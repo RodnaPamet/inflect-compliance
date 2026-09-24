@@ -453,7 +453,7 @@ export async function resolveDirectoryWriter(
             kind: 'snapshot',
             writer: createSnapshotWriter(ctx, provider, conns[0].id, selfIds),
             close: NOOP_CLOSE,
-            readiness: describeWriteReadiness(mergedOrNull(conns[0])),
+            readiness: describeWriteReadiness({ provider, ...mergedOrNull(conns[0]) }),
         };
     }
 
@@ -475,7 +475,7 @@ export async function resolveDirectoryWriter(
                 kind: 'live',
                 writer,
                 close: NOOP_CLOSE,
-                readiness: describeWriteReadiness({ merged: connection, config: connection }),
+                readiness: describeWriteReadiness({ provider, merged: connection, config: connection }),
             };
         }
         const writer = createActiveDirectoryWriter({ connection });
@@ -489,7 +489,7 @@ export async function resolveDirectoryWriter(
             // Past the SECRETS_UNREADABLE guard, so `connection` is the merged
             // bag — no second decrypt, and UNKNOWN is unreachable here by
             // construction rather than by assumption.
-            readiness: describeWriteReadiness({ merged: connection, config: connection }),
+            readiness: describeWriteReadiness({ provider, merged: connection, config: connection }),
         };
     } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);

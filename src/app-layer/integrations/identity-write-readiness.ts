@@ -40,6 +40,19 @@ export type IdentityWriteReadiness =
     | 'DEDICATED_WRITE_BIND'
     /** Only the read bind exists; every write runs as it and may be refused. */
     | 'READ_BIND_ONLY'
+    /**
+     * The connection writes with an APPLICATION credential rather than a bind —
+     * Entra's client-credentials grant (#2843).
+     *
+     * Added because the three values above are LDAP vocabulary and were being
+     * applied to a directory that has no binds at all. An Entra connection has
+     * neither `writeBindDN` nor `bindDN`, so it fell through every arm to the
+     * last one and was reported as *"No bind credential is configured for this
+     * connection at all, so no write can be attempted"* — false for a fully
+     * working connection, and printed into the DRY_RUN artefact the seven-day
+     * dwell exists to produce.
+     */
+    | 'APPLICATION_CREDENTIAL'
     /** Secrets would not decrypt — we cannot see which, and must not guess. */
     | 'UNKNOWN';
 
@@ -50,6 +63,14 @@ export interface WriteReadinessReport {
 }
 
 export interface ReadinessInput {
+    /**
+     * WHICH DIRECTORY this connection is for (#2843).
+     *
+     * Required, and deliberately not optional-with-a-default: the readiness
+     * vocabulary is not shared between providers, and a default would silently
+     * describe one directory in another's terms — which is the whole defect.
+     */
+    readonly provider: string;
     /** Merged connection fields, or null when the secret bag did not decrypt. */
     readonly merged: Record<string, unknown> | null;
     /** configJson alone — always readable, used when `merged` is null. */
@@ -61,6 +82,7 @@ function present(v: unknown): boolean {
 }
 
 export function describeWriteReadiness({
+    provider,
     merged,
     config,
 }: ReadinessInput): WriteReadinessReport {
@@ -74,6 +96,40 @@ export function describeWriteReadiness({
                 'credential is configured is unknown. It is not a report that none exists.',
         };
     }
+    // ── ENTRA: an application credential, not a bind.
+    //
+    // Answered BEFORE the bind arms rather than after, because the bind arms
+    // are exhaustive — the last one has no condition — so anything reaching
+    // them gets an LDAP verdict whether or not LDAP is involved. That is how a
+    // working Entra connection came to be described as having no credential.
+    //
+    // It names `writesEnabled`, which is what actually gates an Entra write:
+    // the writer refuses to construct unless it is exactly `true`. A readiness
+    // report that omits the one flag standing between this connection and a
+    // directory write is answering a question nobody asked.
+    if (provider === 'entra-id') {
+        const consented = merged.writesEnabled === true;
+        if (!present(merged.clientSecret)) {
+            return {
+                readiness: 'UNKNOWN',
+                detail:
+                    'No client secret is readable on this Entra connection, so whether it can ' +
+                    'authenticate is unknown. Entra writes with an application credential, not a ' +
+                    'bind — the absence of a bind DN says nothing about it either way.',
+            };
+        }
+        return {
+            readiness: 'APPLICATION_CREDENTIAL',
+            detail: consented
+                ? 'This connection writes with its application credential and has "Allow ' +
+                  'offboarding writes" on. Whether the tenant has consented the Graph permission ' +
+                  'a disable needs is only established by attempting one.'
+                : 'This connection writes with its application credential, but "Allow offboarding ' +
+                  'writes" is OFF, so the writer refuses to construct and no disable is attempted. ' +
+                  'That is a deliberate per-connection opt-out, not a misconfiguration.',
+        };
+    }
+
     if (present(merged.writeBindDN)) {
         return {
             readiness: 'DEDICATED_WRITE_BIND',
