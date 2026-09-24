@@ -153,10 +153,12 @@ export function describeRefusal(
     //
     // The clamp that rung would meet EXISTS — `JOINER_MAX_MODE` (DRY_RUN) in
     // `identity-joiner-pass`, which the admin route reports verbatim (#2638) —
-    // and so does the trigger (#2687). The entitlement map now EXISTS (#2713 —
-    // `IdentityDepartmentGroupRule` for the rules, `identityDefaultGroupId` +
-    // `identityDefaultGroupName` for the fallback), so a configured tenant's
-    // pass decides rather than refusing. What is still missing is the create
+    // and so does the trigger (#2687). The entitlement map has a SCHEMA and a
+    // READER (#2713 — `IdentityDepartmentGroupRule` for the rules,
+    // `identityDefaultGroupId` + `identityDefaultGroupName` for the fallback)
+    // but NO WRITER (#2839): nothing in `src/` creates a rule or sets either
+    // default-group field, so "a configured tenant" is not a state any tenant
+    // can reach, and every pass refuses. What is still missing is the create
     // VERB (#2714): the pass can say which group it WOULD add the person to and
     // cannot add them. That is why `DIRECTION_IMPLEMENTED.joiner` is still
     // false; see the docblock on it.
