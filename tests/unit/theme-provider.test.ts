@@ -13,7 +13,9 @@
  *   - The provider mounts inside `<Providers>` so every app page can call
  *     `useTheme()`.
  *   - globals.css legacy `--bg-primary` / `--brand` aliases resolve to the
- *     canonical semantic tokens.
+ *     canonical semantic tokens. That stylesheet is read through `cssCodeOf`,
+ *     not `codeOf`: CSS has no `//`, so the TypeScript lexer would have left
+ *     every `/* … *\/` comment standing while reading as masked.
  *   - layout.tsx seeds `data-theme` from the persisted theme COOKIE so SSR
  *     and first paint agree without a client-script race (flash-proof);
  *     `dark` is only the no-cookie first-visit fallback.
@@ -24,21 +26,25 @@ import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../../');
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, cssCodeOf } from '../helpers/source-blocks';
 
 // #2246 Class A — the mask goes at the READ SEAM so an assertion cannot be
 // satisfied by a comment instead of the code it names.
 //
-// `read` masks; `readRaw` does not, and the ONE caller of `readRaw` is the
-// `globals.css` read below. `codeOf` lexes TypeScript, and CSS is not a
-// language it lexes — the repo tracks the missing `.css` masker separately
-// rather than letting this site read as masked while spelling the wrong
-// lexer. Every other read here is `.ts`/`.tsx`, re-derived not assumed.
-function readRaw(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
-}
+// ONE READER PER LANGUAGE, because a mask that lexes the wrong language is
+// worse than no mask: it reads as masked at the call site while leaving every
+// comment in place. `read` lexes TypeScript (`.ts`/`.tsx`); `readCss` lexes
+// CSS, whose only comment form is `/* … */` — which is exactly why `codeOf`
+// was the wrong tool for `globals.css` rather than merely an unnecessary one.
+//
+// This file's header used to say the `.css` masker did not exist and that the
+// globals.css read stayed deliberately raw until it did. `cssCodeOf` (#2727)
+// is that masker, so the last raw seam here is gone.
 function read(rel: string): string {
-    return codeOf(readRaw(rel));
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
+}
+function readCss(rel: string): string {
+    return cssCodeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 }
 
 describe('ThemeProvider — source contract', () => {
@@ -140,7 +146,7 @@ describe('Providers wiring — ThemeProvider mounts inside the app shell', () =>
 });
 
 describe('globals.css — legacy → semantic alias bridge', () => {
-    const src = readRaw('src/app/globals.css');
+    const src = readCss('src/app/globals.css');
 
     it('delegates --bg-primary / --text-primary to the semantic tokens', () => {
         expect(src).toMatch(/--bg-primary:\s*var\(--bg-page\)/);
@@ -154,6 +160,14 @@ describe('globals.css — legacy → semantic alias bridge', () => {
     it('.btn-* rules consume the shared palette (no raw slate/emerald/red numerics)', () => {
         // Capture the .btn block and assert it no longer uses raw
         // Tailwind color classes from the dark-only palette.
+        //
+        // THE SECOND BOUND IS INERT AND ALWAYS WAS. `.btn-primary` occurs
+        // TWICE (the rule and its `:hover`), so `[1]` already stops at the
+        // hover rule — 147 characters — long before the `/* Inputs` comment
+        // this line names. Measured byte-identical under `cssCodeOf`, which is
+        // the only reason masking the read was safe here: the mask blanks that
+        // comment, so a slice that really did depend on it would have silently
+        // widened to EOF and taken the two negatives below with it.
         const btnBlock = src.split(/\.btn-primary/)[1]?.split(/\/\* Inputs/)[0] ?? '';
         expect(btnBlock).toMatch(/var\(--/);
         // None of the old raw-class references should survive in the .btn block.
@@ -168,6 +182,15 @@ describe('globals.css — legacy → semantic alias bridge', () => {
         // uses `<StatusBadge variant="…">` from
         // `src/components/ui/status-badge.tsx`. Forward enforcement
         // lives in `tests/guards/legacy-badge-eradication.test.ts`.
+        //
+        // MASKED, AND THAT IS THE RIGHT DIRECTION FOR A NEGATIVE HERE.
+        // Blanking a document's PROSE (`mdCodeOf`) or narrowing to a region
+        // would let a `.not.toMatch` pass vacuously; a COMMENT mask cannot,
+        // because it removes only comments and leaves every rule intact. It
+        // closes the mirror-image defect instead: a retired `.badge` rule
+        // parked in a `/* … */` block would fail this test while the class is
+        // genuinely gone. Mutation-proved by re-adding `.badge { }` as real
+        // CSS — red under `cssCodeOf`, so the assertion still has teeth.
         expect(src).not.toMatch(/^\s*\.badge\s*\{/m);
         expect(src).not.toMatch(/^\s*\.badge-success\s*\{/m);
         expect(src).not.toMatch(/^\s*\.badge-danger\s*\{/m);

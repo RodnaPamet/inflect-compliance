@@ -16,10 +16,6 @@
     "tests/guards/verification-integrity.test.ts",
     "tests/integration/risk-matrix-admin-api.test.ts",
     "tests/rendered/org-controls-status-emphasis.test.tsx",
-    "tests/unit/epic19-coherence.test.ts",
-    "tests/unit/epic55-hardening.test.ts",
     "tests/unit/filter-foundation.test.ts",
-    "tests/unit/observability-infra.test.ts",
-    "tests/unit/org-page-serialization-boundary.test.ts",
-    "tests/unit/theme-provider.test.ts"
+    "tests/unit/org-page-serialization-boundary.test.ts"
 ]

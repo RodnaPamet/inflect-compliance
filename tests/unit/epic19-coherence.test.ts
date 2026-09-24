@@ -1,4 +1,5 @@
 import { codeOf } from '../helpers/source-blocks';
+import { headingLines, mdSection } from '../helpers/markdown-regions';
 /**
  * Epic 19 Coherence Guards — Observability & Operational Readiness
  *
@@ -307,22 +308,36 @@ describe('Epic 19 Coherence: SLO document', () => {
     );
 
     it('should define all 4 SLOs', () => {
-        expect(sloContent).toContain('SLO 1');
-        expect(sloContent).toContain('SLO 2');
-        expect(sloContent).toContain('SLO 3');
-        expect(sloContent).toContain('SLO 4');
+        // #2246 — "DEFINE an SLO" means a `##` section exists for it, so the
+        // read is the level-2 heading lines and not the whole document. Over
+        // the document `SLO 1` matched 14 times and `SLO 2` eighteen: the
+        // section could be deleted outright and a cross-reference, a summary
+        // table row or a revision-history entry kept this green. Narrowed the
+        // counts are 1 / 2 / 1 / 1 — the two for `SLO 2` being `SLO 2` and its
+        // `SLO 2b` write-latency sibling, both real level-2 sections.
+        const sections = headingLines(sloContent, 2);
+        expect(sections).toContain('SLO 1');
+        expect(sections).toContain('SLO 2');
+        expect(sections).toContain('SLO 3');
+        expect(sections).toContain('SLO 4');
     });
 
     it('SLO latency threshold should match alert rules', () => {
-        // SLO says < 500ms for P95
-        expect(sloContent).toContain('500ms');
-        // Alert fires at > 500 (warning) and > 2000 (critical)
+        // SLO says < 500ms for P95 — in the read-latency SLO's own section.
+        // `500ms` matched 11 times document-wide (k6 budgets, the revision
+        // history, the summary table); bound to the section that sets it, 4.
+        expect(mdSection(sloContent, 'SLO 2: API Latency — Reads (P95)')).toContain(
+            '500ms',
+        );
+        // Alert fires at > 500 (warning) and > 2000 (critical). YAML, not
+        // markdown — left whole, see the seam note at the top of this file.
         expect(alertContent).toContain('> 500');
         expect(alertContent).toContain('> 2000');
     });
 
     it('SLO availability target should match burn rate alert', () => {
-        expect(sloContent).toContain('99.9%');
+        // 4 matches document-wide → 3 inside the availability SLO.
+        expect(mdSection(sloContent, 'SLO 1: API Availability')).toContain('99.9%');
         // Burn rate alert uses 0.001 (100% - 99.9%)
         expect(alertContent).toContain('0.001');
     });
@@ -403,26 +418,48 @@ describe('Epic 19 Coherence: documentation', () => {
         expect(fs.existsSync(path.join(ROOT, 'infra/README.md'))).toBe(true);
     });
 
+    // #2246 — these four read MARKDOWN, and each is narrowed to the region
+    // the test names rather than masked. `mdCodeOf` keeps a document's CODE
+    // and blanks its PROSE, which on three of the four needles below
+    // (`Operational Runbook`, `14 panels`, `10)`) means ZERO matches and an
+    // assertion that could never fail again.
+
     it('observability.md should reference livez, readyz, and health probes', () => {
-        const content = fs.readFileSync(path.join(ROOT, 'docs/observability.md'), 'utf-8');
-        expect(content).toContain('/api/livez');
-        expect(content).toContain('/api/readyz');
-        expect(content).toContain('/api/health');
+        // The probes are documented under `## Health Probes`; whole-document
+        // counts were 4 / 5 / 1, and that section holds 2 / 3 / 1. The
+        // difference is the runbook's simulation commands, which mention the
+        // probes without documenting them.
+        const probes = mdSection(
+            fs.readFileSync(path.join(ROOT, 'docs/observability.md'), 'utf-8'),
+            'Health Probes',
+        );
+        expect(probes).toContain('/api/livez');
+        expect(probes).toContain('/api/readyz');
+        expect(probes).toContain('/api/health');
     });
 
     it('observability.md should contain a runbook section', () => {
+        // The subject is a SECTION, so read the level-2 heading lines. Against
+        // the document, a sentence saying "see the Operational Runbook" was
+        // enough — the section itself could be gone.
         const content = fs.readFileSync(path.join(ROOT, 'docs/observability.md'), 'utf-8');
-        expect(content).toContain('Operational Runbook');
+        expect(headingLines(content, 2)).toContain('Operational Runbook');
     });
 
     it('observability.md should reference the correct panel count', () => {
         const content = fs.readFileSync(path.join(ROOT, 'docs/observability.md'), 'utf-8');
-        expect(content).toContain('14 panels');
+        expect(mdSection(content, 'SLOs, Dashboards & Alerting')).toContain(
+            '14 panels',
+        );
     });
 
     it('infra/README.md should reference the correct alert count', () => {
+        // `'10)'` is a three-character needle against a whole README — it
+        // would be satisfied by a numbered list item, a version string, a
+        // port. What it is actually about is the `## Alert Rules (10)` heading,
+        // so read the level-2 heading lines.
         const content = fs.readFileSync(path.join(ROOT, 'infra/README.md'), 'utf-8');
-        expect(content).toContain('10)');
+        expect(headingLines(content, 2)).toContain('10)');
     });
 });
 

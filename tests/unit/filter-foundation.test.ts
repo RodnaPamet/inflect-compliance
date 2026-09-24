@@ -31,6 +31,7 @@ const ANIMATED_CONTAINER = path.resolve(
 const FILTER_BARREL_SRC = path.resolve(FILTER_DIR, 'index.ts');
 
 import { codeOf } from '../helpers/source-blocks';
+import { mdSection } from '../helpers/markdown-regions';
 
 // #2246 Class A — the mask goes at the READ SEAM.
 //
@@ -38,6 +39,11 @@ import { codeOf } from '../helpers/source-blocks';
 // `package.json` read below is handed to `JSON.parse`, where JSON is DATA and
 // masking has no meaning, and the `GUIDE.md` read is markdown, which `codeOf`
 // does not lex. Source reads go through `readSrc`, which masks.
+//
+// The GUIDE.md read is narrowed per-assertion rather than masked — see the
+// measurement at its call site. `mdCodeOf` is not an option there: it keeps a
+// document's CODE and blanks its PROSE, and this file's needles split across
+// both halves.
 function readFile(p: string): string {
     return fs.readFileSync(p, 'utf-8');
 }
@@ -308,8 +314,29 @@ describe('Filter module — canonical file layout', () => {
 
     it('has a GUIDE.md that pins the epic and the canonical usage', () => {
         const guide = readFile(path.join(FILTER_DIR, 'GUIDE.md'));
+
+        // THE EPIC PIN STAYS RAW, and this is the one site in this file that
+        // does (#2246). It lives in the document's PREAMBLE — the blockquote
+        // under the `#` title, above the first `##` — and neither tool reaches
+        // it: `mdCodeOf` takes it to ZERO (it is prose, not a code span), and
+        // `markdown-regions` cuts ATX sections, of which the preamble is not
+        // one. The other `Epic 53` in the document is inside a Migration Path
+        // subheading, so narrowing to THAT would bind this assertion to a
+        // different claim than the one its name makes. Measured: 2 raw, 0
+        // through `mdCodeOf`, 0 in the Quick Start section.
         expect(guide).toMatch(/Epic\s*53/i);
-        expect(guide).toMatch(/createFilterDefs/);
-        expect(guide).toMatch(/useFilterContext/);
+
+        // THE CANONICAL USAGE is narrowed, because "canonical" names a place:
+        // the Quick Start block a reader copies from. Against the whole
+        // document `createFilterDefs` matched 7 times and `useFilterContext`
+        // 11 — a DO/DON'T bullet, a migration note or an API table kept this
+        // green with the worked example deleted. Bound to the section: 7→2
+        // and 11→2.
+        const quickStart = mdSection(
+            guide,
+            'Quick Start — Adding Filters to a List Page',
+        );
+        expect(quickStart).toMatch(/createFilterDefs/);
+        expect(quickStart).toMatch(/useFilterContext/);
     });
 });
