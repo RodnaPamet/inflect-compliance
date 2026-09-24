@@ -41,6 +41,7 @@
  * This is transport, and transport is all it is.
  */
 import { safeFetch } from '@/app-layer/automation/webhook-safety';
+import { findInternalSecret } from './egress-scan';
 import {
     LATEST_PROTOCOL_VERSION,
     type JsonRpcResponse,
@@ -98,6 +99,23 @@ async function rpc(
     method: string,
     params?: Record<string, unknown>,
 ): Promise<unknown> {
+    // EGRESS. Ahead of the timer and the socket, because a refusal must not be
+    // observable to the far end — not even as a connection it can time.
+    //
+    // Scanned here rather than in `callTool` so the check covers every method
+    // this client will ever send, including ones added later. `initialize` and
+    // `tools/list` pass our own constants and cannot trip it; the authorization
+    // header is a tenant secret that travels BY DESIGN and is not part of
+    // `params`, so it is correctly out of scope.
+    const leaked = findInternalSecret(params);
+    if (leaked) {
+        throw new McpClientError(
+            `mcp_egress_blocked: the arguments for ${method} contain ${leaked}, ` +
+            'which must never be sent to an external server. The run was stopped ' +
+            'before any bytes left. Nothing was sent.',
+        );
+    }
+
     const timeoutMs = opts.timeoutMs ?? MCP_CALL_TIMEOUT_MS;
     const maxBytes = opts.maxResponseBytes ?? MCP_MAX_RESPONSE_BYTES;
 
