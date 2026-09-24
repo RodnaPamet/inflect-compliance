@@ -204,7 +204,24 @@ export type StaticDriverReason =
     | 'ENV_DISABLED'
     | 'TENANT_NOT_OPTED_IN'
     | 'UNRECOGNISED_SETTING'
-    | 'DRIVER_NOT_IMPLEMENTED';
+    | 'DRIVER_NOT_IMPLEMENTED'
+    /**
+     * NO_WORKFLOW_REQUESTS_IT — both switches are on and the build has the
+     * driver, and every run still comes out static because `selectRunDriver`
+     * requires the DEFINITION to ask for the engine and no registered
+     * `WorkflowDefinition` sets `driver`.
+     *
+     * The fourth gate, and the one that had no name. Without it a deployment
+     * with both switches on reported `reason: null` — which this file defines
+     * as "the configured driver IS in force" — while nothing it ran used the
+     * engine. An operator checking why would find the env var right, the
+     * tenant toggle right, and no term saying what actually narrowed it.
+     *
+     * Resolved by `resolveDriverForTenant`, not by `resolveAgentDriver`: the
+     * pure function answers a deployment-and-tenant question and has no
+     * business reading the workflow registry.
+     */
+    | 'NO_WORKFLOW_REQUESTS_IT';
 
 export interface AgentDriverDecision {
     readonly driver: AgentDriver;
