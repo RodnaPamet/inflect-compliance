@@ -205,9 +205,16 @@ export const SUBPAGES: readonly string[] = [
     '/agent-proposals',
     '/agent-runs',
     '/agents/[agentId]',
+    // Added when the RQ4-1 ratchet stopped accepting a WILDCARD match. Both
+    // are real Phase 1 pages, both were reachable and shipped, and neither was
+    // ever listed: `/agents/decisions` and `/agents/reports` matched
+    // `/agents/[agentId]` because `matchesPattern` skips `[param]` segments,
+    // so the completeness scan classified them and nobody added an entry.
+    '/agents/decisions',
     '/agents/proposals',
     '/agents/quarantine',
     '/agents/receipts',
+    '/agents/reports',
     '/agents/review-quality',
     '/agents/runs',
     '/agents/runs/[runId]',
