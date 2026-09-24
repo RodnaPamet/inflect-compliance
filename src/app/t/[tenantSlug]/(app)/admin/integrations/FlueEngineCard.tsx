@@ -5,13 +5,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { CheckCircle, XCircle } from 'lucide-react';
-
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
+import { CircleCheck, CircleDotted } from '@/components/ui/icons/nucleo';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useTranslations } from 'next-intl';
 
@@ -121,7 +120,7 @@ export function FlueEngineCard() {
                             {t('flue.optOut')}
                         </Button>
                     ) : (
-                        <Button variant="primary" size="sm" onClick={() => setMode('FLUE')} disabled={busy}>
+                        <Button variant="secondary" size="sm" onClick={() => setMode('FLUE')} disabled={busy}>
                             {t('flue.optIn')}
                         </Button>
                     )}
@@ -145,10 +144,15 @@ export function FlueEngineCard() {
                     const href = fixHref(term.key);
                     return (
                         <li key={term.key} className="flex items-center gap-default text-sm">
+                            {/* A DOTTED circle, not a cross. An unsatisfied
+                                term is work not yet done, and an error glyph
+                                would read as something having gone wrong —
+                                which is exactly the misreading a checklist
+                                on a six-term gate must avoid. */}
                             {term.satisfied ? (
-                                <CheckCircle className="h-4 w-4 text-status-success" aria-hidden="true" />
+                                <CircleCheck className="h-4 w-4 text-status-success" aria-hidden="true" />
                             ) : (
-                                <XCircle className="h-4 w-4 text-content-muted" aria-hidden="true" />
+                                <CircleDotted className="h-4 w-4 text-content-muted" aria-hidden="true" />
                             )}
                             <span className={term.satisfied ? 'text-content-default' : 'text-content-muted'}>
                                 {t(`flue.term.${term.key}`)}

@@ -5222,7 +5222,7 @@
       "runsOnStatic": "Runs still execute on the static engine — waiting on: {term}.",
       "operatorTerm": "Set on the deployment",
       "fix": "Set up →",
-      "count": "{count, plural, =0 {none} one {# available} other {# available}}",
+      "count": "{count} available",
       "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand.",
       "term": {
         "ENV": "The deployment allows the Flue engine",

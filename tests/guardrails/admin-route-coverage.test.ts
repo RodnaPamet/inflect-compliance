@@ -142,6 +142,10 @@ const ADMIN_ONLY_ROUTES = [
     // for a page of files rather than for one. Audited AV_RESCAN_INITIATED.
     'admin/av-rescan/route.ts',
     'admin/agent-driver/route.ts',
+    // The read half of the Flue wiring card. Same OWNER-only key as the
+    // toggle above it: the response is a superset of that route's facts, so a
+    // narrower key here would be a way to read what tenant_lifecycle guards.
+    'admin/flue-wiring/route.ts',
     'admin/identity-write-policy/route.ts',
     'admin/identity-leaver-passes/route.ts',
     // #2687 — the joiner's half of the same pair. The report names which of a
