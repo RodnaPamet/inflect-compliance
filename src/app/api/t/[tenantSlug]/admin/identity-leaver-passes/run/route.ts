@@ -177,7 +177,18 @@ export const POST = withApiErrorHandling(
             // rather than rate-limit courtesy.
             const job = await enqueue(
                 'identity-leaver-pass',
-                { tenantId: ctx.tenantId, provider },
+                {
+                    tenantId: ctx.tenantId,
+                    provider,
+                    // WHO ASKED, carried into the pass itself (#2843). The audit
+                    // row below already recorded it, but only there — the
+                    // execution row the pass writes said `scheduled` and the
+                    // journal said `system`, so the two artefacts an auditor
+                    // actually reads both asserted nobody asked. Putting the id
+                    // in the payload is what lets the pass write the truth in
+                    // the places it already writes.
+                    requestedByUserId: ctx.userId,
+                },
                 { jobId },
             );
 

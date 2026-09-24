@@ -67,6 +67,7 @@ import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { isApprovalExpired } from '@/lib/agentic/approval-window';
 import { evaluateAgentRegistration } from '@/lib/agentic/agent-registration-gate';
 import {
     provenanceOfToolResult,
@@ -368,6 +369,27 @@ export async function resumeWorkflowRun(
         throw badRequest(`Run is ${run.status}, cannot resume`);
     }
 
+    // ── THE HUMAN'S WINDOW, CHECKED BEFORE ANYTHING IS DISPATCHED ──────────
+    //
+    // A checkpoint pins `approvalExpiresAt` when the run parks, from that
+    // step's mandatory `approvalWindow`. Past it the decision was not taken in
+    // time, and resuming would execute steps a human was supposed to gate on
+    // the strength of an approval given outside the window it was given in.
+    //
+    // REFUSED AT THE DOOR rather than left to the engine, and that is the
+    // whole point of the window existing. Before it, the only thing bounding
+    // the wait was `WALL_CLOCK_MS` — sixty minutes meant for unattended
+    // execution — so a late approval produced a run that dispatched, charged
+    // its budget and halted mid-flight with a RUNTIME_MS message naming a cap
+    // the reviewer had never heard of. This names what actually happened.
+    if (isApprovalExpired(run.approvalExpiresAt, new Date())) {
+        throw badRequest(
+            `approval_window_closed: this run's approval window closed at `
+            + `${run.approvalExpiresAt?.toISOString()}. Start the workflow again — `
+            + `a decision taken after the window is not the decision it parked for.`,
+        );
+    }
+
     // ── RESOLVED FIRST, BECAUSE THE GATE BELOW NEEDS IT ────────────────────
     //
     // RE-RESOLVED, not inherited from the start. A resume is a fresh
@@ -549,7 +571,31 @@ export async function resumeWorkflowRun(
         runId,
         def,
         resumedFrom + 1,
-        run.startedAt.getTime(),
+        // THE ENGINE CLOCK RE-BASES ON RESUME, and only now is that safe.
+        //
+        // `RUNTIME_MS` is the one cap whose `used` is READ from the clock
+        // rather than accumulated, so handing it the run's ORIGINAL start
+        // charged the run for every minute a human spent deciding. A
+        // five-day approval window is inert against a sixty-minute ceiling
+        // measured from a start five days ago: the resume would halt before
+        // executing a step.
+        //
+        // The objection this used to answer — "a workflow with two
+        // checkpoints could span three hours with every segment reporting
+        // itself well inside an hour" — was correct while NOTHING ELSE
+        // bounded the run's calendar life. Something does now, explicitly
+        // and per step: `approvalExpiresAt`, refused above. The two caps
+        // divide the question they used to share — this one bounds a stretch
+        // of UNATTENDED EXECUTION, that one bounds HUMAN DELIBERATION — and
+        // the axes that bound total WORK (STEPS, TOKENS, PROPOSALS) still
+        // accumulate across resumes untouched, so a resumed run buys itself
+        // wall clock and never more work.
+        //
+        // NOT applied to `executeQueuedWorkflowRun`: that path is a SIGTERM
+        // retry of a RUNNING row, where nobody is deliberating and the same
+        // unattended work is resuming. Re-basing there would let a wedged run
+        // buy a fresh hour on every retry.
+        Date.now(),
         resumeDecision.driver,
     );
     return { status, stepFailures };

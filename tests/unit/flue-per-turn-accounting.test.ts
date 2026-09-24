@@ -89,7 +89,27 @@ jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
             // observer is: it is a closure the engine builds and hands over,
             // and holding it is the only way to call it.
             mockOriginFor = originFor;
-            return { tools: [], omitted: [] };
+            // ONE TOOL, not an empty list, and the empty list was a fixture
+            // artefact rather than the scenario. This dispatch's own usage
+            // aggregate declares `toolCalls: 2`, so the run it simulates
+            // plainly HAS tools — and `executeFlueRun` now counts a run that
+            // was offered NONE as a step failure, because an agent handed an
+            // empty catalogue reads nothing and still completes clean.
+            //
+            // Safe to add: `wrapForLedger` is local to `execute.ts`, not this
+            // mocked module, so the engine wraps whatever is returned here.
+            // The shape is the minimum `FlueToolDefinition` asks for; nothing
+            // in this file calls it, since the accounting under test is about
+            // MODEL turns rather than tool invocations.
+            return {
+                tools: [{
+                    name: 'get_compliance_posture',
+                    description: 'stub',
+                    input: undefined,
+                    run: async () => '',
+                }],
+                omitted: [],
+            };
         },
     ),
 }));

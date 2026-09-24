@@ -1,6 +1,16 @@
 #
 # Production Docker Compose for inflect-compliance.
 #
+# ROLE: deployed-production. The repo ALSO carries a root
+# `docker-compose.prod.yml`; that one is a LOCAL production-like stack and is
+# NOT interchangeable with this — different service names, a different
+# database name, a different env file. Both files say which they are because
+# neither used to, and the cost was measured: an operator reading the root one
+# to understand the live deployment concluded the deployed env file had
+# drifted and was a step from writing config into a path nothing reads.
+# `tests/guards/worker-deployment.test.ts` pins that exactly one file claims
+# to be deployed.
+#
 # ── THIS FILE IS CANONICAL ────────────────────────────────────────────
 # It is the source of truth for the production stack's STRUCTURE, and it
 # reaches the VM at /opt/inflect/docker-compose.prod.yml through

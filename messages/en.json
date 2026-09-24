@@ -8271,7 +8271,8 @@
         "stepTokens": "{count} tokens",
         "decisionLink": "Art 12 decision"
       },
-      "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume."
+      "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume.",
+      "approvalWindowCloses": "Approval window closes {date}"
     },
     "quarantine": {
       "crumb": "Quarantine",

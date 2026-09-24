@@ -116,6 +116,28 @@ model AiSystem {
   classificationClauseId  String?
   /// Human-readable rationale for the tier, citing the clause. Generated.
   classificationRationale String?
+  /// THE ANSWERS THE TIER WAS DERIVED FROM — Art 5, Annex I, Annex III, Art 50.
+  ///
+  /// The three fields above record the VERDICT; this records its INPUTS, and
+  /// without it the two states an auditor most needs to tell apart are
+  /// identical on the row: "assessed, and no trigger applies" and "nobody
+  /// filled the questionnaire in". Both produce MINIMAL / Art.95 with a
+  /// rationale reading "no prohibited practice, high-risk use-case, or
+  /// transparency trigger identified" — wording that asserts an assessment
+  /// whose evidence was discarded.
+  ///
+  /// NULL therefore MEANS something: authored before this column existed, or
+  /// authored with no answers supplied. It is deliberately not defaulted to
+  /// `{}`, because an empty object would claim a questionnaire was answered
+  /// with four negatives when nobody answered anything.
+  ///
+  /// NOT in `encrypted-fields.ts`, and that is a decision rather than an
+  /// oversight. The manifest carries this model's FREE TEXT (`purpose`,
+  /// `useContext`) because that is where a describer puts personal data. These
+  /// are closed-vocabulary enum ids and a boolean ABOUT THE SYSTEM — the same
+  /// class as `classificationClauseId`, which is also stored in clear so the
+  /// register can be queried and explained.
+  classificationAnswersJson Json?
   ownerUserId             String?
   status                  AiSystemStatus   @default(ACTIVE)
   createdByUserId         String?

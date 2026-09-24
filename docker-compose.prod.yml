@@ -1,4 +1,22 @@
-# ─── Production Environment ─────────────────────────────────
+# ─── LOCAL production-like stack — NOT THE DEPLOYED ONE ─────
+#
+# ROLE: local-production. Serves localhost:3000; `docs/deployment.md`
+# introduces it as "Quick Start (Local Production)".
+#
+# THE DEPLOYED PRODUCTION STACK IS `deploy/docker-compose.prod.yml`,
+# which is what runs at /opt/inflect on the production VM. The two are
+# NOT interchangeable: this file calls its database service `db` and
+# its database `inflect_production`; the deployed one uses `postgres`
+# and `inflect_compliance`, and reads `./.env.prod` rather than
+# `.env.production`. Running THIS file against the production VM would
+# stand up a SECOND, empty stack beside the live one instead of
+# reconciling it.
+#
+# Both headers say which they are because neither used to, and the
+# cost was a real one: an operator reading this file to understand the
+# live deployment concluded the deployed env file had drifted, and was
+# a step away from writing configuration into a path nothing reads.
+#
 # Usage: docker compose -f docker-compose.prod.yml up -d --build
 #
 # Requires: .env.production (copy from .env.production.example)

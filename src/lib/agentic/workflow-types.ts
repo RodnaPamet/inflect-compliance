@@ -14,6 +14,8 @@
  *   - SYNTHESIS       — reason over accumulated context to produce a summary.
  */
 
+import type { ApprovalWindow } from './approval-window';
+
 /** Accumulated run state. `outputs` is keyed by each step's `label`. */
 export interface WorkflowContext {
     input: Record<string, unknown>;
@@ -67,6 +69,25 @@ export interface ProposeStepDef {
 export interface CheckpointStepDef {
     kind: 'HUMAN_CHECKPOINT';
     label: string;
+    /**
+     * How long the human has, from the moment the run parks here.
+     *
+     * REQUIRED, with no default. Until this existed the wait was bounded by
+     * `ENGINE_CAPS.WALL_CLOCK_MS`, whose own comment reads "max wall-clock a
+     * run may span (across resumes)" — so spanning resumes was INTENDED. What
+     * was never decided is that a HUMAN would be spending that span: sixty
+     * minutes is a sensible ceiling on unattended execution and an absurd one
+     * on deliberation. An approval that took longer left the run unresumable
+     * while the runs list went on offering a Resume button, and the failure
+     * arrived as a RUNTIME_MS halt naming a cap no reviewer has heard of.
+     * See `approval-window.ts`.
+     *
+     * A default would be a fourth way to answer this implicitly, and an
+     * implicit answer is the defect. A pack review and a policy sign-off do
+     * not deserve the same window, and an author who cannot say which this is
+     * has not finished designing the step.
+     */
+    approvalWindow: ApprovalWindow;
     /**
      * A checkpoint CANNOT opt into failure isolation, and `never` is how that is
      * said to the compiler rather than to a reader.

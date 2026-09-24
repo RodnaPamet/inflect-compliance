@@ -76,7 +76,7 @@
  */
 import { logger } from '@/lib/observability/logger';
 import { runInTenantContext } from '@/lib/db-context';
-import { buildSystemContext } from '@/app-layer/context-system';
+import { SYSTEM_PRINCIPAL, buildDelegatedJobContext, buildSystemContext } from '@/app-layer/context-system';
 import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
@@ -407,6 +407,28 @@ async function safeRecordRefusal(
  * `writeErrorExecutionRow` — because the status it writes is the one this
  * function's parameter type deliberately cannot express.
  */
+/**
+ * Did a HUMAN ask for this pass, or did the schedule? — #2843.
+ *
+ * Both durable records of a directory write used to assert "unattended" for an
+ * attended one: the execution row hardcoded `triggeredBy: 'scheduled'`, and
+ * the journal recorded `actorUserId: 'system'`. An off-schedule run fired by a
+ * named admin was indistinguishable from the 05:00 job in both, and the audit
+ * row that DID name them (`IDENTITY_LEAVER_PASS_REQUESTED`) is reachable only
+ * by a timestamp+provider join nothing documents.
+ *
+ * READ OFF `ctx.userId`, which is the fact rather than a proxy for it: a
+ * delegated context carries a real `User.id`, a system context carries
+ * `SYSTEM_PRINCIPAL`. `actorType` would NOT do — `buildSystemContext` and
+ * `buildDelegatedJobContext` both set `'JOB'`, so it cannot tell them apart.
+ *
+ * Derived in ONE place, because the execution row and the journal must not be
+ * able to disagree about who asked.
+ */
+function triggeredByOf(ctx: RequestContext): 'scheduled' | 'manual' {
+    return ctx.userId && ctx.userId !== SYSTEM_PRINCIPAL ? 'manual' : 'scheduled';
+}
+
 async function writeExecutionRow(
     ctx: RequestContext,
     provider: string,
@@ -425,7 +447,7 @@ async function writeExecutionRow(
                 provider,
                 automationKey: `${provider}${LEAVER_PASS_AUTOMATION_SUFFIX}`,
                 status,
-                triggeredBy: 'scheduled',
+                triggeredBy: triggeredByOf(ctx),
                 completedAt: new Date(),
                 resultJson,
             },
@@ -456,7 +478,7 @@ async function writeErrorExecutionRow(
                 provider,
                 automationKey: `${provider}${LEAVER_PASS_AUTOMATION_SUFFIX}`,
                 status: 'ERROR',
-                triggeredBy: 'scheduled',
+                triggeredBy: triggeredByOf(ctx),
                 completedAt: new Date(),
                 resultJson,
             },
@@ -869,11 +891,29 @@ export async function runIdentityLeaverPass(input: {
     tenantId: string;
     provider: string;
     now?: Date;
+    /**
+     * A REAL `User.id` when a human asked for this pass off-schedule; absent
+     * for the 05:00 dispatch. See `IdentityLeaverPassPayload` (#2843).
+     */
+    requestedByUserId?: string;
 }): Promise<LeaverPassResult> {
     const now = input.now ?? new Date();
     // `context-system`, never `context` — the latter reaches @/lib/auth -> @/auth
     // and dies in the worker, which has no Next request to hang a session on.
-    const ctx = buildSystemContext({ tenantId: input.tenantId, job: 'identity-leaver-pass' });
+    //
+    // DELEGATED when somebody asked, so the artefacts can say who. That is not
+    // cosmetic: `IdentityWriteJournal.actorUserId` documents non-null as
+    // meaning a human, and it held 'system' for every row in production —
+    // including rows a named admin caused. `buildDelegatedJobContext` exists
+    // for exactly this shape of work, and every write below inherits the
+    // attribution without another parameter to forget.
+    const ctx = input.requestedByUserId
+        ? buildDelegatedJobContext({
+              tenantId: input.tenantId,
+              job: 'identity-leaver-pass',
+              onBehalfOf: input.requestedByUserId,
+          })
+        : buildSystemContext({ tenantId: input.tenantId, job: 'identity-leaver-pass' });
 
     try {
         // ── 0. What did an earlier pass leave unconfirmed? Read FIRST, so it is

@@ -22,8 +22,20 @@ import { logger } from '@/lib/observability/logger';
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),
 }));
+// A COMPLETE mock of the module's used surface, not just the one function.
+// It carried only `buildSystemContext` until #2843; `SYSTEM_PRINCIPAL` then
+// imported as `undefined`, so the pass's "is this a real person?" check
+// compared 'system' against undefined, called every scheduled run ATTENDED,
+// and wrote `triggeredBy: 'manual'` on the 05:00 job. A partial barrel mock
+// does not fail loudly — it hands you a plausible wrong answer.
 jest.mock('@/app-layer/context-system', () => ({
+    SYSTEM_PRINCIPAL: 'system',
     buildSystemContext: jest.fn((a: { tenantId: string }) => ({ tenantId: a.tenantId, userId: 'system' })),
+    buildDelegatedJobContext: jest.fn((a: { tenantId: string; onBehalfOf: string }) => ({
+        tenantId: a.tenantId,
+        userId: a.onBehalfOf,
+        actorType: 'JOB',
+    })),
 }));
 const getPolicy = jest.fn();
 jest.mock('@/app-layer/usecases/identity-write-policy', () => ({
@@ -474,6 +486,51 @@ describe('the durable record a dry run leaves behind', () => {
         expect((logger.error as jest.Mock).mock.calls.some(
             (c) => typeof c[0] === 'string' && c[0].includes('record could not be written'),
         )).toBe(true);
+    });
+});
+
+describe('the artefacts say WHO asked — #2843', () => {
+    // Both durable records used to assert "unattended" for an attended write:
+    // the execution row hardcoded triggeredBy 'scheduled', and every journal
+    // row carried actorUserId 'system'. Production bore that out — 74 of 74
+    // execution rows said 'scheduled', and all 3 journal rows said 'system',
+    // including runs a named admin fired by hand.
+
+    it("says 'scheduled' when nobody asked — the 05:00 dispatch is unchanged", async () => {
+        findCandidates.mockResolvedValue([]);
+        await runIdentityLeaverPass({ tenantId: 't1', provider: 'entra-id', now: NOW });
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.triggeredBy).toBe('scheduled');
+    });
+
+    it("says 'manual' when a human asked, and the row is otherwise identical", async () => {
+        findCandidates.mockResolvedValue([]);
+        await runIdentityLeaverPass({
+            tenantId: 't1',
+            provider: 'entra-id',
+            now: NOW,
+            requestedByUserId: 'user-42',
+        });
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.triggeredBy).toBe('manual');
+        // Same job, same automation key — a manual run must not look like a
+        // different automation, only a differently-triggered one.
+        expect(data.automationKey).toBe('entra-id.leaver_pass');
+    });
+
+    it('a blank requester is NOT a human — an empty string must not read as attended', async () => {
+        // The nasty edge: `''` is falsy but is also a string, and a truthiness
+        // test written the other way round would have called it attended and
+        // then written an empty actorUserId against a foreign key.
+        findCandidates.mockResolvedValue([]);
+        await runIdentityLeaverPass({
+            tenantId: 't1',
+            provider: 'entra-id',
+            now: NOW,
+            requestedByUserId: '',
+        });
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.triggeredBy).toBe('scheduled');
     });
 });
 

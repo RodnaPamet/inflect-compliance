@@ -163,7 +163,7 @@ describeFn('the policy-card version pin (real DB, real engine)', () => {
                         { title: `Pinned risk ${SUITE}`, description: 'from a pinned run' },
                     ],
                 },
-                { kind: 'HUMAN_CHECKPOINT', label: 'review' },
+                { kind: 'HUMAN_CHECKPOINT', label: 'review', approvalWindow: '24h' },
                 { kind: 'SYNTHESIS', label: 'summary', synthesize: () => ({ text: 'done' }) },
             ],
         });

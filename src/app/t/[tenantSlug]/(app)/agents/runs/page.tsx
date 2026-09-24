@@ -50,6 +50,15 @@ export default async function AgentRunsPage({
         driver: r.driver,
         startedAt: r.startedAt.toISOString(),
         completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+        // WHEN THE HUMAN'S WINDOW CLOSES, for a run parked at a checkpoint.
+        //
+        // Shown here rather than on the compliance calendar, and
+        // `calendar-projection-completeness` records why: a calendar entry
+        // would turn a bound on deliberation into a prompt to clear the
+        // queue. The runs list is where the reviewer is already deciding, so
+        // the date is a FACT beside the run rather than a reminder chasing
+        // them. Null unless parked.
+        approvalExpiresAt: r.approvalExpiresAt ? r.approvalExpiresAt.toISOString() : null,
         summary: r.summary,
         pendingProposals: r._count.proposals,
     }));

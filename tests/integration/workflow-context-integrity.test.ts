@@ -65,7 +65,7 @@ describeFn('Workflow context integrity (real DB)', () => {
             description: 'read → checkpoint → read: the pause is the tamper window',
             steps: [
                 { kind: 'READ', label: 'before', tool: 'get_compliance_posture' },
-                { kind: 'HUMAN_CHECKPOINT', label: 'review' },
+                { kind: 'HUMAN_CHECKPOINT', label: 'review', approvalWindow: '24h' },
                 { kind: 'READ', label: 'after', tool: 'get_compliance_posture' },
             ],
         });

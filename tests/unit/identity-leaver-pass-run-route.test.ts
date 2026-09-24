@@ -295,7 +295,7 @@ describe('POST …/admin/identity-leaver-passes/run — the job id', () => {
 // ── Payload + validation ────────────────────────────────────────────
 
 describe('POST …/admin/identity-leaver-passes/run — payload', () => {
-    it('enqueues the scheduled job with a ctx-derived tenant and nothing else', async () => {
+    it('enqueues the scheduled job, ctx-derived tenant, and names who asked', async () => {
         getTenantCtxMock.mockResolvedValueOnce(
             ctxFor('OWNER', { tenantId: 'tenant-B', userId: 'owner-7' }),
         );
@@ -306,9 +306,33 @@ describe('POST …/admin/identity-leaver-passes/run — payload', () => {
 
         // The JOB is the scheduled one, exactly. A manual run that enqueued a
         // different job would be exercising something other than the 05:00 path.
+        //
+        // `requestedByUserId` joined the payload in #2843 and the title changed
+        // with it: this used to read "and nothing else", asserting a two-key
+        // payload. That was stricter than the reason above — the invariant is
+        // that the manual route drives the SAME job with a tenant it derived
+        // itself, not that the payload can never carry provenance. Still an
+        // exact `toEqual`, so an unexpected third key fails as loudly as before.
         const [name, payload] = enqueueMock.mock.calls[0];
         expect(name).toBe('identity-leaver-pass');
-        expect(payload).toEqual({ tenantId: 'tenant-B', provider: 'entra-id' });
+        expect(payload).toEqual({
+            tenantId: 'tenant-B',
+            provider: 'entra-id',
+            requestedByUserId: 'owner-7',
+        });
+    });
+
+    it('carries the REQUESTER, not the tenant owner or a constant', async () => {
+        // The point of the field. If it were hardcoded, or read off anything
+        // other than the calling session, the execution row would name the
+        // wrong person — which is worse than naming nobody.
+        getTenantCtxMock.mockResolvedValueOnce(
+            ctxFor('OWNER', { tenantId: 'tenant-B', userId: 'someone-else-42' }),
+        );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await POST(req({ provider: 'entra-id' }), ROUTE_ARGS as any);
+        const [, payload] = enqueueMock.mock.calls[0];
+        expect((payload as { requestedByUserId?: string }).requestedByUserId).toBe('someone-else-42');
     });
 
     it('refuses a caller-supplied tenantId with 400 rather than stripping it', async () => {
