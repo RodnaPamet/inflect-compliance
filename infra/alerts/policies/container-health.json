@@ -1,0 +1,60 @@
+{
+  "displayName": "inflect container unhealthy, or health reporting stopped (#2745)",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "conditionThreshold": {
+        "filter": "metric.type=\"custom.googleapis.com/docker/container_health\" AND resource.type=\"gce_instance\"",
+        "comparison": "COMPARISON_LT",
+        "thresholdValue": 1,
+        "duration": "300s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "60s",
+            "perSeriesAligner": "ALIGN_MIN",
+            "crossSeriesReducer": "REDUCE_MIN",
+            "groupByFields": [
+              "metric.label.container"
+            ]
+          }
+        ]
+      },
+      "displayName": "a container reports unhealthy or not running"
+    },
+    {
+      "conditionAbsent": {
+        "filter": "metric.type=\"custom.googleapis.com/docker/container_health\" AND resource.type=\"gce_instance\"",
+        "duration": "900s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ]
+      },
+      "displayName": "health reporting stopped — absence is not health"
+    }
+  ],
+  "documentation": {
+    "content": "A container on the inflect-compliance VM is unhealthy or not running.\n\nWHY THIS EXISTS (#2745). On 2026-09-20 production was down ~25h and nothing alerted. The /api/readyz uptime check now covers 'the app cannot serve'. This covers the other shape: UP BUT DOING NOTHING. A wedged BullMQ worker keeps its container running and the web tier green, so readyz stays 200 while no work happens at all.\n\nWHAT THE SIGNAL MEANS. inflect-worker-1 reports unhealthy when the BullMQ heartbeat key goes stale — a key only a worker that PULLED A JOB, RAN IT and came back can write. It is not a process-existence check.\n\nFIRST STEPS\n1. gcloud compute ssh inflect-compliance --zone europe-west1-b\n2. sudo docker ps -a    -- which container, and is it restarting?\n3. sudo docker exec inflect-worker-1 node dist/worker-healthcheck.mjs\n   exit 1 means the heartbeat is stale: a blocked event loop, a dropped Redis\n   connection, every concurrency slot held, or a scheduler that never\n   registered the 2-minute health-check repeatable.\n4. sudo docker logs --tail 100 <container>\n\nTHE SECOND CONDITION IS THE REPORTER ITSELF. If the metric goes ABSENT the\nreporter or its timer has died, and absence must never read as healthy:\n  systemctl status container-health-reporter.timer\n  sudo /usr/local/bin/container-health-reporter.sh\n\nDocs: docs/runbooks/ (none yet for this), infra/alerts/external-uptime.yml",
+    "mimeType": "text/markdown"
+  },
+  "notificationChannels": [
+    "projects/hazel-design-419410/notificationChannels/11199896282881593035"
+  ],
+  "userLabels": {
+    "issue": "2745",
+    "product": "inflect-compliance"
+  },
+  "enabled": true,
+  "alertStrategy": {
+    "autoClose": "1800s"
+  }
+}

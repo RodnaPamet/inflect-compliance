@@ -1,0 +1,13 @@
+[Unit]
+Description=Report docker container health to GCP Monitoring (#2745)
+Documentation=https://github.com/RodnaPamet/inflect-compliance/issues/2745
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/container-health-reporter.sh
+# The reporter must never wedge: a hung curl would stop the metric flowing,
+# and an absent metric is what the second alert condition exists to catch —
+# but a stuck unit would also stop the timer firing at all.
+TimeoutStartSec=45

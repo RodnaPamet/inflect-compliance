@@ -1002,3 +1002,160 @@ describe('leaver pass report — a staleness refusal does not read as a healthy 
         expect(row.textContent).not.toContain(M.syncNeverObserved);
     });
 });
+
+
+// ── The unsettled-write surface (#2842) ────────────────────────────────
+
+/**
+ * The data was captured carefully and rendered nowhere.
+ *
+ * `recordPassExecution` has carried `journalId` onto every decision that
+ * reached a write, and `unsettledOnEntry` onto the summary, since #2490 — with
+ * a comment calling the report "the second, durable place to find it". The
+ * client's `PassDecision` declared no `journalId` and its `PassResult` declared
+ * no `unsettledOnEntry`, so the second place did not exist and a grep for
+ * `journal` over `src/app/t/` and `src/components/` returned zero.
+ *
+ * THE LOAD-BEARING ASSERTION IN THIS BLOCK IS THAT 0 AND null RENDER
+ * DIFFERENTLY. `readUnsettledBacklog` returns `null` rather than 0 when the
+ * read itself failed, and the server comment says why: "Returns null when it
+ * could not read, which is NOT the same as zero." Both are falsy, so the `?? 0`
+ * every other fact on this page uses would collapse "we could not count the
+ * stranded writes" into "there are none" — on the one page built to stop a
+ * silence being read as an all-clear.
+ */
+const UNSETTLED_PASS = {
+    id: 'pass-unsettled',
+    provider: 'entra_unsettled',
+    status: 'PASSED',
+    executedAt: '2026-09-20T05:00:00.000Z',
+    completedAt: '2026-09-20T05:00:06.000Z',
+    resultJson: {
+        mode: 'AUTOMATIC',
+        evidence: 'live',
+        terminatedWorkers: 2,
+        candidates: 2,
+        population: 300,
+        batchRefused: null,
+        unsettledOnEntry: 3,
+        counts: { DISABLED: 1, REFUSED_PROTECTED: 1 },
+        decisions: [
+            {
+                // Reached `beginWrite`, so it has a capture to point at.
+                linkId: 'lnk-disabled',
+                outcome: 'DISABLED',
+                journalId: 'jrnl0000000000000000disabled',
+            },
+            {
+                // Refused above `beginWrite`, so it genuinely has none — and the
+                // writer OMITS the key rather than writing null, precisely so
+                // this row cannot look like a capture that produced nothing.
+                linkId: 'lnk-protected',
+                outcome: 'REFUSED_PROTECTED',
+                reason: 'The account this connection authenticates as.',
+            },
+        ],
+        decisionsTruncated: false,
+    },
+};
+
+/** The read FAILED. Not zero, and the page must not say zero. */
+const UNSETTLED_UNKNOWN_PASS = {
+    ...UNSETTLED_PASS,
+    id: 'pass-unsettled-unknown',
+    provider: 'entra_unknown',
+    resultJson: { ...UNSETTLED_PASS.resultJson, unsettledOnEntry: null },
+};
+
+/** The read SUCCEEDED and found none. The healthy twin of both rows above. */
+const UNSETTLED_CLEAR_PASS = {
+    ...UNSETTLED_PASS,
+    id: 'pass-unsettled-clear',
+    provider: 'entra_clear',
+    resultJson: { ...UNSETTLED_PASS.resultJson, unsettledOnEntry: 0 },
+};
+
+describe('a decision that wrote carries its journal reference', () => {
+    it('renders the reference, and an em-dash where no write was attempted', async () => {
+        arrange([UNSETTLED_PASS]);
+        await renderReport();
+
+        // POSITIVE: the id an operator is asked to quote is on the page, and it
+        // is the copy affordance rather than un-selectable text — the DISABLED
+        // notification tells IT to hand this reference to their platform
+        // administrator, so transcribing a cuid by eye is the failure mode.
+        const copy = await screen.findByRole('button', { name: M.journalCopyLabel });
+        expect(copy).toHaveTextContent('jrnl0000000000000000disabled');
+
+        // NEGATIVE, paired: the refused row has no reference, and there is no
+        // second copy button to be found. Without the positive above this would
+        // also pass on a page that rendered no journal column at all.
+        expect(screen.getAllByRole('button', { name: M.journalCopyLabel })).toHaveLength(1);
+        const refusedRow = (await screen.findByText('lnk-protected')).closest('tr');
+        expect(refusedRow).not.toBeNull();
+        expect(refusedRow!.textContent).toContain('—');
+    });
+
+    it('gives the column a header, so an empty cell is readable as empty', async () => {
+        arrange([UNSETTLED_PASS]);
+        await renderReport();
+        expect(await screen.findByRole('columnheader', { name: M.colJournal })).toBeInTheDocument();
+    });
+});
+
+describe('an unconfirmed-write backlog is not silence', () => {
+    it('names the backlog and its size when the pass entered with one', async () => {
+        arrange([UNSETTLED_PASS]);
+        await renderReport();
+
+        expect(await screen.findByText(M.unsettledHeading)).toBeInTheDocument();
+        // The COUNT is the fact acted on, so it has to survive into the copy.
+        expect(screen.getByText(M.unsettledBody.replace('{count}', '3'))).toBeInTheDocument();
+    });
+
+    it('says nothing when the backlog was read and was clear', async () => {
+        arrange([UNSETTLED_CLEAR_PASS]);
+        await renderReport();
+
+        // PAIRED POSITIVE FIRST: the detail panel rendered, so the absence
+        // below is an absence on a page that exists.
+        expect(await screen.findByText('lnk-disabled')).toBeInTheDocument();
+        expect(screen.queryByText(M.unsettledHeading)).toBeNull();
+        expect(screen.queryByText(M.unsettledUnknownHeading)).toBeNull();
+    });
+
+    it('reports a FAILED read as unknown, never as clear', async () => {
+        arrange([UNSETTLED_UNKNOWN_PASS]);
+        await renderReport();
+
+        // This is the whole point. `null` gets its own notice and its own word
+        // in the facts row; a `?? 0` anywhere on the path would render this
+        // pass identically to the clear one above.
+        expect(await screen.findByText(M.unsettledUnknownHeading)).toBeInTheDocument();
+        expect(screen.getByText(M.unsettledUnknownShort)).toBeInTheDocument();
+        expect(screen.queryByText(M.unsettledHeading)).toBeNull();
+    });
+
+    it('renders 0 and "could not read" as different things', async () => {
+        // The two states side by side, so the distinction is asserted rather
+        // than implied by two tests that never meet. Selecting each row in turn
+        // is what an operator scanning the week actually does.
+        arrange([UNSETTLED_CLEAR_PASS, UNSETTLED_UNKNOWN_PASS]);
+        await renderReport();
+
+        fireEvent.click(await rowFor('entra_clear'));
+        await waitFor(() => {
+            expect(screen.queryByText(M.unsettledUnknownShort)).toBeNull();
+        });
+        const clearFact = (await screen.findByText(M.factUnsettled)).closest('div');
+        expect(clearFact).not.toBeNull();
+        expect(clearFact!.textContent).toContain('0');
+
+        fireEvent.click(await rowFor('entra_unknown'));
+        await waitFor(() => {
+            expect(screen.getByText(M.unsettledUnknownShort)).toBeInTheDocument();
+        });
+        const unknownFact = (await screen.findByText(M.factUnsettled)).closest('div');
+        expect(unknownFact!.textContent).not.toContain('0');
+    });
+});

@@ -1,0 +1,20 @@
+[Unit]
+Description=Report the stranded identity-write backlog to GCP Monitoring (#2842)
+Documentation=https://github.com/RodnaPamet/inflect-compliance/issues/2842
+# The reporter reads the database through the postgres CONTAINER, so docker has
+# to be up for it to mean anything. It does NOT require the app or the worker:
+# the whole point is that the signal survives the leaver pass not running.
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/identity-unsettled-reporter.sh
+# A hung psql must not wedge the unit. If the read cannot complete the reporter
+# emits nothing, which is correct — the alert policy's absence arm is what turns
+# sustained silence into a page. A stuck unit, by contrast, would stop the timer
+# firing at all, so the timeout is deliberately shorter than the timer interval.
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

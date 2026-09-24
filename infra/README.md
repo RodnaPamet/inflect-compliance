@@ -3,15 +3,45 @@
 This directory contains operational infrastructure configs for deploying
 inflect-compliance with production-grade observability.
 
+## READ THIS FIRST — two kinds of file live here, and only one of them runs
+
+Most of this directory describes a Prometheus / Alertmanager / Grafana stack
+that **is not deployed**. Nothing in `deploy/docker-compose.prod.yml` references
+Prometheus or Alertmanager, and the running app container carries no `OTEL_*`
+environment, so the OTel instruments in `src/lib/observability/` export nowhere.
+`alerts/rules.yml`, `alerts/receivers.yml`, `otel-collector/`, `observability/`
+and `dashboards/` are all of that kind: a provisioning recipe for a stack
+somebody could stand up, not a record of one that exists.
+
+The files that describe what IS deployed name themselves:
+
+| file | what it records |
+| --- | --- |
+| `alerts/external-uptime.yml` | the GCP uptime check on `/api/readyz` and its alert policy |
+| `alerts/gcp-custom-metrics.yml` | the custom metrics the VM reports, and their alert policies |
+| `alerts/policies/*.json` | those policies as applyable JSON |
+| `reporters/` | the host scripts and systemd units that feed them |
+
+Adding a rule to `rules.yml` does not create an alert. It was believed to, for
+months, by the `ALERT ON` instruction in `integration-metrics.ts` that #2842
+corrected — which is why this section exists and why it is first.
+
 ## Directory Structure
 
 ```
 infra/
 ├── README.md                          ← This file
 ├── alerts/
-│   └── rules.yml                      ← Prometheus/Grafana alerting rules
+│   ├── rules.yml                      ← Prometheus rules — NOT DEPLOYED
+│   ├── receivers.yml                  ← Alertmanager routing — NOT DEPLOYED
+│   ├── external-uptime.yml            ← DEPLOYED: GCP uptime check contract
+│   ├── gcp-custom-metrics.yml         ← DEPLOYED: custom-metric alert contract
+│   └── policies/*.json                ← GCP alert policies, as applyable JSON
+├── reporters/                         ← DEPLOYED: host scripts + systemd units
 ├── dashboards/
 │   └── grafana-api-slos.json          ← Grafana dashboard (importable)
+├── observability/                     ← compose/helm/terraform for the stack
+├── scripts/
 └── otel-collector/
     └── config.yml                     ← OpenTelemetry Collector config
 ```

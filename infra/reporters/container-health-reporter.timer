@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the container-health reporter every minute (#2745)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=container-health-reporter.service
+
+[Install]
+WantedBy=timers.target
