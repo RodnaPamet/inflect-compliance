@@ -332,36 +332,42 @@ const HIGH_MULTIPLICITY = 5;
 //   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
 //   converting the other eleven `tests/guards` files, so whoever merges
 //   second re-measures on the merged tree rather than keeping this figure.
-// 1229 -> 1228 (2026-09-24, #2246 final batch, merged with the entry above):
-// -1, and the interesting number is 1229, because the entry above says 1215.
+// 1215 -> 1214 (2026-09-24, #2246 final batch, merged with the entry above):
+// -1, and the -1 is the whole finding, because this branch measured -5 ALONE
+// and the entry above measured -40 alone.
 //
-// THE ENTRY ABOVE WAS RIGHT ABOUT ITS OWN TREE AND MAIN IS NOT THAT TREE.
-// 1215 was measured on the ten-mixed-target branch before `commentsOf` (#2817)
-// landed; #2817 measured 1255 unchanged on ITS tree, which predated the
-// narrowings. Both were honest and neither is main: the two batches are not
-// independent, because a NARROWING removes a site from this population while a
-// MASK leaves it in with its occurrences recounted, so the same site can be
-// removed by one branch and recounted by the other. Measured on origin/main at
-// e1a428ad3 with this branch's files reverted: the live count is 1229 against a
-// committed 1215, i.e. **main is red on this ceiling today and was red before
-// this merge**. `UNANALYSABLE_READ_BASELINE` is the same story (1445 committed,
-// 1451 live). This merge re-seats both to what the merged tree measures, which
-// is the fix rather than a new debt.
+// THE DELTAS ARE NOT ADDITIVE AND THE OVERLAP IS MEASURABLE. Both batches ran
+// from a 1255 base and both converted `capstone-discipline` — 8 ambiguous sites
+// at the merge base, 4 under EITHER branch's version, 4 under both. Each branch
+// therefore counted the same -4, and summing invents four sites this repo never
+// held. Per-file measurement over the 22 files that differ from main puts this
+// branch's residual at exactly -1: `tests/unit/filter-foundation.test.ts`, bound
+// to `mdPreamble(guide, 2)`. Everything else the union leaves where main had it.
 //
-// THE -1 IS THIS BRANCH'S NET, and it is small for the reason the arithmetic
-// hides: the two batches' deltas OVERLAP. `capstone-discipline` is the visible
-// case — 8 ambiguous sites at the merge base, 4 after EITHER branch and 4 after
-// both, so each branch counted the same -4 and summing them invents four sites
-// this repo never held. The residual -1 is `tests/unit/filter-foundation.test.ts`,
-// bound to `mdPreamble(guide, 2)`.
+// THE INSTRUMENT LIES DURING A CONFLICTED MERGE, and this is the part worth
+// keeping. `repoFiles()` is `git ls-files --cached`, which emits an UNMERGED
+// path once PER STAGE — so while the eight conflicts were open, the seven
+// conflicted `.ts` files were each analysed three times and every count here
+// came out inflated: 2529 files instead of 2515, 1228 instead of 1214, 1451
+// instead of 1445. Class C read 150/349 against its 146/329 ceilings the same
+// way. Those numbers were read as "main is red on the union" and main is NOT
+// red — reverting this branch's 22 files onto origin/main at e1a428ad3 and
+// measuring on the COMMITTED tree gives 1215 / 180 / 1445, exactly the three
+// constants main carries.
 //
-// MEASURE, DO NOT ADD. Neither 1250 (this branch alone, from a 1255 base) nor
-// 1215 (the entry above) survives the union, and neither does any arithmetic
-// over the two. The number below came from running the ratchet on the merged
-// tree and taking what the drift sentinel reported — which is also the only way
-// to notice that the sentinel reports the FIRST baseline with slack and stops,
-// so a single pass says "one number moved" whatever the truth is.
-const AMBIGUOUS_NEEDLE_BASELINE = 1228;
+// The tell was there before the cause was: a per-file sweep said -1 while the
+// whole-tree read said +13, with a clean `git status` between them. Two
+// measurements of one quantity disagreeing is evidence about the OBSERVER. So
+// re-seat from a COMMITTED tree, and check `filesExamined` against
+// `git ls-files -- 'tests/*.ts' 'tests/*.tsx' | wc -l` before believing any
+// number in this file.
+//
+// MEASURE, DO NOT ADD. Neither 1250 (this branch alone) nor 1215 (the entry
+// above) survives the union, and neither does any arithmetic over the two. The
+// number below is what the drift sentinel reported on the merged tree — and it
+// reports only the FIRST baseline with slack and then stops, so one pass says
+// "one number moved" whatever the truth is. Re-run until it PASSES.
+const AMBIGUOUS_NEEDLE_BASELINE = 1214;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -696,14 +702,19 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 180;
 // `src.split('## SLO Summary Table')[1]`, which had no end bound and ran
 // 15842 characters to EOF where the section is 800, and a `.toLowerCase()`
 // over a whole 702-line runbook that is now over one playbook.
-// 1451 (2026-09-24, #2246 final batch, merged with the entry above): the
-// committed number moves 1445 -> 1451 and that is NOT a rise this branch
-// caused. 1451 is what origin/main at e1a428ad3 measures with this branch's
-// files reverted — the entry above seated 1445 on a tree that predated
-// `commentsOf` (#2817), so main has been red on this ceiling since the two
-// landed, exactly as it has been on `AMBIGUOUS_NEEDLE_BASELINE`. Re-seating
-// here is the fix; the merged tree measures 1451 too, so this branch's own net
-// effect on the skip count is ZERO.
+// 1445 (2026-09-24, #2246 final batch, merged with the entry above):
+// UNCHANGED, and an unchanged number is the claim this entry is making. This
+// branch measured 1452 alone, i.e. -3 from a 1455 base; the entry above took
+// the same population to 1445 by narrowing `capstone-discipline`, which is
+// where all three of this branch's skips were leaving from. The union is
+// therefore 1445, not 1442: the same three `needle-not-literal` skips cannot
+// leave twice.
+//
+// It briefly read 1451 here, which was the conflicted-merge measurement error
+// the `AMBIGUOUS_NEEDLE_BASELINE` entry documents — unmerged paths are listed
+// once per stage, so seven files were analysed three times. Measured on the
+// COMMITTED tree, main and the merged tree both sit at 1445 and this branch's
+// net effect on the skip count is ZERO.
 //
 // WHAT THIS BRANCH DID DO, measured, is below, and the direction is the
 // evidence — this time about a NEW helper. `mdPreamble(md, level)` in
@@ -723,7 +734,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 180;
 // `docs/design-system.md`. Narrowing those reads to `mdSection(...)` takes them
 // out of the whole-file population entirely, which is what a narrowing is
 // supposed to look like from here.
-const UNANALYSABLE_READ_BASELINE = 1451;
+const UNANALYSABLE_READ_BASELINE = 1445;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
