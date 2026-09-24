@@ -141,7 +141,26 @@ describe('output that becomes nothing reaches ONE column', () => {
 
     it('which `logAiDecision` sanitises and bounds', () => {
         const log = read('src/app-layer/ai/decision-log/index.ts');
-        expect(log).toContain('sanitizePlainText(input.outputSummary).slice(0, SUMMARY_MAX)');
+        // SANITISE-THEN-BOUND is the claim, and it survives the bound becoming
+        // per-feature. The needle used to pin the literal `SUMMARY_MAX`, which
+        // would have failed this change for the wrong reason: the safety
+        // property is that the text is sanitised and truncated before it is
+        // stored, not which number truncates it.
+        expect(log).toContain('sanitizePlainText(input.outputSummary).slice(0, summaryCapFor(input.feature))');
+    });
+
+    it('and the agentic bound is larger than the one-shot bound, not unbounded', () => {
+        // The cap moved because 500 discarded ~93% of a real production
+        // conclusion — measured, not guessed. What must NOT follow is an
+        // unbounded store: this log's whole premise is a bounded summary, and
+        // "raise it until nothing truncates" is how a log becomes a copy of
+        // the model's output.
+        const log = read('src/app-layer/ai/decision-log/index.ts');
+        const oneShot = Number(/const SUMMARY_MAX = (\d+)/.exec(log)?.[1]);
+        const agentic = Number(/const AGENTIC_SUMMARY_MAX = (\d+)/.exec(log)?.[1]);
+        expect(Number.isFinite(oneShot) && Number.isFinite(agentic)).toBe(true);
+        expect(agentic).toBeGreaterThan(oneShot);
+        expect(agentic).toBeLessThanOrEqual(8000);
     });
 
     it('the step ledger does NOT record it', () => {
