@@ -16,21 +16,26 @@ import * as path from 'node:path';
 // that harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike (re-derived per file, not assumed from the directory), so
 // `codeOf` is the right lexer and no language split is needed.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
-// `readDoc` is the DELIBERATE raw seam (#2246). Two assertions below are about
-// the DOCUMENTATION itself — a docblock header and a scope note — so masking
-// comments would empty the very text they name. Naming the reader is what keeps
-// that a stated choice rather than an oversight, and confines it to these two.
+// `readDoc` is the INVERSE mask (#2246), not a raw read. The assertions below
+// are about the DOCUMENTATION itself — a docblock header and a scope note — so
+// `codeOf` would empty the very text they name. `commentsOf` blanks the CODE
+// instead and keeps the comments, which is the same choice stated the other way
+// round and reaches far less: 29 kB of usecase down to its comment text.
 //
-// It also matters for `.not.toMatch`: a NEGATIVE assertion over masked text is
-// trivially true, because the text it looks for has been blanked. Line ~116 is
-// exactly that shape, so reading it masked would have turned a real guard into
-// one that can never fail.
-const readDoc = (rel: string) => readRaw(rel);
+// The `.not.toMatch` on the next-but-one describe block is why this distinction
+// has to be exact. A negative over a mask that removes the FORBIDDEN text is
+// trivially true; a negative over a mask that removes the OTHER category is
+// not. Proved rather than argued — planting `MITIGATE → CLOSED` in a comment of
+// risk-treatment-plan.ts still trips the masked view (the guard can still go
+// red), while planting it in a code literal does not, which is the false alarm
+// worth losing: a status-transition string in code is not the doc header this
+// test forbids.
+const readDoc = (rel: string) => commentsOf(readRaw(rel));
 
 const REPORTS = read('src/app/t/[tenantSlug]/(app)/risks/reports/page.tsx');
 const IMPORT = read('src/app/t/[tenantSlug]/(app)/risks/import/page.tsx');

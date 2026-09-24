@@ -39,16 +39,18 @@ import * as path from 'path';
 // String literals are KEPT — masking them would silently empty assertions that
 // harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike, re-derived per file rather than assumed from the directory.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 const read = (rel: string) => codeOf(readRaw(rel));
-// `readDoc` is the DELIBERATE raw seam (#2246). Masking comments is the right
+// `readDoc` is the INVERSE mask (#2246), not a raw read. `codeOf` is the right
 // default, but an assertion whose SUBJECT is the prose inverts the defect: the
-// text it names is the very text masking blanks, so the assertion could never
-// pass (or, for a negative, never fail) again. Named, so the choice is visible.
-const readDoc = (rel: string) => readRaw(rel);
+// text it names is the very text `codeOf` blanks. `commentsOf` blanks the other
+// category instead, so the assertion keeps its subject and loses the code as
+// reach — which on `to-plain-json.ts` is nearly the whole file, a 2476-char
+// module of which `codeOf` keeps 84.
+const readDoc = (rel: string) => commentsOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 interface PageSpec {
@@ -133,8 +135,8 @@ describe('org list pages — server→client serialization boundary', () => {
         expect(exists(helperPath)).toBe(true);
         const src = read(helperPath);
         expect(src).toMatch(/export\s+function\s+toPlainJson\s*</);
-        // RAW: the docstring assertion below has the PROSE as its subject, so
-        // over masked source it could never pass again.
+        // Comment-scoped: the docstring assertion below has the PROSE as its
+        // subject, so over `codeOf` source it could never pass again.
         const doc = readDoc(helperPath);
         // The docstring must explain WHY — guards against a future
         // "re-export of JSON.parse" with no context.

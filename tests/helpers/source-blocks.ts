@@ -387,25 +387,28 @@ function regexEnd(src: string, slash: number): number {
  * stray apostrophe opening a bogus literal that swallows it) — is a
  * pre-existing `codeOf` limit this function neither creates nor inherits.
  *
- * NO `mdProseOf` SIBLING, AND THAT IS A DECISION WITH A MEASUREMENT BEHIND IT.
- * The obvious inverse of `mdCodeOf` would keep markdown prose and blank fences
- * and code spans. It is NOT built. The only guard in the #2246 population that
- * asserts on markdown prose is `ai-aisvs-hardening-coverage`, reading
- * `docs/security/aisvs-self-assessment.md`, and one of its five sites is
- * `expect(doc).not.toMatch(/L3[- ]verified/i)` — a NEGATIVE assertion whose
- * correct reach genuinely is the whole document.
+ * THE `mdProseOf` SIBLING NOW EXISTS — see it below — AND THE CONDITION THIS
+ * DOCBLOCK SET FOR BUILDING IT IS THE ONE THAT WAS MET. It said: build the
+ * inverse of `mdCodeOf` when a markdown-prose assertion turns up that is
+ * POSITIVE and about prose. Fourteen of them did, across `docs/design-system.md`
+ * and `docs/verification-policy.md` among others, each reading a whole document
+ * raw so that a fenced sample could satisfy a claim about a sentence.
  *
- * The ordinary measurement cannot see the problem: that needle counts 0 raw
- * and 0 through a prose mask, which is a passing measurement wearing a vacuous
- * pass. So a positive control was planted instead — `L3-verified` written
- * inside a fenced block at the end of the document. RAW sees it (1 match, the
- * assertion correctly fails); a prose mask sees 0 and the assertion passes
- * while the document claims exactly what it forbids. That is the whole
- * argument, and it is a fact about the document rather than a preference.
+ * What has NOT changed is the exception that kept it unbuilt for a batch:
+ * `ai-aisvs-hardening-coverage`, reading `docs/security/aisvs-self-assessment.md`,
+ * whose `expect(doc).not.toMatch(/L3[- ]verified/i)` has whole-document reach by
+ * design. The ordinary measurement cannot see the problem — that needle counts 0
+ * raw and 0 through a prose mask, a passing measurement wearing a vacuous pass —
+ * so a positive control was planted instead: `L3-verified` written inside a
+ * fenced block at the end of the document. RAW sees it (1 match, the assertion
+ * correctly fails); a prose mask sees 0 and the assertion passes while the
+ * document claims exactly what it forbids. That site stays RAW permanently and
+ * is the documented floor of the Class A population.
  *
- * A masker whose first user must not use it is one nobody should write on
- * spec. When a markdown-prose assertion turns up that is POSITIVE and about
- * prose, this docblock is the argument for building it then.
+ * The rule that generalises from the pair is in `mdProseOf`'s own docblock, and
+ * it is about WHAT A MASKER REMOVES rather than about an assertion's polarity:
+ * a BULK-TEXT masker can empty a negative assertion, a COMMENT-ONLY masker
+ * (this function, `codeOf`, `cssCodeOf`) cannot.
  */
 export function commentsOf(src: string): string {
     const out: string[] = src.split('').map((c) => (c === '\n' ? '\n' : ' '));
@@ -586,9 +589,61 @@ export function sqlCodeOf(sql: string): string {
  */
 export function mdCodeOf(md: string): string {
     const out: string[] = md.split('').map((c) => (c === '\n' ? '\n' : ' '));
-    const keep = (from: number, to: number) => {
-        for (let k = from; k < to && k < md.length; k++) out[k] = md[k];
-    };
+    for (const { start, end } of mdCodeRanges(md)) {
+        for (let k = start; k < end && k < md.length; k++) out[k] = md[k];
+    }
+    return out.join('');
+}
+
+/**
+ * Where the CODE is in a markdown document — the single scan `mdCodeOf` and
+ * `mdProseOf` both stand on.
+ *
+ * ONE SCAN, for the reason `scanSpans` gives at the top of this file: two
+ * hand-rolled walkers that are meant to be complements WILL eventually
+ * disagree about one byte, and a disagreement between a mask and its inverse
+ * is a byte that is visible in NEITHER view (or, worse, in both). Deriving
+ * both from this list makes `mdCodeOf(md)` and `mdProseOf(md)` exact
+ * complements by construction: every non-newline character of `md` is kept by
+ * exactly one of them.
+ *
+ * TWO PASSES, AND THE ORDER IS LOAD-BEARING. Fences are matched first and
+ * line-oriented (a fence is a line), and inline spans are then scanned only on
+ * the lines no fence covers. Running them the other way round would let an
+ * inline-span scan consume a real fence marker as a span delimiter, and every
+ * line of PROSE inside that fenced block would survive into `mdProseOf` —
+ * which is the exact failure the tool exists to prevent.
+ *
+ * Fences are matched on the opening marker CHARACTER, as
+ * `tests/helpers/markdown-regions.ts` does, so a ``` block containing ~~~ (or
+ * the reverse) does not close early. An UNTERMINATED fence runs to EOF: every
+ * remaining line is code, so `mdProseOf` blanks the rest of the document. That
+ * is the over-blanking direction and it is the safe one here — an assertion
+ * whose needle was blanked away goes RED and its author reads the message,
+ * where prose leaking out of a fence goes GREEN.
+ *
+ * TWO KNOWN MISREADS, both pre-dating this extraction and both erring the same
+ * safe way — neither can put a line of prose inside a fence back into
+ * `mdProseOf`'s output.
+ *
+ *   1. A line whose first non-space characters are three or more backticks is
+ *      read as a FENCE even where CommonMark would read an inline span
+ *      (`` ```code``` at the start of a line ``): pass 1 has precedence and
+ *      does not look for a closer on the same line. `mdCodeOf` over-keeps,
+ *      `mdProseOf` over-blanks to EOF-or-next-fence.
+ *   2. Pass 2 closes an inline span on the first occurrence of the opening
+ *      run rather than on a run of exactly that length, so `` `` ``` `` ``
+ *      (a 3-backtick fence marker shown inside a 2-backtick span) closes one
+ *      backtick early and leaves a lone ` in the prose view. A stray
+ *      delimiter, never a word — it cannot satisfy a needle.
+ *
+ * What pass 1 does handle correctly is the FENCE half of case 2: a span that
+ * shows a fence marker must open with a shorter backtick run, which the `{3,}`
+ * anchor does not match, so no bogus fence opens and the rest of the document
+ * stays prose.
+ */
+function mdCodeRanges(md: string): { start: number; end: number }[] {
+    const ranges: { start: number; end: number }[] = [];
 
     const lines: { start: number; end: number; text: string }[] = [];
     let at = 0;
@@ -614,7 +669,7 @@ export function mdCodeOf(md: string): string {
         }
     }
     for (let i = 0; i < lines.length; i++) {
-        if (fenced[i]) keep(lines[i].start, lines[i].end);
+        if (fenced[i]) ranges.push({ start: lines[i].start, end: lines[i].end });
     }
 
     // Pass 2 — inline code spans, on the lines that are NOT fenced. Runs of
@@ -636,11 +691,62 @@ export function mdCodeOf(md: string): string {
                 j += run;
                 continue;
             }
-            keep(start + j, start + close + run);
+            ranges.push({ start: start + j, end: start + close + run });
             j = close + run;
         }
     }
 
+    return ranges;
+}
+
+/**
+ * The INVERSE of `mdCodeOf` — keep a markdown document's PROSE, blank its
+ * CODE. Fenced blocks (fence markers and info string included) and inline code
+ * spans (backticks included) become spaces; everything else is returned
+ * verbatim. Length and line count are preserved, like every other masker here,
+ * so `indexOf` / `slice` / `/^…$/m` still line up with the file (#2246).
+ *
+ * WHY IT EXISTS, AND WHY `mdCodeOf` IS NOT MERELY UNNECESSARY BUT WRONG FOR
+ * THESE. A guard whose subject is a SENTENCE — "the runbook records the
+ * rollback step", "the policy names the retention window", "the design system
+ * explains why the token exists" — currently reads the whole document RAW, so
+ * its needle can be satisfied by a CODE occurrence inside a fenced sample that
+ * has nothing to do with the claim. Pointing `mdCodeOf` at such a guard does
+ * the opposite of a fix: it DELETES the subject. Measured on the first batch to
+ * try it, 50 needles across ten documents went to ZERO matches through
+ * `mdCodeOf`, every one of them plain prose.
+ *
+ * Narrowing (`mdSection` / `headingLines` in `tests/helpers/markdown-regions.ts`)
+ * is the better fix wherever the prose sits in a nameable section, because the
+ * caller then states WHICH section is supposed to say it. This is the general
+ * tool for the rest: the prose is the whole document minus its samples.
+ *
+ * WHAT THIS MEANS FOR A NEGATIVE ASSERTION — the nuance `commentsOf`'s
+ * docblock got half-right. A masker that removes BULK TEXT makes
+ * `expect(doc).not.toMatch(/x/)` pass VACUOUSLY, and this one does remove bulk
+ * text: every fenced block in the document. So a `.not.toMatch` whose correct
+ * reach is the whole document must NOT be bound to this — and there is a real
+ * one, `tests/guardrails/ai-aisvs-hardening-coverage.test.ts`'s
+ * `expect(doc).not.toMatch(/L3[- ]verified/i)`, proved with a planted positive
+ * control written inside a fence: RAW sees it and fails correctly, a prose mask
+ * sees 0 and passes while the document claims exactly what it forbids. That
+ * site stays raw, permanently, and is the documented floor of the Class A
+ * population.
+ *
+ * A negative assertion is fine here only when its subject genuinely is the
+ * prose — "the runbook never TELLS the operator to do X" is about sentences,
+ * and a code sample mentioning X is exactly the false alarm this removes. Judge
+ * by what the masker deletes against what the assertion is about, and prove
+ * both directions: the needle must still match where it should, and still
+ * fail to match where it should not.
+ */
+export function mdProseOf(md: string): string {
+    const out = md.split('');
+    for (const { start, end } of mdCodeRanges(md)) {
+        for (let k = start; k < end && k < md.length; k++) {
+            if (md[k] !== '\n') out[k] = ' ';
+        }
+    }
     return out.join('');
 }
 

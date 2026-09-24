@@ -37,7 +37,7 @@ import * as path from 'node:path';
 // String literals are KEPT, so assertions that harvest codes or ids from source
 // still see them. Every path this file reads is a TypeScript-alike, re-derived
 // per file rather than assumed from the directory.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const LAYOUT_PATH = path.resolve(__dirname, '../../src/lib/pdf/layout.ts');
 
@@ -133,10 +133,12 @@ function findTextCallsMissingHeight(src: string, range: FunctionRange): Array<{ 
 
 describe('PDF stamp helpers — every text() call must pass `height:`', () => {
     const src = codeOf(fs.readFileSync(LAYOUT_PATH, 'utf8'));
-    // The raw twin is the DELIBERATE seam (#2246): the rationale assertion
-    // below has the PROSE as its subject — `auto-paginat` lives in a comment —
-    // so over masked source it could never pass again.
-    const srcDoc = fs.readFileSync(LAYOUT_PATH, 'utf8');
+    // The INVERSE-masked twin (#2246): the rationale assertion below has the
+    // PROSE as its subject — `auto-paginat` lives in a comment — so `codeOf`
+    // could never satisfy it. `commentsOf` keeps the comments and blanks the
+    // code, which is the narrower read for the same claim: 6 matches raw, 6
+    // masked, 0 through `codeOf`.
+    const srcDoc = commentsOf(fs.readFileSync(LAYOUT_PATH, 'utf8'));
 
     // Scoped to the three stamp helpers — body-of-page text writes
     // (cover, metadata) live in different functions and follow the
@@ -165,6 +167,6 @@ describe('PDF stamp helpers — every text() call must pass `height:`', () => {
 
     it('STAMP_TEXT_HEIGHT constant is defined + load-bearing (anchors the rationale comment)', () => {
         expect(src).toMatch(/STAMP_TEXT_HEIGHT\s*=\s*\d+/);
-        expect(srcDoc).toMatch(/auto-paginat/); // rationale anchor — RAW, it is a comment
+        expect(srcDoc).toMatch(/auto-paginat/); // rationale anchor — comment-scoped
     });
 });

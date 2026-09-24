@@ -23,16 +23,19 @@ import * as path from 'path';
 // String literals are KEPT — masking them would silently empty assertions that
 // harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike, re-derived per file rather than assumed from the directory.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf-8');
 const read = (p: string) => codeOf(readRaw(p));
-// `readDoc` is the DELIBERATE raw seam (#2246). Masking comments is the right
+// `readDoc` is the INVERSE mask (#2246), not a raw read. `codeOf` is the right
 // default, but an assertion whose SUBJECT is the prose inverts the defect: the
-// text it names is the very text masking blanks, so the assertion could never
-// pass (or, for a negative, never fail) again. Named, so the choice is visible.
-const readDoc = (p: string) => readRaw(p);
+// text it names is the very text `codeOf` blanks. `commentsOf` blanks the other
+// category, so the assertion keeps its subject (`/deliberate/i` counts 1 raw
+// and 1 masked, 0 through `codeOf`) and loses the rest of the page as reach —
+// a `deliberate` appearing in an identifier or a label can no longer stand in
+// for the written reason.
+const readDoc = (p: string) => commentsOf(readRaw(p));
 const RUN_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx';
 const CONTROL_PLAN_PAGE = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx';
 

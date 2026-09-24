@@ -718,7 +718,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     guardrails it watches, where one file has 4 raw and 3 in code, so a
  *     commented-out block was padding its ">= 3" floor.
  */
-const RAW_ASSERTING_FILE_BASELINE = 19;
+const RAW_ASSERTING_FILE_BASELINE = 2;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the

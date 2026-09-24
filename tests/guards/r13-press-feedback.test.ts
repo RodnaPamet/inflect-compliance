@@ -48,7 +48,7 @@ import * as path from 'node:path';
 // EVERY read here is wrapped because every path this file reads is a
 // TypeScript-alike — re-derived per file, not assumed from the directory — so
 // there is no second language needing its own reader. String literals are KEPT.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const NAV_ITEM_SRC = codeOf(fs.readFileSync(
@@ -59,13 +59,18 @@ const MOTION_GUARD_SRC = codeOf(fs.readFileSync(
     path.join(ROOT, 'tests/guards/motion-language-discipline.test.ts'),
     'utf8',
 ));
-// The DELIBERATE raw twin (#2246): the assertion that uses it has the PROSE as
-// its subject — it checks that a rationale is WRITTEN DOWN, so over
-// comment-masked source it could never pass again.
-const MOTION_GUARD_DOC = fs.readFileSync(
+// The INVERSE-masked twin (#2246): the assertion that uses it has the PROSE as
+// its subject — it checks that a rationale is WRITTEN DOWN — so `codeOf` could
+// never satisfy it. `commentsOf` is the other half: comments kept, code
+// blanked. That matters more here than elsewhere, because the file being read
+// is itself a GUARD, so its exemption PATH appears in code as well as in the
+// rationale comment; masking the code is what makes this assertion about the
+// written reason rather than about the entry existing. Measured: both needles
+// count the same raw and masked (1 and 6), 0 through `codeOf`.
+const MOTION_GUARD_DOC = commentsOf(fs.readFileSync(
     path.join(ROOT, 'tests/guards/motion-language-discipline.test.ts'),
     'utf8',
-);
+));
 
 describe('Roadmap-13 PR-8 — press feedback (the one allowed transform)', () => {
     describe('NAV_ITEM_BASE wires the press', () => {

@@ -42,16 +42,26 @@ import * as path from "node:path";
 // String literals are KEPT — masking them would silently empty assertions that
 // harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike, re-derived per file rather than assumed from the directory.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, "../..");
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const read = (rel: string) => codeOf(readRaw(rel));
-// `readDoc` is the DELIBERATE raw seam (#2246). Masking comments is the right
+// `readDoc` is the INVERSE mask (#2246), not a raw read. `codeOf` is the right
 // default, but an assertion whose SUBJECT is the prose inverts the defect: the
-// text it names is the very text masking blanks, so the assertion could never
-// pass (or, for a negative, never fail) again. Named, so the choice is visible.
-const readDoc = (rel: string) => readRaw(rel);
+// text it names is the very text `codeOf` blanks. `commentsOf` blanks the CODE
+// and keeps the comments, so such an assertion keeps its subject and gives up
+// the rest of the file as reach. The negative below stays able to fail, proved
+// both ways: plant `ignores it today` in a comment of process-map.ts and the
+// masked view still sees it; plant it in a code literal and it does not, which
+// is the false alarm worth losing.
+//
+// IT IS NOT FOR EVERY NON-DEFAULT READ, and this file had it on one that did
+// not want it: `helperSrc` below was `readDoc` while all four of its
+// assertions name CODE — a function signature, a `!== 409` gate, a property
+// path, a toast call. Measured, each counts 1 raw, 1 through `codeOf` and ZERO
+// through `commentsOf`. It is now `read`, which is what it always meant.
+const readDoc = (rel: string) => commentsOf(readRaw(rel));
 describe("Epic P1 — process map optimistic concurrency", () => {
     describe("Repository — server-side enforcement", () => {
         const src = read(
@@ -131,8 +141,8 @@ describe("Epic P1 — process map optimistic concurrency", () => {
 
     describe("Zod schema — accepts expectedVersion in the save payload", () => {
         const src = read("src/app-layer/schemas/process-map.ts");
-        // RAW twin: the test below locks the COMMENT's phrasing, so over
-        // comment-masked source neither half of it could work — the negative
+        // Comment-scoped twin: the test below locks the COMMENT's phrasing,
+        // so over `codeOf` source neither half of it could work — the negative
         // would pass unconditionally and the positive could never match.
         const srcDoc = readDoc("src/app-layer/schemas/process-map.ts");
 
@@ -155,13 +165,16 @@ describe("Epic P1 — process map optimistic concurrency", () => {
     });
 
     describe("Client — version-conflict helper + canvas wire-up", () => {
-        // MASKED, not `readDoc` (#2246). Every assertion below names CODE — a
-        // signature, a status gate, a payload path, a toast action — so the
+        // MASKED, not `readDoc` (#2246), and BOTH sides of the #2817/#2823
+        // overlap reached it independently. Every assertion below names CODE —
+        // the exported signature, the `!== 409` gate, the
+        // `details.currentVersion` path, the toast's Reload action — so the
         // raw seam was the wrong one: `version-conflict-toast.ts` is 2505
         // bytes of which 696 are non-whitespace code, i.e. ~72% of what these
         // four regexes were matching against is prose. Measured, each needle
-        // is 1 raw and 1 through `codeOf`, so nothing here was green on a
-        // comment today; the seam is what stops the next edit making it so.
+        // is 1 raw, 1 through `codeOf` and ZERO through `commentsOf` — nothing
+        // here was green on a comment today, and the seam is what stops the
+        // next edit making it so.
         const helperSrc = read("src/lib/processes/version-conflict-toast.ts");
         const canvasSrc = read(
             "src/components/processes/PersistedProcessCanvas.tsx",

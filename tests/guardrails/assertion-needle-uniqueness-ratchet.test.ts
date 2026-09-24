@@ -332,7 +332,7 @@ const HIGH_MULTIPLICITY = 5;
 //   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
 //   converting the other eleven `tests/guards` files, so whoever merges
 //   second re-measures on the merged tree rather than keeping this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1189;
+const AMBIGUOUS_NEEDLE_BASELINE = 1190;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -401,7 +401,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1189;
 // own vocabulary in every playbook. `--namespace inflect-production` at 20
 // and `Rollback` at 22 are both five-plus sites that the Rollback playbook's
 // own bounds retire outright.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 166;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 168;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

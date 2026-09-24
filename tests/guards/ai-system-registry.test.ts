@@ -22,20 +22,26 @@ import {
 } from '@/lib/eu-ai-act/classification';
 import { TIER_OBLIGATIONS, allObligationRefs } from '@/lib/eu-ai-act/obligations';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 // Masked at the READ seam (#2246 Class A): comments blanked, string
 // literals kept, offsets preserved — so a token that survives only in
 // a comment can no longer satisfy an assertion below.
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-// Two deliberate RAW readers, both for text `codeOf` must not touch:
-//   · readRawJson — JSON fixtures, parsed rather than asserted on;
-//   · readProvenance — the Regulation citation below IS a comment, so
-//     masking would delete the thing under test.
+// `readRawJson` stays RAW: JSON fixtures are parsed, not asserted on, so
+// masking has no meaning for them.
 const readRawJson = (rel: string) =>
     JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8')) as { key: string }[];
-const readProvenance = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// `readProvenance` is the INVERSE mask, not a raw read (#2246). The Regulation
+// citation below IS a comment, so `codeOf` would delete the thing under test —
+// but the answer to that is `commentsOf`, which blanks the CODE and keeps the
+// comments, not to read the whole file. Measured on both files: the citation
+// counts 1 raw and 1 through `commentsOf`, and 0 through `codeOf`. The reach
+// drops from the whole file to its comment text, so a future `'Regulation (EU)
+// 2024/1689'` appearing in a string literal cannot satisfy an assertion whose
+// subject is the provenance docblock.
+const readProvenance = (rel: string) => commentsOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('classification correctness (authored from the Act)', () => {
     it('Article 5 practice → PROHIBITED, citing the clause', () => {
@@ -168,9 +174,9 @@ describe('AGPL tripwire — no AegisAI-derived material', () => {
         expect(offenders).toEqual([]);
     });
     it('the domain modules cite the Regulation as provenance', () => {
-        // DELIBERATELY RAW. The citation is a docblock line in both files —
-        // this assertion is ABOUT the comment, so the masked reader would
-        // delete its subject and turn a correct test red.
+        // `readProvenance` masks with `commentsOf`. The citation is a
+        // docblock line in both files — the subject is the COMMENT, so the
+        // reader keeps comments and blanks code rather than reading raw.
         expect(readProvenance('src/lib/eu-ai-act/classification.ts')).toContain(
             'Regulation (EU) 2024/1689',
         );

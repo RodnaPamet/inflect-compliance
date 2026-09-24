@@ -17,16 +17,19 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 // Masked at the READ seam (#2246 Class A): comments blanked, string
 // literals kept, offsets preserved — so a token that survives only in
 // a comment can no longer satisfy an assertion below.
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-// DELIBERATELY RAW, for the one assertion whose subject IS a comment
-// (`the presets module documents its single-default scope`).
-const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// The INVERSE mask (#2246), for the one assertion whose subject IS a comment
+// (`the presets module documents its single-default scope`). `codeOf` would
+// blank that comment; `commentsOf` keeps it and blanks the code instead, which
+// is a narrower reach for the same assertion — `/NOT a multi-preset/` counts 1
+// raw, 1 masked, 0 through `codeOf`.
+const readRaw = (rel: string) => commentsOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const DISPATCHER = read('src/app/org/[orgSlug]/(app)/widget-dispatcher.tsx');
 const PICKER = read('src/components/ui/dashboard-widgets/WidgetPicker.tsx');
