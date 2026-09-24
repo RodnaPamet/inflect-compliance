@@ -370,6 +370,42 @@ describe('the pre-existing passSawRows guard is untouched', () => {
             .toEqual({ lt: new Date('2026-09-23T03:00:00.000Z') });
     });
 
+    it('reads an ABSENT pass marker as "not resumed" — undefined, not just null', async () => {
+        // THE `Boolean()` HALF, and it needs its own fixture because the
+        // obvious one cannot see it. The marker is absent as either null or
+        // undefined depending on the caller, and the two mutants differ only
+        // on undefined:
+        //
+        //     Boolean(undefined)      === false   → guard holds
+        //     undefined !== null      === true    → guard is UNCONDITIONAL
+        //
+        // A fixture carrying a real Date satisfies both spellings, so the
+        // resumed-pass test above passes under either — measured: rewriting
+        // `Boolean(conn.syncPassStartedAt)` as `conn.syncPassStartedAt !== null`
+        // left all fifteen assertions green until this one existed.
+        //
+        // `!== null` would make an empty first-run roster read as "an earlier
+        // run of this pass saw rows" and sweep the whole workforce, which is
+        // the mass-terminate the guard exists to prevent.
+        mockDb.integrationConnection.findFirst.mockResolvedValue({
+            id: 'conn-1', provider: 'bamboohr', configJson: {}, secretEncrypted: null,
+            syncCursor: null,
+            // ABSENT, not null — the shape the comment on `passSawRows` names.
+            syncPassStartedAt: undefined,
+        });
+        mockDb.employee.count.mockImplementation(countsBy(4, 4));
+        const r = await runHrisSync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([]),
+        });
+
+        expect(mockDb.employee.updateMany).not.toHaveBeenCalled();
+        // Positive control: the run really did take the complete-roster path,
+        // so an absent `updateMany` is the guard holding rather than the run
+        // failing somewhere above it.
+        expect(r.status).toBe('PASSED');
+        expect(r.departed).toBe(0);
+    });
+
     it('the share cap still applies to a resumed pass', async () => {
         // The two guards compose rather than shadowing each other: a resumed
         // pass satisfies `passSawRows` through the marker, which is exactly
