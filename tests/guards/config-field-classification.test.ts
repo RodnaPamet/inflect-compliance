@@ -88,7 +88,6 @@ const SECRET_FIELDS_WITH_CONFIG_RULES: readonly string[] = [];
  * them is a whole provider that no longer exists.
  */
 const ORPHAN_RULES: readonly string[] = [
-    'hris: rules exist for an UNREGISTERED provider',
     'servicenow.sysparm_query: rule for a field no provider schema declares',
     'sharepoint: rules exist for an UNREGISTERED provider',
 ];
@@ -100,7 +99,6 @@ const ORPHAN_RULES: readonly string[] = [
 const PROVIDERS_WITHOUT_RULES: readonly string[] = [
     'aws-posture: declares config fields but has NO rules entry',
     'azure-posture: declares config fields but has NO rules entry',
-    'bamboohr: declares config fields but has NO rules entry',
     'gcp-posture: declares config fields but has NO rules entry',
 ];
 
