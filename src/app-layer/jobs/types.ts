@@ -867,6 +867,23 @@ export interface IdentityLeaverPassPayload {
      * a forest the account may not live in.
      */
     provider: string;
+    /**
+     * WHO asked, when a human did — #2843.
+     *
+     * Absent for the 05:00 dispatch, which is what "scheduled" honestly means.
+     * Present and a REAL `User.id` when the off-schedule route enqueued this,
+     * because the execution row this pass writes used to say
+     * `triggeredBy: 'scheduled'` either way. An operator reconstructing a
+     * directory write from the durable artefacts was told an unattended
+     * schedule did it, and the only way back was knowing to join
+     * `IDENTITY_LEAVER_PASS_REQUESTED` audit rows on timestamp + provider — a
+     * join no artefact mentions.
+     *
+     * It carries the user id rather than a bare `'manual'` flag because the
+     * journal's `actorUserId` has the same hole and the same answer: the id
+     * fixes both, a flag would fix neither.
+     */
+    requestedByUserId?: string;
 }
 
 /**

@@ -26,8 +26,43 @@ import path from 'node:path';
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const GATE = path.join(REPO_ROOT, 'scripts', 'audit-gate.mjs');
 
-/** The two advisories `security/audit-allowlist.json` exempts. */
-const ALLOWLISTED = ['GHSA-w3rx-r6r6-pgpr', 'GHSA-5p2g-fcmc-qvqq'] as const;
+/**
+ * Advisory ids these tests invent, and a fixture allowlist that exempts them.
+ *
+ * These used to be the two ids the REPO'S allowlist happened to exempt, written
+ * here as a constant with a comment asserting the two agreed. They did, until
+ * the real entries were removed — and then tests about the gate's RETRY
+ * behaviour started failing over which advisories are exempt today, which is
+ * not their subject.
+ *
+ * Synthetic ids and a fixture file instead: what this suite asserts is now
+ * independent of what the repo currently exempts, which is the only way it can
+ * keep asserting it.
+ */
+const ALLOWLISTED = ['GHSA-test-0000-aaaa', 'GHSA-test-1111-bbbb'] as const;
+
+/** A throwaway allowlist exempting exactly `ALLOWLISTED`, valid until 2099. */
+function fixtureAllowlist(): string {
+    const dir = mkdtempSync(path.join(tmpdir(), 'auditallow-'));
+    const file = path.join(dir, 'audit-allowlist.json');
+    writeFileSync(
+        file,
+        JSON.stringify({
+            allow: ALLOWLISTED.map((id) => ({
+                advisory: id,
+                package: 'fixture-pkg',
+                severity: 'high',
+                title: 'synthetic advisory for gate tests',
+                reason: 'fixture',
+                reachability: 'fixture',
+                addedOn: '2026-01-01',
+                reviewBy: '2099-01-01',
+                upgradePlan: 'fixture',
+            })),
+        }),
+    );
+    return file;
+}
 
 function reportWith(advisories: ReadonlyArray<{ id: string; pkg: string; severity: string }>) {
     // npm groups by PACKAGE, with one `via` entry per advisory — two advisories
@@ -58,7 +93,13 @@ function runGate(script: string, extraEnv: Record<string, string> = {}): { code:
             const out = execFileSync('node', [GATE], {
                 cwd: REPO_ROOT,
                 encoding: 'utf8',
-                env: { ...process.env, ...extraEnv, PATH: `${dir}:${process.env.PATH ?? ''}` },
+                env: {
+                    ...process.env,
+                    // The FIXTURE allowlist, not the repo's — see ALLOWLISTED.
+                    AUDIT_ALLOWLIST_PATH: fixtureAllowlist(),
+                    ...extraEnv,
+                    PATH: `${dir}:${process.env.PATH ?? ''}`,
+                },
                 stdio: ['ignore', 'pipe', 'pipe'],
             });
             return { code: 0, out };
@@ -128,7 +169,7 @@ describe('audit gate: an unreachable registry is not a clean result', () => {
         // small (see AUDIT_ATTEMPTS) because a failing `npm audit` is slow and
         // the job it runs in is time-boxed.
         const counter = path.join(mkdtempSync(path.join(tmpdir(), 'auditcount-')), 'n');
-        const report = reportWith(ALLOWLISTED.map((id) => ({ id, pkg: 'image-size', severity: 'high' })));
+        const report = reportWith(ALLOWLISTED.map((id) => ({ id, pkg: 'fixture-pkg', severity: 'high' })));
         const { code, out } = runGate(
             `#!/bin/sh\nn=$(cat ${counter} 2>/dev/null || echo 0); n=$((n+1)); echo $n > ${counter}\n` +
                 `if [ $n -lt 2 ]; then echo '{ "error": { "code": "E503" } }'; exit 1; fi\n` +
@@ -153,7 +194,7 @@ describe('audit gate: the checks that must NOT have been weakened', () => {
 
     it('still blocks an advisory nobody allowlisted', () => {
         const report = reportWith([
-            ...ALLOWLISTED.map((id) => ({ id, pkg: 'image-size', severity: 'high' })),
+            ...ALLOWLISTED.map((id) => ({ id, pkg: 'fixture-pkg', severity: 'high' })),
             { id: 'GHSA-aaaa-bbbb-cccc', pkg: 'some-dep', severity: 'critical' },
         ]);
         const { code, out } = runGate(emits(report));

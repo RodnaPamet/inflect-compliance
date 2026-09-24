@@ -394,6 +394,23 @@ model WorkflowRun {
   triggeredViaKeyId String?
   startedAt         DateTime          @default(now())
   completedAt       DateTime?
+  /// WHEN THE HUMAN'S WINDOW CLOSES, pinned when the run parks at a
+  /// HUMAN_CHECKPOINT from that step's mandatory `approvalWindow`.
+  ///
+  /// Stored, not computed from `startedAt + windowFor(step)` at read time —
+  /// the same choice `AgentProposal.expiresAt` makes and for the same reason:
+  /// a definition can be edited, and a deadline recomputed from the CURRENT
+  /// definition is a deadline that moves under a decision already taken.
+  ///
+  /// NULL means no window applies: the run is not parked, or it parked before
+  /// this column existed. Absence is NOT expiry — reading it that way would
+  /// have killed every parked run on the deploy that shipped this.
+  ///
+  /// Re-pinned on each park. A run that clears one checkpoint and reaches a
+  /// later one gets a fresh window for that step, because it is a new
+  /// decision by (possibly) a new person. A single checkpoint's clock runs
+  /// once and never restarts.
+  approvalExpiresAt DateTime?
   contextJson       String?
   /// Chain head over `contextJson` — the SHA-256 link computed by
   /// `sealContext` in `src/lib/agentic/context-integrity.ts` (OWASP ASI06).

@@ -722,9 +722,11 @@ export function planJoinerPass(input: JoinerPlanInput): JoinerPlan {
     // (#2713): the RULES live in `IdentityDepartmentGroupRule`, one row each
     // so a rule carries its own provenance, and the SINGULAR fallback lives
     // on `TenantSecuritySettings` as `identityDefaultGroupId` +
-    // `identityDefaultGroupName`. Both refusals below are now
-    // reachable-and-FIXABLE: a tenant that has configured neither still
-    // lands here, and an operator can clear it.
+    // `identityDefaultGroupName`. Both refusals below are reachable, and
+    // as of #2839 NOT yet fixable by a tenant: #2713 shipped the schema and
+    // the planner's reader, but nothing in `src/` WRITES either half, so
+    // every tenant lands here and no operator surface can move them off it.
+    // The refusals are correct; what is missing is the write path.
     if (!input.departmentGroups || Object.keys(input.departmentGroups).length === 0) {
         return refuse(
             'NO_DEPARTMENT_MAP',
