@@ -112,10 +112,12 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         // exists AND a dispatcher and a schedule now call it, but
         // decision 10's map now HAS somewhere to live (#2713 —
         // `IdentityDepartmentGroupRule` plus the singular fallback on
-        // `TenantSecuritySettings`), so a tenant that has configured it no
-        // longer refuses `NO_DEPARTMENT_MAP`. The create VERB is still missing
-        // (#2714), which is why `DIRECTION_IMPLEMENTED.joiner` stays false:
-        // #2713 closed one conjunct, not the conjunction.
+        // `TenantSecuritySettings`). Somewhere to live is not somewhere to be
+        // PUT: there is no write path for either half (#2839), so no tenant
+        // can configure it and every pass still refuses `NO_DEPARTMENT_MAP`.
+        // The create VERB is also still missing (#2714), which is why
+        // `DIRECTION_IMPLEMENTED.joiner` stays false: #2713 closed neither
+        // conjunct outright.
         honoured: {
             leaver: { maxMode: LEAVER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.leaver },
             joiner: { maxMode: JOINER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.joiner },
