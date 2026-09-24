@@ -74,6 +74,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice, type InlineNoticeVariant } from '@/components/ui/inline-notice';
+import { CopyText } from '@/components/ui/copy-text';
 import { EmptyState } from '@/components/ui/empty-state';
 // The ORDERING, from the module that owns it — never a copy, and never `!==`.
 // `write-ladder` carries no server imports, so a client component can hold it.
@@ -98,6 +99,26 @@ interface PassDecision {
     outcome: string;
     reason?: string;
     basis?: DecisionBasisJson;
+    /**
+     * The `IdentityWriteJournal` row this decision's write captured into.
+     *
+     * `recordPassExecution` has carried this onto every decision since #2490,
+     * with a comment calling the report "the second, durable place to find it"
+     * — and this interface did not declare it, so the second place did not
+     * exist. The only surviving pointer from a disable to the captured prior
+     * state was `detailsJson.journalId` on the audit row, plus the reference
+     * quoted in the DISABLED notification email, which told IT to hand it to
+     * "your platform administrator". An operator holding that reference had
+     * nowhere on screen to match it against.
+     *
+     * OPTIONAL BECAUSE IT IS GENUINELY ABSENT, not because the column is
+     * unreliable. It exists only once `beginWrite` has committed, so the three
+     * refusals decided above it (self-account, protected, ladder) and the
+     * stranded-connection refusal carry none — and the writer omits the key
+     * rather than writing null, precisely so this page can tell "no write was
+     * attempted" from "a capture was attempted and produced nothing".
+     */
+    journalId?: string;
 }
 
 /** The `resultJson` payload, as written by `writeExecutionRow`. */
@@ -113,6 +134,23 @@ interface PassResult {
     decisionsTruncated?: boolean;
     refusal?: string;
     detail?: string;
+    /**
+     * Directory writes still waiting for an outcome when this pass STARTED.
+     *
+     * Three states, all distinct and all rendered differently:
+     *
+     *   a number  the backlog was read; this many rows had been unsettled for
+     *             over an hour (`UNSETTLED_STALE_MS`). Zero is a real answer.
+     *   `null`    the read FAILED. `readUnsettledBacklog` returns null rather
+     *             than 0 on purpose — an observability read must not be able
+     *             to stop an offboarding, and "we could not count" must not be
+     *             reported as "there are none".
+     *   absent    a row written before the field existed.
+     *
+     * Collapsing null into 0 anywhere on this page would undo the one
+     * distinction the server went out of its way to preserve.
+     */
+    unsettledOnEntry?: number | null;
 }
 
 export interface LeaverPassRow {
@@ -373,6 +411,25 @@ function readSyncSignal(result: PassResult): SyncSignalReading | null {
     return null;
 }
 
+/** The three states of `unsettledOnEntry`, narrowed out of a Json column. */
+type UnsettledReading = { kind: 'count'; count: number } | { kind: 'unknown' } | { kind: 'absent' };
+
+/**
+ * Narrow `unsettledOnEntry` without collapsing its states.
+ *
+ * `null` and `0` are both falsy and a `?? 0` here — the shape every other fact
+ * on this page uses — would silently turn "we could not count the stranded
+ * writes" into "there are none". That is the exact inversion the whole
+ * capture-before-write rail exists to prevent, so this is the one fact on the
+ * page that does not get the `?? 0` treatment.
+ */
+function readUnsettled(result: PassResult): UnsettledReading {
+    const raw = result.unsettledOnEntry;
+    if (raw === null) return { kind: 'unknown' };
+    if (typeof raw === 'number' && Number.isFinite(raw)) return { kind: 'count', count: raw };
+    return { kind: 'absent' };
+}
+
 /**
  * What the write-policy route returns, as much of it as this page reads.
  *
@@ -459,6 +516,7 @@ export function LeaverPassesClient() {
     const selectedDecisions = readDecisions(selectedResult);
     const selectedTruncated = selectedResult.decisionsTruncated === true;
     const selectedSync = readSyncSignal(selectedResult);
+    const selectedUnsettled = readUnsettled(selectedResult);
     // Read from the REFUSAL alone, not from `selectedSync`. The two answer
     // different questions and only this one may re-tone the refusal notice: a
     // pass whose DECISIONS went stale usually carries no refusal at all, and
@@ -576,6 +634,32 @@ export function LeaverPassesClient() {
             ),
         },
         {
+            id: 'journal',
+            header: t('leaverPasses.colJournal'),
+            // COPYABLE, because the value's whole job is to be quoted. The
+            // DISABLED notification tells IT to give this reference to their
+            // platform administrator, and an operator matching that mail against
+            // this table is transcribing a cuid by eye otherwise.
+            //
+            // The em-dash is the same one `basis` and `reason` use for "not
+            // applicable to this row", and it means something precise here: no
+            // write was attempted, so nothing was captured. It is NOT "the
+            // capture is missing" — the writer omits the key rather than
+            // recording null exactly so those two cannot look alike.
+            cell: ({ row }) => {
+                const journalId = row.original.journalId;
+                if (!journalId) return <span className="text-content-subtle">—</span>;
+                return (
+                    <CopyText
+                        value={journalId}
+                        label={t('leaverPasses.journalCopyLabel')}
+                        truncate
+                        className="font-mono text-xs"
+                    />
+                );
+            },
+        },
+        {
             id: 'basis',
             header: t('leaverPasses.colBasis'),
             // TEXT, NOT A BADGE, and that is a decision rather than an omission.
@@ -647,6 +731,19 @@ export function LeaverPassesClient() {
               {
                   label: t('leaverPasses.factPopulation'),
                   value: String(selectedResult.population ?? 0),
+              },
+              {
+                  label: t('leaverPasses.factUnsettled'),
+                  // Three states, three renders. `unknown` gets a WORD rather
+                  // than a number, because any number here would be a claim
+                  // the pass explicitly declined to make; `absent` gets the
+                  // page's em-dash, because an older row recorded nothing.
+                  value:
+                      selectedUnsettled.kind === 'count'
+                          ? String(selectedUnsettled.count)
+                          : selectedUnsettled.kind === 'unknown'
+                            ? t('leaverPasses.unsettledUnknownShort')
+                            : '—',
               },
           ]
         : [];
@@ -823,6 +920,37 @@ export function LeaverPassesClient() {
                                 `leaverPasses.${SYNC_SIGNAL_META[selectedSync.signal].noticeBodyKey}`,
                                 { count: selectedSync.decisions },
                             )}
+                        </InlineNotice>
+                    )}
+
+                    {selectedUnsettled.kind === 'count' && selectedUnsettled.count > 0 && (
+                        // ABOVE the refusal notice, because it is a statement
+                        // about accounts that are in unknown state RIGHT NOW,
+                        // and every other notice on this page is a statement
+                        // about what this pass decided. It is also the only one
+                        // that is not about this pass at all: these rows were
+                        // stranded by an EARLIER run, which is why the body says
+                        // so — an operator who re-runs the pass expecting the
+                        // number to fall has misread it.
+                        <InlineNotice
+                            variant="warning"
+                            title={t('leaverPasses.unsettledHeading')}
+                        >
+                            {t('leaverPasses.unsettledBody', { count: selectedUnsettled.count })}
+                        </InlineNotice>
+                    )}
+
+                    {selectedUnsettled.kind === 'unknown' && (
+                        // A SEPARATE ARM, not a variant of the one above with a
+                        // different number. "We could not count them" and "there
+                        // are three" call for different actions, and the state
+                        // this arm renders is the one that would otherwise be
+                        // indistinguishable on screen from a clean pass.
+                        <InlineNotice
+                            variant="warning"
+                            title={t('leaverPasses.unsettledUnknownHeading')}
+                        >
+                            {t('leaverPasses.unsettledUnknownBody')}
                         </InlineNotice>
                     )}
 

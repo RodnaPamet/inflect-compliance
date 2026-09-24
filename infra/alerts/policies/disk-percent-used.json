@@ -1,0 +1,45 @@
+{
+  "displayName": "inflect disk filling — act before postgres cannot write",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "conditionThreshold": {
+        "filter": "metric.type=\"custom.googleapis.com/host/disk_percent_used\" AND resource.type=\"gce_instance\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 85,
+        "duration": "300s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_MAX"
+          }
+        ]
+      },
+      "displayName": "root filesystem above 85%"
+    },
+    {
+      "conditionAbsent": {
+        "filter": "metric.type=\"custom.googleapis.com/host/disk_percent_used\" AND resource.type=\"gce_instance\"",
+        "duration": "1800s",
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_MAX"
+          }
+        ]
+      },
+      "displayName": "disk reporting stopped — absence is not health"
+    }
+  ],
+  "documentation": {
+    "content": "Root filesystem on the inflect-compliance VM is above threshold.\n\nWHY THIS EXISTS: on 2026-09-24 the disk reached 100%, postgres could not write WAL, crashed mid-write and crash-looped eight times. Every crash took /api/readyz down, so the first signal of a full disk was a database already failing. 14GB of it was container images orphaned by two historical registry renames — WATCHTOWER_CLEANUP only prunes the image path it currently manages.\n\nFIRST CHECKS:\n  docker system df            (reclaimable is usually the answer)\n  docker images               (look for images on dead registry paths)\n  sudo du -xh --max-depth=1 / | sort -rh | head\n\nThe 85% warn threshold leaves roughly 7GB on a 49GB disk — enough to act deliberately rather than under a crashed database.",
+    "mimeType": "text/markdown"
+  },
+  "notificationChannels": [
+    "projects/hazel-design-419410/notificationChannels/11199896282881593035"
+  ],
+  "enabled": true
+}

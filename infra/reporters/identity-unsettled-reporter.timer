@@ -1,0 +1,20 @@
+[Unit]
+Description=Run the identity-unsettled reporter every 5 minutes (#2842)
+
+[Timer]
+# Every 5 minutes, not every minute like container-health.
+#
+# The signal is hour-scale by construction — a row only counts once it has been
+# unsettled for an hour — so a minute's resolution buys nothing and would run
+# 1440 database reads a day for a number that cannot move that fast.
+#
+# 5 minutes is also what the alert policy's alignment periods assume: the
+# absence arm fires after 1800s, which is six consecutive missed runs rather
+# than one bad minute.
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=identity-unsettled-reporter.service
+
+[Install]
+WantedBy=timers.target

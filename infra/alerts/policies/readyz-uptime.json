@@ -1,0 +1,43 @@
+{
+  "displayName": "inflect production is not ready (#2745)",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "conditionThreshold": {
+        "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND metric.label.check_id=\"inflect-readyz-Z8mHqntw7b0\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 1,
+        "duration": "300s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_NEXT_OLDER",
+            "crossSeriesReducer": "REDUCE_COUNT_FALSE",
+            "groupByFields": [
+              "resource.label.host"
+            ]
+          }
+        ]
+      },
+      "displayName": "readyz failing from more than one region"
+    }
+  ],
+  "documentation": {
+    "content": "app.inflect.bg /api/readyz stopped returning 200 with \"status\":\"ready\" from more than one Google probe region.\n\nThis fires for a DEPENDENCY outage as well as a process outage, deliberately. inflect-compliance runs ONE app container on one GCE VM with no replica and no load balancer, so a readyz 503 means users are getting errors. Probing only /api/livez would MISS this: livez is dependency-free and answers \"alive\" whenever the process is up, so the app can be completely unable to serve while the monitor stays green.\n\nWHY THIS EXISTS (#2745): on 2026-09-20 production was down ~25h and nothing alerted. Redis crash-looped 2,511 times on a corrupt AOF; separately the app crash-looped on a half-applied migration (P3009). Every scheduled job stopped. It was found only because someone went looking for an unrelated reason. This check would have fired within ~2 minutes of either fault.\n\nFIRST STEPS\n1. curl -s https://app.inflect.bg/api/readyz | jq .  -- the \"failed\" array names the component.\n2. gcloud compute ssh inflect-compliance --zone europe-west1-b\n3. sudo docker ps -a   -- look at STATUS for restart loops, and RestartCount via docker inspect.\n4. sudo docker logs --tail 100 inflect-app-1   (or inflect-redis-1)\n\nWHAT THIS DOES NOT COVER: a wedged BullMQ worker. readyz reports the APP tier's view of redis, not whether the worker is consuming. A worker that stopped working while the web tier stays green is invisible here and needs its own heartbeat probe.\n\nDocs: docs/incident-response.md, docs/deployment.md\nContract: infra/alerts/external-uptime.yml\nUptime console: https://console.cloud.google.com/monitoring/uptime\n\n── 2026-09-24: two changes, because this policy was firing on things that were not outages ──\n\nSÃO PAULO IS NO LONGER PROBED. It failed 100% of checks — 0.00 pass rate over every hour measured — and #2752 closed that as an accepted limitation after ruling out everything in our control. Left in, it silently consumed this condition's entire margin: the rule is COUNT_FALSE > 1 so that a single flaky region cannot page anyone, but with one region permanently false, ANY second region blinking satisfied it. The condition degraded from 'more than one region' to 'any one region', which is the false-positive shape it was written to avoid. Five regions remain.\n\nDURATION IS 300s, NOT 60s. This app is one container on one VM with no replica, so a deploy takes readyz down for roughly 1-3 minutes and every region fails together — indistinguishable, at 60s, from a real outage. Three deploys a day meant three pages a day for expected events, and an alert that cries wolf is one people stop reading. At 300s a deploy is silent and a genuine outage still pages in about six minutes. The fault this policy exists for (#2745) ran TWENTY-FIVE HOURS undetected; six minutes versus two is not the difference that matters.\n\nIF YOU ARE HERE BECAUSE IT FIRED: it now takes two of five regions failing for five minutes. That is very unlikely to be nothing.",
+    "mimeType": "text/markdown"
+  },
+  "notificationChannels": [
+    "projects/hazel-design-419410/notificationChannels/11199896282881593035"
+  ],
+  "userLabels": {
+    "product": "inflect-compliance",
+    "issue": "2745"
+  },
+  "enabled": true,
+  "alertStrategy": {
+    "autoClose": "1800s"
+  }
+}

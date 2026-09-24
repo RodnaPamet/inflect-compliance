@@ -303,9 +303,44 @@ export function recordIdentityBatchRefused(attrs: {
  * the sum only ever climbs and can never say "the backlog is clear" — only
  * "it stopped growing".
  *
- * ALERT ON — `increase(identity_write_unsettled_total[2d]) > 0`.
- * NOT on `> 0`, which is satisfied for ever after the first stranded row and
- * would be a permanently-firing alert nobody can silence honestly.
+ * THIS COUNTER IS NOT THE ALERT, AND CANNOT BE (#2842). This docblock used to
+ * end with an instruction:
+ *
+ *     ALERT ON — `increase(identity_write_unsettled_total[2d]) > 0`.
+ *
+ * The PromQL is right and the sentence was wrong, because there is nowhere to
+ * put it. Verified on production 2026-09-24:
+ *
+ *   1. NOTHING SCRAPES THIS. `docker inspect inflect-app-1` shows no `OTEL_*`
+ *      environment, so `getMeter()` here hands back a meter with no exporter
+ *      and `.add()` is discarded in-process. The series does not exist.
+ *   2. NOTHING EVALUATES PROMQL. Prometheus and Alertmanager are not deployed;
+ *      `deploy/docker-compose.prod.yml` references neither.
+ *      `infra/alerts/rules.yml` holds 22 rules that have never run, and zero of
+ *      them mention identity.
+ *
+ * So a rule added there would be useless twice over — and worse than useless,
+ * because the next person grepping for coverage would find it and stop looking.
+ * That is exactly how this repo has been bitten before (`external-uptime.yml`
+ * records the 25-hour outage that taught it), and it is why the instruction is
+ * corrected here rather than deleted: the INTENT — an unsettled write must page
+ * somebody — is right and is now implemented, elsewhere.
+ *
+ * WHERE THE ALERT ACTUALLY LIVES. `infra/reporters/identity-unsettled-reporter.sh`,
+ * on a 5-minute systemd timer on the VM, reading the DATABASE and POSTing
+ * `custom.googleapis.com/identity/write_unsettled` to GCP Cloud Monitoring;
+ * policy at `infra/alerts/policies/identity-write-unsettled.json`, contract at
+ * `infra/alerts/gcp-custom-metrics.yml`. Sourcing it from the journal rather
+ * than from here also fixes the counter-fed-a-level problem above at the root:
+ * a row count is a gauge, so it CAN say "the backlog is clear".
+ *
+ * It is not applied yet — installing it is an operator action, and the README
+ * beside it carries the procedure. Until it is, an unsettled identity write
+ * pages nobody. Do not read this block as coverage.
+ *
+ * KEEP CALLING THIS ANYWAY. It costs nothing, it is the only signal that would
+ * light up the moment an OTel exporter is configured, and the log line beside
+ * its call site in `readUnsettledBacklog` is real today.
  */
 export function recordIdentityWritesUnsettled(attrs: { tenantId: string; count: number }): void {
     getMeter()

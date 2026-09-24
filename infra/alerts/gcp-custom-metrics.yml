@@ -1,0 +1,199 @@
+# Custom-metric alerting — what is DEPLOYED for inflect-compliance, and why.
+#
+# Sibling of `external-uptime.yml`, and the same kind of file: a record of a
+# DEPLOYED GCP CONTRACT, not a rule for a stack we wish we had. `rules.yml` and
+# `receivers.yml` in this directory are the other kind — they describe a
+# Prometheus/Alertmanager deployment that has never existed here.
+#
+# ─── WHY THIS FILE EXISTS AT ALL (#2842) ────────────────────────────────
+#
+# On 2026-09-24, working #2842, the only alerting mechanism that ACTUALLY WORKS
+# on this deployment was found to be entirely unversioned. `git grep
+# container-health-reporter` returned zero files. The script lived only at
+# /usr/local/bin/container-health-reporter.sh on the VM, with a systemd timer
+# beside it, and the GCP alert policies it feeds existed only in the console.
+#
+# So the mechanism could not be reviewed, could not be tested, and could not be
+# rebuilt if the VM were lost — while the two files in this directory that CAN
+# be read describe 22 alert rules that do not run. A reader checking "are we
+# alerted on X?" would have found the wrong artefact both ways round.
+#
+# `infra/reporters/` now holds the scripts and units, byte-for-byte as deployed
+# (see the checksums in its README), `infra/alerts/policies/` holds the policies
+# as applyable JSON, and this file records the contract between them.
+#
+# ─── WHY NOT PROMETHEUS ─────────────────────────────────────────────────
+#
+# Asked and answered three times now, so it is written down here once.
+#
+#   1. Prometheus and Alertmanager are NOT DEPLOYED. Nothing in
+#      `deploy/docker-compose.prod.yml` references either. The running stack is
+#      app, worker, caddy, redis, pgbouncer, postgres, clamav, watchtower.
+#   2. The app exports NO OTEL. `docker inspect inflect-app-1` shows no `OTEL_*`
+#      variables, so every OTel instrument in `src/lib/observability/` is
+#      incremented in a meter with no exporter and discarded in-process.
+#
+# A PromQL rule added to `rules.yml` would therefore be useless twice over, and
+# WORSE THAN NOTHING: the next person grepping for coverage would find it and
+# stop looking. That is the specific failure `external-uptime.yml` was rewritten
+# to undo, and this product has now been bitten by it in three separate files.
+#
+# What works instead is small and boring: a host script that POSTs a custom
+# metric using the VM service account's own metadata-server token, and a GCP
+# alert policy with a threshold arm AND an absence arm.
+#
+# ─── THE ABSENCE ARM IS NOT OPTIONAL ────────────────────────────────────
+#
+# Every policy below has one, and they all say the same thing: a reporter that
+# has died must not read as health. A threshold condition alone is satisfied by
+# silence — no data, no breach, no page — which is exactly the shape that let
+# production be down for 25 hours on 2026-09-20 with nothing firing.
+#
+# The corollary binds the REPORTER, not just the policy: a reporter must emit
+# its metric on the healthy path too (0 is a value), and must emit NOTHING when
+# it cannot measure. A reporter that posts 0 on a failed read converts "we
+# cannot tell" into "all clear" and makes the absence arm unreachable.
+
+apiVersion: v1
+kind: CustomMetricAlertContract
+metadata:
+  product: inflect-compliance
+  deployment: single GCE VM (inflect-compliance, europe-west1-b), docker compose, no replicas
+  provider: GCP Cloud Monitoring
+  project: hazel-design-419410
+  issues: ['2745', '2842']
+  verified: '2026-09-24'
+
+# One notification channel for every policy here and in external-uptime.yml.
+# Shared with agri-saas because it is the same operator and the same inbox; the
+# address lives in GCP project config and deliberately not in this file.
+notification_channel:
+  id: '11199896282881593035'
+  kind: email
+  note: >-
+    Not a rota and not a pager. Detection latency is bounded; time-to-human is
+    not. Do not write an acknowledgement or response time on the strength of it.
+
+reporters:
+  - name: container-health-reporter
+    source: infra/reporters/container-health-reporter.sh
+    unit: infra/reporters/container-health-reporter.service
+    timer: infra/reporters/container-health-reporter.timer
+    installed_at: /usr/local/bin/container-health-reporter.sh
+    interval: 60s
+    emits:
+      - custom.googleapis.com/docker/container_health
+      - custom.googleapis.com/host/disk_percent_used
+    status: DEPLOYED
+    captured: '2026-09-24'
+    # Captured from the VM verbatim, not retyped. See infra/reporters/README.md
+    # for the sha256 of each file as it stood on the host at capture time.
+
+  - name: identity-unsettled-reporter
+    source: infra/reporters/identity-unsettled-reporter.sh
+    unit: infra/reporters/identity-unsettled-reporter.service
+    timer: infra/reporters/identity-unsettled-reporter.timer
+    installed_at: /usr/local/bin/identity-unsettled-reporter.sh
+    interval: 5m
+    emits:
+      - custom.googleapis.com/identity/write_unsettled
+    status: NOT YET APPLIED
+    note: >-
+      Written and exercised against production READ-ONLY on 2026-09-24
+      (IDENTITY_UNSETTLED_DRY_RUN=1, which does every read and posts nothing).
+      Installing it and creating its alert policy are OPERATOR ACTIONS — see
+      infra/reporters/README.md. Until both are done there is NO alert on an
+      unsettled identity write, and this entry says so rather than implying
+      coverage.
+
+metrics:
+  - type: custom.googleapis.com/docker/container_health
+    resource: gce_instance
+    labels: [container]
+    value: 1 healthy or running-without-a-healthcheck, 0 unhealthy or not running
+    covers: >-
+      "up but doing nothing" — a wedged BullMQ worker whose heartbeat went
+      stale. /api/readyz is the app tier's view and stays 200 through it.
+    policy: infra/alerts/policies/container-health.json
+    deployed_policy_id: '319132274367019433'
+
+  - type: custom.googleapis.com/host/disk_percent_used
+    resource: gce_instance
+    labels: [mount]
+    value: integer percent of the root filesystem in use
+    covers: >-
+      a full disk BEFORE it takes postgres down. On 2026-09-24 the disk hit
+      100%, postgres could not write WAL and crash-looped eight times, so the
+      first signal of a full disk was a database already failing.
+    policy: infra/alerts/policies/disk-percent-used.json
+    deployed_policy_id: '4253765775671617947'
+
+  - type: custom.googleapis.com/identity/write_unsettled
+    resource: gce_instance
+    labels: []
+    value: >-
+      count of IdentityWriteJournal rows with outcome PENDING or INDETERMINATE
+      and attemptedAt older than one hour, across ALL tenants
+    covers: >-
+      a directory write whose outcome was never confirmed — an account in
+      unknown state. Nothing else in the product surfaces it: a leaver whose
+      disable half-landed looks, from every screen, like a leaver who was
+      disabled.
+    policy: infra/alerts/policies/identity-write-unsettled.json
+    deployed_policy_id: null      # NOT YET APPLIED — see `reporters` above.
+
+    # ─── WHY ONE HOUR, AND WHERE IT CAME FROM ───────────────────────────
+    #
+    # `UNSETTLED_STALE_MS` in src/app-layer/usecases/identity-leaver-pass.ts,
+    # which is 60 * 60 * 1000. Not chosen here. Its docblock gives the
+    # reasoning: a row is minted and settled within the same candidate, seconds
+    # apart, so anything unsettled for an hour was left behind rather than
+    # being in flight. The window is generous on purpose — it exists to avoid
+    # counting a concurrent pass's in-flight write.
+    #
+    # tests/guards/unsettled-reporter-matches-the-product.test.ts fails if the
+    # reporter and the constant ever disagree.
+    staleness_threshold: 1 hour
+    staleness_threshold_source: UNSETTLED_STALE_MS (identity-leaver-pass.ts)
+
+    # ─── WHY A TOTAL AND NOT PER TENANT ─────────────────────────────────
+    #
+    # Because the absence arm has to mean exactly one thing. With a tenant
+    # label, a series APPEARS when a tenant strands a row and STOPS when the
+    # row is settled — so normal operation is full of absence, and an absence
+    # condition over normal absence is noise. A tenant that has never stranded
+    # a write emits nothing at all; a deleted tenant's series lingers. One
+    # unlabelled series, emitted every 5 minutes including when it is 0, makes
+    # "no data" unambiguous.
+    #
+    # Cardinality is the second reason (tenants are added by signup; 10 today),
+    # and the third is that the alert does not need it: every answer is "go and
+    # look", and WHICH tenant is a triage question. Triage reads the per-tenant
+    # breakdown the reporter writes to journald, which carries tenant, provider
+    # and the oldest attemptedAt.
+    granularity: total across tenants
+    triage_detail: journalctl -u identity-unsettled-reporter
+
+    # ─── THE RLS TRAP ───────────────────────────────────────────────────
+    #
+    # "IdentityWriteJournal" is FORCE ROW LEVEL SECURITY. Measured on the live
+    # database, same table, same instant, 2026-09-24:
+    #
+    #     psql as postgres, no SET ROLE       -> 3 rows
+    #     SET LOCAL ROLE app_user, no tenant  -> 0 rows
+    #
+    # A reporter that assumes the app's RLS posture reports zero for every
+    # tenant for ever, with no error and no warning, and the alert is silent by
+    # construction. The reporter must NOT `SET ROLE app_user`. This is recorded
+    # here because the next person to write a monitoring query against a
+    # tenant-scoped table will face it again.
+
+  # ─── WHAT THIS STILL DOES NOT COVER ───────────────────────────────────
+  #
+  #   - Every other identity outcome. FAILED is settled and visible; PENDING
+  #     and INDETERMINATE are the two that mean "unknown". This alert is about
+  #     unknown, not about failure.
+  #   - A tenant whose leaver pass never runs at all. The reporter reads the
+  #     journal, so a dispatcher that stopped dispatching produces no rows and
+  #     no backlog — correctly silent here, and uncovered elsewhere.
+  #   - Whether an alert reaches a human out of hours. There is no rota.

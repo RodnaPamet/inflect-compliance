@@ -1,0 +1,45 @@
+{
+  "displayName": "inflect identity writes unsettled — an account is in unknown state (#2842)",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "a directory write has been unconfirmed for over an hour",
+      "conditionThreshold": {
+        "filter": "metric.type=\"custom.googleapis.com/identity/write_unsettled\" AND resource.type=\"gce_instance\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0,
+        "duration": "600s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_MAX"
+          }
+        ]
+      }
+    },
+    {
+      "displayName": "unsettled-write reporting stopped — absence is not an empty backlog",
+      "conditionAbsent": {
+        "filter": "metric.type=\"custom.googleapis.com/identity/write_unsettled\" AND resource.type=\"gce_instance\"",
+        "duration": "1800s",
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_MAX"
+          }
+        ]
+      }
+    }
+  ],
+  "documentation": {
+    "content": "An identity write against a directory was never confirmed. The account may or may not have been changed, and nothing else will surface it.\n\nWHAT THE NUMBER IS. The count of IdentityWriteJournal rows whose outcome is PENDING or INDETERMINATE and whose attemptedAt is older than one hour, across ALL tenants. One hour is UNSETTLED_STALE_MS from src/app-layer/usecases/identity-leaver-pass.ts: a row is minted and settled seconds apart within one candidate, so an hour means it was left behind rather than being in flight.\n\nWHY IT IS NOT A PROMETHEUS ALERT. There is no Prometheus and no Alertmanager on this deployment, and the app container has no OTEL_* environment, so the identity.write.unsettled OTel counter exports nowhere. infra/alerts/rules.yml describes a stack that does not run. The number is read straight from the database by /usr/local/bin/identity-unsettled-reporter.sh (versioned at infra/reporters/) on a 5-minute systemd timer.\n\nFIRST CHECKS:\n  journalctl -u identity-unsettled-reporter -n 50   (per-tenant breakdown, tenant + provider + oldest row)\n  systemctl list-timers identity-unsettled-reporter.timer\n\nThen open the journal rows for that tenant. Each row carries the account's PRIOR state, captured before the write: that is what a restore reads, and it is why the row exists. Settling it means going to the directory, reading the account's real state, and either resolving the row to APPLIED or reverting it — settleIndeterminateAsApplied in src/app-layer/usecases/identity-write-journal.ts, which only ever promotes a row the directory has been READ and agrees with.\n\nTHE SECOND CONDITION IS NOT A DUPLICATE. It fires when the metric stops arriving at all. The reporter emits 0 on a healthy empty backlog and emits NOTHING when it cannot read — postgres down, container renamed, psql error. Without the absence arm a dead reporter would look exactly like a clear backlog, which is the failure this whole rail exists to prevent.\n\nTHIS POLICY DOES NOT AUTO-CLOSE quickly, deliberately. An account in unknown state is not resolved by the passage of time, and a 30-minute autoClose would silently close the incident if the reporter died while a backlog stood.",
+    "mimeType": "text/markdown"
+  },
+  "notificationChannels": [
+    "projects/hazel-design-419410/notificationChannels/11199896282881593035"
+  ],
+  "enabled": true
+}
