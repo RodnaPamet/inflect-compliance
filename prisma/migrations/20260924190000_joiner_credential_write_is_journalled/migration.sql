@@ -1,0 +1,11 @@
+-- The joiner's credential step becomes a journalled write (#2840).
+--
+-- APPENDED with a bare ADD VALUE, which is what puts it at the END of the
+-- physical type. `prisma/schema/enums.prisma` declares it last for the same
+-- reason: a member declared mid-block lands at the end of the type anyway, and
+-- the two disagree from that moment on. `prisma migrate diff` cannot see the
+-- difference — it compares enum values as a SET — so the agreement is held by
+-- `prisma-enum-order` instead.
+--
+-- AlterEnum
+ALTER TYPE "IdentityWriteAction" ADD VALUE 'ISSUE_CREDENTIAL';

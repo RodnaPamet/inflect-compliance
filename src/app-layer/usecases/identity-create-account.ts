@@ -119,18 +119,62 @@ export interface CreateAccountRequest {
     readonly writeBackToHris?: (externalUserId: string) => Promise<void>;
 }
 
-/** Roll back, and report whether it actually happened. Never throws. */
+/**
+ * Roll back, and report whether it actually happened. Never throws.
+ *
+ * JOURNALLED since #2840. The undo is a real directory write — it disables an
+ * account that exists — and it was the third write in this file with no row of
+ * its own. That is the worst one to leave unrecorded: a rollback runs precisely
+ * when something has already gone wrong, so it is the write most likely to
+ * matter to whoever reads the artefacts afterwards, and the one most likely to
+ * fail on its way.
+ *
+ * `beginWrite` is best-effort here, and deliberately so. If opening the row
+ * throws, the undo still runs: an account left ENABLED in a customer's
+ * directory because this function could not reach its own database is a worse
+ * outcome than an unjournalled disable. The failure is not silent — the caller
+ * still reports `rolledBack`, and the create's own rows are already unsettled.
+ */
 async function rollback(
+    ctx: RequestContext,
+    provisioner: DirectoryProvisioner,
+    mode: IdentityWriteMode,
     disableCreated: (id: string) => Promise<void>,
     externalUserId: string,
 ): Promise<boolean> {
+    let handle: WriteHandle | null = null;
+    try {
+        handle = await beginWrite(ctx, {
+            provider: provisioner.provider,
+            externalUserId,
+            action: 'DISABLE_ACCOUNT',
+            mode,
+            priorState: {
+                accountCreatedInThisPass: true,
+                enabled: false,
+                note:
+                    'undo of a create that failed partway; the account was created blocked and ' +
+                    'never successfully enabled by this pass',
+            },
+        });
+    } catch {
+        // Deliberately swallowed — see the docblock. The undo matters more than
+        // its record, and the record is not the only one: the step that failed
+        // has already left an unsettled row.
+        handle = null;
+    }
+
     try {
         await disableCreated(externalUserId);
+        await handle?.applied();
         return true;
-    } catch {
+    } catch (err) {
         // A failed rollback is worse than no rollback only if it is silent.
         // The caller records `rolledBack: false` and the account stays in the
         // journal as unsettled, which is what puts a human on it.
+        await handle?.indeterminate(
+            `The undo disable failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
         return false;
     }
 }
@@ -138,9 +182,23 @@ async function rollback(
 /**
  * Run the create sequence.
  *
- * Every step is journalled BEFORE it is attempted — `beginWrite` captures
- * prior state and commits it, and there is deliberately no variant that
- * captures afterwards.
+ * Every step is journalled BEFORE it is attempted — `beginWrite` captures prior
+ * state and commits it, and there is deliberately no variant that captures
+ * afterwards.
+ *
+ * THAT SENTENCE WAS FALSE FROM THE DAY IT WAS WRITTEN UNTIL #2840. `beginWrite`
+ * appeared twice in this file, for CREATE_ACCOUNT and ASSIGN_GROUP. The
+ * credential step and the enable step — three and four of four — opened
+ * nothing, and neither did the rollback's disable. All five writes are now
+ * journalled, so the claim above is a description rather than an aspiration.
+ *
+ * It is worth naming how it survived: `tests/unit/identity-create-account.test.ts`
+ * had a green `describe('every write is journalled BEFORE it is attempted')`
+ * whose only assertion was `expect(begun).toEqual(['CREATE_ACCOUNT',
+ * 'ASSIGN_GROUP'])`. The test was honest — its `it` says "the two verbs" — but
+ * the heading asserted the invariant and a reader scanning describe names would
+ * have taken it as proof. A heading is not an assertion, and this one guarded
+ * the gap it was named for.
  */
 export async function createDirectoryAccount(
     ctx: RequestContext,
@@ -197,7 +255,7 @@ export async function createDirectoryAccount(
         await (grouped.kind === 'refused'
             ? groupHandle.failed(grouped.detail)
             : groupHandle.indeterminate(grouped.detail));
-        const rolledBack = await rollback(disableCreated, externalUserId);
+        const rolledBack = await rollback(ctx, provisioner, mode, disableCreated, externalUserId);
         return {
             kind: 'PARTIAL_NO_GROUP',
             externalUserId,
@@ -208,9 +266,31 @@ export async function createDirectoryAccount(
     await groupHandle.applied();
 
     // ── 3. CREDENTIAL, after the group. Never a password fallback.
+    //
+    // JOURNALLED since #2840. It was not, and this is the step whose absence
+    // cost the most: minting the credential is what makes the account USABLE,
+    // so a credential issued against an account whose enable then fails is the
+    // exact half-landed state the unsettled sweep exists to surface — and with
+    // no row opened, the sweep could not see it. The prior state is the one
+    // truthful thing there is to say: this pass created the account blocked,
+    // moments ago, and nothing has been minted for it.
+    const credentialHandle = await beginWrite(ctx, {
+        provider: provisioner.provider,
+        externalUserId,
+        action: 'ISSUE_CREDENTIAL',
+        mode,
+        priorState: {
+            credentialIssued: false,
+            note: 'account created blocked in this same pass; no credential had been minted',
+        },
+    });
+
     const credential = await provisioner.issueCredential(externalUserId);
     if (credential.kind !== 'applied') {
-        const rolledBack = await rollback(disableCreated, externalUserId);
+        await (credential.kind === 'refused'
+            ? credentialHandle.failed(credential.detail)
+            : credentialHandle.indeterminate(credential.detail));
+        const rolledBack = await rollback(ctx, provisioner, mode, disableCreated, externalUserId);
         return {
             kind: 'PARTIAL_NO_CREDENTIAL',
             externalUserId,
@@ -218,11 +298,45 @@ export async function createDirectoryAccount(
             rolledBack,
         };
     }
+    await credentialHandle.applied();
 
     // ── 4. ENABLE. Last, because it is the step that makes the account usable.
-    const enabled = await provisioner.enableAccount(externalUserId);
+    //
+    // CAPTURE FIRST, and the capture is not a formality. Until #2840 this
+    // replaced `userAccountControl` with a literal, destroying every other flag
+    // on the account, with nothing journalled to restore them from. The read is
+    // a separate call so that the value lands in the journal BEFORE the write
+    // is attempted — the ordering the journal's docblock promises — and so the
+    // number the row holds is the number the arithmetic is applied to.
+    const priorRead = await provisioner.readAccountState(externalUserId);
+    if (priorRead.kind !== 'read') {
+        // No capture, no enable. Fail closed rather than enable from a value
+        // nobody read: that is the unconditional replace this fix removed.
+        const rolledBack = await rollback(ctx, provisioner, mode, disableCreated, externalUserId);
+        return {
+            kind: 'PARTIAL_NO_CREDENTIAL',
+            externalUserId,
+            detail:
+                'Credential minted but the account could not be enabled: its prior state could ' +
+                `not be captured, so there is nothing to clear the disable bit from — ${priorRead.detail}`,
+            rolledBack,
+        };
+    }
+
+    const enableHandle = await beginWrite(ctx, {
+        provider: provisioner.provider,
+        externalUserId,
+        action: 'ENABLE_ACCOUNT',
+        mode,
+        priorState: priorRead.priorState,
+    });
+
+    const enabled = await provisioner.enableAccount(externalUserId, priorRead.priorState);
     if (enabled.kind !== 'applied') {
-        const rolledBack = await rollback(disableCreated, externalUserId);
+        await (enabled.kind === 'refused'
+            ? enableHandle.failed(enabled.detail)
+            : enableHandle.indeterminate(enabled.detail));
+        const rolledBack = await rollback(ctx, provisioner, mode, disableCreated, externalUserId);
         return {
             kind: 'PARTIAL_NO_CREDENTIAL',
             externalUserId,
@@ -230,6 +344,7 @@ export async function createDirectoryAccount(
             rolledBack,
         };
     }
+    await enableHandle.applied();
 
     // ── 5. THE WRITE-BACK (#2716). Not rolled back on failure — see the
     // docblock on PARTIAL_NO_HRIS_WRITEBACK.
