@@ -25,6 +25,45 @@ import { jsonResponse } from '@/lib/api-response';
 import { publicBaseUrl } from '@/lib/http/public-base-url';
 
 /**
+ * The connection fields this endpoint serves, named here and nowhere else.
+ *
+ * DELIBERATELY A SECOND LIST. `listIntegrationConnections` already has a
+ * Prisma `select`, and deriving this from that select would give exactly zero
+ * protection: a column added there would flow straight through. The whole
+ * value of a response projection is that it is written independently, so a
+ * column added to the query — or to the model, if the query ever grows a
+ * relation include or drops back to a default select — cannot reach a client
+ * because somebody widened a read.
+ *
+ * Today the two lists agree, so this changes nothing on the wire. That is the
+ * intended state: this is a fence, and a fence that moves nothing on the day
+ * it is built is the only kind worth having.
+ *
+ * `configJson` is on it, and stays on it: the admin form reads
+ * `conn.configJson` to populate the edit dialog, so dropping it would silently
+ * blank every config field on edit. `authFailedAt` / `authFailureReason` are
+ * on it because the usecase selects them for H1-3 and three provider modules
+ * name this endpoint as where an operator reads that reason.
+ *
+ * What is NOT on it, and must never be: `secretEncrypted`, `syncCursor`,
+ * `syncLockedAt`, `syncPassStartedAt`, `tenantId`.
+ */
+const CONNECTION_RESPONSE_FIELDS = [
+    'id',
+    'provider',
+    'name',
+    'isEnabled',
+    'configJson',
+    'lastTestedAt',
+    'lastTestStatus',
+    'authFailedAt',
+    'authFailureReason',
+    'createdAt',
+    'updatedAt',
+    '_count',
+] as const;
+
+/**
  * GET — list all integration connections for this tenant.
  * Secrets are never included. Returns provider metadata too.
  */
@@ -37,12 +76,21 @@ export const GET = withApiErrorHandling(
     const baseUrl = publicBaseUrl(req);
 
     return jsonResponse({
-        connections: connections.map((c: Record<string, unknown>) => ({
-            ...c,
-            hasSecret: true, // secrets exist but are masked
-            secretStatus: '••••••••',
-            webhookUrl: `${baseUrl}/api/integrations/webhooks/${c.provider}`,
-        })),
+        connections: connections.map((c: Record<string, unknown>) => {
+            const projected: Record<string, unknown> = {};
+            for (const field of CONNECTION_RESPONSE_FIELDS) {
+                // Copied only when PRESENT, so the payload keeps the shape it
+                // had rather than gaining `undefined` keys for anything a
+                // future narrower select stops returning.
+                if (field in c) projected[field] = c[field];
+            }
+            return {
+                ...projected,
+                hasSecret: true, // secrets exist but are masked
+                secretStatus: '••••••••',
+                webhookUrl: `${baseUrl}/api/integrations/webhooks/${c.provider}`,
+            };
+        }),
         availableProviders: listAvailableProviders(),
         webhookBaseUrl: `${baseUrl}/api/integrations/webhooks`,
     });

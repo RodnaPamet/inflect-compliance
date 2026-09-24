@@ -186,6 +186,56 @@ describe('a stored credential cannot be redirected to another host by a config e
         expect(originFieldsFor('servicenow')).toEqual(['instance']);
         expect(originFieldsFor('active-directory')).toEqual(['url']);
         // An inert field is not an origin — otherwise every edit would refuse.
-        expect(originFieldsFor('okta')).not.toContain('apiToken');
+        // Asserted as an EXACT list rather than `not.toContain('apiToken')`,
+        // which is how it was written: #2837 deleted okta's `apiToken` rule, so
+        // that spelling became a statement about a key the table no longer has
+        // — true for the wrong reason, and satisfied by an empty result.
+        expect(originFieldsFor('okta')).toEqual(['orgUrl']);
+    });
+});
+
+/**
+ * #2837 — a credential a provider declares in `secretFields` is REFUSED as
+ * config, rather than quietly admitted into the unencrypted bag.
+ *
+ * Ten such keys carried a `CONFIG_FIELD_RULES` entry. They had no reader:
+ * every provider takes its credential from the secret bag or from the merged
+ * `{ ...configJson, ...decryptedSecrets }`, where the secret wins — so the
+ * rules were an accept-list with no consumer, and their only effect was to let
+ * a `PUT` put a bind password in a plain Json column that the admin GET serves.
+ *
+ * One per provider, because the ten were removed provider by provider and a
+ * single example would keep passing with nine rules restored.
+ */
+describe('a secret-declared credential is not accepted as config', () => {
+    it.each([
+        ['active-directory', 'bindDN', 'CN=svc,DC=corp,DC=example,DC=com'],
+        ['active-directory', 'bindPassword', 'REDACTED-NOT-A-REAL-VALUE'],
+        ['entra-id', 'clientSecret', 'REDACTED-NOT-A-REAL-VALUE'],
+        ['github', 'token', 'REDACTED-NOT-A-REAL-VALUE'],
+        ['github', 'webhookSecret', 'REDACTED-NOT-A-REAL-VALUE'],
+        ['google-workspace', 'serviceAccountJson', '{"type":"service_account"}'],
+        ['okta', 'apiToken', 'REDACTED-NOT-A-REAL-VALUE'],
+        ['orangehrm', 'clientSecret', 'REDACTED-NOT-A-REAL-VALUE'],
+        ['servicenow', 'password', 'REDACTED-NOT-A-REAL-VALUE'],
+        ['workday', 'clientSecret', 'REDACTED-NOT-A-REAL-VALUE'],
+    ])('%s.%s is refused', (provider, key, value) => {
+        expect(() => validateProviderConfig(provider, { [key]: value })).toThrow(
+            new RegExp(`Unknown configuration field for ${provider}: ${key}`),
+        );
+    });
+
+    it('the CONFIG half of each of those providers still saves — the positive control', () => {
+        // Without this, every assertion above would also pass if
+        // `validateProviderConfig` had started rejecting the provider id
+        // itself, or every key, rather than these ten keys.
+        expect(() => validateProviderConfig('active-directory', { baseDN: 'DC=corp,DC=example,DC=com' })).not.toThrow();
+        expect(() => validateProviderConfig('entra-id', { clientId: 'abc' })).not.toThrow();
+        expect(() => validateProviderConfig('github', { owner: 'acme', repo: 'api', branch: 'main' })).not.toThrow();
+        expect(() => validateProviderConfig('google-workspace', { domain: 'acme.com' })).not.toThrow();
+        expect(() => validateProviderConfig('okta', { orgUrl: 'https://acme.okta.com' })).not.toThrow();
+        expect(() => validateProviderConfig('orangehrm', { clientId: 'cid' })).not.toThrow();
+        expect(() => validateProviderConfig('servicenow', { username: 'svc' })).not.toThrow();
+        expect(() => validateProviderConfig('workday', { clientId: 'cid' })).not.toThrow();
     });
 });
