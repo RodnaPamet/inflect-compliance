@@ -57,6 +57,19 @@ const OUTSIDER = 'ckt0000000000000000000003';
 
 const mockDb = {
     employee: {
+        // The blast-radius cap (#2838) counts twice, and the two calls differ
+        // ONLY by `syncedAt`: the numerator is the not-seen-this-pass set, the
+        // denominator is the whole live HRIS population. A single stubbed
+        // number makes them equal, so share = 1.0 and the cap refuses every
+        // run — these suites then report PARTIAL, not their expected PASSED.
+        //
+        // Answer the two queries as reality would: one straggler against a
+        // population of a thousand. That is below TERMINATE_SHARE_FLOOR, so
+        // the cap stays silent by the floor rather than by a tuned share —
+        // which is what these suites want, since none of them tests the cap.
+        count: jest.fn(async (args?: { where?: { syncedAt?: unknown } }) =>
+            args?.where?.syncedAt ? 1 : 1000,
+        ),
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
