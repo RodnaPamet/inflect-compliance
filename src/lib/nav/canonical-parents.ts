@@ -42,7 +42,12 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // the structural parent of every one of them: it is the surface that
     // decides which agents may act, and each of these is a view OF those
     // agents' behaviour.
+    // Both added when RQ4-1 stopped accepting a wildcard match and surfaced
+    // them as unlisted. A SUBPAGE owes a canonical parent, and both are
+    // reached from the register exactly as their siblings are.
+    '/agents/decisions': { href: '/agents', label: 'Agents' },
     '/agents/proposals': { href: '/agents', label: 'Agents' },
+    '/agents/reports': { href: '/agents', label: 'Agents' },
     '/agents/runs': { href: '/agents', label: 'Agents' },
     // Back from ONE run goes to the run list, not to the register — the
     // list is where the reader came from and what they are working through.
