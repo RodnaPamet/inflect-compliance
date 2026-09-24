@@ -394,6 +394,7 @@ export class ActiveDirectoryProvider implements ScheduledCheckProvider, Identity
             { key: 'maxAdmins', label: 'Max active admins', type: 'number', required: false, description: 'Threshold for admin_count_within_threshold (default 5).' },
             { key: 'dormantDays', label: 'Dormant admin threshold (days)', type: 'number', required: false, description: 'Admin considered dormant after this many days idle (default 90).' },
             { key: 'allowSelfSignedTls', label: 'Allow self-signed TLS', type: 'boolean', required: false, description: 'Skip TLS certificate verification for an internal/enterprise CA (default off — verification on).' },
+            { key: 'writesEnabled', label: 'Allow offboarding writes', type: 'boolean', required: false, description: 'Let leaver offboarding DISABLE accounts in this directory. Off by default: connecting a directory grants reading only, and this is the separate, per-connection decision that it may also be written to. It does NOT permit creating accounts.' },
         ],
         secretFields: [
             { key: 'bindDN', label: 'Bind DN (service account)', type: 'string', required: true, description: 'A read-only service account DN or userPrincipalName, e.g. CN=svc-inflect,OU=Service,DC=corp,DC=example,DC=com.' },

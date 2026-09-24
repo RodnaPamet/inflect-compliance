@@ -105,6 +105,7 @@
  * @module integrations/providers/entra-id/write-direction
  */
 import type { IdentityDirection } from '@/lib/identity/write-ladder';
+import { WRITES_NOT_ENABLED_PHRASE, isWritesNotEnabledRefusal } from '../write-refusal';
 
 /**
  * The leaver's opt-in. The LEGACY spelling, kept exactly.
@@ -149,22 +150,15 @@ export const ENTRA_WRITE_FLAG_FIELD: Readonly<Record<IdentityDirection, string>>
 };
 
 /**
- * The substring `identity-writer-factory` classifies a constructor failure
- * by, exported so the message and its classifier cannot drift apart.
+ * The substring `identity-writer-factory` classifies a constructor failure by.
  *
- * It used to be an inline regex in that file, matched against a literal
- * sentence in this one — two spellings of the same string, in different
- * modules, with nothing holding them together. Naming the direction in the
- * refusal is exactly the kind of edit that breaks that pair silently, and
- * the symptom would have been a deliberate operator state
- * (`WRITES_NOT_ENABLED`) being reported as an unexplained `WRITER_REFUSED`.
+ * DEFINED IN `providers/write-refusal` and re-exported here, unchanged, since
+ * #2841 gave Active Directory its own per-connection opt-in whose refusal must
+ * carry the same phrase. Moving it below both providers keeps AD from having
+ * to import Entra's consent module for a string; re-exporting keeps this
+ * module's surface and every existing importer exactly as they were.
  */
-export const WRITES_NOT_ENABLED_PHRASE = 'not enabled for directory writes';
-
-/** Is this constructor failure the deliberate opt-out rather than a misconfiguration? */
-export function isWritesNotEnabledRefusal(detail: string): boolean {
-    return detail.toLowerCase().includes(WRITES_NOT_ENABLED_PHRASE);
-}
+export { WRITES_NOT_ENABLED_PHRASE, isWritesNotEnabledRefusal };
 
 /**
  * Just the flags, so a caller can hand over a merged connection bag or the

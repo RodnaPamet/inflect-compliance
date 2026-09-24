@@ -83,6 +83,7 @@ import {
     type ProvisionerResolution,
 } from './identity-provisioner';
 import { mergeConnection } from './identity-writer-factory';
+import { isWritesNotEnabledRefusal } from './providers/write-refusal';
 import {
     AD_COLLISION_NAMESPACES,
     createActiveDirectoryProvisioner,
@@ -290,7 +291,15 @@ export async function resolveDirectoryProvisioner(
         };
     } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        const refusal: ProvisionerRefusal = 'WRITER_REFUSED';
+        // Classified, not hardcoded — mirroring `identity-writer-factory`. A
+        // connection that deliberately did not opt in to joiner writes is an
+        // OPERATOR STATE, and reporting it as an unexplained `WRITER_REFUSED`
+        // sends somebody to debug a directory that is behaving exactly as
+        // configured. `WRITES_NOT_ENABLED` is already in `ProvisionerRefusal`
+        // via `WriterRefusal`; only the classification was missing.
+        const refusal: ProvisionerRefusal = isWritesNotEnabledRefusal(detail)
+            ? 'WRITES_NOT_ENABLED'
+            : 'WRITER_REFUSED';
         // Logged WITHOUT the detail. A constructor refusal's message can quote
         // connection fields, and this line is the one thing about a failed
         // create that reaches the ordinary log stream.

@@ -54,6 +54,12 @@ const CONNECTION = {
     baseDN: 'DC=corp,DC=example,DC=com',
     bindDN: 'CN=svc-inflect,OU=Service,DC=corp,DC=example,DC=com',
     bindPassword: 'read-only-pw',
+    // The leaver write opt-in (#2841). Every test in this file exercises the
+    // WRITE path, so the bag they share has to carry the consent that path now
+    // requires — the same way the Entra writer's fixtures carry theirs. That
+    // the gate is real, and refuses without this key, is proved in
+    // `active-directory-write-direction.test.ts` rather than asserted here.
+    writesEnabled: true,
 };
 
 function userEntry(overrides: Record<string, unknown> = {}): Record<string, unknown> {

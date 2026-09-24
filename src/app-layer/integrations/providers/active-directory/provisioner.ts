@@ -72,6 +72,7 @@ import type {
     IdentifierProbe,
     ProvisionStep,
 } from '@/app-layer/integrations/identity-provisioner';
+import { adDirectionWriteRefusal } from './write-direction';
 
 /** NORMAL_ACCOUNT. The bit every user object carries. */
 const UAC_NORMAL_ACCOUNT = 0x200;
@@ -176,6 +177,23 @@ export function createActiveDirectoryProvisioner(
 ): DirectoryProvisioner & { close(): Promise<void> } {
     const connection = options.connection;
     const provider = options.provider ?? new ActiveDirectoryProvider();
+
+    // Fail CLOSED on the JOINER field — a different key from the leaver's, read
+    // strictly, and asked for explicitly so this call site cannot inherit a
+    // disable grant by forgetting an argument.
+    //
+    // This refuses for EVERY connection today, because `AD_JOINER_WRITES_FIELD`
+    // is deliberately not on the connection form while `JOINER_MAX_MODE` is
+    // `DRY_RUN` (see `write-direction.ts`). That costs nothing now and is the
+    // point: `resolveDirectoryProvisioner` builds a live provisioner only at
+    // `AUTOMATIC`, and an AUTOMATIC joiner pass is already refused at the clamp
+    // before this factory is reached — so the arm is unreachable in both
+    // directions, and the gate is here so that the reviewed diff which lifts the
+    // clamp does not ALSO, silently, grant create authority over every AD
+    // connection that had merely consented to disables.
+    const writesRefusal = adDirectionWriteRefusal(connection, 'joiner');
+    if (writesRefusal) throw new Error(writesRefusal);
+
     const url = String(connection.url ?? '').trim();
     const baseDN = String(connection.baseDN ?? '').trim();
     const createOU = String(options.createOU ?? connection.createOU ?? '').trim();

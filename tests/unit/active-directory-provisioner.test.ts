@@ -100,7 +100,14 @@ function fakeAd(opts: FakeAdOptions = {}) {
 
 const make = (f: ReturnType<typeof fakeAd>, over: Record<string, unknown> = {}) =>
     createActiveDirectoryProvisioner({
-        connection: { ...CONNECTION, ...over },
+        // `joinerWritesEnabled` (#2841) is the CREATE opt-in, and it is
+        // deliberately not on the connection form while `JOINER_MAX_MODE` is
+        // `DRY_RUN` — so in production this constructor refuses for every
+        // connection, and these tests set the key directly to reach the
+        // behaviour they are about. That the refusal is real, and that the
+        // leaver's grant does not substitute for it, is proved in
+        // `active-directory-write-direction.test.ts`.
+        connection: { joinerWritesEnabled: true, ...CONNECTION, ...over },
         provider: f.provider,
         generatePassword: () => 'Str0ngPassw0rd!',
     });

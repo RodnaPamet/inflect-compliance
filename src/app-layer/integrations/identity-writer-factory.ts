@@ -57,7 +57,7 @@ import {
     type DirectoryWriter,
 } from '../usecases/identity-disable-account';
 import { createEntraIdWriter } from './providers/entra-id/writer';
-import { isWritesNotEnabledRefusal } from './providers/entra-id/write-direction';
+import { isWritesNotEnabledRefusal } from './providers/write-refusal';
 import { createActiveDirectoryWriter } from './providers/active-directory/writer';
 import {
     describeWriteReadiness,
