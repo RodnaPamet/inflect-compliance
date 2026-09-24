@@ -576,6 +576,50 @@ export async function runKillSwitchDrillJob(
               ),
           ];
 
+    // A SWEEP THAT DRILLED NOBODY IS NOT A SWEEP THAT PASSED.
+    //
+    // Discovery above selects tenants holding a NON-PLACEHOLDER
+    // `RegisteredAgent`. A deployment whose only register rows are legacy
+    // placeholders therefore yields an EMPTY list, drills nothing, writes no
+    // `AgentKillSwitchDrill` row, raises no Finding — and returns
+    // `{ tenants: 0, failed: 0 }`, which every aggregate above it reads as a
+    // healthy night.
+    //
+    // That is not hypothetical. Measured on 2026-09-24: this job had run
+    // nightly since it shipped and `AgentKillSwitchDrill` held ZERO rows in
+    // production, because the one register row was an "Unregistered legacy
+    // agent" placeholder. The stop control the drill exists to prove had
+    // never once been pulled, and nothing said so.
+    //
+    // No row is written here because there is no tenant to attach one to —
+    // `AgentKillSwitchDrill.tenantId` is required, and inventing a tenant to
+    // hold the evidence would be worse than the silence. What is emitted is
+    // the WARN, carrying the number that explains the emptiness: how many
+    // tenants hold ONLY placeholders, which is the difference between
+    // "nobody runs agents here" and "the filter excluded everyone".
+    if (tenantIds.length === 0) {
+        const placeholderOnly = await prisma.registeredAgent.findMany({
+            where: { deletedAt: null, isLegacyPlaceholder: true },
+            select: { tenantId: true },
+        });
+        logger.warn('agentic: kill-switch drill swept ZERO tenants — nothing was drilled', {
+            jobRunId,
+            tenants: 0,
+            // Named separately: a deployment with no agents at all is fine,
+            // and one whose agents are all placeholders is a filter gap.
+            tenantsWithOnlyPlaceholders: new Set(placeholderOnly.map((a) => a.tenantId)).size,
+            explicitTenant: payload.tenantId ?? null,
+        });
+        // AND A COUNTER TICK, not only a log line. `recordKillSwitchDrill`'s
+        // own docstring makes the argument: "a drill that stopped running is
+        // the same evidence gap as a drill that never existed, and an absence
+        // is ambiguous unless something asserts the positive." A sweep that
+        // drilled nobody is exactly that absence, and emitting into the SAME
+        // counter operators already watch turns it into a positive assertion
+        // they can alert on, rather than a flat line that looks like calm.
+        recordKillSwitchDrill({ outcome: 'SWEPT_NOBODY' });
+    }
+
     let passed = 0;
     let failed = 0;
     let errored = 0;

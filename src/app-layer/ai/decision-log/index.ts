@@ -16,8 +16,39 @@ import type { RequestContext } from '@/app-layer/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { recordAiDecisionLogged, recordAiDecisionOutcome } from '@/lib/observability/metrics';
 
-/** Bounded output-summary length — never store large/raw content. */
+/**
+ * Bounded output-summary length — never store large/raw content.
+ *
+ * TWO bounds, because one number was sized for one SHAPE of output and then
+ * inherited by another. 500 characters is a summary: a risk suggestion, a
+ * posture blurb, the one-shot features this log was built for.
+ *
+ * An agentic run does not summarise, it SYNTHESISES — several tool results
+ * into one structured review. Measured in production on 2026-09-24: a
+ * `posture-review` run read four surfaces, produced ~1,900 output tokens, and
+ * 500 characters survived, cutting the conclusion off mid-table. The Art 12
+ * row is the ONLY record of what the agent concluded — `WorkflowRun.summary`
+ * is deliberately not a second copy — so at that ratio the cap is not
+ * bounding the record, it is discarding it.
+ *
+ * Both still sanitise, and the column is encrypted at rest either way. The
+ * cap is a proportionality decision, not a safety one, and proportion is a
+ * property of the output's shape.
+ */
 const SUMMARY_MAX = 500;
+const AGENTIC_SUMMARY_MAX = 4000;
+
+/**
+ * Which bound this feature's output gets.
+ *
+ * Keyed on the `agentic-run:` prefix `recordModelDecision` writes, so a new
+ * workflow inherits the right bound without a list to update. Every other
+ * feature keeps 500 — widening them all would store more of outputs that
+ * never needed it.
+ */
+export function summaryCapFor(feature: string): number {
+    return feature.startsWith('agentic-run') ? AGENTIC_SUMMARY_MAX : SUMMARY_MAX;
+}
 
 export type AiDecisionOutcome = 'ACCEPTED' | 'EDITED' | 'REJECTED';
 
@@ -61,7 +92,7 @@ export async function logAiDecision(
     // Privacy: digest the input; sanitise + bound the summary. Neither the raw
     // prompt nor PII is ever persisted.
     const summary = input.outputSummary
-        ? sanitizePlainText(input.outputSummary).slice(0, SUMMARY_MAX)
+        ? sanitizePlainText(input.outputSummary).slice(0, summaryCapFor(input.feature))
         : null;
 
     const row = await db.aiDecisionLog.create({

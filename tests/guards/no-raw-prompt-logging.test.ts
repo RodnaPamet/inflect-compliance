@@ -601,7 +601,23 @@ const SINK_FLOOR = 30;
 // does not echo the reason text an administrator typed — that is the same rule
 // `assertNotKilled` follows at the tool boundary, for the same reason: the
 // caller being told about the refusal is the thing that was just stopped.
-const MEASURED_HOLES = 176;
+// 176 -> 177: A RUN THAT COULD REACH NOTHING NAMES ITS GAP. `executeFlueRun`
+// now writes `errorMessage: EMPTY_TOOLSET_MESSAGE` onto the COMPLETED run when
+// the agent held no tool grants, so the row says what could not happen instead
+// of reading as a clean success. One hole, `identifier bound elsewhere`, in
+// `flue/execute.ts` — a file and kind already in KNOWN_UNANALYSABLE, so the
+// PAIR list is unchanged and only the count moves.
+//
+// The identifier is a module-level CONSTANT this file cannot fold, not a
+// value from the run: it is fixed prose naming the misconfiguration and its
+// remedy, and it is the same text for every tenant and every run. It cannot
+// carry prompt content because it never reads any — the message is written
+// before `settleTurns` and does not touch `reply`, `message` or any tool
+// result. Kept as a named constant rather than inlined at the sink (which
+// would drain the hole) because the text is operator-facing copy that a test
+// should be able to assert on by name, and a three-line literal spread inside
+// an `updateRun` call is harder to read than the hole is expensive.
+const MEASURED_HOLES = 177;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

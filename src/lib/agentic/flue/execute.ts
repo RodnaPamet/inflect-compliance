@@ -106,6 +106,20 @@ interface CapLatch {
  * description alone would ask it to infer a plan the definition already
  * states.
  */
+/**
+ * What a run says when it could reach no tools at all.
+ *
+ * One sentence naming the cause and the remedy, in the vocabulary
+ * `driver-plan.ts` uses for every other operator-actionable gap — this lands
+ * in `WorkflowRun.errorMessage`, which the run list and run detail render, so
+ * a bare code would be something to go and look up while a run sits there
+ * looking successful.
+ */
+export const EMPTY_TOOLSET_MESSAGE =
+    'flue_no_tools_granted: this agent holds no MCP tool grants, so the run had ' +
+    'nothing to read and its conclusion is based on no data. Grant the tools the ' +
+    'workflow declares on the agent\'s Tools tab, then run it again.';
+
 function runMessage(def: WorkflowDefinition, fromSeq: number): string {
     const remaining = def.steps.slice(fromSeq);
     const lines = remaining.map((step, i) => `${fromSeq + i + 1}. [${step.kind}] ${step.label}`);
@@ -581,11 +595,37 @@ export async function executeFlueRun(
             return { status, stepFailures };
         }
 
+        // A RUN THAT COULD REACH NOTHING IS NOT A RUN THAT FOUND NOTHING.
+        //
+        // Tool access is deny-by-default (`RegisteredAgentTool`), so an agent
+        // with no grants is handed an EMPTY catalogue, makes one model call
+        // against a specification it cannot act on, and finishes tidily.
+        // Measured in production on 2026-09-24: the first Flue run completed
+        // with `stepFailures: 0`, having read nothing and written no summary
+        // — indistinguishable in the run list from a posture review that
+        // worked, which is the whole problem.
+        //
+        // COMPLETED STANDS. The engine did what it was asked, and failing the
+        // run would report a tenant's configuration gap as an engine fault —
+        // a tenant mid-setup would see failures for a system behaving
+        // correctly. What changes is that the gap is COUNTED and NAMED: the
+        // caller is handed the number it already reports, and the row carries
+        // a sentence saying what could not happen.
+        //
+        // Incremented BEFORE the return rather than folded into it, so the
+        // return expression stays the literal the output guard pins — that
+        // assertion is about model text never escaping through the return
+        // value, and this change has no bearing on it.
+        if (tools.length === 0) {
+            stepFailures += 1;
+        }
+
         await updateRun(ctx, runId, {
             status: 'COMPLETED',
             completedAt: new Date(),
             stepCount: seq,
             costTokens,
+            ...(tools.length === 0 ? { errorMessage: EMPTY_TOOLSET_MESSAGE } : {}),
         });
         return { status: 'COMPLETED', stepFailures };
     } catch (err) {
