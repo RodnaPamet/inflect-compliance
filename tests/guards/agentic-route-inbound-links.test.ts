@@ -156,10 +156,17 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // PHASE 1, point 01's third bullet — the per-tenant driver toggle. The
     // column shipped with a reader, a default and no writer; a gate whose
     // customer half cannot be moved through the product is a constant wearing
-    // a switch's name. NOTE: no page calls this route today, so it is API
-    // surface without a user-facing page — see
-    // docs/implementation-notes/2026-09-23-phase1-surface-reconciliation.md.
+    // a switch's name. The NOTE that used to sit here — "no page calls this
+    // route today, so it is API surface without a user-facing page" — is now
+    // STALE: `FlueEngineCard` on Admin → Integrations reads the wiring state
+    // and PUTs this route's mode. It stayed true for as long as it did
+    // because a toggle that is one of SIX terms tells an operator almost
+    // nothing on its own, so there was nothing coherent to put on a page
+    // until the other five could be shown beside it.
     't/[tenantSlug]/admin/agent-driver/route.ts',
+    // The read half of that card: which of the six terms are satisfied and
+    // which one blocks. Read-only, same tenant-lifecycle key.
+    't/[tenantSlug]/admin/flue-wiring/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/circuit-breaker/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/coverage/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/policy-card/route.ts',

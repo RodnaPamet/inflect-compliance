@@ -351,6 +351,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             + 'ADMIN deliberately does not hold it.',
     },
 
+    // ── Whether the Flue engine is wired, and what still blocks it ──
+    {
+        path: new RegExp(`^${T}\\/admin\\/flue-wiring(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Read-only, and gated with the SAME key as the driver toggle it '
+            + 'sits beside rather than a narrower read key. The response is a '
+            + 'superset of that route\'s facts — the env switch, the build '
+            + 'flag, the workflow term, plus two counts over the agent '
+            + 'register — so a lower key here would be a way to read what '
+            + 'tenant-lifecycle guards.',
+    },
+
     // ── JML identity-write authority (per direction) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/identity-write-policy(\\/.*)?$`),

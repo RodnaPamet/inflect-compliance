@@ -99,8 +99,22 @@ export function narrowToWhatAWorkflowAsksFor(
     decision: AgentDriverDecision,
 ): AgentDriverDecision {
     if (decision.driver !== 'flue') return decision;
-    const asked = listWorkflowDefinitions().some((d) => d.driver === 'flue');
-    return asked ? decision : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
+    return someWorkflowRequestsFlue()
+        ? decision
+        : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
+}
+
+/**
+ * Does any registered definition ask for the engine?
+ *
+ * Extracted so the WIRING SURFACE and the GATE are the same call rather than
+ * two readings of the same registry. A surface that re-implemented this would
+ * be a detector mirroring the runtime by name: correct the day it is written
+ * and silently stale the day the gate's rule changes, reporting a term
+ * satisfied while runs keep falling back.
+ */
+export function someWorkflowRequestsFlue(): boolean {
+    return listWorkflowDefinitions().some((d) => d.driver === 'flue');
 }
 
 /**
