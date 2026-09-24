@@ -32,8 +32,23 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { mdProseOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A — the markdown read below goes through the PROSE mask. Its
+// four needles are the policy's load-bearing sentences, and against the whole
+// document any of them could be satisfied by a fenced sample instead. The
+// inverse masker `mdCodeOf` would be exactly wrong here: it keeps the code and
+// blanks the prose, which deletes the subject. Measured on
+// docs/verification-policy.md — 1 / 3 / 2 / 2 raw, identical through
+// `mdProseOf`, and ZERO through `mdCodeOf`.
+//
+// Proved to have teeth rather than assumed. Replace every prose occurrence of
+// `structurally present` and append a fenced block that lists the three state
+// names: RAW is still satisfied and the guard stays green while the policy no
+// longer states the rule; `mdProseOf` is not, and the guard goes red.
+const readMdProse = (rel: string) => mdProseOf(read(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /**
@@ -109,7 +124,7 @@ describe('verification integrity — guard the guards', () => {
     it('the verification policy states the structural-is-not-verified rule', () => {
         // The load-bearing sentence of the policy — if the doc is
         // hollowed out, this catches it.
-        const policy = read('docs/verification-policy.md');
+        const policy = readMdProse('docs/verification-policy.md');
         expect(policy).toMatch(/not\s+\*\*?proof|not.*proof a feature works/i);
         expect(policy).toMatch(/structurally present/i);
         expect(policy).toMatch(/functionally tested/i);

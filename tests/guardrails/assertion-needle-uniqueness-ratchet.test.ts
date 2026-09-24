@@ -318,7 +318,17 @@ const HIGH_MULTIPLICITY = 5;
 //   places in `docs/deployment.md`, `/autoscaling…|HPA/` 13, `/CC BY 4\.0|…/`
 //   6 across the NIS2 licence sidecar. Every one of those was a guard whose
 //   named section could be deleted while a sibling kept it green.
-const AMBIGUOUS_NEEDLE_BASELINE = 1255;
+// 1250 (2026-09-24, #2246 final batch, measured on the branch that set it):
+// -5, from eighteen files leaving the Class A raw population. The drop has two
+// causes and neither is a needle being rewritten. THIRTEEN sites left Class D
+// altogether because `capstone-discipline` narrowed its `docs/design-system.md`
+// reads to `mdSection(...)` — a narrowed read is not a whole-file read — which
+// takes `/\bpage\b/` (14 satisfying positions in the document) and
+// `/\bdefault\b/` (8) out of the count with them. The rest is the effect the
+// `commentsOf` and `mdProseOf` entries in `SOURCE_BLOCKS_MASKERS` predict: a
+// masked read's occurrences are counted against the masked text, so a needle
+// with one occurrence in a comment and one in code becomes unique.
+const AMBIGUOUS_NEEDLE_BASELINE = 1250;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -380,7 +390,17 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1255;
 // places and `helm rollback` in 6, so binding those assertions to
 // `### Scaling` and `### Rollback via helm rollback` retires several
 // five-plus-multiplicity sites at once.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 193;
+// 191 (2026-09-24, #2246 final batch, measured on the branch that set it): -2,
+// and both are `capstone-discipline`'s `docs/design-system.md` needles that sat
+// above the five-occurrence threshold — `/\bpage\b/` at 14 and `/\bdefault\b/`
+// at 8. Narrowing that read to `mdSection(doc, 'Spacing — semantic scale
+// (v2-PR-2)')` takes both out of the whole-file population; inside the section
+// they satisfy 3 positions each.
+//
+// Found only by re-running the drift sentinel after lowering
+// AMBIGUOUS_NEEDLE_BASELINE — it reports the FIRST baseline with slack and
+// stops, so one pass says "one number moved" whatever the truth is.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 191;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -619,7 +639,26 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 193;
 // took 2 off the SKIPPED count rather than adding to it, which is what a
 // narrowing is supposed to look like from here. A rise would have meant the
 // helper was reading as a mask.
-const UNANALYSABLE_READ_BASELINE = 1455;
+//
+// 1455 -> 1452 (2026-09-24, #2246 final batch): -3, and the direction is again
+// the evidence — this time about a NEW helper. `mdPreamble(md, level)` in
+// `tests/helpers/markdown-regions.ts` cuts the region above a document's first
+// heading at `level`, which is the one region `mdSection` and `headingLines`
+// cannot reach. A preamble takes one argument naturally, and spelling it that
+// way is what raised this number by 7 for `headingLines(md)` in #2789: one
+// argument is the shape of a WRAPPER and resolves `content-transformed`, a
+// capped skip. `level` is a real parameter — "above the first `##`" and "above
+// the first `#`" are different regions — so it is two arguments, an EXTRACTION,
+// and out of scope. Measured after the fact rather than predicted: this number
+// did not rise.
+//
+// It FELL because `capstone-discipline`'s three `for (const x of [...]) {
+// expect(doc).toContain(x) }` loops were whole-file reads whose needle is an
+// identifier the analyser cannot fold — `needle-not-literal` skips against
+// `docs/design-system.md`. Narrowing those reads to `mdSection(...)` takes them
+// out of the whole-file population entirely, which is what a narrowing is
+// supposed to look like from here.
+const UNANALYSABLE_READ_BASELINE = 1452;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

@@ -30,23 +30,31 @@ import * as path from 'node:path';
 // that harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike (re-derived per file, not assumed from the directory), so
 // `codeOf` is the right lexer and no language split is needed.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
-// `readDoc` is the DELIBERATE raw seam (#2246). Masking comments is the right
+// `readDoc` is the INVERSE mask (#2246), not a raw read. `codeOf` is the right
 // default, but an assertion whose SUBJECT is the prose inverts the defect: over
-// masked text a `.not.toMatch(/<some docstring>/)` is trivially true and can
-// never fail again, so the stale doc it forbids could come straight back with
-// nothing to catch it. Named, so the choice is visible and stays confined.
-const readDoc = (rel: string) => readRaw(rel);
+// comment-masked text a `.not.toMatch(/<some docstring>/)` is trivially true
+// and can never fail again. The answer is `commentsOf` — comments kept, code
+// blanked — rather than the whole file, and the negatives below stay
+// non-vacuous under it because it removes CODE, not the prose they forbid.
+//
+// Proved both directions rather than reasoned. Planting `filter their data`
+// in a COMMENT of DashboardChartContext.tsx: the masked view still sees it, so
+// the assertion can still go red. Planting the same string in a CODE literal:
+// the masked view does not, which is the false alarm the mask exists to remove
+// — an identifier or a toast string mentioning filtering is not the docstring
+// this test forbids. Same result for the second needle.
+const readDoc = (rel: string) => commentsOf(readRaw(rel));
 
 const REPO = read('src/app-layer/repositories/DashboardRepository.ts');
 const USECASE = read('src/app-layer/usecases/dashboard.ts');
 const CLIENT = read('src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx');
 const CONTEXT = read('src/app/t/[tenantSlug]/(app)/dashboard/DashboardChartContext.tsx');
-// Same file, read RAW: the docstring test below asserts on prose, not code.
+// Same file, comment-masked: the docstring test below asserts on prose, not code.
 const CONTEXT_DOC = readDoc('src/app/t/[tenantSlug]/(app)/dashboard/DashboardChartContext.tsx');
 const KPI_CARD = read('src/components/ui/KpiCard.tsx');
 const ACTIVITY_CARD = read('src/app/t/[tenantSlug]/(app)/dashboard/RecentActivityCard.tsx');
@@ -136,8 +144,9 @@ describe('3. chart interaction is honestly "focus", not "filter"', () => {
     });
 
     it('drops the aspirational "filter their data" docstring', () => {
-        // CONTEXT_DOC, not CONTEXT: this test forbids a DOCSTRING, and over
-        // comment-masked text both assertions would pass unconditionally.
+        // CONTEXT_DOC, not CONTEXT: this test forbids a DOCSTRING, so it
+        // reads the file's COMMENTS (`commentsOf`). Over `codeOf` text — the
+        // opposite mask — both assertions would pass unconditionally.
         expect(CONTEXT_DOC).not.toMatch(/filter their data/);
         expect(CONTEXT_DOC).not.toMatch(/data filtered\s+to the selected/);
     });

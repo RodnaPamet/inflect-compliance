@@ -576,6 +576,81 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     `src/app-layer/usecases/control/test-plans.ts` (the rationale note at 282
  *     and a back-reference at 473) — so in each case the block the test is
  *     named for can be deleted and the other occurrence keeps it green.
+ *   • 11 (2026-09-24, measured on the branch that set it — the number
+ *     reconciles across the three batches in flight, so read it as this
+ *     tree's count and not as main's): the eighteen files that survived the
+ *     other batches, closed with the last two tools the campaign needed plus
+ *     one correction. Everything below is a MEASUREMENT taken before the edit,
+ *     needle by needle, raw against each candidate.
+ *
+ *     `mdProseOf` — THE INVERSE OF `mdCodeOf`, which the 29 entry below
+ *     declined to build on spec and named the condition for building: a
+ *     markdown assertion that is POSITIVE and about prose. Fourteen turned up.
+ *     It keeps a document's prose and blanks its fenced blocks and inline code
+ *     spans, sharing ONE scan with `mdCodeOf` (`mdCodeRanges`) so the two are
+ *     exact complements by construction rather than by review. Proved on
+ *     synthetic sources first — a fence holding prose-looking text, an inline
+ *     span holding the needle, a `#` heading inside a fence, an unterminated
+ *     fence (runs to EOF, the over-blanking direction), a ``` marker inside a
+ *     `` `` `` span, a ~~~ fence containing ``` — and then mutation-proved:
+ *     moving a sentence INTO a fenced block leaves the raw count at 1 and takes
+ *     the masked count to 0. Registered in `SOURCE_BLOCKS_MASKERS` in this same
+ *     diff, which is the #2727 lesson the note there records.
+ *
+ *     `mdPreamble(md, level)` — the region above the first heading at `level`,
+ *     which neither `mdSection` nor `headingLines` can cut. Fence-aware,
+ *     throws when there is no such heading (a narrowing that silently widened
+ *     back to the whole file would be the state the caller is leaving).
+ *     Deliberately TWO arguments: `tests/helpers/assertion-reach.ts` reads a
+ *     one-argument call as a WRAPPER (`content-transformed`, a capped skip) and
+ *     two as an EXTRACTION, and `level` is a real parameter rather than padding
+ *     — "above the first `##`" and "above the first `#`" are different regions.
+ *     Measured after the fact: `UNANALYSABLE_READ_BASELINE` did not move.
+ *
+ *     THE ONE THAT REDDENED, and it is the reason to measure rather than
+ *     convert. `tests/integration/risk-matrix-admin-api` carried a raw seam
+ *     whose stated reason was "its subject is the note itself, so masking
+ *     comments would blank exactly what it verifies". Both halves were false.
+ *     The `note:` is a STRING LITERAL, which `codeOf` KEEPS — `'Read-only
+ *     sibling'` counts 1 masked, 0 through `commentsOf`, so it never needed a
+ *     raw read. And its sibling needle `'Risk matrix configuration'` does not
+ *     occur in the note at all: its ONE occurrence in the file is the
+ *     decorative divider `// ── Risk matrix configuration (Epic 44) ──`, so
+ *     half of "the registry documents the read-only sibling" was satisfied by a
+ *     comment banner. Binding it took it to zero and turned the suite red.
+ *     Fixed against the file: both assertions now name text that is in the
+ *     note, so hollowing the note is what breaks them.
+ *
+ *     WHERE A MASK CANNOT GO, MEASURED. `capstone-discipline` reads
+ *     `docs/design-system.md`, and three of its needles STRADDLE the boundary
+ *     the two markdown maskers separate: `/hover:scale-\*.*banned/` matches
+ *     ``- `hover:scale-*`, … are banned.``, whose left half is a code span and
+ *     whose right half is prose. It counts 1 raw and ZERO through BOTH maskers.
+ *     Two more (`` /`outline` —/ ``, `` /`success` —/ ``) are NEGATIVES of the
+ *     same shape, where a mask would have been a silent vacuous pass. All
+ *     thirteen sites are narrowed with `mdSection` instead — which is also what
+ *     they mean, and tightens the loose ones: `/\bpage\b/` from 14 satisfying
+ *     positions to 3, `/\bdefault\b/` from 8 to 3.
+ *
+ *     A SECOND MISLABELLED SEAM, same shape as the first.
+ *     `p1-optimistic-concurrency` read `version-conflict-toast.ts` through its
+ *     `readDoc` while all four of that block's assertions name CODE — a
+ *     signature, a `!== 409` gate, a property path, a toast call. Each counts 1
+ *     through `codeOf` and ZERO through `commentsOf`. It now reads `read`.
+ *
+ *     THE REMAINING TWELVE are `commentsOf` at the seam, every needle measured
+ *     raw / `commentsOf` / `codeOf` first: each matches the same number raw and
+ *     masked and ZERO through `codeOf`. Six of those seams carry a `.not.`
+ *     assertion, and each was proved BOTH directions rather than argued from
+ *     polarity — plant the forbidden text in a COMMENT and the masked view
+ *     still sees it (the guard can still go red); plant it in a code literal
+ *     and it does not, which is the false alarm the mask exists to remove. The
+ *     rule that generalises is about what a masker REMOVES, not about the
+ *     assertion's sign: a BULK-TEXT masker can empty a negative, a masker that
+ *     removes the other lexical category cannot.
+ *
+ *     `ai-aisvs-hardening-coverage` STAYS, permanently, for the reason the
+ *     entry below gives. It is the documented floor of this population.
  *   • 29 (2026-09-24): the six the entry above could not close, closed by
  *     BUILDING the missing tool rather than by reclassifying them. `commentsOf`
  *     in `tests/helpers/source-blocks.ts` is the inverse of `codeOf` — comments
@@ -660,7 +735,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 29;
+const RAW_ASSERTING_FILE_BASELINE = 11;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the

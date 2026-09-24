@@ -58,9 +58,24 @@
  * WHAT THIS MODULE IS NOT. It is not a masker and must never be given a
  * one-argument spelling, a default parameter, or a convenience wrapper that
  * hides the region name. `tests/helpers/source-blocks.ts` is the masker
- * home; every extractor there is comment-FREE by design, which is precisely
- * why none of them can serve a guard whose subject is a comment or a line of
- * prose. These two keep the text exactly as written inside the bound.
+ * home. These three keep the text exactly as written inside the bound.
+ *
+ * Every EXTRACTOR in that module — `declarationOf`, `functionBodyOf` and the
+ * rest — is comment-FREE by design, which is why none of THEM can serve a
+ * guard whose subject is a comment or a line of prose. Its two inverse
+ * MASKERS can (`commentsOf` for a comment, `mdProseOf` for markdown prose);
+ * what they cannot do is narrow.
+ *
+ * THAT MODULE NOW HAS A PROSE MASKER TOO, and the two are complements rather
+ * than rivals. `mdProseOf` blanks a document's fences and code spans and keeps
+ * everything else — the general tool for a prose assertion whose subject is
+ * spread across a document. Narrowing is still the better fix WHEREVER THE
+ * PROSE SITS IN A NAMEABLE REGION, because the second argument makes the guard
+ * say which part of the document is supposed to carry the claim, and because
+ * a narrowing keeps the text byte-for-byte (a needle that straddles a code
+ * span and the prose beside it — `` `hover:scale-*` are banned`` — survives a
+ * narrowing and dies under EITHER mask). Reach for `mdProseOf` when the region
+ * has no name.
  */
 
 /**
@@ -106,6 +121,49 @@ export function headingLines(md: string, level: number): string {
         .split('\n')
         .filter((_, i) => levels[i] === level)
         .join('\n');
+}
+
+/**
+ * The document's PREAMBLE — everything above its first heading at `level`.
+ *
+ * The region `mdSection` and `headingLines` cannot cut. A guide's opening
+ * block — the `#` title, the status banner, the one-line statement of what the
+ * document is for — belongs to no `##` section, so a guard asserting "this doc
+ * declares which epic owns it" or "this doc names itself the source of truth"
+ * had nowhere to bind and read the whole file. Against the whole file such a
+ * needle is satisfied by a later mention in a migration table or a fenced
+ * sample; against the preamble it has to come from the banner the test says it
+ * is checking.
+ *
+ * LEVEL IS A REAL PARAMETER, not padding to satisfy an arity rule. "Above the
+ * first `##`" and "above the first `#`" are different regions of the same
+ * document, and which one a guard means is exactly what it should have to say
+ * — the same argument `headingLines(md, level)` makes for its own second
+ * argument. It happens to also be what keeps this a two-argument EXTRACTION
+ * rather than a one-argument WRAPPER, and the file header explains why that
+ * distinction is load-bearing for `tests/helpers/assertion-reach.ts`: a
+ * one-argument `headingLines(md)` pushed `UNANALYSABLE_READ_BASELINE` from
+ * 1460 to 1467.
+ *
+ * Fence-aware through the shared `headingLevels`, which matters here for the
+ * same reason as everywhere else in this module: a `#` comment inside an
+ * opening bash block would otherwise end the preamble at the first line of the
+ * first sample.
+ *
+ * THROWS when the document has no heading at `level`, rather than returning
+ * the whole document. That is not defensiveness — returning everything would
+ * be a narrowing that silently WIDENS back to a whole-file read, which is the
+ * exact state the caller is converting away from, and nothing would report it.
+ * `mdSection` throws for the sibling reason.
+ */
+export function mdPreamble(md: string, level: number): string {
+    const lines = md.split('\n');
+    const levels = headingLevels(md);
+    const first = levels.findIndex((l) => l === level);
+    if (first < 0) {
+        throw new Error(`markdown preamble not bounded: no level-${level} heading`);
+    }
+    return lines.slice(0, first).join('\n');
 }
 
 /**

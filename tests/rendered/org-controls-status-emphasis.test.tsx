@@ -22,7 +22,7 @@ import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src/app/org/[orgSlug]/(app)/controls/ControlsTable.tsx');
@@ -91,9 +91,13 @@ describe('org non-performing controls — status emphasis', () => {
     it('records why this map is not consolidated', () => {
         // The comment is load-bearing: it is the only thing standing between
         // this file and a well-meant "import the shared map" cleanup.
-        // DELIBERATELY RAW — this test's subject IS the comment (see its
-        // name); the masked reader above would delete what it asserts.
-        const srcRaw = fs.readFileSync(SRC, 'utf8');
+        // INVERSE-masked (#2246) — this test's subject IS the comment (see
+        // its name), so `codeOf` above would delete what it asserts and
+        // `commentsOf` keeps exactly it. Both needles count the same masked as
+        // raw (1 and 2) and 0 through `codeOf`; the reach stops at the file's
+        // comments, so a `non-performing` className cannot stand in for the
+        // written reason.
+        const srcRaw = commentsOf(fs.readFileSync(SRC, 'utf8'));
         expect(srcRaw).toMatch(/DELIBERATELY hotter than `CONTROL_STATUS_VARIANT`/);
         expect(srcRaw).toMatch(/non-performing/i);
     });

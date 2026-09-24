@@ -56,7 +56,7 @@ import * as path from 'node:path';
 import * as ts from 'typescript';
 
 import { REPO_ROOT, repoFiles, repoRelative } from './repo-files';
-import { codeOf, commentsOf, cssCodeOf, mdCodeOf, sqlCodeOf } from './source-blocks';
+import { codeOf, commentsOf, cssCodeOf, mdCodeOf, mdProseOf, sqlCodeOf } from './source-blocks';
 
 // ───────────────────────────── parsing ──────────────────────────────────
 
@@ -1012,6 +1012,25 @@ const SOURCE_BLOCKS_MASKERS: ReadonlyMap<string, MaskFn> = new Map<string, MaskF
     // case both occurrences were already comments. Worth knowing before
     // reading a future move in that number as this entry's doing.
     ['commentsOf', commentsOf],
+    // #2246, the same diff that introduced it. `mdProseOf` is the INVERSE of
+    // `mdCodeOf` — a markdown document's fenced blocks and inline code spans
+    // blanked, its prose kept — for the guards whose subject is a SENTENCE in
+    // a document rather than a sample inside it. Those read the whole file RAW
+    // because `mdCodeOf` deletes their subject (measured: 50 prose needles
+    // across ten documents, all to ZERO through `mdCodeOf`).
+    //
+    // Listed here for the reason the `mdCodeOf` / `cssCodeOf` note above
+    // records at length: without an entry, a conversion that takes the
+    // campaign's advice resolves as `content-transformed` — a CAPPED skip —
+    // and LEAVES the analysed population instead of moving from raw to masked,
+    // which shrinks the measurement rather than the debt.
+    //
+    // What it does to Class D: a `mdProseOf` read's occurrence count is taken
+    // against prose only, so a needle that occurred twice in the raw document
+    // can become unique when one occurrence was inside a fence. That is a real
+    // improvement in the reading, and it is why `AMBIGUOUS_NEEDLE_BASELINE`
+    // can move DOWN on a diff that adds no assertion.
+    ['mdProseOf', mdProseOf],
 ]);
 
 /** Is this module specifier `tests/helpers/source-blocks`, however spelled? */

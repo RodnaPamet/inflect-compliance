@@ -32,7 +32,7 @@ import { readPrismaSchema } from '../helpers/prisma-schema';
 // `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
 // Which extension flows through which helper was re-derived in this file, not
 // assumed from the directory it lives in.
-import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -41,11 +41,13 @@ const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 const dashboard = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx');
 const mcPanel = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/MonteCarloPanel.tsx');
 const analytics = read('src/app-layer/usecases/risk-analytics.ts');
-// The DELIBERATE raw twin (#2246). This file's own test draws the line:
-// "the docstring may reference the history; the SHAPE may not" — so the shape
-// assertions read MASKED and the demotion disclaimer, whose entire subject is
-// the docstring, reads RAW. Masked, that disclaimer could never pass again.
-const analyticsDoc = readRaw('src/app-layer/usecases/risk-analytics.ts');
+// The INVERSE-masked twin (#2246). This file's own test draws the line — "the
+// docstring may reference the history; the SHAPE may not" — and the two
+// maskers draw exactly that line: `analytics` is `codeOf` (shape, comments
+// blanked) and this is `commentsOf` (docstring, code blanked). Under `codeOf`
+// the demotion disclaimer could never pass again; under this it counts 1, the
+// same as raw, while the reach stops at the file's comments.
+const analyticsDoc = commentsOf(readRaw('src/app-layer/usecases/risk-analytics.ts'));
 const engine = read('src/app-layer/usecases/monte-carlo.ts');
 const schema = readPrismaSchema();
 const migration = readSql('prisma/migrations/20260612000000_rq3_1_simulation_p80/migration.sql');

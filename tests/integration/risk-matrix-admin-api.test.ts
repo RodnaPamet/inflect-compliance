@@ -25,20 +25,33 @@ function read(rel: string): string {
     return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 }
 
-// The DELIBERATE raw seam (#2246): one assertion below checks that the registry
-// DOCUMENTS the read-only sibling. Its subject is the note itself, so masking
-// comments would blank exactly what it verifies.
-function readDoc(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
-}
+// THE RAW SEAM IS GONE, AND ITS PREMISE WAS WRONG (#2246, final batch).
+//
+// It read: "one assertion below checks that the registry DOCUMENTS the
+// read-only sibling; its subject is the note itself, so masking comments would
+// blank exactly what it verifies." Measured against `route-permissions.ts`,
+// that is false in BOTH halves:
+//
+//   · The `note:` field the sentence means is a STRING LITERAL, and `codeOf`
+//     KEEPS string literals. `'Read-only sibling'` counts 1 through the masked
+//     reader and 0 through `commentsOf`. It never needed a raw read at all.
+//   · `'Risk matrix configuration'` does not occur in the note. Its single
+//     occurrence in the file is the decorative section divider
+//     `// ── Risk matrix configuration (Epic 44) ──`, so the assertion that
+//     claimed the registry documents the sibling was half satisfied by a
+//     comment banner — exactly the Class A defect. Binding that needle to the
+//     masked reader took it to ZERO and turned this suite RED, which is how it
+//     was found.
+//
+// Both assertions now read `permsSrc` and name text that is actually IN the
+// note, so deleting or hollowing the note is what breaks them. The divider is
+// free to be renamed or dropped, because it never carried the claim.
 
 describe('Admin risk-matrix-config API — wiring', () => {
     const routeSrc = read(
         'src/app/api/t/[tenantSlug]/admin/risk-matrix-config/route.ts',
     );
     const permsSrc = read('src/lib/security/route-permissions.ts');
-    // RAW twin for the one assertion whose subject is the NOTE, not the code.
-    const permsDoc = readDoc('src/lib/security/route-permissions.ts');
     const pageSrc = read(
         'src/app/t/[tenantSlug]/(app)/admin/risk-matrix/page.tsx',
     );
@@ -80,8 +93,13 @@ describe('Admin risk-matrix-config API — wiring', () => {
 
     it('route-permissions documents the read-only sibling at /risk-matrix-config (risks.view)', () => {
         // The note explicitly calls out the read-only sibling so
-        // future audits don't tighten the wrong path.
-        expect(permsDoc).toContain('Risk matrix configuration');
-        expect(permsDoc).toContain('Read-only sibling');
+        // future audits don't tighten the wrong path. Both needles are drawn
+        // from the `note:` STRING, which `codeOf` keeps — the previous pair
+        // read the whole file raw and one of them matched only the `// ── Risk
+        // matrix configuration ──` divider above the rule, not the note.
+        expect(permsSrc).toContain('likelihood × impact matrix shape');
+        expect(permsSrc).toContain(
+            'Read-only sibling at /risk-matrix-config (risks.view).',
+        );
     });
 });

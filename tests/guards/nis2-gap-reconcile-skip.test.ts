@@ -17,7 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = 'src/app-layer/usecases/task-source-reconcile.ts';
@@ -25,9 +25,13 @@ const SRC = 'src/app-layer/usecases/task-source-reconcile.ts';
 // literals kept, offsets preserved — so a token that survives only in
 // a comment can no longer satisfy an assertion below.
 const src = codeOf(fs.readFileSync(path.join(ROOT, SRC), 'utf-8'));
-// DELIBERATELY RAW, for the one test below that asserts the load-bearing
-// COMMENT is still there. Masking that read would delete its subject.
-const srcRaw = fs.readFileSync(path.join(ROOT, SRC), 'utf-8');
+// The INVERSE mask (#2246), for the one test below that asserts the
+// load-bearing COMMENT is still there. `codeOf` would delete its subject, so
+// this reads the other half: comments kept, code blanked. Measured on this
+// file — `/source of truth/i` counts 1 raw and 1 masked, `/NIS2/` 3 and 3,
+// both 0 through `codeOf` — and the reach drops from 29 kB of usecase to its
+// comment text, so a future `NIS2` identifier cannot stand in for the note.
+const srcRaw = commentsOf(fs.readFileSync(path.join(ROOT, SRC), 'utf-8'));
 
 describe('NIS2 plain-CONTROL_GAP reconcile skip (confirmed behaviour)', () => {
     it('reconcileControlGap only runs when the task carries a real controlId', () => {

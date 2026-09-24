@@ -48,7 +48,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf, functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
@@ -120,13 +120,21 @@ describe('resuming a flue run in the worker', () => {
 });
 
 describe('the justification that was false is corrected', () => {
-    // RAW, not `read()`. Every other assertion in this file masks comments,
-    // because code is the subject and a comment quoting a pattern must not
-    // satisfy a check for it. Here the COMMENT IS THE SUBJECT: it vouched for
-    // a gate that did not exist, which is how the absence survived review — a
-    // reader asking whether the funnel should assert found a sentence saying
-    // someone else already had. Masking would blank the very thing under test.
-    const raw = fs.readFileSync(path.join(ROOT, 'src/lib/mcp/auth.ts'), 'utf8');
+    // `commentsOf`, not `read()`. Every other assertion in this file masks
+    // comments, because code is the subject and a comment quoting a pattern
+    // must not satisfy a check for it. Here the COMMENT IS THE SUBJECT: it
+    // vouched for a gate that did not exist, which is how the absence survived
+    // review — a reader asking whether the funnel should assert found a
+    // sentence saying someone else already had. `codeOf` would blank the very
+    // thing under test, so this reads the INVERSE (#2246): comments kept, code
+    // blanked. 29 kB of module down to its comment text.
+    //
+    // The `.not.toContain` below stays meaningful under it, proved both ways:
+    // plant that sentence in a comment and the masked view still sees it (the
+    // guard can go red); plant it in a string literal and it does not, which is
+    // correct — a message that happens to quote the retracted claim is not the
+    // claim being made again.
+    const raw = commentsOf(fs.readFileSync(path.join(ROOT, 'src/lib/mcp/auth.ts'), 'utf8'));
 
     it('no longer claims the engine route already gated the register', () => {
         expect(raw).not.toContain(

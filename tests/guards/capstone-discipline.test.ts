@@ -23,10 +23,24 @@
 import * as fs from "fs";
 import * as path from "path";
 
-// #2246 Class A — the mask goes at the READ SEAM. The two `.tsx` reads below
-// are masked; the `docs/design-system.md` read is NOT, because `codeOf` lexes
-// TypeScript and markdown is not a language it lexes. That read is prose and
-// is tracked as an unmasked seam rather than spelled with the wrong lexer.
+// #2246 Class A — the mask goes at the READ SEAM for the two `.tsx` reads
+// below. The `docs/design-system.md` read is NARROWED instead, section by
+// section, and that is not a second-best: this document's assertions are the
+// case where NEITHER markdown masker works.
+//
+// Measured. Of the thirteen needles, ten name CODE (`<DataTable>`, `` `ghost`
+// ``, `elevation="flat"`, the five spacing tokens) and would survive
+// `mdCodeOf` but die under `mdProseOf`. The other three STRADDLE the boundary:
+// `/hover:scale-\*.*banned/` matches `- \`hover:scale-*\`, … are banned.`,
+// whose left half is a code span and whose right half is prose — it counts 1
+// raw and ZERO through BOTH maskers. A mask cannot serve a needle that spans
+// the two categories it separates; a narrowing keeps the text byte-for-byte.
+//
+// Narrowing is also what these assertions MEAN. "Documents the spacing-token
+// vocabulary" is a claim about the spacing section, not about the document,
+// and binding it there tightens the loose ones considerably — `/\bpage\b/`
+// from 14 satisfying positions to 3, `/\bdefault\b/` from 8 to 3.
+import { mdSection } from "../helpers/markdown-regions";
 import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -101,10 +115,19 @@ describe("v2-PR-15 EmptyState size axis", () => {
 });
 
 describe("v2-PR-15 design-system.md primitive-by-intent index", () => {
-    const src = fs.readFileSync(
+    const doc = fs.readFileSync(
         path.join(ROOT, "docs/design-system.md"),
         "utf8",
     );
+    // One section per claim. `mdSection` is fence-aware, so a `#` inside a
+    // fenced sample cannot end a section early, and it THROWS when a heading
+    // is gone — a renamed section fails loudly rather than asserting against
+    // an empty string.
+    const decisionTree = mdSection(doc, "Decision tree by intent");
+    const spacing = mdSection(doc, "Spacing — semantic scale (v2-PR-2)");
+    const motion = mdSection(doc, "Motion language (v2-PR-4)");
+    const elevation = mdSection(doc, "Card elevation (v2-PR-9)");
+    const variants = mdSection(doc, "Button variants (v2-PR-1, post-cull)");
 
     it("documents every v2 primitive", () => {
         // Each primitive shipped in the v2 package should appear in
@@ -129,16 +152,16 @@ describe("v2-PR-15 design-system.md primitive-by-intent index", () => {
             "<MetadataBar>",
             "<TabSection>",
         ]) {
-            expect(src).toContain(primitive);
+            expect(decisionTree).toContain(primitive);
         }
     });
 
     it("documents the spacing-token vocabulary", () => {
-        expect(src).toMatch(/\btight\b/);
-        expect(src).toMatch(/\bcompact\b/);
-        expect(src).toMatch(/\bdefault\b/);
-        expect(src).toMatch(/\bsection\b/);
-        expect(src).toMatch(/\bpage\b/);
+        expect(spacing).toMatch(/\btight\b/);
+        expect(spacing).toMatch(/\bcompact\b/);
+        expect(spacing).toMatch(/\bdefault\b/);
+        expect(spacing).toMatch(/\bsection\b/);
+        expect(spacing).toMatch(/\bpage\b/);
     });
 
     it("documents the post-cull Button variant set (primary | secondary | ghost | destructive | destructive-outline)", () => {
@@ -149,11 +172,16 @@ describe("v2-PR-15 design-system.md primitive-by-intent index", () => {
             "`destructive`",
             "`destructive-outline`",
         ]) {
-            expect(src).toContain(variant);
+            expect(variants).toContain(variant);
         }
-        // Retired variants must NOT show as recommended.
-        expect(src).not.toMatch(/`outline` —/);
-        expect(src).not.toMatch(/`success` —/);
+        // Retired variants must NOT show as recommended. Bound to the section
+        // rather than masked: the needle spans a code span and the em-dash
+        // beside it, so under either markdown mask it could never match and
+        // the negative would pass vacuously. Narrowing keeps the text verbatim
+        // AND says what "shown as recommended" means — appearing in the
+        // Button variants list, not anywhere in the document.
+        expect(variants).not.toMatch(/`outline` —/);
+        expect(variants).not.toMatch(/`success` —/);
     });
 
     it("documents the 3 elevation levels", () => {
@@ -162,13 +190,13 @@ describe("v2-PR-15 design-system.md primitive-by-intent index", () => {
             'elevation="raised"',
             'elevation="floating"',
         ]) {
-            expect(src).toContain(level);
+            expect(elevation).toContain(level);
         }
     });
 
     it("documents the motion language ban list", () => {
-        expect(src).toMatch(/hover:translate-\*.*banned/i);
-        expect(src).toMatch(/hover:scale-\*.*banned/i);
-        expect(src).toMatch(/hover:shadow-\*.*banned/i);
+        expect(motion).toMatch(/hover:translate-\*.*banned/i);
+        expect(motion).toMatch(/hover:scale-\*.*banned/i);
+        expect(motion).toMatch(/hover:shadow-\*.*banned/i);
     });
 });

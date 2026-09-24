@@ -30,19 +30,35 @@ const ANIMATED_CONTAINER = path.resolve(
 );
 const FILTER_BARREL_SRC = path.resolve(FILTER_DIR, 'index.ts');
 
-import { codeOf } from '../helpers/source-blocks';
+import { mdPreamble } from '../helpers/markdown-regions';
+import { codeOf, mdCodeOf } from '../helpers/source-blocks';
 
 // #2246 Class A — the mask goes at the READ SEAM.
 //
-// `readFile` stays RAW and has exactly two callers, both deliberate: the
-// `package.json` read below is handed to `JSON.parse`, where JSON is DATA and
-// masking has no meaning, and the `GUIDE.md` read is markdown, which `codeOf`
-// does not lex. Source reads go through `readSrc`, which masks.
+// `readFile` stays RAW and has exactly ONE caller now: the `package.json` read
+// below, handed to `JSON.parse`, where JSON is DATA and masking has no
+// meaning. Source reads go through `readSrc`, which masks with `codeOf`; the
+// `GUIDE.md` read goes through the two markdown readers below.
 function readFile(p: string): string {
     return fs.readFileSync(p, 'utf-8');
 }
 function readSrc(p: string): string {
     return codeOf(readFile(p));
+}
+// The GUIDE.md assertions split across the two kinds of markdown text, so they
+// get two readers rather than one whole-file read.
+//
+//   · `readMdCode` — `createFilterDefs` / `useFilterContext` are API NAMES, and
+//     every occurrence of each in the guide is inside a fenced sample or a
+//     backticked heading. 7 and 11 matches raw, the same 7 and 11 through
+//     `mdCodeOf`, ZERO through `mdProseOf`.
+//   · `mdPreamble(md, 2)` — "pins the epic" is a claim about the banner at the
+//     top of the document, not about the document. `/Epic\s*53/i` counts 2 raw:
+//     the banner, and `### From CompactFilterBar (Epic 52) to Enterprise
+//     Filters (Epic 53)` in the migration section 250 lines below, which is
+//     precisely the accidental satisfier. Against the preamble it counts 1.
+function readMdCode(p: string): string {
+    return mdCodeOf(readFile(p));
 }
 
 // ─── 1. Dependencies locked in package.json ──────────────────────────
@@ -307,9 +323,14 @@ describe('Filter module — canonical file layout', () => {
     });
 
     it('has a GUIDE.md that pins the epic and the canonical usage', () => {
-        const guide = readFile(path.join(FILTER_DIR, 'GUIDE.md'));
-        expect(guide).toMatch(/Epic\s*53/i);
-        expect(guide).toMatch(/createFilterDefs/);
-        expect(guide).toMatch(/useFilterContext/);
+        const guidePath = path.join(FILTER_DIR, 'GUIDE.md');
+        // The epic pin is the document's opening banner — read the preamble,
+        // the region above the first `##`, which neither `mdSection` nor
+        // `headingLines` can cut.
+        expect(mdPreamble(readFile(guidePath), 2)).toMatch(/Epic\s*53/i);
+        // The canonical usage is CODE, so it reads the code view.
+        const guideCode = readMdCode(guidePath);
+        expect(guideCode).toMatch(/createFilterDefs/);
+        expect(guideCode).toMatch(/useFilterContext/);
     });
 });

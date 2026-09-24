@@ -22,15 +22,18 @@ import * as path from 'node:path';
 // EVERY read here is wrapped because every path this file reads is a
 // TypeScript-alike — re-derived per file, not assumed from the directory — so
 // there is no second language needing its own reader. String literals are KEPT.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const ROUTE = 'src/app/api/t/[tenantSlug]/calendar/connections/route.ts';
 const src = codeOf(fs.readFileSync(path.join(ROOT, ROUTE), 'utf8'));
-// The DELIBERATE raw twin (#2246): the assertion that uses it has the PROSE as
-// its subject — it checks that a rationale is WRITTEN DOWN, so over
-// comment-masked source it could never pass again.
-const srcDoc = fs.readFileSync(path.join(ROOT, ROUTE), 'utf8');
+// The INVERSE-masked twin (#2246). The assertion that uses it has the PROSE as
+// its subject — it checks that a rationale is WRITTEN DOWN — so `codeOf` could
+// never satisfy it. `commentsOf` is the other half of the same idea: comments
+// kept, code blanked. Measured: the needle counts 1 raw, 1 through
+// `commentsOf`, 0 through `codeOf`, and the reach drops from the whole route
+// file to its comment text.
+const srcDoc = commentsOf(fs.readFileSync(path.join(ROOT, ROUTE), 'utf8'));
 const codeOnly = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('both verbs are gated', () => {
