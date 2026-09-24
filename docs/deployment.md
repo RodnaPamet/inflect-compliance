@@ -57,7 +57,7 @@ curl http://localhost:3000/api/health | jq .
 | `UPLOAD_DIR` | ✅ | Set to `/data/uploads` (Docker) |
 | `DATA_ENCRYPTION_KEY` | ✅ **REQUIRED** in production | ≥32 chars, `openssl rand -base64 48`. **Production startup exits 1 if missing, too short, or equal to the documented dev fallback.** Both the Next.js app server and the BullMQ worker enforce this. See [encryption docs](encryption-data-protection.md). |
 | `REDIS_URL` | ✅ **REQUIRED** in production (GAP-13) | Connection string. **Must be AUTHENTICATED in production** — carry a non-empty password (`redis://:PASSWORD@HOST:6379`, `redis://user:pw@host`, or `rediss://:token@host` for TLS). A bare `redis://host:6379` is rejected. **Production startup exits 1 if unset OR unauthenticated under `NODE_ENV=production`** (`src/env.ts` schema check + `src/instrumentation.ts` defense-in-depth). The `/api/readyz` and legacy `/api/health` probes also PING Redis on every check; a missing or broken Redis returns 503 → orchestrator stops routing traffic. Hosts: rate limits (login brute-force, invite redemption, email dispatch), BullMQ job queue, session/cache coordination. |
-| `REDIS_PASSWORD` | ✅ **REQUIRED** for production-like Compose | The password the bundled Redis container enforces via `--requirepass`. `docker-compose.prod.yml`, `docker-compose.staging.yml`, and `deploy/docker-compose.prod.yml` all use `${REDIS_PASSWORD:?…}` — `docker compose up` **aborts** before the container is created if it is unset. The compose files build `REDIS_URL` from it automatically (`redis://:${REDIS_PASSWORD}@redis:6379`). Generate with `openssl rand -base64 32`. Not needed when connecting to an external managed Redis (set `REDIS_URL` directly instead). |
+| `REDIS_PASSWORD` | ✅ **REQUIRED** for production-like Compose | The password the bundled Redis container enforces via `--requirepass`. `docker-compose.prod.yml`, `docker-compose.staging.yml`, and `deploy/docker-compose.prod.yml` all use `${REDIS_PASSWORD:?…}` — `docker compose up` **aborts** before the container is created if it is unset. `docker-compose.prod.yml` and `docker-compose.staging.yml` also build `REDIS_URL` from it automatically (`redis://:${REDIS_PASSWORD}@redis:6379`); `deploy/docker-compose.prod.yml` does **not** — that stack's `REDIS_URL` comes from the host's `.env.prod` with the credential already embedded, so the two must be kept consistent (see "The production VM's Compose file is repo-canonical"). Generate with `openssl rand -base64 32`. Not needed when connecting to an external managed Redis (set `REDIS_URL` directly instead). |
 | `CORS_ALLOWED_ORIGINS` | Optional | Comma-separated origins |
 | `NOTIFICATIONS_TZ` | Optional (default `Europe/London`) | IANA timezone (DST-aware) for the daily task-due deadline notification cron. Sets **both** the 08:00 firing time **and** the "due today / tomorrow / in a week" calendar-day classification — one zone, so a task due near local midnight is bucketed by the local calendar day rather than the UTC one. Must be a valid IANA zone name (`src/env.ts` rejects an invalid zone at startup). |
 
@@ -98,7 +98,7 @@ wide open. The policy is environment-specific:
 | Environment | Redis auth | How |
 |-------------|-----------|-----|
 | Local dev (`docker-compose.yml`) | **Unauthenticated**, loopback-only | Redis intentionally runs without `--requirepass` for dev ergonomics, but its host port is bound to `127.0.0.1:6379` — not reachable from the dev machine's network. |
-| Staging / Production Compose (`docker-compose.staging.yml`, `docker-compose.prod.yml`, `deploy/docker-compose.prod.yml`) | **Required password** | The bundled Redis container runs `redis-server --requirepass "${REDIS_PASSWORD:?…}"`. The `:?` fail-fast syntax aborts `docker compose up` before the container is created if `REDIS_PASSWORD` is unset. The app `REDIS_URL` is built from it (`redis://:${REDIS_PASSWORD}@redis:6379`). |
+| Staging / Production Compose (`docker-compose.staging.yml`, `docker-compose.prod.yml`, `deploy/docker-compose.prod.yml`) | **Required password** | The bundled Redis container runs `redis-server --requirepass "${REDIS_PASSWORD:?…}"`. The `:?` fail-fast syntax aborts `docker compose up` before the container is created if `REDIS_PASSWORD` is unset. The two root compose files build the app's `REDIS_URL` from it (`redis://:${REDIS_PASSWORD}@redis:6379`); `deploy/docker-compose.prod.yml` has no inline `REDIS_URL` and takes it from the host `.env.prod` instead. |
 | Kubernetes / AWS | **Managed Redis, TLS + auth** | ElastiCache with `transit_encryption_enabled` + an AUTH token (Epic OI-1). The token is provisioned by Terraform into AWS Secrets Manager; the app receives a `rediss://:token@host` connection string via the `REDIS_URL` secret. |
 
 `src/env.ts` enforces the contract from the application side: under
@@ -173,13 +173,138 @@ How it is wired:
 - `tests/guards/worker-deployment.test.ts` fails CI if the `worker`
   service, the build step, or the build script is dropped.
 
-> **Operator action — existing self-hosted VM.** The GCP VM's
-> `/opt/inflect/` Compose file is hand-managed; Watchtower only
-> swaps the *image*, it does NOT apply Compose structure changes.
-> After this change ships, add the `worker` service to the VM's
-> Compose file (copy the block from `deploy/docker-compose.prod.yml`)
-> and run `docker compose up -d worker`. Until then, no scheduled
-> job runs on that host.
+> **Operator note — the `worker` service runs on the GCP VM.** Watchtower
+> swaps the *image* only; it never applies Compose structure changes. Structure
+> reaches the VM through `deploy/apply.sh` — see the next section.
+
+---
+
+## The production VM's Compose file is repo-canonical
+
+`deploy/docker-compose.prod.yml` is the source of truth for the structure of
+the production stack on the GCP VM (`inflect-compliance`, `europe-west1-b`,
+stack root `/opt/inflect/`). It reaches the host through `deploy/apply.sh`,
+and divergence is reported by `deploy/check-drift.sh`.
+
+That contract dates from #2849. Before it, the host file was hand-edited and
+the repo copy was hand-edited independently, and the two had diverged by about
+148 lines with nothing watching. The hazard was not the divergence itself but
+its shape: the repo copy *looked* like the deployable artefact, so someone
+recovering under time pressure would have reached for version control and got
+a file that had never run.
+
+### The two scripts
+
+| | |
+| --- | --- |
+| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). |
+| `deploy/check-drift.sh` | Compares repo against VM by sha256. Exit 0 in sync, 1 drift in a file `apply.sh` can push, 2 the VM was unreachable (UNKNOWN — never read as "no drift"), 3 only the unreconciled Caddyfile differs. |
+
+Run `check-drift.sh` on a weekly cadence so a hand-edit on the VM surfaces in
+days rather than during an incident. It runs from an operator's machine or a
+cron box, **not** from GitHub Actions: no workflow in this repo authenticates
+to GCP (the only secrets any of them reference are `GITHUB_TOKEN` and
+`RELEASE_APP_PRIVATE_KEY`), so a scheduled job would fail to reach the VM and
+report exit 2 — UNKNOWN — every week. A check that cannot run is worse than
+none, because every aggregate scores it green. Scheduling it in CI needs a GCP
+service-account or workload-identity secret first.
+
+`apply.sh` recreates containers, so run it in a service window: expect a short
+502 on `app` and a Redis restart (AOF-persisted, so queued BullMQ jobs
+survive). It health-verifies `/api/readyz` on **both** public origins —
+`app.inflect.bg` and the sslip.io host — because Caddy serves two vhosts and
+checking one would report the other's outage as a clean deploy. It uses
+`/api/readyz` rather than `/api/livez` deliberately: `livez` is
+dependency-free and stays green straight through a Redis or database outage,
+which is exactly the failure a deploy causes.
+
+### The canonical set is more than the compose file
+
+The compose file bind-mounts three repo-owned files, so a compose file that is
+in sync says nothing about what the containers actually mount. `apply.sh`
+pushes, and `check-drift.sh` checks, all of:
+
+```
+deploy/docker-compose.prod.yml  → /opt/inflect/docker-compose.prod.yml
+deploy/init-roles.sh            → /opt/inflect/init-roles.sh
+prisma.config.ts                → /opt/inflect/prisma.config.ts
+```
+
+`prisma.config.ts` is mounted into both `app` and `worker` at `/app`: Prisma 7
+resolves its config at runtime, and the entrypoint runs `prisma migrate deploy`
+before `next start`. That mount has been live since the 2026-05-05 Prisma 7
+recovery and was absent from the repo file until #2849 reconciled it back.
+
+### Interpolation scope is not `env_file`, and the difference bites
+
+Compose interpolates `${VAR}` from the shell environment and from files named
+by `--env-file`. A service-level `env_file:` entry is handed to the *container*
+and takes no part in interpolation. The two are easy to conflate, so `apply.sh`
+always runs compose as:
+
+```bash
+docker compose --env-file .env --env-file .env.prod -f docker-compose.prod.yml up -d
+```
+
+| host file | holds | role |
+| --- | --- | --- |
+| `/opt/inflect/.env` | `POSTGRES_PASSWORD` | interpolation only |
+| `/opt/inflect/.env.prod` | `DATA_ENCRYPTION_KEY`, `REDIS_PASSWORD`, the app's runtime config | interpolation **and** the container environment |
+
+Naming `.env.prod` on both sides is deliberate. `app.environment` sets
+`DATA_ENCRYPTION_KEY`, and a service-level `environment:` value overrides the
+same key coming from `env_file:`. Sourcing the interpolation from the very file
+the container reads makes the two agree by construction. Sourcing it from
+anywhere else lets compose hand the app a *different* key than `.env.prod`
+holds — a failure that surfaces as unreadable ciphertext rather than an error.
+
+Neither host env file is ever written, read for values, or echoed by these
+scripts. The preflight checks for the presence of a KEY and prints only
+`PRESENT <name>` / `ABSENT <name>`.
+
+### Outstanding operator actions
+
+Two things need an operator, and `apply.sh` refuses to proceed past the first.
+
+1. **`REDIS_PASSWORD` is absent from the host env files.** Redis auth reaches
+   the app embedded inside `REDIS_URL`; the compose file needs the credential
+   as a standalone variable for `--requirepass` and `REDISCLI_AUTH`. Add
+   `REDIS_PASSWORD=` to `/opt/inflect/.env.prod`, set to the credential already
+   inside `REDIS_URL` — confirmed byte-identical to the live `--requirepass`
+   on 2026-09-24 by comparing digests. These scripts do not write secret files,
+   by design; do it by hand. Until then `apply.sh` stops in preflight having
+   changed nothing, which is the fail-fast working.
+
+2. **`deploy/caddy/Caddyfile` diverges from `/opt/inflect/caddy/Caddyfile` in
+   both directions.** The live copy serves a second vhost, `app.inflect.bg`
+   (answering 200), that the repo copy does not define; the repo copy carries
+   the retry and HTTP/3 settings from #1814 and #1275 that the live copy never
+   received. Each side holds content the other lacks, so neither can overwrite
+   the other. `apply.sh` deliberately does **not** push it — pushing the repo
+   copy would delete a live production hostname. `check-drift.sh` reports it
+   separately and exits 3, so it stays visible instead of being quietly
+   applied. Merging the two is a decision with a TLS blast radius; once merged,
+   move the entry from `UNRECONCILED` to `APPLIABLE` in `check-drift.sh` and
+   add it to `CANONICAL_SET` in `apply.sh`.
+
+### The pipelock overlay
+
+`deploy/docker-compose.pipelock.yml` holds the optional pipelock MCP mediator.
+It lived in the canonical compose file until #2849, and that is what made the
+canonical file un-runnable: it bind-mounts `./pipelock-signing.key`, which does
+not exist on the VM, and Docker responds to a missing bind-mount source by
+creating an empty **directory** rather than by failing. `docker compose config`
+validates syntax and `env_file:` presence and says nothing about bind-mount
+sources, so the service passed every check short of actually starting it.
+Enabling pipelock means satisfying the preconditions listed in that file's
+header and adding a second `-f` flag.
+
+### `deploy/.env.prod.example` describes a different deployment
+
+That template describes the Epic OI-1 AWS model — Secrets Manager, RDS,
+ElastiCache, resolved by `scripts/bootstrap-env-from-secrets.sh`. The GCP VM
+does not use any of it; its secrets live in the two plaintext host files above.
+Read the template as documentation of the AWS path, not of this host.
 
 ---
 
