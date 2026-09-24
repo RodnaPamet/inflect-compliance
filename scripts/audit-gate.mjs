@@ -42,7 +42,24 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ALLOWLIST = path.join(ROOT, 'security', 'audit-allowlist.json');
+/**
+ * The allowlist this gate enforces.
+ *
+ * `AUDIT_ALLOWLIST_PATH` exists for TESTS ONLY, and the reason it had to be
+ * added is worth keeping: `tests/unit/audit-gate-registry-unavailable.test.ts`
+ * verified the gate's behaviour against the REPO'S OWN allowlist, with the two
+ * advisory ids it expected to find written into the test as a constant. That
+ * is a mirror — two statements of the same fact with nothing holding them
+ * together — and it went stale the moment the real entries were removed, which
+ * broke tests that have nothing to do with which advisories happen to be
+ * exempt today.
+ *
+ * `tests/guards/audit-gate-allowlist-path-not-overridden.test.ts` asserts no
+ * workflow sets this variable, so it cannot become a way to run CI against an
+ * empty allowlist.
+ */
+const ALLOWLIST =
+    process.env.AUDIT_ALLOWLIST_PATH || path.join(ROOT, 'security', 'audit-allowlist.json');
 const BLOCKING = new Set(['moderate', 'high', 'critical']);
 
 /**
