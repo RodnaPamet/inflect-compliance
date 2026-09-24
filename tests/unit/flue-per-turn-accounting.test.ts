@@ -45,6 +45,8 @@ const mockObservers: Array<(event: unknown, ctx: unknown) => void> = [];
 let mockRead: () => Promise<{ text?: string; metadata?: Record<string, unknown> }>;
 /** The guard observer `flueToolsFor` was handed, so a test can fire a verdict. */
 let mockGuardObserver: ((o: unknown) => void) | undefined;
+/** The origin resolver `flueToolsFor` was handed, so a test can ASK it. */
+let mockOriginFor: ((id: string) => unknown) | undefined;
 
 jest.mock(
     '@flue/runtime',
@@ -79,10 +81,17 @@ jest.mock('@/lib/agentic/flue/providers', () => ({
     flueModelIsRegistered: jest.fn(() => true),
 }));
 jest.mock('@/lib/agentic/flue/tools-adapter', () => ({
-    flueToolsFor: jest.fn((_inv: unknown, observer: (o: unknown) => void) => {
-        mockGuardObserver = observer;
-        return { tools: [], omitted: [] };
-    }),
+    flueToolsFor: jest.fn(
+        (_inv: unknown, observer: (o: unknown) => void, originFor?: (id: string) => unknown) => {
+            mockGuardObserver = observer;
+            // The THIRD argument — the origin resolver that tells a queued
+            // proposal which step made it. Captured for the same reason the
+            // observer is: it is a closure the engine builds and hands over,
+            // and holding it is the only way to call it.
+            mockOriginFor = originFor;
+            return { tools: [], omitted: [] };
+        },
+    ),
 }));
 jest.mock('@/lib/mcp/tools/propose-tools', () => ({
     isProposeTool: () => false,
@@ -212,6 +221,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockObservers.length = 0;
     mockGuardObserver = undefined;
+    mockOriginFor = undefined;
 });
 
 describe('one decision row per MODEL CALL, carrying that call’s own tokens', () => {
@@ -527,5 +537,40 @@ describe('a halted run records where it got to, so a resume does not redo it', (
         const carrying = updated.mock.calls.filter(([, , d]) => 'costTokens' in (d as object));
         expect(carrying.length).toBeGreaterThan(0);
         for (const [, , d] of carrying) expect(d).toHaveProperty('stepCount');
+    });
+});
+
+describe('the origin resolver is BUILT, and answers about real calls only', () => {
+    // A guard elsewhere reads this off the source, on the stated grounds that
+    // the resolver's CONSTRUCTION is "reachable only by reading it" because
+    // `execute.ts` cannot be imported under the node project. This file is the
+    // counter-example to that premise — it imports and drives `executeFlueRun`
+    // — so the construction is reachable here, and asked rather than described.
+    //
+    // What makes it worth asking: `flueToolsFor(inv, observe?, originFor?)`
+    // takes the resolver OPTIONALLY, because the direct MCP route legitimately
+    // resolves no origin. Dropping the third argument compiles, passes every
+    // adapter test, and silently lands every Flue-queued proposal with
+    // `runId: null` — which reads, correctly and indistinguishably, as
+    // "proposed outside a run".
+
+    it('hands the adapter a resolver at all', async () => {
+        mockRead = async () => ({ text: 'done', metadata: {} });
+
+        await executeFlueRun(CTX, 'run-origin', DEF, 0, Date.now(), 'anthropic/claude');
+
+        expect(typeof mockOriginFor).toBe('function');
+    });
+
+    it('answers undefined for a call id it never registered', async () => {
+        // A read tool's call id is never registered, so the map misses. The
+        // funnel's signature makes that absence an answer; a fallback of
+        // `{ runId, stepSeq: 0 }` would attribute every unregistered call to
+        // the run's first step.
+        mockRead = async () => ({ text: 'done', metadata: {} });
+
+        await executeFlueRun(CTX, 'run-origin', DEF, 0, Date.now(), 'anthropic/claude');
+
+        expect(mockOriginFor?.('never-registered')).toBeUndefined();
     });
 });

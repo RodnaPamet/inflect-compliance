@@ -24,9 +24,21 @@
  * ── WHAT IS ASSERTED STRUCTURALLY AND WHY ───────────────────────────────────
  *
  * `wrapForLedger` is module-private and its charge happens inside a closure the
- * Flue runtime invokes — and `execute.ts` cannot even be IMPORTED under the
- * `node` project, because it reaches `@flue/runtime`, which is ESM-only. So the
- * charge is read off the source, bound to the function that owns it.
+ * Flue runtime invokes, so the charge is read off the source, bound to the
+ * function that owns it.
+ *
+ * THE OLD REASON GIVEN HERE WAS FALSE. This said `execute.ts` "cannot even be
+ * IMPORTED under the `node` project, because it reaches `@flue/runtime`, which
+ * is ESM-only". It can: `tests/unit/flue-per-turn-accounting.test.ts` supplies
+ * that module with `jest.mock(..., { virtual: true })`, statically imports
+ * `executeFlueRun`, and calls it in eighteen tests — under the node project,
+ * in about two seconds, with no model. The true constraint is that
+ * `execute.ts` cannot be imported WITHOUT that virtual mock, which is a
+ * different and much smaller thing.
+ *
+ * So a structural needle here is a CHOICE about cost, not a necessity. Where
+ * one carries a load-bearing claim it should be upgraded; the file below now
+ * exercises the origin resolver rather than describing it.
  *
  * The COUNTING RULE is not read off source: `proposedItemCount` is a pure
  * function living beside the `proposeArgs` envelope whose 1–20 rule it mirrors,
@@ -141,11 +153,14 @@ describe('the seed the charge makes meaningful', () => {
  * call id, and `undefined` when nobody resolved one — is exercised against real
  * calls in `tests/unit/flue-tools-adapter.test.ts`.
  *
- * What CANNOT be exercised is the one piece in between: `execute.ts` statically
- * imports `@flue/runtime`, which publishes no `require` condition, so the `node`
- * project cannot load this module at all (the file header above says the same
- * about the charge). That leaves the resolver's CONSTRUCTION — the half that
- * decides whether a resolver exists — reachable only by reading it.
+ * The resolver's CONSTRUCTION — the half that decides whether a resolver
+ * exists at all — is NOW EXERCISED, in
+ * `tests/unit/flue-per-turn-accounting.test.ts`: that file mocks
+ * `@flue/runtime` virtually, drives `executeFlueRun`, captures the third
+ * argument this call hands the adapter, and asks it. Dropping the argument
+ * reddens it. This paragraph used to say the construction was "reachable only
+ * by reading it", on the premise that the node project cannot load
+ * `execute.ts` — which that same sibling disproves.
  *
  * ── AND IT IS EXACTLY THE HALF NOTHING ELSE WOULD NOTICE ────────────────────
  *
