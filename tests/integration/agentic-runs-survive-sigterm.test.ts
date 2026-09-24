@@ -20,6 +20,9 @@
  * So the test that earns its place is `leaves another process's run alone`. A
  * drain that paused everything would satisfy every other assertion here.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -32,6 +35,7 @@ import {
 } from '@/lib/agentic/in-flight-runs';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { REPO_ROOT } from '../helpers/repo-files';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -190,5 +194,39 @@ describe('the in-flight registry itself', () => {
         trackInFlightRun('a');
         inFlightRunIds().push('ghost');
         expect(inFlightRunIds()).toEqual(['a']);
+    });
+});
+
+describe('BOTH tiers install the drain, not just the one that had it', () => {
+    // The function above is only worth anything where it is CALLED, and it was
+    // called in one of the two processes that execute runs.
+    //
+    // `executeFrom` tracks every run through `trackInFlightRun` on both tiers,
+    // so the worker's register was populated and read by nobody:
+    // `scripts/worker.ts` closed BullMQ, quit Redis and drained OTel on
+    // SIGTERM, and never paused a run it was executing. #2824 made that live
+    // by routing Flue resumes to the worker.
+    const read = (rel: string) =>
+        readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+
+    it('the web tier drains', () => {
+        expect(read('src/lib/observability/shutdown.ts')).toContain('pauseInFlightRuns(');
+    });
+
+    it('the worker drains too', () => {
+        expect(read('scripts/worker.ts')).toContain('pauseInFlightRuns(');
+    });
+
+    it('the worker drains BEFORE it closes the queue', () => {
+        // `worker.close()` waits for the active job. A reasoning run is
+        // bounded by WALL_CLOCK_MS — an hour — and a deploy's grace period is
+        // seconds, so waiting does not save the run; pausing it does, and only
+        // while there is still time to write.
+        const src = read('scripts/worker.ts');
+        const drain = src.indexOf('pauseInFlightRuns(');
+        const close = src.indexOf('worker?.close()');
+        expect(drain).toBeGreaterThan(-1);
+        expect(close).toBeGreaterThan(-1);
+        expect(drain).toBeLessThan(close);
     });
 });
