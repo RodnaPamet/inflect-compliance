@@ -183,6 +183,16 @@ export interface JoinerDecision {
     readonly reason: string | null;
     /** The address this person would be created under, when one could be derived. */
     readonly intendedAddress: string | null;
+    /**
+     * The address the ROSTER holds, when a decision turned on the two
+     * disagreeing — `REFUSED_IDENTITY_DIVERGES` (#2843).
+     *
+     * Null everywhere else, because it is only evidence where it is the reason.
+     * Same class as `intendedAddress`: `Employee.workEmail`, a plain
+     * RLS-scoped column of ours that the personnel page already renders — not
+     * a directory-sourced identifier.
+     */
+    readonly rosterAddress: string | null;
     readonly nameSource: NameSource | null;
     /** The department string VERBATIM — decision 5 wants both names, not one. */
     readonly department: string | null;
@@ -424,6 +434,7 @@ function decide(
     const base = {
         employeeId: candidate.employeeId,
         intendedAddress: null,
+        rosterAddress: null,
         nameSource: null,
         department: candidate.department,
         groupId: null,
@@ -540,6 +551,7 @@ function decide(
     const withIdentity = {
         ...base,
         intendedAddress: derived.address,
+        rosterAddress: null,
         nameSource: derived.nameSource,
     };
 
@@ -561,11 +573,28 @@ function decide(
         return {
             ...withIdentity,
             outcome: 'REFUSED_IDENTITY_DIVERGES',
+            rosterAddress: candidate.workEmail,
+            // THE ADDRESSES ARE NOT INLINED HERE, and that is the fix (#2843).
+            //
+            // They were, and `persistableDecisions` scrubs every reason through
+            // `redactDirectoryIdentifiers` — which replaces anything
+            // email-shaped with `{account}`. The durable sentence therefore
+            // read "The derived address ({account}) is not the address the
+            // roster holds for this person ({account})": {account} is not
+            // {account}. The one thing the refusal exists to tell an operator —
+            // WHICH address diverged — was the one thing the artefact could not
+            // say, while `intendedAddress` sat verbatim in the sibling key of
+            // the same JSON object, so the scrub bought no confidentiality
+            // either.
+            //
+            // Both values are OURS — a derivation of ours, and
+            // `Employee.workEmail` — so they belong in structured keys that a
+            // text scrub cannot mangle, and the sentence points at them.
             reason:
-                `The derived address (${derived.address}) is not the address the roster holds ` +
-                `for this person (${candidate.workEmail}). Creating it would produce an account ` +
-                'the link matcher never joins to this employee — and therefore one the leaver ' +
-                'can never disable. The HRIS write-back that would make the two agree is Phase 2; ' +
+                'The derived address is not the address the roster holds for this person; see ' +
+                'intendedAddress and rosterAddress. Creating it would produce an account the ' +
+                'link matcher never joins to this employee — and therefore one the leaver can ' +
+                'never disable. The HRIS write-back that would make the two agree is Phase 2; ' +
                 'until it exists the joiner refuses rather than creating an orphan.',
         };
     }

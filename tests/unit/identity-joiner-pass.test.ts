@@ -27,6 +27,7 @@ jest.mock('@/lib/db-context', () => {
     throw new Error('the joiner planner must not reach the db context — a DRY_RUN plan reads nothing');
 });
 
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import {
     JOINER_MAX_MODE,
     MAX_CREATES_PER_RUN,
@@ -250,6 +251,37 @@ describe('per-candidate decisions', () => {
         expect(d?.outcome).toBe('REFUSED_IDENTITY_DIVERGES');
         expect(d?.reason).toMatch(/leaver can never disable/i);
         expect(plan.wouldCreate).toBe(0);
+
+        // BOTH addresses, structurally (#2843). They used to live only inside
+        // `reason`, which the durable artefact scrubs — so the record said
+        // "{account} is not {account}" and an operator could not tell which
+        // address diverged, which is the only thing this refusal exists to say.
+        expect(d?.intendedAddress).toBe('jane.smith@acme.com');
+        expect(d?.rosterAddress).toBe('j.smith@acme.com');
+        // ...and the sentence no longer inlines them, so the scrub has nothing
+        // to destroy. Asserted as an ABSENCE of '@' rather than of the two
+        // literals: a future edit that inlines a DIFFERENT address would pass a
+        // literal check and fail this one.
+        expect(d?.reason).not.toMatch(/@/);
+        expect(d?.reason).toMatch(/intendedAddress and rosterAddress/);
+
+        // THE INVARIANT, proved against the real scrub rather than by eye.
+        // `persistableDecisions` puts every reason through this before the row
+        // is written, and the whole defect was that doing so destroyed this
+        // sentence. Run it here: what an operator reads months later must be
+        // what this asserts.
+        const persisted = redactDirectoryIdentifiers(d?.reason ?? '', null);
+        expect(persisted).toBe(d?.reason);
+        expect(persisted).not.toContain('{account}');
+    });
+
+    it('carries rosterAddress ONLY where the two addresses disagreeing is the decision', () => {
+        // It is evidence where it is the reason and noise everywhere else —
+        // and a field that is always populated is one a reader stops reading.
+        const plan = planJoinerPass(input({ observedAddresses: ['JANE.SMITH@acme.com'] }));
+        const d = outcomeFor(plan, 'emp-1');
+        expect(d?.outcome).toBe('ACCOUNT_OBSERVED');
+        expect(d?.rosterAddress).toBeNull();
     });
 
     it('never renames around a collision — decision 1 declines the token arm', () => {
