@@ -205,11 +205,28 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         dormantDays: { kind: 'inert' },
         maxAdmins: { kind: 'inert' },
     },
-    hris: {
+    /**
+     * BambooHR — keyed `bamboohr`, which is the PROVIDER ID.
+     *
+     * It was keyed `hris` from the day it was written until #2837, and
+     * `validateProviderConfig` is called with a provider id, so the entry
+     * matched nothing and its rules never ran once. That is not a cosmetic
+     * mismatch: the `subdomain` check below is an INJECTION GUARD, and for the
+     * whole time it was unreachable a value carrying a dot or a slash went
+     * into `configJson` unchallenged.
+     *
+     * `apiKey` is deliberately NOT listed. It is declared in the provider's
+     * `secretFields`, so it belongs in the encrypted secrets bag, and an entry
+     * here would do the opposite of protect it: `configJson` is stored in the
+     * clear and returned by the admin API, so permitting the key is what lets
+     * a credential land there. Leaving it out means `validateProviderConfig`
+     * rejects `apiKey` in configJson outright — which is the correct answer to
+     * a caller trying to put one there.
+     */
+    bamboohr: {
         // BambooHR interpolates this into {subdomain}.bamboohr.com, so a value
         // carrying a dot or slash escapes the intended host.
         subdomain: { kind: 'boundedQuery', check: (v) => (/^[a-z0-9-]+$/i.test(v) ? null : 'must be a bare subdomain (letters, digits, hyphens)') },
-        apiKey: { kind: 'inert' },
     },
     sharepoint: {
         // SharePoint has no configSchema descriptor — it is not a registry

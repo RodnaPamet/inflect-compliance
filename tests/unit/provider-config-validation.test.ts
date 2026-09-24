@@ -83,8 +83,15 @@ describe('bounded queries stay queries', () => {
     it('rejects a BambooHR subdomain that would escape the interpolated host', () => {
         // The value is interpolated into {subdomain}.bamboohr.com, so a dot or a
         // slash changes which host is contacted.
-        expect(() => validateProviderConfig('hris', { subdomain: 'acme.evil.com' })).toThrow();
-        expect(() => validateProviderConfig('hris', { subdomain: 'acme' })).not.toThrow();
+        //
+        // THE PROVIDER ID IS 'bamboohr'. This read `'hris'` until #2837 — the
+        // same wrong key the rules table itself used — so the test and the
+        // defect agreed with each other and both stayed green. Production calls
+        // `validateProviderConfig` with the provider id, found no rules for
+        // `bamboohr`, and returned the config unvalidated. The guard this test
+        // is named for had never run on the path that matters.
+        expect(() => validateProviderConfig('bamboohr', { subdomain: 'acme.evil.com' })).toThrow();
+        expect(() => validateProviderConfig('bamboohr', { subdomain: 'acme' })).not.toThrow();
     });
 });
 
