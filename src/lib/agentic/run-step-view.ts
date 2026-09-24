@@ -126,3 +126,37 @@ export function stepDataScope(
     }
     return dataScopeForToolCall(tool, args);
 }
+
+/**
+ * What a recorded step may CLAIM about itself: its tool, and its label.
+ *
+ * The two lines this replaces were each protected and their COMPOSITION was
+ * not. `declaredStepFor` is pinned by its own tests, `resolveStepTool` by its
+ * own, and the run-detail page joined them — so the join was the one part of
+ * #2774 with no executing assertion over it.
+ *
+ * #2774: Flue steps inherited an unrelated step's tool and rung, because the
+ * projection indexed `def.steps[s.seq]` and a Flue `seq` counts steps RECORDED
+ * rather than indexing the definition. A MODEL_CALL wore another step's tool
+ * name and a data-access claim about content it never touched — on a
+ * governance surface, a specific false statement about what an agent did.
+ *
+ * Reverting the call site to `def?.steps?.[seq]` reintroduces exactly that,
+ * and every test stayed green: the unit tests still exercised the two
+ * functions, and the rendered timeline supplies `tool` and `label` as
+ * FIXTURES, so it pins the client's rendering of whatever the server decided.
+ * `kind` is the term that makes the difference, which is why it is a parameter
+ * here rather than something a caller may forget to pass.
+ */
+export function stepDeclaration(
+    defSteps: readonly WorkflowStepDef[] | undefined,
+    seq: number,
+    kind: string,
+    toolCalled: string | null,
+): { tool: string | null; label: string | null } {
+    const declared = declaredStepFor(defSteps, seq, kind);
+    return {
+        tool: resolveStepTool(toolCalled, declared),
+        label: declared?.label ?? null,
+    };
+}
