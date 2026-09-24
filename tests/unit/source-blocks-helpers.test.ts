@@ -29,6 +29,7 @@ import {
     braceBlockAfter,
     callExpressionOf,
     codeOf,
+    commentsOf,
     declarationOf,
     functionBodyOf,
     interfaceBodyOf,
@@ -568,5 +569,146 @@ describe('source-blocks — cssCodeOf', () => {
     it('keeps a comment opener inside a string', () => {
         const css = 'a::after{content:"/*"}\n';
         expect(cssCodeOf(css)).toMatch(/content:"\/\*"/);
+    });
+});
+
+/**
+ * `commentsOf` — the INVERSE of `codeOf`.
+ *
+ * Synthetic on purpose. The seven `tests/guardrails/` files this was written
+ * for exercise it on real source, but a real file cannot be made to carry the
+ * one shape that matters most — a string literal containing `//` — without
+ * inventing it, and "a masker that silently keeps a string" is the failure
+ * that would make every assertion using it READ as bound to the comments
+ * while remaining satisfiable from code.
+ */
+describe('source-blocks — commentsOf', () => {
+    it('keeps comments, blanks code, and preserves length and line count', () => {
+        const src = [
+            '/** Doc for the thing. */',
+            "const a = 'status'; // trailing note",
+            'const b = 1;',
+        ].join('\n');
+
+        const out = commentsOf(src);
+        expect(out).toHaveLength(src.length);
+        expect(out.split('\n')).toHaveLength(3);
+        expect(out).toContain('/** Doc for the thing. */');
+        expect(out).toContain('// trailing note');
+        // Code is gone — including the string literal `codeOf` would KEEP.
+        expect(out).not.toContain('const');
+        expect(out).not.toContain("'status'");
+    });
+
+    it('is the complement of codeOf on the comment bytes', () => {
+        const src = "const a = 1; // note\nconst b = 'x';\n";
+        expect(codeOf(src)).not.toContain('note');
+        expect(commentsOf(src)).toContain('// note');
+        expect(commentsOf(src)).not.toContain('const a');
+    });
+
+    // ── fail-closed: a string must never surface as comment text ──
+
+    it('does NOT surface // from inside a string literal', () => {
+        const src = "const url = 'https://example.test/x';\n";
+        const out = commentsOf(src);
+        expect(out).not.toContain('//');
+        expect(out.trim()).toBe('');
+    });
+
+    it('does NOT surface a block comment written inside a string literal', () => {
+        const src = 'const s = "/* not a comment */";\n';
+        const out = commentsOf(src);
+        expect(out).not.toContain('not a comment');
+        expect(out.trim()).toBe('');
+    });
+
+    it('does NOT surface // from inside a template literal', () => {
+        const src = 'const t = `see https://example.test/y`;\n';
+        expect(commentsOf(src).trim()).toBe('');
+    });
+
+    it('does NOT surface // from a template literal spanning lines', () => {
+        const src = ['const t = `', 'https://example.test/z', '`;'].join('\n');
+        const out = commentsOf(src);
+        expect(out.trim()).toBe('');
+        expect(out.split('\n')).toHaveLength(3);
+    });
+
+    // ── comment-body shapes ──
+
+    it('keeps a // written inside a block comment', () => {
+        const src = '/* see // for the line form */\n';
+        expect(commentsOf(src)).toContain('// for the line form');
+    });
+
+    it('does not nest: a block comment ends at its FIRST close', () => {
+        // JS block comments do not nest, so the inner opener is comment TEXT
+        // and what follows the first close is CODE.
+        const src = '/* outer /* inner */ code(); // tail\n';
+        const out = commentsOf(src);
+        expect(out).toContain('/* outer /* inner */');
+        expect(out).not.toContain('code()');
+        expect(out).toContain('// tail');
+    });
+
+    // ── regex literals ──
+
+    // Each of these asserts the WHOLE output, not an absence. An absence
+    // assertion passes on a half-blanked line — measured: `not.toContain('[//]')`
+    // was satisfied while the mask was emitting `//]y/; // kept` as comment
+    // text, because the `[` had been blanked and the substring no longer
+    // matched. The exact form is what makes the mutation below go red.
+
+    it('does not surface a regex body containing an escaped slash', () => {
+        const src = 'const re = /a\\/b/; // kept\n';
+        expect(commentsOf(src).trim()).toBe('// kept');
+    });
+
+    it('does not surface a regex whose body contains // inside a class', () => {
+        // The shape that makes a regex look like a line-comment opener: an
+        // unescaped `/` is legal inside a character class.
+        const src = 'const re = /x[//]y/; // kept\n';
+        expect(commentsOf(src).trim()).toBe('// kept');
+    });
+
+    it('does not surface a regex whose body contains /* inside a class', () => {
+        // Worse than the line form: an unterminated block comment runs to EOF,
+        // so a regex-blind mask reports the whole rest of the file as comment.
+        const src = 'const re = /x[/*]y/; // kept\n';
+        expect(commentsOf(src).trim()).toBe('// kept');
+    });
+
+    it('does not surface a regex after `return`, where // IS the body', () => {
+        const src = 'function f(s) { return /\\/\\//.test(s); } // kept\n';
+        expect(commentsOf(src).trim()).toBe('// kept');
+    });
+
+    it('keeps a JSX comment after a self-closing tag (the .tsx hazard)', () => {
+        const src = '<Foo bar={x} /> {/* jsx note */}\n';
+        expect(commentsOf(src)).toContain('/* jsx note */');
+    });
+
+    it('keeps a JSX comment after a closing tag', () => {
+        const src = '<div>y</div> {/* closing note */}\n';
+        expect(commentsOf(src)).toContain('/* closing note */');
+    });
+
+    // ── the mutation this exists to catch ──
+
+    it('declines a needle MOVED from the comment into code', () => {
+        const inComment = ['// CC BY 4.0 — Paolo Carner', 'export const X = 1;'].join('\n');
+        const inCode = [
+            'export const LICENCE = "CC BY 4.0";',
+            'export const X = 1;',
+        ].join('\n');
+
+        // Raw text cannot tell the two apart — that is the defect.
+        expect(inComment).toMatch(/CC BY 4\.0/);
+        expect(inCode).toMatch(/CC BY 4\.0/);
+
+        // Through the mask, only the one that IS a comment matches.
+        expect(commentsOf(inComment)).toMatch(/CC BY 4\.0/);
+        expect(commentsOf(inCode)).not.toMatch(/CC BY 4\.0/);
     });
 });

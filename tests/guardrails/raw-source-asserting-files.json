@@ -1,11 +1,5 @@
 [
     "tests/guardrails/ai-aisvs-hardening-coverage.test.ts",
-    "tests/guardrails/audit-s2-control-testing.test.ts",
-    "tests/guardrails/chart-platform-foundation.test.ts",
-    "tests/guardrails/incident-containment-forensic-coverage.test.ts",
-    "tests/guardrails/org-widget-integrity.test.ts",
-    "tests/guardrails/sovereignty-self-assessment-coverage.test.ts",
-    "tests/guardrails/trust-center-coverage.test.ts",
     "tests/guards/ai-system-registry.test.ts",
     "tests/guards/calendar-connections-route-gate.test.ts",
     "tests/guards/capstone-discipline.test.ts",

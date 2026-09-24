@@ -42,6 +42,23 @@ const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8
 // Markdown is NOT lexable by codeOf (`//` in a URL would blank the rest of
 // the line), and the doc assertions below are ABOUT prose. Separate reader,
 // deliberately raw.
+//
+// STILL RAW AFTER #2246's INVERSE MASKER, and this is the one file in that
+// batch where that is the right answer. `commentsOf` is for `.ts` comments and
+// does not apply here; the markdown analogue would be an `mdProseOf` — prose
+// kept, fences and code spans blanked — and the `not.toMatch` at the bottom of
+// this describe is exactly what it must not be used on. A negative assertion's
+// correct reach IS the whole document.
+//
+// Measured, because the obvious measurement is useless here: `/L3[- ]verified/i`
+// counts 0 raw and 0 through a prose mask, so the numbers agree while meaning
+// opposite things. Planting `L3-verified` inside a fenced block at the end of
+// the document separates them — RAW matches it (1) and the assertion correctly
+// fails; a prose mask matches 0 and the guard passes while the document claims
+// L3. The other four sites here would narrow harmlessly (e.g. `/MCP server/`
+// 5 → 5 in prose, `/no vector DB|embeddings|RAG/` 13 → 10), but a file leaves
+// the Class A population only when EVERY site is masked, so converting them
+// would buy nothing and cost the one assertion that matters.
 const readDoc = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const AI = 'src/app-layer/ai/risk-assessment';
 

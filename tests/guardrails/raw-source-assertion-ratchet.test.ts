@@ -576,6 +576,43 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     `src/app-layer/usecases/control/test-plans.ts` (the rationale note at 282
  *     and a back-reference at 473) — so in each case the block the test is
  *     named for can be deleted and the other occurrence keeps it green.
+ *   • 29 (2026-09-24): the six the entry above could not close, closed by
+ *     BUILDING the missing tool rather than by reclassifying them. `commentsOf`
+ *     in `tests/helpers/source-blocks.ts` is the inverse of `codeOf` — comments
+ *     kept, code (string literals included) blanked, length and line count
+ *     preserved — and each of the six now reads its comment-asserting site
+ *     through a separately named `readComments` seam beside its existing
+ *     `read`. `ai-aisvs-hardening-coverage` is the seventh and STAYS, for the
+ *     reason the entry above gives: its five raw sites read a `.md` document
+ *     and one of them is `not.toMatch(/L3[- ]verified/i)`, whose correct reach
+ *     is the whole document. The inverse of `mdCodeOf` was therefore NOT built;
+ *     a masker whose first user must not use it is one nobody should write on
+ *     spec.
+ *
+ *     EVERY NEEDLE MEASURED THREE WAYS before anything was edited — raw,
+ *     through `commentsOf`, through `codeOf`. Nine needles across the six:
+ *     every one matches the same number of times raw and masked, and every one
+ *     goes to ZERO under `codeOf`. That is the proof the six really were the
+ *     shape the 36 entry claimed (masking deletes the subject) AND that the
+ *     inverse is the right tool (it does not).
+ *
+ *     THE TWO CLASS D AMBIGUITIES ABOVE ARE NOT RESOLVED BY THIS, measured:
+ *     `/idempotent/i` still matches twice through the mask (both occurrences
+ *     are comments, L11 and L148) and so does `/OVERDUE semantics/` (L282 and
+ *     L473). Narrowing the READ to the comments is orthogonal to a needle that
+ *     is ambiguous WITHIN them, so `AMBIGUOUS_NEEDLE_BASELINE` does not move
+ *     and the two remain open. Recorded rather than quietly dropped.
+ *
+ *     NO SIBLING BASELINE MOVED, and that was checked rather than assumed:
+ *     `AMBIGUOUS_NEEDLE_BASELINE` 1255, `HIGHLY_AMBIGUOUS_NEEDLE_BASELINE` 193,
+ *     `UNANALYSABLE_READ_BASELINE` 1455, `UNBOUNDED_INTERIOR_SPAN_BASELINE` 146
+ *     and `INTERIOR_SPAN_BASELINE` 329 are identical before and after. The nine
+ *     sites were already whole-file reads in Class D's population; masking
+ *     changes which BUCKET they sit in here and what text their occurrence
+ *     count is taken against, not whether they are analysed. `commentsOf` is
+ *     registered in `SOURCE_BLOCKS_MASKERS` in the same diff, which is what
+ *     keeps them analysed — #2727 added two maskers without that entry and the
+ *     conversions it enabled fell into `content-transformed`, a capped skip.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -681,7 +718,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     guardrails it watches, where one file has 4 raw and 3 in code, so a
  *     commented-out block was padding its ">= 3" floor.
  */
-const RAW_ASSERTING_FILE_BASELINE = 29;
+const RAW_ASSERTING_FILE_BASELINE = 23;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the

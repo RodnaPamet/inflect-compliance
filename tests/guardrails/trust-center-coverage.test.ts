@@ -23,7 +23,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -37,14 +37,17 @@ const ROOT = path.resolve(__dirname, '../..');
  * explanatory security-contract comment that names those very paths. Masking
  * removes both hazards at once.
  *
- * `readRaw` is kept for the ONE assertion in this file that is deliberately
- * about prose — the `/trust/` allowlist entry's explanatory comment — which
- * the #2246 prober flagged as satisfiable only by a comment. It is, and
- * that is the test's stated intent, so it reads the unmasked text and says
- * so at the call site.
+ * `readComments` is the INVERSE mask, for the ONE assertion in this file that
+ * is deliberately about prose — the `/trust/` allowlist entry's explanatory
+ * comment — which the #2246 prober flagged as satisfiable only by a comment.
+ * It is, and that is the test's stated intent. It read the whole file RAW
+ * until #2246's inverse masker existed; raw made the stated intent
+ * unenforceable, since any later `Trust Center` in the file's CODE would have
+ * satisfied it just as well.
  */
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
+const readComments = (rel: string) => commentsOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 const PUBLIC_ROUTE = 'src/app/trust/[slug]/page.tsx';
@@ -245,10 +248,11 @@ describe('Trust Center — middleware: public allowlist + edge rate-limit', () =
         expect(read('src/lib/auth/guard.ts')).toMatch(/'\/trust\/'/);
         // The allowlist ENTRY is code and is asserted against masked text
         // above. This second assertion is about the explanatory COMMENT that
-        // accompanies it, so it reads raw ON PURPOSE — the #2246 prober
-        // confirmed `/Trust Center/` has no code occurrence in this file, and
-        // for this one assertion that is the correct answer, not a defect.
-        expect(readRaw('src/lib/auth/guard.ts')).toMatch(/Trust Center/);
+        // accompanies it, so it reads the COMMENTS ON PURPOSE — the #2246
+        // prober confirmed `/Trust Center/` has no code occurrence in this
+        // file (codeOf: 0, commentsOf: 1), and for this one assertion that is
+        // the correct answer, not a defect.
+        expect(readComments('src/lib/auth/guard.ts')).toMatch(/Trust Center/);
     });
     it('the /trust/ path is edge-rate-limited before the public allow', () => {
         const mw = read('src/middleware.ts');

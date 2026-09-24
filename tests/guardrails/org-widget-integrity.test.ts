@@ -22,16 +22,18 @@ import {
     resolveWidgetTitle,
 } from '@/app-layer/usecases/org-dashboard-widget-titles';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-/**
- * Raw text, comments INCLUDED. Only the "documents idempotency" assertion
- * uses it — that one is deliberately ABOUT a docblock, so masking would
- * break a correct test.
- */
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * COMMENTS ONLY — the inverse of `read`. Only the "documents idempotency"
+ * assertion uses it: that one is deliberately ABOUT a docblock, so `codeOf`
+ * would delete its subject, and the raw read it used to do would let the word
+ * appearing anywhere in the script's code stand in for the docblock (#2246).
+ */
+const readComments = (rel: string) => commentsOf(readRaw(rel));
 
 describe('GUARDRAIL: org dashboard widget integrity', () => {
     describe('preset', () => {
@@ -149,8 +151,13 @@ describe('GUARDRAIL: org dashboard widget integrity', () => {
 
         it('the de-dup reconcile script exists + documents idempotency', () => {
             const script = read('scripts/reconcile-org-dashboard-widgets.ts');
-            // Deliberately about the DOCBLOCK — reads the unmasked text.
-            expect(readRaw('scripts/reconcile-org-dashboard-widgets.ts')).toMatch(/idempotent/i);
+            // Deliberately about the DOCBLOCK — bound to the comments. Note
+            // the needle still matches TWICE through the mask (L11 and L148
+            // of the script, both comments), so this narrows the READ without
+            // resolving the Class D ambiguity: either docblock satisfies it.
+            expect(readComments('scripts/reconcile-org-dashboard-widgets.ts')).toMatch(
+                /idempotent/i,
+            );
             // De-dup keyed on (type, chartType); backfills via the canonical map.
             expect(script).toMatch(/resolveWidgetTitle\(/);
             expect(script).toMatch(/--execute/);
