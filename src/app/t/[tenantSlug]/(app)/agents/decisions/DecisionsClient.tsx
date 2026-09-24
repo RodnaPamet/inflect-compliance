@@ -73,6 +73,13 @@ export function DecisionsClient({
     return (
         <div className="space-y-section">
             <PageHeader
+                // A SUBPAGE gets a back affordance, like every sibling under
+                // `/agents`. This page never had one: it was missing from
+                // `page-segregation`'s lists, so the RQ4-1 completeness scan
+                // classified it through the `/agents/[agentId]` wildcard and
+                // the RQ4-10 sweep — which only walks listed SUBPAGES — never
+                // saw it to ask.
+                back={{ smart: true }}
                 title={t('decisions.title')}
                 description={t('decisions.description')}
                 actions={
