@@ -3,9 +3,12 @@
  * which status a verdict settles to, and whether the breaker's count can see a
  * block that produced no proposal.
  *
- * `executeFlueRun` itself cannot be imported under this project (`@flue/runtime`
- * is ESM-only), and its wiring is pinned in
- * `tests/guards/flue-guard-outcome-has-arms.test.ts`. What CAN be run is the
+ * `executeFlueRun`'s own wiring is pinned in
+ * `tests/guards/flue-guard-outcome-has-arms.test.ts`. (This used to say the
+ * function "cannot be imported under this project" because `@flue/runtime` is
+ * ESM-only. It can — `tests/unit/flue-per-turn-accounting.test.ts` mocks that
+ * module virtually and drives it through eighteen tests right here in the node
+ * project. What cannot happen is importing it WITHOUT that mock.) What CAN be run is the
  * two functions that own the decisions, and those are the ones a reader would
  * get wrong.
  */

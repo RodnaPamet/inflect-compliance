@@ -25,11 +25,22 @@
  *
  * ── WHY THESE ARE SOURCE ASSERTIONS ─────────────────────────────────────────
  *
- * `executeFlueRun` cannot be imported under the `node` jest project at all:
- * it reaches `@flue/runtime`, which is ESM-only. So the wiring is read off the
- * source, bound to the functions that own it. The parts that CAN be exercised
- * — the settle arm's own choice of status, and the breaker's arithmetic — are
- * tested behaviourally in `tests/unit/`.
+ * The wiring is read off the source, bound to the functions that own it, and
+ * the parts with their own seams — the settle arm's choice of status, the
+ * breaker's arithmetic — are tested behaviourally in `tests/unit/`.
+ *
+ * THE OLD REASON GIVEN HERE WAS FALSE. This said `executeFlueRun` "cannot be
+ * imported under the `node` jest project at all: it reaches `@flue/runtime`,
+ * which is ESM-only". It can, and a sibling already does:
+ * `tests/unit/flue-per-turn-accounting.test.ts` supplies that module with
+ * `jest.mock(..., { virtual: true })` and drives `executeFlueRun` through
+ * eighteen tests in the node project. The real constraint is that it cannot be
+ * imported WITHOUT the virtual mock.
+ *
+ * Kept structural because these assertions are about WIRING — which call sits
+ * where, and in what order — which source reads well and a behavioural test
+ * would pin only incidentally. That is a cost argument, not an impossibility,
+ * and it should be written as one.
  */
 import { readFileSync } from 'fs';
 import path from 'path';
