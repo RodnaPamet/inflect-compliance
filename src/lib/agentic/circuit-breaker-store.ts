@@ -604,32 +604,67 @@ export async function recordAuthorizedCall(
  * Both counts are `count`, not `findMany`: the caller wants the number, and
  * either population is unbounded in principle.
  */
+/**
+ * WHERE a guard block lives, in each of the two tables it can land in.
+ *
+ * Built here and shared, rather than re-spelled by each consumer. The two
+ * populations are the whole point of this counter — a block that produced a
+ * proposal, and a Flue block that produced only a step — and a second copy of
+ * either fragment is how a consumer ends up counting one of them.
+ *
+ * `agentId` is optional so the same rule serves the per-agent question the
+ * breaker asks and the tenant-wide one the governance report asks.
+ */
+function guardBlockWhere(tenantId: string, since: Date, agentId?: string) {
+    return {
+        proposals: {
+            tenantId,
+            ...(agentId ? { agentId } : {}),
+            guardVerdict: 'QUARANTINED',
+            createdAt: { gte: since },
+        },
+        steps: {
+            tenantId,
+            guardVerdict: 'QUARANTINED',
+            // `at`, the step's own stamp — not the run's `startedAt`. A run
+            // that began before this window and was blocked inside it was
+            // blocked inside it.
+            at: { gte: since },
+            ...(agentId ? { run: { agentId } } : {}),
+        },
+    };
+}
+
+/**
+ * Every guard block this TENANT took in the window, across both populations.
+ *
+ * The governance report's question, and the same rule the breaker latches on —
+ * so the report and the breaker can never disagree about how many blocks there
+ * were, which is the disagreement an assessor cannot tell from a defect.
+ */
+export async function countTenantGuardBlocksInWindow(
+    db: Pick<PrismaTx, 'agentProposal' | 'workflowStep'>,
+    tenantId: string,
+    since: Date,
+): Promise<number> {
+    const where = guardBlockWhere(tenantId, since);
+    const [proposalBlocks, stepBlocks] = await Promise.all([
+        db.agentProposal.count({ where: where.proposals }),
+        db.workflowStep.count({ where: where.steps }),
+    ]);
+    return proposalBlocks + stepBlocks;
+}
+
 export async function countGuardBlocksInWindow(
     db: Pick<PrismaTx, 'agentProposal' | 'workflowStep'>,
     tenantId: string,
     agentId: string,
     since: Date,
 ): Promise<number> {
+    const where = guardBlockWhere(tenantId, since, agentId);
     const [proposalBlocks, stepBlocks] = await Promise.all([
-        db.agentProposal.count({
-            where: {
-                tenantId,
-                agentId,
-                guardVerdict: 'QUARANTINED',
-                createdAt: { gte: since },
-            },
-        }),
-        db.workflowStep.count({
-            where: {
-                tenantId,
-                guardVerdict: 'QUARANTINED',
-                // `at`, the step's own stamp — not the run's `startedAt`. A run
-                // that began before this window and was blocked inside it was
-                // blocked inside it.
-                at: { gte: since },
-                run: { agentId },
-            },
-        }),
+        db.agentProposal.count({ where: where.proposals }),
+        db.workflowStep.count({ where: where.steps }),
     ]);
     // Named rather than returned inline, deliberately:
     // `tests/guards/flue-guard-outcome-has-arms.test.ts` reads this exact line
