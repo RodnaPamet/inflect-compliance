@@ -72,12 +72,52 @@ function serviceNowQuery(value: string): string | null {
 }
 
 /**
- * Every field a provider DECLARES must appear here.
+ * Every field a provider declares as a CONFIG field must appear here — and no
+ * field it declares as a SECRET field may.
  *
  * `tests/guards/config-field-classification.test.ts` cross-walks this against
  * each registered provider's `configSchema.configFields`, so a new field cannot
  * be added without someone deciding what it is. That cross-walk is the point:
  * a hand-maintained list that nothing checks is the failure mode this replaces.
+ *
+ * ## Why a secretField must never carry a rule here (#2837)
+ *
+ * The two halves of `ConnectionConfigSchema` are two different storage
+ * decisions, not two ways of describing one bag. `secretFields` are encrypted
+ * into `secretEncrypted` and never returned by the API. `configFields` land in
+ * `configJson`, which is a plain unencrypted Json column, is selected by
+ * `listIntegrationConnections`, and is served by `GET /admin/integrations`
+ * under a payload carrying `secretStatus: '••••••••'` — a mask that describes
+ * the SECRETS bag and says nothing about this one.
+ *
+ * So a rule here for a secret-declared key is an accept-list entry that admits
+ * a credential into the clear. It is not what the provider intends, it is not
+ * where the provider READS the value from (every credential read below goes
+ * through the merged `{ ...configJson, ...decryptedSecrets }` bag or through
+ * `secrets.<key>` directly), and nothing downstream rejects or warns.
+ *
+ * Ten such entries existed and were removed: active-directory `bindDN` /
+ * `bindPassword`, entra-id `clientSecret`, github `token` / `webhookSecret`,
+ * google-workspace `serviceAccountJson`, okta `apiToken`, orangehrm
+ * `clientSecret`, servicenow `password`, workday `clientSecret` — plus
+ * sharepoint `accessToken`, which is the same defect on the one provider the
+ * guard's cross-walk cannot see (SharePoint is not a registry provider, so it
+ * declares no `secretFields` for the guard to compare against; the token is
+ * injected into the client at construction time from the decrypted secret and
+ * was never a member of `SharePointConfigJson`).
+ *
+ * The asymmetry that proves this was drift rather than design: AD pinned
+ * `bindDN` and `bindPassword` here while its other two secret fields,
+ * `writeBindDN` and `writeBindPassword`, never had rules at all — and AD's own
+ * `validateConnection` reads `secrets.bindDN`, never `config.bindDN`.
+ *
+ * Removing a rule is a behaviour change: `validateProviderConfig` now throws
+ * `badRequest('Unknown configuration field for <provider>: <key>')` for these
+ * keys. Nothing live sends them. The admin form's `formConfig` is keyed off
+ * `configSchema.configFields` alone and its `formSecrets` off `secretFields`,
+ * so the only way one of these could reach `configJson` on a save is a stored
+ * row already holding it — `handleEdit` round-trips `conn.configJson` back out
+ * — and production holds none.
  */
 export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>> = {
     'active-directory': {
@@ -88,14 +128,11 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         // makes it safe (the host resolving into private space) is a
         // connect-time fact; see the module docblock.
         allowSelfSignedTls: { kind: 'inert' },
-        bindDN: { kind: 'inert' },
-        bindPassword: { kind: 'inert' },
         dormantDays: { kind: 'inert' },
         maxAdmins: { kind: 'inert' },
     },
     okta: {
         orgUrl: { kind: 'vendorOrigin', allow: OKTA_HOSTS },
-        apiToken: { kind: 'inert' },
         dormantDays: { kind: 'inert' },
         enrichPerUser: { kind: 'inert' },
         maxAdmins: { kind: 'inert' },
@@ -104,7 +141,6 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         host: { kind: 'vendorOrigin', allow: WORKDAY_HOSTS },
         tenant: { kind: 'inert' },
         clientId: { kind: 'inert' },
-        clientSecret: { kind: 'inert' },
         reportPath: { kind: 'inert' },
     },
     /**
@@ -121,7 +157,6 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
     orangehrm: {
         baseUrl: { kind: 'vendorOrigin', allow: ORANGEHRM_HOSTS },
         clientId: { kind: 'inert' },
-        clientSecret: { kind: 'inert' },
         // Inert as a STRING — it reaches no host and carries no query — and the
         // same caveat the Entra `writesEnabled` entry carries applies: inert is
         // a statement about the value's REACH, not about its consequence. This
@@ -135,14 +170,12 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         instance: { kind: 'vendorOrigin', allow: SERVICENOW_HOSTS },
         table: { kind: 'inert' },
         username: { kind: 'inert' },
-        password: { kind: 'inert' },
         windowDays: { kind: 'inert' },
         sysparm_query: { kind: 'boundedQuery', check: serviceNowQuery },
     },
     'entra-id': {
         tenantId: { kind: 'inert' },
         clientId: { kind: 'inert' },
-        clientSecret: { kind: 'inert' },
         // Inert as a STRING — it reaches no host and carries no query. It is
         // nonetheless the most consequential field on this connection: the
         // Entra writer refuses to construct unless it is exactly `true`, so
@@ -158,7 +191,6 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
     'google-workspace': {
         domain: { kind: 'inert' },
         adminEmail: { kind: 'inert' },
-        serviceAccountJson: { kind: 'inert' },
         enrichSso: { kind: 'inert' },
         dormantDays: { kind: 'inert' },
         maxAdmins: { kind: 'inert' },
@@ -176,7 +208,6 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         // never taken from config (graph.microsoft.com is a constant).
         aadTenantId: { kind: 'inert' },
         allowedSiteIds: { kind: 'inert' },
-        accessToken: { kind: 'inert' },
         defaultDriveId: { kind: 'inert' },
         // Written by the delta-import path, not by an admin: opaque
         // continuation tokens returned by Graph. Declared because the write is
@@ -188,8 +219,6 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         owner: { kind: 'inert' },
         repo: { kind: 'inert' },
         branch: { kind: 'inert' },
-        token: { kind: 'inert' },
-        webhookSecret: { kind: 'inert' },
     },
 };
 

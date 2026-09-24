@@ -19,7 +19,7 @@
  * `secretEncrypted` and never returned by the API. A field with an entry in
  * `CONFIG_FIELD_RULES` is accepted by `validateProviderConfig` into
  * `configJson` — which is a plain Json column, is selected by
- * `listIntegrationConnections`, and is spread into the admin GET response.
+ * `listIntegrationConnections`, and is served by the admin GET.
  *
  * A key that is BOTH is a credential the config validator will accept into
  * the unencrypted bag. Nothing rejects it and nothing warns: the response
@@ -30,11 +30,11 @@
  *
  * `tests/guards/integration-credential-placement.test.ts` asserts that no
  * provider DECLARES a credential in `configFields`. That is a different
- * structure and it does not catch this: active-directory declares
- * `bindPassword` correctly, in `secretFields`, and still carries a
- * `CONFIG_FIELD_RULES` entry for it. The sibling never reads that table.
- * Declaration and accept-list are two lists, and only one of them was
- * guarded.
+ * structure and it did not catch this: active-directory declared
+ * `bindPassword` correctly, in `secretFields`, and carried a
+ * `CONFIG_FIELD_RULES` entry for it anyway. The sibling never reads that
+ * table. Declaration and accept-list are two lists, and only one of them was
+ * guarded. #2837 emptied the second one; this file is what keeps it empty.
  */
 import '@/app-layer/integrations/bootstrap';
 import { CONFIG_FIELD_RULES } from '@/app-layer/integrations/config-schema';
@@ -59,31 +59,29 @@ function declaredFields(): Map<string, Declared> {
 }
 
 /**
- * Secret-declared keys that TODAY also carry a config rule.
+ * Secret-declared keys that also carry a config rule.
  *
- * A BASELINE, and it may only shrink. These are not benign: each one is a
- * credential `validateProviderConfig` will admit into `configJson`. They are
- * pinned rather than deleted because removing a rule changes what the
- * endpoint accepts, and that is a behaviour change which deserves its own
- * diff and its own review — not a silent side effect of adding a guard.
+ * EMPTY, and it may only grow back over somebody's explicit objection. It
+ * held ten entries when this guard was written — every one a credential
+ * `validateProviderConfig` would admit into the unencrypted bag — and #2837
+ * removed all ten rules from `CONFIG_FIELD_RULES`:
  *
- * The asymmetry is the tell that this list is drift rather than design:
- * active-directory pins `bindDN` and `bindPassword` here while its OTHER two
- * secret fields, `writeBindDN` and `writeBindPassword`, have no config rule
+ *   active-directory.bindDN          active-directory.bindPassword
+ *   entra-id.clientSecret            github.token
+ *   github.webhookSecret             google-workspace.serviceAccountJson
+ *   okta.apiToken                    orangehrm.clientSecret
+ *   servicenow.password              workday.clientSecret
+ *
+ * They were pinned rather than deleted here because removing a rule changes
+ * what the endpoint accepts, and that deserved its own diff and its own
+ * review. It got one.
+ *
+ * The asymmetry was the tell that the list was drift rather than design:
+ * active-directory pinned `bindDN` and `bindPassword` while its OTHER two
+ * secret fields, `writeBindDN` and `writeBindPassword`, had no config rule
  * at all. Nobody decided that; it accumulated.
  */
-const SECRET_FIELDS_WITH_CONFIG_RULES: readonly string[] = [
-    'active-directory.bindDN',
-    'active-directory.bindPassword',
-    'entra-id.clientSecret',
-    'github.token',
-    'github.webhookSecret',
-    'google-workspace.serviceAccountJson',
-    'okta.apiToken',
-    'orangehrm.clientSecret',
-    'servicenow.password',
-    'workday.clientSecret',
-];
+const SECRET_FIELDS_WITH_CONFIG_RULES: readonly string[] = [];
 
 /**
  * Rules whose field no registered provider declares. Dead entries, and one of
@@ -150,17 +148,36 @@ describe('config field classification — the cross-walk config-schema.ts claims
     it('a SECRET-declared field must not also carry a config rule — baseline may only shrink', () => {
         const declared = declaredFields();
         const found: string[] = [];
+        // THE DENOMINATOR, and it is part of the result. With the baseline at
+        // zero this assertion's whole content is `found === []`, which a
+        // cross-walk that examined NOTHING would also satisfy — a registry that
+        // failed to bootstrap, a `secretFields` key renamed out from under
+        // `declaredFields()`, a `CONFIG_FIELD_RULES` reduced to `{}`. Counting
+        // the pairs actually compared makes an empty selection distinguishable
+        // from a clean one.
+        let comparedPairs = 0;
+        let secretFieldsSeen = 0;
         for (const [provider, rules] of Object.entries(CONFIG_FIELD_RULES)) {
             const d = declared.get(provider);
             if (!d) continue;
+            secretFieldsSeen += d.secret.size;
             for (const key of Object.keys(rules)) {
+                comparedPairs += 1;
                 if (d.secret.has(key)) found.push(`${provider}.${key}`);
             }
         }
+        // Both sides of the comparison are non-empty: there are rules to check
+        // AND secret fields they could collide with.
+        expect(comparedPairs).toBeGreaterThan(20);
+        expect(secretFieldsSeen).toBeGreaterThan(5);
         expect(found.sort()).toEqual([...SECRET_FIELDS_WITH_CONFIG_RULES].sort());
     });
 
     it('the baseline is honest: every entry in it is really a secret field today', () => {
+        // VACUOUS WHILE THE BASELINE IS EMPTY, and kept for the day it is not.
+        // It exists so an entry cannot be re-added for a key that has since
+        // stopped being a secret field — which would read as a real pin while
+        // pinning nothing. The test with teeth today is the one above.
         const declared = declaredFields();
         const stale = SECRET_FIELDS_WITH_CONFIG_RULES.filter((entry) => {
             const idx = entry.lastIndexOf('.');
