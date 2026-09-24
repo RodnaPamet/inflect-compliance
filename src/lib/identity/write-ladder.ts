@@ -188,14 +188,32 @@ export type IdentityDirection = 'leaver' | 'joiner';
  *     zoned cron breaks that, so the fan-out is deliberately UTC and the zoned
  *     dispatch remains owed. That is a scheduling refinement, though, not the
  *     absence of a runtime, and it is no longer what holds this flag down.
- *   • NO ENTITLEMENT MAP — CLEARED by #2713. Owner decision 10 was REVISED on
- *     2026-09-21: the rules live in `IdentityDepartmentGroupRule`, one row per
- *     department→security-group rule, because the planner consumes a LIST that
- *     wants per-rule provenance. The SINGULAR fallback stayed on
- *     `TenantSecuritySettings` as `identityDefaultGroupId` +
- *     `identityDefaultGroupName`, where it inherits the OWNER gate. A tenant
- *     with rules configured no longer refuses `NO_DEPARTMENT_MAP`; one without
- *     still does, and that refusal is now one an operator CAN clear.
+ *   • NO ENTITLEMENT MAP — STILL HELD, and this paragraph used to say
+ *     otherwise. #2713 gave the map a SCHEMA and a READER: the rules live in
+ *     `IdentityDepartmentGroupRule`, one row per department→security-group
+ *     rule because the planner consumes a LIST that wants per-rule provenance,
+ *     and the SINGULAR fallback sits on `TenantSecuritySettings` as
+ *     `identityDefaultGroupId` + `identityDefaultGroupName` where it inherits
+ *     the OWNER gate.
+ *
+ *     WHAT IT DID NOT GIVE THE MAP IS A WRITER (#2839). `identity-joiner-run`
+ *     does one `findMany` against `IdentityDepartmentGroupRule` and that is the
+ *     ONLY reference to the table in `src/` — no usecase creates, updates or
+ *     deletes a rule, and `updateTenantSecurityConfig`'s patch type does not
+ *     list either default-group field. So no tenant can configure either half,
+ *     every plan refuses `NO_DEPARTMENT_MAP`, and `wouldCreate` is
+ *     structurally 0.
+ *
+ *     From #2713 until #2839 this paragraph asserted the opposite — that the
+ *     refusal had become one an operator could act on. It had not, and the
+ *     sentence was specific enough to be believed and stop a reader checking.
+ *     Acting on it needs a write path: an admin surface plus a usecase that
+ *     sets the rules and the default group. Until that lands, this condition
+ *     holds the flag down on its own.
+ *
+ *     `tests/guards/entitlement-map-claims-match-its-write-path.test.ts` now
+ *     pins the CONJUNCTION rather than either half, so the day the writer
+ *     lands, this paragraph fails a test instead of quietly going stale.
  *
  * SO THE TRIGGER LANDING IS NOT THE CONDITION FOR FLIPPING THIS. That is what
  * this paragraph used to say — "when the trigger lands, this flips in the same

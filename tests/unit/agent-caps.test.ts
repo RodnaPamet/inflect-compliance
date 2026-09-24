@@ -490,7 +490,7 @@ registerWorkflow({
             buildItems: () =>
                 Array.from({ length: HALF_ISH_PROPOSALS }, (_unused, i) => ({ title: `a-${i}` })),
         },
-        { kind: 'HUMAN_CHECKPOINT', label: 'review' },
+        { kind: 'HUMAN_CHECKPOINT', label: 'review', approvalWindow: '24h' },
         {
             kind: 'PROPOSE',
             label: 'second',
@@ -507,7 +507,7 @@ registerWorkflow({
     description: 'A run that can be resumed hours after it started.',
     steps: [
         { kind: 'READ', label: 'before', tool: 'get_compliance_posture' },
-        { kind: 'HUMAN_CHECKPOINT', label: 'review' },
+        { kind: 'HUMAN_CHECKPOINT', label: 'review', approvalWindow: '24h' },
         { kind: 'READ', label: 'after', tool: 'get_compliance_posture' },
     ],
 });
@@ -642,9 +642,47 @@ describe('a run whose policy card permits one tool call', () => {
 
 // ─── RUNTIME ─────────────────────────────────────────────────────────
 
-describe('a run resumed after its wall clock has run out', () => {
-    /** A paused run with a valid sealed context, started `ageMs` ago. */
-    function seedPausedRun(ageMs: number): string {
+/**
+ * TWO CLOCKS, AND THEY BOUND DIFFERENT THINGS.
+ *
+ * This block used to be called "a run resumed after its wall clock has run
+ * out", and that title was accurate about a state nobody had chosen. A
+ * HUMAN_CHECKPOINT parks a run for a person; `resumeWorkflowRun` handed the
+ * engine the run's ORIGINAL start; and `RUNTIME_MS` is the one cap whose
+ * `used` is READ from the clock rather than accumulated. So the sixty minutes
+ * of `ENGINE_CAPS.WALL_CLOCK_MS` — a ceiling on UNATTENDED EXECUTION — was
+ * what bounded a human's deliberation, and an approval that took an afternoon
+ * left the run unresumable while the runs list still offered a Resume button.
+ *
+ * Measured in production 2026-09-24: "12847343 already spent; 0 more asked
+ * for and NONE granted".
+ *
+ * The two questions are now answered separately, and this block asserts the
+ * split rather than the symptom:
+ *
+ *   RUNTIME_MS         bounds ONE stretch of unattended execution. It
+ *                      re-bases on resume, so a person's time is not spent
+ *                      from the engine's budget.
+ *   approvalExpiresAt  bounds the HUMAN's window, pinned per checkpoint from
+ *                      that step's mandatory `approvalWindow`.
+ *
+ * The first test here is REVERSED from what it asserted before, deliberately,
+ * and carries the objection it used to pin so a reader sees why it changed.
+ * The axes that bound WORK — STEPS, TOKENS, PROPOSALS — accumulate across
+ * resumes and are asserted above, untouched: a resumed run buys wall clock,
+ * never more work.
+ */
+describe('the engine clock and the human window, which bound different things', () => {
+    /**
+     * A paused run with a valid sealed context, started `ageMs` ago and with
+     * `windowRemainingMs` left on the human's deadline.
+     *
+     * TWO INDEPENDENT KNOBS on purpose. How old the run is and whether the
+     * approval window is still open are now separate facts, and a fixture
+     * that derived one from the other could not tell the two clocks apart —
+     * which is the whole subject of this block.
+     */
+    function seedPausedRun(ageMs: number, windowRemainingMs = HOUR_MS): string {
         const id = `run-paused-${++idSeq}`;
         const context = { input: {}, outputs: { before: { ok: true } } };
         const envelope = {
@@ -673,30 +711,57 @@ describe('a run resumed after its wall clock has run out', () => {
             errorMessage: null,
             completedAt: null,
             startedAt: new Date(Date.now() - ageMs),
+            // The human's own deadline, pinned when the run parked. Defaults
+            // to OPEN (still within the window) so the age of the run and the
+            // state of the window are independent knobs — which is the whole
+            // point of them being different clocks.
+            approvalExpiresAt: new Date(Date.now() + windowRemainingMs),
             agentId: null,
         });
         return id;
     }
 
-    it('halts on RUNTIME_MS without calling another tool', async () => {
+    it('resumes an hours-old run, because the human\'s time is not the engine\'s', async () => {
+        // THIS ASSERTION IS REVERSED, deliberately. It used to expect FAILED
+        // with a RUNTIME_MS halt, pinning that the clock ran from the run's
+        // original start — so a two-hour-old run could not be resumed at all.
+        //
+        // That was `WALL_CLOCK_MS`, sixty minutes, chosen to bound UNATTENDED
+        // EXECUTION and spent instead on a person reading a checkpoint. Both
+        // shipped canned workflows carry one, and the runs list offers a
+        // Resume button on exactly those rows: measured in production on
+        // 2026-09-24, resuming a run parked ~3.6h earlier halted instantly at
+        // "12847343 already spent; 0 more asked for and NONE granted".
+        //
+        // The objection the old assertion answered — that re-basing lets a
+        // two-checkpoint workflow span three hours with every segment looking
+        // compliant — was correct while NOTHING bounded the run's calendar
+        // life. `approvalExpiresAt` bounds it now, per checkpoint, and the
+        // next test is that bound.
         const runId = seedPausedRun(2 * HOUR_MS);
 
         const result = await resumeWorkflowRun(ctx(), runId);
 
-        expect(result.status).toBe('FAILED');
-        expect(mockReadTool).not.toHaveBeenCalled();
-        expect(mockCapHalt).toHaveBeenCalledWith({ cap: 'RUNTIME_MS', source: 'ENGINE' });
-        const details = capHaltDetails();
-        expect(details.cap).toBe('RUNTIME_MS');
-        expect(details.limit).toBe(ENGINE_RUN_CAPS.RUNTIME_MS);
-        expect(details.stepsNotRun).toBe(1);
+        expect(result.status).toBe('COMPLETED');
+        expect(mockCapHalt).not.toHaveBeenCalled();
     });
 
-    it('measures from the RUN\'s start, not the resume\'s', async () => {
-        // The defect this pins: `executeFrom(..., Date.now())` at the resume
-        // site handed every resumed segment a fresh hour, so a workflow with
-        // two checkpoints could span three hours with every segment reporting
-        // itself well inside an hour-long ceiling.
+    it('refuses once the APPROVAL window has closed, before any tool runs', async () => {
+        // The bound that replaces it, and it refuses AT THE DOOR rather than
+        // dispatching and halting: the old failure spent budget and reported a
+        // RUNTIME_MS cap no reviewer has heard of, which is a worse answer to
+        // "why did my approval not take" than naming the window.
+        const runId = seedPausedRun(2 * HOUR_MS, -1_000);
+
+        await expect(resumeWorkflowRun(ctx(), runId)).rejects.toThrow(/approval_window_closed/);
+        expect(mockReadTool).not.toHaveBeenCalled();
+        expect(mockCapHalt).not.toHaveBeenCalled();
+    });
+
+    it('still completes a freshly-parked run', async () => {
+        // The positive control. Without it, an implementation that refused
+        // EVERY resume would satisfy the window test above while being
+        // completely broken.
         const fresh = seedPausedRun(1_000);
 
         const result = await resumeWorkflowRun(ctx(), fresh);

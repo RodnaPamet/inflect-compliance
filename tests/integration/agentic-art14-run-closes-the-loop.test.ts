@@ -110,7 +110,7 @@ describeFn('Art 14 closes on the run a human actually reviews', () => {
             description: 'read → checkpoint → synthesis',
             steps: [
                 { kind: 'READ', label: 'posture', tool: 'get_compliance_posture' },
-                { kind: 'HUMAN_CHECKPOINT', label: 'review' },
+                { kind: 'HUMAN_CHECKPOINT', label: 'review', approvalWindow: '24h' },
                 { kind: 'SYNTHESIS', label: 'summary', synthesize: () => ({ text: 'done' }) },
             ],
         });
