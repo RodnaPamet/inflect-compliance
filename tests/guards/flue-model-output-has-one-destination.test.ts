@@ -97,6 +97,33 @@ describe('output that becomes nothing reaches ONE column', () => {
         ).toContain('outputSummary,');
     });
 
+    it('and the RENAME does not open a second sink the count cannot see', () => {
+        // THE HOLE THIS FILE HAD. The count above watches the literal
+        // `reply.text`, and the value stops being spelled that way one line
+        // later: `settleTurns(reply.text ?? null)` renames it to `finalText`
+        // at the parameter boundary, so every sink added INSIDE that function
+        // is invisible to the assertion that claims to cover them.
+        //
+        // Measured, not supposed. Adding `summary: finalText` to the ledger
+        // write inside `settleTurns` — a second, unscanned, unbounded copy of
+        // model output, rendered on the runs list — left this file GREEN at
+        // 7/7 while a sink spelled `reply.text` in the same commit turned it
+        // red. That is the file's own stated regression arriving through the
+        // one spelling it does not watch.
+        //
+        // So the settled text is counted on the OTHER side of the rename too.
+        // TWO uses: the parameter itself, and the ternary that gives the text
+        // to the LAST turn and no other. A third is a new destination.
+        const settle = declarationOf(engine, 'settleTurns');
+        const uses = settle.split('finalText').length - 1;
+        expect({ usesOfSettledText: uses }).toEqual({ usesOfSettledText: 2 });
+        // And the run's own progress write must not be one of them — that is
+        // the column the runs list renders, and `logAiDecision`'s sanitise +
+        // 500-char bound do not apply to it.
+        expect(callExpressionOf(settle, 'updateRun')).not.toContain('finalText');
+        expect(callExpressionOf(settle, 'updateRun')).not.toContain('summary');
+    });
+
     it('the per-call path reads TOKENS off the event stream, never model output', () => {
         // The sink this change could have added. A `turn` event carries
         // `response.output` — the assistant message that call produced —
