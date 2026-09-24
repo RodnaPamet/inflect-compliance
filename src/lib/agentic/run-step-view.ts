@@ -1,5 +1,5 @@
 import { dataScopeForToolCall } from '@/lib/mcp/tool-data-scope';
-import type { AgentDataAccessScope } from '@/lib/mcp/tool-data-scope';
+import type { AgentDataAccessScope } from '@prisma/client';
 import type { WorkflowStepDef } from './workflow-types';
 
 /**
