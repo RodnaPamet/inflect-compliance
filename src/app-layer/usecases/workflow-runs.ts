@@ -192,12 +192,17 @@ export async function startWorkflowRun(
     // did this run start under", and both answers stop being recoverable once
     // the configuration moves on.
     //
-    // Today every answer is `static`: `DRIVER_IMPLEMENTED.flue` is false, so
-    // even a tenant with both switches on falls back with a named reason. The
-    // decision is resolved and recorded anyway, and that is deliberate — a seam
-    // whose first exercise is the diff that also makes it load-bearing has
-    // never been observed working. This one is observable from the run's audit
-    // entry before it can change any behaviour.
+    // `DRIVER_IMPLEMENTED.flue` has been TRUE since #2770 flipped it. This
+    // comment said it was false — written when it was, and left behind when it
+    // stopped being — so a reader checking why every run came out `static`
+    // was sent to the wrong term. The answer is `static` because no registered
+    // WorkflowDefinition sets `driver`, and `selectRunDriver` requires the
+    // DEFINITION to request the engine, not merely the deployment to permit it.
+    //
+    // The decision is resolved and recorded regardless, and that is deliberate
+    // — a seam whose first exercise is the diff that also makes it
+    // load-bearing has never been observed working. This one is observable
+    // from the run's audit entry before it can change any behaviour.
     const driverDecision = await resolveDriverForRun(ctx.tenantId, {
         requestId: ctx.requestId,
         workflowKey,

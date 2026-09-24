@@ -117,9 +117,36 @@ function flueImportedNames(source: string): string[] {
     const names: string[] = [];
     // `import ... from '@flue/x'` — the clause is everything between `import`
     // and `from`, which covers default, namespace and named forms at once.
-    const re = /import\s+(?:type\s+)?([\s\S]*?)\s+from\s+['"](@flue\/[^'"]+)['"]/g;
+    // `[^'"]` rather than `[\s\S]`: the clause must not cross a module
+    // specifier. With `[\s\S]*?` a match beginning at an EARLIER import ran
+    // through that statement's quotes and into this one, so
+    // `import * as v from 'valibot';` on the line above a @flue import made
+    // the clause start with `* as` — and the namespace check below fired on a
+    // file that imports nothing of the sort. Three false positives in `src/`,
+    // caught by this guard's own population scan.
+    const re = /import\s+(?:type\s+)?([^'"]*?)\s+from\s+['"](@flue\/[^'"]+)['"]/g;
     for (const m of source.matchAll(re)) {
         const clause = m[1];
+        // A NAMESPACE import reaches EVERY export, and the clause does not say
+        // which. `import * as flue from '@flue/runtime'` binds only `flue`, so
+        // an identifier scan of the clause yields `as` and `flue` and never
+        // `useSandbox` — while `flue.useSandbox()` two lines later reaches the
+        // refused capability exactly as a named import would.
+        //
+        // Measured: this returned `[]` for
+        // `import * as flue from '@flue/runtime'; flue.useSandbox();`. The ban
+        // the plan calls non-negotiable was one import form away from
+        // reporting nothing.
+        //
+        // Treated as the dynamic forms below are treated, and for the same
+        // stated reason — "the whole module is treated as reaching everything
+        // it exports" — rather than by scanning member accesses, which would
+        // need to follow the local binding through aliases and re-exports to
+        // be worth anything.
+        if (/^\s*\*\s+as\s+/.test(clause)) {
+            names.push('__NAMESPACE_FLUE_IMPORT__');
+            continue;
+        }
         for (const ident of clause.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)) {
             names.push(ident[0]);
         }
@@ -149,7 +176,12 @@ const violations = SOURCE_FILES.flatMap((rel) => {
     // explanation down, which is the wrong trade every time.
     const source = codeOf(readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
     return flueImportedNames(source)
-        .filter((n) => REFUSED_FLUE_EXPORT_NAMES.has(n) || n === '__DYNAMIC_FLUE_IMPORT__')
+        .filter(
+            (n) =>
+                REFUSED_FLUE_EXPORT_NAMES.has(n) ||
+                n === '__DYNAMIC_FLUE_IMPORT__' ||
+                n === '__NAMESPACE_FLUE_IMPORT__',
+        )
         .map((n) => `${rel} imports ${n}`);
 });
 
@@ -187,7 +219,10 @@ describe('the refused agent-runtime capabilities stay out of src/', () => {
 describe('the detector fires — on every shape the real code could take', () => {
     const detects = (source: string) =>
         flueImportedNames(source).filter(
-            (n) => REFUSED_FLUE_EXPORT_NAMES.has(n) || n === '__DYNAMIC_FLUE_IMPORT__',
+            (n) =>
+                REFUSED_FLUE_EXPORT_NAMES.has(n) ||
+                n === '__DYNAMIC_FLUE_IMPORT__' ||
+                n === '__NAMESPACE_FLUE_IMPORT__',
         );
 
     it('catches a plain named import', () => {
@@ -220,6 +255,30 @@ describe('the detector fires — on every shape the real code could take', () =>
         expect(detects(`import { useSandbox as runCode } from '@flue/runtime';`)).toContain(
             'useSandbox',
         );
+    });
+
+    it('catches a NAMESPACE import, which reaches every refused export', () => {
+        // Measured blind before this: the clause of `import * as flue from
+        // '@flue/runtime'` binds only `flue`, so an identifier scan yields
+        // `as` and `flue` and never `useSandbox` — while `flue.useSandbox()`
+        // reaches it exactly as a named import would. The sandbox ban the plan
+        // calls non-negotiable was one import form away from meaningless.
+        expect(detects(`import * as flue from '@flue/runtime';\nflue.useSandbox();`)).toEqual([
+            '__NAMESPACE_FLUE_IMPORT__',
+        ]);
+        // ...and it does not depend on the refused call being present. The
+        // namespace itself is what reaches everything.
+        expect(detects(`import * as flue from '@flue/postgres';`)).toEqual([
+            '__NAMESPACE_FLUE_IMPORT__',
+        ]);
+    });
+
+    it('still reads a NAMED clause by its names', () => {
+        // The control. Without it the change above could pass by reporting the
+        // namespace sentinel for every import shape, which would make the
+        // named detection below untestable.
+        expect(detects(`import { useTool } from '@flue/runtime';`)).toEqual([]);
+        expect(detects(`import { useSandbox } from '@flue/runtime';`)).toEqual(['useSandbox']);
     });
 
     it('catches a dynamic import or require of any @flue module', () => {
