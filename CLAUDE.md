@@ -98,21 +98,31 @@ The production deployment runs on a single GCP VM, and **Claude has
 gcloud compute ssh inflect-compliance --zone europe-west1-b --command "…"
 ```
 
-The VM hosts a hand-managed Docker Compose stack at `/opt/inflect/`
-(`docker-compose.prod.yml`). It **drifts** from
-`deploy/docker-compose.prod.yml` in the repo — Watchtower
-auto-updates only the `app` + `worker` *images*, never Compose
-structure. Docker commands on the VM need `sudo`.
-`/opt/inflect/.env.prod` and the Redis `--requirepass` value are
-real secrets — never echo them.
+The VM hosts a Docker Compose stack at `/opt/inflect/`
+(`docker-compose.prod.yml`). Watchtower auto-updates only the
+`app` + `worker` *images*, never Compose structure. Docker
+commands on the VM need `sudo`. `/opt/inflect/.env.prod` and the
+Redis `--requirepass` value are real secrets — never echo them,
+and never `cat` the live compose file (it carries inline
+credentials). Extract SHAPE instead: `sudo grep -oE
+"^\s*[A-Z_]+:" <file> | sort -u`.
 
-**When a deployment or runtime change must be applied to the VM** —
-a new Compose service, a Redis config change, a one-off job run,
-inspecting container logs — **execute it directly via
-`gcloud compute ssh`. Do not ask the operator to do it by hand.**
-Back up any file before editing it (the existing
-`<file>.bak.<timestamp>` convention), validate with
-`docker compose config`, then `docker compose up -d <service>`.
+**The Compose file is repo-canonical (#2849) — do NOT hand-edit
+the host copy.** `deploy/docker-compose.prod.yml` is the source of
+truth; it reaches the VM through `deploy/apply.sh` (preflights by
+default, `CONFIRM=1` applies) and divergence is reported by
+`deploy/check-drift.sh`. Hand-editing `/opt/inflect/` is what
+produced the ~148-line drift #2849 closed, and it makes the repo
+file a trap for whoever reaches for version control mid-incident.
+A structural change belongs in the repo file, in a PR, then
+applied. See **`docs/deployment.md` → "The production VM's
+Compose file is repo-canonical"** for the canonical set, the
+`--env-file` vs `env_file:` distinction, and the outstanding
+operator actions.
+
+Non-structural VM work — inspecting container logs, a one-off job
+run — is still fine to execute directly via `gcloud compute ssh`
+rather than asking the operator.
 
 ## Architecture
 

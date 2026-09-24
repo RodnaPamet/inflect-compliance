@@ -41,6 +41,7 @@ import { runIdentitySync } from '@/app-layer/usecases/identity-sync';
 import { SYNC_UPSERT_CHUNK_SIZE } from '@/app-layer/integrations/sync-transaction';
 import type { NormalizedEmployee, HrisSyncProvider } from '@/app-layer/integrations/providers/hris';
 import type { IdentitySyncProvider, NormalizedIdentityAccount } from '@/app-layer/integrations/providers/identity/types';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 jest.setTimeout(180_000);
 
@@ -78,24 +79,25 @@ async function clearOwnRows(): Promise<void> {
     await prisma.employee.updateMany({ where, data: { managerEmployeeId: null } });
     await prisma.employee.deleteMany({ where });
     await prisma.integrationConnection.deleteMany({ where });
-    // AuditLog IS DELIBERATELY NOT CLEARED, and an earlier version of this
-    // helper tried to. That line was green here and RED in CI, which is the
-    // tell: `audit_log_immutable` is a BEFORE DELETE OR UPDATE ... FOR EACH ROW
-    // trigger that raises unconditionally — but a BEFORE-ROW trigger never
-    // fires on a ZERO-ROW match. On a box whose AuditLog happens to be empty
-    // the statement is a silent no-op and passes; in CI the sync's own upserts
-    // produce audit rows for this tenant, the delete matches, and it raises
-    // (surfacing as Prisma P2003, "Foreign key constraint violated on the (not
-    // available)", which points nowhere near the real cause).
+    // AUDIT ROWS ARE CLEARED THROUGH THE SANCTIONED HELPER, and this comment
+    // replaces one that said they were "harmless to leave".
     //
-    // An empty selection is a PASS — the same shape this repo hunts in
-    // assertions, here in a teardown.
+    // That was true only while audit writes from a job context were SILENTLY
+    // FAILING. `RequestContext.userId` is a `string`, so `buildSystemContext`
+    // put the literal 'system' there; `AuditLog.userId` is a foreign key to
+    // `User.id` and no such row exists, so every insert this sync attempted
+    // was rejected and no rows ever landed. The teardown below could delete
+    // the tenant because the rows blocking it were never written.
     //
-    // The rows are harmless to leave: the trail is append-only by design and
-    // tenantId T is unique to this suite, so nothing else reads them. Deleting
-    // them would also contradict the module doc of the code under test, which
-    // keeps per-row Prisma upserts INSTEAD of a batched INSERT ... ON CONFLICT
-    // precisely so the audit trail exists.
+    // Once that was fixed the rows appear, and `AuditLog_tenantId_fkey` is ON
+    // DELETE RESTRICT — so `tenant.deleteMany` fails and the suite cannot
+    // clean up after itself. `deleteAuditRowsForTenants` is the repo's one
+    // documented bypass of the `audit_log_immutable` trigger (#2523) and
+    // exists for exactly this: a suite clearing ITS OWN tenant's rows.
+    //
+    // Not clearing them is not an option here: the tenant row leaks otherwise,
+    // one per run, on a shared database.
+    await deleteAuditRowsForTenants(prisma, [T]);
 }
 
 async function seedConnection(provider: string): Promise<string> {

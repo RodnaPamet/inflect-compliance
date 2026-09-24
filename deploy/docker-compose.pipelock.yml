@@ -1,0 +1,92 @@
+#
+# OPT-IN OVERLAY — pipelock MCP mediator (AI agent firewall).
+#
+# Usage (only after the preconditions below are met):
+#
+#   docker compose --env-file .env --env-file .env.prod \
+#     -f docker-compose.prod.yml \
+#     -f docker-compose.pipelock.yml up -d
+#
+# ── WHY THIS IS NOT IN docker-compose.prod.yml ────────────────────────
+# It used to be, and that is precisely what made the canonical file
+# un-runnable (#2849). The service is defined but was never activated:
+# production has run eight services since the stack was built, and
+# pipelock is not one of them. Meanwhile the definition carries two
+# preconditions that the VM does not satisfy:
+#
+#   1. `./pipelock-signing.key` does not exist on the VM. A bind mount
+#      whose source is missing does not fail loudly — Docker CREATES AN
+#      EMPTY DIRECTORY at that path and mounts it, so the daemon starts
+#      and finds a directory where its Ed25519 private key should be.
+#   2. The image tag is `:latest` on a third-party registry with an
+#      explicit "pin to a digest before enabling" note that nobody has
+#      acted on.
+#
+# Neither is caught by `docker compose config`, which validates syntax
+# and `env_file:` presence and says nothing about bind-mount sources or
+# whether an image resolves. So a file containing this service passes
+# every check available short of running it, and then fails at `up`.
+# Keeping it in the canonical file meant the canonical file could not
+# be applied; splitting it out means the thing we push is the thing
+# that runs, and enabling pipelock stays a deliberate act.
+#
+# ── PRECONDITIONS BEFORE ENABLING ─────────────────────────────────────
+#   [ ] Pin `image:` to a digest (`@sha256:…`), not `:latest`.
+#   [ ] Generate the Ed25519 keypair and place the PRIVATE half at
+#       /opt/inflect/pipelock-signing.key (root-owned, mode 0400):
+#         openssl genpkey -algorithm ed25519 -out pipelock-signing.key
+#         openssl pkey -in pipelock-signing.key -pubout -out pipelock-signing.pub
+#   [ ] Put the PUBLIC half in /opt/inflect/.env.prod as
+#       PIPELOCK_PUBLIC_KEY (public half ONLY — the app verifies with it).
+#   [ ] Confirm the receipt endpoint POST /api/t/<slug>/agent-receipts
+#       accepts the daemon's receipt format for the pinned version.
+#
+# Mode "balanced" = detect + sign; it does NOT block tool calls. To
+# enforce blocking, switch the daemon to "strict" AND set the app's
+# PIPELOCK_STRICT_MODE=1 (default 0). We use ONLY the Apache-2.0 CORE
+# receipt format — NOT the Elastic-License-2.0 "fleet" features.
+#
+# Deliberately NOT Watchtower-labelled: no `com.centurylinklabs…enable`
+# label, so the mediator is never auto-updated underneath a pinned
+# digest.
+#
+services:
+  # → MCP path, inspects each tool call, and emits a mediator-signed
+  # Ed25519 "action receipt" per decision. We POST those receipts to
+  #   POST /api/t/<slug>/agent-receipts
+  # where the app VERIFIES the signature (native Node crypto) against
+  # PIPELOCK_PUBLIC_KEY before trusting/linking them to the audit chain.
+  #
+  # Mode "balanced" = detect + sign (does NOT block tool calls). To
+  # enforce blocking later, switch the daemon to "strict" AND set the
+  # app's PIPELOCK_STRICT_MODE=1 (default 0). We use ONLY the Apache-2.0
+  # CORE receipt format — NOT the Elastic-License-2.0 "fleet" features.
+  #
+  # Key management (do this ONCE, out of band — see the runbook below):
+  #   1. Generate an Ed25519 keypair for the mediator:
+  #        openssl genpkey -algorithm ed25519 -out pipelock-signing.key
+  #        openssl pkey -in pipelock-signing.key -pubout -out pipelock-signing.pub
+  #   2. Give pipelock the PRIVATE key (mounted secret below) — it never
+  #      leaves the daemon.
+  #   3. Put the PUBLIC key (raw 32-byte, hex or base64) in the app's env
+  #      as PIPELOCK_PUBLIC_KEY (deploy/.env.prod). Public half only.
+  #
+  # NOTE: image tag + exact env/flags depend on the pipelock release in
+  # use — pin a digest before enabling. This service is DEFINED here but
+  # is NOT auto-updated by Watchtower (no enable label) and should be
+  # activated deliberately by an operator.
+  pipelock:
+    image: ghcr.io/luckypipewrench/pipelock:latest # pin to a digest before enabling
+    restart: unless-stopped
+    depends_on:
+      - app
+    env_file:
+      - ./.env.prod
+    environment:
+      PIPELOCK_MODE: "balanced" # detect + sign; switch to "strict" to block
+      PIPELOCK_SIGNING_KEY_FILE: "/run/secrets/pipelock-signing.key"
+    volumes:
+      # PRIVATE signing key — stays with the daemon, never in the app.
+      - ./pipelock-signing.key:/run/secrets/pipelock-signing.key:ro
+    expose:
+      - "8080"

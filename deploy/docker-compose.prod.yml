@@ -1,17 +1,69 @@
 #
 # Production Docker Compose for inflect-compliance.
 #
-# ROLE: deployed-production. THIS is the file that runs the live
-# stack, at /opt/inflect/docker-compose.prod.yml on the production VM.
-# The repo ALSO carries a root `docker-compose.prod.yml`; that one is
-# a LOCAL production-like stack and is not interchangeable with this
-# (different service names, different database name, different env
-# file). Reason for saying so in both files: see that one's header.
+# ROLE: deployed-production. The repo ALSO carries a root
+# `docker-compose.prod.yml`; that one is a LOCAL production-like stack and is
+# NOT interchangeable with this — different service names, a different
+# database name, a different env file. Both files say which they are because
+# neither used to, and the cost was measured: an operator reading the root one
+# to understand the live deployment concluded the deployed env file had
+# drifted and was a step from writing config into a path nothing reads.
+# `tests/guards/worker-deployment.test.ts` pins that exactly one file claims
+# to be deployed.
 #
-# Runs on a single VM. Caddy terminates TLS (LE via sslip.io) and
-# proxies to the Next.js app. Postgres + PgBouncer + Redis + ClamAV
-# are internal-only (no host port publishing) so the only public
-# listeners are 80/443 on Caddy.
+# ── THIS FILE IS CANONICAL ────────────────────────────────────────────
+# It is the source of truth for the production stack's STRUCTURE, and it
+# reaches the VM at /opt/inflect/docker-compose.prod.yml through
+# `deploy/apply.sh` — never by hand-editing the host copy. Divergence is
+# detected by `deploy/check-drift.sh`. Watchtower updates the app+worker
+# IMAGES only; it never rewrites this file.
+#
+# That contract is new as of #2849. Before it, the host copy was
+# hand-edited and had drifted ~148 lines from this one: secrets inlined
+# where this file interpolates, no `:?` fail-fast guards, the comments
+# explaining non-obvious choices gone, and a volume mount present live
+# and absent here. Someone reaching for version control mid-incident got
+# something that had never run.
+#
+# ── SECRETS ARE NEVER INLINED HERE ────────────────────────────────────
+# Every credential is a `${VAR:?message}` reference. The `:?` form aborts
+# `docker compose up` BEFORE any container is created when the variable
+# is missing, so a misconfiguration is a refusal at the command line
+# rather than a crash loop or — worse — a container that starts with an
+# empty password. If you are tempted to paste a literal in here to make
+# a deploy go: don't. Put it in the host env files and let apply.sh pass
+# them. A literal here is committed to a public repo.
+#
+# ── HOW THE VARIABLES GET RESOLVED ────────────────────────────────────
+# Compose interpolates `${VAR}` from the shell environment and from the
+# files named by `--env-file` ONLY. A service-level `env_file:` entry is
+# NOT in interpolation scope — it is handed to the container and nothing
+# else. The two are easy to confuse and the confusion is load-bearing
+# here, so apply.sh runs compose as:
+#
+#   docker compose --env-file .env --env-file .env.prod \
+#                  -f docker-compose.prod.yml up -d
+#
+#   /opt/inflect/.env       → POSTGRES_PASSWORD  (interpolation only)
+#   /opt/inflect/.env.prod  → DATA_ENCRYPTION_KEY, REDIS_PASSWORD, and the
+#                             app's runtime config (interpolation AND, via
+#                             `env_file:` below, the container environment)
+#
+# Naming .env.prod on BOTH sides is deliberate. `app.environment` sets
+# DATA_ENCRYPTION_KEY and a service-level `environment:` value OVERRIDES
+# the same key from `env_file:`. Sourcing the interpolation from the very
+# file the container reads makes the two agree by construction; sourcing
+# it from anywhere else lets compose hand the app a DIFFERENT key than
+# .env.prod holds, and the app would then decrypt nothing and say little.
+#
+# Runs on a single VM. Caddy terminates TLS (LE via sslip.io and
+# app.inflect.bg) and proxies to the Next.js app. Postgres + PgBouncer +
+# Redis + ClamAV are internal-only (no host port publishing) so the only
+# public listeners are 80/443 on Caddy.
+#
+# The optional pipelock MCP mediator lives in an overlay —
+# deploy/docker-compose.pipelock.yml. It is NOT part of this file
+# because it has unmet preconditions on the VM; see that file's header.
 #
 
 services:
@@ -21,7 +73,13 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Guarded like the other two secrets. It was the ONLY credential
+      # in this file without a `:?` — and the only one the VM could
+      # actually resolve, which is the worst pairing of the two
+      # properties: an unset POSTGRES_PASSWORD does not abort the
+      # deploy, it initialises a fresh volume with an EMPTY superuser
+      # password, and pgbouncer below authenticates against it happily.
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required. It lives in /opt/inflect/.env on the prod VM; apply.sh passes that file with --env-file.}"
       POSTGRES_DB: inflect_compliance
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -43,7 +101,7 @@ services:
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_USER: postgres
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required. It lives in /opt/inflect/.env on the prod VM; apply.sh passes that file with --env-file.}"
       DB_NAME: inflect_compliance
       POOL_MODE: transaction
       DEFAULT_POOL_SIZE: "25"
@@ -117,6 +175,16 @@ services:
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"
     volumes:
       - app-uploads:/data/uploads
+      # Reconciled FROM the live host file (#2849). Prisma 7 resolves its
+      # config at RUNTIME, not only at generate time, so the production
+      # image needs prisma.config.ts present at /app — the entrypoint runs
+      # `prisma migrate deploy` before `next start` and fails without it.
+      # This mount has been live since the 2026-05-05 Prisma 7 recovery
+      # (the VM still carries docker-compose.prod.yml.before-prisma7-recovery
+      # from that day) and was missing here, so this file has been
+      # un-deployable ever since. The host copy is byte-identical to the
+      # repo's root prisma.config.ts — apply.sh pushes it to keep it so.
+      - ./prisma.config.ts:/app/prisma.config.ts:ro
     expose:
       - "3000"
     labels:
@@ -162,6 +230,9 @@ services:
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"
     volumes:
       - app-uploads:/data/uploads
+      # Same reason as `app` above — the worker runs the same image and
+      # loads the same Prisma client.
+      - ./prisma.config.ts:/app/prisma.config.ts:ro
     labels:
       com.centurylinklabs.watchtower.enable: "true"
 
@@ -208,49 +279,6 @@ services:
       - ./caddy:/etc/caddy:ro
       - caddy-data:/data
       - caddy-config:/config
-
-  # ── pipelock (MCP mediator — AI agent firewall) ───────────────
-  # External "AI agent firewall for MCP security" (Apache-2.0 CORE;
-  # github.com/luckyPipewrench/pipelock). Sits in front of the agent
-  # → MCP path, inspects each tool call, and emits a mediator-signed
-  # Ed25519 "action receipt" per decision. We POST those receipts to
-  #   POST /api/t/<slug>/agent-receipts
-  # where the app VERIFIES the signature (native Node crypto) against
-  # PIPELOCK_PUBLIC_KEY before trusting/linking them to the audit chain.
-  #
-  # Mode "balanced" = detect + sign (does NOT block tool calls). To
-  # enforce blocking later, switch the daemon to "strict" AND set the
-  # app's PIPELOCK_STRICT_MODE=1 (default 0). We use ONLY the Apache-2.0
-  # CORE receipt format — NOT the Elastic-License-2.0 "fleet" features.
-  #
-  # Key management (do this ONCE, out of band — see the runbook below):
-  #   1. Generate an Ed25519 keypair for the mediator:
-  #        openssl genpkey -algorithm ed25519 -out pipelock-signing.key
-  #        openssl pkey -in pipelock-signing.key -pubout -out pipelock-signing.pub
-  #   2. Give pipelock the PRIVATE key (mounted secret below) — it never
-  #      leaves the daemon.
-  #   3. Put the PUBLIC key (raw 32-byte, hex or base64) in the app's env
-  #      as PIPELOCK_PUBLIC_KEY (deploy/.env.prod). Public half only.
-  #
-  # NOTE: image tag + exact env/flags depend on the pipelock release in
-  # use — pin a digest before enabling. This service is DEFINED here but
-  # is NOT auto-updated by Watchtower (no enable label) and should be
-  # activated deliberately by an operator.
-  pipelock:
-    image: ghcr.io/luckypipewrench/pipelock:latest # pin to a digest before enabling
-    restart: unless-stopped
-    depends_on:
-      - app
-    env_file:
-      - ./.env.prod
-    environment:
-      PIPELOCK_MODE: "balanced" # detect + sign; switch to "strict" to block
-      PIPELOCK_SIGNING_KEY_FILE: "/run/secrets/pipelock-signing.key"
-    volumes:
-      # PRIVATE signing key — stays with the daemon, never in the app.
-      - ./pipelock-signing.key:/run/secrets/pipelock-signing.key:ro
-    expose:
-      - "8080"
 
 volumes:
   pgdata:
