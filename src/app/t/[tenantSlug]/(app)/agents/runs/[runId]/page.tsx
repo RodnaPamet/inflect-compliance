@@ -4,7 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
-import { declaredStepFor, resolveStepTool, stepDataScope } from '@/lib/agentic/run-step-view';
+import { stepDataScope, stepDeclaration } from '@/lib/agentic/run-step-view';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 
 import { AgentRunDetailClient, type RunStepRow } from './AgentRunDetailClient';
@@ -125,12 +125,11 @@ export default async function AgentRunDetailPage({
         // static engine, whose loop walks the definition's array; a Flue run's
         // `seq` counts steps RECORDED and indexes nothing. `declaredStepFor`
         // carries the rule and is tested on its own.
-        const declared = declaredStepFor(def?.steps, s.seq, s.kind);
-        // Resolved ONCE: both the tool chip and the data rung below read it,
-        // and `resolveStepTool` carries a rule (column first, definition only
-        // for the hole a failed step leaves) that must not be evaluated twice
-        // and risk answering differently.
-        const tool = resolveStepTool(s.toolCalled, declared);
+        // Resolved ONCE, and as ONE call: the tool chip, the label and the
+        // data rung below all read it, and the rule must not be evaluated
+        // twice and risk answering differently. `stepDeclaration` carries the
+        // join — which was the one part of #2774 nothing asserted over.
+        const { tool, label } = stepDeclaration(def?.steps, s.seq, s.kind, s.toolCalled);
         return {
             id: s.id,
             seq: s.seq,
@@ -184,7 +183,7 @@ export default async function AgentRunDetailPage({
             // nothing rather than 0, so a read that cost nothing and a model
             // call whose usage went unreported stay different facts.
             costTokens: s.costTokens,
-            label: declared?.label ?? null,
+            label,
             at: s.at.toISOString(),
             actorUserId: s.actorUserId,
             // Decrypted agent-authored content by the time it reaches here.

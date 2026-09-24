@@ -16,7 +16,7 @@ import * as path from 'node:path';
 
 import { AgentDataAccessScope } from '@prisma/client';
 
-import { declaredStepFor, resolveStepTool, stepDataScope } from '@/lib/agentic/run-step-view';
+import { declaredStepFor, resolveStepTool, stepDataScope, stepDeclaration } from '@/lib/agentic/run-step-view';
 import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import type { WorkflowStepDef } from '@/lib/agentic/workflow-types';
@@ -214,5 +214,49 @@ describe('stepDataScope — the rung a step REACHED, not its floor', () => {
         // A synthesis or a checkpoint reaches no tenant data by construction,
         // and a chip reading "NONE" would imply a rung was evaluated.
         expect(stepDataScope(null, JSON.stringify({ frameworkKey: 'soc2' }))).toBeNull();
+    });
+});
+
+describe('stepDeclaration — the JOIN, which is the part #2774 lived in', () => {
+    // Its own fixture: `DEF` above is scoped to the describe that owns it.
+    const JOIN_DEF: WorkflowStepDef[] = [READ, CHECKPOINT, READ];
+    // `declaredStepFor` and `resolveStepTool` were each pinned and their
+    // COMPOSITION was not, so the run-detail page could be reverted to
+    // `def?.steps?.[seq]` with every test still green: the unit tests exercise
+    // the two functions, and the rendered timeline supplies `tool` and `label`
+    // as fixtures — it pins the client's rendering of whatever the server
+    // decided.
+
+    it('a MODEL_CALL claims NO tool and NO label, whatever sits at that index', () => {
+        // THE #2774 CASE. A Flue `seq` counts steps RECORDED and indexes
+        // nothing, so the definition's step 0 is not this step's declaration.
+        // Indexing it made a MODEL_CALL wear another step's tool name and a
+        // data-access claim about content it never touched.
+        expect(stepDeclaration(JOIN_DEF, 0, 'MODEL_CALL', null)).toEqual({
+            tool: null,
+            label: null,
+        });
+    });
+
+    it('a TOOL_CALL names the tool the COLUMN recorded, not the definition’s', () => {
+        expect(stepDeclaration(JOIN_DEF, 0, 'TOOL_CALL', 'list_risks')).toEqual({
+            tool: 'list_risks',
+            label: null,
+        });
+    });
+
+    it('a static step still takes its declaration from the definition', () => {
+        // The positive control. Without it the assertions above would pass
+        // under an implementation that returned nulls for everything, and the
+        // static engine's timeline would silently lose its labels.
+        const out = stepDeclaration(JOIN_DEF, 0, 'READ', null);
+        expect(out.tool).toBe(JOIN_DEF[0].tool);
+        expect(out.label).toBe(JOIN_DEF[0].label);
+    });
+
+    it('a failed static step falls back to the declaration for its tool', () => {
+        // `resolveStepTool`'s rule: the column first, the definition only for
+        // the hole a failed step leaves.
+        expect(stepDeclaration(JOIN_DEF, 0, 'READ', null).tool).toBe(JOIN_DEF[0].tool);
     });
 });
