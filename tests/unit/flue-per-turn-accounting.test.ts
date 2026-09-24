@@ -118,6 +118,11 @@ jest.mock('@/app-layer/ai/decision-log', () => ({
         `sha256:${Buffer.from(JSON.stringify(input ?? null)).toString('hex').padEnd(64, '0').slice(0, 64)}`,
 }));
 jest.mock('@/lib/db/rls-middleware', () => ({
+    // PARTIAL: `execute.ts` reaches `kill-switch.ts`, which imports the prisma
+    // client, whose extension chain is built from this module. A wholesale
+    // replacement makes the suite fail to LOAD — and `Tests: 0 total` reads as
+    // a pass in every aggregate.
+    ...jest.requireActual('@/lib/db/rls-middleware'),
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>
         fn({ registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-1' }) } }),
     ),
@@ -187,6 +192,13 @@ function emitTurn(
 /** The `{ tokensIn, tokensOut, latencyMs, outputSummary }` of each decision row. */
 function decisionRows(): Array<Record<string, unknown>> {
     return logged.mock.calls.map(([, , input]) => input as Record<string, unknown>);
+}
+
+/** The `stepCount` of the last `updateRun` that carried one. */
+function persistedStepCount(): number | undefined {
+    const carrying = updated.mock.calls.filter(([, , data]) => 'stepCount' in (data as object));
+    const last = carrying.at(-1);
+    return last ? ((last[2] as { stepCount: number }).stepCount) : undefined;
 }
 
 /** The `costTokens` of the last `updateRun` that carried one. */
@@ -445,5 +457,75 @@ describe('a settled response that reported tokens is never free', () => {
 
         expect(logged).not.toHaveBeenCalled();
         expect(persistedCostTokens()).toBe(0);
+    });
+});
+
+describe('a halted run records where it got to, so a resume does not redo it', () => {
+    // `resumeWorkflowRun` re-enters the definition at `run.stepCount`. The
+    // engine wrote that column on its two TERMINAL exits only — COMPLETED and
+    // the TOKENS cap — so a run stopped by a guard FLAG persisted NO progress
+    // at all. A flagged run is `AWAITING_APPROVAL`, which is exactly the state
+    // a human resumes.
+    //
+    // It bites on a RESUMED segment. `seq` starts at `fromSeq` and advances
+    // per TOOL_CALL the ledger numbers, so a segment that began at step 3 and
+    // made two tool calls before being flagged had earned stepCount 5. Writing
+    // nothing left the column at 3, and approving the run re-issued those two
+    // tool calls and re-charged their tokens.
+
+    it('persists progress when a guard FLAG halts a RESUMED segment', async () => {
+        mockRead = async () => {
+            emitTurn('run-1', { input: 100, output: 10 });
+            // `review.check` leaves by throwing on its refusal path, so this is
+            // the normal exit for a flag — not an error path.
+            mockGuardObserver?.({ toolCallId: 't1', verdict: 'FLAGGED', ruleIds: ['pii.email'] });
+            throw new Error('guard flagged the call');
+        };
+
+        // fromSeq 3: the run is resuming, and the column must not go backwards.
+        await executeFlueRun(CTX, 'run-1', DEF, 3, Date.now(), 'anthropic/claude');
+
+        // Before the fix this was `undefined` — the exit wrote no stepCount at
+        // all, so whatever the column held survived the segment.
+        expect(persistedStepCount()).toBe(3);
+    });
+
+    it('persists progress on a plain failure too', async () => {
+        mockRead = async () => {
+            emitTurn('run-1', { input: 400, output: 40 });
+            throw new Error('the provider hung up');
+        };
+
+        await executeFlueRun(CTX, 'run-1', DEF, 2, Date.now(), 'anthropic/claude');
+
+        expect(persistedStepCount()).toBe(2);
+    });
+
+    it('counts the MODEL_CALL step a completed dispatch recorded', async () => {
+        mockRead = async () => {
+            emitTurn('run-1', { input: 100, output: 10 });
+            return { text: 'done', metadata: {} };
+        };
+
+        await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), 'anthropic/claude');
+
+        // One MODEL_CALL step was recorded, so the ledger advanced past it.
+        expect(persistedStepCount()).toBe(1);
+    });
+
+    it('writes progress in the SAME update as the charge', async () => {
+        // One writer, for the reason `settleAtGuard`'s comment gives about
+        // `costTokens`: two writers for one run's progress is how the two
+        // drift, and a resume reading a stale stepCount redoes paid work.
+        mockRead = async () => {
+            emitTurn('run-1', { input: 100, output: 10 });
+            return { text: 'done', metadata: {} };
+        };
+
+        await executeFlueRun(CTX, 'run-1', DEF, 0, Date.now(), 'anthropic/claude');
+
+        const carrying = updated.mock.calls.filter(([, , d]) => 'costTokens' in (d as object));
+        expect(carrying.length).toBeGreaterThan(0);
+        for (const [, , d] of carrying) expect(d).toHaveProperty('stepCount');
     });
 });

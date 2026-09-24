@@ -5,7 +5,7 @@ import type { RequestContext } from '@/app-layer/types';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
-import { updateRun, failRun, haltRunAtCap, haltRunAtGuard } from '@/lib/agentic/drivers/run-settlement';
+import { updateRun, failRun, haltRunAtCap, haltRunAtGuard, haltRunAtKill } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
@@ -24,6 +24,8 @@ import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
 import { bindRun, releaseRun } from './run-binding';
+import { resolveKillState, killRefusalMessage, KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
+import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { ensureFlueRuntime } from './runtime-start';
 import {
     flueToolsFor,
@@ -159,6 +161,35 @@ export async function executeFlueRun(
     // as a stream error, mid-run, with the run row already created and an
     // agent already dispatched — where here it is a named refusal naming the
     // configuration gap.
+    // ── THE KILL SWITCH, BEFORE ANYTHING IS SENT ANYWHERE ───────────────────
+    //
+    // `assertNotKilled` gates the TOOL boundary, which is the only place this
+    // was consulted. On this engine that is too late by one model call: with a
+    // switch engaged the run still booted the runtime, assembled the tenant's
+    // content into a prompt, sent it to the model provider and wrote its Art
+    // 12 decision row — and only a TOOL call it then tried to make was
+    // refused. A run that makes no tool call was never stopped at all.
+    //
+    // "No agent is running anywhere in this deployment" is what the platform
+    // refusal message promises an operator. A model call is the agent running.
+    //
+    // First, before `ensureFlueRuntime`, because booting the runtime and
+    // resolving the invocation are both work a killed run should not cause.
+    // Uncached for the reason `kill-switch.ts` gives: a kill state that lags by
+    // one execution cycle is this control failing at the moment it matters.
+    const kill = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
+    if (kill) {
+        // The drill drives the same gate against a canary id; its refusals must
+        // not be counted with real ones. Derived from the agent id rather than
+        // passed in, so no caller can mark a real refusal as a drill.
+        recordAgentKillRefusal({
+            scope: kill.scope,
+            drill: ctx.agentId === KILL_SWITCH_DRILL_AGENT_ID,
+        });
+        const status = await haltRunAtKill(ctx, runId, kill, killRefusalMessage(kill.scope));
+        return { status, stepFailures: 0 };
+    }
+
     const providers = await ensureFlueRuntime();
     if (!flueModelIsRegistered(modelSpecifier, providers)) {
         const status = await failRun(ctx, runId, refusalMessage('MODEL_NOT_REGISTERED'));
@@ -303,7 +334,6 @@ export async function executeFlueRun(
      */
     const settleTurns = async (finalText: string | null): Promise<void> => {
         const pending = turns.splice(0);
-        if (pending.length === 0) return;
         for (const [i, turn] of pending.entries()) {
             costTokens += turn.totalTokens;
             // The settled text belongs to the LAST call and to no other.
@@ -327,7 +357,27 @@ export async function executeFlueRun(
                 turn.durationMs,
             );
         }
-        await updateRun(ctx, runId, { costTokens });
+        // stepCount RIDES WITH costTokens, and unconditionally.
+        //
+        // `stepCount` is how a resumed run knows where it got to:
+        // `resumeWorkflowRun` re-enters at `run.stepCount`. The Flue engine
+        // wrote it on its two TERMINAL exits only — COMPLETED and the TOKENS
+        // cap halt — so a run halted by a guard FLAG kept whatever value it
+        // started the segment with. That run is `AWAITING_APPROVAL`, which is
+        // precisely the resumable state: approving it re-ran the segment from
+        // the beginning, re-charging its tokens and re-doing its tool calls.
+        //
+        // Here rather than at each exit, because this is already the single
+        // writer for the run's progress — the comment in `settleAtGuard`
+        // explains why a second writer for the same number is how the two
+        // drift, and that argument covers `stepCount` exactly as it covers
+        // `costTokens`.
+        //
+        // UNCONDITIONAL, so the early return that used to sit above this is
+        // gone. `seq` also advances on TOOL_CALL steps, which the ledger
+        // numbers independently of model turns, so a dispatch with an empty
+        // `turns` array can still have made durable progress worth recording.
+        await updateRun(ctx, runId, { costTokens, stepCount: seq });
     };
 
     /**
@@ -580,10 +630,12 @@ export async function executeFlueRun(
         // as the process; a subscriber left behind would keep this run's array
         // reachable and go on filtering every event every later run emits.
         stopObserving?.();
-        // The binding is normally CLAIMED by the agent's render. This covers
-        // the paths where it never was — a dispatch that threw before the
-        // agent rendered — so authority does not sit in the map for the
-        // lifetime of the process.
+        // THE disposer. The agent's render READS the binding and leaves it in
+        // place, because the runtime re-renders before every model call and
+        // each render needs the same authority. So this `finally` is what ends
+        // its life — on success, failure, guard halt and throw alike — and it
+        // does so at the moment the dispatch ends, which is the boundary that
+        // was meant all along.
         releaseRun(runId);
     }
 }
@@ -628,6 +680,26 @@ function wrapForLedger(
                     latch.halt = halt;
                     throw new Error(halt.message);
                 }
+            }
+
+            // AND THE WALL CLOCK, which is what makes the preflight's claim
+            // true. That comment says the per-tool charge "bounds how far
+            // past, since every subsequent tool call re-checks" — and until
+            // now no subsequent call re-checked anything but the counters.
+            // RUNTIME_MS was charged exactly once, before the dispatch, so a
+            // run that entered inside its wall clock could stay in a
+            // tool-calling loop indefinitely: the STEPS cap bounded how MANY
+            // calls it made, never how long they took.
+            //
+            // Zero units, because the clock has already spent whatever it has
+            // spent — `charge` reads `now() - startedAtMs` for this kind
+            // rather than a counter. That is exactly what the static driver
+            // does before every step, and this is this engine's equivalent
+            // moment: the last point before control leaves for a tool.
+            const runtimeHalt = budget.charge('RUNTIME_MS', 0);
+            if (runtimeHalt) {
+                latch.halt = runtimeHalt;
+                throw new Error(runtimeHalt.message);
             }
 
             // PROPOSALS is charged PER ITEM, not per call. `proposeArgs`

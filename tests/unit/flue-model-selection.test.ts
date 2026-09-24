@@ -56,15 +56,28 @@ describe('which model a Flue run may ask for', () => {
         // equality: a future branch that returned the external specifier for
         // some LOCAL_ONLY sub-case would satisfy "ok: true" above if the case
         // above were the only one written.
+        // SERVABLE selections must resolve, and resolve locally. Asserting
+        // `ok` here keeps the teeth: without it a resolver that refused
+        // everything would satisfy the prohibition vacuously.
         for (const sel of [
             { residency: 'LOCAL_ONLY' as const },
             { residency: 'LOCAL_ONLY' as const, localModel: 'mistral-7b' },
-            { residency: 'LOCAL_ONLY' as const, localBaseUrl: 'http://other:8080/v1' },
         ]) {
             const out = resolveFlueModel(sel);
             expect(out.ok).toBe(true);
             if (out.ok) expect(out.specifier.startsWith(FLUE_PROVIDER_IDS.local)).toBe(true);
         }
+
+        // An UNSERVED tenant gateway refuses — and the prohibition still holds
+        // the way it matters. This case used to assert `ok: true`, which was
+        // stricter than the intent stated above: it resolved, locally, and
+        // then dispatched to the DEPLOYMENT's gateway, which is the residency
+        // breach this file exists to prevent.
+        const unserved = resolveFlueModel({
+            residency: 'LOCAL_ONLY',
+            localBaseUrl: 'http://other:8080/v1',
+        });
+        expect(unserved).toEqual({ ok: false, reason: 'LOCAL_GATEWAY_NOT_SERVED' });
     });
 
     it('a per-tenant override beats the env default', () => {
@@ -104,6 +117,52 @@ describe('an unconfigured run is refused, not quietly downgraded', () => {
         expect(resolveFlueModel({ residency: 'LOCAL_ONLY' })).toEqual({
             ok: false,
             reason: 'LOCAL_GATEWAY_NOT_CONFIGURED',
+        });
+    });
+
+    it('LOCAL_ONLY refuses a tenant gateway this deployment does not serve', () => {
+        // THE RESIDENCY HOLE. The tenant nominated its own gateway, and the
+        // `inflect-local` provider is built once at boot from
+        // AI_LOCAL_BASE_URL alone. Accepting the tenant value here decided the
+        // run may proceed and then did not carry: the dispatch went to the
+        // DEPLOYMENT's endpoint, sending that workspace's content somewhere it
+        // did not nominate — under the one setting that exists to stop exactly
+        // that.
+        realEnv.env.AI_LOCAL_BASE_URL = 'https://gateway.deployment.internal';
+        expect(
+            resolveFlueModel({
+                residency: 'LOCAL_ONLY',
+                localBaseUrl: 'https://gateway.tenant.internal',
+            }),
+        ).toEqual({ ok: false, reason: 'LOCAL_GATEWAY_NOT_SERVED' });
+    });
+
+    it('LOCAL_ONLY allows a tenant gateway that IS the served one', () => {
+        // The positive control. A tenant that names the same endpoint the
+        // deployment serves is asking for nothing that cannot be honoured, and
+        // must not be refused — without this the test above would pass under
+        // an implementation that refused every per-tenant value.
+        realEnv.env.AI_LOCAL_BASE_URL = 'https://gateway.deployment.internal';
+        expect(
+            resolveFlueModel({
+                residency: 'LOCAL_ONLY',
+                localBaseUrl: 'https://gateway.deployment.internal',
+            }),
+        ).toEqual({
+            ok: true,
+            residency: 'LOCAL_ONLY',
+            specifier: 'inflect-local/llama-3.1-70b',
+        });
+    });
+
+    it('LOCAL_ONLY with no tenant gateway still uses the deployment one', () => {
+        // The common case must keep working: most tenants set nothing and
+        // inherit the deployment gateway.
+        realEnv.env.AI_LOCAL_BASE_URL = 'https://gateway.deployment.internal';
+        expect(resolveFlueModel({ residency: 'LOCAL_ONLY' })).toEqual({
+            ok: true,
+            residency: 'LOCAL_ONLY',
+            specifier: 'inflect-local/llama-3.1-70b',
         });
     });
 

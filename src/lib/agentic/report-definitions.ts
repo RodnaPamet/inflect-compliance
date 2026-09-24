@@ -414,6 +414,30 @@ export const METRIC_DEFINITIONS = {
     },
 
     // ── Incident and kill-switch history ─────────────────────────────
+    'incidents.guard_blocks': {
+        id: 'incidents.guard_blocks',
+        label: 'Guard blocks',
+        population:
+            'QUARANTINED verdicts inside the window, across BOTH places one ' +
+            'can land: AgentProposal rows the guard quarantined, and ' +
+            'WorkflowStep rows a run was stopped at',
+        moment: 'OVER_WINDOW',
+        includes: [
+            'blocks that produced a proposal, and blocks on a reasoning run ' +
+                'that produced no proposal at all — the second is the only ' +
+                'trace a Flue block leaves',
+            'blocks on a run that began before the window; the step carries ' +
+                'its own stamp, and a run blocked inside the window was ' +
+                'blocked inside it',
+        ],
+        excludes: [
+            'FLAGGED verdicts, which pause for review rather than stop — those ' +
+                'are counted by approvals.guard_flagged',
+            'runs the circuit breaker then latched; the trip is counted ' +
+                'separately by incidents.breaker_trips, and one cause can ' +
+                'produce both',
+        ],
+    },
     'incidents.kill_engagements': {
         id: 'incidents.kill_engagements',
         label: 'Kill switches engaged',

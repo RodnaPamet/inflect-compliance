@@ -63,6 +63,7 @@ import {
 import { METRIC_DEFINITIONS } from '@/lib/agentic/report-definitions';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import { monthStartUtc } from '@/lib/agentic/monthly-budget';
+import { countTenantGuardBlocksInWindow } from '@/lib/agentic/circuit-breaker-store';
 import { resolveProposalGuardState } from '@/lib/agentic/proposal-guard-state';
 import type { Measure } from '@/lib/agentic/report-measures';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
@@ -1043,6 +1044,53 @@ describe('the content guard, counted in three states', () => {
         ] as const) {
             expectAbsent(report.metrics[id], 'NO_POPULATION', 'NO_PROPOSALS_RECORDED');
         }
+    });
+});
+
+describe('guard blocks, the fourth stop control', () => {
+    // Plan point 10 asks for guard-block counts on /agents/reports. The
+    // section already carried kills, breaker trips and spend against budget;
+    // blocks were the one stop that stopped something and was never reported.
+
+    it('counts a Flue block that produced NO proposal', async () => {
+        // THE CASE A PROPOSAL CENSUS CANNOT SEE, and the reason this is
+        // counted over two populations. A guard that refuses a reasoning run
+        // writes a QUARANTINED step and no proposal at all, so a count over
+        // AgentProposal alone reads zero on a run the guard stopped.
+        const run = await prisma.workflowRun.create({
+            data: {
+                tenantId: T1, workflowKey: 'wf-blocked', status: 'ABORTED',
+                startedAt: ago(3), agentId: seeded[T1].agents.A1,
+            },
+        });
+        await prisma.workflowStep.create({
+            data: {
+                tenantId: T1, runId: run.id, seq: 0, kind: 'TOOL_CALL',
+                status: 'DONE', at: ago(3), guardVerdict: 'QUARANTINED',
+                toolCalled: 'list_risks',
+            },
+        });
+
+        // The PROPOSAL half, counted independently and BEFORE the report, so
+        // the two sides of the assertion do not move together. An earlier
+        // draft compared the report against the same helper it calls, which
+        // passed just as happily with the step half deleted.
+        const proposalBlocks = await prisma.agentProposal.count({
+            where: {
+                tenantId: T1,
+                guardVerdict: 'QUARANTINED',
+                createdAt: { gte: ago(400) },
+            },
+        });
+
+        const report = await buildIncidentHistoryReport(ctxFor(T1));
+
+        // The step is the +1. A proposal-only census reports `proposalBlocks`
+        // and misses the run the guard actually stopped.
+        expectMeasured(report.metrics['incidents.guard_blocks'], proposalBlocks + 1);
+        // ...and the fixture really does carry proposal blocks too, so this is
+        // not 0 + 1 agreeing with itself.
+        expect(proposalBlocks).toBeGreaterThan(0);
     });
 });
 

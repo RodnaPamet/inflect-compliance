@@ -318,17 +318,50 @@ const HIGH_MULTIPLICITY = 5;
 //   places in `docs/deployment.md`, `/autoscaling…|HPA/` 13, `/CC BY 4\.0|…/`
 //   6 across the NIS2 licence sidecar. Every one of those was a guard whose
 //   named section could be deleted while a sibling kept it green.
-// 1250 (2026-09-24, #2246 final batch, measured on the branch that set it):
-// -5, from eighteen files leaving the Class A raw population. The drop has two
-// causes and neither is a needle being rewritten. THIRTEEN sites left Class D
-// altogether because `capstone-discipline` narrowed its `docs/design-system.md`
-// reads to `mdSection(...)` — a narrowed read is not a whole-file read — which
-// takes `/\bpage\b/` (14 satisfying positions in the document) and
-// `/\bdefault\b/` (8) out of the count with them. The rest is the effect the
-// `commentsOf` and `mdProseOf` entries in `SOURCE_BLOCKS_MASKERS` predict: a
-// masked read's occurrences are counted against the masked text, so a needle
-// with one occurrence in a comment and one in code becomes unique.
-const AMBIGUOUS_NEEDLE_BASELINE = 1250;
+// 1255 -> 1215 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+//   files): -40, the same mechanism as batch 6 one directory over. 82 raw
+//   markdown sites across six guards were bound to the section or the heading
+//   lines their own test titles name, which takes the whole subject out of
+//   this population. The needles that were ambiguous purely because a
+//   670-line runbook was in scope: `--namespace inflect-production` matched
+//   20 places in `docs/incident-response.md`, `Rollback` 22, `/\bpage\b/` 14
+//   in `docs/design-system.md`, `/params/i` 10 in `docs/codebase-hygiene.md`.
+//   Bound to the Rollback playbook, the spacing scale and the pillar headings
+//   they are 5, 1, 3 and 1.
+//
+//   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
+//   converting the other eleven `tests/guards` files, so whoever merges
+//   second re-measures on the merged tree rather than keeping this figure.
+// 1229 -> 1228 (2026-09-24, #2246 final batch, merged with the entry above):
+// -1, and the interesting number is 1229, because the entry above says 1215.
+//
+// THE ENTRY ABOVE WAS RIGHT ABOUT ITS OWN TREE AND MAIN IS NOT THAT TREE.
+// 1215 was measured on the ten-mixed-target branch before `commentsOf` (#2817)
+// landed; #2817 measured 1255 unchanged on ITS tree, which predated the
+// narrowings. Both were honest and neither is main: the two batches are not
+// independent, because a NARROWING removes a site from this population while a
+// MASK leaves it in with its occurrences recounted, so the same site can be
+// removed by one branch and recounted by the other. Measured on origin/main at
+// e1a428ad3 with this branch's files reverted: the live count is 1229 against a
+// committed 1215, i.e. **main is red on this ceiling today and was red before
+// this merge**. `UNANALYSABLE_READ_BASELINE` is the same story (1445 committed,
+// 1451 live). This merge re-seats both to what the merged tree measures, which
+// is the fix rather than a new debt.
+//
+// THE -1 IS THIS BRANCH'S NET, and it is small for the reason the arithmetic
+// hides: the two batches' deltas OVERLAP. `capstone-discipline` is the visible
+// case — 8 ambiguous sites at the merge base, 4 after EITHER branch and 4 after
+// both, so each branch counted the same -4 and summing them invents four sites
+// this repo never held. The residual -1 is `tests/unit/filter-foundation.test.ts`,
+// bound to `mdPreamble(guide, 2)`.
+//
+// MEASURE, DO NOT ADD. Neither 1250 (this branch alone, from a 1255 base) nor
+// 1215 (the entry above) survives the union, and neither does any arithmetic
+// over the two. The number below came from running the ratchet on the merged
+// tree and taking what the drift sentinel reported — which is also the only way
+// to notice that the sentinel reports the FIRST baseline with slack and stops,
+// so a single pass says "one number moved" whatever the truth is.
+const AMBIGUOUS_NEEDLE_BASELINE = 1228;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -390,17 +423,28 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1250;
 // places and `helm rollback` in 6, so binding those assertions to
 // `### Scaling` and `### Rollback via helm rollback` retires several
 // five-plus-multiplicity sites at once.
-// 191 (2026-09-24, #2246 final batch, measured on the branch that set it): -2,
-// and both are `capstone-discipline`'s `docs/design-system.md` needles that sat
-// above the five-occurrence threshold — `/\bpage\b/` at 14 and `/\bdefault\b/`
-// at 8. Narrowing that read to `mdSection(doc, 'Spacing — semantic scale
-// (v2-PR-2)')` takes both out of the whole-file population; inside the section
-// they satisfy 3 positions each.
+// 193 -> 180 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+// files): -13 against -40 ambiguous, a ratio close to batch 6's and for the
+// same reason — two of the six converted guards read operational RUNBOOKS
+// (`docs/incident-response.md`, `docs/slos.md`), and a runbook repeats its
+// own vocabulary in every playbook. `--namespace inflect-production` at 20
+// and `Rollback` at 22 are both five-plus sites that the Rollback playbook's
+// own bounds retire outright.
+// 180 (2026-09-24, #2246 final batch, merged with the entry above): UNCHANGED,
+// and the zero is the evidence that the two branches removed the SAME sites.
+// This branch alone measured 191, i.e. -2 from 193, and named both: the
+// `capstone-discipline` `docs/design-system.md` needles above the
+// five-occurrence threshold, `/\bpage\b/` at 14 and `/\bdefault\b/` at 8.
+// The entry above removes them too, inside its own -13. Summing the deltas
+// would have predicted 178; the merged tree measures 180, because the same two
+// sites cannot leave twice. Per-file measurement confirms it —
+// `capstone-discipline` carries 2 five-plus sites at the merge base and 0 under
+// EITHER branch's version and 0 under both.
 //
 // Found only by re-running the drift sentinel after lowering
 // AMBIGUOUS_NEEDLE_BASELINE — it reports the FIRST baseline with slack and
 // stops, so one pass says "one number moved" whatever the truth is.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 191;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 180;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -640,8 +684,29 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 191;
 // narrowing is supposed to look like from here. A rise would have meant the
 // helper was reading as a mask.
 //
-// 1455 -> 1452 (2026-09-24, #2246 final batch): -3, and the direction is again
-// the evidence — this time about a NEW helper. `mdPreamble(md, level)` in
+// 1455 -> 1445 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+// files): -10, and the direction is again the evidence that the helper read
+// as a NARROWING and not as a mask. Every new seam is two-argument
+// (`mdSection(read(DOC), '6. Rollback')`, `headingLines(read(SLO_DOC), 2)`),
+// so the arity rule puts them out of scope rather than into
+// `content-transformed`. The fall comes from three places, all of them sites
+// LEAVING a skip bucket: `needle-carries-span` on the severity-table and
+// Rollback assertions, and two hand-rolled narrowings that were
+// `content-transformed` and are now real extractions —
+// `src.split('## SLO Summary Table')[1]`, which had no end bound and ran
+// 15842 characters to EOF where the section is 800, and a `.toLowerCase()`
+// over a whole 702-line runbook that is now over one playbook.
+// 1451 (2026-09-24, #2246 final batch, merged with the entry above): the
+// committed number moves 1445 -> 1451 and that is NOT a rise this branch
+// caused. 1451 is what origin/main at e1a428ad3 measures with this branch's
+// files reverted — the entry above seated 1445 on a tree that predated
+// `commentsOf` (#2817), so main has been red on this ceiling since the two
+// landed, exactly as it has been on `AMBIGUOUS_NEEDLE_BASELINE`. Re-seating
+// here is the fix; the merged tree measures 1451 too, so this branch's own net
+// effect on the skip count is ZERO.
+//
+// WHAT THIS BRANCH DID DO, measured, is below, and the direction is the
+// evidence — this time about a NEW helper. `mdPreamble(md, level)` in
 // `tests/helpers/markdown-regions.ts` cuts the region above a document's first
 // heading at `level`, which is the one region `mdSection` and `headingLines`
 // cannot reach. A preamble takes one argument naturally, and spelling it that
@@ -658,7 +723,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 191;
 // `docs/design-system.md`. Narrowing those reads to `mdSection(...)` takes them
 // out of the whole-file population entirely, which is what a narrowing is
 // supposed to look like from here.
-const UNANALYSABLE_READ_BASELINE = 1452;
+const UNANALYSABLE_READ_BASELINE = 1451;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

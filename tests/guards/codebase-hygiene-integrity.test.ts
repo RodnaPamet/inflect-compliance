@@ -30,8 +30,30 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { headingLines } from '../helpers/markdown-regions';
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * TWO READERS, ONE PER LANGUAGE (#2246 Class A).
+ *
+ * `read` is the TypeScript seam and is MASKED: every anchor below names a
+ * code symbol, and `itCount` is counting real `it(` blocks — a guardrail
+ * gutted to a no-op with its symbols left behind in a docblock is exactly
+ * what this meta-ratchet exists to catch, so the prose must not count.
+ * Measured across the four guardrails, masking removes a lot of satisfying
+ * text without emptying anything: `as any` 20→9 and 12→2, `console` 14→6,
+ * `params` 27→16, `Promise` 11→6, `dub-utils` 6→3. It also moves one real
+ * number — `tests/guards/no-explicit-any-ratchet.test.ts` has 4 `it(`
+ * occurrences raw and 3 in code, i.e. one of them is COMMENTED OUT and was
+ * padding the ">= 3 blocks" floor this file asserts.
+ *
+ * `readMarkdown` is the prose seam and is deliberately NOT masked: `codeOf`
+ * lexes TypeScript, and the markdown masker would blank the very sentences
+ * the doc assertion is about. That read is NARROWED instead — see below.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+const readMarkdown = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /**
@@ -101,12 +123,25 @@ describe('codebase-hygiene integrity — guard the guards', () => {
     it('the doc states all three hygiene pillars', () => {
         // The load-bearing structure — if the doc is hollowed out,
         // this catches it.
-        const doc = read('docs/codebase-hygiene.md');
-        expect(doc).toMatch(/as any/i);
-        expect(doc).toMatch(/downward ratchet/i);
-        expect(doc).toMatch(/logging discipline/i);
-        expect(doc).toMatch(/adapted/i);
-        expect(doc).toMatch(/params/i);
-        expect(doc).toMatch(/Promise/);
+        //
+        // NARROWED to the doc's level-2 HEADING LINES (#2246 Class A). A
+        // PILLAR in this document is a `## Pillar N — …` section, and each of
+        // the three headings carries both of its own needles, so the level-2
+        // heading lines are the region this test is actually about. Over the
+        // whole document the needles were badly over-satisfied — `/params/i`
+        // matched 10 times and `/as any/i` 4 — meaning a pillar could have
+        // been deleted outright and its needle kept matching from a body
+        // paragraph elsewhere. Masking would have been worse than useless:
+        // `/downward ratchet/i`, `/logging discipline/i` and `/adapted/i` all
+        // fall to ZERO through `mdCodeOf`, which would have made three of the
+        // six assertions permanently vacuous. Measured raw → heading lines:
+        // 4→1, 1→1, 1→1, 2→1, 10→1, 6→1.
+        const pillars = headingLines(readMarkdown('docs/codebase-hygiene.md'), 2);
+        expect(pillars).toMatch(/as any/i);
+        expect(pillars).toMatch(/downward ratchet/i);
+        expect(pillars).toMatch(/logging discipline/i);
+        expect(pillars).toMatch(/adapted/i);
+        expect(pillars).toMatch(/params/i);
+        expect(pillars).toMatch(/Promise/);
     });
 });

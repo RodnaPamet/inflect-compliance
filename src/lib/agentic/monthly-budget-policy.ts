@@ -124,6 +124,32 @@ export async function evaluateMonthlyBudgetForRun(
  * `createSealedRun` leaves a RUNNING row nothing will ever advance, which the
  * `agentic-run-settlement` sweep would later have to reap as a crashed
  * executor — a refusal disguised as an outage.
+ *
+ * ── CHECKED, NOT RESERVED — AND THE BOUND ON THAT ───────────────────────────
+ *
+ * `spentThisMonth` is an aggregate read outside any transaction, and nothing
+ * is written to claim the headroom this verdict just granted. So N starts that
+ * interleave between the read and their first charge all see the same spend
+ * and all pass, and the month can end over budget by at most
+ *
+ *     (N - 1) x runTokenCap
+ *
+ * where N is the number of run starts overlapping one read. The verdict is
+ * `spentThisMonth + runTokenCap > budgetTokens`, so each one individually was
+ * honest about its own worst case; what no one of them could see was the
+ * others.
+ *
+ * NOT FIXED HERE, deliberately. A reservation needs somewhere to hold the
+ * claim — a counter row taken under a transaction, or an advisory lock on the
+ * tenant — and releasing it correctly on every exit a run can take (completed,
+ * failed, guard-halted, killed, reaped) is the part that goes wrong. That is a
+ * schema and concurrency decision, not a tightening.
+ *
+ * What bounds the exposure meanwhile: the overshoot is proportional to
+ * CONCURRENT STARTS, not to time, and the per-run cap bounds each term. A
+ * tenant starting runs one at a time cannot overshoot at all, and the
+ * governance pack reports spend against budget from the same column, so an
+ * overshoot is visible rather than silent.
  */
 export async function assertWithinMonthlyBudget(
     ctx: RequestContext,

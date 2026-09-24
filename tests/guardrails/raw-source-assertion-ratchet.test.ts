@@ -576,12 +576,28 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     `src/app-layer/usecases/control/test-plans.ts` (the rationale note at 282
  *     and a back-reference at 473) — so in each case the block the test is
  *     named for can be deleted and the other occurrence keeps it green.
- *   • 11 (2026-09-24, measured on the branch that set it — the number
- *     reconciles across the three batches in flight, so read it as this
- *     tree's count and not as main's): the eighteen files that survived the
- *     other batches, closed with the last two tools the campaign needed plus
- *     one correction. Everything below is a MEASUREMENT taken before the edit,
- *     needle by needle, raw against each candidate.
+ *   • 6 (2026-09-24): the eighteen files that survived the other batches,
+ *     closed with the last two tools the campaign needed plus one correction.
+ *     Everything below is a MEASUREMENT taken before the edit, needle by
+ *     needle, raw against each candidate.
+ *
+ *     THE NUMBER IS 6, AND IT IS NOT ANY BRANCH'S ARITHMETIC — which is the
+ *     second time this list has had to say so. This branch measured 11 alone;
+ *     the `29 (2026-09-23)` entry below measured 23 with the `29 (2026-09-24)`
+ *     entry beside it. Neither figure survives the union and 11 - (23 - 29) is
+ *     not the answer either, because the two batches converted OVERLAPPING
+ *     files: six guardrails (`chart-platform-foundation`,
+ *     `incident-containment-forensic-coverage`, `org-widget-integrity`,
+ *     `sovereignty-self-assessment-coverage`, `trust-center-coverage`,
+ *     `audit-s2-control-testing`) left in both, and a removal counted twice is
+ *     a file this repo never held. Resolved the way the entry below prescribes
+ *     — the JSON is the set UNION of the two branches' removals, the ratchet
+ *     was run on the merged tree with an empty baseline, and the six files it
+ *     named are what is written down. One file came BACK relative to this
+ *     branch alone: `capstone-discipline`, because the merge took main's two
+ *     whole-document `.not.toMatch` retired-variant assertions over this
+ *     branch's narrowed ones (a negative is satisfied by any restriction of
+ *     the text it reads, so narrowing one forbids strictly less).
  *
  *     `mdProseOf` — THE INVERSE OF `mdCodeOf`, which the 29 entry below
  *     declined to build on spec and named the condition for building: a
@@ -596,6 +612,20 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     moving a sentence INTO a fenced block leaves the raw count at 1 and takes
  *     the masked count to 0. Registered in `SOURCE_BLOCKS_MASKERS` in this same
  *     diff, which is the #2727 lesson the note there records.
+ *
+ *     WHERE IT ACTUALLY LANDED, which the union changed and is worth naming so
+ *     nobody reads "fourteen" as fourteen call sites. Of the fourteen prose
+ *     assertions the survey found, thirteen are better served by a NARROWING —
+ *     `mdSection` / `headingLines` / `mdPreamble` — because the caller then
+ *     states WHICH region is supposed to say it, and the merge took main's
+ *     narrowing wherever the two branches disagreed. One seam is masked:
+ *     `verification-integrity`'s `readMarkdown`, over `docs/verification-policy.md`.
+ *     The two tools compose there rather than compete — the mask removes the
+ *     fenced samples inside whatever region is read, the narrowing chooses the
+ *     region — and the measurements are at the call sites: 1/3/2/2 raw,
+ *     1/3/2/2 through `mdProseOf`, 1 in the preamble and 2/1/1 in the states
+ *     section. A masker with no caller is a blind spot with a docblock, so it
+ *     is bound at a real seam or it should not be exported.
  *
  *     `mdPreamble(md, level)` — the region above the first heading at `level`,
  *     which neither `mdSection` nor `headingLines` can cut. Fence-aware,
@@ -627,10 +657,23 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     ``- `hover:scale-*`, … are banned.``, whose left half is a code span and
  *     whose right half is prose. It counts 1 raw and ZERO through BOTH maskers.
  *     Two more (`` /`outline` —/ ``, `` /`success` —/ ``) are NEGATIVES of the
- *     same shape, where a mask would have been a silent vacuous pass. All
- *     thirteen sites are narrowed with `mdSection` instead — which is also what
- *     they mean, and tightens the loose ones: `/\bpage\b/` from 14 satisfying
- *     positions to 3, `/\bdefault\b/` from 8 to 3.
+ *     same shape, where a mask would have been a silent vacuous pass. The
+ *     eleven POSITIVES are narrowed with `mdSection` instead — which is also
+ *     what they mean, and tightens the loose ones: `/\bpage\b/` from 14
+ *     satisfying positions to 3, `/\bdefault\b/` from 8 to 3.
+ *
+ *     THE TWO NEGATIVES STAY WHOLE-DOCUMENT, and that is a CORRECTION to what
+ *     this branch shipped alone. It narrowed them to the Button-variants
+ *     section on the argument that the needle straddles the mask boundary —
+ *     true, and beside the point, because the choice there is not
+ *     mask-vs-narrow but narrow-vs-nothing. A negative assertion is satisfied
+ *     by any RESTRICTION of the text it reads, so bounding
+ *     `` expect(doc).not.toMatch(/`outline` —/) `` to one section forbids
+ *     strictly LESS: a "`outline` — use for …" line could reappear in the
+ *     decision tree with the guard green. Narrowing a negative is the one
+ *     conversion in this campaign that weakens the assertion while reading as
+ *     converted, and it is why this file is still in the list above. A file's
+ *     presence here is a cap, not an accusation — see the note below.
  *
  *     A SECOND MISLABELLED SEAM, same shape as the first.
  *     `p1-optimistic-concurrency` read `version-conflict-toast.ts` through its
@@ -734,8 +777,66 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
+ *   • 29 (2026-09-23): ten `tests/guards` files with MIXED read targets, six
+ *     of which leave. Their raw sites were 94 and are now 7.
+ *
+ *     THE NUMBER IS 29, NOT 30, AND THAT IS THE POINT OF WRITING IT DOWN.
+ *     This batch and the `nav-item-geometry-discipline` batch above were
+ *     authored in parallel against a 36-entry list. Each was internally
+ *     consistent alone — 36 - 1 = 35, 36 - 6 = 30 — and NEITHER number
+ *     survives the union: the merged list is 29. A baseline is a
+ *     MEASUREMENT of the combined tree, never the arithmetic of one branch,
+ *     and a history entry naming 30 would name a state this repo never
+ *     holds. Resolved by running the ratchet on the merged tree and taking
+ *     the count it reported. The technique was
+ *     chosen PER READ rather than per file, and the split is the finding:
+ *     eight of the ten had already masked every `.ts` read they own, and were
+ *     in this list only for markdown admitted by the #2727 widening.
+ *
+ *     MASKING IS THE WRONG TOOL ON THOSE, and it is wrong in the silent
+ *     direction. Counted needle by needle against the documents actually read,
+ *     `mdCodeOf` takes 50 of these assertions' needles to ZERO — it keeps a
+ *     document's code and blanks its prose, and a guard asserting that a
+ *     policy states a rule or a runbook names a playbook is asserting about
+ *     prose. Every one of those would have read as converted while being
+ *     unable to fail. So the markdown reads are NARROWED with
+ *     `tests/helpers/markdown-regions.ts` — `mdSection` where the subject is a
+ *     section's content, `headingLines(doc, N)` where the test's own title is
+ *     a claim about section STRUCTURE ("documents the four tiers", "states all
+ *     three pillars", "still declares an RPO and an RTO section").
+ *
+ *     Narrowing is not cosmetic here. Bound to the region the test names:
+ *     `--namespace inflect-production` 20 → 5, `Rollback` 22 → 1,
+ *     `/\bpage\b/` 14 → 3, `/params/i` 10 → 1, `/Epic OI-3/` 7 → 5,
+ *     `AUTH_TEST_MODE=1` 5 → 1. `oi-3-runbook-and-slos` alone held 42 of the
+ *     94, against two 670-line documents whose own docblock already records
+ *     three assertions that went on passing from a dated CHANGELOG row after
+ *     the live text they pinned had been corrected.
+ *
+ *     FOUR FILES STAY, each for a reason this ratchet already recognises:
+ *     `ai-system-registry` and `p1-optimistic-concurrency` assert that a
+ *     COMMENT is present or absent (a Regulation citation in a docblock; the
+ *     phrasing of a rationale) — through `codeOf` the citation goes 1 → 0 in
+ *     each of the two files it is read from, and `/optimistic-concurrency/`
+ *     2 → 0, so masking would make the positives impossible and the negative
+ *     unfailable;
+ *     `capstone-discipline` keeps two `.not.toMatch` over the whole document,
+ *     because a negative is satisfied by any RESTRICTION of the text it reads,
+ *     so narrowing one weakens it while looking converted; and
+ *     `verification-integrity` keeps one positive whose subject is the
+ *     document's opening thesis, ABOVE the first `##`, so there is no section
+ *     to bind it to and every candidate takes it to 0.
+ *
+ *     WHAT WAS NOT A DEFECT, measured rather than assumed: no assertion
+ *     reddened. Every needle that survives its new bound was already matching
+ *     real text. Two things did move that are worth recording — the summary
+ *     table in `oi-3` was bounded by `src.split('## SLO Summary Table')[1]`,
+ *     which has no END and ran 15842 characters to EOF where the section is
+ *     800; and `codebase-hygiene-integrity` counts `it(` blocks in the
+ *     guardrails it watches, where one file has 4 raw and 3 in code, so a
+ *     commented-out block was padding its ">= 3" floor.
  */
-const RAW_ASSERTING_FILE_BASELINE = 11;
+const RAW_ASSERTING_FILE_BASELINE = 6;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the
@@ -1069,7 +1170,35 @@ describe('Class A — assertions satisfied by prose', () => {
         expect(r.unlexableByExtension['.yml']).toBeGreaterThan(50);
         // And the newly-admitted languages ARE inside — the other half of
         // "the gate opened" rather than "the filter broke".
-        expect(r.lexableByExtension['.md']).toBeGreaterThan(100);
+        //
+        // `.md` IS A DRAINING POPULATION AND `.sql` IS NOT, which is why the
+        // note above does not transfer and this clause had to change shape.
+        // The `.sql` fix is a MASK at the read seam: a site moves from raw to
+        // masked and `lexableByExtension` does not move at all, which is the
+        // invariance that made "count what the gate admits" a stable control.
+        // The `.md` fix cannot be a mask — `mdCodeOf` blanks a document's
+        // prose, and a guard asserting that a policy states a rule is
+        // asserting about prose — so the prescribed fix is a NARROWING, and a
+        // narrowed read (`mdSection(doc, 'Rollback')`) is a two-argument
+        // extraction that leaves the analysed population ENTIRELY. Taking the
+        // advice therefore drains this very count. Measured: the #2246
+        // mixed-target batch (2026-09-23) converted 82 raw `.md` sites across
+        // six `tests/guards` files and took this number 147 → 65, straight
+        // through a floor of 100, on a diff that deleted no read and no
+        // assertion.
+        //
+        // So the load-bearing half is now the EXCLUSION check, which no
+        // conversion can move: if the gate closed, `.md` reads would reappear
+        // under `unlexableByExtension`. The magnitude floor stays as the
+        // companion that says reads exist to be admitted at all — an empty
+        // selection satisfies the exclusion check on its own — but it is set
+        // well below the live count on purpose, because it is drainable and
+        // two branches each narrowing markdown drain it independently. When
+        // it does fire, check `unlexableByExtension['.md']` first: undefined
+        // means the gate is open and somebody took the advice, and the
+        // response is to re-seat this number, not to un-narrow a read.
+        expect(r.unlexableByExtension['.md']).toBeUndefined();
+        expect(r.lexableByExtension['.md']).toBeGreaterThan(20);
         expect(r.lexableByExtension['.css']).toBeGreaterThan(10);
     });
 

@@ -245,7 +245,6 @@ describeFn('Agentic workflow engine (real DB)', () => {
         const run = await getWorkflowRun(ctx(), result.runId);
         expect(run.status).toBe('ABORTED');
     });
-});
 
     // ─────────────────────────────────────────────────────────────────────
     //  costTokens ACCUMULATES ACROSS ALL KINDS
@@ -313,3 +312,4 @@ describeFn('Agentic workflow engine (real DB)', () => {
             expect((await runRow(paused.runId)).costTokens).toBeGreaterThan(atCheckpoint);
         });
     });
+});

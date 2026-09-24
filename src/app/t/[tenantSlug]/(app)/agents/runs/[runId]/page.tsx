@@ -3,9 +3,8 @@ import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
-import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
-import { declaredStepFor, resolveStepTool } from '@/lib/agentic/run-step-view';
+import { stepDataScope, stepDeclaration } from '@/lib/agentic/run-step-view';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 
 import { AgentRunDetailClient, type RunStepRow } from './AgentRunDetailClient';
@@ -126,12 +125,11 @@ export default async function AgentRunDetailPage({
         // static engine, whose loop walks the definition's array; a Flue run's
         // `seq` counts steps RECORDED and indexes nothing. `declaredStepFor`
         // carries the rule and is tested on its own.
-        const declared = declaredStepFor(def?.steps, s.seq, s.kind);
-        // Resolved ONCE: both the tool chip and the data rung below read it,
-        // and `resolveStepTool` carries a rule (column first, definition only
-        // for the hole a failed step leaves) that must not be evaluated twice
-        // and risk answering differently.
-        const tool = resolveStepTool(s.toolCalled, declared);
+        // Resolved ONCE, and as ONE call: the tool chip, the label and the
+        // data rung below all read it, and the rule must not be evaluated
+        // twice and risk answering differently. `stepDeclaration` carries the
+        // join — which was the one part of #2774 nothing asserted over.
+        const { tool, label } = stepDeclaration(def?.steps, s.seq, s.kind, s.toolCalled);
         return {
             id: s.id,
             seq: s.seq,
@@ -141,16 +139,30 @@ export default async function AgentRunDetailPage({
             // hole a failed step leaves. The rule is `resolveStepTool`, which
             // carries the reasoning and is tested on its own.
             tool,
-            // THE DATA RUNG THE TOOL REACHES, derived rather than stored.
+            // THE DATA RUNG THE TOOL REACHED, derived rather than stored.
             //
-            // `baseDataScopeForTool` is a pure function of the tool NAME —
-            // the catalogue rule, or the class default — so there is nothing
-            // to migrate and nothing that can drift from the authority that
-            // actually enforces it. Deriving it here rather than recording it
-            // on the step is what keeps those two the same fact: if the
-            // catalogue reclassifies a tool tomorrow, an old run's timeline
-            // re-reads the rung that tool reaches TODAY, which is the honest
-            // answer to "what does this step touch".
+            // ARGUMENT-AWARE, and that is the whole point of the function
+            // chosen. This used to call `baseDataScopeForTool`, whose own
+            // docstring defines it as the MINIMUM — "the rung a tool call
+            // reaches AT LEAST — its base, with no argument raising it". The
+            // seam that ENFORCES the rung uses `dataScopeForToolCall(name,
+            // args)` (authorize.ts), so the two disagreed exactly where an
+            // argument raises the rung.
+            //
+            // That is not hypothetical on the shipped workflows.
+            // `get_framework_status` is READ_METADATA at base and
+            // READ_TENANT_DATA when called with `frameworkKey`, and
+            // framework-onboarding threads that key into it. So a real run
+            // touched tenant data and the timeline told a reviewer it had read
+            // catalogue metadata. On a governance surface, under-reporting
+            // what an agent reached is the one error that matters.
+            //
+            // Still DERIVED, which is what the note it replaces was really
+            // defending: the rung comes from the recorded args plus TODAY's
+            // catalogue, so nothing is migrated and nothing can drift from the
+            // authority that enforces it. If the catalogue reclassifies a tool
+            // tomorrow, an old run's timeline re-reads the rung that call
+            // would reach today.
             //
             // Computed on the SERVER. The helper only type-imports from
             // Prisma and otherwise reaches the tool catalogue, so this adds
@@ -159,7 +171,7 @@ export default async function AgentRunDetailPage({
             // Null when the step names no tool — a synthesis or a checkpoint
             // reaches no tenant data by construction, and a chip reading
             // "NONE" there would imply a rung was evaluated when none was.
-            scope: tool ? baseDataScopeForTool(tool) : null,
+            scope: stepDataScope(tool, s.inputJson),
             // WHAT THE GUARD SAID, when one ran. Null is not CLEAN: a
             // checkpoint or a synthesis reaches no tenant content and is never
             // scanned, and a chip reading CLEAN there would tell a reviewer
@@ -171,7 +183,7 @@ export default async function AgentRunDetailPage({
             // nothing rather than 0, so a read that cost nothing and a model
             // call whose usage went unreported stay different facts.
             costTokens: s.costTokens,
-            label: declared?.label ?? null,
+            label,
             at: s.at.toISOString(),
             actorUserId: s.actorUserId,
             // Decrypted agent-authored content by the time it reaches here.

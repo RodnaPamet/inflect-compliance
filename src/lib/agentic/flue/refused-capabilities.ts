@@ -70,22 +70,34 @@ const SANDBOX: readonly RefusedCapability[] = [
 ];
 
 /**
- * FILESYSTEM WRITE TOOLS.
+ * FILESYSTEM TOOLS.
  *
  * Not named as a refusal in the plan, and included because they are the same
- * decision one step along: both operate on the sandbox filesystem, so they are
- * inert without a sandbox and a live danger with one. Listing them costs
- * nothing today and closes the door that a future `useSandbox` reinstatement
- * would otherwise open by default.
+ * decision one step along: all of them operate on the sandbox filesystem, so
+ * they are inert without a sandbox and a live danger with one. Listing them
+ * costs nothing today and closes the door that a future `useSandbox`
+ * reinstatement would otherwise open by default.
  *
- * Note this is about the SANDBOX filesystem, not about database writes — those
- * are refused by a different and stronger mechanism: propose-not-commit, where
- * the adapter offers read tools only and every write becomes an `AgentProposal`
- * a human approves.
+ * READS ARE HERE TOO, and they were not. This list held the two writers on
+ * exactly the argument above, while `createReadTool`, `createGrepTool` and
+ * `createGlobTool` — same package, same `(env: Sandbox)` signature, same
+ * inert-or-dangerous property — were absent. A read tool over a sandbox
+ * filesystem is an exfiltration surface, not a lesser write: `SandboxToolFactory`
+ * is already refused for "exposes sandbox operations as tools", and these are
+ * sandbox operations exposed as tools.
+ *
+ * Note this is about the SANDBOX filesystem, not about database reads or
+ * writes — those are governed by a different and stronger mechanism:
+ * propose-not-commit plus the deny-by-default tool allowlist, where the
+ * adapter offers audited MCP read tools only and every write becomes an
+ * `AgentProposal` a human approves.
  */
-const FILESYSTEM_WRITE: readonly RefusedCapability[] = [
+const FILESYSTEM: readonly RefusedCapability[] = [
     { name: 'createWriteTool', reason: 'writes to the sandbox filesystem; inert without one, dangerous with one' },
     { name: 'createEditTool', reason: 'edits the sandbox filesystem; inert without one, dangerous with one' },
+    { name: 'createReadTool', reason: 'reads the sandbox filesystem; an exfiltration surface with one' },
+    { name: 'createGrepTool', reason: 'searches the sandbox filesystem; an exfiltration surface with one' },
+    { name: 'createGlobTool', reason: 'enumerates the sandbox filesystem; an exfiltration surface with one' },
 ];
 
 /**
@@ -105,7 +117,7 @@ const CHANNELS: readonly RefusedCapability[] = [
 /** Every refused export name, with its reason. */
 export const REFUSED_FLUE_EXPORTS: readonly RefusedCapability[] = [
     ...SANDBOX,
-    ...FILESYSTEM_WRITE,
+    ...FILESYSTEM,
     ...CHANNELS,
 ];
 

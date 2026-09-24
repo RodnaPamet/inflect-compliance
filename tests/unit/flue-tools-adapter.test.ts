@@ -616,7 +616,55 @@ describe('the guard sandwich', () => {
 
         await runGuardedTool(invocation(), 'list_risks', { limit: 5 }, 'call-1');
 
-        expect(order).toEqual(['egress', 'funnel', 'input']);
+        // FOUR slices, not three. The result is scanned twice and the two ask
+        // different questions: `guardUntrustedInput` asks whether someone is
+        // steering the model with this text, `guardEgress` whether there is a
+        // secret in it. A tenant Risk description carrying an API key passes
+        // the first and fails the second, and this text is on its way to a
+        // third-party model provider.
+        expect(order).toEqual(['egress', 'funnel', 'input', 'egress']);
+    });
+
+    it('scans the RESULT for secrets, not only for injection', async () => {
+        // The two questions are different. `guardUntrustedInput` asks whether
+        // someone is steering the model with this text; `guardEgress` asks
+        // whether there is a secret in it. A tenant Risk description carrying
+        // an API key passes the first and fails the second — and the result is
+        // on its way to a third-party model provider.
+        //
+        // Before this, the egress slice ran on the ARGS only, which the
+        // comment there describes as protecting the QUEUE. The text travelling
+        // the other way was the run's one outbound path with no secret scan.
+        mockGuardInput.mockResolvedValue(CLEAN);
+        mockRunReadTool.mockResolvedValue({
+            content: [{ type: 'text', text: 'risk: the production access key is still in the runbook' }],
+        } as never);
+        const egressSaw: unknown[] = [];
+        mockGuardEgress.mockImplementation(async (_ctx, payload) => {
+            egressSaw.push(payload);
+            return CLEAN;
+        });
+
+        await runGuardedTool(invocation(), 'list_risks', { limit: 5 }, 'call-9');
+
+        // The RESULT TEXT reached the egress scan, not merely the args.
+        expect(egressSaw).toContain('risk: the production access key is still in the runbook');
+    });
+
+    it('refuses to hand the model a result the egress guard flagged', async () => {
+        // Scanning without enforcing would record the verdict and serve the
+        // secret anyway.
+        mockGuardInput.mockResolvedValue(CLEAN);
+        mockRunReadTool.mockResolvedValue({
+            content: [{ type: 'text', text: 'payload' }],
+        } as never);
+        mockGuardEgress
+            .mockResolvedValueOnce(CLEAN) // the args
+            .mockResolvedValueOnce(FLAGGED); // the result
+
+        await expect(
+            runGuardedTool(invocation(), 'list_risks', { limit: 5 }, 'call-10'),
+        ).rejects.toThrow();
     });
 
     it('NEVER reaches the funnel when the argument guard blocks', async () => {
@@ -875,8 +923,14 @@ describe('what the step ledger is told about a guarded call', () => {
 
         await runGuardedTool(invocation(), 'list_risks', {}, 'call-1', review);
 
+        // THREE reports, not two. The result is scanned twice — injection and
+        // egress — and both are recorded under the `result` slice because both
+        // are about the same text. The ledger folds every verdict for one
+        // `toolCallId` into the worst seen, so a result flagged by either
+        // reads as flagged.
         expect(seen.map((o) => `${o.slice}:${o.verdict}`)).toEqual([
             'args:CLEAN',
+            'result:CLEAN',
             'result:CLEAN',
         ]);
         // The id is what keeps concurrent calls apart in the driver's map.

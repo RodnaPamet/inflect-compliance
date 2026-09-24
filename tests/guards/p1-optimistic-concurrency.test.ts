@@ -165,15 +165,17 @@ describe("Epic P1 — process map optimistic concurrency", () => {
     });
 
     describe("Client — version-conflict helper + canvas wire-up", () => {
-        // `read`, not `readDoc`: every assertion in this block names CODE —
-        // the exported signature, the 409 gate, the `details.currentVersion`
-        // path, the toast's Reload action — so comments are what must be
-        // blanked here, not kept. It read raw until #2246's final batch
-        // measured it: all four needles count 1 through `codeOf` and 0 through
-        // `commentsOf`.
-        const helperSrc = read(
-            "src/lib/processes/version-conflict-toast.ts",
-        );
+        // MASKED, not `readDoc` (#2246), and BOTH sides of the #2817/#2823
+        // overlap reached it independently. Every assertion below names CODE —
+        // the exported signature, the `!== 409` gate, the
+        // `details.currentVersion` path, the toast's Reload action — so the
+        // raw seam was the wrong one: `version-conflict-toast.ts` is 2505
+        // bytes of which 696 are non-whitespace code, i.e. ~72% of what these
+        // four regexes were matching against is prose. Measured, each needle
+        // is 1 raw, 1 through `codeOf` and ZERO through `commentsOf` — nothing
+        // here was green on a comment today, and the seam is what stops the
+        // next edit making it so.
+        const helperSrc = read("src/lib/processes/version-conflict-toast.ts");
         const canvasSrc = read(
             "src/components/processes/PersistedProcessCanvas.tsx",
         );

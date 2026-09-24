@@ -1,11 +1,6 @@
 [
     "tests/guardrails/ai-aisvs-hardening-coverage.test.ts",
-    "tests/guards/auth-server-gate-coverage.test.ts",
-    "tests/guards/behavioural-coverage-registry.test.ts",
-    "tests/guards/codebase-hygiene-integrity.test.ts",
-    "tests/guards/dependency-governance-integrity.test.ts",
-    "tests/guards/oi-3-runbook-and-slos.test.ts",
-    "tests/guards/readiness-discoverability-provenance.test.ts",
+    "tests/guards/capstone-discipline.test.ts",
     "tests/unit/epic19-coherence.test.ts",
     "tests/unit/epic55-hardening.test.ts",
     "tests/unit/observability-infra.test.ts",

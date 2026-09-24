@@ -66,7 +66,17 @@ export type FlueModelRefusal =
     /** LOCAL_ONLY with a gateway but no model named on it. */
     | 'LOCAL_MODEL_NOT_CONFIGURED'
     /** EXTERNAL residency, but no external credential exists. */
-    | 'EXTERNAL_CREDENTIAL_NOT_CONFIGURED';
+    | 'EXTERNAL_CREDENTIAL_NOT_CONFIGURED'
+    /**
+     * LOCAL_ONLY against a gateway this deployment does not serve.
+     *
+     * The tenant nominated its own `aiLocalBaseUrl`, and the `inflect-local`
+     * provider is built ONCE AT BOOT from `AI_LOCAL_BASE_URL` alone. Honouring
+     * the tenant value here while the traffic went to the deployment endpoint
+     * would send that tenant's content somewhere it did not nominate — under a
+     * residency setting whose whole point is that it does not.
+     */
+    | 'LOCAL_GATEWAY_NOT_SERVED';
 
 export type FlueModelChoice =
     | { ok: true; specifier: string; residency: 'EXTERNAL' | 'LOCAL_ONLY' }
@@ -99,6 +109,26 @@ export function resolveFlueModel(sel?: FlueModelSelection): FlueModelChoice {
     if (sel?.residency === 'LOCAL_ONLY') {
         const baseUrl = sel.localBaseUrl || env.AI_LOCAL_BASE_URL;
         if (!baseUrl) return { ok: false, reason: 'LOCAL_GATEWAY_NOT_CONFIGURED' };
+        // WHAT IS DECIDED HERE MUST BE WHAT IS DIALLED THERE.
+        //
+        // The `inflect-local` provider is built once at boot, from
+        // `AI_LOCAL_BASE_URL` alone (`runtime-start.ts`: "Deployment-wide
+        // only"). A per-tenant `aiLocalBaseUrl` therefore decides that the run
+        // may proceed, and then does not carry: the dispatch goes to the
+        // deployment's endpoint. For a LOCAL_ONLY workspace that is the one
+        // outcome the setting exists to prevent — the tenant's content leaving
+        // for a gateway it did not nominate.
+        //
+        // Refused, not silently honoured, and not silently ignored. This is
+        // the same treatment the sibling `localModel` override already gets:
+        // unserved per-tenant values become a named refusal an operator can
+        // act on (`flueModelIsRegistered`), never a fallback. The upgrade path
+        // is the same one recorded on `FlueProviderModels.localModels` — read
+        // the distinct configured gateways at boot and register a provider per
+        // gateway.
+        if (sel.localBaseUrl && sel.localBaseUrl !== env.AI_LOCAL_BASE_URL) {
+            return { ok: false, reason: 'LOCAL_GATEWAY_NOT_SERVED' };
+        }
         const model = sel.localModel || env.AI_LOCAL_MODEL;
         if (!model) return { ok: false, reason: 'LOCAL_MODEL_NOT_CONFIGURED' };
         return {
