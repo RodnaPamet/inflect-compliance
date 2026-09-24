@@ -1,3 +1,4 @@
+import { mdSection } from '../helpers/markdown-regions';
 import { codeOf } from '../helpers/source-blocks';
 /**
  * Auth server-gate coverage — the load-bearing integration tests.
@@ -88,12 +89,27 @@ describe('auth server-gate coverage — integration tests we rely on', () => {
         // The README is the operator-facing record of WHY we
         // run with AUTH_TEST_MODE=1. If the README disappears,
         // a future contributor has no context for the choice.
-        const src = fs.readFileSync(
+        //
+        // NARROWED, not masked (#2246 Class A). The subject here is PROSE, so
+        // `mdCodeOf` is the wrong tool — it keeps a document's code and blanks
+        // its sentences, and measured on this file that takes 'SMTP catcher'
+        // from 2 matches to 0, i.e. the assertion would pass vacuously for
+        // ever. The fix is to bind the read to the section this test names in
+        // its own title, which is also the section the docblock above tells a
+        // contributor to edit. Measured raw → section: 'AUTH_TEST_MODE=1'
+        // 5 → 1 (the other four are the sibling invariant section, which was
+        // satisfying this assertion on its own), 'playwright.real-auth.
+        // config.ts' 1 → 1, 'SMTP catcher' 2 → 2.
+        const readme = fs.readFileSync(
             path.join(ROOT, 'tests/e2e/README.md'),
             'utf8',
         );
-        expect(src).toContain('AUTH_TEST_MODE=1');
-        expect(src).toContain('playwright.real-auth.config.ts');
-        expect(src).toContain('SMTP catcher');
+        const decision = mdSection(
+            readme,
+            'Why not a sibling `playwright.real-auth.config.ts`?',
+        );
+        expect(decision).toContain('AUTH_TEST_MODE=1');
+        expect(decision).toContain('playwright.real-auth.config.ts');
+        expect(decision).toContain('SMTP catcher');
     });
 });

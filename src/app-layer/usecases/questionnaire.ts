@@ -121,10 +121,34 @@ export async function autofillQuestionnaire(ctx: RequestContext, questionnaireId
         // secret-leak verdict aborts the whole autofill.
         const inputGuard = await guardUntrustedInput(ctx, items.map((i) => i.questionText).join('\n'), { source: 'questionnaire', db });
         const egressGuard = await guardEgress(ctx, { grounding }, { source: 'questionnaire:outbound', db });
+        // The grounding is tenant-authored prose — Control.name/objective/
+        // successCriteria and Policy.title/description — and it is assembled
+        // INTO the prompt, so it is untrusted INPUT, not merely outbound
+        // payload. `guardEgress` above scans it for secret shapes; that is a
+        // different question from whether it carries an injection.
+        //
+        // The comment above this block cites risk-suggestions as the mirror,
+        // and that is exactly where this deviated: risk-suggestions puts its
+        // tenant content through the INPUT scan — tenantContext, asset names
+        // and `existingControls` all go into `untrustedText`
+        // (risk-suggestions.ts:106-112). Questionnaire scanned only the
+        // external question half, so a control objective could carry
+        // instructions straight into the draft an auditor later receives.
+        //
+        // Scanned separately, at a DIFFERENT threshold, because the two halves
+        // are not equally trusted. The questionnaire arrives from outside and
+        // keeps the strict `assertNoReviewRequired` (flag OR block aborts).
+        // The grounding is the tenant's own record, so it aborts only on a
+        // BLOCK — matching how risk-suggestions treats tenant content. Folding
+        // both into one strict call would let any flagged control objective
+        // take out the tenant's whole autofill.
+        const groundingText = grounding.map((g) => `${g.label}\n${g.text}`).join('\n');
+        const groundingGuard = await guardUntrustedInput(ctx, groundingText, { source: 'questionnaire:grounding', db });
         // H2 — auto-draft surface: abort on ANY review-required input verdict
         // (flag OR block), so an injected question never reaches the LLM even
         // under the default balanced guard mode.
         assertNoReviewRequired(inputGuard);
+        assertGuardAllowed(groundingGuard);
         assertGuardAllowed(egressGuard);
 
         let drafted = 0, flagged = 0, fromLibrary = 0;

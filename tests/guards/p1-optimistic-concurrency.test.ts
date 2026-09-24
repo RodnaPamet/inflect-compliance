@@ -155,9 +155,14 @@ describe("Epic P1 — process map optimistic concurrency", () => {
     });
 
     describe("Client — version-conflict helper + canvas wire-up", () => {
-        const helperSrc = readDoc(
-            "src/lib/processes/version-conflict-toast.ts",
-        );
+        // MASKED, not `readDoc` (#2246). Every assertion below names CODE — a
+        // signature, a status gate, a payload path, a toast action — so the
+        // raw seam was the wrong one: `version-conflict-toast.ts` is 2505
+        // bytes of which 696 are non-whitespace code, i.e. ~72% of what these
+        // four regexes were matching against is prose. Measured, each needle
+        // is 1 raw and 1 through `codeOf`, so nothing here was green on a
+        // comment today; the seam is what stops the next edit making it so.
+        const helperSrc = read("src/lib/processes/version-conflict-toast.ts");
         const canvasSrc = read(
             "src/components/processes/PersistedProcessCanvas.tsx",
         );

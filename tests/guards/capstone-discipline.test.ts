@@ -25,8 +25,23 @@ import * as path from "path";
 
 // #2246 Class A — the mask goes at the READ SEAM. The two `.tsx` reads below
 // are masked; the `docs/design-system.md` read is NOT, because `codeOf` lexes
-// TypeScript and markdown is not a language it lexes. That read is prose and
-// is tracked as an unmasked seam rather than spelled with the wrong lexer.
+// TypeScript and markdown is not a language it lexes.
+//
+// The markdown masker is not the answer either. `mdCodeOf` keeps a document's
+// CODE and blanks its PROSE, and measured on this document that takes all
+// three motion-ban needles from 1 match to 0 — three assertions that would
+// then pass for ever without the ban being written down anywhere. So the
+// markdown reads are NARROWED instead: each positive assertion is bound to
+// the section its own test names, which is where the fact it checks is
+// supposed to live.
+//
+// TWO ASSERTIONS STAY WHOLE-DOCUMENT AND MUST: the retired-variant checks are
+// `.not.toMatch`, and a negative assertion is satisfied by ANY restriction of
+// the text it reads. Narrowing one to the Button-variants section would let a
+// "`outline` — use for …" line reappear in the decision tree with the guard
+// still green, which is the defect this issue is about wearing a fix's
+// costume. Measured, both needles are at 0 over the whole document today.
+import { mdSection } from "../helpers/markdown-regions";
 import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -108,8 +123,12 @@ describe("v2-PR-15 design-system.md primitive-by-intent index", () => {
 
     it("documents every v2 primitive", () => {
         // Each primitive shipped in the v2 package should appear in
-        // the table by name. If a future PR ships a new primitive,
-        // it must update this doc — that's the system invariant.
+        // the table by name — in the DECISION TREE, which is the index this
+        // doc exists to be; a primitive named only in "What this index is
+        // NOT" is not documented by it. Measured, every one of the 17
+        // occurrences is inside that section today (counts unchanged
+        // raw → section), so this binds the claim without weakening it.
+        const index = mdSection(src, "Decision tree by intent");
         for (const primitive of [
             "<EntityListPage>",
             "<EntityDetailLayout>",
@@ -129,19 +148,26 @@ describe("v2-PR-15 design-system.md primitive-by-intent index", () => {
             "<MetadataBar>",
             "<TabSection>",
         ]) {
-            expect(src).toContain(primitive);
+            expect(index).toContain(primitive);
         }
     });
 
     it("documents the spacing-token vocabulary", () => {
-        expect(src).toMatch(/\btight\b/);
-        expect(src).toMatch(/\bcompact\b/);
-        expect(src).toMatch(/\bdefault\b/);
-        expect(src).toMatch(/\bsection\b/);
-        expect(src).toMatch(/\bpage\b/);
+        // The spacing scale is one named subsection, and these five words are
+        // ordinary English: over the whole document `/\bpage\b/` matched 14
+        // times and `/\bdefault\b/` 8, so the scale could have been deleted
+        // outright with both still green. Measured raw → section: 2→2, 1→1,
+        // 8→3, 2→2, 14→3.
+        const spacing = mdSection(src, "Spacing — semantic scale (v2-PR-2)");
+        expect(spacing).toMatch(/\btight\b/);
+        expect(spacing).toMatch(/\bcompact\b/);
+        expect(spacing).toMatch(/\bdefault\b/);
+        expect(spacing).toMatch(/\bsection\b/);
+        expect(spacing).toMatch(/\bpage\b/);
     });
 
     it("documents the post-cull Button variant set (primary | secondary | ghost | destructive | destructive-outline)", () => {
+        const variants = mdSection(src, "Button variants (v2-PR-1, post-cull)");
         for (const variant of [
             "`primary`",
             "`secondary`",
@@ -149,26 +175,34 @@ describe("v2-PR-15 design-system.md primitive-by-intent index", () => {
             "`destructive`",
             "`destructive-outline`",
         ]) {
-            expect(src).toContain(variant);
+            expect(variants).toContain(variant);
         }
-        // Retired variants must NOT show as recommended.
+        // Retired variants must NOT show as recommended. These two stay on
+        // the WHOLE document deliberately — see the note at the import. A
+        // negative is satisfied by any subset of the text it reads, so
+        // narrowing it would weaken the assertion while looking converted.
         expect(src).not.toMatch(/`outline` —/);
         expect(src).not.toMatch(/`success` —/);
     });
 
     it("documents the 3 elevation levels", () => {
+        const elevation = mdSection(src, "Card elevation (v2-PR-9)");
         for (const level of [
             'elevation="flat"',
             'elevation="raised"',
             'elevation="floating"',
         ]) {
-            expect(src).toContain(level);
+            expect(elevation).toContain(level);
         }
     });
 
     it("documents the motion language ban list", () => {
-        expect(src).toMatch(/hover:translate-\*.*banned/i);
-        expect(src).toMatch(/hover:scale-\*.*banned/i);
-        expect(src).toMatch(/hover:shadow-\*.*banned/i);
+        // Narrowed, and NOT masked: all three needles are 1 raw and 0 through
+        // `mdCodeOf`, because the word "banned" is prose. 1→1 through the
+        // section.
+        const motion = mdSection(src, "Motion language (v2-PR-4)");
+        expect(motion).toMatch(/hover:translate-\*.*banned/i);
+        expect(motion).toMatch(/hover:scale-\*.*banned/i);
+        expect(motion).toMatch(/hover:shadow-\*.*banned/i);
     });
 });

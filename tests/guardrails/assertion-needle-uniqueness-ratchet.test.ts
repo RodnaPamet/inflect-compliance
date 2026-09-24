@@ -305,34 +305,9 @@ const HIGH_MULTIPLICITY = 5;
 //   8/8 green. Two detectors counting a site is not the same as either one
 //   failing on it.
 //
-//   SHARED STATE: zero-headroom and shared with every open PR. 1229 is the
-//   live count of main@023355538 + this branch; whoever merges second
+//   SHARED STATE: zero-headroom and shared with every open PR. 1255 is the
+//   live count of main@a76c192d5 + this branch; whoever merges second
 //   re-measures on the merged tree rather than keeping this figure.
-//
-// 1255 -> 1229 (2026-09-24, #2246 Class A, the eight files outside
-//   `tests/guards` / `tests/guardrails`): -26, and every one of them was freed
-//   by the same mechanism as the -18 below — NARROWING a markdown read onto
-//   the region its test names, which removes the site from this population
-//   wholesale because the subject stops being a whole-file read.
-//
-//   All 26 come from this diff, and that is derivable rather than assumed:
-//   `DRIFT_ALLOWANCE` is 0, so main being green means main's live count was
-//   exactly 1255.
-//
-//   The concentration is `docs/slos.md`, which `observability-infra` read
-//   whole 23 times. Bound to the region each test names: `SLO 1` 14 matches ->
-//   1 in the level-2 heading lines, `500ms` 11 -> 1 in `## SLO Summary Table`,
-//   `api_request_count` 11 -> 2 in `## Telemetry Inventory`, `Critical` 7 -> 1
-//   in `### Alert Thresholds`, `/api/livez` 6 -> 1 in `### Exclusions`. Each
-//   of those was a needle a whole chapter of the document could satisfy while
-//   the section under test was gone.
-//
-//   `UNANALYSABLE_READ_BASELINE` moved too, 1455 -> 1453, and the DIRECTION
-//   is the half worth checking: DOWN. Every narrowing here is spelled with TWO
-//   arguments (`mdSection(md, heading)` / `headingLines(md, level)`), which
-//   `assertion-reach.ts` reads as an EXTRACTION and takes out of scope — not
-//   the one-argument wrapper shape that pushed this same ceiling UP by 7 in
-//   #2789.
 //
 // 1273 -> 1255 (2026-09-23, #2246 Class A batch 6): -18, freed by NARROWING
 //   six markdown-reading guards in `tests/guardrails/` onto the document
@@ -343,7 +318,21 @@ const HIGH_MULTIPLICITY = 5;
 //   places in `docs/deployment.md`, `/autoscaling…|HPA/` 13, `/CC BY 4\.0|…/`
 //   6 across the NIS2 licence sidecar. Every one of those was a guard whose
 //   named section could be deleted while a sibling kept it green.
-const AMBIGUOUS_NEEDLE_BASELINE = 1229;
+// 1255 -> 1215 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+//   files): -40, the same mechanism as batch 6 one directory over. 82 raw
+//   markdown sites across six guards were bound to the section or the heading
+//   lines their own test titles name, which takes the whole subject out of
+//   this population. The needles that were ambiguous purely because a
+//   670-line runbook was in scope: `--namespace inflect-production` matched
+//   20 places in `docs/incident-response.md`, `Rollback` 22, `/\bpage\b/` 14
+//   in `docs/design-system.md`, `/params/i` 10 in `docs/codebase-hygiene.md`.
+//   Bound to the Rollback playbook, the spacing scale and the pillar headings
+//   they are 5, 1, 3 and 1.
+//
+//   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
+//   converting the other eleven `tests/guards` files, so whoever merges
+//   second re-measures on the merged tree rather than keeping this figure.
+const AMBIGUOUS_NEEDLE_BASELINE = 1189;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -405,21 +394,14 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1229;
 // places and `helm rollback` in 6, so binding those assertions to
 // `### Scaling` and `### Rollback via helm rollback` retires several
 // five-plus-multiplicity sites at once.
-//
-// 193 -> 179 (2026-09-24, #2246 Class A, the eight files outside
-// `tests/guards` / `tests/guardrails`): -14, alongside -26 on the ambiguous
-// count above — and the SAME inversion, for the same reason. An SLO document
-// is the runbook shape: `docs/slos.md` says `SLO 1` in 14 places, `500ms` in
-// 11 and `api_request_count` in 11, so `observability-infra`'s 23
-// whole-document reads were dense in five-plus-multiplicity needles and
-// narrowing them retires a cluster at a time.
-//
-// WORTH NOTING HOW THIS WAS FOUND, because the instrument hid it: the drift
-// sentinel reports the FIRST baseline with slack and stops, so re-seating
-// AMBIGUOUS_NEEDLE_BASELINE was what made this one visible. A single green
-// run after one edit is not evidence the other ceilings held — re-run until
-// the sentinel passes rather than until the message changes.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 179;
+// 193 -> 180 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+// files): -13 against -40 ambiguous, a ratio close to batch 6's and for the
+// same reason — two of the six converted guards read operational RUNBOOKS
+// (`docs/incident-response.md`, `docs/slos.md`), and a runbook repeats its
+// own vocabulary in every playbook. `--namespace inflect-production` at 20
+// and `Rollback` at 22 are both five-plus sites that the Rollback playbook's
+// own bounds retire outright.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 166;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -659,19 +641,19 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 179;
 // narrowing is supposed to look like from here. A rise would have meant the
 // helper was reading as a mask.
 //
-// 1455 -> 1453 (2026-09-24, #2246 Class A, the eight files outside
-// `tests/guards` / `tests/guardrails`): -2, the same direction and the same
-// arity check as the entry above, on a batch that narrowed 46 markdown seams
-// with two-argument calls. Down, not up: the helper still reads as an
-// extraction rather than a wrapper.
-//
-// AND A NOTE ABOUT THE INSTRUMENT, because it nearly cost this a wrong claim.
-// The drift sentinel reports the FIRST baseline carrying slack and stops, so
-// this batch surfaced its three moves ONE PER RUN — ambiguous, then highly-
-// ambiguous, then this. After the first failure it was true and useless to
-// say "only one baseline moved". Re-run the sentinel until it PASSES, not
-// until its message changes.
-const UNANALYSABLE_READ_BASELINE = 1453;
+// 1455 -> 1445 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+// files): -10, and the direction is again the evidence that the helper read
+// as a NARROWING and not as a mask. Every new seam is two-argument
+// (`mdSection(read(DOC), '6. Rollback')`, `headingLines(read(SLO_DOC), 2)`),
+// so the arity rule puts them out of scope rather than into
+// `content-transformed`. The fall comes from three places, all of them sites
+// LEAVING a skip bucket: `needle-carries-span` on the severity-table and
+// Rollback assertions, and two hand-rolled narrowings that were
+// `content-transformed` and are now real extractions —
+// `src.split('## SLO Summary Table')[1]`, which had no end bound and ran
+// 15842 characters to EOF where the section is 800, and a `.toLowerCase()`
+// over a whole 702-line runbook that is now over one playbook.
+const UNANALYSABLE_READ_BASELINE = 1443;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

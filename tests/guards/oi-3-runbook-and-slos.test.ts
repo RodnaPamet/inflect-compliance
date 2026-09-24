@@ -16,9 +16,44 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { headingLines, mdSection } from '../helpers/markdown-regions';
+
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
+
+/**
+ * #2246 Class A — NARROWED, NOT MASKED, and on this file the difference is
+ * the whole point.
+ *
+ * Both documents this guard reads are long (672 and 702 lines) and every
+ * assertion below names ONE part of one of them: an SLO, a playbook, a
+ * table. Read whole, a needle is satisfied by that text anywhere — a sibling
+ * section, a fenced sample, or, as the RETIRED block further down records in
+ * detail, a dated row in the CHANGELOG describing what some past epic did.
+ * That is not hypothetical here: `/restore-test\.sh/`, `/helm rollback/` and
+ * `/restore-db-instance/` all went on passing after the live text they
+ * pinned had been corrected, because the changelog still said April.
+ * Measured over the whole runbook, `--namespace inflect-production` matched
+ * 20 times, `Rollback` 22, `Epic OI-3` 7, `PagerDuty incident` 5.
+ *
+ * The markdown MASKER cannot be the fix. `mdCodeOf` keeps a document's code
+ * and blanks its prose, and measured across these two files it takes 25 of
+ * the needles below to ZERO — every heading assertion, all seven
+ * communication templates, both severity rows, the expand-and-contract
+ * caveat, and the three Epic-OI-n references. Those assertions would have
+ * read as converted while being unable to fail.
+ *
+ * So each read is bound to the region the test names in its own title:
+ * `mdSection` for a section's content, `headingLines(doc, 2)` for the
+ * assertions that are about the document HAVING a section rather than about
+ * anything inside it. Both are fence-aware, which this runbook needs — it is
+ * mostly shell, and a shell comment starts with `#`.
+ *
+ * Spelled out at every call site rather than behind a `section(heading)`
+ * helper: `tests/helpers/assertion-reach.ts` tells a narrowing from a mask by
+ * ARITY, and a one-argument wrapper reads as a mask.
+ */
 
 describe('OI-3 — SLOs (docs/slos.md)', () => {
     const SLO_DOC = 'docs/slos.md';
@@ -28,30 +63,39 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
     });
 
     it('declares availability ≥ 99.9% (OI-3 spec)', () => {
-        const src = read(SLO_DOC);
         // The existing SLO 1 (pre-OI-3) already covered availability.
         // Locked here so a future "simplify" PR can't drop the target.
-        expect(src).toMatch(/99\.9\s*%/);
+        // Bound to SLO 1 — the figure appears 4 times across the document,
+        // 3 of them here, so the target could have gone from its own SLO and
+        // still matched from the summary table.
+        const availability = mdSection(read(SLO_DOC), 'SLO 1: API Availability');
+        expect(availability).toMatch(/99\.9\s*%/);
     });
 
     it('splits API latency into READS (<500ms) and WRITES (<1000ms) per OI-3 spec', () => {
-        const src = read(SLO_DOC);
-        expect(src).toMatch(/SLO 2:\s*API Latency\s*[—-]\s*Reads/i);
-        expect(src).toMatch(/SLO 2b:\s*API Latency\s*[—-]\s*Writes/i);
-        // Read target
-        expect(src).toMatch(/95th percentile of GET requests\s*<\s*500ms/i);
+        // The SPLIT is a claim about section structure: the doc must have
+        // both SLOs as level-2 sections, not merely mention them in prose.
+        const slos = headingLines(read(SLO_DOC), 2);
+        expect(slos).toMatch(/SLO 2:\s*API Latency\s*[—-]\s*Reads/i);
+        expect(slos).toMatch(/SLO 2b:\s*API Latency\s*[—-]\s*Writes/i);
+        // Read target — inside the read SLO, not anywhere in the file.
+        expect(mdSection(read(SLO_DOC), 'SLO 2: API Latency — Reads (P95)')).toMatch(
+            /95th percentile of GET requests\s*<\s*500ms/i,
+        );
         // Write target
-        expect(src).toMatch(/95th percentile of state-mutating requests\s*<\s*1000ms/i);
+        expect(mdSection(read(SLO_DOC), 'SLO 2b: API Latency — Writes (P95)')).toMatch(
+            /95th percentile of state-mutating requests\s*<\s*1000ms/i,
+        );
     });
 
     it('read latency formula filters by GET|HEAD method', () => {
-        const src = read(SLO_DOC);
-        expect(src).toMatch(/http_method=~"GET\|HEAD"/);
+        const reads = mdSection(read(SLO_DOC), 'SLO 2: API Latency — Reads (P95)');
+        expect(reads).toMatch(/http_method=~"GET\|HEAD"/);
     });
 
     it('write latency formula filters by mutating methods', () => {
-        const src = read(SLO_DOC);
-        expect(src).toMatch(/http_method=~"POST\|PUT\|PATCH\|DELETE"/);
+        const writes = mdSection(read(SLO_DOC), 'SLO 2b: API Latency — Writes (P95)');
+        expect(writes).toMatch(/http_method=~"POST\|PUT\|PATCH\|DELETE"/);
     });
 
     // ── RETIRED 2026-09-02 (#2226): four assertions that pinned PROSE ──
@@ -87,23 +131,31 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
     // The two section-existence checks below are kept: they assert the doc has
     // an RPO and an RTO section at all, which is structure rather than content.
     it('still declares an RPO and an RTO section', () => {
-        const src = read(SLO_DOC);
-        expect(src).toMatch(/SLO 6:\s*RPO/i);
-        expect(src).toMatch(/SLO 7:\s*RTO/i);
+        // "has an RPO and an RTO SECTION" is literally a claim about the
+        // level-2 headings — which is what the RETIRED note above concluded
+        // when it kept these two and deleted the content assertions.
+        const slos = headingLines(read(SLO_DOC), 2);
+        expect(slos).toMatch(/SLO 6:\s*RPO/i);
+        expect(slos).toMatch(/SLO 7:\s*RTO/i);
     });
 
     it('declares the repository SLO that uses OI-3 part 2 metrics', () => {
-        const src = read(SLO_DOC);
-        expect(src).toMatch(/SLO 5:\s*Repository latency/i);
-        // The metric name from OI-3 part 2
-        expect(src).toMatch(/repo_method_duration/);
+        expect(headingLines(read(SLO_DOC), 2)).toMatch(/SLO 5:\s*Repository latency/i);
+        // The metric name from OI-3 part 2 — inside SLO 5, where it powers
+        // that SLO, not in the telemetry inventory at the top (3 raw, 2 here).
+        expect(mdSection(read(SLO_DOC), 'SLO 5: Repository latency (Epic OI-3)')).toMatch(
+            /repo_method_duration/,
+        );
     });
 
     it('summary table contains all 8 SLOs (4 original + read/write split + repo + RPO + RTO)', () => {
-        const src = read(SLO_DOC);
-        // The summary table appears late in the doc and lists every SLO
-        const summarySection = src.split('## SLO Summary Table')[1];
-        expect(summarySection).toBeDefined();
+        // The summary table appears late in the doc and lists every SLO.
+        // `src.split('## SLO Summary Table')[1]` used to bound this: it is
+        // not fence-aware and, more to the point, it has no END — it ran
+        // 15842 characters to EOF, swallowing the whole Load-Test and Metric
+        // Dependencies sections. `mdSection` returns the 800 characters that
+        // are actually the table.
+        const summarySection = mdSection(read(SLO_DOC), 'SLO Summary Table');
         for (const target of [
             'API Availability',
             'API Latency — Reads',
@@ -119,8 +171,8 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
     });
 
     it('revision history records the OI-3 update', () => {
-        const src = read(SLO_DOC);
-        expect(src).toMatch(/2026-04-27.*OI-3/);
+        const history = mdSection(read(SLO_DOC), 'Revision History');
+        expect(history).toMatch(/2026-04-27.*OI-3/);
     });
 });
 
@@ -142,15 +194,22 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
     ] as const;
 
     it.each(REQUIRED_PLAYBOOKS)('contains the %s playbook', (label) => {
-        const src = read(DOC);
-        // Match "## <num>. <Label>" or "## <Label>"
-        expect(src.toLowerCase()).toContain(label.toLowerCase());
+        // A PLAYBOOK is a level-2 section, so the claim is about the heading
+        // lines and not about the label appearing somewhere in 702 lines.
+        // Measured lower-cased over the whole document, 'Rollback' matched 22
+        // times, 'Redis OOM' 5, 'App Down' 3 — that assertion could not have
+        // noticed a deleted playbook. Against the headings each is exactly 1.
+        const playbooks = headingLines(read(DOC), 2);
+        expect(playbooks.toLowerCase()).toContain(label.toLowerCase());
     });
 
     it('quick-reference table maps every alert to a playbook', () => {
-        const src = read(DOC);
         // Every alert from rules.yml that pages should appear in the
-        // quick-reference. Lock the OI-3-spec alerts.
+        // quick-reference. Lock the OI-3-spec alerts. "In the quick
+        // reference" is the claim, so that is the region: each of these five
+        // occurs 2-3 times document-wide and exactly once here, which is the
+        // difference between "the table routes it" and "the word appears".
+        const quick = mdSection(read(DOC), 'Quick reference');
         for (const alert of [
             'DatabaseConnectionPoolExhausted',
             'RedisMemoryHighCritical',
@@ -158,73 +217,80 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
             'QueueDepthBacklogCritical',
             'CertificateExpiryCritical',
         ]) {
-            expect(src).toContain(alert);
+            expect(quick).toContain(alert);
         }
     });
 
     it('references the four OI-3 dashboards by UID', () => {
-        const src = read(DOC);
+        const dashboards = mdSection(read(DOC), 'Dashboards');
         for (const uid of [
             'inflect-app-overview',
             'inflect-database',
             'inflect-redis',
             'inflect-bullmq',
         ]) {
-            expect(src).toContain(uid);
+            expect(dashboards).toContain(uid);
         }
     });
 
     it('App Down playbook uses /api/livez (matches external uptime contract)', () => {
-        const src = read(DOC);
         // The playbook must instruct curl/kubectl-curl to /api/livez —
         // the same endpoint the external uptime monitor probes.
-        expect(src).toMatch(/curl[^`]*\/api\/livez/);
+        const appDown = mdSection(read(DOC), '1. App Down');
+        expect(appDown).toMatch(/curl[^`]*\/api\/livez/);
     });
 
     it('Rollback playbook uses helm rollback with explicit revision history', () => {
-        const src = read(DOC);
-        expect(src).toMatch(/helm history inflect-production/);
-        expect(src).toMatch(/helm rollback inflect-production/);
-        expect(src).toMatch(/--namespace inflect-production/);
+        // `--namespace inflect-production` appears 20 times across the
+        // runbook and `helm rollback inflect-production` 4; inside the
+        // Rollback playbook, 5 and 2. Every one of the other 15 belonged to
+        // some other playbook's shell block.
+        const rollback = mdSection(read(DOC), '6. Rollback');
+        expect(rollback).toMatch(/helm history inflect-production/);
+        expect(rollback).toMatch(/helm rollback inflect-production/);
+        expect(rollback).toMatch(/--namespace inflect-production/);
     });
 
     it('Rollback playbook documents the migration-Job-not-re-run-on-rollback caveat', () => {
-        const src = read(DOC);
         // expand-and-contract is THE mitigation. Without this the
         // rollback playbook is unsafe.
-        expect(src.toLowerCase()).toMatch(/expand[\s-]and[\s-]contract/);
+        const rollback = mdSection(read(DOC), '6. Rollback');
+        expect(rollback.toLowerCase()).toMatch(/expand[\s-]and[\s-]contract/);
         // Migration Job is one-way
-        expect(src).toMatch(/migration Job is one-way|hooks?\s+are\s+\*?\*?NOT\*?\*?\s+re-run|NOT.{1,5}re-run on rollback/i);
+        expect(rollback).toMatch(/migration Job is one-way|hooks?\s+are\s+\*?\*?NOT\*?\*?\s+re-run|NOT.{1,5}re-run on rollback/i);
     });
 
     it('Database Unavailable playbook covers PgBouncer pool inspection', () => {
-        const src = read(DOC);
-        expect(src).toMatch(/SHOW POOLS/);
-        expect(src).toMatch(/pgbouncer/i);
+        const database = mdSection(read(DOC), '2. Database Unavailable / Slow');
+        expect(database).toMatch(/SHOW POOLS/);
+        expect(database).toMatch(/pgbouncer/i);
     });
 
     it('Database recovery from PITR uses restore-db-instance-to-point-in-time', () => {
-        const src = read(DOC);
-        expect(src).toMatch(/restore-db-instance-to-point-in-time/);
+        // The `###` subsection this test is named after, not the whole
+        // playbook: the command also appears in the Operational alignment
+        // summary, which is a list of deliverables rather than a procedure.
+        const pitr = mdSection(read(DOC), 'DB recovery from PITR');
+        expect(pitr).toMatch(/restore-db-instance-to-point-in-time/);
     });
 
     it('Data Breach playbook references the hash-chained AuditLog (preserves evidence)', () => {
-        const src = read(DOC);
-        expect(src).toMatch(/AuditLog/);
-        expect(src).toMatch(/hash-chained/i);
+        const breach = mdSection(read(DOC), '7. Data Breach Response');
+        expect(breach).toMatch(/AuditLog/);
+        expect(breach).toMatch(/hash-chained/i);
     });
 
     it('Data Breach playbook references the Epic B v1→v2 sweep for KEK rotation', () => {
-        const src = read(DOC);
         // The KEK rotation runbook lives in epic-b-encryption.md;
         // the incident-response runbook MUST point at it (regenerating
         // the KEK without the sweep is a data-loss event).
-        expect(src).toMatch(/epic-b-encryption/);
-        expect(src).toMatch(/v1.{0,5}v2/i);
+        const breach = mdSection(read(DOC), '7. Data Breach Response');
+        expect(breach).toMatch(/epic-b-encryption/);
+        expect(breach).toMatch(/v1.{0,5}v2/i);
     });
 
     it('Communication templates section has 5 named templates', () => {
-        const src = read(DOC);
+        const comms = mdSection(read(DOC), 'Communication templates');
         const templates = [
             'PagerDuty incident',
             'Status page update — initial',
@@ -233,37 +299,49 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
             'Internal Slack — incident channel kickoff',
         ];
         for (const t of templates) {
-            expect(src).toContain(t);
+            expect(comms).toContain(t);
         }
         // Plus the customer-email templates (degradation + breach)
-        expect(src).toMatch(/Customer email\s*[—-]\s*service degradation/);
-        expect(src).toMatch(/Customer email\s*[—-]\s*confirmed data breach/);
+        expect(comms).toMatch(/Customer email\s*[—-]\s*service degradation/);
+        expect(comms).toMatch(/Customer email\s*[—-]\s*confirmed data breach/);
     });
 
     it('Severity definitions table includes both CRITICAL and WARNING tiers', () => {
-        const src = read(DOC);
-        expect(src).toMatch(/CRITICAL[\s\S]{0,200}PagerDuty/);
-        expect(src).toMatch(/WARNING[\s\S]{0,200}Slack/);
+        // Both needles carry a `[\s\S]{0,200}` span, so read whole-document
+        // they could pair a CRITICAL from one playbook with a PagerDuty 200
+        // characters later in another. 3 matches raw, 1 inside the table.
+        const severity = mdSection(read(DOC), 'Severity definitions');
+        expect(severity).toMatch(/CRITICAL[\s\S]{0,200}PagerDuty/);
+        expect(severity).toMatch(/WARNING[\s\S]{0,200}Slack/);
     });
 
     it('Operational alignment section names every prior-epic deliverable', () => {
-        const src = read(DOC);
         // The closing section MUST call out the dependencies so an
-        // operator reading this doc cold sees the system map.
-        expect(src).toMatch(/Operational alignment/i);
-        expect(src).toMatch(/Epic OI-1/);
-        expect(src).toMatch(/Epic OI-2/);
-        expect(src).toMatch(/Epic OI-3/);
+        // operator reading this doc cold sees the system map — and "the
+        // section names them" is the claim, so reading the whole document for
+        // it answered a different question. `/Epic OI-3/` matched 7 times
+        // document-wide; `restore-test.sh` twice, only one of them here.
+        const alignment = mdSection(read(DOC), 'Operational alignment summary');
+        expect(headingLines(read(DOC), 2)).toMatch(/Operational alignment/i);
+        expect(alignment).toMatch(/Epic OI-1/);
+        expect(alignment).toMatch(/Epic OI-2/);
+        expect(alignment).toMatch(/Epic OI-3/);
         // Specific deliverables
-        expect(src).toMatch(/restore-test\.sh/);
-        expect(src).toMatch(/manage_master_user_password/);
-        expect(src).toMatch(/external-uptime\.yml/);
+        expect(alignment).toMatch(/restore-test\.sh/);
+        expect(alignment).toMatch(/manage_master_user_password/);
+        expect(alignment).toMatch(/external-uptime\.yml/);
     });
 });
 
 describe('OI-3 — final readiness check (alignment)', () => {
     it('every alert with severity=critical has a corresponding playbook section', () => {
-        const runbookSrc = read('docs/incident-response.md');
+        // The runbook half is bound to the quick-reference table: "addressed
+        // in the runbook" means the operator can route from the alert name,
+        // and that table is where routing happens.
+        const quickReference = mdSection(
+            read('docs/incident-response.md'),
+            'Quick reference',
+        );
         const rulesSrc = read('infra/alerts/rules.yml');
 
         // Walk the rules YAML for critical alerts
@@ -295,19 +373,24 @@ describe('OI-3 — final readiness check (alignment)', () => {
         ];
         for (const name of MUST_BE_NAMED) {
             expect(criticalNames).toContain(name);
-            expect(runbookSrc).toContain(name);
+            expect(quickReference).toContain(name);
         }
     });
 
     it('SLO doc references the alert names that protect each SLO', () => {
-        const src = read('docs/slos.md');
-        // Latency SLO ↔ ApiP95Latency alerts; Error rate SLO ↔ ApiErrorRate alerts
-        expect(src).toMatch(/ApiP95LatencyWarning/);
-        expect(src).toMatch(/ApiP95LatencyCritical/);
+        // Latency SLO ↔ ApiP95Latency alerts; Error rate SLO ↔ ApiErrorRate
+        // alerts. "Protects each SLO" is a claim about WHERE the alert is
+        // named — beside the objective it guards. Measured, both names occur
+        // exactly once in the document and both are in the read-latency SLO's
+        // Telemetry Source, so binding here asserts the pairing rather than
+        // the mention.
+        const reads = mdSection(read('docs/slos.md'), 'SLO 2: API Latency — Reads (P95)');
+        expect(reads).toMatch(/ApiP95LatencyWarning/);
+        expect(reads).toMatch(/ApiP95LatencyCritical/);
     });
 
     it('runbook references the dashboards UIDs that each alert uses', () => {
-        const runbook = read('docs/incident-response.md');
+        const dashboards = mdSection(read('docs/incident-response.md'), 'Dashboards');
         const rules = read('infra/alerts/rules.yml');
 
         // Extract every `dashboard:` annotation value from rules.yml
@@ -325,9 +408,10 @@ describe('OI-3 — final readiness check (alignment)', () => {
         );
 
         for (const uid of uniqueUids) {
-            // The runbook should mention every dashboard the alerts
-            // route operators to.
-            expect(runbook).toContain(uid);
+            // The runbook's Dashboards section should list every dashboard
+            // the alerts route operators to — a UID buried in some
+            // playbook's shell block is not a directory entry.
+            expect(dashboards).toContain(uid);
         }
     });
 });

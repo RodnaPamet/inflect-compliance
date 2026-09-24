@@ -303,7 +303,6 @@ export async function executeFlueRun(
      */
     const settleTurns = async (finalText: string | null): Promise<void> => {
         const pending = turns.splice(0);
-        if (pending.length === 0) return;
         for (const [i, turn] of pending.entries()) {
             costTokens += turn.totalTokens;
             // The settled text belongs to the LAST call and to no other.
@@ -327,7 +326,27 @@ export async function executeFlueRun(
                 turn.durationMs,
             );
         }
-        await updateRun(ctx, runId, { costTokens });
+        // stepCount RIDES WITH costTokens, and unconditionally.
+        //
+        // `stepCount` is how a resumed run knows where it got to:
+        // `resumeWorkflowRun` re-enters at `run.stepCount`. The Flue engine
+        // wrote it on its two TERMINAL exits only — COMPLETED and the TOKENS
+        // cap halt — so a run halted by a guard FLAG kept whatever value it
+        // started the segment with. That run is `AWAITING_APPROVAL`, which is
+        // precisely the resumable state: approving it re-ran the segment from
+        // the beginning, re-charging its tokens and re-doing its tool calls.
+        //
+        // Here rather than at each exit, because this is already the single
+        // writer for the run's progress — the comment in `settleAtGuard`
+        // explains why a second writer for the same number is how the two
+        // drift, and that argument covers `stepCount` exactly as it covers
+        // `costTokens`.
+        //
+        // UNCONDITIONAL, so the early return that used to sit above this is
+        // gone. `seq` also advances on TOOL_CALL steps, which the ledger
+        // numbers independently of model turns, so a dispatch with an empty
+        // `turns` array can still have made durable progress worth recording.
+        await updateRun(ctx, runId, { costTokens, stepCount: seq });
     };
 
     /**
@@ -580,10 +599,12 @@ export async function executeFlueRun(
         // as the process; a subscriber left behind would keep this run's array
         // reachable and go on filtering every event every later run emits.
         stopObserving?.();
-        // The binding is normally CLAIMED by the agent's render. This covers
-        // the paths where it never was — a dispatch that threw before the
-        // agent rendered — so authority does not sit in the map for the
-        // lifetime of the process.
+        // THE disposer. The agent's render READS the binding and leaves it in
+        // place, because the runtime re-renders before every model call and
+        // each render needs the same authority. So this `finally` is what ends
+        // its life — on success, failure, guard halt and throw alike — and it
+        // does so at the moment the dispatch ends, which is the boundary that
+        // was meant all along.
         releaseRun(runId);
     }
 }
