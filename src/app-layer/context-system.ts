@@ -46,9 +46,17 @@ import { RequestContext } from './types';
  * Every job previously spelled this inline as the literal `'system'`,
  * which is not a real `User.id` — so an audit row naming it resolves to
  * nobody, and a reviewer reading the trail cannot tell a platform sweep
- * from a person. The value is unchanged (rows already carry it, and
- * rewriting history is not on the table); what changes is that it now
- * travels with `actorType: 'JOB'`, which makes the row self-describing.
+ * from a person. It now travels with `actorType: 'JOB'`, which is what
+ * makes the row self-describing.
+ *
+ * AN EARLIER VERSION OF THIS COMMENT SAID "rows already carry it". They do
+ * not, and they never could: `AuditLog.userId` is a foreign key to
+ * `User.id`, no `User` row has this id, and every such insert was rejected.
+ * Production held ZERO rows with `userId = 'system'` while dropping roughly
+ * 71 audit events a day — `JOB`-typed rows stopped entirely on 2026-09-12.
+ * The sentinel is now mapped to NULL at the audit write seam
+ * (`auditUserIdOrNull` in `lib/audit/audit-writer.ts`), which is where the
+ * column is, rather than at each of the thirteen context builders.
  */
 export const SYSTEM_PRINCIPAL = 'system';
 
