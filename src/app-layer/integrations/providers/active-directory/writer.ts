@@ -126,6 +126,7 @@ import {
     type DirectoryWriter,
 } from '@/app-layer/usecases/identity-disable-account';
 import { logger } from '@/lib/observability/logger';
+import { adDirectionWriteRefusal } from './write-direction';
 
 /** The provider id this writer answers for. Must match `ActiveDirectoryProvider.id`. */
 export const AD_PROVIDER_ID = 'active-directory';
@@ -542,6 +543,27 @@ export function createActiveDirectoryWriter(
 ): ClosableDirectoryWriter {
     const connection = options.connection;
     const provider = options.provider ?? new ActiveDirectoryProvider();
+
+    // Fail CLOSED, and STRICTLY — `!== true` inside `adDirectionWriteRefusal`,
+    // not a coercion. FIRST in this constructor, before a URL is read or a
+    // credential is touched, because a connection that never consented should
+    // not have its bind material assembled at all.
+    //
+    // Until #2841 the only consent statement for AD was the tenant-level
+    // `identityLeaverMode`, which says what the TENANT'S automation posture is,
+    // not what may be done to THIS directory. A tenant answers that question
+    // once; a tenant with two directories connected enrolled both.
+    //
+    // THE DIRECTION IS NAMED, and passed from HERE rather than defaulted inside
+    // the gate. This writer is the LEAVER's — `DirectoryWriter` declares
+    // `readState` / `disable` / `preflight` and no create verb — so it asks for
+    // the leaver direction explicitly. The AD joiner write goes through
+    // `createActiveDirectoryProvisioner`, which asks this same gate for
+    // `'joiner'` and reads a DIFFERENT field. A default here would let that call
+    // site inherit the leaver's grant by forgetting an argument, which is the
+    // entire failure this gate exists to prevent.
+    const writesRefusal = adDirectionWriteRefusal(connection, 'leaver');
+    if (writesRefusal) throw new Error(writesRefusal);
 
     const url = String(connection.url ?? '').trim();
     const baseDN = String(connection.baseDN ?? '').trim();

@@ -130,6 +130,16 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         allowSelfSignedTls: { kind: 'inert' },
         dormantDays: { kind: 'inert' },
         maxAdmins: { kind: 'inert' },
+        // Inert as a STRING — it reaches no host and carries no query — and the
+        // same caveat the Entra `writesEnabled` entry carries applies: inert is
+        // a statement about the value's REACH, not about its consequence. This
+        // is the per-connection statement that a human asserts this directory
+        // may be written to at all, and until #2841 Active Directory had no
+        // such statement: the tenant-level `identityLeaverMode` stood in for
+        // one, which meant a read-only AD connection gained standing disable
+        // authority the moment anyone moved that tenant to AUTOMATIC.
+        // `providers/active-directory/write-direction.ts` holds the rest.
+        writesEnabled: { kind: 'inert' },
     },
     okta: {
         orgUrl: { kind: 'vendorOrigin', allow: OKTA_HOSTS },
