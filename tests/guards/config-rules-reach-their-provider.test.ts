@@ -34,10 +34,12 @@
  * None of these can be satisfied by an empty scan: each asserts a denominator
  * first.
  */
+import '@/app-layer/integrations/bootstrap';
 import {
     CONFIG_FIELD_RULES,
     validateProviderConfig,
 } from '@/app-layer/integrations/config-schema';
+import { registry } from '@/app-layer/integrations/registry';
 
 /**
  * Provider ids with no rules entry, each with the reason it is not a hole.
@@ -54,6 +56,22 @@ const NO_CONFIG_RULES: Readonly<Record<string, string>> = {
     device: 'device inventory is imported, not configured per-connection',
     personnel: 'the internal roster provider — no external connection to configure',
     training: 'training records are imported, not configured per-connection',
+    'aws-posture': 'posture collector; configuration is the credential, which lives in the secrets bag',
+};
+
+/**
+ * Rules keyed to something the REGISTRY does not list.
+ *
+ * Restored after being deleted as "dead" — it was not dead, my scanner was
+ * wrong. `sharepoint` has no `configSchema` descriptor and is not a registry
+ * provider; the delta-import path merges `deltaTokens` through this entry
+ * rather than an admin form, so `validateProviderConfig` is never called with
+ * it and the rules are documentation of a write that happens elsewhere.
+ */
+const NON_PROVIDER_KEYS: Readonly<Record<string, string>> = {
+    sharepoint:
+        'not a registry provider; the delta-import path merges deltaTokens through this entry ' +
+        'rather than an admin form',
 };
 
 
@@ -76,37 +94,21 @@ const NOT_ACTUALLY_SECRET: Readonly<Record<string, string>> = {
 };
 
 /**
- * Registered provider ids, read from the provider modules rather than
- * hand-listed — a hand-list would drift the same way the table key did.
+ * Registered provider ids — from the REGISTRY, which is the authority.
+ *
+ * This walked `src/app-layer/integrations/providers/**` for `readonly id =`
+ * until the outbound MCP provider landed. That scraper found `mcp-server`,
+ * which declares an id and a `configField` but is NOT in the bootstrap
+ * registry — so `validateProviderConfig` is never called with it, and a rules
+ * entry for it would have been DEAD ON ARRIVAL. Precisely the `hris` defect
+ * this guard exists to prevent, reintroduced by the guard itself.
+ *
+ * `config-field-classification` already read the registry, so the two guards
+ * disagreed about what a provider IS. They now share one source, and it is the
+ * one the validator is actually keyed by.
  */
 function registeredProviderIds(): string[] {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const fs = require('fs') as typeof import('fs');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const path = require('path') as typeof import('path');
-    const root = path.resolve(__dirname, '../../src/app-layer/integrations/providers');
-
-    // WALK, don't assume a layout. The first version of this read only
-    // `<dir>/index.ts` and missed `github` — which declares its id in
-    // `legacy-provider.ts` — and the two posture providers, which are
-    // top-level files rather than directories. A scan that silently covers
-    // less than it appears to is the same class of defect this guard exists
-    // to catch, one level up.
-    const ids: string[] = [];
-    const walk = (dir: string): void => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) walk(full);
-            else if (entry.name.endsWith('.ts')) {
-                const src = fs.readFileSync(full, 'utf8');
-                for (const m of src.matchAll(/readonly (?:id|providerId) = '([a-z0-9-]+)'/g)) {
-                    ids.push(m[1]);
-                }
-            }
-        }
-    };
-    walk(root);
-    return [...new Set(ids)].sort();
+    return [...new Set(registry.listProviders().map((p) => (p as { id: string }).id))].sort();
 }
 
 const IDS = registeredProviderIds();
@@ -122,7 +124,7 @@ describe('every rules entry reaches a provider, and every provider is accounted 
     });
 
     it('no rules entry is keyed to something no caller passes', () => {
-        const dead = KEYS.filter((k) => !IDS.includes(k));
+        const dead = KEYS.filter((k) => !IDS.includes(k) && !(k in NON_PROVIDER_KEYS));
         expect({
             why:
                 'validateProviderConfig looks rules up BY PROVIDER ID and returns the config ' +
@@ -151,12 +153,16 @@ describe('every rules entry reaches a provider, and every provider is accounted 
         const staleNoConfig = Object.keys(NO_CONFIG_RULES).filter(
             (id) => !IDS.includes(id) || KEYS.includes(id),
         );
+        const staleNonProvider = Object.keys(NON_PROVIDER_KEYS).filter(
+            (k) => !(k in CONFIG_FIELD_RULES) || IDS.includes(k),
+        );
         const staleNotSecret = Object.keys(NOT_ACTUALLY_SECRET).filter((q) => {
             const [provider, field] = q.split('.');
             return !(provider in CONFIG_FIELD_RULES) || !(field in CONFIG_FIELD_RULES[provider]);
         });
-        expect({ staleNoConfig, staleNotSecret }).toEqual({
+        expect({ staleNoConfig, staleNonProvider, staleNotSecret }).toEqual({
             staleNoConfig: [],
+            staleNonProvider: [],
             staleNotSecret: [],
         });
     });
