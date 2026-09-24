@@ -40,12 +40,35 @@ jest.mock('@/lib/observability', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
+/**
+ * THE REGISTRY IS MOCKED, AND IT DID NOT USED TO BE.
+ *
+ * This file's subject is the GATE — that `narrowToWhatAWorkflowAsksFor`
+ * resolves both ways — and its negative arm is "no definition asks". Driving
+ * that arm through the REAL registry made it reachable only while nothing
+ * shipped asked, so the day one did (`posture-review`) this test went red
+ * having found no defect: the premise had been retired, not violated.
+ *
+ * What SHIPS is a different claim and has its own home.
+ * `tests/guardrails/canned-workflows-coverage.test.ts` asserts through
+ * `selectRunDriver` that a shipped definition actually reaches the engine —
+ * which is the claim that would have to fail for the engine to be unreachable
+ * again, and it fails there rather than here.
+ *
+ * So both arms are driven by one knob, and neither depends on the registry's
+ * contents. The name must start with `mock` — `babel-plugin-jest-hoist`
+ * refuses any other out-of-scope binding inside a hoisted factory.
+ */
+let mockDefinitions: Array<{ driver?: string }> = [];
+jest.mock('@/lib/agentic/workflow-registry', () => ({
+    listWorkflowDefinitions: () => mockDefinitions,
+}));
+
 import {
     getAgentDriverSetting,
     setAgentDriverSetting,
 } from '@/app-layer/usecases/agent-driver-setting';
 import { DRIVER_IMPLEMENTED } from '@/lib/agentic/agent-driver';
-import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -55,6 +78,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     row = { agentDriver: 'STATIC' };
     delete envBag.AGENT_DRIVER_FLUE;
+    mockDefinitions = [];
 });
 
 describe('what the tenant has asked for', () => {
@@ -109,13 +133,14 @@ describe('what a run would ACTUALLY execute on', () => {
     it('reports STATIC when no workflow asks for the engine, however the switches are set', async () => {
         // THE FOURTH TERM, and the one that had no name until it was added.
         // `selectRunDriver` resolves flue only when the DEFINITION asks for
-        // it, and no registered WorkflowDefinition sets `driver` — so with the
-        // env var on, the tenant opted in and the build implemented, every run
-        // still executes on the static engine.
+        // it, so a registry in which none does leaves every run on the static
+        // engine with the env var on, the tenant opted in and the build
+        // implemented.
         //
         // Reporting `flue` with `reason: null` here told an operator the
         // configured driver was IN FORCE. It was permitted, which is a
         // different fact, and the difference is every run they were looking at.
+        mockDefinitions = [{ driver: 'static' }, {}];
         envBag.AGENT_DRIVER_FLUE = '1';
         row = { agentDriver: 'FLUE' };
 
@@ -137,15 +162,10 @@ describe('what a run would ACTUALLY execute on', () => {
         // CONJUNCTION, which is the thing that has to stay true either side of
         // that change.
         //
-        // The FOURTH term is registered first: a definition that asks for the
-        // engine. Without it `selectRunDriver` can never choose flue, and the
-        // test above pins that case.
-        registerWorkflow({
-            key: 'wf-asks-for-flue',
-            label: 'Asks for flue',
-            driver: 'flue',
-            steps: [],
-        } as unknown as Parameters<typeof registerWorkflow>[0]);
+        // The FOURTH term first: a definition that asks for the engine.
+        // Without one `selectRunDriver` can never choose flue, and the test
+        // above pins that case.
+        mockDefinitions = [{ driver: 'static' }, { driver: 'flue' }];
         envBag.AGENT_DRIVER_FLUE = '1';
         row = { agentDriver: 'FLUE' };
 
