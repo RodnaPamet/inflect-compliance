@@ -590,7 +590,18 @@ const SINK_FLOOR = 30;
 // which fits plausibly and passes a single-file run. The figure above was cross-
 // checked by linting `origin/main`'s `execute.ts` and this branch's separately:
 // 2/2 against 3/3, which is the whole difference between 173/98 and 174/99.
-const MEASURED_HOLES = 174;
+// 174 → 176: KILL SWITCH STOPS THE MODEL CALL. `haltRunAtKill` is a new
+// settlement arm and a new audit sink, and two of its `detailsJson` values are
+// `identifier bound elsewhere` — `kill.scope` and `kill.switchId`, both fields
+// of the verdict row the switch read, beside field names that ARE in the
+// source. That file and that kind are already in KNOWN_UNANALYSABLE, so the
+// PAIR list is unchanged and only the count moves.
+//
+// Nothing in that row carries prompt content, and the message deliberately
+// does not echo the reason text an administrator typed — that is the same rule
+// `assertNotKilled` follows at the tool boundary, for the same reason: the
+// caller being told about the refusal is the thing that was just stopped.
+const MEASURED_HOLES = 176;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -606,7 +617,10 @@ const MEASURED_HOLES = 174;
 // 98 → 99: FLUE PER-TURN ACCOUNTING. See the note on `MEASURED_HOLES` above
 // for the one sink and the one hole, and for why the pair was measured on a
 // tree with no unmerged paths.
-const MEASURED_SINKS = 99;
+// 99 → 100: KILL SWITCH STOPS THE MODEL CALL. The one new sink is
+// `haltRunAtKill`'s audit row. Raising the denominator TIGHTENS
+// `HOLES_PER_SINK_CEILING`, which is the direction this pair is meant to move.
+const MEASURED_SINKS = 100;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
