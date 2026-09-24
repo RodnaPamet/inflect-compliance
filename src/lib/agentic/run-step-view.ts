@@ -1,3 +1,5 @@
+import { dataScopeForToolCall } from '@/lib/mcp/tool-data-scope';
+import type { AgentDataAccessScope } from '@prisma/client';
 import type { WorkflowStepDef } from './workflow-types';
 
 /**
@@ -81,4 +83,46 @@ export function declaredStepFor(
 ): WorkflowStepDef | undefined {
     if (kind === 'MODEL_CALL' || kind === 'TOOL_CALL') return undefined;
     return steps?.[seq];
+}
+
+/**
+ * The data rung a recorded step actually REACHED.
+ *
+ * Argument-aware on purpose. `baseDataScopeForTool` answers the MINIMUM — its
+ * own docstring says "the rung a tool call reaches AT LEAST — its base, with
+ * no argument raising it" — and the run timeline used it, while the seam that
+ * ENFORCES the rung uses `dataScopeForToolCall(name, args)`. The two disagree
+ * exactly where an argument raises the rung, and the timeline showed the lower
+ * number.
+ *
+ * Not hypothetical on shipped workflows: `get_framework_status` is
+ * READ_METADATA at base and READ_TENANT_DATA when called with `frameworkKey`,
+ * and framework-onboarding threads that key into it. The run touched tenant
+ * data; the reviewer was told it read catalogue metadata.
+ *
+ * `inputJson` is where BOTH engines record the tool's own arguments — the
+ * static driver writes `input: args`, the Flue driver `input: context.data` —
+ * so one reading serves both. Unparseable or absent args contribute no term,
+ * which `dataScopeForToolCall` resolves to the base: the answer this surface
+ * gave before, so a malformed blob degrades to the old behaviour rather than
+ * to a wrong one.
+ *
+ * Null when the step names no tool. A synthesis or a checkpoint reaches no
+ * tenant data by construction, and a chip reading "NONE" would imply a rung
+ * was evaluated when none was.
+ */
+export function stepDataScope(
+    tool: string | null,
+    inputJson: string | null,
+): AgentDataAccessScope | null {
+    if (!tool) return null;
+    let args: unknown = null;
+    if (inputJson) {
+        try {
+            args = JSON.parse(inputJson);
+        } catch {
+            args = null;
+        }
+    }
+    return dataScopeForToolCall(tool, args);
 }

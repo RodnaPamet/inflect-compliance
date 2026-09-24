@@ -16,7 +16,7 @@ import * as path from 'node:path';
 
 import { AgentDataAccessScope } from '@prisma/client';
 
-import { declaredStepFor, resolveStepTool } from '@/lib/agentic/run-step-view';
+import { declaredStepFor, resolveStepTool, stepDataScope } from '@/lib/agentic/run-step-view';
 import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import type { WorkflowStepDef } from '@/lib/agentic/workflow-types';
@@ -173,5 +173,46 @@ describe('which definition entry a recorded step may borrow from', () => {
 
     it('is safe when there is no definition at all', () => {
         expect(declaredStepFor(undefined, 0, 'READ')).toBeUndefined();
+    });
+});
+
+describe('stepDataScope — the rung a step REACHED, not its floor', () => {
+    // The timeline used `baseDataScopeForTool`, whose own docstring defines it
+    // as the MINIMUM. The seam that ENFORCES the rung is argument-aware
+    // (`dataScopeForToolCall` in authorize.ts), so the two disagreed exactly
+    // where an argument raises it — and the surface showed the lower number.
+    //
+    // On a governance surface, under-reporting what an agent reached is the
+    // one error that matters.
+
+    it('reports READ_TENANT_DATA when the raising argument was recorded', () => {
+        // `get_framework_status` is READ_METADATA at base and
+        // READ_TENANT_DATA with `frameworkKey`. framework-onboarding threads
+        // that key into it, so this is the shipped workflow, not an edge case.
+        expect(
+            stepDataScope('get_framework_status', JSON.stringify({ frameworkKey: 'soc2' })),
+        ).toBe('READ_TENANT_DATA');
+    });
+
+    it('reports the base rung when the argument is absent', () => {
+        // The positive control in the other direction: without the key the
+        // same tool really does only read the installable catalogue, and
+        // reporting TENANT_DATA there would over-report.
+        expect(stepDataScope('get_framework_status', JSON.stringify({ limit: 50 }))).toBe(
+            'READ_METADATA',
+        );
+    });
+
+    it('degrades to the base rung on an unparseable payload', () => {
+        // Not to null and not to the maximum: unreadable args are exactly the
+        // old behaviour, which is the safe direction for a display.
+        expect(stepDataScope('get_framework_status', 'not json')).toBe('READ_METADATA');
+        expect(stepDataScope('get_framework_status', null)).toBe('READ_METADATA');
+    });
+
+    it('answers null for a step that named no tool', () => {
+        // A synthesis or a checkpoint reaches no tenant data by construction,
+        // and a chip reading "NONE" would imply a rung was evaluated.
+        expect(stepDataScope(null, JSON.stringify({ frameworkKey: 'soc2' }))).toBeNull();
     });
 });
