@@ -683,6 +683,17 @@ export async function latchOnGuardBlock(
             return { blocksInWindow, latched: false };
         }
 
+        // The row is otherwise created only by `openBreakerGate`, which runs
+        // inside `authorizeToolCall`/`authorizeResourceRead` — the tool funnel.
+        // A guard block happens AROUND the model call and never reaches that
+        // funnel, so an agent whose calls are all blocked, or which has only
+        // ever proposed, has no row at all. `updateMany` then matches nothing
+        // and the trip is silently lost: the agent keeps running having earned
+        // the threshold. Insert-if-absent first, so the conditional update
+        // below has something to latch. `ON CONFLICT DO NOTHING` keeps this
+        // idempotent and cannot reopen a breaker that is already OPEN.
+        await ensureLatchRow(tenantId, agentId);
+
         const latched = await prisma.agentCircuitBreaker.updateMany({
             where: { tenantId, agentId, state: 'CLOSED' },
             data: {

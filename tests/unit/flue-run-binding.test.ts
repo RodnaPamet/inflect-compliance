@@ -13,7 +13,7 @@
  */
 import {
     bindRun,
-    takeRunBinding,
+    readRunBinding,
     releaseRun,
     outstandingRunBindings,
     type FlueRunBinding,
@@ -31,7 +31,7 @@ afterEach(() => {
 describe('binding a run', () => {
     it('hands back exactly what was bound', () => {
         bindRun('r1', binding('t1'));
-        expect(takeRunBinding('r1')?.modelSpecifier).toBe('inflect-local/llama-3.1-70b');
+        expect(readRunBinding('r1')?.modelSpecifier).toBe('inflect-local/llama-3.1-70b');
     });
 
     it('REFUSES a second bind for a live run', () => {
@@ -47,39 +47,57 @@ describe('binding a run', () => {
         // preventing.
         bindRun('r1', binding('tenant-one'));
         expect(() => bindRun('r1', binding('tenant-two'))).toThrow();
-        const claimed = takeRunBinding('r1');
+        const claimed = readRunBinding('r1');
         expect(claimed?.tools[0]?.name).toBe('tenant-one');
     });
 });
 
-describe('claiming a run', () => {
-    it('TAKES — a second claim finds nothing', () => {
-        // The assertion with teeth. A `get` would leave authority addressable
-        // after the run that resolved it has finished with it.
+describe('reading a run', () => {
+    it('READS — every render sees the same authority', () => {
+        // THE ASSERTION WITH TEETH, and it used to say the opposite. A
+        // destructive read gave the FIRST render the tools and every later one
+        // the no-authority branch, because `@flue/runtime` re-runs the agent
+        // function before every model call. A two-turn run was a one-turn run
+        // with a blind tail that still reported COMPLETED.
         bindRun('r1', binding('t1'));
-        expect(takeRunBinding('r1')).toBeDefined();
-        expect(takeRunBinding('r1')).toBeUndefined();
+        expect(readRunBinding('r1')).toBeDefined();
+        expect(readRunBinding('r1')).toBeDefined();
+        expect(readRunBinding('r1')?.tools[0]?.name).toBe('t1');
     });
 
-    it('an unbound run claims nothing rather than throwing', () => {
+    it('an unbound run reads nothing rather than throwing', () => {
         // The agent function is synchronous and has no error channel worth
         // using; absence is a state its caller decides about.
-        expect(takeRunBinding('never-bound')).toBeUndefined();
+        expect(readRunBinding('never-bound')).toBeUndefined();
     });
 
-    it('binds are independent — claiming one leaves the others', () => {
+    it('binds are independent — reading one does not disturb the others', () => {
         bindRun('r1', binding('t1'));
         bindRun('r2', binding('t2'));
-        takeRunBinding('r1');
-        expect(takeRunBinding('r2')).toBeDefined();
+        readRunBinding('r1');
+        expect(readRunBinding('r2')?.tools[0]?.name).toBe('t2');
+    });
+
+    it('release is what ends a binding, and it is final', () => {
+        // Disposal moved to the driver's `finally`. Reading must not dispose;
+        // releasing must.
+        bindRun('r1', binding('t1'));
+        readRunBinding('r1');
+        releaseRun('r1');
+        expect(readRunBinding('r1')).toBeUndefined();
     });
 });
 
 describe('the map does not grow without bound', () => {
-    it('a claimed run leaves nothing behind', () => {
+    it('a released run leaves nothing behind', () => {
+        // The leak property survives the move from take to read, because the
+        // driver's `finally` releases on EVERY exit. What changed is who
+        // disposes, not whether anyone does.
         const before = outstandingRunBindings();
         bindRun('r1', binding('t1'));
-        takeRunBinding('r1');
+        readRunBinding('r1');
+        expect(outstandingRunBindings()).toBe(before + 1); // a read keeps it
+        releaseRun('r1');
         expect(outstandingRunBindings()).toBe(before);
     });
 

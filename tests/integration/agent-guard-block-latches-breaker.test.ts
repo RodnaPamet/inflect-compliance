@@ -26,7 +26,7 @@ import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 import { latchOnGuardBlock, openBreakerGate } from '@/lib/agentic/circuit-breaker-store';
-import { GUARD_BLOCK_TRIP_THRESHOLD } from '@/lib/agentic/circuit-breaker';
+import { GUARD_BLOCK_TRIP, GUARD_BLOCK_TRIP_THRESHOLD } from '@/lib/agentic/circuit-breaker';
 import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
@@ -322,16 +322,45 @@ describeFn('guard blocks latch the breaker, at the right threshold', () => {
         expect(out).toEqual({ blocksInWindow: GUARD_BLOCK_TRIP_THRESHOLD, latched: false });
     });
 
-    it('is a no-op, not a crash, when the agent has no breaker row', async () => {
-        // The latch row is created by `openBreakerGate` on an agent's first
-        // tool call. An agent that has only ever proposed may not have one, and
-        // that must not throw on a path that runs after a row is written.
+    it('latches an agent that has no breaker row yet', async () => {
+        // THE CASE THE WHOLE MECHANISM IS FOR. The row is created only by
+        // `openBreakerGate`, inside the tool funnel. A guard block happens
+        // around the MODEL call and never reaches that funnel — so an agent
+        // whose every call is blocked, or which has only ever proposed, has
+        // no row. This test used to assert `latched: false` and called it
+        // "a no-op, not a crash": the agent earned the threshold and kept
+        // running, and the assertion pinned that as correct.
+        //
+        // It must latch. `latchOnGuardBlock` inserts the row if absent.
+        expect(await breakerState(T1, seeded[T1].agentId)).toBeNull();
+
         for (let i = 0; i < GUARD_BLOCK_TRIP_THRESHOLD; i++) {
             await quarantined(T1, seeded[T1].agentId, NOW);
         }
 
         const out = await latchOnGuardBlock(T1, seeded[T1].agentId, NOW);
 
-        expect(out).toEqual({ blocksInWindow: GUARD_BLOCK_TRIP_THRESHOLD, latched: false });
+        expect(out).toEqual({ blocksInWindow: GUARD_BLOCK_TRIP_THRESHOLD, latched: true });
+        const row = await breakerState(T1, seeded[T1].agentId);
+        expect(row?.state).toBe('OPEN');
+        expect(row?.trippedSignals).toEqual([GUARD_BLOCK_TRIP]);
+    });
+
+    it('does not throw when the insert races another writer', async () => {
+        // The original concern behind the assertion above, kept: two blocked
+        // calls settling at once both reach the insert. ON CONFLICT DO NOTHING
+        // makes the second a no-op rather than a unique-violation, and the
+        // second latch finds the row already OPEN.
+        for (let i = 0; i < GUARD_BLOCK_TRIP_THRESHOLD; i++) {
+            await quarantined(T1, seeded[T1].agentId, NOW);
+        }
+
+        const [a, b] = await Promise.all([
+            latchOnGuardBlock(T1, seeded[T1].agentId, NOW),
+            latchOnGuardBlock(T1, seeded[T1].agentId, NOW),
+        ]);
+
+        expect([a.latched, b.latched].filter(Boolean)).toHaveLength(1);
+        expect((await breakerState(T1, seeded[T1].agentId))?.state).toBe('OPEN');
     });
 });
