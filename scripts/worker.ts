@@ -25,6 +25,8 @@ import 'dotenv/config';
 // separate process that never loads that hook, so without this its job
 // execution would be invisible to Tempo.
 import { initTelemetry, shutdownTelemetry } from '../src/lib/observability/instrumentation';
+import { pauseInFlightRuns } from '../src/lib/agentic/in-flight-runs';
+import { SHUTDOWN_PAUSE_RUNS_MS } from '../src/lib/observability/shutdown-budget';
 import {
     runJobInTraceContext,
     readTraceCarrier,
@@ -345,6 +347,32 @@ async function shutdown(signal: string) {
     log.info({ signal }, 'shutdown signal received — closing worker');
 
     try {
+        // PAUSE IN-FLIGHT AGENTIC RUNS FIRST, and this tier needs it more than
+        // the web one does.
+        //
+        // `installShutdownHandlers` does this for the web process. The worker
+        // had its own SIGTERM handler that closed BullMQ, quit Redis and
+        // drained OTel, and never touched the runs it was executing — while
+        // `executeFrom` tracks every run through `trackInFlightRun`, on BOTH
+        // tiers, so the register was populated here and read by nobody.
+        //
+        // A reasoning run is bounded by WALL_CLOCK_MS, an hour; a deploy's
+        // grace period is seconds. `worker.close()` waiting for the active job
+        // therefore does not save it — the process is killed mid-run, the row
+        // stays RUNNING, and the settlement sweep later reaps it to FAILED
+        // with a permanent hash-chained row saying it had no executor. Point
+        // 10 asks the opposite: "a SIGTERM must leave the run resumable from
+        // its last completed seq".
+        //
+        // BEFORE `worker.close()`, because close waits on the active job and
+        // the whole value of this line is that it runs while there is still
+        // time. Bounded and never-throwing by its own contract, and caught
+        // anyway for the reason the web handler gives: an unguarded await here
+        // would reject the handler and skip the OTel drain below, costing
+        // every span of the deploy to save one query.
+        await pauseInFlightRuns(SHUTDOWN_PAUSE_RUNS_MS).catch((err) => {
+            log.warn({ err }, 'shutdown: pausing in-flight agentic runs threw');
+        });
         await worker?.close();
         await connection?.quit();
         // Drain in-flight OTel span batches before exit so the final
