@@ -47,7 +47,7 @@ export async function runHrisSyncJob(payload: HrisSyncPayload): Promise<HrisSync
         // PASSED: nothing was reconciled, and a green status here would make a
         // contended connection indistinguishable from a synced one in the logs
         // someone reads to ask why an employee still shows as active.
-        return { executionId: '', status: 'SKIPPED', upserted: 0, managersLinked: 0 };
+        return { executionId: '', status: 'SKIPPED', upserted: 0, managersLinked: 0, managersCleared: 0 };
     }
 
     try {
