@@ -17,6 +17,13 @@ const db = {
         findFirst: jest.fn(),
         findMany: jest.fn(),
     },
+    // `getRestorableStateForAccount` resolves the account before it can ask the
+    // journal anything. Named here rather than in a per-test factory so a test
+    // that forgets to stub it fails as "undefined is not a function" at the
+    // call, not as a confusing empty result three lines later.
+    connectedIdentityAccount: {
+        findFirst: jest.fn(),
+    },
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -30,6 +37,7 @@ import {
     beginWrite,
     findRestorableState,
     getJournalWrite,
+    getRestorableStateForAccount,
     listJournalWrites,
     listUnsettledWrites,
 } from '@/app-layer/usecases/identity-write-journal';
@@ -368,5 +376,125 @@ describe('the journal index', () => {
 
         await listJournalWrites(ctx, { provider: 'entra-id' });
         expect(db.identityWriteJournal.findMany.mock.calls[1][0].where.provider).toBe('entra-id');
+    });
+});
+
+/**
+ * #2877 finding 26 — `findRestorableState` had no caller in `src/`.
+ *
+ * The capture was taken, committed and reachable only through the reference in
+ * the DISABLED mail. Nothing could ask the question from the ACCOUNT, which is
+ * what is left when the mail is gone or names a write nobody can identify.
+ *
+ * The three outcomes are asserted separately because two of them are routinely
+ * collapsed into one `null`, and an operator needs them told apart: "no such
+ * account" is a mistyped or foreign reference, "no capture" is the ordinary
+ * state of any tenant that has only ever run DRY_RUN.
+ */
+describe('getRestorableStateForAccount — the restore read, keyed by account', () => {
+    beforeEach(() => {
+        db.connectedIdentityAccount.findFirst.mockReset();
+        db.identityWriteJournal.findFirst.mockReset();
+    });
+
+    it('resolves the account, then returns the capture the journal holds for it', async () => {
+        db.connectedIdentityAccount.findFirst.mockResolvedValue({
+            id: 'acc-1', provider: 'active-directory', externalUserId: 'guid-9',
+        });
+        db.identityWriteJournal.findFirst.mockResolvedValue({
+            id: 'jrn-7',
+            priorStateJson: { userAccountControl: 512 },
+            attemptedAt: new Date('2026-09-12T05:00:00.000Z'),
+            outcome: 'APPLIED',
+        });
+
+        const r = await getRestorableStateForAccount(ctx, 'acc-1');
+
+        expect(r).toStrictEqual({
+            kind: 'found',
+            accountId: 'acc-1',
+            provider: 'active-directory',
+            journalId: 'jrn-7',
+            priorState: { userAccountControl: 512 },
+            attemptedAt: new Date('2026-09-12T05:00:00.000Z'),
+            outcome: 'APPLIED',
+        });
+    });
+
+    it('asks the journal with the DIRECTORY identifier, which the caller never supplied', async () => {
+        // The point of the account-id shape: `externalUserId` is resolved
+        // server-side and never travels in a URL. If this ever queried by the
+        // path segment instead, the journal lookup would carry 'acc-1'.
+        db.connectedIdentityAccount.findFirst.mockResolvedValue({
+            id: 'acc-1', provider: 'entra-id', externalUserId: 'ext-secret-9',
+        });
+        db.identityWriteJournal.findFirst.mockResolvedValue(null);
+
+        await getRestorableStateForAccount(ctx, 'acc-1');
+
+        expect(db.identityWriteJournal.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    provider: 'entra-id',
+                    externalUserId: 'ext-secret-9',
+                    tenantId: 't1',
+                }),
+            }),
+        );
+    });
+
+    it('scopes the account read by tenant as well as by id, beside RLS', async () => {
+        db.connectedIdentityAccount.findFirst.mockResolvedValue(null);
+
+        await getRestorableStateForAccount(ctx, 'acc-elsewhere');
+
+        expect(db.connectedIdentityAccount.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 'acc-elsewhere', tenantId: 't1' },
+            }),
+        );
+    });
+
+    it('answers no-account for an unknown or foreign reference, without asking the journal', async () => {
+        db.connectedIdentityAccount.findFirst.mockResolvedValue(null);
+
+        const r = await getRestorableStateForAccount(ctx, 'acc-nope');
+
+        expect(r).toStrictEqual({ kind: 'no-account' });
+        // Not merely the right answer — the journal is never consulted for an
+        // account this tenant cannot see.
+        expect(db.identityWriteJournal.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('answers no-capture — distinct from no-account — for an account never written to', async () => {
+        // The ordinary case on a DRY_RUN tenant. Reporting it as "not found"
+        // would send somebody looking for a bug that is not there.
+        db.connectedIdentityAccount.findFirst.mockResolvedValue({
+            id: 'acc-2', provider: 'entra-id', externalUserId: 'ext-2',
+        });
+        db.identityWriteJournal.findFirst.mockResolvedValue(null);
+
+        const r = await getRestorableStateForAccount(ctx, 'acc-2');
+
+        expect(r).toStrictEqual({ kind: 'no-capture', accountId: 'acc-2', provider: 'entra-id' });
+    });
+
+    it('carries INDETERMINATE through rather than hiding it, so a restore can warn', async () => {
+        // The capture may be the only surviving copy of the prior state, and
+        // the write it describes may never have landed. Both halves have to
+        // reach the human.
+        db.connectedIdentityAccount.findFirst.mockResolvedValue({
+            id: 'acc-3', provider: 'active-directory', externalUserId: 'guid-3',
+        });
+        db.identityWriteJournal.findFirst.mockResolvedValue({
+            id: 'jrn-3',
+            priorStateJson: { userAccountControl: 514 },
+            attemptedAt: new Date('2026-09-20T01:00:00.000Z'),
+            outcome: 'INDETERMINATE',
+        });
+
+        const r = await getRestorableStateForAccount(ctx, 'acc-3');
+
+        expect(r).toMatchObject({ kind: 'found', outcome: 'INDETERMINATE' });
     });
 });

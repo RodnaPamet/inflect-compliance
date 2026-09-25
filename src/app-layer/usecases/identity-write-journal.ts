@@ -465,6 +465,89 @@ export async function findRestorableState(
     });
 }
 
+/**
+ * What a restore lookup can find, keyed by the account the operator can name.
+ *
+ * THREE OUTCOMES RATHER THAN A NULLABLE, because two of them are different
+ * answers an operator needs told apart. "There is no such account" and "this
+ * account exists and has never been written to" collapse into the same `null`,
+ * and the second is the ordinary case on a tenant that has only ever run in
+ * DRY_RUN — answering it with "not found" sends somebody looking for a bug.
+ */
+export type RestorableLookup =
+    | { readonly kind: 'no-account' }
+    | { readonly kind: 'no-capture'; readonly accountId: string; readonly provider: string }
+    | {
+          readonly kind: 'found';
+          readonly accountId: string;
+          readonly provider: string;
+          readonly journalId: string;
+          readonly priorState: Record<string, unknown>;
+          readonly attemptedAt: Date;
+          readonly outcome: 'APPLIED' | 'INDETERMINATE';
+      };
+
+/**
+ * The captured prior state for ONE account, addressed the way the product
+ * addresses accounts everywhere else — by `ConnectedIdentityAccount.id`.
+ *
+ * ═══ WHY THIS EXISTS, WHEN `getJournalWrite` ALREADY DOES ═══
+ *
+ * They answer different questions. `getJournalWrite` answers "what does THIS
+ * REFERENCE say", and the reference comes out of the DISABLED mail. This one
+ * answers "what was replaced on THIS ACCOUNT", which is what somebody asks when
+ * the mail is gone, was never received, or belongs to a write nobody can now
+ * name. `findRestorableState` was written for exactly that and had no caller in
+ * `src/` — the read surface built for the mail's reference could not be reached
+ * from the account.
+ *
+ * ═══ WHY THE ACCOUNT ID AND NOT THE DIRECTORY IDENTIFIER ═══
+ *
+ * `findRestorableState` is scoped by `(provider, externalUserId)` so that it
+ * still answers once the link and the employee row are gone. That is the right
+ * scoping for the QUERY and the wrong shape for a URL: `externalUserId` is a
+ * raw directory identifier, which this subsystem deliberately does not hand out
+ * (see the `select` notes on the index and on `getJournalWrite`), and a URL is
+ * the one part of a request that is written to an access log by everything it
+ * passes through. `ConnectedIdentityAccount.id` is tenant-scoped, opaque, and
+ * already how `admin/identity-account-protection/[accountId]` addresses the same
+ * accounts. The directory identifier is resolved HERE, server-side, and never
+ * appears in a path, a query string or a response.
+ *
+ * The account row outliving the link is what keeps the documented benefit: the
+ * lookup still answers after the employee and the link are gone, which is the
+ * case somebody is most likely to be asking about.
+ */
+export async function getRestorableStateForAccount(
+    ctx: RequestContext,
+    accountId: string,
+): Promise<RestorableLookup> {
+    const account = await runInTenantContext(ctx, (db) =>
+        db.connectedIdentityAccount.findFirst({
+            // The `tenantId` predicate is belt AND braces beside RLS, matching
+            // every other read in this file: an account id from another tenant
+            // must be indistinguishable from one that does not exist.
+            where: { id: accountId, tenantId: ctx.tenantId },
+            select: { id: true, provider: true, externalUserId: true },
+        }),
+    );
+    if (!account) return { kind: 'no-account' };
+
+    const restorable = await findRestorableState(ctx, account.provider, account.externalUserId);
+    if (!restorable) {
+        return { kind: 'no-capture', accountId: account.id, provider: account.provider };
+    }
+    return {
+        kind: 'found',
+        accountId: account.id,
+        provider: account.provider,
+        journalId: restorable.journalId,
+        priorState: restorable.priorState,
+        attemptedAt: restorable.attemptedAt,
+        outcome: restorable.outcome,
+    };
+}
+
 /** Bound on one page of unsettled rows. */
 const MAX_UNSETTLED = 200;
 
