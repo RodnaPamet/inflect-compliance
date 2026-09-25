@@ -259,7 +259,17 @@ fi
 
 # ── Apply ────────────────────────────────────────────────────────────────
 log "backing up ${REMOTE_COMPOSE} → ${REMOTE_COMPOSE}.bak.${TS}"
-ssh_vm "sudo cp -a '${REMOTE_COMPOSE}' '${REMOTE_COMPOSE}.bak.${TS}'"
+# `cp -a` preserves the SOURCE's mode, so a backup of a 600 file is already
+# 600 — but only if the source is. Backups written by any other path, and the
+# ones already on the VM, were 644: #2889 found 7 `.env.prod.bak.*` world
+# readable, each a complete credential set, three of whose secrets were still
+# live five months later.
+#
+# Chmod is applied EXPLICITLY rather than trusted from `cp -a`, because the
+# property that matters — a dead copy of a config file is readable only by
+# root — should not depend on the live file's mode being right at the moment
+# the copy is taken.
+ssh_vm "sudo cp -a '${REMOTE_COMPOSE}' '${REMOTE_COMPOSE}.bak.${TS}' && sudo chmod 600 '${REMOTE_COMPOSE}.bak.${TS}'"
 
 log "installing the validated file"
 ssh_vm "sudo mv '${STAGED}' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOTE_COMPOSE}'"
@@ -267,11 +277,35 @@ ssh_vm "sudo mv '${STAGED}' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOT
 for entry in "${CANONICAL_SET[@]:1}"; do
     local_path="${entry%%:*}"; remote_base="${entry##*:}"
     log "pushing ${remote_base}"
-    ssh_vm "sudo cp -a '${REMOTE_DIR}/${remote_base}' '${REMOTE_DIR}/${remote_base}.bak.${TS}' 2>/dev/null || true"
+    ssh_vm "sudo sh -c \"cp -a '${REMOTE_DIR}/${remote_base}' '${REMOTE_DIR}/${remote_base}.bak.${TS}' && chmod 600 '${REMOTE_DIR}/${remote_base}.bak.${TS}'\" 2>/dev/null || true"
     gcloud compute scp "$local_path" "${VM_NAME}:/tmp/${remote_base}.new.${TS}" \
         --zone "$VM_ZONE" --tunnel-through-iap
     ssh_vm "sudo mv '/tmp/${remote_base}.new.${TS}' '${REMOTE_DIR}/${remote_base}' && sudo chown root:root '${REMOTE_DIR}/${remote_base}'"
 done
+
+# ── Prune ──────────────────────────────────────────────────────────────────
+#
+# Keep the last KEEP_BACKUPS per basename, delete the rest (#2889).
+#
+# Unbounded retention of dead config buys nothing. The rollback command this
+# script prints names THIS run's timestamp, so the only backup an operator is
+# ever told to use is the newest one; older copies are reachable only by
+# someone who goes looking, and each `.env.prod.bak.*` is a complete
+# credential set that ages into a set nobody remembers rotating.
+#
+# `shred` rather than `rm`: these are credential files on a VM whose disk is a
+# GCE persistent disk, and the cost of overwriting a handful of small files is
+# nothing next to leaving them recoverable.
+KEEP_BACKUPS="${KEEP_BACKUPS:-5}"
+log "pruning backups, keeping the newest ${KEEP_BACKUPS} per file"
+ssh_vm "sudo sh -c '
+  cd \"${REMOTE_DIR}\" 2>/dev/null || exit 0
+  for base in \$(ls -1 *.bak.* 2>/dev/null | sed \"s/\\.bak\\..*//\" | sort -u); do
+    ls -1t \"\$base\".bak.* 2>/dev/null | tail -n +\$((${KEEP_BACKUPS} + 1)) | while read -r old; do
+      shred -u \"\$old\" 2>/dev/null || rm -f \"\$old\"
+    done
+  done
+'"
 
 log "docker compose up -d"
 ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '${COMPOSE_BASENAME}' up -d"
