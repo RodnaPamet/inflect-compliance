@@ -27,6 +27,7 @@ import * as path from 'node:path';
 // TypeScript-alike — re-derived per file, not assumed from the directory — so
 // there is no second language needing its own reader. String literals are KEPT.
 import { codeOf } from '../helpers/source-blocks';
+import { SCHEDULED_JOBS } from '@/app-layer/jobs/schedules';
 
 const ROOT = path.resolve(__dirname, '../..');
 const JOBS = path.join(ROOT, 'src/app-layer/jobs');
@@ -61,7 +62,36 @@ const DISPATCHERS: ReadonlyArray<{ schedule: string; file: string }> = [
     // is silent, and a dispatcher absent from this table is one the guard
     // cannot see.
     { schedule: 'identity-joiner-dispatch', file: 'identity-joiner.ts' },
+    // #2892 finding 10. Absent since the table was written, and the comment
+    // directly above was added FOR THE JOINER while this row was already
+    // missing — so the sentence "a dispatcher absent from this table is one
+    // the guard cannot see" was, at the moment it was written, describing the
+    // leaver.
+    //
+    // It is the consequential one. The joiner writes nothing today
+    // (JOINER_MAX_MODE is DRY_RUN); the leaver performs live directory
+    // disables at AUTOMATIC. Tighten its cron to `0 *(slash)6 * * *` and leave
+    // DAILY_BUCKET_MS, and three of every four passes become BullMQ dedupe
+    // no-ops: nothing errors, the schedule reports complete, and a terminated
+    // employee's account stays enabled ~18h longer than the cadence promises.
+    { schedule: 'identity-leaver-dispatch', file: 'identity-leaver.ts' },
 ];
+
+/**
+ * `*-dispatch` schedules that are NOT fan-out dispatchers, each with the reason.
+ *
+ * The completeness check below derives its population from `SCHEDULED_JOBS`
+ * rather than trusting the table above, because the table's failure mode is
+ * omission and an omission cannot fail a check that only iterates the table.
+ * That is how the leaver stayed outside this guard: every assertion walked
+ * `DISPATCHERS`, so a missing row was not a failing row, it was no row.
+ */
+const NOT_FAN_OUT_DISPATCHERS: Readonly<Record<string, string>> = {
+    'notification-dispatch':
+        'a dispatcher by name only — `notification-dispatch.ts` calls neither `fanOut` nor ' +
+        '`dispatchJobId` and uses no bucket constant, so there is no bucket-vs-cron ' +
+        'relationship for this guard to check.',
+};
 
 /**
  * Shortest interval between two firings of a 5-field cron, in ms.
@@ -124,6 +154,38 @@ function bucketsUsedIn(src: string): string[] {
 
 const stripComments = (s: string) =>
     s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+describe('the table is the whole population', () => {
+    it('every scheduled *-dispatch is covered or excused by name', () => {
+        // Widened to string: `j.name` is `keyof JobPayloadMap`, and the two
+        // maps below are keyed by plain strings.
+        const scheduled: string[] = SCHEDULED_JOBS.map((j) => j.name).filter((n) =>
+            n.endsWith('-dispatch'),
+        );
+
+        // Denominator first: an empty scan would satisfy the loop below.
+        expect(scheduled.length).toBeGreaterThan(5);
+
+        const covered = new Set(DISPATCHERS.map((d) => d.schedule));
+        const missing = scheduled.filter(
+            (n) => !covered.has(n) && !(n in NOT_FAN_OUT_DISPATCHERS),
+        );
+        expect(missing).toEqual([]);
+    });
+
+    it('excuses nothing that is not scheduled, and nothing twice', () => {
+        // The other direction: a stale excuse is a claim about a dispatcher
+        // that no longer exists, and an entry in both places would let a real
+        // dispatcher be excused out of the checks it is listed for.
+        const scheduled = new Set<string>(SCHEDULED_JOBS.map((j) => j.name));
+        const covered = new Set(DISPATCHERS.map((d) => d.schedule));
+        for (const [name, reason] of Object.entries(NOT_FAN_OUT_DISPATCHERS)) {
+            expect(scheduled.has(name)).toBe(true);
+            expect(covered.has(name)).toBe(false);
+            expect(reason.trim().length).toBeGreaterThan(20);
+        }
+    });
+});
 
 describe('fan-out dedupe bucket vs cron period', () => {
     const schedulesSrc = codeOf(fs.readFileSync(path.join(JOBS, 'schedules.ts'), 'utf8'));
