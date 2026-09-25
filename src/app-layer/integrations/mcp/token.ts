@@ -81,6 +81,55 @@ export const ENTRA_MCP_SCOPE =
  * differently from `invalid_client` (the secret is wrong), and an operator
  * needs to know which.
  */
+
+interface TokenPayload {
+    access_token?: string;
+    expires_in?: number;
+    refresh_token?: string;
+    error?: string;
+    error_description?: string;
+}
+
+/**
+ * One POST to Entra's token endpoint, for every grant type.
+ *
+ * Shared so the refresh exchange and the authorization-code exchange cannot
+ * disagree about what a refusal looks like. The rule that matters is the same
+ * for both: surface the error CODE and never the DESCRIPTION, because Entra's
+ * `error_description` echoes request parameters and this string reaches logs.
+ */
+async function postToTokenEndpoint(
+    tenantId: string,
+    form: Record<string, string>,
+): Promise<TokenPayload> {
+    if (!GUID.test(tenantId)) {
+        throw new McpTokenError('tenantId must be a GUID');
+    }
+
+    const res = await safeFetch(`${LOGIN_HOST}/${tenantId}/oauth2/v2.0/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(form).toString(),
+    } as RequestInit);
+
+    const text = await res.text();
+    let payload: TokenPayload;
+    try {
+        payload = JSON.parse(text) as TokenPayload;
+    } catch {
+        // The body is never quoted: a token response is a credential in its
+        // entirety.
+        throw new McpTokenError(`token endpoint returned a non-JSON body (HTTP ${res.status})`);
+    }
+
+    if (!res.ok || payload.error) {
+        throw new McpTokenError(
+            `token endpoint refused the ${form.grant_type}: ${payload.error ?? `HTTP ${res.status}`}`,
+        );
+    }
+    return payload;
+}
+
 export async function mintAccessToken(creds: RefreshCredentials): Promise<MintedToken> {
     if (!GUID.test(creds.tenantId)) {
         throw new McpTokenError('tenantId must be a GUID');
@@ -89,7 +138,7 @@ export async function mintAccessToken(creds: RefreshCredentials): Promise<Minted
         throw new McpTokenError('clientId, clientSecret and refreshToken are all required');
     }
 
-    const body = new URLSearchParams({
+    const payload = await postToTokenEndpoint(creds.tenantId, {
         client_id: creds.clientId,
         client_secret: creds.clientSecret,
         grant_type: 'refresh_token',
@@ -97,35 +146,6 @@ export async function mintAccessToken(creds: RefreshCredentials): Promise<Minted
         scope: creds.scope ?? ENTRA_MCP_SCOPE,
     });
 
-    const res = await safeFetch(`${LOGIN_HOST}/${creds.tenantId}/oauth2/v2.0/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-    } as RequestInit);
-
-    const text = await res.text();
-    let payload: {
-        access_token?: string;
-        expires_in?: number;
-        refresh_token?: string;
-        error?: string;
-        error_description?: string;
-    };
-    try {
-        payload = JSON.parse(text) as typeof payload;
-    } catch {
-        // The body is never quoted: a token response is the one payload in this
-        // module that is a credential in its entirety.
-        throw new McpTokenError(`token endpoint returned a non-JSON body (HTTP ${res.status})`);
-    }
-
-    if (!res.ok || payload.error) {
-        // The CODE, never the description — Entra's error_description can echo
-        // request parameters back, and this string reaches logs.
-        throw new McpTokenError(
-            `token endpoint refused the refresh: ${payload.error ?? `HTTP ${res.status}`}`,
-        );
-    }
     if (!payload.access_token) {
         throw new McpTokenError('token endpoint returned no access_token');
     }
@@ -226,4 +246,79 @@ export async function authorizationFor(
 
     const staticHeader = str(secrets.authorization);
     return staticHeader || undefined;
+}
+
+/**
+ * The URL an administrator is sent to in order to authorize this deployment
+ * against an external MCP server behind Entra.
+ *
+ * `offline_access` is the whole point: without it Entra returns an access token
+ * and no refresh token, and the connection is back to working for an hour. The
+ * resource's own `.default` requests exactly the delegated permissions an admin
+ * has already consented to on the app registration — this flow cannot widen
+ * what the tenant granted, it can only exercise it.
+ *
+ * `prompt=consent` is deliberate. Entra will silently return a token with no
+ * refresh token if it believes consent is already in place, which produces a
+ * connection that looks configured and dies in an hour. Asking every time costs
+ * one extra click and removes that failure entirely.
+ */
+export function buildMcpAuthorizeUrl(input: {
+    tenantId: string;
+    clientId: string;
+    redirectUri: string;
+    state: string;
+    scope?: string;
+}): string {
+    if (!GUID.test(input.tenantId)) {
+        throw new McpTokenError('tenantId must be a GUID');
+    }
+    const q = new URLSearchParams({
+        client_id: input.clientId,
+        response_type: 'code',
+        redirect_uri: input.redirectUri,
+        response_mode: 'query',
+        scope: input.scope ?? ENTRA_MCP_SCOPE,
+        state: input.state,
+        prompt: 'consent',
+    });
+    return `${LOGIN_HOST}/${input.tenantId}/oauth2/v2.0/authorize?${q.toString()}`;
+}
+
+/**
+ * Exchange the authorization code for a REFRESH token.
+ *
+ * The access token that comes back with it is discarded: it is minutes from
+ * being stale by the time anyone uses the connection, and the refresh token is
+ * the thing worth storing. Returning it would invite a caller to persist it.
+ *
+ * A response with no refresh token is an ERROR rather than a partial success.
+ * Storing the access token instead would produce a connection that works
+ * through the first test and fails silently an hour later, which is the exact
+ * failure this whole flow exists to remove.
+ */
+export async function exchangeCodeForRefreshToken(input: {
+    tenantId: string;
+    clientId: string;
+    clientSecret: string;
+    code: string;
+    redirectUri: string;
+    scope?: string;
+}): Promise<string> {
+    const payload = await postToTokenEndpoint(input.tenantId, {
+        client_id: input.clientId,
+        client_secret: input.clientSecret,
+        grant_type: 'authorization_code',
+        code: input.code,
+        redirect_uri: input.redirectUri,
+        scope: input.scope ?? ENTRA_MCP_SCOPE,
+    });
+
+    if (!payload.refresh_token) {
+        throw new McpTokenError(
+            'Entra returned no refresh token. The authorization must request ' +
+                'offline_access, or consent was already in place and was not re-prompted.',
+        );
+    }
+    return payload.refresh_token;
 }
