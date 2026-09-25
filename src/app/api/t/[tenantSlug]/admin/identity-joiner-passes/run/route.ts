@@ -111,7 +111,11 @@ export const POST = withApiErrorHandling(
             // retries would put three rows on one morning.
             const job = await enqueue(
                 'identity-joiner-pass',
-                { tenantId: ctx.tenantId, provider },
+                // The requester travels in the PAYLOAD, not only in the audit
+                // line below. `ctx.userId` was already known here and was
+                // written to `details` as prose — which an operator can read
+                // but no artefact can join on.
+                { tenantId: ctx.tenantId, provider, requestedByUserId: ctx.userId },
                 { jobId },
             );
 

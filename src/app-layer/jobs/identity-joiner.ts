@@ -78,7 +78,14 @@ export async function runIdentityJoinerPassJob(
     if (!payload.tenantId || !payload.provider) {
         throw new Error('identity-joiner-pass requires tenantId + provider');
     }
-    return runIdentityJoinerPass({ tenantId: payload.tenantId, provider: payload.provider });
+    return runIdentityJoinerPass({
+        tenantId: payload.tenantId,
+        provider: payload.provider,
+        // Threaded rather than defaulted here: the pass decides what an absent
+        // requester MEANS, and deciding it in two places is how the two stop
+        // agreeing.
+        requestedByUserId: payload.requestedByUserId,
+    });
 }
 
 /** Fan-out: one joiner pass per (tenant, writable provider) with a live connection. */

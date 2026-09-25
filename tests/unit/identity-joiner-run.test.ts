@@ -163,6 +163,55 @@ describe('the pass runs end to end and names a decision per starter', () => {
     });
 });
 
+describe('the execution row says who asked — #2895', () => {
+    const rowData = () =>
+        (mockDb.integrationExecution.create.mock.calls[0][0] as {
+            data: { triggeredBy: string };
+        }).data;
+
+    it('records a named requester as manual', async () => {
+        // The joiner had no requester field at all, so this row read
+        // `scheduled` for a run a named admin started from the button — and
+        // unlike the leaver there was nothing to thread, which is why #2870
+        // never reached here.
+        await runIdentityJoinerPass({
+            tenantId: TENANT,
+            provider: PROVIDER,
+            requestedByUserId: 'user-42',
+            now: NOW,
+        });
+
+        expect(rowData().triggeredBy).toBe('manual');
+    });
+
+    it('records the 04:30 dispatch as scheduled, which is what it is', async () => {
+        // The positive control. "Scheduled" is only honest when the
+        // unattended path genuinely has no requester to name, so this must
+        // stay `scheduled` rather than becoming manual for everything.
+        await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
+
+        expect(rowData().triggeredBy).toBe('scheduled');
+    });
+
+    it('reads the requester, not the actor TYPE, which cannot tell them apart', async () => {
+        // `buildSystemContext` and `buildDelegatedJobContext` both set
+        // actorType 'JOB'. A derivation off that would label every run the
+        // same, and the two runs above would agree.
+        await runIdentityJoinerPass({
+            tenantId: TENANT,
+            provider: PROVIDER,
+            requestedByUserId: 'user-42',
+            now: NOW,
+        });
+        const delegated = rowData().triggeredBy;
+
+        mockDb.integrationExecution.create.mockClear();
+        await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
+
+        expect(delegated).not.toBe(rowData().triggeredBy);
+    });
+});
+
 describe('THE WINDOW — it lives in the planner, and the query must not narrow it', () => {
     it('asks the database for ONBOARDING employees and nothing about dates', async () => {
         await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });

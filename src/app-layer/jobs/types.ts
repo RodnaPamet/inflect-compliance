@@ -922,6 +922,19 @@ export interface IdentityLeaverDispatchPayload {
 export interface IdentityJoinerPassPayload {
     tenantId: string;
     /**
+     * WHO asked, when a human did — the joiner half of #2895.
+     *
+     * Same field, same meaning and same absence rule as the leaver's: absent
+     * for the 04:30 dispatch, which is what "scheduled" honestly means, and a
+     * real `User.id` when the off-schedule route enqueued this.
+     *
+     * The joiner had no such field at all, so `identity-joiner-run.ts` wrote
+     * `triggeredBy: 'scheduled'` on every execution row and the route could
+     * only put the requester in a log line. The leaver's fix (#2870) never
+     * reached here because the joiner had nothing to thread.
+     */
+    requestedByUserId?: string;
+    /**
      * The DIRECTORY, not the connection — the same unit the leaver uses, and for
      * a joiner-specific reason on top of the leaver's.
      *

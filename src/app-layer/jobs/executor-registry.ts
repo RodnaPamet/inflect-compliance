@@ -1371,14 +1371,20 @@ executorRegistry.register('identity-joiner-pass', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();
     const { runIdentityJoinerPassJob } = await import('./identity-joiner');
+    // `NamesEveryField` for the reason the leaver registration above gives in
+    // full: naming fields is right, and an optional field added to the payload
+    // type is invisible to the compiler at a hand-named call site unless the
+    // naming itself is made mandatory.
+    const joinerPayload: NamesEveryField<JobPayload<'identity-joiner-pass'>> = {
+        tenantId: payload.tenantId,
+        provider: payload.provider,
+        requestedByUserId: payload.requestedByUserId,
+    };
     // `tenantId` and `provider` NAMED rather than the payload spread. A payload
     // forwarded opaquely is how a scoped job silently becomes an unscoped one,
     // and both fields are gates here: the tenant bounds every read, and the
     // provider bounds the link-freshness and collision reads.
-    const r = await runIdentityJoinerPassJob({
-        tenantId: payload.tenantId,
-        provider: payload.provider,
-    });
+    const r = await runIdentityJoinerPassJob(joinerPayload);
     return makeResult(
         'identity-joiner-pass',
         startedAt,
