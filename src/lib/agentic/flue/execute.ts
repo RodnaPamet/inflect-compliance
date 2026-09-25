@@ -5,6 +5,7 @@ import type { RequestContext } from '@/app-layer/types';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
+import { recordExternalToolDecision } from './tool-decision';
 import { updateRun, failRun, haltRunAtCap, haltRunAtGuard, haltRunAtKill } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
@@ -767,6 +768,7 @@ function wrapForLedger(
             const seq = ledger.nextSeq();
             // BEFORE the call, because the call is what reads it.
             ledger.noteOrigin(context.toolCallId, seq);
+            const startedAt = Date.now();
             try {
                 const result = await tool.run(context);
                 const verdict = ledger.takeVerdict(context.toolCallId);
@@ -785,6 +787,15 @@ function wrapForLedger(
                     // they are the reviewable half.
                     input: context.data,
                 });
+                // The Art 12 disclosure, for an external tool only — a no-op
+                // for every built-in, which is why it is called unconditionally
+                // rather than the engine deciding whose tool this is.
+                await recordExternalToolDecision(ctx, {
+                    runId,
+                    toolName: tool.name,
+                    status: 'DONE',
+                    latencyMs: Date.now() - startedAt,
+                });
                 return result;
             } catch (err) {
                 ledger.onFailure();
@@ -801,6 +812,15 @@ function wrapForLedger(
                     guardRuleIds: verdict?.ruleIds,
                     input: context.data,
                     output: { error: err instanceof Error ? err.message : String(err) },
+                });
+                // A call that threw still SENT something. Disclosing only the
+                // successes would record the calls that worked rather than the
+                // data that left.
+                await recordExternalToolDecision(ctx, {
+                    runId,
+                    toolName: tool.name,
+                    status: 'FAILED',
+                    latencyMs: Date.now() - startedAt,
                 });
                 throw err;
             } finally {
