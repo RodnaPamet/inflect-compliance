@@ -35,7 +35,17 @@ jest.mock('@/app-layer/policies/common', () => ({
     assertCanAdmin: jest.fn(),
 }));
 
+// PARTIAL: `manifestStateOf` stays real — it computes the verdict these tests
+// are about. Only the WRITE is stubbed, so an approval's contract (which name,
+// which hashes) is asserted at the seam rather than through the database.
+const writePinMock = jest.fn();
+jest.mock('@/app-layer/usecases/mcp-tool-manifest', () => ({
+    ...jest.requireActual('@/app-layer/usecases/mcp-tool-manifest'),
+    writeToolManifestPin: (...a: unknown[]) => writePinMock(...a),
+}));
+
 import {
+    approveExternalToolManifest,
     listExternalMcpTools,
     MAX_EXTERNAL_TOOLS,
 } from '@/app-layer/usecases/external-mcp-tools';
@@ -149,5 +159,85 @@ describe('bounds and refusals', () => {
             url: 'https://mcp.example.com',
             authorization: 'Bearer abc',
         });
+    });
+});
+
+describe('approving an external definition', () => {
+    const adminCtx = { tenantId: 'tnt_1', userId: 'usr_9' } as never;
+    const liveHashes = () => hashToolManifest(ALERTS);
+
+    beforeEach(() => writePinMock.mockResolvedValue({ changed: true, revision: 1 }));
+
+    it('pins under the QUALIFIED name, with the hashes it observed itself', async () => {
+        await approveExternalToolManifest(adminCtx, {
+            connectionId: CONN,
+            toolName: 'list_alerts',
+            expectedManifestHash: liveHashes().manifestHash,
+        });
+
+        expect(writePinMock).toHaveBeenCalledTimes(1);
+        const [, , pinnedName, hashes, approver] = writePinMock.mock.calls[0];
+        expect(pinnedName).toBe(externalToolName(CONN, 'list_alerts'));
+        expect(hashes).toEqual({
+            descriptionHash: liveHashes().descriptionHash,
+            schemaHash: liveHashes().schemaHash,
+            manifestHash: liveHashes().manifestHash,
+        });
+        expect(approver).toBe('usr_9');
+    });
+
+    /**
+     * The window this argument is about is not a deploy. An external server can
+     * change its text between the call that rendered the review and the call
+     * this approval itself makes.
+     */
+    it('refuses a hash that no longer matches what the server says', async () => {
+        await expect(
+            approveExternalToolManifest(adminCtx, {
+                connectionId: CONN,
+                toolName: 'list_alerts',
+                expectedManifestHash: 'sha256-of-something-the-operator-read-earlier',
+            }),
+        ).rejects.toThrow(/changed since it was reviewed/);
+        expect({ writes: writePinMock.mock.calls.length }).toEqual({ writes: 0 });
+    });
+
+    it('refuses a tool the server no longer advertises', async () => {
+        listToolsMock.mockResolvedValue([]);
+        await expect(
+            approveExternalToolManifest(adminCtx, {
+                connectionId: CONN,
+                toolName: 'list_alerts',
+                expectedManifestHash: liveHashes().manifestHash,
+            }),
+        ).rejects.toThrow(/no longer advertises/);
+        expect({ writes: writePinMock.mock.calls.length }).toEqual({ writes: 0 });
+    });
+
+    it('says "past the cap" rather than "gone" when the catalogue was truncated', async () => {
+        listToolsMock.mockResolvedValue(
+            Array.from({ length: MAX_EXTERNAL_TOOLS + 1 }, (_, i) => ({
+                ...ALERTS,
+                name: i === MAX_EXTERNAL_TOOLS ? 'list_alerts' : `tool_${i}`,
+            })),
+        );
+        await expect(
+            approveExternalToolManifest(adminCtx, {
+                connectionId: CONN,
+                toolName: 'list_alerts',
+                expectedManifestHash: liveHashes().manifestHash,
+            }),
+        ).rejects.toThrow(new RegExp(`not among the first ${MAX_EXTERNAL_TOOLS}`));
+    });
+
+    it('will not approve without an approving user', async () => {
+        await expect(
+            approveExternalToolManifest({ tenantId: 'tnt_1' } as never, {
+                connectionId: CONN,
+                toolName: 'list_alerts',
+                expectedManifestHash: liveHashes().manifestHash,
+            }),
+        ).rejects.toThrow(/approving user/);
+        expect({ writes: writePinMock.mock.calls.length }).toEqual({ writes: 0 });
     });
 });
