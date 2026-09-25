@@ -49,6 +49,7 @@
  */
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { runInTenantContext } from '@/lib/db-context';
 import type { RequestContext } from '../types';
 import {
@@ -332,7 +333,15 @@ function selfAccountIdsFromConnection(conn: {
         merged = (conn.configJson ?? {}) as Record<string, unknown>;
         logger.warn('dry-run self-account ids fell back to config: secrets did not decrypt', {
             component: 'identity-writer-factory',
-            error: err instanceof Error ? err.message : String(err),
+            // Scrubbed like every other logged error on this path. What
+            // reaches here today is a `decryptField`/`JSON.parse` message
+            // carrying no directory identifier, so this changes nothing an
+            // operator reads — but the value is an arbitrary upstream string
+            // on a line pino stamps with the tenant, and this same file holds
+            // the constructor-refusal `detail`, which IS a bindDN or a
+            // directory account string. Wrapping it is what keeps the next
+            // edit from being a leak (#2892 finding 11).
+            error: redactDirectoryIdentifiers(err instanceof Error ? err.message : String(err)),
         });
     }
     return [merged.writeBindDN, merged.bindDN]

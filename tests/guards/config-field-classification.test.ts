@@ -94,7 +94,31 @@ const ORPHAN_RULES: readonly string[] = [
 
 /**
  * Providers that declare config fields and have no rules entry at all, so
- * `validateProviderConfig` falls back to `?? {}` and rejects EVERY field.
+ * `validateProviderConfig` ACCEPTS EVERY KEY they are sent.
+ *
+ * This said the opposite — "falls back to `?? {}` and rejects EVERY field" —
+ * until #2892 finding 3. The code is `config-schema.ts:327-328`:
+ *
+ *     const rules = CONFIG_FIELD_RULES[providerId];
+ *     if (!rules) return config;
+ *
+ * Passthrough, not rejection, and proven by
+ * `tests/unit/provider-config-validation.test.ts:111`. The `?? {}` mechanic is
+ * real but lives at `config-schema.ts:271`, inside a different function.
+ *
+ * The direction matters more than most comment drift: `validateProviderConfig`
+ * argues in its own docblock that the passthrough is SAFE because this guard
+ * fails CI on an unclassified provider, and this list is where a reviewer
+ * comes to check that claim. It told them the arm was closed when it is open.
+ * What is actually open: these three accept any key into `configJson`, which
+ * is unencrypted and returned by `GET /admin/integrations` — including their
+ * own secret-declared names. Bounded today only because no posture provider
+ * spreads `configJson` generically (`aws-posture-provider.ts:318-328` reads
+ * five named keys).
+ *
+ * `config-rules-reach-their-provider.test.ts` keeps the same set as
+ * `NO_CONFIG_RULES`, with a reason per entry. Two lists, one fact: if they
+ * ever disagree, that guard's rule 2 is the one that fails.
  */
 const PROVIDERS_WITHOUT_RULES: readonly string[] = [
     'aws-posture: declares config fields but has NO rules entry',

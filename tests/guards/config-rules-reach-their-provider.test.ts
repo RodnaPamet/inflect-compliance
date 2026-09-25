@@ -26,7 +26,10 @@
  *  2. Every registered provider either HAS rules or is listed below. This is
  *     the `if (!rules) return config` arm made visible: a provider with no
  *     entry accepts any key into `configJson`, which is stored unencrypted and
- *     returned by the admin API, and today six do.
+ *     returned by the admin API. `NO_CONFIG_RULES` below is the current set;
+ *     the count is deliberately not repeated here, because it was wrong — this
+ *     line said "today six do" while the list held three, and rule 2 passing
+ *     is what proves three is the real number.
  *  3. No rule permits a CREDENTIAL-NAMED field. `configJson` is the wrong
  *     place for one by construction, and a provider that needs a secret has
  *     `secretFields` and the encrypted bag for it.
