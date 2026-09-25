@@ -112,6 +112,44 @@ describe('settling', () => {
         expect(u.data.detail).toBe('Graph returned 403');
     });
 
+    it('redacts a directory identifier out of the stored reason — #2843 finding 22', async () => {
+        // A provider rejection is not machine-safe text. `sanitizePlainText`
+        // is Epic C.5's markup defence and leaves a DN completely intact, so
+        // before this the journal stored the identifier verbatim — and this
+        // row is read back by an operator surface and carried into an auditor
+        // export, which a log line at least is not.
+        const h = await beginWrite(ctx, input());
+        await h.failed('LDAP result 50 modifying CN=Alice Smith,OU=Staff,DC=corp');
+
+        const u = db.identityWriteJournal.updateMany.mock.calls[0][0];
+        expect(u.data.detail).not.toMatch(/Alice Smith/);
+        expect(u.data.detail).not.toMatch(/DC=corp/);
+        // Still a usable sentence: the provider's answer survives, the person
+        // does not.
+        expect(u.data.detail).toMatch(/LDAP result 50/);
+        expect(u.data.detail).toMatch(/\{account\}/);
+    });
+
+    it('redacts an email and a GUID the same way', async () => {
+        const h = await beginWrite(ctx, input());
+        await h.reverted('reverted for alex.leaver@acme.example (id 8f14e45f-ceea-467a-9f2c-1d1e0a0d5c77)');
+
+        const u = db.identityWriteJournal.updateMany.mock.calls[0][0];
+        expect(u.data.detail).not.toMatch(/alex\.leaver@/);
+        expect(u.data.detail).not.toMatch(/8f14e45f/);
+    });
+
+    it('leaves a reason with no identifier in it alone', async () => {
+        // The positive control: redaction must not be doing something to every
+        // string, or the assertions above would pass against a stub.
+        const h = await beginWrite(ctx, input());
+        await h.failed('Graph returned 403');
+
+        expect(db.identityWriteJournal.updateMany.mock.calls[0][0].data.detail).toBe(
+            'Graph returned 403',
+        );
+    });
+
     it('every settle is predicated on the row still being PENDING', async () => {
         // Append-only: a settle must not overwrite an outcome another actor
         // already recorded.

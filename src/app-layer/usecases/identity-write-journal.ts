@@ -31,6 +31,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { badRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { recordIdentityWritesUnsettled } from '@/lib/observability/integration-metrics';
 import type { IdentityWriteMode } from './identity-write-policy';
 
@@ -126,7 +127,26 @@ export async function beginWrite(ctx: RequestContext, input: BeginWriteInput): P
         // WRITE path, per Epic C.5 — render-time escaping alone would leave the
         // stored row dangerous to the PDF export and any SDK consumer reading
         // it verbatim.
-        const safeDetail = detail === undefined ? null : sanitizePlainText(detail);
+        // REDACTED as well as sanitised — #2843 finding 22.
+        //
+        // `sanitizePlainText` answers a different question. It is Epic C.5's
+        // markup defence, and it leaves a directory identifier completely
+        // intact: a provider rejection naming `CN=Alice Smith,OU=Staff,DC=corp`
+        // survives it unchanged and is then stored, rendered on an operator
+        // surface, and carried into an auditor export.
+        //
+        // `identity-log-identifier-scrub` does not cover this. That guard
+        // matches `logger.<level>()` calls by construction
+        // (`logFieldsIn`), so a DURABLE copy of the same string was outside
+        // every check the log path has — which is the sharper version of the
+        // same disclosure, because a row has none of a log's excuses about
+        // retention and it is read back deliberately.
+        //
+        // Order is free: the redactor substitutes fixed literals that cannot
+        // reintroduce markup, and its own docblock says it is safe on either
+        // side of sanitisation.
+        const safeDetail =
+            detail === undefined ? null : sanitizePlainText(redactDirectoryIdentifiers(detail));
         // Predicated on PENDING so a settle cannot overwrite an outcome another
         // actor already recorded, and a double-settle is a no-op rather than a
         // rewrite of history in an append-only journal.
