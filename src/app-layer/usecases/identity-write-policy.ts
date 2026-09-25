@@ -210,7 +210,17 @@ export function describeRefusal(
         const days = (now.getTime() - current.dryRunSince.getTime()) / 86_400_000;
         if (days < DRY_RUN_MIN_DAYS) {
             const left = Math.ceil(DRY_RUN_MIN_DAYS - days);
-            return `Dry-run has been active for ${Math.floor(days)} of ${DRY_RUN_MIN_DAYS} required days. ${left} more before this direction can widen — the point is to observe a real termination-and-hire cycle against what HR and IT actually did.`;
+            // "so there is TIME FOR" rather than "to observe" — #2843 finding 31.
+            //
+            // This gate measures elapsed days and nothing else; it never reads
+            // `IntegrationExecution` and cannot tell whether a single pass ran.
+            // That is deliberate and tested (`is measured in days, not runs`):
+            // a termination-and-hire cycle takes calendar time, so calendar
+            // time is the proxy. But the sentence said the POINT IS TO OBSERVE,
+            // which reads as a claim that observation happened — and an
+            // operator treating a passed gate as evidence of a watched cycle is
+            // believing something nobody measured.
+            return `Dry-run has been active for ${Math.floor(days)} of ${DRY_RUN_MIN_DAYS} required days. ${left} more before this direction can widen — the window exists so there is time for a real termination-and-hire cycle to happen and be compared against what HR and IT actually did. It counts days, not passes.`;
         }
     }
 

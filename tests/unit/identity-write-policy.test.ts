@@ -117,6 +117,22 @@ describe('dry-run is time-boxed, and the clock is real', () => {
         expect(almost).toMatch(/required days/);
     });
 
+    it('SAYS it counts days, and does not claim a cycle was observed', () => {
+        // #2843 finding 31. The refusal read "the point is to observe a real
+        // termination-and-hire cycle", which states the window's PURPOSE as
+        // though it were the gate's TEST. The gate reads a clock: a tenant
+        // whose schedule was off, whose connection was disabled, or who simply
+        // had nobody leave satisfies it identically to one that watched seven
+        // days of real passes.
+        //
+        // The behaviour is deliberate and stays — the test above pins it. What
+        // changed is the sentence, so a passed gate is not read as evidence of
+        // something nobody measured.
+        const why = describeRefusal('leaver', { mode: 'DRY_RUN', dryRunSince: daysAgo(2) }, 'AUTOMATIC', NOW);
+        expect(why).toMatch(/counts days, not passes/i);
+        expect(why).not.toMatch(/the point is to observe/i);
+    });
+
     /**
      * THE SAFETY PROPERTY THE #2241 DELETION EXISTS TO CREATE.
      *
