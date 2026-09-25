@@ -511,3 +511,59 @@ describe('API Key Scopes — every domain the auth layer accepts is offerable', 
         expect(bogus).toEqual([]);
     });
 });
+
+/**
+ * CALLING OUT IS ITS OWN SCOPE.
+ *
+ * `admin.agent_external_tools` decides whether a credential may reach a tool on
+ * somebody else's MCP server. It shipped in #2883 as a permission with no scope
+ * mapped to it, which meant no narrowly-scoped key could ever hold it — the
+ * feature was unreachable by exactly the credential shape this codebase argues
+ * for, and the failure would have surfaced as a confusing refusal mid-run.
+ *
+ * Two properties are asserted rather than assumed: the scope GRANTS it, and
+ * `admin:write` does NOT. Folding it into `write` would hand every key that can
+ * edit tenant settings, SSO or SCIM the ability to egress data to a third
+ * party — a different kind of authority arriving by accident.
+ */
+describe('admin:external_tools', () => {
+    it('grants the permission that lets a credential leave the tenant', () => {
+        const perms = scopesToPermissions(['admin:external_tools']);
+        expect(perms.admin.agent_external_tools).toBe(true);
+    });
+
+    it('is MINTABLE — a permission behind a scope nobody can request is still unreachable', () => {
+        expect(VALID_SCOPES).toContain('admin:external_tools');
+    });
+
+    it('does not arrive with admin:write', () => {
+        const perms = scopesToPermissions(['admin:write']);
+        expect(perms.admin.agent_external_tools).toBe(false);
+        // The paired positive: admin:write still grants what it always did, so
+        // this is a narrowing of nothing.
+        expect(perms.admin.manage).toBe(true);
+        expect(perms.admin.sso).toBe(true);
+    });
+
+    it('does not arrive with an unrelated scope', () => {
+        expect(scopesToPermissions(['controls:read']).admin.agent_external_tools).toBe(false);
+    });
+
+    /**
+     * A `*` key DOES get it, deliberately. The four agent-governance flags are
+     * subtracted from `*` because they are SELF-MODIFICATION — a credential
+     * that could grant itself tools or rewrite its own card. This one is the
+     * agent acting, which is what a bearer token is for, and holding it confers
+     * no power to widen it.
+     */
+    it('is present on a `*` key, while the self-modification flags stay absent', () => {
+        const star = scopesToPermissions(['*']);
+        expect(star.admin.agent_external_tools).toBe(true);
+        expect({
+            registry: star.admin.agent_registry,
+            exposure: star.admin.agent_tool_exposure,
+            card: star.admin.agent_policy_card,
+            kill: star.admin.agent_kill_switch,
+        }).toEqual({ registry: false, exposure: false, card: false, kill: false });
+    });
+});
