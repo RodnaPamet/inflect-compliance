@@ -18,17 +18,66 @@ import {
 
 describe('a cloud-mastered account may be written in the cloud directory', () => {
     it('allows an Entra account observed as NOT synced from on-prem', () => {
-        expect(resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: false })).toEqual({
-            allowed: true,
-            basis: 'NOT_ON_PREM_SYNCED',
-        });
+        // The stamp is the word "observed" in this title, made real (#2892
+        // finding 6). Without it the fixture describes an account whose flag
+        // NOTHING ever looked at, and asserting that such an account may be
+        // written is what pinned the age-bound hole green.
+        expect(
+            resolveWriteTarget({
+                provider: 'entra-id',
+                onPremisesSyncEnabled: false,
+                onPremStateObservedAt: new Date(),
+            }),
+        ).toEqual({ allowed: true, basis: 'NOT_ON_PREM_SYNCED' });
     });
 
     it('allows Okta and Google the same way', () => {
-        expect(resolveWriteTarget({ provider: 'okta', onPremisesSyncEnabled: false }).allowed).toBe(true);
-        expect(
-            resolveWriteTarget({ provider: 'google-workspace', onPremisesSyncEnabled: false }).allowed,
-        ).toBe(true);
+        const observed = { onPremisesSyncEnabled: false as const, onPremStateObservedAt: new Date() };
+        expect(resolveWriteTarget({ provider: 'okta', ...observed }).allowed).toBe(true);
+        expect(resolveWriteTarget({ provider: 'google-workspace', ...observed }).allowed).toBe(true);
+    });
+});
+
+describe('an answer nothing observed is not an answer — #2892 finding 6', () => {
+    it('refuses a NOT-synced answer that carries no observation at all', () => {
+        // The hole. `staleAnswer` is gated on a stamp being PRESENT, so a row
+        // with `false` and no stamp was never stale; the `=== null` branch was
+        // skipped because the value is `false`; and the function allowed the
+        // write with the age bound never applied.
+        const r = resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: false });
+
+        expect(r.allowed).toBe(false);
+        expect(r.allowed === false && r.basis).toBe('NEVER_OBSERVED');
+    });
+
+    it('gives it the remedy that can actually be taken', () => {
+        // NEVER_OBSERVED, not the stale refusal, because the remedies differ:
+        // a stale stamp usually means the observing connection was disabled
+        // and waiting will not clear it, while a missing stamp clears on the
+        // next successful sync.
+        const r = resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: false });
+
+        expect(r.allowed === false && r.reason).toMatch(/run a .*directory sync/i);
+        expect(r.allowed === false && r.reason).not.toMatch(/waiting alone will not clear/i);
+    });
+
+    it('still allows the same answer once a sync has recorded it', () => {
+        // The positive control: the refusal is about the OBSERVATION, not
+        // about the value, so stamping it must flip the verdict back.
+        const r = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+            onPremStateObservedAt: new Date(),
+        });
+
+        expect(r).toEqual({ allowed: true, basis: 'NOT_ON_PREM_SYNCED' });
+    });
+
+    it('does not disturb the on-prem-mastered refusal, which never reaches here', () => {
+        const r = resolveWriteTarget({ provider: 'entra-id', onPremisesSyncEnabled: true });
+
+        expect(r.allowed).toBe(false);
+        expect(r.allowed === false && r.basis).not.toBe('NEVER_OBSERVED');
     });
 });
 
@@ -346,6 +395,9 @@ describe('the verdict says WHICH rule produced it', () => {
         const notSynced = resolveWriteTarget({
             provider: 'entra-id',
             onPremisesSyncEnabled: false,
+            // Stamped like its sibling above. This test called both verdicts
+            // "observed" while observing only one of them.
+            onPremStateObservedAt: new Date(),
         });
         expect(cloudOnly.allowed).toBe(true);
         expect(notSynced.allowed).toBe(true);

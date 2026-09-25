@@ -209,7 +209,13 @@ describe('the provider id resolveWriteTarget matches on', () => {
         expect(writer.provider).toBe('entra-id');
         expect(ENTRA_WRITER_PROVIDER_ID).toBe('entra-id');
         expect(
-            resolveWriteTarget({ provider: writer.provider, onPremisesSyncEnabled: false }),
+            resolveWriteTarget({
+                provider: writer.provider,
+                onPremisesSyncEnabled: false,
+                // See identity-disable-account.test.ts: an unstamped `false`
+                // is a row no provider writes, and the rail refuses it.
+                onPremStateObservedAt: new Date(),
+            }),
         ).toEqual({ allowed: true, basis: 'NOT_ON_PREM_SYNCED' });
     });
 });
