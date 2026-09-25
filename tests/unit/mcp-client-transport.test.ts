@@ -26,9 +26,15 @@ import {
 } from '@/app-layer/integrations/mcp/client';
 
 /** A Response whose body streams `text` in one chunk. */
-const bodyOf = (text: string, ok = true, status = 200) => ({
+const bodyOf = (text: string, ok = true, status = 200, contentType = 'application/json') => ({
     ok,
     status,
+    // Headers are part of the CONTRACT, not decoration. This double carried
+    // none until #2906's proving run: streamable HTTP lets a server answer in
+    // either JSON or SSE and the content-type is how a client tells them apart,
+    // so a double without headers could not express the difference — and the
+    // SSE path shipped untested because no test could have reached it.
+    headers: { get: (k: string) => (k.toLowerCase() === 'content-type' ? contentType : null) },
     body: {
         getReader() {
             let sent = false;
@@ -141,5 +147,101 @@ describe('what comes back is bounded and distrusted', () => {
         safeFetchMock.mockResolvedValue(bodyOf('{}', false, 503));
 
         await expect(listTools(OPTS)).rejects.toThrow(/HTTP 503/);
+    });
+});
+
+/**
+ * SSE REPLIES — the half of streamable HTTP this client advertised and could
+ * not read.
+ *
+ * A server chooses whether to answer a POST with `application/json` or
+ * `text/event-stream`; this client sends an `Accept` naming both, so refusing
+ * one was a promise it did not keep. Microsoft's Entra MCP server answers every
+ * call in SSE, and the whole transport failed against it with "non-JSON body"
+ * until #2906's proving run drove a real handshake.
+ *
+ * The rule worth pinning is not "parse SSE" but "find OUR reply in it". An
+ * event stream legitimately carries notifications and log messages beside the
+ * answer, so taking the first `data:` line works against a quiet server and
+ * fails against a chatty one.
+ */
+const sse = (...frames: string[]) => frames.map((f) => `event: message\ndata: ${f}\n`).join('\n');
+
+/** The id this client actually sent — echoed back, as a real server does. */
+const idOf = (call: unknown[]): string =>
+    JSON.parse((call[1] as { body: string }).body).id as string;
+
+/** Answer whatever arrives, in SSE, with `frames(id)` built from the real id. */
+const sseReplying = (frames: (id: string) => string[]) =>
+    safeFetchMock.mockImplementation((...call: unknown[]) =>
+        Promise.resolve(bodyOf(sse(...frames(idOf(call))), true, 200, 'text/event-stream')),
+    );
+
+describe('a reply delivered as an event stream', () => {
+    it('is parsed when the server answers in SSE', async () => {
+        sseReplying((id) => [
+            JSON.stringify({ jsonrpc: '2.0', id, result: { protocolVersion: '2025-06-18' } }),
+        ]);
+        await expect(initialize({ url: 'https://mcp.example.com' })).resolves.toEqual({
+            protocolVersion: '2025-06-18',
+        });
+    });
+
+    /**
+     * The discriminator. All three frames are well-formed JSON-RPC; only one is
+     * the answer to this call. A reader that took the first would return the
+     * notification's payload and silently succeed.
+     */
+    it('takes OUR reply, not the first message in the stream', async () => {
+        sseReplying((id) => [
+            JSON.stringify({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info' } }),
+            JSON.stringify({ jsonrpc: '2.0', id: `${id}-someone-else`, result: { protocolVersion: 'wrong-call' } }),
+            JSON.stringify({ jsonrpc: '2.0', id, result: { protocolVersion: '2025-06-18' } }),
+        ]);
+        await expect(initialize({ url: 'https://mcp.example.com' })).resolves.toEqual({
+            protocolVersion: '2025-06-18',
+        });
+    });
+
+    it('skips a malformed event rather than losing the good one beside it', async () => {
+        sseReplying((id) => [
+            '{not json at all',
+            JSON.stringify({ jsonrpc: '2.0', id, result: { protocolVersion: '2025-06-18' } }),
+        ]);
+        await expect(initialize({ url: 'https://mcp.example.com' })).resolves.toEqual({
+            protocolVersion: '2025-06-18',
+        });
+    });
+
+    it('surfaces a JSON-RPC error carried over SSE', async () => {
+        sseReplying((id) => [
+            JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'no such method' } }),
+        ]);
+        await expect(initialize({ url: 'https://mcp.example.com' })).rejects.toThrow(/no such method/);
+    });
+
+    it('says the stream carried no reply, rather than "non-JSON body"', async () => {
+        sseReplying(() => [
+            JSON.stringify({ jsonrpc: '2.0', method: 'notifications/message', params: {} }),
+        ]);
+        // The two failures call for different remedies — a protocol mismatch
+        // versus a server that answered something else — so they read
+        // differently.
+        await expect(initialize({ url: 'https://mcp.example.com' })).rejects.toThrow(
+            /no reply to initialize in its event stream/,
+        );
+    });
+
+    it('still parses a plain JSON answer', async () => {
+        safeFetchMock.mockImplementation((...call: unknown[]) =>
+            Promise.resolve(
+                bodyOf(
+                    JSON.stringify({ jsonrpc: '2.0', id: idOf(call), result: { protocolVersion: '2025-06-18' } }),
+                ),
+            ),
+        );
+        await expect(initialize({ url: 'https://mcp.example.com' })).resolves.toEqual({
+            protocolVersion: '2025-06-18',
+        });
     });
 });
