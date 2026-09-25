@@ -36,8 +36,9 @@
  *     inherits the same OWNER gate as the ladder itself. A tenant with neither
  *     configured still refuses `NO_DEPARTMENT_MAP` / `NO_DEFAULT_GROUP`, and
  *     as of #2839 that is EVERY tenant: #2713 shipped the schema and the
- *     reader below, but no write path for either half exists anywhere in
- *     `src/`, so the refusal is not one an operator can currently clear.
+ *     reader below, and #2839 shipped the WRITER — `identity-entitlement-map`
+ *     creates, replaces and removes rules and sets the singular fallback — so
+ *     the refusal is now one an operator can clear by configuring a map.
  *   · `timeZone` — owner decision 9 fires dispatch on the tenant's own zone.
  *     Nothing stores one, so the start-date window is computed in UTC and
  *     `predictionLimits` SAYS SO on every plan.

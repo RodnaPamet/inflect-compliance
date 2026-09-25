@@ -196,24 +196,28 @@ export type IdentityDirection = 'leaver' | 'joiner';
  *     `identityDefaultGroupId` + `identityDefaultGroupName` where it inherits
  *     the OWNER gate.
  *
- *     WHAT IT DID NOT GIVE THE MAP IS A WRITER (#2839). `identity-joiner-run`
- *     does one `findMany` against `IdentityDepartmentGroupRule` and that is the
- *     ONLY reference to the table in `src/` — no usecase creates, updates or
- *     deletes a rule, and `updateTenantSecurityConfig`'s patch type does not
- *     list either default-group field. So no tenant can configure either half,
- *     every plan refuses `NO_DEPARTMENT_MAP`, and `wouldCreate` is
- *     structurally 0.
+ *     WHAT #2713 DID NOT GIVE THE MAP WAS A WRITER, and #2839 did.
+ *     `identity-entitlement-map` creates, replaces and removes rules and sets
+ *     the singular fallback, each write OWNER-gated and audited as `access`
+ *     rather than configuration — a department→group rule decides what a
+ *     future joiner is granted. So a tenant can now configure either half, and
+ *     the refusal IS one an operator can clear.
  *
- *     From #2713 until #2839 this paragraph asserted the opposite — that the
- *     refusal had become one an operator could act on. It had not, and the
- *     sentence was specific enough to be believed and stop a reader checking.
- *     Acting on it needs a write path: an admin surface plus a usecase that
- *     sets the rules and the default group. Until that lands, this condition
+ *     THE HISTORY IS KEPT BECAUSE IT IS THE POINT. From #2713 until #2839 this
+ *     paragraph said exactly that sentence while no writer existed — no
+ *     usecase created a rule, and `updateTenantSecurityConfig`'s patch type
+ *     listed neither default-group field — so every plan refused
+ *     `NO_DEPARTMENT_MAP` and `wouldCreate` was structurally 0. The sentence
+ *     was specific enough to be believed and to stop a reader checking.
+ *
+ *     `tests/guards/entitlement-map-claims-match-its-write-path.test.ts` pins
+ *     the CONJUNCTION rather than either half, and it earned that on the day
+ *     the writer landed: it went red pointing at these paragraphs, which is
+ *     the coupling that was missing the first time round.
+ *
+ *     `wouldCreate` is still 0, but for the OTHER reason now — the create verb
+ *     is unwired and `JOINER_MAX_MODE` is DRY_RUN. This condition no longer
  *     holds the flag down on its own.
- *
- *     `tests/guards/entitlement-map-claims-match-its-write-path.test.ts` now
- *     pins the CONJUNCTION rather than either half, so the day the writer
- *     lands, this paragraph fails a test instead of quietly going stale.
  *
  * SO THE TRIGGER LANDING IS NOT THE CONDITION FOR FLIPPING THIS. That is what
  * this paragraph used to say — "when the trigger lands, this flips in the same
