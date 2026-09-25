@@ -118,8 +118,15 @@ function auditDetails(call = 0): Record<string, unknown> {
 describe('upsertIntegrationConnection — security-weakening flags in the audit entry', () => {
     function stubCreate() {
         const create = jest.fn().mockResolvedValue({ id: 'conn-new' });
+        // `findFirst` as well as `create`: an HRIS provider takes the
+        // sole-enabled-connection branch before the write, and a tx mock that
+        // supplies only the method THIS describe block happens to reach fails
+        // as a TypeError inside the code under test the moment a test picks a
+        // different provider. `null` is "no other enabled HRIS connection",
+        // which is what an empty tenant looks like.
+        const findFirst = jest.fn().mockResolvedValue(null);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ integrationConnection: { create } } as never),
+            fn({ integrationConnection: { create, findFirst } } as never),
         );
         return create;
     }
@@ -148,6 +155,64 @@ describe('upsertIntegrationConnection — security-weakening flags in the audit 
             'allowSelfSignedTls',
             'insecureSkipVerify',
         ]);
+    });
+
+    it('records the flag that GRANTS directory write authority', async () => {
+        // #2892 finding 2. `writesEnabled` is the one flag between a leaver
+        // pass and disabling real accounts in a customer's directory. Turning
+        // it on used to write `securityFlagsEnabled: []` and the summary
+        // "Updated integration: AD" — a record indistinguishable from renaming
+        // the connection, on the grant of write authority itself.
+        stubCreate();
+
+        await upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+            provider: 'active-directory',
+            name: 'AD',
+            configJson: { writesEnabled: true, host: 'ldaps://dc.example.com' },
+        });
+
+        expect(auditDetails().securityFlagsEnabled).toStrictEqual(['writesEnabled']);
+    });
+
+    it('records the HRIS write-back grant the same way', async () => {
+        stubCreate();
+
+        await upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+            provider: 'orangehrm',
+            name: 'HR',
+            configJson: { writeBackEnabled: 'true' },
+        });
+
+        expect(auditDetails().securityFlagsEnabled).toStrictEqual(['writeBackEnabled']);
+    });
+
+    it('keeps weakening and authority flags in one list, in list order', async () => {
+        // Both kinds on one connection. Order follows the declaration, so a
+        // reader comparing two rows is comparing stable strings.
+        stubCreate();
+
+        await upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+            provider: 'active-directory',
+            name: 'AD',
+            configJson: { writesEnabled: true, allowSelfSignedTls: true },
+        });
+
+        expect(auditDetails().securityFlagsEnabled).toStrictEqual([
+            'allowSelfSignedTls',
+            'writesEnabled',
+        ]);
+    });
+
+    it('treats an OFF authority flag as off, like every other flag', async () => {
+        stubCreate();
+
+        await upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+            provider: 'active-directory',
+            name: 'AD',
+            configJson: { writesEnabled: false },
+        });
+
+        expect(auditDetails().securityFlagsEnabled).toStrictEqual([]);
     });
 
     it('records an EMPTY list when no config was submitted at all', async () => {

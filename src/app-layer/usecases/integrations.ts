@@ -65,11 +65,58 @@ const IDENTITY_SYNC_PROVIDERS = new Set(['okta', 'google-workspace', 'entra-id',
  */
 const SECURITY_WEAKENING_FLAGS = ['allowSelfSignedTls', 'insecureSkipVerify', 'disableCertValidation'] as const;
 
-/** The weakening flags currently ON, for the audit entry. Empty when none. */
+/**
+ * Flags that GRANT write authority over a customer's directory or HRIS
+ * (#2892 finding 2).
+ *
+ * Separate from the list above because they are not the same kind of thing —
+ * nothing here weakens a transport — but they belong in the same audit field
+ * for the same reason, and the reason is stronger. `writesEnabled` is the one
+ * flag standing between a leaver pass and disabling real accounts in a real
+ * directory: with it off the writer refuses to construct, with it on the pass
+ * writes. Turning it on used to produce
+ * `INTEGRATION_CONNECTION_UPDATED { summary: 'Updated integration: <name>',
+ * securityFlagsEnabled: [] }` — a record indistinguishable from renaming the
+ * connection.
+ *
+ * Actor, timestamp and connection id were always on the row, so the grant was
+ * bounded to a set of updates; what could not be recovered was WHICH update
+ * granted it. That is the same question the TLS list exists to answer.
+ *
+ * `writesEnabled` is the key on both directory providers
+ * (`active-directory/index.ts:397`, `entra-id/index.ts:202`);
+ * `writeBackEnabled` is the HRIS equivalent (`hris/write-back.ts`).
+ */
+const WRITE_AUTHORITY_FLAGS = ['writesEnabled', 'writeBackEnabled'] as const;
+
+/**
+ * Both lists, because the audit field carries both.
+ *
+ * The field is still `securityFlagsEnabled`: it is written into
+ * `detailsJson` and read by nothing else in the repo, but renaming a key that
+ * already exists on historical audit rows would split one fact across two
+ * spellings for no gain.
+ *
+ * A coverage note, measured rather than assumed: `insecureSkipVerify` and
+ * `disableCertValidation` appear in ZERO provider files, so before this change
+ * the live coverage of this mechanism was one flag on one provider
+ * (`allowSelfSignedTls`). They are kept because an unreferenced key costs
+ * nothing and catches a provider that adds it later, but the list's length
+ * should not be mistaken for its reach.
+ */
+const AUDITED_CONFIG_FLAGS = [...SECURITY_WEAKENING_FLAGS, ...WRITE_AUTHORITY_FLAGS] as const;
+
+/**
+ * The audited flags currently ON, for the audit entry. Empty when none.
+ *
+ * Reports flags that are ON, not flags that CHANGED — so a row says what the
+ * connection's posture became, and a reader reconstructs the transition from
+ * the previous row.
+ */
 function enabledSecurityFlags(configJson: unknown): string[] {
     if (!configJson || typeof configJson !== 'object') return [];
     const cfg = configJson as Record<string, unknown>;
-    return SECURITY_WEAKENING_FLAGS.filter((k) => cfg[k] === true || cfg[k] === 'true');
+    return AUDITED_CONFIG_FLAGS.filter((k) => cfg[k] === true || cfg[k] === 'true');
 }
 
 export async function listIntegrationConnections(ctx: RequestContext) {
