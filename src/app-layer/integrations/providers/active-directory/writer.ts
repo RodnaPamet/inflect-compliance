@@ -126,6 +126,7 @@ import {
     type DirectoryWriter,
 } from '@/app-layer/usecases/identity-disable-account';
 import { logger } from '@/lib/observability/logger';
+import { isUnderBaseDn } from './dn-containment';
 import { adDirectionWriteRefusal } from './write-direction';
 
 /** The provider id this writer answers for. Must match `ActiveDirectoryProvider.id`. */
@@ -322,63 +323,6 @@ export function resultCodeOf(err: unknown): number | null {
 
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * Split a DN on its RDN separators, respecting backslash escaping.
- *
- * `CN=Smith\, Jane,OU=Staff,DC=corp` is THREE components, not four. A naive
- * `split(',')` on a DN carrying an escaped comma produces fragments that match
- * nothing, which would turn the containment check below into a refusal of a
- * perfectly ordinary account name.
- */
-function splitDn(dn: string): string[] {
-    const parts: string[] = [];
-    let current = '';
-    for (let i = 0; i < dn.length; i += 1) {
-        const ch = dn[i];
-        if (ch === '\\') {
-            current += ch + (dn[i + 1] ?? '');
-            i += 1;
-            continue;
-        }
-        if (ch === ',') {
-            parts.push(current);
-            current = '';
-            continue;
-        }
-        current += ch;
-    }
-    parts.push(current);
-    return parts;
-}
-
-/** Lower-case, trim each RDN, drop empties. Enough for a containment test. */
-function normalizeDn(dn: string): string {
-    return splitDn(dn)
-        .map((part) => part.trim().toLowerCase())
-        .filter((part) => part !== '')
-        .join(',');
-}
-
-/**
- * Whether `dn` names an object strictly beneath `baseDN`.
- *
- * Deliberately a SUFFIX test on normalised components rather than a real DN
- * parse: AD compares DN components case-insensitively and ignores the optional
- * whitespace after a separator, and those two are the whole difference between
- * two spellings of one object. Anything this cannot place confidently reads as
- * "not contained", which is the fail-closed direction — the remedy for a false
- * refusal is a correctly formed `baseDN` on the connection, and the alternative
- * is acting on an object nobody scoped.
- *
- * The base itself returns false. It is a naming context, not a user object, and
- * a disable aimed at it is not a case worth admitting.
- */
-function isUnderBaseDn(dn: string, baseDN: string): boolean {
-    const target = normalizeDn(dn);
-    const root = normalizeDn(baseDN);
-    if (target === '' || root === '') return false;
-    return target.endsWith(`,${root}`);
-}
 
 /**
  * The raw 16 bytes AD stores for a canonical GUID string.
