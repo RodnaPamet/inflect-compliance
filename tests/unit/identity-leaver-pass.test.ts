@@ -847,8 +847,28 @@ describe('the batch', () => {
         // is the one no test watched.
         await run();
         expect(mockDb.connectedIdentityAccount.count).toHaveBeenCalledWith({
-            where: { tenantId: 't1', provider: 'entra-id' },
+            where: { tenantId: 't1', provider: 'entra-id', status: 'ACTIVE' },
         });
+    });
+
+    it('counts the same rows the numerator counts, not every row ever seen', async () => {
+        // #2892 finding 5. The two exact-match assertions around this one were
+        // added by #2884 to catch an all-provider denominator, and they did —
+        // but an exact-match check pins the WHOLE predicate, so they also
+        // froze the absence of a status filter. The fix for this finding would
+        // have reddened the tests guarding the rail it fixes.
+        //
+        // The pairing, stated so it is asserted rather than implied: the
+        // breaker's numerator subtracts every candidate whose
+        // `lastObservedEnabled` is false, and that field IS
+        // `status === 'ACTIVE'` (`identity-disable-account.ts:1652`). Rows are
+        // never deleted, only flipped to DEPROVISIONED, so an unfiltered count
+        // grows forever and shrinks the share until only the absolute cap is
+        // left — a fail-open on the rail that disables real accounts.
+        await run();
+
+        const where = mockDb.connectedIdentityAccount.count.mock.calls[0][0].where;
+        expect(where.status).toBe('ACTIVE');
     });
 
     it('scopes the denominator to the provider ASKED FOR, not a constant', async () => {
@@ -858,7 +878,7 @@ describe('the batch', () => {
         mockDb.connectedIdentityAccount.count.mockResolvedValue(400);
         await runIdentityLeaverPass({ tenantId: 't1', provider: 'active-directory', now: NOW });
         expect(mockDb.connectedIdentityAccount.count).toHaveBeenLastCalledWith({
-            where: { tenantId: 't1', provider: 'active-directory' },
+            where: { tenantId: 't1', provider: 'active-directory', status: 'ACTIVE' },
         });
     });
 

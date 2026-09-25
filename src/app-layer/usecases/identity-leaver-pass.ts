@@ -1046,9 +1046,33 @@ export async function runIdentityLeaverPass(input: {
         }
 
         // ── 4. The population the breaker measures the batch against.
+        //
+        // `status: 'ACTIVE'` because that is EXACTLY what the numerator counts.
+        // `lastObservedEnabled` is derived as `status === 'ACTIVE'`
+        // (`identity-disable-account.ts:1652`) and the breaker subtracts every
+        // candidate whose value is false, so a denominator without this
+        // predicate counts rows the numerator can never include.
+        //
+        // Rows are never deleted — `identity-sync.ts:652` flips them to
+        // DEPROVISIONED and there is no `delete`/`deleteMany` for this model
+        // anywhere in src/ or prisma/ — so the unfiltered count grows
+        // monotonically with every account the directory has ever returned.
+        // That inflates the bottom of the fraction, shrinks the share, and
+        // WITHDRAWS refusals: with MAX_DISABLE_SHARE 0.1 and SHARE_RULE_FLOOR
+        // 5, past roughly 500 accumulated rows only the absolute cap of 50
+        // remains, and a broken feed terminating 45 of 200 live staff writes.
+        // Fail-open, on the rail that disables real accounts.
+        //
+        // NOT `{ not: 'DEPROVISIONED' }`, which is what the sibling breaker in
+        // `identity-sync.ts:622-626` uses. That is right THERE — its numerator
+        // is the rows it is about to deprovision, so its halves meet at a
+        // different line — and it would leave SUSPENDED in this denominator
+        // while the numerator still excludes it. Nothing writes SUSPENDED
+        // today, so the two spellings agree on every current row; they stop
+        // agreeing the moment one does, and only this one stays paired.
         const population = await runInTenantContext(ctx, (db) =>
             db.connectedIdentityAccount.count({
-                where: { tenantId: ctx.tenantId, provider: input.provider },
+                where: { tenantId: ctx.tenantId, provider: input.provider, status: 'ACTIVE' },
             }),
         );
 
