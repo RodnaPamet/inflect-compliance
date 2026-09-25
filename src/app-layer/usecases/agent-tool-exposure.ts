@@ -39,6 +39,7 @@
  */
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
+import { EXTERNAL_TOOL_PREFIX, isExternalToolName } from '@/lib/mcp/external-tool-name';
 import { isKnownMcpTool, mcpToolCapabilityClass, MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import {
@@ -99,6 +100,35 @@ export async function listAgentTools(ctx: RequestContext, agentId: string) {
         const agent = await assertAgentGrantable(db, ctx, agentId);
         const tools = await RegisteredAgentToolRepository.listForAgent(db, ctx, agentId);
 
+        // ── EXTERNAL TOOLS ARE GRANTABLE ONCE BASELINED, AND NOT BEFORE ─────
+        //
+        // Read from the PIN TABLE, never from a live `tools/list`. Two reasons,
+        // and the second is the point:
+        //
+        //   · a catalogue fetch here would put a third party's uptime in the
+        //     path of this page, and a dead server would empty the list rather
+        //     than report itself.
+        //   · grantability would otherwise mean "whatever that server
+        //     advertises right now" — a set its operator can change between two
+        //     page loads. A pin is a definition somebody here looked at and
+        //     accepted, which is the only version of "available" an operator
+        //     can be held to.
+        //
+        // So the ordering is load-bearing: baseline, then grant. An unbaselined
+        // external tool is not offered, and a grant cannot be made for it.
+        const externalPins = await db.mcpToolManifestPin.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                toolName: { startsWith: EXTERNAL_TOOL_PREFIX },
+            },
+            // Bounded, and above any catalogue an operator could review: the
+            // cap on one connection's catalogue is 250.
+            take: 1000,
+            orderBy: { toolName: 'asc' },
+            select: { toolName: true },
+        });
+        const available = [...MCP_TOOL_NAMES, ...externalPins.map((p) => p.toolName)];
+
         // ── WHICH GRANTS THE CEILING ACTUALLY PERMITS ───────────────────────
         //
         // `assertGrantWithinTier` refuses an over-tier grant when it is MADE.
@@ -137,7 +167,7 @@ export async function listAgentTools(ctx: RequestContext, agentId: string) {
             agentId,
             granted: tools,
             /** The full catalogue, so a UI can offer what is not yet granted. */
-            available: MCP_TOOL_NAMES,
+            available,
             /**
              * The AGENT's effective ceiling — the minimum of its registered
              * autonomy and its tier cap.
@@ -155,7 +185,7 @@ export async function listAgentTools(ctx: RequestContext, agentId: string) {
              * default-by-class rule.
              */
             requiredAutonomy: Object.fromEntries(
-                MCP_TOOL_NAMES.map((name) => [
+                available.map((name) => [
                     name,
                     requiredAutonomyFor(mcpToolCapabilityClass(name)),
                 ]),
@@ -270,11 +300,36 @@ function assertGrantWithinDeclaredDataScope(
 export async function grantAgentTool(ctx: RequestContext, agentId: string, input: unknown) {
     assertCanWrite(ctx);
     const { toolName } = AgentToolGrantSchema.parse(input);
-    if (!isKnownMcpTool(toolName)) {
-        throw badRequest(`Unknown MCP tool "${toolName}".`);
-    }
 
     return runInTenantContext(ctx, async (db) => {
+        // ── WHAT IS GRANTABLE ───────────────────────────────────────────────
+        //
+        // A built-in name is grantable because this build defines it. An
+        // EXTERNAL name is grantable only when a pin is on file, and the pin is
+        // the whole authority: it means somebody here read that tool's
+        // definition and accepted it. Without one there is nothing to grant
+        // against — the description the agent would be handed is text no human
+        // in this workspace has seen.
+        //
+        // Checked inside the tenant context because the answer is per-tenant,
+        // and the prefix test runs FIRST so a nonsense name costs no query.
+        if (!isKnownMcpTool(toolName)) {
+            if (!isExternalToolName(toolName)) {
+                throw badRequest(`Unknown MCP tool "${toolName}".`);
+            }
+            const pinned = await db.mcpToolManifestPin.findUnique({
+                where: { tenantId_toolName: { tenantId: ctx.tenantId, toolName } },
+                select: { id: true },
+            });
+            if (!pinned) {
+                throw badRequest(
+                    `"${toolName}" has no approved definition on file. Review the ` +
+                        'server\'s catalogue and accept the tool definition before ' +
+                        'granting it.',
+                );
+            }
+        }
+
         const agent = await assertAgentGrantable(db, ctx, agentId);
         assertGrantWithinTier(agent, toolName);
         assertGrantWithinDeclaredDataScope(agent, toolName);

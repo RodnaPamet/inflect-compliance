@@ -41,6 +41,7 @@ import {
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
 import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
+import { externalToolName } from '@/lib/mcp/external-tool-name';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -69,6 +70,12 @@ interface DbOptions {
      * returns without writing.
      */
     standingAssessment?: Record<string, unknown> | null;
+    /**
+     * Qualified names of EXTERNAL tools this tenant has a pin on file for.
+     * A pin is what makes an external tool grantable at all, so the default of
+     * none is the state in which none of them are.
+     */
+    externalPins?: string[];
 }
 
 function makeDb(options: DbOptions = {}) {
@@ -112,6 +119,16 @@ function makeDb(options: DbOptions = {}) {
                 staleness.push(args);
                 return { count: 1 };
             }),
+        },
+        mcpToolManifestPin: {
+            findMany: jest.fn(async () =>
+                (options.externalPins ?? []).map((toolName) => ({ toolName })),
+            ),
+            findUnique: jest.fn(async (args: any) =>
+                (options.externalPins ?? []).includes(args.where.tenantId_toolName.toolName)
+                    ? { id: 'pin-1' }
+                    : null,
+            ),
         },
         registeredAgentTool: {
             findMany: jest.fn(async () => [
@@ -398,5 +415,84 @@ describe('listAgentTools', () => {
         expect(out.autonomyCeiling).toBe(ceilingForRiskTier('LOW'));
         expect(out.autonomyCeiling).toBeLessThan(6);
         expect(out.autonomyCeiling).toBeGreaterThan(DENY_CEILING);
+    });
+});
+
+/**
+ * EXTERNAL TOOLS — grantable only once their definition has been accepted, and
+ * only to an agent that declared it reaches outside the boundary.
+ *
+ * The second half is the one worth pinning. A tool on somebody else's MCP
+ * server reaches `EXTERNAL_EGRESS` on every call — the enum's top rung, "the
+ * only one whose blast radius is not bounded by the tenant's own database". If
+ * it were left to the class default it would answer `WRITE_TENANT_DATA`, and an
+ * agent registered at that scope could be granted a tool that leaves the
+ * platform while its declaration — and the risk score standing on that
+ * declaration — said otherwise.
+ */
+describe('external tools', () => {
+    const CONN = 'cmconnaaa';
+    const EXT = externalToolName(CONN, 'list_alerts');
+
+    /** The default fixture, with the declared scope under test. */
+    const agentDeclaring = (dataAccessScope: string) => ({
+        id: 'agent-1',
+        status: 'ACTIVE',
+        name: 'Agent one',
+        autonomyLevel: 2,
+        dataAccessScope,
+        reversibility: 'REVERSIBLE',
+        provenance: 'FIRST_PARTY',
+        modelRef: null,
+        riskTier: 'LOW',
+        riskTierScoredAt: new Date(),
+        _count: { tools: 1 },
+    });
+
+    it('grants one whose definition is pinned, to an agent that declared egress', async () => {
+        const { upserts } = makeDb({
+            agent: agentDeclaring('EXTERNAL_EGRESS'),
+            externalPins: [EXT],
+        });
+        await expect(grantAgentTool(ctx, 'agent-1', { toolName: EXT })).resolves.toMatchObject({
+            toolName: EXT,
+        });
+        expect(upserts[0].create.toolName).toBe(EXT);
+    });
+
+    it('refuses one with no approved definition on file', async () => {
+        const { upserts } = makeDb({
+            agent: agentDeclaring('EXTERNAL_EGRESS'),
+            externalPins: [],
+        });
+        await expect(grantAgentTool(ctx, 'agent-1', { toolName: EXT })).rejects.toThrow(
+            /no approved definition on file/,
+        );
+        expect({ writes: upserts.length }).toEqual({ writes: 0 });
+    });
+
+    it('refuses one to an agent that did not declare it reaches outside', async () => {
+        const { upserts } = makeDb({
+            agent: agentDeclaring('WRITE_TENANT_DATA'),
+            externalPins: [EXT],
+        });
+        await expect(grantAgentTool(ctx, 'agent-1', { toolName: EXT })).rejects.toThrow(
+            /reaches EXTERNAL_EGRESS on every call/,
+        );
+        expect({ writes: upserts.length }).toEqual({ writes: 0 });
+    });
+
+    it('offers pinned external tools as available, alongside the built-in catalogue', async () => {
+        makeDb({ externalPins: [EXT] });
+        const res: any = await listAgentTools(ctx, 'agent-1');
+        expect(res.available).toEqual([...MCP_TOOL_NAMES, EXT]);
+        // And the rung a UI compares against is present for it, not just for ours.
+        expect(res.requiredAutonomy[EXT]).toBeGreaterThan(0);
+    });
+
+    it('does not offer an external tool that has no pin', async () => {
+        makeDb({ externalPins: [] });
+        const res: any = await listAgentTools(ctx, 'agent-1');
+        expect(res.available).toEqual([...MCP_TOOL_NAMES]);
     });
 });
