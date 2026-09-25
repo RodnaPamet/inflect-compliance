@@ -1172,6 +1172,30 @@ export async function runIdentityLeaverPass(input: {
                         population,
                         batchRefused: outcome.refused ?? null,
                         counts,
+                        // #2843 finding 53. `writeReadiness` was computed on
+                        // every pass, put on the RETURN value, and read by
+                        // nothing — no route serialises it, no component
+                        // renders it, and it never reached this row. #2604
+                        // added it so an operator could tell a pass that
+                        // disabled nobody because there was nobody from one
+                        // that disabled nobody because the credential cannot
+                        // write; that distinction only helps if it is written
+                        // down where they look.
+                        //
+                        // The DURABLE artefact rather than a new screen: this
+                        // row is what the seven-day dwell is read from, and a
+                        // verdict that exists only in a return value is a
+                        // verdict nobody has.
+                        //
+                        // Both halves. `readiness` is the machine-comparable
+                        // enum and `detail` is the sentence that says what to
+                        // do about it — persisting the enum alone would repeat
+                        // the original mistake one layer down, leaving the
+                        // actionable half unreachable.
+                        writeReadiness: {
+                            readiness: resolution.readiness.readiness,
+                            detail: resolution.readiness.detail,
+                        },
                     },
                     outcome.refused,
                 );
