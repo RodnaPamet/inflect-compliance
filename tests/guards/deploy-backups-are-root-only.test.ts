@@ -55,6 +55,20 @@ function backupWrites(src: string): string[] {
         });
 }
 
+/**
+ * Lines of a script that contain a token.
+ *
+ * Every assertion below runs over LINES rather than the whole file, which is
+ * both sharper and what keeps this guard out of the population it belongs to:
+ * `Class D — un-analysable whole-file reads` counts a regex matched against a
+ * whole file, because the analyser cannot tell how many places such a needle
+ * could match. Five whole-file `toMatch` calls here pushed that ratchet from
+ * 1443 to 1444 — a new guard joining the set it is meant to be outside of.
+ */
+function linesWith(src: string, token: string): string[] {
+    return src.split('\n').filter((l) => !l.trimStart().startsWith('#') && l.includes(token));
+}
+
 describe('deploy backups are written root-only', () => {
     const apply = fs.readFileSync(APPLY, 'utf8');
 
@@ -82,9 +96,12 @@ describe('deploy backups are written root-only', () => {
         // What has to be true: a keep-count is bound to a value, the list is
         // sliced past it, and what falls off is destroyed rather than
         // unlinked.
-        expect(apply).toMatch(/KEEP_BACKUPS="\$\{KEEP_BACKUPS:-\d+\}"/);
-        expect(apply).toMatch(/tail -n \+/);
-        expect(apply).toMatch(/shred -u/);
+        const bound = linesWith(apply, 'KEEP_BACKUPS=');
+        expect(bound).toHaveLength(1);
+        expect(bound[0]).toMatch(/KEEP_BACKUPS:-\d+/);
+
+        expect(linesWith(apply, 'tail -n +')).not.toHaveLength(0);
+        expect(linesWith(apply, 'shred -u')).not.toHaveLength(0);
     });
 
     it('the scheduled drift check fails on a file readable beyond root', () => {
@@ -93,7 +110,7 @@ describe('deploy backups are written root-only', () => {
         // warning: a readable credential set is a live exposure, not an
         // outstanding decision.
         const drift = fs.readFileSync(DRIFT, 'utf8');
-        expect(drift).toMatch(/-perm \/o\+r/);
-        expect(drift).toMatch(/readable beyond root/);
+        expect(linesWith(drift, '-perm /o+r')).not.toHaveLength(0);
+        expect(linesWith(drift, 'readable beyond root')).not.toHaveLength(0);
     });
 });
