@@ -81,6 +81,14 @@ const IDENTITY_WRITE_PATH: readonly string[] = [
     // the day it landed rather than after the first leak.
     'src/app-layer/usecases/identity-joiner-run.ts',
     'src/app-layer/integrations/bounded-fetch.ts',
+    // #2892 finding 11. The WRITER-RESOLUTION seam, omitted since the list was
+    // written. The guard's title claims "the identity write path" and this is
+    // where that path decides which writer it gets — it reads the self-account
+    // ids out of the secret bag and holds the constructor-refusal `detail`,
+    // which is a bindDN or a directory account string. Nothing here leaked:
+    // the one unwrapped field carried a decrypt/parse message. It was one edit
+    // from doing so, with the guard green.
+    'src/app-layer/integrations/identity-writer-factory.ts',
 ];
 
 /** The wrappers that satisfy the rule. `scrubbed` is the helper under an alias. */
