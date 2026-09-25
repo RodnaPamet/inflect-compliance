@@ -22,6 +22,7 @@
     "prod:local": "npm run migrate:deploy && npm run build && npm start",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
+    "mutation-proof": "tsx scripts/mutation-proof.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed-self-assessments": "tsx scripts/seed-self-assessments.ts",
     "db:seed-policy-templates": "tsx scripts/seed-policy-templates.ts",
