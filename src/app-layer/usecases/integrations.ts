@@ -462,12 +462,64 @@ export async function testConnectionCredentials(
         const connection = await runInTenantContext(ctx, (db) =>
             db.integrationConnection.findFirst({
                 where: { id: input.connectionId, tenantId: ctx.tenantId },
-                select: { configJson: true, secretEncrypted: true },
+                // `provider` is selected so the caller's claim about it can be
+                // CHECKED rather than trusted — see the refusal below.
+                select: { provider: true, configJson: true, secretEncrypted: true },
             }),
         );
         if (!connection) throw notFound('Connection not found');
+
+        // ═══ THE PROVIDER IS THE ROW'S, NOT THE CALLER'S ═══
+        //
+        // `providerImpl` is resolved from `input.provider`, and the secrets
+        // come from the row. Without this check those are allowed to disagree:
+        // a caller names any registered provider and this hands that provider's
+        // client the decrypted secret bag of a connection belonging to a
+        // different one. The bags are plain records, so a bind password lands
+        // wherever the chosen provider sends its credential.
+        if (connection.provider !== input.provider) {
+            throw badRequest(
+                `This connection is a ${connection.provider} connection, not ${input.provider}. ` +
+                    'Testing it as a different provider would hand one integration\'s stored ' +
+                    'credential to another integration\'s client.',
+            );
+        }
+
         storedConfig = (connection.configJson as Record<string, unknown>) ?? {};
         storedSecrets = decryptConnectionSecrets(connection.secretEncrypted);
+
+        // ═══ THE SAME REFUSAL THE SAVE PATH MAKES, FOR THE SAME REASON ═══
+        //
+        // `upsertIntegrationConnection` refuses a config change that redirects a
+        // stored credential at a new host unless the credential is resent
+        // (`redirectsStoredCredential`, and read its docblock — it describes
+        // this attack in full). This path had no equivalent, and it is the
+        // SHARPER version of the same hole: the save path at least writes an
+        // audit row and leaves a changed connection behind, whereas a test
+        // leaves only a routine-looking `lastTestStatus`.
+        //
+        // So an `admin.manage` holder who cannot READ the credential through
+        // any route — GET masks it — could send one request naming a host they
+        // control and have the stored bind DN and password presented to it.
+        //
+        // Only when the caller did NOT resend the secret. Sending a credential
+        // WITH a new host is the legitimate rotate-and-retarget case the save
+        // path also allows, and refusing it would break testing a moved host.
+        const resentSecrets = Object.keys(input.secrets ?? {}).length > 0;
+        if (!resentSecrets && input.configJson != null) {
+            const redirected = redirectsStoredCredential(
+                connection.provider,
+                storedConfig,
+                input.configJson,
+            );
+            if (redirected) {
+                throw badRequest(
+                    `Changing "${redirected}" points this connection at a different host, so the ` +
+                        'stored credential cannot be used to test it. Re-enter the credential with ' +
+                        'this change.',
+                );
+            }
+        }
     }
 
     const result = await providerImpl.validateConnection(
