@@ -220,7 +220,13 @@ export const AgentToolGrantSchema = z.object({
     toolName: z
         .string()
         .min(1, 'A tool name is required')
-        .max(100)
+        // 100 fitted the built-in catalogue, whose longest name is under 30. An
+        // EXTERNAL tool's grantable name is qualified — `mcp__<cuid>__<name>`,
+        // about 32 characters before the server's own name — so the old cap
+        // could refuse at grant a tool the catalogue had already offered as
+        // available. A name is not user prose and does not need room to grow;
+        // this is sized to make available and grantable the same set.
+        .max(200)
         .trim(),
 });
 export type AgentToolGrantInput = z.infer<typeof AgentToolGrantSchema>;
