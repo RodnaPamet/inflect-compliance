@@ -113,6 +113,14 @@ jest.mock('@/app-layer/jobs/dailyEvidenceExpiry', () => {
 jest.mock('@/app-layer/jobs/data-lifecycle', () => ({
     purgeSoftDeletedOlderThan: jest.fn(async () => [{ scanned: 0, purged: 0 }]),
     purgeExpiredEvidenceOlderThan: jest.fn(async () => ({ scanned: 0, purged: 0 })),
+    // #2843 finding 27's step. Absent, this factory was a SUBSET of the module
+    // and the failure surfaced as `purgeIdentityArtefactsOlderThan is not a
+    // function` thrown from the executor — a defect reported against the code
+    // under test rather than against the fixture that caused it (#2897).
+    purgeIdentityArtefactsOlderThan: jest.fn(async () => [
+        { model: 'IdentityWriteJournal', scanned: 0, purged: 0, dryRun: false },
+        { model: 'IntegrationExecution', scanned: 0, purged: 0, dryRun: false },
+    ]),
     runRetentionSweep: jest.fn(async () => [{ scanned: 0, expired: 0 }]),
 }));
 jest.mock('@/app-layer/jobs/policyReviewReminder', () => ({

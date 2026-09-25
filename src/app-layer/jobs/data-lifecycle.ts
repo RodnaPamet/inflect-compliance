@@ -114,6 +114,26 @@ export interface PurgeExpiredEvidenceOptions extends PurgeOptions {
     graceDays?: number;
 }
 
+/**
+ * How long the identity write artefacts are kept (#2843 finding 27).
+ *
+ * 730 days, matching `risk-snapshot-jobs.ts` — one retention answer for
+ * compliance artefacts rather than two — and chosen between two real
+ * pressures:
+ *
+ *   KEEP IT LONG ENOUGH. `IdentityWriteJournal` is the evidence that a
+ *     directory write happened, and the write ladder's own refusal text says
+ *     the seven-day dwell exists so an operator can compare a pass against
+ *     what HR and IT actually did. An auditor sampling a 12-month period in
+ *     early 2026 needs early-2025 rows present, so two cycles is the floor.
+ *
+ *   DO NOT KEEP IT FOREVER. The journal stores `externalUserId` and
+ *     `priorStateJson` — directory identifiers for real people. Unbounded
+ *     retention is a data-minimisation exposure, not only a growth one, and
+ *     "forever" was the answer before this.
+ */
+export const DEFAULT_IDENTITY_ARTEFACT_RETENTION_DAYS = 730;
+
 export interface PurgeResult {
     model: string;
     scanned: number;
@@ -336,6 +356,145 @@ export async function purgeExpiredEvidenceOlderThan(
 
         return { model: 'Evidence', scanned, purged, dryRun };
     }, { tenantId: options.tenantId });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 3. Purge identity write artefacts past their retention window
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Delete `IdentityWriteJournal` and `IntegrationExecution` rows older than the
+ * retention window (#2843 finding 27).
+ *
+ * ── WHY AGE AND NOT `retentionUntil` ──
+ *
+ * `RETENTION_MODELS` above is the per-row mechanism: a model joins it only
+ * when `retentionUntil` is on its update schema and its edit UI, and the
+ * docblock there records what happens when that price is not paid — six
+ * models sat in the list as guaranteed-empty queries run daily, forever,
+ * behind a policy doc claiming the dates were enforced. Neither artefact here
+ * has such a column and neither should: nobody sets a retention date on an
+ * individual directory write.
+ *
+ * ── WHY THE AUDIT ROW CARRIES COUNTS AND NOT IDS ──
+ *
+ * The sibling evidence purge writes one `DATA_PURGED` row per record, naming
+ * it. Doing that here would defeat the purge: the identifier being destroyed
+ * is `externalUserId`, and copying it into an audit row that outlives the
+ * journal retains exactly the personal data this exists to remove. So the
+ * attestation is per-MODEL and per-run — what was destroyed, how much, and
+ * the cutoff it was measured against.
+ */
+export async function purgeIdentityArtefactsOlderThan(
+    options: PurgeOptions & { retentionDays?: number } = {},
+): Promise<PurgeResult[]> {
+    return runJob('purge-identity-artefacts', async () => {
+        const now = options.now ?? new Date();
+        const retentionDays = options.retentionDays ?? DEFAULT_IDENTITY_ARTEFACT_RETENTION_DAYS;
+        const dryRun = options.dryRun ?? false;
+        const db = options.db ?? defaultPrisma;
+        const cutoff = new Date(now.getTime() - retentionDays * 86_400_000);
+
+        // Grouped BY TENANT rather than purged in one sweep, because
+        // `AuditLog.tenantId` is required — an attestation belongs to a
+        // tenant, and a global run that wrote one row could not say whose
+        // data it destroyed. The grouping is the attestation, not an
+        // optimisation.
+        const scope = options.tenantId ? { tenantId: options.tenantId } : {};
+        const results: PurgeResult[] = [];
+
+        // `attemptedAt` — when the write was TRIED — not `settledAt`, which is
+        // null on a row that never settled. Pruning on a nullable column would
+        // keep the unsettled rows forever, and those are the ones an operator
+        // most wants bounded.
+        const journalByTenant = await db.identityWriteJournal.groupBy({
+            by: ['tenantId'],
+            where: { ...scope, attemptedAt: { lt: cutoff } },
+            _count: { _all: true },
+        });
+        const execByTenant = await db.integrationExecution.groupBy({
+            by: ['tenantId'],
+            where: { ...scope, executedAt: { lt: cutoff } },
+            _count: { _all: true },
+        });
+
+        const journalTotal = journalByTenant.reduce((n, g) => n + g._count._all, 0);
+        const execTotal = execByTenant.reduce((n, g) => n + g._count._all, 0);
+
+        if (!dryRun) {
+            for (const g of journalByTenant) {
+                await db.identityWriteJournal.deleteMany({
+                    where: { tenantId: g.tenantId, attemptedAt: { lt: cutoff } },
+                });
+                await writePurgeAttestation(
+                    db, g.tenantId, 'IdentityWriteJournal', g._count._all, retentionDays, cutoff,
+                );
+            }
+            for (const g of execByTenant) {
+                await db.integrationExecution.deleteMany({
+                    where: { tenantId: g.tenantId, executedAt: { lt: cutoff } },
+                });
+                await writePurgeAttestation(
+                    db, g.tenantId, 'IntegrationExecution', g._count._all, retentionDays, cutoff,
+                );
+            }
+        }
+
+        results.push({
+            model: 'IdentityWriteJournal',
+            scanned: journalTotal,
+            purged: dryRun ? 0 : journalTotal,
+            dryRun,
+        });
+        results.push({
+            model: 'IntegrationExecution',
+            scanned: execTotal,
+            purged: dryRun ? 0 : execTotal,
+            dryRun,
+        });
+
+        logger.info('identity artefact retention purge', {
+            component: 'job',
+            dryRun,
+            retentionDays,
+            cutoff: cutoff.toISOString(),
+            tenants: new Set([
+                ...journalByTenant.map((g) => g.tenantId),
+                ...execByTenant.map((g) => g.tenantId),
+            ]).size,
+            journal: journalTotal,
+            executions: execTotal,
+        });
+
+        return results;
+    });
+}
+
+/**
+ * One `DATA_PURGED` row per tenant per model — COUNTS, never ids.
+ *
+ * The sibling evidence purge names each record it destroys. Doing that here
+ * would defeat the purge: the identifier being removed is `externalUserId`,
+ * and copying it into an audit row that outlives the journal retains exactly
+ * the personal data this exists to remove.
+ */
+async function writePurgeAttestation(
+    db: typeof defaultPrisma,
+    tenantId: string,
+    model: string,
+    purged: number,
+    retentionDays: number,
+    cutoff: Date,
+): Promise<void> {
+    await db.auditLog.create({
+        data: {
+            tenantId,
+            action: 'DATA_PURGED',
+            entity: model,
+            entityId: `retention:${cutoff.toISOString()}`,
+            details: JSON.stringify({ purged, retentionDays, cutoff: cutoff.toISOString() }),
+        },
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════════
