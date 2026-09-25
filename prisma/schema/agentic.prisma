@@ -1192,6 +1192,91 @@ model McpToolManifestPin {
   @@unique([tenantId, toolName])
 }
 
+/// A tenant's SAVED ARGUMENTS for one external tool — the Grafana query, the
+/// Entra filter — kept strictly apart from what the agent may DO.
+///
+/// ## Why a model of its own
+///
+/// Not config on the connection: a connection is shared by every agent that
+/// uses it, so parameters stored there land at the wrong granularity and a run
+/// could not say which query it ran. Not the policy card either, even though
+/// that is already versioned and already recorded per run — the card is the
+/// AUTHORITY artifact, and putting input on it blurs the exact line this table
+/// exists to draw. The capability is the grant; this is only the argument.
+///
+/// ## One row, a revision counter, and no version table
+///
+/// The obvious design is a `*Version` child like `AgentPolicyCardVersion`. It
+/// is not needed, because the values a run actually sent are ALREADY recorded:
+/// the `TOOL_CALL` step stores `input` — the arguments as dispatched. So the
+/// question "what did that run ask?" is answered from the run, and this table
+/// only has to answer "what is in force now, and at which revision". A version
+/// table would be a second, divergent answer to a question the ledger already
+/// settles.
+///
+/// ## The pending split is the re-approval rule
+///
+/// Editing requires the same authority that granted the tool, and a changed set
+/// does not take effect until it is approved. So an edit lands in the `pending*`
+/// columns and the agent keeps running `parameters` until a human accepts the
+/// change. Without the split, an authorised edit would silently re-point a live
+/// agent's query with no reviewed moment — which is the shape `McpToolManifestPin`
+/// exists to prevent one layer up, for text written by somebody else.
+model ExternalToolParameterSet {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The QUALIFIED external tool name — `mcp__<connectionId>__<toolName>`. The
+  /// same key the grant and the manifest pin use, so all three join without a
+  /// translation step.
+  toolName String
+  /// Operator-facing name for this set, e.g. "prod firing alerts". Distinct
+  /// sets per tool are the point: one agent may hold several.
+  label    String
+
+  /// The arguments themselves, exactly as they will be dispatched.
+  parameters Json
+  /// SHA-256 over the canonicalised (sorted-key, no-whitespace) parameters.
+  /// What an approval names, so a caller approves what it reviewed rather than
+  /// whatever the row says at the moment the request lands.
+  parametersHash String
+
+  /// 1 for the first saved set, +1 on every accepted change. The number a run
+  /// records, and the number an operator reads as "how many times has this
+  /// query moved".
+  revision Int @default(1)
+
+  /// `BASELINE` — the first set anybody saved. `APPROVED` — a named human
+  /// accepted a CHANGE. The two stay distinguishable for the reason the
+  /// manifest pin keeps them so: "did a person accept this" must have a
+  /// straight answer rather than one inferred from a timestamp.
+  approvalSource   String
+  /// NULL on, and only on, a `BASELINE` row. No FK, matching
+  /// `McpToolManifestPin.approvedByUserId`: accountability has to survive the
+  /// approver's account being deleted.
+  approvedByUserId String?
+  approvedAt       DateTime @default(now())
+  /// The hash this revision replaced. NULL on the baseline.
+  previousHash     String?
+
+  /// An edit awaiting approval. NOT in force: every dispatch reads
+  /// `parameters`. All four move together or none of them do.
+  pendingParameters Json?
+  pendingHash       String?
+  pendingByUserId   String?
+  pendingAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// One set per (tenant, tool, label). Tenant-leading so it doubles as the
+  /// tenant-scoped lookup index — every query this table serves is `tenantId`,
+  /// or `tenantId + toolName`, or all three.
+  @@unique([tenantId, toolName, label])
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // Epic Agentic 9 — THE KILL SWITCH (OWASP ASI08 cascading failure,
 // ASI10 rogue agent).

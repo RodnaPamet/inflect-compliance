@@ -28,6 +28,8 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /** Models with a dedicated two-tenant BEHAVIOURAL isolation test. */
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
+    ExternalToolParameterSet:
+        "tests/integration/external-tool-parameters.test.ts",
     IdentityAccountLink: "tests/integration/identity-account-link-rls.test.ts",
     IdentityDepartmentGroupRule:
         "tests/integration/identity-department-group-rule-rls.test.ts",
