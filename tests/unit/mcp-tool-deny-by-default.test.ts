@@ -183,6 +183,9 @@ function invocationFor(shape: InvocationShape = {}): McpInvocation {
         agentStanding: granted === null ? ('no_binding' as const) : ('vouched' as const),
         grantedTools: granted === null ? null : new Set(granted),
         offeredTools: shape.offered === undefined ? [...CATALOGUE] : [...shape.offered],
+        // No external grants in this fixture; the external path is covered by
+        // its own suite.
+        externalTools: [],
         audience: null,
         autonomyCeiling: 6,
         riskTier: 'LOW',

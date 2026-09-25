@@ -127,6 +127,9 @@ function invocationFor(over: Partial<McpInvocation> = {}): McpInvocation {
         agentStanding: 'vouched' as const,
         grantedTools: new Set(['list_risks']),
         offeredTools: [...MCP_TOOL_NAMES],
+        // No external grants in this fixture; the external path is covered by
+        // its own suite.
+        externalTools: [],
         audience: null,
         autonomyCeiling: 6,
         riskTier: 'LOW',

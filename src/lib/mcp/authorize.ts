@@ -148,6 +148,7 @@ import { isAppError } from '@/lib/errors/types';
 import type { PermissionSet } from '@/lib/permissions';
 import type { AgentRiskTier } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
+import type { McpReadTool } from './tools/types';
 import type { AgentPrincipal } from '@/lib/agentic/agent-authority';
 
 import { enforceMcpCapability } from './auth';
@@ -230,6 +231,18 @@ export interface McpInvocation {
      * `McpInvocation`.
      */
     offeredTools: readonly string[];
+    /**
+     * EXTERNAL read tools this invocation may load, resolved at assembly from
+     * the agent's grants — already checked against their pins, already dropped
+     * if the far end's definition has moved since a human accepted it.
+     *
+     * Carried on the invocation for the same reason `offeredTools` is: it is a
+     * SNAPSHOT. The set cannot grow under a run in flight, and the catalogue it
+     * came from belongs to somebody else, which is precisely the case that
+     * property exists for. Empty for every invocation with no external grants,
+     * which is nearly all of them.
+     */
+    externalTools: ReadonlyArray<McpReadTool<Record<string, unknown>>>;
     /**
      * The RFC 8693 audience the presented token was minted for, or `null` when
      * the caller presented the long-lived API key itself.

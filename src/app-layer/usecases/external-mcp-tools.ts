@@ -38,8 +38,13 @@ import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { listTools } from '@/app-layer/integrations/mcp/client';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
-import { externalToolName, EXTERNAL_TOOL_PREFIX } from '@/lib/mcp/external-tool-name';
-import type { ApprovedToolManifest } from '@/lib/mcp/tool-manifest';
+import { logger } from '@/lib/observability/logger';
+import {
+    externalToolName,
+    EXTERNAL_TOOL_PREFIX,
+    parseExternalToolName,
+} from '@/lib/mcp/external-tool-name';
+import { verifyToolManifest, type ApprovedToolManifest } from '@/lib/mcp/tool-manifest';
 
 import { assertCanAdmin } from '../policies/common';
 import {
@@ -258,4 +263,138 @@ export async function approveExternalToolManifest(
             ctx.userId as string,
         ),
     );
+}
+
+// ── Runtime resolution ──────────────────────────────────────────────────────
+
+/**
+ * One external tool an agent may actually load: the definition the server is
+ * serving RIGHT NOW, already checked against the pin a human approved, with the
+ * transport to reach it.
+ *
+ * Definitions rather than tools, deliberately. The data access lives here
+ * because `tests/guardrails/mcp-server-coverage.test.ts` holds the MCP surface
+ * to one rule — a tool file goes through a usecase and never touches Prisma —
+ * and that rule is the cross-tenant-leak lock, not a style preference. The
+ * `McpReadTool` shape is assembled next door in `lib/mcp/tools/external-tools.ts`
+ * from what this returns.
+ */
+export interface GrantedExternalTool {
+    /** `mcp__<connectionId>__<toolName>` — our key for grants and pins. */
+    qualified: string;
+    /** Exactly what the server advertised, under the name IT used. */
+    def: { name: string; description: string; inputSchema: Record<string, unknown> };
+    transport: { url: string; authorization?: string };
+}
+
+/** Upper bound on tools considered per connection, mirroring the catalogue's. */
+const MAX_TOOLS_PER_CONNECTION = 250;
+
+interface ConnectionRow {
+    id: string;
+    configJson: unknown;
+    secretEncrypted: string | null;
+}
+
+/**
+ * Build the external read tools this invocation may load.
+ *
+ * Returns `[]` — with no query and no network — when the agent holds no
+ * external grants, which is every invocation today and most of them after.
+ */
+export async function resolveGrantedExternalTools(
+    ctx: RequestContext,
+    grantedTools: ReadonlySet<string> | null,
+): Promise<GrantedExternalTool[]> {
+    if (!grantedTools || grantedTools.size === 0) return [];
+
+    const wanted = new Map<string, Set<string>>();
+    for (const name of grantedTools) {
+        const ref = parseExternalToolName(name);
+        if (!ref) continue;
+        const forConn = wanted.get(ref.connectionId) ?? new Set<string>();
+        forConn.add(ref.toolName);
+        wanted.set(ref.connectionId, forConn);
+    }
+    if (wanted.size === 0) return [];
+
+    const connectionIds = [...wanted.keys()];
+    const { connections, pins } = await runInTenantContext(ctx, async (db) => ({
+        connections: (await db.integrationConnection.findMany({
+            where: {
+                id: { in: connectionIds },
+                tenantId: ctx.tenantId,
+                provider: MCP_SERVER_PROVIDER_ID,
+                isEnabled: true,
+            },
+            select: { id: true, configJson: true, secretEncrypted: true },
+        })) as ConnectionRow[],
+        pins: await db.mcpToolManifestPin.findMany({
+            where: { tenantId: ctx.tenantId, toolName: { in: [...grantedTools] } },
+            select: {
+                toolName: true,
+                descriptionHash: true,
+                schemaHash: true,
+                manifestHash: true,
+                revision: true,
+                approvedByUserId: true,
+                approvalSource: true,
+            },
+        }),
+    }));
+
+    const pinByName = new Map(pins.map((p) => [p.toolName, p as ApprovedToolManifest]));
+    const out: GrantedExternalTool[] = [];
+
+    for (const connection of connections) {
+        const config = (connection.configJson ?? {}) as { url?: unknown };
+        const url = typeof config.url === 'string' ? config.url.trim() : '';
+        if (!url) continue;
+
+        const secrets = connection.secretEncrypted
+            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+            : {};
+        const authorization =
+            typeof secrets.authorization === 'string' && secrets.authorization.trim()
+                ? secrets.authorization.trim()
+                : undefined;
+
+        let advertised;
+        try {
+            advertised = await listTools({ url, authorization });
+        } catch (err) {
+            // Named, never quoted: an error from somebody else's server is text
+            // we did not write, and this line is read by operators.
+            logger.warn('mcp.external_catalogue_unreachable', {
+                connectionId: connection.id,
+                error: err instanceof Error ? err.name : 'non-Error thrown',
+            });
+            continue;
+        }
+
+        const asked = wanted.get(connection.id) ?? new Set<string>();
+        for (const descriptor of advertised.slice(0, MAX_TOOLS_PER_CONNECTION)) {
+            if (!asked.has(descriptor.name)) continue;
+
+            const qualified = externalToolName(connection.id, descriptor.name);
+            const def = {
+                name: descriptor.name,
+                description: descriptor.description ?? '',
+                inputSchema: (descriptor.inputSchema ?? {}) as Record<string, unknown>,
+            };
+            const verdict = verifyToolManifest(def, pinByName.get(qualified) ?? null);
+            if (verdict.status !== 'APPROVED') {
+                logger.warn('mcp.external_tool_refused_on_manifest', {
+                    connectionId: connection.id,
+                    tool: qualified,
+                    status: verdict.status,
+                });
+                continue;
+            }
+
+            out.push({ qualified, def, transport: { url, authorization } });
+        }
+    }
+
+    return out;
 }
