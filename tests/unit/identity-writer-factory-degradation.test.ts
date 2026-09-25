@@ -172,7 +172,16 @@ describe('a refusal always carries a readable reason, even for a non-Error throw
 
     it('the dry run reports READ_BIND_ONLY when no write bind exists', async () => {
         mockDb.integrationConnection.findMany.mockResolvedValue([
-            { id: 'c1', configJson: { bindDN: 'CN=svc-read,DC=corp' }, secretEncrypted: null },
+            {
+                id: 'c1',
+                // `writesEnabled` stated rather than omitted (#2892 finding 4).
+                // The assertion below is about the BIND consequence, and a
+                // bind consequence only applies to a connection whose writes
+                // are permitted at all — with the opt-in off the writer never
+                // constructs and no LDAP result is reached.
+                configJson: { bindDN: 'CN=svc-read,DC=corp', writesEnabled: true },
+                secretEncrypted: null,
+            },
         ]);
 
         const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });
@@ -182,6 +191,23 @@ describe('a refusal always carries a readable reason, even for a non-Error throw
         expect(r.readiness.readiness).toBe('READ_BIND_ONLY');
         // The sentence has to name the consequence, not just the state.
         expect(r.readiness.detail).toMatch(/result 50/);
+    });
+
+    it('the dry run names the opt-in, not the bind, when writes are off', async () => {
+        // The other half, reached through the FACTORY rather than
+        // `describeWriteReadiness` directly — this is the path the seven-day
+        // dwell artefact is built on, and the path that reported a ready
+        // credential for a connection that disables nobody.
+        mockDb.integrationConnection.findMany.mockResolvedValue([
+            { id: 'c1', configJson: { bindDN: 'CN=svc-read,DC=corp' }, secretEncrypted: null },
+        ]);
+
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });
+
+        expect(r.kind).toBe('snapshot');
+        if (r.kind !== 'snapshot') return;
+        expect(r.readiness.detail).toMatch(/allow offboarding writes" is off/i);
+        expect(r.readiness.detail).not.toMatch(/result 50/);
     });
 
     it('UNDECRYPTABLE SECRETS REPORT UNKNOWN, NOT read-bind-only', async () => {
