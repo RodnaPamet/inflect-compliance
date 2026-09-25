@@ -91,9 +91,16 @@ import { recordJoinerPassOutcome } from '@/lib/observability/integration-metrics
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { isAboveClamp,
     PASS_AUTOMATION_SUFFIX,
+    type IdentityWriteMode,
 } from '@/lib/identity/write-ladder';
 
 import { getIdentityWritePolicy } from './identity-write-policy';
+// The execute branch's collaborators. Each is the seam #2674 built and left
+// without a caller; importing them here is what makes the clamp the last gate
+// rather than the only one.
+import { resolveDirectoryProvisioner } from '../integrations/identity-provisioner-factory';
+import { resolveDirectoryWriter } from '../integrations/identity-writer-factory';
+import { createDirectoryAccount } from './identity-create-account';
 import { OBSERVATION_FRESHNESS_MS } from './identity-write-target';
 import {
     JOINER_MAX_MODE,
@@ -163,6 +170,16 @@ export interface JoinerPassResult {
     readonly detail: string;
     readonly starters: number;
     readonly wouldCreate: number;
+    /**
+     * Accounts this pass actually created. Always 0 at DRY_RUN and below,
+     * where `wouldCreate` is the whole story.
+     *
+     * A SEPARATE number from `wouldCreate` rather than a reinterpretation of
+     * it: an operator reading a row during an incident must be able to tell a
+     * pass that decided from one that acted, and a single field that changes
+     * meaning with the mode is how that distinction gets lost.
+     */
+    readonly created: number;
     readonly decisions: number;
     readonly errorMessage?: string;
 }
@@ -572,16 +589,45 @@ export async function runIdentityJoinerPass(input: {
             return resultOf(plan);
         }
 
+        // ACT, above DRY_RUN. The plan is recorded either way and FIRST, so a
+        // create that throws still leaves the decisions that led to it —
+        // capture-before-write, the same order the journal uses.
+        //
+        // DRY_RUN is the terminal state for `PLANNED` (see
+        // `JoinerDecisionOutcome`), so the branch is skipped rather than
+        // called with a mode that means "decide only". Above it, the pass is
+        // reachable only when `JOINER_MAX_MODE` permits — which is the clamp
+        // doing its job, and now the ONLY thing between a plan and a create.
         await safeRecordPlan(ctx, input.provider, plan, {
             observedAddresses: observed.addresses.length,
             observedTruncated: observed.truncated,
             linkFreshnessMs: JOINER_LINK_FRESHNESS_MS,
         });
+
+        const execution =
+            mode === 'DRY_RUN'
+                ? NOTHING_EXECUTED
+                : await executePlannedCreates(ctx, input.provider, mode, plan, starters);
+
+        if (execution.attempted > 0 || execution.refused > 0) {
+            logger.info('joiner pass acted', {
+                component: 'identity-joiner-pass',
+                tenantId: ctx.tenantId,
+                provider: input.provider,
+                mode,
+                attempted: execution.attempted,
+                created: execution.created,
+                partial: execution.partial,
+                refused: execution.refused,
+                refusalDetail: execution.refusalDetail,
+            });
+        }
+
         recordJoinerPassOutcome({
             provider: input.provider,
             outcome: plan.refusal ? refusalOutcome(plan.refusal) : 'completed',
         });
-        return resultOf(plan);
+        return { ...resultOf(plan), created: execution.created };
     } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         logger.error('joiner pass failed', {
@@ -599,10 +645,150 @@ export async function runIdentityJoinerPass(input: {
             detail,
             starters: 0,
             wouldCreate: 0,
+            created: 0,
             decisions: 0,
             errorMessage: detail,
         };
     }
+}
+
+
+/** What the execute branch did, for the pass result and the log line. */
+export interface CreateExecution {
+    readonly attempted: number;
+    readonly created: number;
+    readonly partial: number;
+    readonly refused: number;
+    readonly refusalDetail: string | null;
+}
+
+const NOTHING_EXECUTED: CreateExecution = {
+    attempted: 0,
+    created: 0,
+    partial: 0,
+    refused: 0,
+    refusalDetail: null,
+};
+
+/**
+ * Act on the plan — the branch #2674 and #2714 built everything for and nobody
+ * called.
+ *
+ * ═══ WHY THIS DID NOT EXIST ═══
+ *
+ * `createDirectoryAccount` and `resolveDirectoryProvisioner` both had ZERO
+ * callers. The pass's mode handling returned the plan in all three of its arms,
+ * so `JOINER_MAX_MODE` read as the last gate in front of finished machinery
+ * when it was the only gate in front of an absent branch: raising the clamp
+ * would have produced no creates at all.
+ *
+ * ═══ BOTH GRANTS, OR NEITHER ═══
+ *
+ * `createDirectoryAccount` takes `disableCreated` — the undo — and decision 4
+ * says it is *"the live-proven leaver verb, injected rather than imported so
+ * this module adds no new authority of its own"*. That is right, and it has a
+ * consequence: acting needs a DirectoryWriter as well as a DirectoryProvisioner,
+ * and Active Directory gates those separately and on purpose (`writesEnabled`
+ * for the leaver, its own field for the joiner).
+ *
+ * So a tenant granting create but not disable would get a joiner that creates
+ * an account, fails at the group or the credential, and has no way to undo it.
+ * This refuses instead, before the first create. The whole ordering argument —
+ * *sequence so the recoverable half is last* — assumes recovery is available;
+ * a create you cannot undo is not a create this pass should start.
+ *
+ * ASSUMPTION, and a reversible one: the owner has not ruled on this. The
+ * alternatives are to create without rollback (which makes `rolledBack`
+ * unreachable for such tenants) or to give the provisioner its own disable
+ * (which is what decision 4 exists to prevent). Fail-closed matches this
+ * subsystem; changing it is this function's first `if`.
+ */
+async function executePlannedCreates(
+    ctx: RequestContext,
+    provider: string,
+    mode: IdentityWriteMode,
+    plan: JoinerPlan,
+    starters: readonly JoinerCandidate[],
+): Promise<CreateExecution> {
+    const planned = plan.decisions.filter((d) => d.outcome === 'PLANNED');
+    if (planned.length === 0) return NOTHING_EXECUTED;
+
+    const provisioning = await resolveDirectoryProvisioner({ ctx, provider, mode });
+    if (provisioning.kind !== 'live') {
+        return {
+            ...NOTHING_EXECUTED,
+            refused: planned.length,
+            refusalDetail:
+                provisioning.kind === 'none'
+                    ? provisioning.detail
+                    : 'The provisioner resolved to a snapshot, which cannot create.',
+        };
+    }
+
+    const writing = await resolveDirectoryWriter({ ctx, provider, mode });
+    if (writing.kind !== 'live') {
+        await provisioning.close();
+        return {
+            ...NOTHING_EXECUTED,
+            refused: planned.length,
+            refusalDetail:
+                'This connection can create but cannot disable, so a create that fails partway ' +
+                'could not be undone. Grant offboarding writes as well, or the joiner refuses ' +
+                'rather than leaving an account nobody can reach.',
+        };
+    }
+
+    // `fullName` is on the STARTER, not the decision. `JoinerDecision` carries
+    // `nameSource` but no name, and `DerivedIdentity` has none either — so the
+    // branch zips back by employeeId rather than widening what the pass
+    // persists with a person's name.
+    const byId = new Map(starters.map((c) => [c.employeeId, c]));
+
+    let created = 0;
+    let partial = 0;
+    let refused = 0;
+    try {
+        for (const decision of planned) {
+            const starter = byId.get(decision.employeeId);
+            // A PLANNED decision without these is not reachable from the
+            // planner — it refuses first — so this is a belt, and it counts as
+            // a refusal rather than being skipped in silence.
+            if (!starter || !decision.intendedAddress || !decision.groupId) {
+                refused += 1;
+                continue;
+            }
+            const outcome = await createDirectoryAccount(ctx, {
+                provisioner: provisioning.provisioner,
+                candidate: {
+                    identifier: decision.intendedAddress,
+                    displayName: starter.fullName,
+                    employeeId: decision.employeeId,
+                },
+                groupId: decision.groupId,
+                mode,
+                // The prior state for the undo is KNOWN rather than read
+                // back: this pass created the account moments ago and the
+                // create's last step enables it, so `enabled: true` is what
+                // the disable is reverting. Re-reading would be a second
+                // round trip whose answer we already have, and a read that
+                // failed would strand the undo.
+                disableCreated: (externalUserId: string) =>
+                    writing.writer.disable(externalUserId, {
+                        enabled: true,
+                        priorState: { createdBy: 'joiner-pass', employeeId: decision.employeeId },
+                    }),
+            });
+            if (outcome.kind === 'APPLIED') created += 1;
+            else if (outcome.kind === 'REFUSED') refused += 1;
+            else partial += 1;
+        }
+    } finally {
+        // Both, and the writer first: it was opened second.
+        await writing.close();
+        await provisioning.close();
+    }
+
+    return { attempted: planned.length, created, partial, refused, refusalDetail: null };
 }
 
 /** The plan, as the job result. ONE derivation, so the row and the return agree. */
@@ -614,6 +800,9 @@ function resultOf(plan: JoinerPlan): JoinerPassResult {
         detail: plan.detail,
         starters: plan.starters,
         wouldCreate: plan.wouldCreate,
+        // The plan alone never created anything; the execute branch overrides
+        // this when it runs.
+        created: 0,
         decisions: plan.decisions.length,
     };
 }
