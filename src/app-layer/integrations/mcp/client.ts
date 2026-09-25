@@ -119,6 +119,8 @@ async function rpc(
     const timeoutMs = opts.timeoutMs ?? MCP_CALL_TIMEOUT_MS;
     const maxBytes = opts.maxResponseBytes ?? MCP_MAX_RESPONSE_BYTES;
 
+    const requestId = `ic-${++nextId}`;
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -135,7 +137,7 @@ async function rpc(
             },
             body: JSON.stringify({
                 jsonrpc: '2.0',
-                id: `ic-${++nextId}`,
+                id: requestId,
                 method,
                 ...(params ? { params } : {}),
             }),
@@ -151,9 +153,26 @@ async function rpc(
 
     const text = await readBounded(res, maxBytes);
 
+    // Streamable HTTP lets a server answer a POST with EITHER `application/json`
+    // OR `text/event-stream`, and the choice is the SERVER'S. We send an
+    // `Accept` naming both, so refusing to parse one of them was a promise this
+    // client did not keep — Microsoft's Entra MCP server answers every call in
+    // SSE, and the whole transport failed against it with "non-JSON body".
+    const contentType = res.headers.get('content-type') ?? '';
+    const payload = contentType.includes('text/event-stream')
+        ? sseReplyTo(text, requestId)
+        : text;
+
+    if (payload === null) {
+        // The stream parsed but carried no reply to THIS call. Distinguished
+        // from a malformed body because the remedies differ: one is a protocol
+        // mismatch, the other is a server that answered something else.
+        throw new McpClientError(`MCP server sent no reply to ${method} in its event stream`);
+    }
+
     let parsed: JsonRpcResponse;
     try {
-        parsed = JSON.parse(text) as JsonRpcResponse;
+        parsed = JSON.parse(payload) as JsonRpcResponse;
     } catch {
         // The body is NOT included in the message. It is attacker-influenced
         // text of unknown shape, and an error string is one of the few places
@@ -168,6 +187,41 @@ async function rpc(
         );
     }
     return (parsed as { result?: unknown }).result;
+}
+
+/**
+ * The JSON-RPC reply to ONE request, pulled out of an SSE body.
+ *
+ * Matched on the request id rather than taken as "the first message", because
+ * an event stream legitimately carries more than the answer: a server may send
+ * `notifications/message` log entries or progress events alongside it, and the
+ * first `data:` line is not reliably the reply. Taking the first would work
+ * against a quiet server and fail against a chatty one — the kind of bug that
+ * shows up only in production, against whichever server talks most.
+ *
+ * Per the SSE grammar an event is terminated by a blank line and its `data:`
+ * lines are joined with newlines. Anything unparseable is skipped rather than
+ * fatal: one malformed event must not discard a well-formed reply beside it.
+ *
+ * Returns `null` when the stream held no reply to this id.
+ */
+function sseReplyTo(body: string, requestId: string): string | null {
+    for (const frame of body.split(/\r?\n\r?\n/)) {
+        const data = frame
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).replace(/^ /, ''))
+            .join('\n');
+        if (!data) continue;
+
+        try {
+            const message = JSON.parse(data) as { id?: unknown };
+            if (message.id === requestId) return data;
+        } catch {
+            continue;
+        }
+    }
+    return null;
 }
 
 /**

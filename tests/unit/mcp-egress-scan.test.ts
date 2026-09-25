@@ -26,6 +26,9 @@ import { callTool, McpClientError } from '@/app-layer/integrations/mcp/client';
 const bodyOf = (text: string) => ({
     ok: true,
     status: 200,
+    // The content-type is part of the contract: streamable HTTP lets a server
+    // answer in JSON or SSE, and the client reads this to tell them apart.
+    headers: { get: (k: string) => (k.toLowerCase() === 'content-type' ? 'application/json' : null) },
     body: {
         getReader() {
             let sent = false;
