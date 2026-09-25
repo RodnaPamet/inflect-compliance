@@ -87,7 +87,9 @@ import {
     CONNECTION_DISABLED_REFUSAL,
     OBSERVATION_FRESHNESS_MS,
 } from './identity-write-target';
-import { isAboveClamp } from '@/lib/identity/write-ladder';
+import { isAboveClamp,
+    PASS_AUTOMATION_SUFFIX,
+} from '@/lib/identity/write-ladder';
 import {
     disableAccountsForLeaver,
     findLeaverCandidates,
@@ -233,7 +235,7 @@ export function leaverPassStatus(
  * is gated at OWNER; letting the rows drift onto it would widen their audience
  * as a side effect of choosing where to store them.
  */
-export const LEAVER_PASS_AUTOMATION_SUFFIX = '.leaver_pass';
+export const LEAVER_PASS_AUTOMATION_SUFFIX = PASS_AUTOMATION_SUFFIX.leaver;
 
 /**
  * The durable record a dry run leaves behind.
