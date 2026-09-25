@@ -200,6 +200,46 @@ export type PermissionSet = {
          * stopping every deployment is not an authority a customer holds.
          */
         agent_kill_switch: boolean;
+        /**
+         * CALLING a tool that lives on an external MCP server.
+         *
+         * A FIFTH agent key, and the only one of the five that is not about
+         * configuring an agent. `agent_registry` admits an agent,
+         * `agent_tool_exposure` decides what it may reach, `agent_policy_card`
+         * sets how far it may go and `agent_kill_switch` stops it. Each governs
+         * a human changing a record. This one governs the AGENT ACTING, and
+         * acting outside the platform boundary specifically.
+         *
+         * ## Why it is not folded into `agent_tool_exposure`
+         *
+         * That key answers "who may grant this tool", which is already asked
+         * and already enforced — a grant requires a pin, and the pin requires a
+         * human to have read the definition. The question left over is a
+         * different one asked at a different time by a different principal:
+         * whether the CREDENTIAL presenting itself at call time may leave the
+         * tenant at all. Folding them would mean the authority to configure an
+         * agent's tool list is the same authority the agent then exercises,
+         * which is the composition every one of its neighbours exists to
+         * refuse.
+         *
+         * ## Why not `admin.manage`, which owns the connection
+         *
+         * `admin.manage` gates `/admin/integrations` — CONFIGURING outbound
+         * integrations, noted there as "mis-configuration leaks data outside
+         * the tenant". Requiring it here would mean a credential that reads
+         * alerts from one Grafana server also holds CRUD over every integration
+         * the tenant has. The narrower key is the point: an operator can let an
+         * agent call out without handing it the keys to rewire what it calls.
+         *
+         * Granted to OWNER and ADMIN by default, like its four neighbours. The
+         * default is deliberately NOT where this feature's caution lives: a
+         * call still needs a pinned definition a human accepted, a grant on the
+         * agent, and an agent registered as reaching `EXTERNAL_EGRESS`. Making
+         * this key alone default-off would add a fourth lock to a door with
+         * three, while making the other three easy to mistake for the whole
+         * protection.
+         */
+        agent_external_tools: boolean;
     };
 };
 
@@ -259,7 +299,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'tenant_lifecycle', 'owner_management',
         'compliance_dsar_view', 'compliance_dsar_manage',
         'agent_registry', 'agent_tool_exposure', 'agent_policy_card',
-        'agent_kill_switch',
+        'agent_kill_switch', 'agent_external_tools',
     ],
 };
 
@@ -299,7 +339,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     compliance_dsar_view: true, compliance_dsar_manage: true,
                     agent_registry: true, agent_tool_exposure: true,
                     agent_policy_card: true,
-                    agent_kill_switch: true,
+                    agent_kill_switch: true, agent_external_tools: true,
                 },
             };
         case 'ADMIN':
@@ -338,7 +378,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // operational administration of an already-approved agent,
                     // not the authority to admit new ones.
                     agent_policy_card: true,
-                    agent_kill_switch: true,
+                    agent_kill_switch: true, agent_external_tools: true,
                 },
             };
         case 'EDITOR':
@@ -360,7 +400,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false },
             };
         case 'AUDITOR':
             return {
@@ -382,7 +422,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false },
             };
         case 'READER':
         default:
@@ -402,7 +442,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false },
             };
     }
 }
