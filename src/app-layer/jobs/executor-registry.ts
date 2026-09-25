@@ -424,6 +424,7 @@ executorRegistry.register('data-lifecycle', async (payload) => {
     const {
         purgeSoftDeletedOlderThan,
         purgeExpiredEvidenceOlderThan,
+        purgeIdentityArtefactsOlderThan,
         runRetentionSweep,
     } = await import('./data-lifecycle');
 
@@ -435,6 +436,14 @@ executorRegistry.register('data-lifecycle', async (payload) => {
         tenantId: payload.tenantId,
         dryRun: payload.dryRun,
     });
+    // The two JML artefacts, pruned by AGE rather than by a per-row
+    // `retentionUntil` — see the function's docblock for why they are not in
+    // RETENTION_MODELS.
+    const identityPurge = await purgeIdentityArtefactsOlderThan({
+        tenantId: payload.tenantId,
+        dryRun: payload.dryRun,
+    });
+
     const retentionResults = await runRetentionSweep({
         tenantId: payload.tenantId,
         dryRun: payload.dryRun,
@@ -457,17 +466,19 @@ executorRegistry.register('data-lifecycle', async (payload) => {
 
     const totalScanned = purgeResults.reduce((s, r) => s + r.scanned, 0)
         + evidencePurge.scanned
+        + identityPurge.reduce((s, r) => s + r.scanned, 0)
         + retentionResults.reduce((s, r) => s + r.scanned, 0)
         + tenantPurge.length;
     const totalActioned = purgeResults.reduce((s, r) => s + r.purged, 0)
         + evidencePurge.purged
+        + identityPurge.reduce((s, r) => s + r.purged, 0)
         + retentionResults.reduce((s, r) => s + r.expired, 0)
         + tenantPurge.reduce((s, r) => s + r.totalRows, 0);
 
     return makeResult(
         'data-lifecycle', startedAt, startMs,
         totalScanned, totalActioned, 0,
-        { purgeResults, evidencePurge, retentionResults, tenantPurge },
+        { purgeResults, evidencePurge, identityPurge, retentionResults, tenantPurge },
     );
 });
 

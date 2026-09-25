@@ -413,6 +413,35 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 | `daily-evidence-expiry` (daily 06:00 UTC) | `runDailyEvidenceExpiryNotifications` (`jobs/dailyEvidenceExpiry.ts`); reminder generation also in `runEvidenceRetentionNotifications` (`jobs/retention-notifications.ts`) | N-day-before (30/7/1) reminder tasks for expiring evidence, gated by `Tenant.reminderDaysBefore` (default 14). | Evidence only |
 | `data-lifecycle` (daily 03:00 UTC) | `purgeSoftDeletedOlderThan` (90-day grace, 12 `SOFT_DELETE_MODELS`) · `purgeExpiredEvidenceOlderThan` (hard-delete archived evidence > 365 days) · `runRetentionSweep` (cross-model `retentionUntil` sweep over the 2 `RETENTION_MODELS` that have a writer — `Asset`; `Evidence` is skipped by that loop and handled by the separate `retention-sweep` cron) — all in `jobs/data-lifecycle.ts` | The actual purge engine: hard-deletes aged soft-deletes + aged archived evidence; sweeps `retentionUntil` across the retention models. | 12 soft-delete + 2 retention models |
 
+### Identity write artefacts — 730 days
+
+`data-lifecycle` also runs `purgeIdentityArtefactsOlderThan`
+(`jobs/data-lifecycle.ts`), which deletes `IdentityWriteJournal` rows older
+than 730 days measured on `attemptedAt`, and `IntegrationExecution` rows older
+than 730 days measured on `executedAt`.
+
+**Why 730.** It matches `risk-snapshot-jobs.ts`, so the product has one
+retention answer for compliance artefacts rather than two, and it is two annual
+audit cycles: an auditor sampling a 12-month period in early 2026 needs
+early-2025 rows present. Before this, the answer was *forever*.
+
+**Why by AGE and not `retentionUntil`.** These are not in `RETENTION_MODELS`.
+That list is the per-row mechanism and a model joins it only when
+`retentionUntil` is on its update schema and its edit UI — see the warning
+above this section about six models that sat in that list as guaranteed-empty
+queries. Nobody sets a retention date on an individual directory write.
+
+**Why `attemptedAt` and not `settledAt`.** `settledAt` is NULL on a row that
+never settled. Pruning on a nullable column would keep the unsettled rows
+forever, and those are the ones an operator most wants bounded.
+
+**What the attestation carries.** One `DATA_PURGED` audit row per tenant per
+model, holding COUNTS and never identifiers. The sibling evidence purge names
+each record it destroys; doing that here would copy `externalUserId` into a row
+that outlives the journal, retaining exactly the personal data the purge
+exists to remove. `AuditLog.tenantId` is required, which is why the purge is
+grouped by tenant rather than swept globally.
+
 There is ONE purge implementation. `src/lib/retention-purge.ts` used to hold a
 second, manual/CLI variant of the same sweep; it was deleted (2026-08-14)
 because nothing imported it but its own test, and the two had drifted in both
