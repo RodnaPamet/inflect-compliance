@@ -181,6 +181,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/review-quality/route.ts',
     't/[tenantSlug]/admin/agents/route.ts',
     't/[tenantSlug]/admin/agents/tool-manifests/route.ts',
+    // #2860 — saved arguments for an external MCP tool, and the approval a
+    // change to one needs. Same tenant-wide class as the manifest pin above:
+    // a set is keyed by (tenant, tool, label) and not by agent, so it governs
+    // every agent granted that tool.
+    't/[tenantSlug]/admin/agents/parameter-sets/route.ts',
     't/[tenantSlug]/admin/mcp/quarantine/route.ts',
     't/[tenantSlug]/admin/security-settings/agent-enforcement/route.ts',
     't/[tenantSlug]/agent-proposals/[id]/approve/route.ts',
