@@ -43,6 +43,7 @@
  */
 import type { AgentDataAccessScope } from '@prisma/client';
 
+import { isExternalToolName } from './external-tool-name';
 import { mcpToolCapabilityClass } from './tool-catalogue';
 
 /**
@@ -124,6 +125,29 @@ function higher(a: AgentDataAccessScope, b: AgentDataAccessScope): AgentDataAcce
 }
 
 /**
+ * The rung a tool reaches with NO argument term.
+ *
+ * An EXTERNAL tool answers `EXTERNAL_EGRESS` unconditionally, and that is the
+ * whole reason this helper exists rather than the expression being written
+ * twice. Calling a tool on somebody else's MCP server IS what this enum's top
+ * rung describes — "sends tenant data to a destination outside the platform
+ * boundary… the only one whose blast radius is not bounded by the tenant's own
+ * database". The arguments of that call are chosen by the model, so there is no
+ * argument shape under which the egress fails to happen.
+ *
+ * Left to the class default an external tool would answer `WRITE_TENANT_DATA`,
+ * because an unknown name falls to the `propose` class. An agent DECLARED at
+ * that scope could then be granted a tool that leaves the boundary and
+ * `assertGrantWithinDeclaredDataScope` would allow it — the declared scope
+ * would simply be false. That is the failure this line prevents, which is why
+ * both the call-time and the admin-time answers come from here.
+ */
+function baseScopeOf(toolName: string): AgentDataAccessScope {
+    if (isExternalToolName(toolName)) return 'EXTERNAL_EGRESS';
+    return ruleFor(toolName)?.base ?? CLASS_DEFAULT[mcpToolCapabilityClass(toolName)];
+}
+
+/**
  * The data-access rung this tool call reaches.
  *
  * `args` is whatever the caller sent — an object, a string, undefined. Anything
@@ -132,7 +156,7 @@ function higher(a: AgentDataAccessScope, b: AgentDataAccessScope): AgentDataAcce
  */
 export function dataScopeForToolCall(toolName: string, args: unknown): AgentDataAccessScope {
     const rule = ruleFor(toolName);
-    const base = rule?.base ?? CLASS_DEFAULT[mcpToolCapabilityClass(toolName)];
+    const base = baseScopeOf(toolName);
     if (!rule?.raisedBy || args === null || typeof args !== 'object' || Array.isArray(args)) {
         return base;
     }
@@ -160,7 +184,7 @@ export function dataScopeForToolCall(toolName: string, args: unknown): AgentData
  * card would make the whole argument-derived rung pointless.
  */
 export function baseDataScopeForTool(toolName: string): AgentDataAccessScope {
-    return ruleFor(toolName)?.base ?? CLASS_DEFAULT[mcpToolCapabilityClass(toolName)];
+    return baseScopeOf(toolName);
 }
 
 /**

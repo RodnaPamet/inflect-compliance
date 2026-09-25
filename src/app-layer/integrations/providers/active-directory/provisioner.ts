@@ -73,6 +73,7 @@ import type {
     ProvisionRead,
     ProvisionStep,
 } from '@/app-layer/integrations/identity-provisioner';
+import { isUnderBaseDn } from './dn-containment';
 import { adDirectionWriteRefusal } from './write-direction';
 
 /** NORMAL_ACCOUNT. The bit every user object carries. */
@@ -373,6 +374,31 @@ export function createActiveDirectoryProvisioner(
                     detail: `No single account resolved for ${externalUserId} under ${baseDN}.`,
                 };
             }
+            // THE GROUP DN IS CONTAINED, TOO — #2843 finding 51.
+            //
+            // Every other DN in this file comes from `dnFor()`, which is a
+            // search scoped to `baseDN` and therefore contained by
+            // construction. `groupId` is not: it arrives from the entitlement
+            // map and reaches `c.modify()` as a DN unchecked, so a value naming
+            // a group in another naming context — a different domain in the
+            // forest, the configuration partition — would be written to without
+            // complaint, adding this account to a group nobody scoped.
+            //
+            // The same suffix test the leaver writer applies to the account it
+            // disables, and fail-closed for the same reason: anything it cannot
+            // place confidently reads as not contained, and the remedy for a
+            // false refusal is a correctly formed `baseDN` on the connection.
+            if (!isUnderBaseDn(groupId, baseDN)) {
+                return {
+                    kind: 'refused',
+                    detail:
+                        `Refusing to add ${dn} to a group outside this connection's base DN. The ` +
+                        `group named is not under ${baseDN}, so it belongs to a naming context this ` +
+                        'connection was not scoped to — and a membership grant is exactly the write ' +
+                        'that should not reach one.',
+                };
+            }
+
             try {
                 // Membership lives on the GROUP in AD, not on the user.
                 await c.modify(groupId, [{ operation: 'add', type: 'member', values: [dn] }]);
