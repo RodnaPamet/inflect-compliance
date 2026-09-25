@@ -5329,7 +5329,9 @@
         "hris": "ЧР",
         "document": "Документи",
         "other": "Друго"
-      }
+      },
+      "authorizeEntra": "Оторизиране с Microsoft Entra",
+      "authorizeFailed": "Оторизацията не можа да започне."
     },
     "forbidden": {
       "title": "Изисква се администраторски достъп",

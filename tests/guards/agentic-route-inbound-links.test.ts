@@ -186,6 +186,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // a set is keyed by (tenant, tool, label) and not by agent, so it governs
     // every agent granted that tool.
     't/[tenantSlug]/admin/agents/parameter-sets/route.ts',
+    // An external server's catalogue and the approval that makes one of its
+    // tools grantable. Under /admin/agents rather than /admin/integrations
+    // because accepting a tool DESCRIPTION is agent governance, not credential
+    // wiring — and that placement is what earns it admin.agent_registry.
+    't/[tenantSlug]/admin/agents/external-tools/route.ts',
     't/[tenantSlug]/admin/mcp/quarantine/route.ts',
     't/[tenantSlug]/admin/security-settings/agent-enforcement/route.ts',
     't/[tenantSlug]/agent-proposals/[id]/approve/route.ts',

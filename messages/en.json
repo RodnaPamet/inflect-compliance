@@ -5329,7 +5329,9 @@
         "hris": "HR",
         "document": "Document",
         "other": "Other"
-      }
+      },
+      "authorizeEntra": "Authorize with Microsoft Entra",
+      "authorizeFailed": "Could not start the authorization."
     },
     "forbidden": {
       "title": "Admin Access Required",
