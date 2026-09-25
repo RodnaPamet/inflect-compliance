@@ -108,7 +108,18 @@ beforeEach(() => {
     mockDb.employee.findMany.mockResolvedValue([{ id: 'emp-1' }, { id: 'emp-2' }]);
     findCandidates.mockResolvedValue([{ linkId: 'l1', externalUserId: 'x1', onPremisesSyncEnabled: false }]);
     mockDb.connectedIdentityAccount.count.mockResolvedValue(400);
-    resolveWriter.mockResolvedValue({ kind: 'snapshot', writer: { provider: 'entra-id' }, close });
+    // `readiness` is on EVERY arm of the real `resolveDirectoryWriter` — the
+    // snapshot reader, the live Entra writer and the live AD writer all return
+    // one. The default mock omitted it, so the moment the pass began persisting
+    // it (#2843 finding 53) six tests failed on a field production always has.
+    // A mock that is a subset of the thing it stands for fails later and
+    // somewhere else, which is how it reads as a defect in the code under test.
+    resolveWriter.mockResolvedValue({
+        kind: 'snapshot',
+        writer: { provider: 'entra-id' },
+        close,
+        readiness: { readiness: 'READ_BIND_ONLY' as const, detail: 'fixture readiness' },
+    });
     disableBatch.mockResolvedValue({ results: [{ outcome: 'DRY_RUN', linkId: 'l1' }] });
     mockDb.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
     // Default: nothing stranded. Tests that care override it.
@@ -783,6 +794,43 @@ describe('the batch', () => {
     it('measures the blast radius against the observed account population', async () => {
         await run();
         expect(disableBatch.mock.calls[0][2]).toMatchObject({ population: 400 });
+    });
+
+    it('writes the readiness verdict INTO the row, not just the return value', async () => {
+        // #2843 finding 53. `writeReadiness` was computed on every pass, put on
+        // the return value, and consumed by nothing — no route serialises it,
+        // no component renders it, and it never reached this row.
+        //
+        // #2604 added it so an operator could tell a pass that disabled nobody
+        // because there WAS nobody from one that disabled nobody because the
+        // credential cannot write. That distinction only helps if it is written
+        // where they look, and this row is what the seven-day dwell is read
+        // from.
+        resolveWriter.mockResolvedValue({
+            kind: 'snapshot',
+            writer: { provider: 'entra-id' },
+            close,
+            readiness: {
+                readiness: 'APPLICATION_CREDENTIAL' as const,
+                detail: 'writes with its application credential',
+            },
+        });
+        await run();
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.resultJson.writeReadiness).toEqual({
+            readiness: 'APPLICATION_CREDENTIAL',
+            detail: 'writes with its application credential',
+        });
+    });
+
+    it('persists the DETAIL too — the enum alone is not actionable', async () => {
+        // Persisting only the enum would repeat the original mistake one layer
+        // down: `READ_BIND_ONLY` names a state, and the sentence beside it is
+        // what says every disable will be refused with LDAP result 50.
+        await run();
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(typeof data.resultJson.writeReadiness.detail).toBe('string');
+        expect(data.resultJson.writeReadiness.detail.length).toBeGreaterThan(0);
     });
 
     it('counts the DENOMINATOR per provider, the same way the numerator is scoped', async () => {
