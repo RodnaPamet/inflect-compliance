@@ -31,16 +31,23 @@
  * notification — the rule `mcp-tool-manifest.ts` states, for the same reason,
  * and more sharply because this text is not ours.
  */
+import { z } from 'zod';
+
 import { decryptField } from '@/lib/security/encryption';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound } from '@/lib/errors/types';
+import { badRequest, notFound } from '@/lib/errors/types';
 import { listTools } from '@/app-layer/integrations/mcp/client';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { externalToolName, EXTERNAL_TOOL_PREFIX } from '@/lib/mcp/external-tool-name';
 import type { ApprovedToolManifest } from '@/lib/mcp/tool-manifest';
 
 import { assertCanAdmin } from '../policies/common';
-import { manifestStateOf, type ToolManifestState } from './mcp-tool-manifest';
+import {
+    manifestStateOf,
+    writeToolManifestPin,
+    type ApproveToolManifestResult,
+    type ToolManifestState,
+} from './mcp-tool-manifest';
 import type { RequestContext } from '../types';
 
 /**
@@ -161,4 +168,94 @@ export async function listExternalMcpTools(
         advertised: advertised.length,
         truncated: advertised.length > considered.length,
     };
+}
+
+// ── Approve ─────────────────────────────────────────────────────────────────
+
+export const ApproveExternalToolSchema = z
+    .object({
+        connectionId: z.string().min(1),
+        /** The name the SERVER advertises, not the qualified one. */
+        toolName: z.string().min(1),
+        /**
+         * The hash the operator reviewed. Required for the reason the built-in
+         * path requires it: an endpoint taking only a name would approve
+         * whatever the server says at the moment the request lands, including a
+         * definition that changed between the operator reading it and clicking.
+         *
+         * The argument is STRONGER here. For a built-in, the window is a
+         * deploy. For an external server, the text can change between the two
+         * calls this request itself makes, at the choosing of whoever runs it.
+         */
+        expectedManifestHash: z.string().min(1),
+    })
+    .strict();
+
+export type ApproveExternalToolInput = z.infer<typeof ApproveExternalToolSchema>;
+
+/**
+ * Accept an external tool's CURRENT definition — baseline, or re-approval after
+ * drift.
+ *
+ * Re-reads the catalogue rather than trusting anything the caller sent beyond
+ * the hash: the definition being pinned has to be one this deployment observed
+ * itself, or the pin attests a description nobody here ever saw.
+ *
+ * The pin is written by `writeToolManifestPin`, the same function the built-in
+ * path uses, under the QUALIFIED name. That is deliberate — a second write path
+ * for external tools would be a second, quieter way to clear a refusal.
+ */
+export async function approveExternalToolManifest(
+    ctx: RequestContext,
+    input: unknown,
+): Promise<ApproveToolManifestResult> {
+    assertCanAdmin(ctx);
+
+    const parsed = ApproveExternalToolSchema.safeParse(input);
+    if (!parsed.success) {
+        throw badRequest('Invalid external tool approval', parsed.error.flatten());
+    }
+    const { connectionId, toolName, expectedManifestHash } = parsed.data;
+
+    // `userId` is what the accountability column exists for. Unreachable
+    // through the route, checked anyway: the column's whole value is that it is
+    // never null on an APPROVED row.
+    if (!ctx.userId) {
+        throw badRequest('An approving user is required');
+    }
+
+    const { tools, truncated } = await listExternalMcpTools(ctx, connectionId);
+    const tool = tools.find((t) => t.advertisedName === toolName);
+    if (!tool) {
+        // Either the server stopped advertising it, or it sits past the cap. The
+        // two are told apart because "approve something you cannot see" and
+        // "approve something that is gone" call for different actions.
+        throw notFound(
+            truncated
+                ? `"${toolName}" is not among the first ${MAX_EXTERNAL_TOOLS} tools this ` +
+                  'server advertises, so it cannot be reviewed or approved here.'
+                : `The server no longer advertises a tool named "${toolName}"`,
+        );
+    }
+
+    if (tool.liveManifestHash !== expectedManifestHash) {
+        throw badRequest(
+            'The tool definition changed since it was reviewed. Re-read the current ' +
+                'definition and approve that hash.',
+        );
+    }
+
+    return runInTenantContext(ctx, (db) =>
+        writeToolManifestPin(
+            db,
+            ctx,
+            tool.toolName,
+            {
+                descriptionHash: tool.liveDescriptionHash,
+                schemaHash: tool.liveSchemaHash,
+                manifestHash: tool.liveManifestHash,
+            },
+            ctx.userId as string,
+        ),
+    );
 }

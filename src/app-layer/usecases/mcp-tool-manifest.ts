@@ -31,7 +31,7 @@
  */
 import { z } from 'zod';
 
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { allToolDefinitions, toolDefinitionByName } from '@/lib/mcp/tool-definitions';
 import {
@@ -39,6 +39,7 @@ import {
     verifyToolManifest,
     type ApprovedToolManifest,
     type ToolDefinition,
+    type ToolManifestHashes,
     type ToolManifestStatus,
 } from '@/lib/mcp/tool-manifest';
 import { logger } from '@/lib/observability/logger';
@@ -232,139 +233,163 @@ export async function approveToolManifest(
     }
     const approvedByUserId = ctx.userId;
 
-    const result = await runInTenantContext(ctx, async (db) => {
-        const existing = await db.mcpToolManifestPin.findUnique({
-            where: { tenantId_toolName: { tenantId: ctx.tenantId, toolName } },
-            select: { id: true, manifestHash: true, revision: true },
-        });
+    return runInTenantContext(ctx, (db) =>
+        writeToolManifestPin(db, ctx, toolName, live, approvedByUserId),
+    );
+}
 
-        if (existing && existing.manifestHash === live.manifestHash) {
-            return {
-                manifestHash: existing.manifestHash,
-                previousManifestHash: null,
-                revision: existing.revision,
-                changed: false,
-            };
-        }
+/**
+ * Write one tool's pin, its audit row and its bell — THE approval rule, once.
+ *
+ * Extracted so an EXTERNAL tool is accepted by exactly this code rather than a
+ * parallel copy. What a second copy would risk is not tidiness: this function
+ * decides whether a supply-chain accept is recorded with an approver's name,
+ * whether a re-approval that changed nothing stays silent, and whether the bell
+ * rings at all. An external variant drifting on any of those would be a quieter
+ * way to clear a refusal — exactly what somebody who has just changed a tool
+ * description needs.
+ *
+ * Takes `db` instead of opening its own transaction: the pin, its audit row and
+ * its notification have to land in ONE tenant context, and the caller owns it.
+ */
+export async function writeToolManifestPin(
+    db: PrismaTx,
+    ctx: RequestContext,
+    toolName: string,
+    live: ToolManifestHashes,
+    approvedByUserId: string,
+): Promise<ApproveToolManifestResult> {
+    const existing = await db.mcpToolManifestPin.findUnique({
+        where: { tenantId_toolName: { tenantId: ctx.tenantId, toolName } },
+        select: { id: true, manifestHash: true, revision: true },
+    });
 
-        const previousManifestHash = existing?.manifestHash ?? null;
-        const revision = (existing?.revision ?? 0) + 1;
+    if (existing && existing.manifestHash === live.manifestHash) {
+        return {
+            toolName,
+            manifestHash: existing.manifestHash,
+            previousManifestHash: null,
+            revision: existing.revision,
+            approvedByUserId,
+            changed: false,
+        };
+    }
 
-        if (existing) {
-            await db.mcpToolManifestPin.update({
-                where: { id: existing.id },
-                data: {
-                    descriptionHash: live.descriptionHash,
-                    schemaHash: live.schemaHash,
-                    manifestHash: live.manifestHash,
-                    approvalSource: 'APPROVED',
-                    approvedByUserId,
-                    approvedAt: new Date(),
-                    revision,
-                    previousManifestHash,
-                },
-            });
-        } else {
-            await db.mcpToolManifestPin.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    toolName,
-                    descriptionHash: live.descriptionHash,
-                    schemaHash: live.schemaHash,
-                    manifestHash: live.manifestHash,
-                    approvalSource: 'APPROVED',
-                    approvedByUserId,
-                    approvedAt: new Date(),
-                    revision,
-                    previousManifestHash,
-                },
-            });
-        }
+    const previousManifestHash = existing?.manifestHash ?? null;
+    const revision = (existing?.revision ?? 0) + 1;
 
-        await logEvent(db, ctx, {
-            entityType: 'McpToolManifestPin',
-            entityId: toolName,
-            action: 'MCP_TOOL_MANIFEST_APPROVED',
-            details: `Tool manifest approved for "${toolName}" (revision ${revision})`,
-            detailsJson: {
-                category: 'custom',
-                event: 'mcp_tool_manifest_approved',
-                tool: toolName,
-                // Digests and the approver. Never the description — see header.
-                manifestHash: live.manifestHash,
-                previousManifestHash,
+    if (existing) {
+        await db.mcpToolManifestPin.update({
+            where: { id: existing.id },
+            data: {
                 descriptionHash: live.descriptionHash,
                 schemaHash: live.schemaHash,
-                revision,
+                manifestHash: live.manifestHash,
+                approvalSource: 'APPROVED',
                 approvedByUserId,
+                approvedAt: new Date(),
+                revision,
+                previousManifestHash,
             },
         });
-
-        // ─── The bell (#2561) ───────────────────────────────────────────
-        //
-        // ONLY ON THIS PATH, which is the guard. The `changed: false` return
-        // above leaves before any of this, so a re-approval that matches the
-        // hash already on file writes no pin, no audit row and no bell. A
-        // notification for a call that changed nothing is the fastest way to
-        // teach somebody to ignore this particular bell, and this is the one
-        // bell in the agentic set that announces a supply-chain accept.
-        //
-        // AFTER the audit row, and best-effort — the same shape and the same
-        // reasoning as the kill switch (`agent-kill-switch.ts`). The audit
-        // entry is the durable record; an approval that failed because the
-        // bell was down would leave the boundary refusing a tool a human has
-        // accepted, which is the wrong failure mode for a clearing action.
-        //
-        // INSIDE the tenant transaction: `Notification` is tenant-scoped under
-        // RLS, so the write needs the bound client. `createMany({
-        // skipDuplicates: true })` cannot throw P2002 and poison the
-        // transaction, which is why the emitter uses it.
-        try {
-            // `null` agent — the accept is TENANT-WIDE. There is no single
-            // agent to route to, so this resolves the workspace's ACTIVE
-            // OWNERs, which is exactly the audience for a decision that binds
-            // every agent at once. No new recipient logic.
-            const { recipientUserIds } = await resolveAgenticRecipients(db, ctx.tenantId, null);
-            await createAgenticNotification(db, 'AGENT_TOOL_MANIFEST_PIN_CHANGED', {
+    } else {
+        await db.mcpToolManifestPin.create({
+            data: {
                 tenantId: ctx.tenantId,
-                tenantSlug: ctx.tenantSlug ?? null,
-                // The TOOL NAME is the entity: there is no per-pin surface to
-                // link to, and it is the right thing for the day-granular
-                // dedupe key to collapse on.
-                entityId: toolName,
-                // The name, and nothing else from the definition. The header
-                // of this module explains why the description reaches no
-                // audit row, no log line and no response — a bell row is one
-                // more reader, and it is read by people.
-                subject: `The tool "${toolName}"`,
-                detail:
-                    previousManifestHash === null
-                        ? 'first approval for this tool'
-                        : `revision ${revision}, replacing the definition previously on file`,
-                recipientUserIds,
-                actorUserId: approvedByUserId,
-            });
-        } catch (err) {
-            logger.warn('notification: failed to record tool-manifest pin bell', {
-                requestId: ctx.requestId,
-                tenantId: ctx.tenantId,
-                tool: toolName,
-                // Never `String(err)` — a thrown Prisma error can carry the
-                // row it was writing, and this row's `message` names the tool
-                // this workspace just accepted.
-                error: err instanceof Error ? err.message : 'non-Error thrown',
-            });
-        }
+                toolName,
+                descriptionHash: live.descriptionHash,
+                schemaHash: live.schemaHash,
+                manifestHash: live.manifestHash,
+                approvalSource: 'APPROVED',
+                approvedByUserId,
+                approvedAt: new Date(),
+                revision,
+                previousManifestHash,
+            },
+        });
+    }
 
-        return { manifestHash: live.manifestHash, previousManifestHash, revision, changed: true };
+    await logEvent(db, ctx, {
+        entityType: 'McpToolManifestPin',
+        entityId: toolName,
+        action: 'MCP_TOOL_MANIFEST_APPROVED',
+        details: `Tool manifest approved for "${toolName}" (revision ${revision})`,
+        detailsJson: {
+            category: 'custom',
+            event: 'mcp_tool_manifest_approved',
+            tool: toolName,
+            // Digests and the approver. Never the description — see header.
+            manifestHash: live.manifestHash,
+            previousManifestHash,
+            descriptionHash: live.descriptionHash,
+            schemaHash: live.schemaHash,
+            revision,
+            approvedByUserId,
+        },
     });
+
+    // ─── The bell (#2561) ───────────────────────────────────────────
+    //
+    // ONLY ON THIS PATH, which is the guard. The `changed: false` return
+    // above leaves before any of this, so a re-approval that matches the
+    // hash already on file writes no pin, no audit row and no bell. A
+    // notification for a call that changed nothing is the fastest way to
+    // teach somebody to ignore this particular bell, and this is the one
+    // bell in the agentic set that announces a supply-chain accept.
+    //
+    // AFTER the audit row, and best-effort — the same shape and the same
+    // reasoning as the kill switch (`agent-kill-switch.ts`). The audit
+    // entry is the durable record; an approval that failed because the
+    // bell was down would leave the boundary refusing a tool a human has
+    // accepted, which is the wrong failure mode for a clearing action.
+    //
+    // INSIDE the tenant transaction: `Notification` is tenant-scoped under
+    // RLS, so the write needs the bound client. `createMany({
+    // skipDuplicates: true })` cannot throw P2002 and poison the
+    // transaction, which is why the emitter uses it.
+    try {
+        // `null` agent — the accept is TENANT-WIDE. There is no single
+        // agent to route to, so this resolves the workspace's ACTIVE
+        // OWNERs, which is exactly the audience for a decision that binds
+        // every agent at once. No new recipient logic.
+        const { recipientUserIds } = await resolveAgenticRecipients(db, ctx.tenantId, null);
+        await createAgenticNotification(db, 'AGENT_TOOL_MANIFEST_PIN_CHANGED', {
+            tenantId: ctx.tenantId,
+            tenantSlug: ctx.tenantSlug ?? null,
+            // The TOOL NAME is the entity: there is no per-pin surface to
+            // link to, and it is the right thing for the day-granular
+            // dedupe key to collapse on.
+            entityId: toolName,
+            // The name, and nothing else from the definition. The header
+            // of this module explains why the description reaches no
+            // audit row, no log line and no response — a bell row is one
+            // more reader, and it is read by people.
+            subject: `The tool "${toolName}"`,
+            detail:
+                previousManifestHash === null
+                    ? 'first approval for this tool'
+                    : `revision ${revision}, replacing the definition previously on file`,
+            recipientUserIds,
+            actorUserId: approvedByUserId,
+        });
+    } catch (err) {
+        logger.warn('notification: failed to record tool-manifest pin bell', {
+            requestId: ctx.requestId,
+            tenantId: ctx.tenantId,
+            tool: toolName,
+            // Never `String(err)` — a thrown Prisma error can carry the
+            // row it was writing, and this row's `message` names the tool
+            // this workspace just accepted.
+            error: err instanceof Error ? err.message : 'non-Error thrown',
+        });
+    }
 
     return {
         toolName,
-        manifestHash: result.manifestHash,
-        previousManifestHash: result.previousManifestHash,
-        revision: result.revision,
+        manifestHash: live.manifestHash,
+        previousManifestHash,
+        revision,
         approvedByUserId,
-        changed: result.changed,
+        changed: true,
     };
 }
