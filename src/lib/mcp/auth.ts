@@ -85,6 +85,7 @@ import {
     systemClock,
 } from './token-exchange';
 import { isKnownMcpTool, MCP_TOOL_NAMES } from './tool-catalogue';
+import { resolveExternalReadTools } from './tools/external-tools';
 import {
     resolveAgentAuthority,
     PrincipalUnresolvedError,
@@ -400,6 +401,11 @@ export async function buildMcpInvocation(
         riskTierCeiling: riskTierCeilingFor(governedTier),
     });
 
+    // One `tools/list` per connection the agent has grants on, and nothing at
+    // all when it has none — which is every invocation that predates this
+    // feature and most that follow it.
+    const externalTools = await resolveExternalReadTools(ctx, grantedTools);
+
     return {
         ctx,
         principal,
@@ -416,7 +422,12 @@ export async function buildMcpInvocation(
         // on, resolution enumerates this array and never the live registry, so a
         // tool that becomes offered after this line runs is not loadable by this
         // invocation — no detection required. See `loadable-tools.ts`.
-        offeredTools: [...MCP_TOOL_NAMES],
+        // This build's catalogue PLUS the external tools this agent holds
+        // approved grants for. Both are snapshots taken here; see
+        // `external-tools.ts` for why an external catalogue in particular must
+        // not be re-read once a run is moving.
+        offeredTools: [...MCP_TOOL_NAMES, ...externalTools.map((t) => t.name)],
+        externalTools,
         audience: options.audience ?? null,
         autonomyCeiling,
         policyCard: inForce

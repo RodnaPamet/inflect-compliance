@@ -146,6 +146,9 @@ function invocationFor(
         agentStanding: 'vouched' as const,
         grantedTools: new Set(['list_risks', 'list_controls']),
         offeredTools: [...MCP_TOOL_NAMES],
+        // No external grants in this fixture; the external path is covered by
+        // its own suite.
+        externalTools: [],
         audience,
         autonomyCeiling: 6,
         // A scored agent, so the tier term is never what refuses here — these

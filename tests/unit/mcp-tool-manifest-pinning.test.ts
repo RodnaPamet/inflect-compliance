@@ -336,6 +336,9 @@ function invocation(): McpInvocation {
         // was offered nothing can load nothing, and these tests are about what
         // the manifest PIN does to a tool that IS on offer.
         offeredTools: MCP_TOOL_NAMES,
+        // No external grants in this fixture; the external path is covered by
+        // its own suite.
+        externalTools: [],
         ctx,
         principal: {
             userId: APPROVER,

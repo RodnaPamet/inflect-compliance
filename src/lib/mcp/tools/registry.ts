@@ -113,9 +113,29 @@ export function listReadToolDescriptors(inv: McpInvocation): McpToolDescriptor[]
  * narrows this further itself, and says so.
  */
 export function loadableReadTools(inv: McpInvocation): ReadonlyArray<McpReadTool<unknown>> {
-    return READ_TOOLS.filter((t) => isToolLoadable(inv, t.name)).filter((t) =>
-        canSee(inv, t.authorize.keys),
-    );
+    return allReadTools(inv)
+        .filter((t) => isToolLoadable(inv, t.name))
+        .filter((t) => canSee(inv, t.authorize.keys));
+}
+
+/**
+ * This build's read tools, plus the EXTERNAL ones this invocation resolved at
+ * assembly.
+ *
+ * One function so the listing and the funnel enumerate the same set. They were
+ * the same expression written twice for about ten minutes, which is exactly how
+ * a catalogue and the thing it describes start to disagree — and the disagreement
+ * that matters here is the quiet direction: a tool the listing offers and the
+ * funnel cannot resolve produces a refusal the model cannot plan around.
+ *
+ * `inv.externalTools` is already filtered to grants whose pinned definition
+ * still matches what the server serves, so nothing about the union re-decides
+ * authority — `isToolLoadable` and `authorizeToolCall` do that for both halves
+ * identically.
+ */
+function allReadTools(inv: McpInvocation): ReadonlyArray<McpReadTool<unknown>> {
+    if (inv.externalTools.length === 0) return READ_TOOLS;
+    return [...READ_TOOLS, ...(inv.externalTools as ReadonlyArray<McpReadTool<unknown>>)];
 }
 
 /**
@@ -166,7 +186,7 @@ export async function runReadTool(
     //    a protocol error (`null` below); a name the registry holds but this
     //    invocation's manifest never offered is a refusal with its own audit
     //    row. See `resolveOfferedTool` and `loadable-tools.ts`.
-    const tool = await resolveOfferedTool(inv, READ_TOOLS, name);
+    const tool = await resolveOfferedTool(inv, allReadTools(inv), name);
     if (!tool) throw new McpToolNotFoundError(name);
 
     const ctx = inv.ctx;

@@ -157,6 +157,9 @@ function invocationFor(
         // suite calls is on it, so the loader never refuses and every assertion
         // below stays about the CARD.
         offeredTools: [...MCP_TOOL_NAMES],
+        // No external grants in this fixture; the external path is covered by
+        // its own suite.
+        externalTools: [],
         audience: null,
         // Above every rung any tool here requires, so the SEPARATE autonomy
         // ceiling of 2/10 is never what refuses.
