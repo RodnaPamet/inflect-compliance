@@ -10,6 +10,11 @@
  */
 const initializeMock = jest.fn();
 const listToolsMock = jest.fn();
+const mintMock = jest.fn();
+jest.mock('@/app-layer/integrations/mcp/token', () => ({
+    ...jest.requireActual('@/app-layer/integrations/mcp/token'),
+    mintAccessToken: (...a: unknown[]) => mintMock(...a),
+}));
 
 jest.mock('@/app-layer/integrations/mcp/client', () => {
     class McpClientError extends Error {
@@ -57,12 +62,39 @@ describe('what the provider declares about itself', () => {
         expect(listToolsMock).toHaveBeenCalledTimes(1);
     });
 
-    it('asks for a URL and an optional authorization, and nothing else', () => {
-        expect(provider.configSchema.configFields.map((f) => f.key)).toEqual(['url']);
-        expect(provider.configSchema.secretFields.map((f) => f.key)).toEqual(['authorization']);
-        // The credential is a SECRET field, so it rides the encrypted store
-        // rather than the config blob.
-        expect(provider.configSchema.secretFields[0].required).toBe(false);
+    it('asks for a URL, the Entra fields, and nothing else', () => {
+        expect(provider.configSchema.configFields.map((f) => f.key)).toEqual([
+            'url',
+            'tenantId',
+            'clientId',
+        ]);
+        expect(provider.configSchema.secretFields.map((f) => f.key)).toEqual([
+            'authorization',
+            'clientSecret',
+            'refreshToken',
+        ]);
+    });
+
+    /**
+     * Which fields are SECRETS is the load-bearing half. `clientSecret` and
+     * `refreshToken` are long-lived credentials — the refresh token more so
+     * than the access tokens it buys — and a secret field rides the encrypted
+     * store while a config field sits in a plain JSON column that reaches
+     * exports and logs. `tenantId` and `clientId` are identifiers, not
+     * credentials, and are config for that reason.
+     */
+    it('puts every credential in the encrypted store and no identifier in it', () => {
+        expect(provider.configSchema.secretFields.map((f) => f.key).sort()).toEqual(
+            ['authorization', 'clientSecret', 'refreshToken'].sort(),
+        );
+        expect(provider.configSchema.configFields.map((f) => f.key)).not.toContain('clientSecret');
+        expect(provider.configSchema.configFields.map((f) => f.key)).not.toContain('refreshToken');
+    });
+
+    it('requires none of them, so a server needing no credential still works', () => {
+        for (const f of provider.configSchema.secretFields) {
+            expect({ key: f.key, required: f.required }).toEqual({ key: f.key, required: false });
+        }
     });
 });
 
@@ -127,5 +159,72 @@ describe('validating a connection', () => {
 
         expect(r.valid).toBe(true);
         expect(Object.keys(r)).toEqual(['valid']);
+    });
+});
+
+/**
+ * ENTRA CREDENTIALS — validating what mints a token, not a token.
+ *
+ * Validation exists to answer "do these credentials work". Two failure modes
+ * are easy to confuse and are separated on purpose: a credential that cannot
+ * MINT is our side of the connection, and a server that REFUSES is theirs. An
+ * operator told the wrong one goes looking in the wrong place.
+ */
+describe('a connection configured for Entra', () => {
+    const cfg = {
+        url: 'https://mcp.svc.cloud.microsoft/enterprise',
+        tenantId: '0fc6f345-0eee-4408-89a9-96fdd1b6439d',
+        clientId: 'client-1',
+    };
+    const secrets = { clientSecret: 'secret-1', refreshToken: 'refresh-1' };
+
+    beforeEach(() => {
+        mintMock.mockReset();
+        initializeMock.mockReset().mockResolvedValue({ protocolVersion: '2025-06-18' });
+        listToolsMock.mockReset().mockResolvedValue([]);
+    });
+
+    it('mints a token and presents it as a Bearer header', async () => {
+        mintMock.mockResolvedValue({ accessToken: 'at-1', expiresAt: Date.now() + 3_600_000, rotatedRefreshToken: null });
+
+        await expect(provider.validateConnection(cfg, secrets)).resolves.toEqual({ valid: true });
+        expect(initializeMock).toHaveBeenCalledWith(
+            expect.objectContaining({ authorization: 'Bearer at-1' }),
+        );
+    });
+
+    it('refuses a PARTLY configured connection, before reaching the network', async () => {
+        // Falling back to a stale pasted token here would work until that token
+        // died and then look like a server problem.
+        const r = await provider.validateConnection(cfg, { clientSecret: 'secret-1' });
+
+        expect(r.valid).toBe(false);
+        expect(r.error).toMatch(/all required together/);
+        expect({ mints: mintMock.mock.calls.length, handshakes: initializeMock.mock.calls.length }).toEqual({
+            mints: 0,
+            handshakes: 0,
+        });
+    });
+
+    it('says the CREDENTIAL failed, not the server, when minting is refused', async () => {
+        const { McpTokenError } = jest.requireActual('@/app-layer/integrations/mcp/token');
+        mintMock.mockRejectedValue(new McpTokenError('token endpoint refused the refresh: invalid_grant'));
+
+        const r = await provider.validateConnection(cfg, secrets);
+
+        expect(r.valid).toBe(false);
+        expect(r.error).toMatch(/invalid_grant/);
+        // The server was never asked, so nothing about it can be blamed.
+        expect({ handshakes: initializeMock.mock.calls.length }).toEqual({ handshakes: 0 });
+    });
+
+    it('still accepts a static credential, for a server that takes one', async () => {
+        await expect(
+            provider.validateConnection({ url: cfg.url }, { authorization: 'Bearer pasted' }),
+        ).resolves.toEqual({ valid: true });
+        expect(initializeMock).toHaveBeenCalledWith(
+            expect.objectContaining({ authorization: 'Bearer pasted' }),
+        );
+        expect({ mints: mintMock.mock.calls.length }).toEqual({ mints: 0 });
     });
 });
