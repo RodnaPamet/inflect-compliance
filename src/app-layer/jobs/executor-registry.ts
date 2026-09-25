@@ -37,7 +37,7 @@ import {
     IntegrationRateLimitedError,
 } from '@/app-layer/integrations/http-resilience';
 import { recordQueueRetryBypass } from '@/lib/observability/integration-metrics';
-import type { JobName, JobPayload, JobRunResult } from './types';
+import type { JobName, JobPayload, JobRunResult, NamesEveryField } from './types';
 
 // ─── Executor Contract ──────────────────────────────────────────────
 
@@ -1262,7 +1262,26 @@ executorRegistry.register('identity-leaver-pass', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();
     const { runIdentityLeaverPassJob } = await import('./identity-leaver');
-    const r = await runIdentityLeaverPassJob({ tenantId: payload.tenantId, provider: payload.provider });
+    // Fields NAMED rather than the payload spread, for the reason the joiner
+    // registration below states in full. `NamesEveryField` is what keeps that
+    // discipline honest: it makes naming every DECLARED field mandatory while
+    // leaving each VALUE as optional as the payload declares it, so a field
+    // added to `IdentityLeaverPassPayload` breaks this line instead of being
+    // dropped in silence.
+    //
+    // It was dropped in silence once. #2870 added `requestedByUserId` and
+    // threaded it through the route and the job; this line kept naming two
+    // fields. It type-checked — the field is optional — so every manual leaver
+    // run reached the pass with no requester, fell to the system principal, and
+    // recorded `triggeredBy: 'scheduled'` on a directory write a named admin
+    // had asked for. The fix looked landed at both ends for as long as it was
+    // inert in the middle.
+    const leaverPayload: NamesEveryField<JobPayload<'identity-leaver-pass'>> = {
+        tenantId: payload.tenantId,
+        provider: payload.provider,
+        requestedByUserId: payload.requestedByUserId,
+    };
+    const r = await runIdentityLeaverPassJob(leaverPayload);
     return makeResult(
         'identity-leaver-pass',
         startedAt,
@@ -1287,7 +1306,29 @@ executorRegistry.register('identity-leaver-pass', async (payload) => {
         // Reporting candidates here instead would read as work performed.
         r.counts.DISABLED ?? 0,
         r.candidates - (r.counts.DISABLED ?? 0),
-        { mode: r.mode, refusal: r.refusal, counts: r.counts, population: r.population },
+        // Every field `LEAVER_RESULT_DISPOSITION` marks 'details'. That map is
+        // the declaration; this literal is the honouring of it, and
+        // `leaver-result-fields-reach-the-row` fails if the two drift apart.
+        //
+        // Four of these were absent until #2895. `writeReadiness` is the one
+        // that mattered most: #2604 computed a verdict on whether the resolved
+        // connection could write at all, #2885 threaded it out of the pass, and
+        // the row it exists to annotate never carried it — so the readiness
+        // report an operator consults during an incident was, on every real
+        // run, reconstructed from nothing. `detail` is a refusal's only
+        // human-readable half, `terminatedWorkers` counts sessions actually
+        // killed in a live directory, and `batchRefused` says why a batch
+        // stopped. All four were computed, returned, and thrown away here.
+        {
+            mode: r.mode,
+            refusal: r.refusal,
+            detail: r.detail,
+            counts: r.counts,
+            terminatedWorkers: r.terminatedWorkers,
+            population: r.population,
+            batchRefused: r.batchRefused,
+            writeReadiness: r.writeReadiness,
+        },
         { status: r.status, errorMessage: r.errorMessage },
     );
 });

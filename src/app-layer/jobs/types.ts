@@ -716,6 +716,30 @@ export interface AgentRunExecutePayload {
     runId: string;
 }
 
+/**
+ * Every key of `T` required to be PRESENT, keeping each key's own value type.
+ *
+ * The executor registrations name payload fields one by one rather than
+ * spreading, because a payload forwarded opaquely is how a scoped job silently
+ * becomes an unscoped one. That discipline is right and stays. What it lacked
+ * was a way to tell "this field is deliberately not forwarded" from "nobody
+ * updated this call site" — and an OPTIONAL field cannot tell them apart,
+ * because `{tenantId, provider}` type-checks perfectly against a payload whose
+ * third field is `requestedByUserId?: string`.
+ *
+ * That is not hypothetical. #2870 added `requestedByUserId` to
+ * `IdentityLeaverPassPayload` and threaded it through the route and the job;
+ * the executor in between kept naming two fields, the compiler had nothing to
+ * say, and every manual leaver run recorded itself as an unattended schedule
+ * for the life of the fix.
+ *
+ * Annotating the forwarded object with this type makes the NAMING mandatory
+ * while leaving the VALUE optional — `Required<T>` would strip `| undefined`
+ * from the value too and force a real user id onto the 05:00 dispatch, which
+ * has none and should not invent one.
+ */
+export type NamesEveryField<T> = { [K in keyof Required<T>]: T[K] };
+
 export interface JobPayloadMap {
     'agent-run-execute': AgentRunExecutePayload;
     'health-check': HealthCheckPayload;

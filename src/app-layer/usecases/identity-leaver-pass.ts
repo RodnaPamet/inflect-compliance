@@ -650,6 +650,52 @@ export interface LeaverPassResult {
     readonly writeReadiness?: WriteReadinessReport;
 }
 
+/** Where a `LeaverPassResult` field ends up once the executor has run. */
+export type ResultFieldDisposition =
+    /** Written into `JobRun.details`, the operator-visible blob. */
+    | 'details'
+    /** Carried by the outcome pair — `{ status, errorMessage }`. */
+    | 'outcome'
+    /** One of the three counted columns: scanned / actioned / skipped. */
+    | 'positional'
+    /** Deliberately not durable. The string is the reason, and it is required. */
+    | { readonly notPersisted: string };
+
+/**
+ * Every field of `LeaverPassResult`, and what becomes of it.
+ *
+ * This exists because computing a fact and DURABLY RECORDING it are two
+ * different things, and the gap between them is invisible in a diff. The
+ * executor builds `JobRun.details` as an object literal typed
+ * `Record<string, unknown>` — so a field this usecase returns and the executor
+ * forgets produces no error anywhere. #2885 computed `writeReadiness`, returned
+ * it, and tested that it was returned; the executor persisted four fields and
+ * has never persisted that one, so the verdict reached no operator artefact at
+ * all. `detail`, `terminatedWorkers` and `batchRefused` were dropped the same
+ * way and nobody had noticed.
+ *
+ * `satisfies Record<keyof LeaverPassResult, …>` makes the map exhaustive: add a
+ * field to the interface and this object fails to compile until someone says
+ * where it goes. Saying "nowhere" is allowed — but it costs a written reason,
+ * which is the difference between a decision and an oversight.
+ *
+ * `leaver-result-fields-reach-the-row` is the other half: it proves the
+ * executor actually honours what is declared here.
+ */
+export const LEAVER_RESULT_DISPOSITION = {
+    status: 'outcome',
+    mode: 'details',
+    refusal: 'details',
+    detail: 'details',
+    counts: 'details',
+    terminatedWorkers: 'details',
+    candidates: 'positional',
+    population: 'details',
+    batchRefused: 'details',
+    errorMessage: 'outcome',
+    writeReadiness: 'details',
+} as const satisfies Record<keyof LeaverPassResult, ResultFieldDisposition>;
+
 /**
  * Candidates whose OBSERVING connection is not currently enabled.
  *
