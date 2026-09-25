@@ -148,8 +148,14 @@ export async function recordModelDecision(
     }
 }
 
-/** The registered agent's AI-system id — the Art 12 subject this run acts as. */
-async function aiSystemIdFor(db: PrismaTx, ctx: RequestContext): Promise<string | null> {
+/**
+ * The registered agent's AI-system id — the Art 12 subject this run acts as.
+ *
+ * Exported for `tool-decision.ts`, which records the same subject for a call
+ * served by somebody else's server. Two derivations of "which AI system is this"
+ * would be two answers to a question an auditor asks once.
+ */
+export async function aiSystemIdFor(db: PrismaTx, ctx: RequestContext): Promise<string | null> {
     const agent = await db.registeredAgent.findFirst({
         where: { id: ctx.agentId, tenantId: ctx.tenantId },
         select: { aiSystemId: true },
