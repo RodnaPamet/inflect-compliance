@@ -123,6 +123,15 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
     'active-directory': {
         url: { kind: 'internalOrigin', scheme: 'ldaps:' },
         baseDN: { kind: 'inert' },
+        // Inert as a STRING — it reaches no host and carries no query — but
+        // not inert in consequence: it decides where a created account lands.
+        // What makes it safe is a CONNECT-TIME fact the validator cannot
+        // check, exactly like `allowSelfSignedTls` above: the provisioner
+        // refuses any OU outside the connection's own base DN
+        // (`provisioner.ts`, the containment check `assignGroup` already had).
+        // Declared here so an operator can set it at all — an undeclared key
+        // is rejected outright by `validateProviderConfig`.
+        createOU: { kind: 'inert' },
         adminGroups: { kind: 'inert' },
         // Deliberately inert HERE. The flag is dangerous, but the condition that
         // makes it safe (the host resolving into private space) is a
