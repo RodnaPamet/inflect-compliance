@@ -321,6 +321,72 @@ describe('AD provisioner — group membership lives on the GROUP', () => {
         const changes = f.modifies.at(-1)!.changes as Array<{ type: string }>;
         expect(changes[0].type).toBe('member');
     });
+
+    // ── #2843 finding 51. Every other DN in the provisioner comes from
+    // `dnFor()`, a baseDN-scoped search, so it is contained by construction.
+    // `groupId` arrives from the entitlement map and reached `c.modify()`
+    // unchecked — which is precisely why the exception was easy to miss.
+
+    it('REFUSES a group in another naming context, and writes nothing', async () => {
+        const f = fakeAd();
+        const r = await make(f).assignGroup(GUID, 'CN=Admins,OU=Groups,DC=other,DC=forest');
+        expect(r.kind).toBe('refused');
+        expect(r.detail).toMatch(/base DN/i);
+        // The write must not have been attempted at all.
+        expect(f.modifies).toHaveLength(0);
+    });
+
+    it('ADMITS the configuration partition — a documented limit of a suffix test', async () => {
+        // I wrote this expecting a refusal and it is wrong to expect one.
+        // `CN=Configuration,DC=corp,DC=example,DC=test` is a SEPARATE naming
+        // context in AD, but textually it is a suffix of the domain DN, so a
+        // containment test built on suffixes cannot tell the two apart — and
+        // this one says it is a suffix test, deliberately, because AD compares
+        // DN components case-insensitively and a real parse buys nothing here.
+        //
+        // Asserted rather than deleted so the boundary is recorded: this check
+        // stops a group in ANOTHER FOREST OR DOMAIN, which is the reachable
+        // case (the entitlement map is operator-supplied). It does not stop a
+        // cross-partition DN inside the same domain. Excluding CN=Configuration
+        // and CN=Schema by name would be a stronger claim than a suffix test
+        // can honestly make, and the leaver writer accepts the same limit for
+        // the account it disables.
+        const f = fakeAd();
+        const r = await make(f).assignGroup(
+            GUID,
+            'CN=Enterprise Admins,CN=Users,CN=Configuration,DC=corp,DC=example,DC=test',
+        );
+        expect(r.kind).toBe('applied');
+    });
+
+    it('accepts a contained group whose RDN carries an escaped comma', async () => {
+        // The positive control: without it, a check that refused EVERYTHING
+        // would satisfy both refusal tests above while breaking every real
+        // assignment.
+        //
+        // It does NOT prove `splitDn`'s escaped-comma handling, and I first
+        // wrote that it did. Replacing `splitDn` with a naive `split(',')`
+        // leaves this green — the escape sits in the LEADING RDN, and the
+        // suffix comparison only ever looks at the trailing components, so
+        // mangling the head changes nothing about containment. The escape
+        // handling is real and defensive, but it is not reachable through this
+        // seam, and a comment claiming otherwise would be the kind of assertion
+        // that reads as proof and is not.
+        const f = fakeAd();
+        const r = await make(f).assignGroup(
+            GUID,
+            'CN=Engineering\\, Platform,OU=Groups,DC=corp,DC=example,DC=test',
+        );
+        expect(r.kind).toBe('applied');
+        expect(f.modifies).toHaveLength(1);
+    });
+
+    it('refuses the base DN itself — a naming context is not a group', async () => {
+        const f = fakeAd();
+        const r = await make(f).assignGroup(GUID, 'DC=corp,DC=example,DC=test');
+        expect(r.kind).toBe('refused');
+        expect(f.modifies).toHaveLength(0);
+    });
 });
 
 describe('AD provisioner — the probe asks about both namespaces', () => {
