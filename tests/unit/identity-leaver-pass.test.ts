@@ -785,6 +785,35 @@ describe('the batch', () => {
         expect(disableBatch.mock.calls[0][2]).toMatchObject({ population: 400 });
     });
 
+    it('counts the DENOMINATOR per provider, the same way the numerator is scoped', async () => {
+        // #2843 finding 7. The value was asserted above; WHAT IT COUNTS was not,
+        // and dropping `provider` from this WHERE reddened nothing.
+        //
+        // `identity-write-breaker` states the invariant: "MEASURED THE SAME WAY
+        // AS THE NUMERATOR, or the share means nothing" — and warns the two
+        // directions are not interchangeable. The numerator is provider-scoped
+        // (`findLeaverCandidates` takes a provider), so an all-provider
+        // denominator counts every directory's accounts, enlarges the bottom of
+        // the fraction, shrinks the share, and WITHDRAWS refusals. That is the
+        // permissive direction, on the rail that disables real accounts, and it
+        // is the one no test watched.
+        await run();
+        expect(mockDb.connectedIdentityAccount.count).toHaveBeenCalledWith({
+            where: { tenantId: 't1', provider: 'entra-id' },
+        });
+    });
+
+    it('scopes the denominator to the provider ASKED FOR, not a constant', async () => {
+        // The positive control for the assertion above. A hardcoded provider
+        // would satisfy an exact-match check while counting the wrong directory
+        // for every other connection a tenant has.
+        mockDb.connectedIdentityAccount.count.mockResolvedValue(400);
+        await runIdentityLeaverPass({ tenantId: 't1', provider: 'active-directory', now: NOW });
+        expect(mockDb.connectedIdentityAccount.count).toHaveBeenLastCalledWith({
+            where: { tenantId: 't1', provider: 'active-directory' },
+        });
+    });
+
     it('hands the batch every candidate, WITH the state the breaker counts', async () => {
         // The counterpart to the population assertion above, and the other half
         // of the fraction. This file mocks both `findLeaverCandidates` and
