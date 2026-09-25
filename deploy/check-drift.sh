@@ -119,6 +119,37 @@ for entry in "${UNRECONCILED[@]}"; do
     fi
 done
 
+# ── Backup permissions ─────────────────────────────────────────────────────
+#
+# A group- or world-readable file under the deploy directory is a finding on
+# its own, independent of drift (#2889).
+#
+# The history: 7 `.env.prod.bak.*` files sat at 644 for five months, each a
+# complete credential set, three of whose secrets were still live when they
+# were found. `apply.sh` now chmods every backup it writes and prunes the old
+# ones — but nothing stopped a hand-run `cp` from recreating the exposure, and
+# "we fixed the ones that existed" is not a control.
+#
+# Checked here because this script already walks the deploy directory on a
+# schedule and already exits non-zero for a condition an operator must act on.
+# It fails LOUDLY rather than warning: a readable credential set is not an
+# outstanding decision, it is a live exposure.
+ok "checking deploy-directory permissions"
+LOOSE=$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap \
+    --command "sudo find '${REMOTE_DIR}' -maxdepth 1 -type f \\( -perm /o+r -o -perm /g+r \\) 2>/dev/null | sort" 2>/dev/null || true)
+if [ -n "$LOOSE" ]; then
+    err ""
+    err "Files under ${REMOTE_DIR} are readable beyond root:"
+    printf '%s\n' "$LOOSE" | while read -r f; do err "  $f"; done
+    err ""
+    err "Each .env.prod backup is a complete credential set. Fix with:"
+    err "  gcloud compute ssh ${VM_NAME} --zone ${VM_ZONE} --tunnel-through-iap \\"
+    err "    --command \"sudo chmod 600 ${REMOTE_DIR}/*\""
+    err ""
+    err "Then ask what wrote them at that mode, because apply.sh no longer does."
+    exit 1
+fi
+
 if [ "$APPLIABLE_DRIFT" -ne 0 ]; then
     err ""
     err "The live stack no longer matches the repo. Either:"
