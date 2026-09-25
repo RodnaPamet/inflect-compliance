@@ -111,14 +111,28 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
     };
 
     it('rejects EDITOR (canAdmin gate)', async () => {
-        mockGetProvider.mockReturnValue({ id: 'datadog' } as never);
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            // `configSchema` is REQUIRED on `IntegrationProvider`, so a stub
+            // without it describes a provider that cannot exist — and the
+            // upsert now reads the declared fields from it to validate the
+            // secrets bag (#2843 finding 16).
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
         await expect(
             upsertIntegrationConnection(makeRequestContext('EDITOR'), validInput),
         ).rejects.toThrow(/Admin only/);
     });
 
     it('rejects READER + AUDITOR', async () => {
-        mockGetProvider.mockReturnValue({ id: 'datadog' } as never);
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            // `configSchema` is REQUIRED on `IntegrationProvider`, so a stub
+            // without it describes a provider that cannot exist — and the
+            // upsert now reads the declared fields from it to validate the
+            // secrets bag (#2843 finding 16).
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
         await expect(
             upsertIntegrationConnection(makeRequestContext('READER'), validInput),
         ).rejects.toThrow();
@@ -140,7 +154,14 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
     });
 
     it('encrypts secrets via encryptField (plaintext never reaches DB)', async () => {
-        mockGetProvider.mockReturnValue({ id: 'datadog' } as never);
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            // `configSchema` is REQUIRED on `IntegrationProvider`, so a stub
+            // without it describes a provider that cannot exist — and the
+            // upsert now reads the declared fields from it to validate the
+            // secrets bag (#2843 finding 16).
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
         let createArgs: any;
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
@@ -166,7 +187,14 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
     });
 
     it('omits encryption call when no secrets are provided', async () => {
-        mockGetProvider.mockReturnValue({ id: 'datadog' } as never);
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            // `configSchema` is REQUIRED on `IntegrationProvider`, so a stub
+            // without it describes a provider that cannot exist — and the
+            // upsert now reads the declared fields from it to validate the
+            // secrets bag (#2843 finding 16).
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 integrationConnection: {
@@ -185,7 +213,14 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
     });
 
     it('emits CREATED audit on new connection', async () => {
-        mockGetProvider.mockReturnValue({ id: 'datadog' } as never);
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            // `configSchema` is REQUIRED on `IntegrationProvider`, so a stub
+            // without it describes a provider that cannot exist — and the
+            // upsert now reads the declared fields from it to validate the
+            // secrets bag (#2843 finding 16).
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 integrationConnection: {
@@ -204,7 +239,14 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
     });
 
     it('emits UPDATED audit when id is provided + connection exists', async () => {
-        mockGetProvider.mockReturnValue({ id: 'datadog' } as never);
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            // `configSchema` is REQUIRED on `IntegrationProvider`, so a stub
+            // without it describes a provider that cannot exist — and the
+            // upsert now reads the declared fields from it to validate the
+            // secrets bag (#2843 finding 16).
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 integrationConnection: {
@@ -227,7 +269,14 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
     });
 
     it('throws notFound when updating a connection that is not in the tenant', async () => {
-        mockGetProvider.mockReturnValue({ id: 'datadog' } as never);
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            // `configSchema` is REQUIRED on `IntegrationProvider`, so a stub
+            // without it describes a provider that cannot exist — and the
+            // upsert now reads the declared fields from it to validate the
+            // secrets bag (#2843 finding 16).
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 integrationConnection: {

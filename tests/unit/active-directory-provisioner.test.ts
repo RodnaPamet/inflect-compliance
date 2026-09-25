@@ -192,6 +192,52 @@ describe('AD provisioner — created BLOCKED, which is the whole safety argument
         expect(String(f.adds[0].attributes?.sAMAccountName).length).toBeLessThanOrEqual(20);
     });
 
+    it('refuses a creation OU outside the connection base DN — #2843 finding 51, the create half', async () => {
+        // `assignGroup` got this check; the create never had one. An account
+        // created outside `baseDN` sits in a naming context nobody delegated
+        // AND outside what the leaver pass is scoped to — so the pass that
+        // provisions it could never be the pass that offboards it.
+        const f = fakeAd();
+        const r = await make(f, {
+            createOU: 'OU=Contractors,DC=other,DC=example,DC=test',
+        }).createBlockedAccount({
+            identifier: 'a.new@corp.example.test',
+            displayName: 'A New',
+            employeeId: 'e-1',
+        });
+
+        expect(r.kind).toBe('refused');
+        expect(r.kind === 'refused' && r.detail).toMatch(/not under this connection's base DN/i);
+    });
+
+    it('names the consequence, not just the rule', async () => {
+        const f = fakeAd();
+        const r = await make(f, {
+            createOU: 'OU=Contractors,DC=other,DC=example,DC=test',
+        }).createBlockedAccount({
+            identifier: 'a.new@corp.example.test',
+            displayName: 'A New',
+            employeeId: 'e-1',
+        });
+
+        expect(r.kind === 'refused' && r.detail).toMatch(/never offboarded|cannot later find/i);
+    });
+
+    it('allows an OU that IS under the base DN — the control', async () => {
+        // Without this, a check that refused every OU would satisfy both
+        // assertions above and make creates impossible.
+        const f = fakeAd();
+        const r = await make(f, {
+            createOU: 'OU=Employees,DC=corp,DC=example,DC=test',
+        }).createBlockedAccount({
+            identifier: 'a.new@corp.example.test',
+            displayName: 'A New',
+            employeeId: 'e-1',
+        });
+
+        expect(r.kind === 'refused' && /base DN/i.test(r.detail)).toBe(false);
+    });
+
     it('REFUSES without a creation OU rather than guessing one', async () => {
         const f = fakeAd();
         const r = await make(f, { createOU: '' }).createBlockedAccount({

@@ -123,6 +123,15 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
     'active-directory': {
         url: { kind: 'internalOrigin', scheme: 'ldaps:' },
         baseDN: { kind: 'inert' },
+        // Inert as a STRING — it reaches no host and carries no query — but
+        // not inert in consequence: it decides where a created account lands.
+        // What makes it safe is a CONNECT-TIME fact the validator cannot
+        // check, exactly like `allowSelfSignedTls` above: the provisioner
+        // refuses any OU outside the connection's own base DN
+        // (`provisioner.ts`, the containment check `assignGroup` already had).
+        // Declared here so an operator can set it at all — an undeclared key
+        // is rejected outright by `validateProviderConfig`.
+        createOU: { kind: 'inert' },
         adminGroups: { kind: 'inert' },
         // Deliberately inert HERE. The flag is dangerous, but the condition that
         // makes it safe (the host resolving into private space) is a
@@ -313,6 +322,76 @@ export function redirectsStoredCredential(
         return field;
     }
     return null;
+}
+
+/**
+ * The SECRETS bag, validated the way `configJson` already is (#2843 finding 16).
+ *
+ * ═══ THE BYPASS THIS CLOSES ═══
+ *
+ * `validateProviderConfig` throws `Unknown configuration field` on a key a
+ * provider does not declare. The secrets bag had no validation at all — it went
+ * straight to `encryptField(JSON.stringify(...))` — and `mergeConnection`
+ * returns `{ ...config, ...secrets }`, so a secret SHADOWS a config field of
+ * the same name.
+ *
+ * Those two facts compose into a way around the config validator. The AD write
+ * gate reads its opt-in off the merged view
+ * (`writer.ts:509` → `adDirectionWriteRefusal(connection, 'leaver')`, where
+ * `connection` is `mergeConnection(...)` at `identity-writer-factory.ts:471`),
+ * so `secrets: { writesEnabled: true }` grants offboarding write authority over
+ * a customer's directory without ever passing the validator that exists to stop
+ * exactly that.
+ *
+ * ═══ TWO RULES, AND THE FIRST IS THE LOAD-BEARING ONE ═══
+ *
+ * 1. A secrets key may never be a CONFIG field name. This is unconditional —
+ *    it holds for a provider with no declared secrets at all — because the
+ *    shadowing is a property of the merge, not of the provider.
+ *
+ * 2. For a provider that declares `secretFields`, an undeclared key is refused,
+ *    mirroring rule 1 of the config path.
+ *
+ * The fields are passed IN rather than read from the registry here: importing
+ * the registry into this module would pull the whole provider bootstrap into
+ * its graph, and the one caller has already resolved the provider.
+ */
+export function validateProviderSecrets(
+    providerId: string,
+    secrets: unknown,
+    declared: { configFields: readonly { key: string }[]; secretFields: readonly { key: string }[] },
+): Record<string, unknown> {
+    if (secrets == null) return {};
+    if (typeof secrets !== 'object' || Array.isArray(secrets)) {
+        throw badRequest('Invalid secrets: must be a plain object');
+    }
+    const bag = secrets as Record<string, unknown>;
+
+    const configKeys = new Set(declared.configFields.map((f) => f.key));
+    for (const key of Object.keys(bag)) {
+        if (configKeys.has(key)) {
+            throw badRequest(
+                `"${key}" is a configuration field for ${providerId} and cannot be sent as a ` +
+                    'secret. A secret of the same name overrides the configured value, which ' +
+                    'would place it beyond the validation every configuration field passes.',
+            );
+        }
+    }
+
+    // Only when the provider says what its secrets ARE. A provider that
+    // declares none is not asserting that anything goes — it has not been
+    // described yet — so rule 1 still applies and this one stays quiet rather
+    // than refusing every secret it has.
+    if (declared.secretFields.length > 0) {
+        const allowed = new Set(declared.secretFields.map((f) => f.key));
+        for (const key of Object.keys(bag)) {
+            if (!allowed.has(key)) {
+                throw badRequest(`Unknown secret field for ${providerId}: ${key}`);
+            }
+        }
+    }
+
+    return bag;
 }
 
 export function validateProviderConfig(

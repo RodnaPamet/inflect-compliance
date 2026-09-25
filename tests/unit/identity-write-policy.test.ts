@@ -31,7 +31,12 @@ const settingsRow: { identityLeaverMode: string; identityJoinerMode: string } = 
 };
 
 const upsert = jest.fn(async (_args: unknown): Promise<unknown> => ({}));
+const executionCount = jest.fn(async (_args: unknown): Promise<number> => 1);
 const mockDb = {
+    // The dwell gate counts executed passes when a mode is WIDENED (#2843
+    // finding 31). Defaults to 1 — the ordinary case — so every existing test
+    // about the day count still reaches the day check.
+    integrationExecution: { count: executionCount },
     tenantSecuritySettings: {
         findUnique: jest.fn(async (_args: unknown): Promise<unknown> => ({
             ...settingsRow,
@@ -110,6 +115,68 @@ describe('dry-run is time-boxed, and the clock is real', () => {
         expect(describeRefusal('leaver', { mode: 'DRY_RUN', dryRunSince: null }, 'AUTOMATIC', NOW)).toMatch(/no recorded start/i);
     });
 
+    it('refuses a window that has recorded no pass at all — #2843 finding 31', () => {
+        // The mechanism half of the finding. #2887 fixed the SENTENCE the gate
+        // renders; the gate still counted days and nothing else, so a tenant
+        // could serve the full week having run nothing and be widened to the
+        // rung that writes to a real directory.
+        const why = describeRefusal(
+            'leaver',
+            { mode: 'DRY_RUN', dryRunSince: daysAgo(DRY_RUN_MIN_DAYS + 1) },
+            'AUTOMATIC',
+            NOW,
+            0,
+        );
+
+        expect(why).toMatch(/recorded 0 completed leaver passes/i);
+    });
+
+    it('says what a zero count MEANS, not just that it is zero', () => {
+        // "Wait longer" is the wrong instruction here and the reason the day
+        // count alone was misleading: no more waiting will produce a pass if
+        // the dispatcher never fires.
+        const why = describeRefusal(
+            'leaver',
+            { mode: 'DRY_RUN', dryRunSince: daysAgo(DRY_RUN_MIN_DAYS + 1) },
+            'AUTOMATIC',
+            NOW,
+            0,
+        );
+
+        expect(why).toMatch(/dispatcher that never fired|directory that never resolved/i);
+        expect(why).not.toMatch(/more days? required|wait/i);
+    });
+
+    it('checks evidence BEFORE the day count, so the useful refusal wins', () => {
+        // A window that is both short AND empty should say the thing the
+        // operator can act on. Waiting fixes the days; nothing fixes the
+        // passes except finding out why none ran.
+        const why = describeRefusal(
+            'leaver',
+            { mode: 'DRY_RUN', dryRunSince: daysAgo(1) },
+            'AUTOMATIC',
+            NOW,
+            0,
+        );
+
+        expect(why).toMatch(/recorded 0 completed/i);
+        expect(why).not.toMatch(/required days/i);
+    });
+
+    it('lets a window through once a pass has run and the days are served', () => {
+        // The positive control. A gate that refused both ways would satisfy
+        // every assertion above while making the rung unreachable.
+        expect(
+            describeRefusal(
+                'leaver',
+                { mode: 'DRY_RUN', dryRunSince: daysAgo(DRY_RUN_MIN_DAYS + 1) },
+                'AUTOMATIC',
+                NOW,
+                1,
+            ),
+        ).toBeNull();
+    });
+
     it('is measured in days, not runs', () => {
         // A tenant with a quiet week has observed nothing by running the job
         // seven times. The window exists to span a real termination/hire cycle.
@@ -150,7 +217,10 @@ describe('dry-run is time-boxed, and the clock is real', () => {
                 // DRY_RUN itself, a window that is open but not yet elapsed.
                 describeRefusal(
                     'leaver',
-                    { mode: from, dryRunSince: from === 'DRY_RUN' ? daysAgo(DRY_RUN_MIN_DAYS - 1) : null },
+                    {
+                        mode: from,
+                        dryRunSince: from === 'DRY_RUN' ? daysAgo(DRY_RUN_MIN_DAYS - 1) : null,
+                    },
                     'AUTOMATIC',
                     NOW,
                 ) === null,
@@ -205,10 +275,65 @@ describe('narrowing is never blocked', () => {
     });
 });
 
+describe('setIdentityWriteMode counts the passes itself — #2843 finding 31', () => {
+    const ctx = makeRequestContext('OWNER');
+
+    it('refuses a widen when the window recorded nothing', async () => {
+        // The WIRING. Removing the count from this path left every unit test
+        // green, because they exercise `describeRefusal` directly and it
+        // cannot tell whether its caller bothered to look.
+        executionCount.mockResolvedValueOnce(0);
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValueOnce({
+            ...settingsRow,
+            identityLeaverMode: 'DRY_RUN',
+            identityLeaverDryRunSince: daysAgo(DRY_RUN_MIN_DAYS + 1),
+            identityJoinerDryRunSince: null,
+        });
+
+        await expect(setIdentityWriteMode(ctx, 'leaver', 'AUTOMATIC', NOW)).rejects.toThrow(
+            /recorded 0 completed leaver passes/i,
+        );
+    });
+
+    it('counts only this direction, since the window is per direction', async () => {
+        executionCount.mockResolvedValueOnce(0);
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValueOnce({
+            ...settingsRow,
+            identityLeaverMode: 'DRY_RUN',
+            identityLeaverDryRunSince: daysAgo(DRY_RUN_MIN_DAYS + 1),
+            identityJoinerDryRunSince: null,
+        });
+
+        await setIdentityWriteMode(ctx, 'leaver', 'AUTOMATIC', NOW).catch(() => undefined);
+
+        const where = (executionCount.mock.calls[0][0] as { where: { automationKey: unknown } }).where;
+        expect(JSON.stringify(where)).toMatch(/leaver_pass/);
+        expect(JSON.stringify(where)).not.toMatch(/joiner_pass/);
+    });
+
+    it('does not count when the move is not leaving DRY_RUN', async () => {
+        // Narrowing, or entering the window, has nothing to prove — and this
+        // read must not become a cost every mode change pays.
+        executionCount.mockClear();
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValueOnce({
+            ...settingsRow,
+            identityLeaverMode: 'AUTOMATIC',
+            identityLeaverDryRunSince: null,
+            identityJoinerDryRunSince: null,
+        });
+
+        await setIdentityWriteMode(ctx, 'leaver', 'DISABLED', NOW);
+
+        expect(executionCount).not.toHaveBeenCalled();
+    });
+});
+
 describe('no-op', () => {
     it('setting the mode it already has is allowed', () => {
         for (const m of LADDER) {
-            expect(describeRefusal('leaver', { mode: m, dryRunSince: null }, m, NOW)).toBeNull();
+            expect(
+                describeRefusal('leaver', { mode: m, dryRunSince: null }, m, NOW),
+            ).toBeNull();
         }
     });
 });

@@ -49,7 +49,13 @@ jest.mock('@/lib/security/encryption', () => ({
 // Validation is mocked so the VALIDATED config can be a distinguishable object
 // from the SUBMITTED one. If both were the same value no assertion could tell
 // whether the usecase stores the checked config or the raw input.
+// Over a `requireActual` spread. A one-key factory here was a SUBSET of the
+// module, and the moment the usecase gained a second call into it the failure
+// surfaced as an error inside the code under test rather than at the fixture
+// (#2897). `validateProviderConfig` is the only one this suite needs to
+// control; `validateProviderSecrets` is exercised for real.
 jest.mock('@/app-layer/integrations/config-schema', () => ({
+    ...jest.requireActual('@/app-layer/integrations/config-schema'),
     validateProviderConfig: jest.fn(),
 }));
 
@@ -103,7 +109,13 @@ const mockWebhookUpdate = prisma.integrationWebhookEvent.update as jest.MockedFu
 beforeEach(() => {
     jest.clearAllMocks();
     mockIsScheduled.mockReturnValue(true);
-    mockGetProvider.mockReturnValue({ id: 'datadog' } as never);
+    // `configSchema` included: it is REQUIRED on `IntegrationProvider`, so a
+    // stub without it describes a provider that cannot exist — and the usecase
+    // now reads the declared fields from it to validate the secrets bag.
+    mockGetProvider.mockReturnValue({
+        id: 'datadog',
+        configSchema: { configFields: [], secretFields: [] },
+    } as never);
     mockValidate.mockReturnValue({});
     mockDecrypt.mockReturnValue('{}');
 });
@@ -114,6 +126,91 @@ function auditDetails(call = 0): Record<string, unknown> {
 }
 
 // ─── enabledSecurityFlags — the audit projection ─────────────────────
+
+describe('the secrets bag cannot get around the config validator — #2843 finding 16', () => {
+    /**
+     * The real AD declarations, because the refusal is about which list a key
+     * is ON: `writesEnabled` is a config field and not a secret one.
+     *
+     * Separate from the transaction stub so a test that expects a REFUSAL can
+     * set up the provider without queueing a tx implementation it will never
+     * consume.
+     */
+    function providerIsAd() {
+        mockGetProvider.mockReturnValue({
+            id: 'active-directory',
+            configSchema: {
+                configFields: [{ key: 'url' }, { key: 'baseDN' }, { key: 'writesEnabled' }],
+                secretFields: [{ key: 'bindDN' }, { key: 'bindPassword' }],
+            },
+        } as never);
+    }
+
+    function stub() {
+        const create = jest.fn().mockResolvedValue({ id: 'conn-new' });
+        const findFirst = jest.fn().mockResolvedValue(null);
+        providerIsAd();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ integrationConnection: { create, findFirst } } as never),
+        );
+        return create;
+    }
+
+    it('refuses a secret that shadows a config field, at the usecase', () => {
+        // The mutation run for this fix showed nothing covered the WIRING:
+        // removing the validator call from the usecase left every unit test
+        // green, because they exercised the function and not the seam. That is
+        // the same shape that let #2870 and #2885 sit inert.
+        //
+        // NO tx implementation is queued. `mockImplementationOnce` queues, and
+        // a refusal never reaches the transaction — so queueing one here would
+        // leave it in the queue for whichever test ran next to consume. That
+        // is a leak I caused and then had to find.
+        providerIsAd();
+
+        return expect(
+            upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+                provider: 'active-directory',
+                name: 'AD',
+                configJson: { url: 'ldaps://dc.example.com', baseDN: 'DC=corp,DC=test' },
+                secrets: { writesEnabled: true },
+            }),
+        ).rejects.toThrow(/configuration field .* cannot be sent as a secret/i);
+    });
+
+    it('still accepts the secrets the provider actually declares', async () => {
+        // The positive control: the refusal must be about the SHADOW, not
+        // about sending secrets at all.
+        const create = stub();
+
+        await upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+            provider: 'active-directory',
+            name: 'AD',
+            configJson: { url: 'ldaps://dc.example.com', baseDN: 'DC=corp,DC=test' },
+            secrets: { bindDN: 'CN=svc,DC=corp,DC=test', bindPassword: 'pw' },
+        });
+
+        expect(create).toHaveBeenCalled();
+    });
+
+    it('nothing is written when the bag is refused', async () => {
+        // The refusal must come BEFORE the encrypt-and-store, or the bypass is
+        // only reported rather than prevented. Asserted on the TRANSACTION
+        // never opening, which is stronger than "create was not called" and
+        // needs no queued implementation to leak.
+        providerIsAd();
+        mockRunInTx.mockClear();
+
+        await upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+            provider: 'active-directory',
+            name: 'AD',
+            configJson: { url: 'ldaps://dc.example.com', baseDN: 'DC=corp,DC=test' },
+            secrets: { writesEnabled: true },
+        }).catch(() => undefined);
+
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+});
 
 describe('upsertIntegrationConnection — security-weakening flags in the audit entry', () => {
     function stubCreate() {

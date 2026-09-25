@@ -191,6 +191,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // because accepting a tool DESCRIPTION is agent governance, not credential
     // wiring — and that placement is what earns it admin.agent_registry.
     't/[tenantSlug]/admin/agents/external-tools/route.ts',
+    // #2912 — the Entra consent flow for an MCP server connection. The start
+    // is tenant-scoped and admin-gated; the callback is tenant-AGNOSTIC because
+    // one registered redirect URI serves every tenant, and it re-authorises
+    // through getTenantCtx rather than trusting the URL it was called with.
+    't/[tenantSlug]/admin/integrations/[connectionId]/mcp-consent/route.ts',
+    'integrations/mcp-server/callback/route.ts',
     't/[tenantSlug]/admin/mcp/quarantine/route.ts',
     't/[tenantSlug]/admin/security-settings/agent-enforcement/route.ts',
     't/[tenantSlug]/agent-proposals/[id]/approve/route.ts',

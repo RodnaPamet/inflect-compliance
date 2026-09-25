@@ -294,6 +294,29 @@ export function createActiveDirectoryProvisioner(
         },
 
         async createBlockedAccount(input: CreateAccountInput): Promise<CreateAccountStep> {
+            // THE CREATION OU IS CONTAINED, for the reason `assignGroup` below
+            // is (#2843 finding 51). Both are operator-supplied DNs that reach
+            // the directory unchecked otherwise, and this one decides where a
+            // NEW account lands — outside `baseDN` it would sit in a naming
+            // context nobody delegated, invisible to the leaver pass that is
+            // scoped to that base, so the account this pass creates could
+            // never be offboarded by the pass that offboards.
+            //
+            // Ordered BEFORE the emptiness check so the refusals compose in
+            // the order an operator fixes them: a present-but-wrong OU is a
+            // different mistake from an absent one, and reporting "not
+            // configured" for a configured-but-foreign value would send them
+            // looking in the wrong place.
+            if (createOU && !isUnderBaseDn(createOU, baseDN)) {
+                return {
+                    kind: 'refused',
+                    detail:
+                        `Refusing to create an account in "${createOU}", which is not under this ` +
+                        `connection's base DN (${baseDN}). An account created outside the scope ` +
+                        'this connection was given is one the leaver pass cannot later find — ' +
+                        'so it could be provisioned and never offboarded.',
+                };
+            }
             if (!createOU) {
                 return {
                     kind: 'refused',
