@@ -26,7 +26,11 @@ import type { CheckResult, EvidencePayload, ConnectionValidationResult } from '.
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
-import { validateProviderConfig, redirectsStoredCredential } from '../integrations/config-schema';
+import {
+    validateProviderConfig,
+    validateProviderSecrets,
+    redirectsStoredCredential,
+} from '../integrations/config-schema';
 // The ONE list of HRIS provider ids, imported rather than restated — see the
 // note on its declaration for why a second copy is the specific defect that
 // module exists to prevent.
@@ -288,10 +292,20 @@ export async function upsertIntegrationConnection(
     const providerImpl = registry.getProvider(input.provider);
     if (!providerImpl) throw badRequest(`Unknown provider: ${input.provider}`);
 
-    // Encrypt secrets if provided
+    // Encrypt secrets if provided — VALIDATED FIRST.
+    //
+    // This used to encrypt whatever it was handed, four lines above the
+    // comment below that calls validation "the boundary that stops the next
+    // one being stored at all". The boundary only covered `configJson`, and
+    // `mergeConnection` returns `{ ...config, ...secrets }`, so the unchecked
+    // bag was a way around the checked one (#2843 finding 16).
     let secretEncrypted: string | undefined;
     if (input.secrets && Object.keys(input.secrets).length > 0) {
-        secretEncrypted = encryptField(JSON.stringify(input.secrets));
+        const validatedSecrets = validateProviderSecrets(input.provider, input.secrets, {
+            configFields: providerImpl.configSchema.configFields ?? [],
+            secretFields: providerImpl.configSchema.secretFields ?? [],
+        });
+        secretEncrypted = encryptField(JSON.stringify(validatedSecrets));
     }
 
     // Validate BEFORE anything is written. configJson was previously stored
