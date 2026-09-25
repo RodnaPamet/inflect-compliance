@@ -79,7 +79,11 @@
  */
 import type { Prisma } from '@prisma/client';
 
-import { buildSystemContext } from '../context-system';
+import {
+    SYSTEM_PRINCIPAL,
+    buildDelegatedJobContext,
+    buildSystemContext,
+} from '../context-system';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
@@ -381,7 +385,13 @@ async function writeJoinerExecutionRow(
                 provider,
                 automationKey: `${provider}${JOINER_PASS_AUTOMATION_SUFFIX}`,
                 status,
-                triggeredBy: 'scheduled',
+                // Derived, not asserted. Read off `ctx.userId` because that
+                // is the fact: a delegated context carries a real `User.id`, a
+                // system context carries SYSTEM_PRINCIPAL. `actorType` would
+                // NOT do — both builders set 'JOB', so it cannot tell them
+                // apart.
+                triggeredBy:
+                    ctx.userId && ctx.userId !== SYSTEM_PRINCIPAL ? 'manual' : 'scheduled',
                 completedAt: new Date(),
                 resultJson,
             },
@@ -484,12 +494,26 @@ async function safeRecordErroredPass(
 export async function runIdentityJoinerPass(input: {
     tenantId: string;
     provider: string;
+    /** A real `User.id` when a human asked; absent for the 04:30 dispatch. */
+    requestedByUserId?: string;
     now?: Date;
 }): Promise<JoinerPassResult> {
     const now = input.now ?? new Date();
     // `context-system`, never `context` — the latter reaches @/lib/auth -> @/auth
     // and dies in the worker, which has no Next request to hang a session on.
-    const ctx = buildSystemContext({ tenantId: input.tenantId, job: 'identity-joiner-pass' });
+    //
+    // DELEGATED when somebody asked, mirroring the leaver (#2870, #2895). The
+    // joiner writes to no directory today, so nothing here is a disable
+    // waiting to be misattributed — but the execution row is the artefact an
+    // operator reads to reconstruct a run, and it said `scheduled` for a run a
+    // named admin started from the button.
+    const ctx = input.requestedByUserId
+        ? buildDelegatedJobContext({
+              tenantId: input.tenantId,
+              job: 'identity-joiner-pass',
+              onBehalfOf: input.requestedByUserId,
+          })
+        : buildSystemContext({ tenantId: input.tenantId, job: 'identity-joiner-pass' });
 
     try {
         const policy = await getIdentityWritePolicy(ctx);

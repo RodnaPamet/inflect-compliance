@@ -69,9 +69,40 @@ describe('the manual id cannot collide with the scheduled one', () => {
 });
 
 describe('what it enqueues is exactly the scheduled path', () => {
-    it('passes tenantId and provider, and nothing else', async () => {
+    it('passes the scheduled payload plus the requester, and nothing else', async () => {
+        // This said "tenantId and provider, and nothing else" and used an
+        // exact-match assertion, so it pinned the ABSENCE of a requester —
+        // the same shape that made #2884's denominator test block the fix for
+        // the defect it was guarding.
+        //
+        // The intent it was written for is intact and is the comment above:
+        // the manual run must do the same WORK as 04:30, or it proves
+        // something other than what runs then. What differs is the
+        // attribution, which is the whole reason the button needed a fix.
         await call({ provider: 'entra-id' });
-        expect(enqueue.mock.calls[0][1]).toEqual({ tenantId: 'tenant-1', provider: 'entra-id' });
+
+        expect(enqueue.mock.calls[0][1]).toEqual({
+            tenantId: 'tenant-1',
+            provider: 'entra-id',
+            requestedByUserId: 'user-1',
+        });
+    });
+
+    it('carries a REAL user id, not a flag', async () => {
+        // `IdentityWriteJournal.actorUserId` and the execution row both need
+        // an id to be joinable on. A bare 'manual' marker would satisfy the
+        // execution row and leave the journal exactly as unattributable as
+        // before.
+        await call({ provider: 'entra-id' });
+
+        // Narrowed at the read rather than widening `EnqueueArgs`: that type
+        // describes the SCHEDULED payload on purpose, and loosening it would
+        // stop the other assertions in this file from noticing a stray field.
+        const payload = enqueue.mock.calls[0][1] as { requestedByUserId?: string };
+        const requester = payload.requestedByUserId;
+        expect(typeof requester).toBe('string');
+        expect(requester).not.toBe('manual');
+        expect(requester).not.toBe('system');
     });
 
     it('rejects an unknown provider rather than enqueueing it', async () => {
