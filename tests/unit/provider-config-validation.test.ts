@@ -32,7 +32,24 @@ describe('vendor-hosted origins must belong to the vendor', () => {
 });
 
 describe('customer-internal origins get scheme enforcement, not an allowlist', () => {
-    it('accepts an ldaps:// domain controller on any host', () => {
+it('accepts a creation OU, so an operator can actually set one — #2714', async () => {
+        // The provisioner has always REFUSED a create without an OU, and the
+        // field was declared on its options — but not on the provider, so
+        // `validateProviderConfig` rejected it as an unknown key and there was
+        // no way to supply one. The refusal read as a configuration problem
+        // the operator could fix; it was a configuration they could not reach.
+        //
+        // What makes an arbitrary DN safe here is a CONNECT-TIME fact this
+        // validator cannot check: the provisioner refuses any OU outside the
+        // connection's own base DN.
+        expect(() =>
+            validateProviderConfig('active-directory', {
+                createOU: 'OU=Employees,DC=corp,DC=example,DC=test',
+            }),
+        ).not.toThrow();
+    });
+
+        it('accepts an ldaps:// domain controller on any host', () => {
         // No vendor suffix can apply — an AD host is customer infrastructure.
         expect(() =>
             validateProviderConfig('active-directory', { url: 'ldaps://dc.corp.example.com:636' }),
