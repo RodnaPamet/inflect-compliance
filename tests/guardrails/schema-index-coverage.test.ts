@@ -402,6 +402,15 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // #2860 — a tenant's saved arguments for an external tool.
+    //
+    // ONE findMany, in `external-tool-parameters.ts`: filters by `tenantId`,
+    // optionally plus `toolName`, and sorts by `toolName` then `label`. The
+    // unique index `(tenantId, toolName, label)` is tenant-leading and covers
+    // the filter AND the sort in one traversal, so a curated composite would be
+    // a second B-tree over the same three columns in the same order.
+    ExternalToolParameterSet:
+        "@@unique([tenantId, toolName, label]) is tenant-leading and serves both the filter and the sort",
     // #2713 — the JML joiner's department→security-group entitlement map.
     //
     // ONE findMany, in `identity-joiner-run.ts`'s entitlement loader: filters by

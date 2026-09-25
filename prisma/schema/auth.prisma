@@ -195,6 +195,7 @@ model Tenant {
   agentProposalApprovals            AgentProposalApproval[]
   agentProposalSampleAudits         AgentProposalSampleAudit[]
   mcpToolManifestPins               McpToolManifestPin[]
+  externalToolParameterSets         ExternalToolParameterSet[]
   agentKillSwitches                 AgentKillSwitch[]
   agentKillSwitchDrills             AgentKillSwitchDrill[]
   agentBehaviourWindows             AgentBehaviourWindow[]
