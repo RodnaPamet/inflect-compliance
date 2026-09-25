@@ -9,7 +9,7 @@ import { coerceDeclaredBooleans } from '@/lib/integrations/config-form-values';
 import { useEffect, useState, useCallback } from 'react';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { Trash2, CheckCircle, XCircle, Loader2, Link2, Eye, EyeOff, RefreshCw, Activity, Pencil } from 'lucide-react';
+import { Trash2, CheckCircle, XCircle, Loader2, Link2, Eye, EyeOff, RefreshCw, Activity, Pencil, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
@@ -81,6 +81,7 @@ export default function AdminIntegrationsPage() {
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [formProvider, setFormProvider] = useState('');
+    const [authorizing, setAuthorizing] = useState<string | null>(null);
     const [formName, setFormName] = useState('');
     const [formConfig, setFormConfig] = useState<Record<string, string>>({});
     const [formSecrets, setFormSecrets] = useState<Record<string, string>>({});
@@ -259,6 +260,36 @@ export default function AdminIntegrationsPage() {
         setMessage(null);
         setShowForm(true);
         setTimeout(() => document.getElementById('save-integration-btn')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
+    };
+
+    /**
+     * Send the admin to Entra to authorize this MCP connection.
+     *
+     * A full-page navigation, not a popup: the state cookie the callback
+     * verifies is `SameSite=Lax`, which survives a top-level redirect and is
+     * exactly what a popup would put at risk.
+     */
+    const handleAuthorize = async (conn: ConnectionDTO) => {
+        setAuthorizing(conn.id);
+        setMessage(null);
+        try {
+            const res = await fetch(apiUrl(`/admin/integrations/${conn.id}/mcp-consent`), {
+                method: 'POST',
+            });
+            const data = await res.json();
+            if (!res.ok || !data.authorizeUrl) {
+                // The server's reason is shown: it is our own text — "set the
+                // tenant ID, client ID and client secret first" — and it names
+                // what to fix.
+                setMessage({ type: 'error', text: data.error ?? t('integrations.authorizeFailed') });
+                setAuthorizing(null);
+                return;
+            }
+            window.location.href = data.authorizeUrl as string;
+        } catch {
+            setMessage({ type: 'error', text: t('integrations.authorizeFailed') });
+            setAuthorizing(null);
+        }
     };
 
     const handleTest = async (conn: ConnectionDTO) => {
@@ -621,6 +652,13 @@ export default function AdminIntegrationsPage() {
                                                     {testing === row.original.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
                                                 </Button>
                                             </Tooltip>
+                                            {row.original.provider === 'mcp-server' && (
+                                                <Tooltip content={t('integrations.authorizeEntra')}>
+                                                    <Button variant="secondary" size="xs" onClick={() => handleAuthorize(row.original)} disabled={authorizing === row.original.id} aria-label={t('integrations.authorizeEntra')}>
+                                                        {authorizing === row.original.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                                                    </Button>
+                                                </Tooltip>
+                                            )}
                                             <Tooltip content={t('integrations.editConnection')}>
                                                 <Button variant="secondary" size="xs" onClick={() => handleEdit(row.original)} aria-label={t('integrations.editConnection')}>
                                                     <Pencil className="w-3.5 h-3.5" />

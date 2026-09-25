@@ -95,6 +95,7 @@ const ADMIN_ONLY_ROUTES = [
     // register's blast radius, not the per-agent grant's.
     'admin/agents/tool-manifests/route.ts',
     'admin/agents/parameter-sets/route.ts',
+    'admin/agents/external-tools/route.ts',
     'admin/integrations/[connectionId]/mcp-consent/route.ts',
     // The agent risk assessment (Agentic 3) — read the instrument, answer one
     // question, and score the agent. Same `admin.agent_registry` key as the
