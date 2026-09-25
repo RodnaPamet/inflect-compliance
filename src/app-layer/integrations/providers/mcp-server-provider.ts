@@ -40,6 +40,7 @@
  * forbids — the count below is information, not permission.
  */
 import { initialize, listTools, McpClientError } from '../mcp/client';
+import { mintAccessToken, McpTokenError } from '../mcp/token';
 import type {
     ConnectionConfigSchema,
     ConnectionValidationResult,
@@ -61,6 +62,44 @@ export interface McpServerConfig {
 export interface McpServerSecrets {
     /** Sent verbatim as `Authorization`, e.g. `Bearer …`. */
     authorization?: string;
+}
+
+
+/**
+ * The header to present during VALIDATION — OAuth minted fresh, or the static
+ * credential verbatim.
+ *
+ * Separate from `authorizationFor` only in that it bypasses the cache. The
+ * shape checks are the same and live in one place, so the two cannot disagree
+ * about what "configured for OAuth" means.
+ */
+async function freshAuthorization(
+    config: Record<string, unknown>,
+    secrets: Record<string, unknown>,
+): Promise<string | undefined> {
+    const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+    const tenantId = str(config.tenantId);
+    const clientId = str(config.clientId);
+    const clientSecret = str(secrets.clientSecret);
+    const refreshToken = str(secrets.refreshToken);
+
+    if (tenantId || clientId || clientSecret || refreshToken) {
+        if (!tenantId || !clientId || !clientSecret || !refreshToken) {
+            throw new McpTokenError(
+                'This connection is partly configured for Entra — tenant ID, client ID, '
+                + 'client secret and refresh token are all required together.',
+            );
+        }
+        const minted = await mintAccessToken({
+            tenantId,
+            clientId,
+            clientSecret,
+            refreshToken,
+            scope: str(config.scope) || undefined,
+        });
+        return `Bearer ${minted.accessToken}`;
+    }
+    return str(secrets.authorization) || undefined;
 }
 
 export class McpServerProvider implements IntegrationProvider {
@@ -97,6 +136,22 @@ export class McpServerProvider implements IntegrationProvider {
                 required: true,
                 description: 'HTTPS endpoint of the MCP server, e.g. https://mcp.example.com/rpc',
             },
+            {
+                key: 'tenantId',
+                label: 'Entra tenant ID',
+                type: 'string',
+                required: false,
+                description:
+                    'For a server behind Microsoft Entra. Leave blank for a server that takes '
+                    + 'a static credential.',
+            },
+            {
+                key: 'clientId',
+                label: 'Application (client) ID',
+                type: 'string',
+                required: false,
+                description: 'The app registration authorized against this MCP server.',
+            },
         ],
         secretFields: [
             {
@@ -106,7 +161,24 @@ export class McpServerProvider implements IntegrationProvider {
                 required: false,
                 description:
                     'Sent verbatim as the Authorization header, e.g. "Bearer …". Leave blank '
-                    + 'for a server that needs no credential.',
+                    + 'for a server that needs no credential, or use the Entra fields below — '
+                    + 'a pasted token expires and the connection stops working with it.',
+            },
+            {
+                key: 'clientSecret',
+                label: 'Client secret',
+                type: 'string',
+                required: false,
+                description: 'The app registration\'s secret. Required with the Entra fields.',
+            },
+            {
+                key: 'refreshToken',
+                label: 'Refresh token',
+                type: 'string',
+                required: false,
+                description:
+                    'Obtained once, interactively. Exchanged for a short-lived access token on '
+                    + 'demand, so the connection keeps working. The access token is never stored.',
             },
         ],
     };
@@ -120,10 +192,23 @@ export class McpServerProvider implements IntegrationProvider {
             return { valid: false, error: 'Server URL is required.' };
         }
 
-        const authorization =
-            typeof secrets.authorization === 'string' && secrets.authorization.trim()
-                ? secrets.authorization.trim()
-                : undefined;
+        // Minted FRESH here, never from the token cache. Validation exists to
+        // answer "do these credentials work", and a cached token would answer
+        // "did they work earlier" — so an operator who replaces a bad secret
+        // and retests would be told it is fine by a token the old secret
+        // bought. The runtime path caches; this one must not.
+        let authorization: string | undefined;
+        try {
+            authorization = await freshAuthorization(config, secrets);
+        } catch (err) {
+            // A credential that cannot mint a token is OUR side of the
+            // connection, and saying so keeps an operator from going to look at
+            // the server.
+            return {
+                valid: false,
+                error: err instanceof McpTokenError ? err.message : 'Could not obtain an access token.',
+            };
+        }
 
         try {
             // BOTH calls, not just the handshake. A server that answers

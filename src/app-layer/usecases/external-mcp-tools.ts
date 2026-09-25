@@ -33,10 +33,11 @@
  */
 import { z } from 'zod';
 
-import { decryptField } from '@/lib/security/encryption';
+import { decryptField, encryptField } from '@/lib/security/encryption';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { listTools } from '@/app-layer/integrations/mcp/client';
+import { authorizationFor } from '@/app-layer/integrations/mcp/token';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -299,12 +300,6 @@ export interface GrantedExternalTool {
 /** Upper bound on tools considered per connection, mirroring the catalogue's. */
 const MAX_TOOLS_PER_CONNECTION = 250;
 
-interface ConnectionRow {
-    id: string;
-    configJson: unknown;
-    secretEncrypted: string | null;
-}
-
 /**
  * Build the external read tools this invocation may load.
  *
@@ -337,7 +332,7 @@ export async function resolveGrantedExternalTools(
                 isEnabled: true,
             },
             select: { id: true, configJson: true, secretEncrypted: true },
-        })) as ConnectionRow[],
+        })),
         // The approved sets for the granted tools. `parameters` only — the
         // pending columns are deliberately NOT selected, so a proposal cannot
         // reach a run even by accident.
@@ -378,10 +373,44 @@ export async function resolveGrantedExternalTools(
         const secrets = connection.secretEncrypted
             ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
             : {};
-        const authorization =
-            typeof secrets.authorization === 'string' && secrets.authorization.trim()
-                ? secrets.authorization.trim()
-                : undefined;
+
+        // Minted through the SHARED resolver, so the runtime and the "Test
+        // connection" button agree about what a credential means. A connection
+        // configured for Entra gets a fresh access token; one carrying a static
+        // header gets that header.
+        let authorization: string | undefined;
+        try {
+            authorization = await authorizationFor(
+                connection.id,
+                (connection.configJson ?? {}) as Record<string, unknown>,
+                secrets,
+                // Entra may hand back a NEW refresh token on any exchange.
+                // Dropping it strands the connection at the next expiry, hours
+                // later, with nothing pointing back here — so it is persisted
+                // before the token it came with is used.
+                async (rotated) => {
+                    await runInTenantContext(ctx, (db) =>
+                        db.integrationConnection.update({
+                            where: { id: connection.id },
+                            data: {
+                                secretEncrypted: encryptField(
+                                    JSON.stringify({ ...secrets, refreshToken: rotated }),
+                                ),
+                            },
+                        }),
+                    );
+                },
+            );
+        } catch (err) {
+            // Same shape as an unreachable server: this connection contributes
+            // nothing and the run continues. A credential problem must not stop
+            // an agent's unrelated internal work.
+            logger.warn('mcp.external_credentials_unusable', {
+                connectionId: connection.id,
+                error: err instanceof Error ? err.name : 'non-Error thrown',
+            });
+            continue;
+        }
 
         let advertised;
         try {
