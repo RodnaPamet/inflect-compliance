@@ -46,6 +46,13 @@ import type {
     IntegrationProvider,
 } from '../types';
 
+/**
+ * The provider id, as one spelling. A usecase that looks up this kind of
+ * connection has to filter on it, and a second literal would silently select
+ * nothing the day either moved.
+ */
+export const MCP_SERVER_PROVIDER_ID = 'mcp-server';
+
 export interface McpServerConfig {
     /** The endpoint. Validated by `safeFetch` at call time, never trusted here. */
     url?: string;
@@ -57,7 +64,7 @@ export interface McpServerSecrets {
 }
 
 export class McpServerProvider implements IntegrationProvider {
-    readonly id = 'mcp-server';
+    readonly id = MCP_SERVER_PROVIDER_ID;
     readonly displayName = 'MCP server (external)';
     readonly description =
         'An external Model Context Protocol server an agent can be granted tools on. '
