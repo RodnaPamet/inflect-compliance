@@ -35,6 +35,8 @@
  * became an authoritative non-admin. An unreadable probe means UNKNOWN.
  */
 
+import { AD_LEAVER_WRITES_FIELD } from './providers/active-directory/write-direction';
+
 export type IdentityWriteReadiness =
     /** A dedicated write credential is configured for this connection. */
     | 'DEDICATED_WRITE_BIND'
@@ -130,21 +132,52 @@ export function describeWriteReadiness({
         };
     }
 
+    // The LDAP arms carry the SAME opt-in the Entra arm above names, for the
+    // same reason (#2892 finding 4).
+    //
+    // Since #2857 an AD leaver write is gated on `AD_LEAVER_WRITES_FIELD`, and
+    // `adDirectionWriteRefusal` refuses to construct the writer unless it is
+    // exactly `true`. Without this, a connection with a dedicated write bind
+    // and the box unticked reports "a dedicated write credential is
+    // configured" — and is then refused WRITES_NOT_ENABLED at AUTOMATIC and
+    // disables nobody. The bind half of that sentence is true; read during the
+    // seven-day DRY_RUN dwell, the whole of it is what an operator is deciding
+    // on.
+    //
+    // It bites every AD connection that exists rather than a misconfigured
+    // few: the field has no legacy, so a connection predating #2857 has never
+    // stored it and reads as not consented.
+    //
+    // The READINESS VALUE is left alone and only the detail changes, exactly as
+    // the Entra arm does it. The value answers "what kind of credential is
+    // this", which the opt-in does not change; collapsing a consent question
+    // into a credential vocabulary is what produced the wrong Entra verdict
+    // this function already carries a comment about.
+    const adConsented = merged[AD_LEAVER_WRITES_FIELD] === true;
+    const adOptOut =
+        ' "Allow offboarding writes" is OFF on this connection, so the writer refuses to ' +
+        'construct and no disable is attempted. That is a deliberate per-connection opt-out, ' +
+        'not a misconfiguration.';
+
     if (present(merged.writeBindDN)) {
         return {
             readiness: 'DEDICATED_WRITE_BIND',
-            detail:
-                'A dedicated write credential is configured. Whether it holds the directory ' +
-                'rights a disable needs is only established by attempting one.',
+            detail: adConsented
+                ? 'A dedicated write credential is configured and "Allow offboarding writes" ' +
+                  'is on. Whether it holds the directory rights a disable needs is only ' +
+                  'established by attempting one.'
+                : 'A dedicated write credential is configured, but' + adOptOut,
         };
     }
     if (present(config.bindDN) || present(merged.bindDN)) {
         return {
             readiness: 'READ_BIND_ONLY',
-            detail:
-                'No dedicated write credential is configured, so writes run as the read bind. ' +
-                'If it lacks the delegation, every disable is refused with LDAP result 50 and ' +
-                'the leaver is not offboarded.',
+            detail: adConsented
+                ? 'No dedicated write credential is configured, so writes run as the read ' +
+                  'bind. If it lacks the delegation, every disable is refused with LDAP ' +
+                  'result 50 and the leaver is not offboarded.'
+                : 'No dedicated write credential is configured, so writes would run as the ' +
+                  'read bind — but' + adOptOut,
         };
     }
     return {

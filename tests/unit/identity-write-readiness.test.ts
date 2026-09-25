@@ -54,7 +54,11 @@ describe('identity write readiness', () => {
         // on exactly the admin accounts an offboarding most wants disabled.
         const detail = describeWriteReadiness({
             provider: 'active-directory',
-            merged: { writeBindDN: 'CN=svc-write,DC=x' },
+            // `writesEnabled` stated rather than left out. Since #2857 it is
+            // what actually permits an AD leaver write, so a fixture that
+            // omits it describes a connection that writes to nothing — which
+            // is not the case this assertion is about.
+            merged: { writeBindDN: 'CN=svc-write,DC=x', writesEnabled: true },
             config: {},
         }).detail;
         expect(detail).toMatch(/only established by attempting/i);
@@ -64,11 +68,64 @@ describe('identity write readiness', () => {
     it('names the consequence an operator can act on', () => {
         const detail = describeWriteReadiness({
             provider: 'active-directory',
-            merged: { bindDN: 'CN=svc-read,DC=x' },
+            merged: { bindDN: 'CN=svc-read,DC=x', writesEnabled: true },
             config: {},
         }).detail;
         expect(detail).toMatch(/result 50/);
         expect(detail).toMatch(/not offboarded/i);
+    });
+});
+
+describe("AD's write opt-in is part of the verdict — #2892 finding 4", () => {
+    const ad = (merged: Record<string, unknown>) =>
+        describeWriteReadiness({ provider: 'active-directory', merged, config: {} });
+
+    it('does not report a ready write credential on a connection that will refuse', () => {
+        // The defect. A dedicated write bind with the box unticked reported
+        // "a dedicated write credential is configured" and nothing else. The
+        // same connection at AUTOMATIC is refused WRITES_NOT_ENABLED and
+        // disables nobody — and DRY_RUN, where this verdict is read, is the
+        // compulsory seven-day dwell every connection passes through.
+        const v = ad({ writeBindDN: 'CN=svc-write,DC=x' });
+
+        expect(v.detail).toMatch(/allow offboarding writes" is off/i);
+        expect(v.detail).toMatch(/no disable is attempted/i);
+    });
+
+    it('says so on the read-bind path too, where the write would also be refused', () => {
+        const v = ad({ bindDN: 'CN=svc-read,DC=x' });
+
+        expect(v.detail).toMatch(/allow offboarding writes" is off/i);
+        // The bind consequence is NOT the operative one when the opt-in is
+        // off: the writer never constructs, so no LDAP result 50 is reached.
+        expect(v.detail).not.toMatch(/result 50/);
+    });
+
+    it('keeps the credential verdict, which consent does not change', () => {
+        // Only the detail moves. The readiness value answers "what kind of
+        // credential is this"; folding a consent question into a credential
+        // vocabulary is what produced the wrong Entra verdict this module
+        // already carries a comment about.
+        expect(ad({ writeBindDN: 'CN=svc-write,DC=x' }).readiness).toBe('DEDICATED_WRITE_BIND');
+        expect(ad({ writeBindDN: 'CN=svc-write,DC=x', writesEnabled: true }).readiness).toBe(
+            'DEDICATED_WRITE_BIND',
+        );
+    });
+
+    it('requires exactly true, matching the writer it is describing', () => {
+        // `adDirectionWriteRefusal` tests `=== true`. A readiness report that
+        // accepted a truthy string would describe a connection as consented
+        // that the writer then refuses.
+        for (const v of ['true', 1, {}, 'yes']) {
+            expect(ad({ writeBindDN: 'CN=svc-write,DC=x', writesEnabled: v }).detail).toMatch(
+                /is off/i,
+            );
+        }
+    });
+
+    it('treats a connection predating the field as not consented', () => {
+        // No AD connection has ever stored it, so this is every existing one.
+        expect(ad({ writeBindDN: 'CN=svc-write,DC=x' }).detail).toMatch(/is off/i);
     });
 });
 
