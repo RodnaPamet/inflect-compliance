@@ -143,7 +143,18 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     frameworks: { read: ['view'], write: ['install'] },
     audits:     { read: ['view'], write: ['manage', 'freeze', 'share'] },
     reports:    { read: ['view'], write: ['export'] },
-    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'] },
+    // `external_tools` is its OWN action, not part of `write`. The permission
+    // it carries decides whether this credential may leave the tenant at all —
+    // folding it into `admin:write` would hand every key that can edit tenant
+    // settings, SSO or SCIM the ability to egress data to a third party, which
+    // is a different kind of authority arriving by accident.
+    //
+    // It is deliberately NOT subtracted from the `*` branch below, unlike the
+    // four agent-governance flags. Their subtraction is about SELF-MODIFICATION
+    // — a credential that could grant itself tools or rewrite its own card. This
+    // one is the agent ACTING, which is precisely what a bearer token is for,
+    // and holding it confers no power to widen it.
+    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'] },
     // MCP capability gate (Epic MCP). These are CAPABILITY scopes, not
     // resource permissions — they deliberately map to NO PermissionSet flags
     // (empty action arrays). `mcp:read` gates access to the read-only MCP tool
