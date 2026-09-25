@@ -346,7 +346,33 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
     const nullMeansCloudOnly =
         NULL_MEANS_NOT_SYNCED.has(account.provider) && observedFresh;
 
-    if (account.onPremisesSyncEnabled === null && !nullMeansCloudOnly) {
+    // An answer nothing ever observed is not an answer (#2892 finding 6).
+    //
+    // `staleAnswer` above is gated on `onPremStateObservedAt != null`, which is
+    // load-bearing for the null-VALUE case and leaves a hole for this one: with
+    // `onPremisesSyncEnabled: false` and no stamp at all, nothing is stale,
+    // the `=== null` test below is false because the value is `false`, and the
+    // function returned `{ allowed: true, basis: 'NOT_ON_PREM_SYNCED' }`. The
+    // age bound was skipped entirely — contradicting the comment above
+    // `observedFresh` ("FRESHNESS IS CHECKED ONCE, HERE, AND APPLIES TO BOTH
+    // REMAINING BRANCHES") and `isObservationFresh`'s own fail-closed
+    // contract.
+    //
+    // It routes to NEVER_OBSERVED rather than to the stale refusal because the
+    // REMEDIES differ, which is the distinction this function already draws
+    // twice. A stale stamp usually means the observing connection was
+    // disabled, and no amount of waiting refreshes it. A missing stamp means
+    // no sync has recorded the flag yet, and "run a successful directory sync
+    // first, then retry" is advice that can actually be taken.
+    //
+    // Scoped to `false` explicitly. `true` is refused earlier and
+    // `active-directory` returns at the ON_PREM_DIRECTORY arm before any of
+    // this, so neither can reach here — but naming the value keeps that true
+    // if either of those moves.
+    const unobservedAnswer =
+        account.onPremisesSyncEnabled === false && account.onPremStateObservedAt == null;
+
+    if ((account.onPremisesSyncEnabled === null || unobservedAnswer) && !nullMeansCloudOnly) {
         // TWO REFUSALS, NOT ONE — and they were the same sentence until now.
         //
         // Whether the provider CAN answer is decided by the same set the allow

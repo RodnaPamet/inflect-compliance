@@ -135,6 +135,13 @@ const input = (over = {}) => ({
     linkId: 'link-1',
     externalUserId: 'ext-1',
     onPremisesSyncEnabled: false,
+    // Stamped by default (#2892 finding 6). Production writes the flag and the
+    // observation as a PAIR — `identity-sync.ts:353`, and the entra provider
+    // derives `onPremStateObserved` from whether Graph returned the property
+    // at all (`entra-id/index.ts:162`) — so `false` with no stamp is a row no
+    // provider produces. Leaving it out made every account in this file an
+    // unobserved one, which the write-target rail now correctly refuses.
+    onPremStateObservedAt: new Date(),
     ...over,
 });
 
@@ -420,7 +427,14 @@ describe('the write-target refuses what would silently revert', () => {
     });
 
     it('refuses when the sync flag was never observed', async () => {
-        const r = await disableAccount(ctx, fakeWriter(), input({ onPremisesSyncEnabled: null }));
+        // The absence is the subject, so it is stated rather than inherited:
+        // `input` now stamps by default, and a FRESH stamp beside a `null`
+        // value is the cloud-only ALLOW, not this refusal.
+        const r = await disableAccount(
+            ctx,
+            fakeWriter(),
+            input({ onPremisesSyncEnabled: null, onPremStateObservedAt: null }),
+        );
         expect(r.outcome).toBe('REFUSED_TARGET');
         expect(r.reason).toMatch(/never observed/i);
     });
@@ -1687,12 +1701,12 @@ describe('every decision the write-target shaped says WHICH rule shaped it', () 
         const notYet = await disableAccount(
             ctx,
             fakeWriter(),
-            input({ onPremisesSyncEnabled: null }),
+            input({ onPremisesSyncEnabled: null, onPremStateObservedAt: null }),
         );
         const cannot = await disableAccount(
             ctx,
             fakeWriter({ provider: 'okta' }),
-            input({ onPremisesSyncEnabled: null }),
+            input({ onPremisesSyncEnabled: null, onPremStateObservedAt: null }),
         );
 
         expect(notYet.outcome).toBe('REFUSED_TARGET');
