@@ -285,6 +285,15 @@ export interface GrantedExternalTool {
     /** Exactly what the server advertised, under the name IT used. */
     def: { name: string; description: string; inputSchema: Record<string, unknown> };
     transport: { url: string; authorization?: string };
+    /**
+     * The tenant's APPROVED parameter sets for this tool, if any.
+     *
+     * Only what is in force — a pending edit is not here, because the agent
+     * keeps dispatching what a human accepted until somebody accepts the
+     * change. Empty means the tenant has saved nothing and the model supplies
+     * arguments itself, which is every external tool until somebody saves one.
+     */
+    parameterSets: ReadonlyArray<{ label: string; parameters: Record<string, unknown> }>;
 }
 
 /** Upper bound on tools considered per connection, mirroring the catalogue's. */
@@ -319,7 +328,7 @@ export async function resolveGrantedExternalTools(
     if (wanted.size === 0) return [];
 
     const connectionIds = [...wanted.keys()];
-    const { connections, pins } = await runInTenantContext(ctx, async (db) => ({
+    const { connections, pins, parameterSets } = await runInTenantContext(ctx, async (db) => ({
         connections: (await db.integrationConnection.findMany({
             where: {
                 id: { in: connectionIds },
@@ -329,6 +338,15 @@ export async function resolveGrantedExternalTools(
             },
             select: { id: true, configJson: true, secretEncrypted: true },
         })) as ConnectionRow[],
+        // The approved sets for the granted tools. `parameters` only — the
+        // pending columns are deliberately NOT selected, so a proposal cannot
+        // reach a run even by accident.
+        parameterSets: await db.externalToolParameterSet.findMany({
+            where: { tenantId: ctx.tenantId, toolName: { in: [...grantedTools] } },
+            orderBy: { label: 'asc' },
+            take: 500,
+            select: { toolName: true, label: true, parameters: true },
+        }),
         pins: await db.mcpToolManifestPin.findMany({
             where: { tenantId: ctx.tenantId, toolName: { in: [...grantedTools] } },
             select: {
@@ -344,6 +362,12 @@ export async function resolveGrantedExternalTools(
     }));
 
     const pinByName = new Map(pins.map((p) => [p.toolName, p as ApprovedToolManifest]));
+    const setsByTool = new Map<string, { label: string; parameters: Record<string, unknown> }[]>();
+    for (const row of parameterSets) {
+        const list = setsByTool.get(row.toolName) ?? [];
+        list.push({ label: row.label, parameters: (row.parameters ?? {}) as Record<string, unknown> });
+        setsByTool.set(row.toolName, list);
+    }
     const out: GrantedExternalTool[] = [];
 
     for (const connection of connections) {
@@ -392,7 +416,12 @@ export async function resolveGrantedExternalTools(
                 continue;
             }
 
-            out.push({ qualified, def, transport: { url, authorization } });
+            out.push({
+                qualified,
+                def,
+                transport: { url, authorization },
+                parameterSets: setsByTool.get(qualified) ?? [],
+            });
         }
     }
 

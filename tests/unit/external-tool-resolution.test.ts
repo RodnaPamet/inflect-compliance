@@ -20,6 +20,7 @@
 const mockTx = {
     integrationConnection: { findMany: jest.fn() },
     mcpToolManifestPin: { findMany: jest.fn() },
+    externalToolParameterSet: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockTx)),
@@ -77,6 +78,9 @@ beforeEach(() => {
         },
     ]);
     mockTx.mcpToolManifestPin.findMany.mockResolvedValue([pinFor(ALERTS)]);
+    // No saved sets by default: the model supplies arguments, as it does for
+    // any tool until a tenant configures one.
+    mockTx.externalToolParameterSet.findMany.mockResolvedValue([]);
     listToolsMock.mockResolvedValue([ALERTS]);
 });
 
@@ -187,5 +191,104 @@ describe('an unreachable server', () => {
     it('loses its own tools and does not fail the invocation', async () => {
         listToolsMock.mockRejectedValue(new Error('ECONNREFUSED'));
         await expect(resolveExternalReadTools(ctx, new Set([QUALIFIED]))).resolves.toEqual([]);
+    });
+});
+
+/**
+ * SAVED PARAMETERS: the tenant owns the values, the model owns only the choice.
+ *
+ * The narrowing has to be TOTAL to mean anything. If the model could still pass
+ * free-form arguments alongside a chosen set, the approved row would be a
+ * suggestion and the re-approval requirement in #2860 would protect nothing —
+ * so a tool with saved sets advertises exactly one argument and accepts exactly
+ * one.
+ */
+describe('when a tenant has saved parameters', () => {
+    const PROD = { query: 'up{job="api"} == 0', range: '5m' };
+    const STAGING = { query: 'up{job="api",env="staging"} == 0', range: '1h' };
+
+    beforeEach(() => {
+        mockTx.externalToolParameterSet.findMany.mockResolvedValue([
+            { toolName: QUALIFIED, label: 'prod alerts', parameters: PROD },
+            { toolName: QUALIFIED, label: 'staging alerts', parameters: STAGING },
+        ]);
+    });
+
+    it('advertises a CHOICE of set rather than the raw arguments', async () => {
+        const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
+        expect(tool.inputSchema).toEqual({
+            type: 'object',
+            properties: {
+                parameterSet: {
+                    type: 'string',
+                    enum: ['prod alerts', 'staging alerts'],
+                    description: 'Which approved parameter set to run.',
+                },
+            },
+            required: ['parameterSet'],
+            additionalProperties: false,
+        });
+        expect(tool.description).toMatch(/prod alerts, staging alerts/);
+    });
+
+    it('dispatches the APPROVED values for the chosen label', async () => {
+        callToolMock.mockResolvedValue({ content: [] });
+        const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
+
+        await tool.run(ctx, { parameterSet: 'staging alerts' });
+
+        expect(callToolMock).toHaveBeenCalledWith(
+            { url: 'https://mcp.example.com', authorization: 'Bearer abc' },
+            'list_alerts',
+            STAGING,
+        );
+    });
+
+    /**
+     * The discriminator. A model that asked for one set and smuggled its own
+     * query alongside must not get its query — and must not get a merge of the
+     * two either.
+     */
+    it('never sends what the model supplied, only what was approved', async () => {
+        callToolMock.mockResolvedValue({ content: [] });
+        const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
+
+        await tool.run(ctx, {
+            parameterSet: 'prod alerts',
+            query: 'up{job="secrets"}',
+        } as never);
+
+        const sent = callToolMock.mock.calls[0][2];
+        expect(sent).toEqual(PROD);
+        expect(sent.query).not.toContain('secrets');
+    });
+
+    it('refuses free-form arguments at the schema', async () => {
+        const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
+        // `.strict()` — an extra key is a parse failure, not a silently
+        // dropped field, so the funnel refuses before `run` is ever entered.
+        expect(tool.argsSchema.safeParse({ parameterSet: 'prod alerts', query: 'x' }).success).toBe(
+            false,
+        );
+        expect(tool.argsSchema.safeParse({ query: 'x' }).success).toBe(false);
+        expect(tool.argsSchema.safeParse({ parameterSet: 'prod alerts' }).success).toBe(true);
+    });
+
+    it('refuses a label that is not an approved set', async () => {
+        const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
+        expect(tool.argsSchema.safeParse({ parameterSet: 'whatever' }).success).toBe(false);
+        await expect(tool.run(ctx, { parameterSet: 'whatever' })).rejects.toThrow(
+            /external_parameter_set_unknown/,
+        );
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    it('does not offer another tool\'s sets', async () => {
+        mockTx.externalToolParameterSet.findMany.mockResolvedValue([
+            { toolName: externalToolName(CONN, 'other_tool'), label: 'x', parameters: PROD },
+        ]);
+        const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
+        // No sets for THIS tool, so it falls back to the server's own schema.
+        expect(tool.inputSchema).toEqual(ALERTS.inputSchema);
     });
 });

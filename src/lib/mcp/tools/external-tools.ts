@@ -88,7 +88,7 @@ export async function resolveExternalReadTools(
     grantedTools: ReadonlySet<string> | null,
 ): Promise<McpReadTool<Record<string, unknown>>[]> {
     const granted = await resolveGrantedExternalTools(ctx, grantedTools);
-    return granted.map((g) => adapterFor(g.qualified, g.def, g.transport));
+    return granted.map((g) => adapterFor(g.qualified, g.def, g.transport, g.parameterSets));
 }
 
 /** One approved external tool, in the shape the funnel already knows. */
@@ -96,12 +96,52 @@ function adapterFor(
     qualified: string,
     def: { name: string; description: string; inputSchema: Record<string, unknown> },
     transport: { url: string; authorization?: string },
+    parameterSets: ReadonlyArray<{ label: string; parameters: Record<string, unknown> }> = [],
 ): McpReadTool<Record<string, unknown>> {
+    // ── WHO CHOOSES THE ARGUMENTS ───────────────────────────────────────────
+    //
+    // With no saved set the model chooses them, as it does for any tool. Once a
+    // tenant HAS saved one, the model chooses only WHICH approved set to run —
+    // and the values come from the row a human accepted.
+    //
+    // The narrowing is the point, and it has to be total: if the model could
+    // still pass free-form arguments alongside, the approved set would be a
+    // suggestion and the re-approval requirement would protect nothing. So a
+    // tool with saved sets advertises exactly one argument and accepts exactly
+    // one, and an unknown label is refused rather than falling back.
+    //
+    // This cannot WIDEN anything. The set is chosen from rows this tenant
+    // approved, the call still goes out under the server's pinned schema, and
+    // every other term — grant, rung, `EXTERNAL_EGRESS`, the egress scan on the
+    // way out — is unchanged.
+    const hasSets = parameterSets.length > 0;
+    const labels = parameterSets.map((p) => p.label);
+
     return {
         name: qualified,
-        description: def.description,
-        inputSchema: def.inputSchema,
-        argsSchema: EXTERNAL_ARGS_SCHEMA,
+        description: hasSets
+            ? `${def.description}\n\nArguments are supplied by an approved parameter ` +
+              `set configured for this workspace. Choose one of: ${labels.join(', ')}.`
+            : def.description,
+        inputSchema: hasSets
+            ? {
+                  type: 'object',
+                  properties: {
+                      parameterSet: {
+                          type: 'string',
+                          enum: labels,
+                          description: 'Which approved parameter set to run.',
+                      },
+                  },
+                  required: ['parameterSet'],
+                  additionalProperties: false,
+              }
+            : def.inputSchema,
+        argsSchema: hasSets
+            ? (z
+                  .object({ parameterSet: z.enum(labels as [string, ...string[]]) })
+                  .strict() as unknown as typeof EXTERNAL_ARGS_SCHEMA)
+            : EXTERNAL_ARGS_SCHEMA,
         resourceScope: { resource: 'external_tools', action: 'read' },
         authorize: {
             keys: [EXTERNAL_TOOL_PERMISSION],
@@ -129,10 +169,29 @@ function adapterFor(
             mirrors: 'no human route — the tool is served by an external MCP server',
         },
         run: async (_ctx, args) => {
+            // The arguments that actually go out. With saved sets this is the
+            // APPROVED row, looked up by the label the model chose — never the
+            // model's own object, which by then carries only the label.
+            const outbound = hasSets
+                ? parameterSets.find((p) => p.label === (args as { parameterSet?: string })?.parameterSet)
+                      ?.parameters
+                : (args ?? {});
+
+            if (hasSets && !outbound) {
+                // Unreachable through `argsSchema`, which is an enum over these
+                // same labels — and checked anyway, because the alternative to
+                // a refusal here is dispatching `undefined` as the arguments,
+                // i.e. running the tool with no parameters at all.
+                throw new Error(
+                    `external_parameter_set_unknown: no approved parameter set for ` +
+                        `"${qualified}" matches the requested label.`,
+                );
+            }
+
             // `callTool` is the one outbound seam and it scans these arguments
             // before a socket is opened. Nothing is added here: a second check
             // in a per-tool wrapper would be the copy that drifts.
-            return callTool(transport, def.name, args ?? {});
+            return callTool(transport, def.name, outbound ?? {});
         },
     };
 }
