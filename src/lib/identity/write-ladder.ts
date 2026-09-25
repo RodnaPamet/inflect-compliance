@@ -149,6 +149,25 @@ export function isAboveClamp(mode: IdentityWriteMode, clamp: IdentityWriteMode):
 export type IdentityDirection = 'leaver' | 'joiner';
 
 /**
+ * The `automationKey` suffix each direction's pass writes on its
+ * `IntegrationExecution` row.
+ *
+ * HERE rather than beside the passes that write them, because the dwell gate
+ * in `identity-write-policy` has to COUNT those rows (#2843 finding 31) and
+ * both pass modules import that gate. Reading the suffix from either of them
+ * would close a cycle; copying the string into the gate would be a second
+ * source of truth for a value whose whole job is matching rows written
+ * elsewhere.
+ *
+ * The passes re-export these under their original names, so every existing
+ * call site is unchanged.
+ */
+export const PASS_AUTOMATION_SUFFIX: Readonly<Record<IdentityDirection, string>> = {
+    leaver: '.leaver_pass',
+    joiner: '.joiner_pass',
+};
+
+/**
  * Which directions have a RUNTIME behind them — not which are settable.
  *
  * This is the single source for the answer. It was previously spelled once, as a

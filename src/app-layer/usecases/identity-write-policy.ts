@@ -39,6 +39,7 @@ import {
     coerceStoredMode,
     type IdentityWriteMode,
     type IdentityDirection,
+    PASS_AUTOMATION_SUFFIX,
 } from '@/lib/identity/write-ladder';
 
 // Re-exported so the dozen existing importers keep their import path. The
@@ -61,6 +62,25 @@ interface DirectionState {
     mode: IdentityWriteMode;
     dryRunSince: Date | null;
 }
+
+/**
+ * Passes the window must contain before a direction may leave DRY_RUN.
+ *
+ * ONE, and the number is deliberately a floor rather than a sample size.
+ *
+ * The gate's original reasoning stands and is kept: a termination-and-hire
+ * cycle takes calendar time, so calendar time is the right proxy for "has
+ * enough happened yet", and counting runs would not improve it — a tenant with
+ * a quiet week has observed nothing by running seven times.
+ *
+ * What calendar time cannot see is whether the machinery works AT ALL. Seven
+ * days with zero executions is not a quiet week; it is a dispatcher that never
+ * fired, a connection that never resolved, or a tenant that has no directory
+ * attached — and the operator is about to widen the rung that lets this pass
+ * write to a real directory. One executed pass is the difference between "we
+ * waited" and "we waited and the thing ran".
+ */
+export const DRY_RUN_MIN_PASSES = 1;
 
 const FIELDS = {
     leaver: { mode: 'identityLeaverMode', since: 'identityLeaverDryRunSince' },
@@ -100,15 +120,14 @@ export async function getIdentityWritePolicy(
                 identityJoinerDryRunSince: true,
             },
         });
+        const leaverMode = coerceStoredMode(row?.identityLeaverMode);
+        const joinerMode = coerceStoredMode(row?.identityJoinerMode);
+        const leaverSince = row?.identityLeaverDryRunSince ?? null;
+        const joinerSince = row?.identityJoinerDryRunSince ?? null;
+
         return {
-            leaver: {
-                mode: coerceStoredMode(row?.identityLeaverMode),
-                dryRunSince: row?.identityLeaverDryRunSince ?? null,
-            },
-            joiner: {
-                mode: coerceStoredMode(row?.identityJoinerMode),
-                dryRunSince: row?.identityJoinerDryRunSince ?? null,
-            },
+            leaver: { mode: leaverMode, dryRunSince: leaverSince },
+            joiner: { mode: joinerMode, dryRunSince: joinerSince },
         };
     });
 }
@@ -124,6 +143,20 @@ export function describeRefusal(
     current: DirectionState,
     next: IdentityWriteMode,
     now: Date,
+    /**
+     * Passes that EXECUTED since the window opened — #2843 finding 31.
+     *
+     * An ARGUMENT rather than a field on `DirectionState`, and the shape is
+     * the point. The count is only meaningful when somebody is WIDENING a
+     * mode, which happens on one route; `getIdentityWritePolicy` is read by
+     * every pass on every run, and putting a query behind it would have made
+     * a hot read pay for a rare question — and did, until the blast radius
+     * said so: 35 test files mock that read's db without the model.
+     *
+     * `undefined` means "not supplied", and the check is skipped. Callers that
+     * are not widening a mode have nothing to prove.
+     */
+    passesInWindow?: number,
 ): string | null {
     if (current.mode === next) return null;
 
@@ -207,6 +240,18 @@ export function describeRefusal(
         if (!current.dryRunSince) {
             return 'Dry-run has no recorded start. Re-select DRY_RUN to start the observation window.';
         }
+        // EVIDENCE as well as elapsed time (#2843 finding 31). Checked before
+        // the day count so an operator who has waited the week and run nothing
+        // is told the useful thing rather than being sent away to wait again.
+        if (passesInWindow !== undefined && passesInWindow < DRY_RUN_MIN_PASSES) {
+            return (
+                `Dry-run has recorded ${passesInWindow} completed ${direction} ` +
+                `passes since the window opened, and at least ${DRY_RUN_MIN_PASSES} is required. ` +
+                'The window measures elapsed days, but a week with no pass at all is a ' +
+                'dispatcher that never fired or a directory that never resolved — not a quiet ' +
+                'week. Check the pass report for this direction before widening the mode.'
+            );
+        }
         const days = (now.getTime() - current.dryRunSince.getTime()) / 86_400_000;
         if (days < DRY_RUN_MIN_DAYS) {
             const left = Math.ceil(DRY_RUN_MIN_DAYS - days);
@@ -236,6 +281,31 @@ export function describeRefusal(
  * more than the route said (the pattern this repo already corrected once, where
  * a hand-rolled `canAdmin` check threw a 403 that wrote no AUTHZ_DENIED row).
  */
+/**
+ * Passes that EXECUTED for one direction since a timestamp.
+ *
+ * `status: { not: 'ERROR' }` because a pass that errored observed nothing.
+ * Everything else — PASSED, PARTIAL, NOT_APPLICABLE — RAN, and a run that
+ * found nobody is still the machinery working end to end, which is the fact
+ * the dwell gate cannot otherwise see.
+ */
+async function countExecutedPasses(
+    ctx: RequestContext,
+    direction: IdentityDirection,
+    since: Date,
+): Promise<number> {
+    return runInTenantContext(ctx, (db) =>
+        db.integrationExecution.count({
+            where: {
+                tenantId: ctx.tenantId,
+                automationKey: { endsWith: PASS_AUTOMATION_SUFFIX[direction] },
+                executedAt: { gte: since },
+                status: { not: 'ERROR' },
+            },
+        }),
+    );
+}
+
 export async function setIdentityWriteMode(
     ctx: RequestContext,
     direction: IdentityDirection,
@@ -247,7 +317,17 @@ export async function setIdentityWriteMode(
     const policy = await getIdentityWritePolicy(ctx);
     const current = policy[direction];
 
-    const refusal = describeRefusal(direction, current, next, now);
+    // Counted HERE, on the one path that widens a mode, and only when the
+    // question can arise: leaving DRY_RUN with a window open. Every other
+    // transition has nothing to prove, and `getIdentityWritePolicy` stays the
+    // cheap read every pass makes.
+    const leavingDryRun = current.mode === 'DRY_RUN' && next !== 'DRY_RUN';
+    const passesInWindow =
+        leavingDryRun && current.dryRunSince
+            ? await countExecutedPasses(ctx, direction, current.dryRunSince)
+            : undefined;
+
+    const refusal = describeRefusal(direction, current, next, now, passesInWindow);
     if (refusal) throw forbidden(refusal);
 
     const f = FIELDS[direction];

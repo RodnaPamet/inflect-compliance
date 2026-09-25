@@ -89,7 +89,9 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import { recordJoinerPassOutcome } from '@/lib/observability/integration-metrics';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
-import { isAboveClamp } from '@/lib/identity/write-ladder';
+import { isAboveClamp,
+    PASS_AUTOMATION_SUFFIX,
+} from '@/lib/identity/write-ladder';
 
 import { getIdentityWritePolicy } from './identity-write-policy';
 import { OBSERVATION_FRESHNESS_MS } from './identity-write-target';
@@ -148,7 +150,7 @@ export const MAX_REPORTED_JOINER_DECISIONS = 200;
  * make `listJoinerPasses` return leaver rows whose decisions are keyed by link
  * id, which a joiner reader would render as starters with no employee.
  */
-export const JOINER_PASS_AUTOMATION_SUFFIX = '.joiner_pass';
+export const JOINER_PASS_AUTOMATION_SUFFIX = PASS_AUTOMATION_SUFFIX.joiner;
 
 /** Bound on how many passes one read returns. A daily job over a short window. */
 const MAX_LISTED_PASSES = 100;
