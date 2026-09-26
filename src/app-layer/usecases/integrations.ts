@@ -12,6 +12,8 @@
 import { Prisma, EvidenceType } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { selfAccountIdsFromConnection } from '../integrations/identity-writer-factory';
+import { matchesSelf } from './identity-disable-account';
 // Side-effect: register every provider into the registry IN THIS MODULE GRAPH.
 // The registry is a module singleton; relying on `instrumentation.ts` to
 // populate it does NOT work when Next bundles instrumentation and the route
@@ -1130,6 +1132,13 @@ export async function listConnectedAccounts(
                 status: true,
                 isAdmin: true,
                 mfaEnrolled: true,
+                // SELECTED FOR A COMPARISON, NOT FOR THE WIRE. `matchesSelf`
+                // weighs both the directory id and the email, because an
+                // account is known by an objectGUID, a DN or a
+                // userPrincipalName depending on who names it. The field is
+                // destructured away before the row is returned, so the rule
+                // above — searched but never rendered — still holds.
+                externalUserId: true,
                 // The break-glass flag and its reason. Added as FIELDS on each
                 // row — the response SHAPE is unchanged, still `{ accounts: [] }`
                 // — which matters because the access-review page consumes this
@@ -1193,7 +1202,40 @@ export async function listConnectedAccounts(
             // through an `Array.isArray` check that fails open — the docblock
             // above says adding FIELDS is safe and changing the SHAPE is not,
             // and a nested object on every row is closer to the second.
-            return rows.map(({ identityLink, connection, ...account }) => {
+            // ── Which row is the one this integration authenticates AS (#2881 f54) ──
+            //
+            // The AD self-lockout rail refuses to disable the account the
+            // connection binds as, and that refusal is the product's own
+            // protection. In production it was invisible: 0 of 37 accounts
+            // carried `isProtected`, and the page offering a protect button
+            // gave no indication of which row most needed it — neither
+            // connection stores `bindDN` in `configJson`, so an operator has no
+            // way to know which of 26 AD rows is the service account.
+            //
+            // DERIVED THROUGH THE RAIL'S OWN FUNCTIONS, never re-implemented.
+            // `selfAccountIdsFromConnection` is what the writer factory hands
+            // the snapshot reader, and `matchesSelf` is what rail 0a asks. So
+            // the badge agrees with the refusal by construction: a marked row
+            // WILL be refused, and an unmarked roster means the rail cannot
+            // recognise its own account — which is itself the finding, made
+            // visible instead of latent.
+            //
+            // Socket-free, and bounded by the number of CONNECTIONS rather than
+            // accounts: one read of the connections already referenced by this
+            // page, not one per row.
+            const connectionIds = [...new Set(rows.map((r) => r.connectionId))];
+            const selfIdsByConnection = new Map<string, readonly string[]>();
+            if (connectionIds.length > 0) {
+                const conns = await db.integrationConnection.findMany({
+                    where: { id: { in: connectionIds }, tenantId: ctx.tenantId },
+                    select: { id: true, configJson: true, secretEncrypted: true },
+                });
+                for (const c of conns) {
+                    selfIdsByConnection.set(c.id, selfAccountIdsFromConnection(c));
+                }
+            }
+
+            return rows.map(({ identityLink, connection, externalUserId, ...account }) => {
                 const write = identityLink ? (writes.get(identityLink.id) ?? null) : null;
                 return {
                     ...account,
@@ -1201,6 +1243,13 @@ export async function listConnectedAccounts(
                     // Flattened rather than passed through as `connection: { name }`
                     // — see the select above and the docblock on this usecase.
                     connectionName: connection.name,
+                    // A FIELD, like `isProtected` beside it — the response
+                    // shape stays `{ accounts: [...] }` for the access-review
+                    // gate that reads this body through a tolerant check.
+                    isSelfAccount: matchesSelf(
+                        { externalUserId, email: account.email },
+                        selfIdsByConnection.get(account.connectionId),
+                    ),
                     linked: identityLink !== null,
                     // Only meaningful when unlinked. A linked account carries no
                     // reason, rather than a stale one from before it linked.
