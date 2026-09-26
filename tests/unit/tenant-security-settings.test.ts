@@ -23,6 +23,12 @@ const mockDb = {
         findUnique: jest.fn(),
         upsert: jest.fn(),
     },
+    // The recertification-owner write checks the nominee actually holds a seat
+    // before storing the id — see the suite at the end of this file for why a
+    // bare store would be settable and inert.
+    tenantMembership: {
+        findUnique: jest.fn(),
+    },
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -246,5 +252,79 @@ describe('audit stream secret', () => {
         const serialised = JSON.stringify(payload);
         expect(serialised).not.toContain(secret);
         expect(serialised).not.toContain('siem.example.com');
+    });
+});
+
+/**
+ * `recertificationOwnerUserId` — the name this product acts under when it
+ * raises a review nobody asked for (#2879 f58).
+ *
+ * ═══ WHY THE WRITE VALIDATES AND DOES NOT JUST STORE ═══
+ *
+ * `agent-driver-column-has-a-writer` names the failure this column could
+ * otherwise repeat: "settable and inert". An id that resolves to nobody stores
+ * cleanly, reads back cleanly, and then raises nothing forever — while the
+ * tenant believes automated recertification is on. `resolveMemberContext`
+ * would refuse it at RUN time, months later, on a night nobody is watching.
+ * Refusing at the moment somebody types it is the only place that can say so.
+ */
+describe('recertificationOwnerUserId', () => {
+    const OWNER = 'clw0000000000000000000000';
+
+    beforeEach(() => {
+        mockDb.tenantSecuritySettings.upsert.mockResolvedValue({});
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({});
+    });
+
+    it('stores an id that names an ACTIVE member', async () => {
+        mockDb.tenantMembership.findUnique.mockResolvedValue({ status: 'ACTIVE' });
+
+        await updateTenantSecurityConfig(ctxFor('ADMIN'), { recertificationOwnerUserId: OWNER });
+
+        const written = mockDb.tenantSecuritySettings.upsert.mock.calls.at(-1)?.[0];
+        expect(written.update.recertificationOwnerUserId).toBe(OWNER);
+    });
+
+    it('REFUSES an id that names nobody', async () => {
+        mockDb.tenantMembership.findUnique.mockResolvedValue(null);
+
+        await expect(
+            updateTenantSecurityConfig(ctxFor('ADMIN'), { recertificationOwnerUserId: OWNER }),
+        ).rejects.toThrow(/ACTIVE member/i);
+        expect(mockDb.tenantSecuritySettings.upsert).not.toHaveBeenCalled();
+    });
+
+    it.each(['INVITED', 'DEACTIVATED', 'REMOVED'])(
+        'REFUSES a member whose status is %s — a bare existence test would pass it',
+        async (status) => {
+            // These are exactly the rows that clear "does a membership exist"
+            // and then fail `resolveMemberContext`, which accepts ACTIVE only.
+            mockDb.tenantMembership.findUnique.mockResolvedValue({ status });
+
+            await expect(
+                updateTenantSecurityConfig(ctxFor('ADMIN'), { recertificationOwnerUserId: OWNER }),
+            ).rejects.toThrow(/ACTIVE member/i);
+        },
+    );
+
+    it('clears with null WITHOUT looking anybody up', async () => {
+        // Turning it off must not depend on the departing nominee still being
+        // resolvable — that would make a setting you cannot switch off once
+        // the person it names has gone.
+        await updateTenantSecurityConfig(ctxFor('ADMIN'), { recertificationOwnerUserId: null });
+
+        expect(mockDb.tenantMembership.findUnique).not.toHaveBeenCalled();
+        const written = mockDb.tenantSecuritySettings.upsert.mock.calls.at(-1)?.[0];
+        expect(written.update.recertificationOwnerUserId).toBeNull();
+    });
+
+    it('is not written at all when the key is absent — patch semantics', async () => {
+        // The invariant this whole file exists for: this writer shares a row
+        // with `updateTenantMfaPolicy`, so an absent key that got written would
+        // clobber a value the caller never mentioned.
+        await updateTenantSecurityConfig(ctxFor('ADMIN'), { mfaFailClosed: true });
+
+        const written = mockDb.tenantSecuritySettings.upsert.mock.calls.at(-1)?.[0];
+        expect(written.update).not.toHaveProperty('recertificationOwnerUserId');
     });
 });

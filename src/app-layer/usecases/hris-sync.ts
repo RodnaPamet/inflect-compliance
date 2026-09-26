@@ -28,6 +28,8 @@
 import type { RequestContext } from '../types';
 import { buildSystemContext } from '../context-system';
 import { logEvent } from '../events/audit';
+import { resolveRecertificationOwner } from './recertification-owner';
+import { createTask } from './task';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
@@ -221,6 +223,15 @@ export interface HrisSyncResult {
      */
     roleChanges: number;
     /**
+     * What became of the recertification those role changes call for.
+     *
+     * `null` when there were no role changes, so nothing was owed. Every other
+     * value is an ANSWER, including the refusals: a pass that raised nothing
+     * because nobody is nominated says `NO_OWNER`, which is the difference
+     * between a control that is off and a control that is broken.
+     */
+    recertification: RecertificationOutcome | null;
+    /**
      * Employees this pass marked TERMINATED — ZERO when the blast-radius rail
      * refused, and absent on the arms that never reach the reconcile.
      *
@@ -230,6 +241,80 @@ export interface HrisSyncResult {
      */
     departed?: number;
     errorMessage?: string;
+}
+
+
+/**
+ * Every way raising a recertification can end, as one word for the row.
+ *
+ * NOT A BOOLEAN, and not an absence. The whole finding behind this
+ * (#2879 f58) is that nothing recomputed access after a move and nobody could
+ * tell. Replacing that with a pass that quietly raises nothing would be the
+ * same silence with more code behind it, so each refusal is named and lands on
+ * the execution row an operator reads.
+ */
+export type RecertificationOutcome =
+    | 'RAISED'
+    /** Nobody is nominated. A settings task, and the tenant may not know. */
+    | 'NO_OWNER'
+    /** Somebody IS nominated and is no longer an active member. */
+    | 'OWNER_NOT_ACTIVE'
+    /** The nominee holds the tenant but not the authority to own a task. */
+    | 'OWNER_CANNOT_CREATE_TASKS'
+    | 'FAILED';
+
+/**
+ * Ask the accountable human to re-examine the access of workers who moved.
+ *
+ * A TASK RATHER THAN A CAMPAIGN, deliberately. `createConnectedAccessReview`
+ * scopes by PROVIDER, so a campaign triggered by one transfer would put every
+ * account in that directory in front of a reviewer — which is how a control
+ * becomes noise and then becomes ignored. The task names the count and points
+ * at the trail; opening the right campaign is a judgement the reviewer makes
+ * with the audit rows in front of them.
+ *
+ * NEVER FATAL. This runs after the mirror has been written, and a failure to
+ * raise a follow-up must not roll back a roster sync the leaver pass depends
+ * on. Every arm returns a word instead of throwing.
+ */
+async function raiseRoleChangeRecertification(
+    tenantId: string,
+    moved: number,
+    now: Date,
+): Promise<RecertificationOutcome> {
+    try {
+        const owner = await resolveRecertificationOwner(tenantId, 'hris-sync');
+        if (owner.kind === 'unset') return 'NO_OWNER';
+        if (owner.kind === 'unresolvable') return 'OWNER_NOT_ACTIVE';
+
+        await createTask(owner.ctx, {
+            title: `Re-examine access for ${moved} worker(s) whose role changed`,
+            description:
+                `The HRIS feed reported a change of department or job title for ${moved} ` +
+                `worker(s) in the sync completed at ${now.toISOString()}. Their entitlements ` +
+                'have not been recomputed — this product does not adjust access on a transfer. ' +
+                'Each change is recorded as an Employee audit entry naming the fields that ' +
+                'actually differed, with before and after values.',
+            source: 'INTEGRATION',
+            priority: 'P2',
+        });
+        return 'RAISED';
+    } catch (err) {
+        // A nominee who holds the tenant as a READER clears
+        // `resolveMemberContext` and then fails `assertCanCreateTask`. That is
+        // the right refusal and the wrong way to learn about it, so it is
+        // reported as its own outcome rather than as a generic failure.
+        const msg = err instanceof Error ? err.message : String(err);
+        const denied = /permission/i.test(msg);
+        logger.warn('hris-sync could not raise a role-change recertification', {
+            component: 'hris-sync',
+            tenantId,
+            moved,
+            outcome: denied ? 'OWNER_CANNOT_CREATE_TASKS' : 'FAILED',
+            error: msg,
+        });
+        return denied ? 'OWNER_CANNOT_CREATE_TASKS' : 'FAILED';
+    }
 }
 
 export async function runHrisSync(input: {
@@ -272,7 +357,7 @@ export async function runHrisSync(input: {
         return { ok: true as const, conn, executionId: execution.id };
     });
     if (!opened.ok) {
-        return { executionId: opened.executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, errorMessage: 'HRIS connection not found' };
+        return { executionId: opened.executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, recertification: null, errorMessage: 'HRIS connection not found' };
     }
     const { conn, executionId } = opened;
 
@@ -282,7 +367,7 @@ export async function runHrisSync(input: {
     const resolved = input.provider ?? registry.getProvider(conn.provider);
     if (!resolved || !isHrisSyncProvider(resolved)) {
         await shortTx((db) => db.integrationExecution.update({ where: { id: executionId }, data: { status: 'ERROR', errorMessage: 'Provider does not support HRIS sync', completedAt: new Date() } }));
-        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, errorMessage: 'Provider does not support HRIS sync' };
+        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, recertification: null, errorMessage: 'Provider does not support HRIS sync' };
     }
 
     const start = Date.now();
@@ -358,7 +443,7 @@ export async function runHrisSync(input: {
         });
         // This usecase CATCHES the provider error, so the classification has
         // to ride the result or the queue-level bypass never sees it.
-        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
+        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, recertification: null, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
     }
 
     // Declared outside the try so the write-failure arm can report what
@@ -368,6 +453,7 @@ export async function runHrisSync(input: {
     let managersLinked = 0;
     let managersCleared = 0;
     let roleChanges = 0;
+    let recertification: RecertificationOutcome | null = null;
 
     // ── 3. The write phase ───────────────────────────────────────────────
     // Wrapped in a catch, because the RUNNING row is now COMMITTED. Before this
@@ -687,7 +773,7 @@ export async function runHrisSync(input: {
                         data: {
                             status: 'PASSED',
                             errorMessage: null,
-                            resultJson: { upserted, managersLinked, managersCleared, roleChanges, departed: 0, total: roster.length, partial: true, resuming: true },
+                            resultJson: { upserted, managersLinked, managersCleared, roleChanges, recertification, departed: 0, total: roster.length, partial: true, resuming: true },
                             durationMs: Date.now() - start,
                             completedAt: new Date(),
                         },
@@ -702,7 +788,7 @@ export async function runHrisSync(input: {
                     upserted,
                     passStartedAt,
                 });
-                return { executionId, status: 'PARTIAL', upserted, managersLinked, managersCleared, roleChanges, errorMessage: msg };
+                return { executionId, status: 'PARTIAL', upserted, managersLinked, managersCleared, roleChanges, recertification, errorMessage: msg };
             }
 
             // NOT resumable — unchanged behaviour. Loud and non-retryable,
@@ -711,13 +797,13 @@ export async function runHrisSync(input: {
             await shortTx((db) =>
                 db.integrationExecution.update({
                     where: { id: executionId },
-                    data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, roleChanges, total: roster.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
+                    data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, roleChanges, recertification, total: roster.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
                 }),
             );
             logger.warn('hris-sync partial roster — departure reconcile skipped', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted });
             // Loud, but NOT retryable: the cap is deterministic, so a retry
             // re-reads the same too-large roster and truncates identically.
-            return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, roleChanges, errorMessage: msg, noRetry: true };
+            return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, roleChanges, recertification, errorMessage: msg, noRetry: true };
         }
 
         // H3 — departed-employee reconcile: a source=HRIS employee absent from a
@@ -872,6 +958,23 @@ export async function runHrisSync(input: {
         });
         const { departed, proposed: terminateProposed, refusal, refusalReason } = outcome;
 
+            // AFTER the mirror is written and BEFORE the row is finalised, so
+            // the outcome lands on the same execution an operator opens to see
+            // the counts that caused it.
+            //
+            // ON THE COMPLETED PATH ONLY. The truncated and resumable arms
+            // return before this: a pass that did not finish reading the
+            // roster has not established that anybody moved, and raising a
+            // review off a partial read asks somebody to act on a half-seen
+            // workforce.
+            //
+            // And only when something actually moved — a pass with no role
+            // changes owes no recertification, and saying `NO_OWNER` on every
+            // quiet night would train people to ignore it.
+            if (roleChanges > 0) {
+                recertification = await raiseRoleChangeRecertification(ctx.tenantId, roleChanges, now);
+            }
+
         await shortTx(async (db) => {
             await db.integrationExecution.update({
                 where: { id: executionId },
@@ -893,6 +996,7 @@ export async function runHrisSync(input: {
                         managersLinked,
                         managersCleared,
                         roleChanges,
+                        recertification,
                         departed,
                         total: roster.length,
                         ...(refusal ? { terminateRefused: refusalReason, terminateProposed } : {}),
@@ -922,7 +1026,7 @@ export async function runHrisSync(input: {
                 reason: refusalReason,
             });
         } else {
-            logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, managersLinked, managersCleared, roleChanges, departed });
+            logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, managersLinked, managersCleared, roleChanges, recertification, departed });
         }
 
         return {
@@ -932,6 +1036,7 @@ export async function runHrisSync(input: {
             managersLinked,
             managersCleared,
             roleChanges,
+            recertification,
             departed,
             // Rides the result as well as the row: `jobs/hris-sync` returns
             // this straight to the queue, and a caller that only reads the
@@ -948,13 +1053,13 @@ export async function runHrisSync(input: {
         await shortTx((db) =>
             db.integrationExecution.update({
                 where: { id: executionId },
-                data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, roleChanges, writePhaseFailed: true }, durationMs: Date.now() - start, completedAt: new Date() },
+                data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, roleChanges, recertification, writePhaseFailed: true }, durationMs: Date.now() - start, completedAt: new Date() },
             }),
         );
         logger.error('hris-sync write phase failed — execution recorded as ERROR', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, error: msg });
         // NO `noRetry` here. Unlike the deterministic truncation arms above, a
         // write that ran out of budget or lost the pool is exactly the shape a
         // retry fixes, so the queue must stay free to try again.
-        return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, roleChanges, errorMessage: msg };
+        return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, roleChanges, recertification, errorMessage: msg };
     }
 }

@@ -1,0 +1,35 @@
+-- WHO IS ACCOUNTABLE WHEN A RECERTIFICATION IS RAISED WITHOUT A HUMAN ASKING.
+--
+-- #2879's finding 58 reads "nothing recomputes access after a move and the
+-- compensating control is manual-only — no job ever creates an access-review
+-- campaign". That is true, and it is not an oversight: it falls out of an
+-- accountability decision the codebase already made and states.
+--
+-- `Task.createdByUserId` is NOT NULL, and `context-system.ts` says what that
+-- costs a background job in as many words — a synthetic principal "fails at
+-- RUNTIME on the constraint rather than at compile time". The review flow adds
+-- its own requirement, `assertCanAdmin` plus a named `reviewerUserId`. So a
+-- scheduled pass cannot raise either artefact without a REAL user to be
+-- accountable, and the product had no way to name one: `Tenant` carries no
+-- owner, and no job in `src/` picks an administrator to act as.
+--
+-- This column is that name, and nothing more. It does NOT grant: the resolution
+-- path runs the named user through `resolveMemberContext`, which reads their
+-- real membership and REFUSES by returning null — so a principal who has since
+-- been demoted or removed loses the ability rather than keeping an ADMIN
+-- context nobody re-checked. The docblock on `buildDelegatedJobContext` calls
+-- that escalation out directly, having been bitten by it: a READER who owned a
+-- policy once had an ADMIN-authority write committed under their name.
+--
+-- NULLABLE, and the null case is REPORTED rather than skipped. A tenant that
+-- has not named an owner gets no automated recertification, and the sync says
+-- so on its execution row. A switch that cannot say why it did nothing is the
+-- same outage wearing a different label.
+ALTER TABLE "TenantSecuritySettings"
+    ADD COLUMN "recertificationOwnerUserId" TEXT;
+
+-- No foreign key, deliberately, and for the same reason the journal's
+-- `actorUserId` has none: the setting must outlive the user row it names.
+-- A deleted user leaves a dangling id that `resolveMemberContext` resolves to
+-- nothing and refuses on, which is the correct outcome — where an FK with
+-- ON DELETE SET NULL would erase the record that anybody was ever nominated.

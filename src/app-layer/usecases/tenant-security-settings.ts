@@ -169,6 +169,15 @@ export interface TenantSecurityConfig {
      * enforcing would be worse than no page.
      */
     requireRegisteredAgent: boolean;
+    /**
+     * Who is accountable for recertifications raised without a human asking,
+     * or null when this tenant has named nobody and none are raised.
+     *
+     * REPORTED, not merely stored, for the reason the field above is: a switch
+     * that cannot say why it did nothing is the same outage wearing a
+     * different label.
+     */
+    recertificationOwnerUserId: string | null;
 }
 
 export interface TenantSecurityConfigPatch {
@@ -181,6 +190,14 @@ export interface TenantSecurityConfigPatch {
     aiLocalModel?: string | null;
     mfaFailClosed?: boolean;
     requireRegisteredAgent?: boolean;
+    /**
+     * The user accountable for recertifications raised without a human asking.
+     *
+     * `null` clears it, which turns automated recertification OFF for this
+     * tenant — reported on the sync's execution row rather than skipped
+     * quietly.
+     */
+    recertificationOwnerUserId?: string | null;
 }
 
 const MAX_CONCURRENT_SESSIONS_CEILING = 100;
@@ -202,6 +219,7 @@ export async function getTenantSecurityConfig(
                 aiResidency: true,
                 aiLocalBaseUrl: true,
                 aiLocalModel: true,
+                recertificationOwnerUserId: true,
                 mfaFailClosed: true,
                 requireRegisteredAgent: true,
             },
@@ -221,6 +239,9 @@ export async function getTenantSecurityConfig(
             // the gate is how an operator turns off something already off and
             // believes the opposite.
             requireRegisteredAgent: row?.requireRegisteredAgent ?? true,
+            // Null is the DEFAULT and it is meaningful: nobody nominated, so
+            // nothing is raised automatically.
+            recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
         };
     });
 }
@@ -284,6 +305,39 @@ export async function updateTenantSecurityConfig(
         }
         data.maxConcurrentSessions = v;
         changed.push('maxConcurrentSessions');
+    }
+
+    if (patch.recertificationOwnerUserId !== undefined) {
+        const v = patch.recertificationOwnerUserId;
+        if (v !== null) {
+            // REFUSED UNLESS THE NAMED USER IS ACTUALLY A MEMBER, because the
+            // alternative is a setting that is settable and inert: an id that
+            // resolves to nobody stores cleanly, reads back cleanly, and then
+            // raises nothing forever while the tenant believes automated
+            // recertification is on. `resolveMemberContext` would refuse it at
+            // RUN time, which is both too late and too quiet to be the only
+            // check.
+            //
+            // ACTIVE specifically, matching what that resolver accepts — an
+            // INVITED or DEACTIVATED member passes a bare existence test and
+            // then fails in exactly the same silent way.
+            const member = await runInTenantContext(ctx, (db) =>
+                db.tenantMembership.findUnique({
+                    where: { tenantId_userId: { tenantId: ctx.tenantId, userId: v } },
+                    select: { status: true },
+                }),
+            );
+            if (!member || member.status !== 'ACTIVE') {
+                throw badRequest(
+                    'recertificationOwnerUserId must name an ACTIVE member of this tenant. ' +
+                    'The named user would be accountable for reviews this product raises on ' +
+                    'their behalf, so a principal it cannot resolve is refused here rather ' +
+                    'than at the moment a review is due.',
+                );
+            }
+        }
+        data.recertificationOwnerUserId = v;
+        changed.push('recertificationOwnerUserId');
     }
 
     if (patch.auditStreamUrl !== undefined) {
@@ -413,6 +467,7 @@ export async function updateTenantSecurityConfig(
                 aiResidency: true,
                 aiLocalBaseUrl: true,
                 aiLocalModel: true,
+                recertificationOwnerUserId: true,
                 mfaFailClosed: true,
                 requireRegisteredAgent: true,
             },
@@ -432,6 +487,9 @@ export async function updateTenantSecurityConfig(
             // the gate is how an operator turns off something already off and
             // believes the opposite.
             requireRegisteredAgent: row?.requireRegisteredAgent ?? true,
+            // Null is the DEFAULT and it is meaningful: nobody nominated, so
+            // nothing is raised automatically.
+            recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
         };
     });
 }
