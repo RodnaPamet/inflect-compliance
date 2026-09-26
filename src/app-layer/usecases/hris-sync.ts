@@ -27,6 +27,7 @@
  */
 import type { RequestContext } from '../types';
 import { buildSystemContext } from '../context-system';
+import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
@@ -213,6 +214,13 @@ export interface HrisSyncResult {
      */
     managersCleared: number;
     /**
+     * Employees whose `department` or `jobTitle` actually DIFFERED from the row
+     * this pass replaced — the product's only true role-change signal. Distinct
+     * from the `$allModels` audit extension's `changedFields`, which lists the
+     * payload's keys and so names these columns on every run regardless.
+     */
+    roleChanges: number;
+    /**
      * Employees this pass marked TERMINATED — ZERO when the blast-radius rail
      * refused, and absent on the arms that never reach the reconcile.
      *
@@ -264,7 +272,7 @@ export async function runHrisSync(input: {
         return { ok: true as const, conn, executionId: execution.id };
     });
     if (!opened.ok) {
-        return { executionId: opened.executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, errorMessage: 'HRIS connection not found' };
+        return { executionId: opened.executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, errorMessage: 'HRIS connection not found' };
     }
     const { conn, executionId } = opened;
 
@@ -274,7 +282,7 @@ export async function runHrisSync(input: {
     const resolved = input.provider ?? registry.getProvider(conn.provider);
     if (!resolved || !isHrisSyncProvider(resolved)) {
         await shortTx((db) => db.integrationExecution.update({ where: { id: executionId }, data: { status: 'ERROR', errorMessage: 'Provider does not support HRIS sync', completedAt: new Date() } }));
-        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, errorMessage: 'Provider does not support HRIS sync' };
+        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, errorMessage: 'Provider does not support HRIS sync' };
     }
 
     const start = Date.now();
@@ -350,7 +358,7 @@ export async function runHrisSync(input: {
         });
         // This usecase CATCHES the provider error, so the classification has
         // to ride the result or the queue-level bypass never sees it.
-        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
+        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, roleChanges: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
     }
 
     // Declared outside the try so the write-failure arm can report what
@@ -359,6 +367,7 @@ export async function runHrisSync(input: {
     let upserted = 0;
     let managersLinked = 0;
     let managersCleared = 0;
+    let roleChanges = 0;
 
     // ── 3. The write phase ───────────────────────────────────────────────
     // Wrapped in a catch, because the RUNNING row is now COMMITTED. Before this
@@ -381,7 +390,70 @@ export async function runHrisSync(input: {
         // with no reconcile keep whatever status the roster reported, so the
         // mirror over-reports people as present. The reconcile is the half that
         // marks people TERMINATED, and it cannot run on its own.
+        // ═══ THE ONLY MOMENT THE PRIOR ROLE STILL EXISTS ═══
+        //
+        // The upserts below overwrite `department` and `jobTitle` in the same
+        // statement that would otherwise report them, so a move is observable
+        // only from here, against the rows as they stand before the first chunk
+        // commits.
+        //
+        // ONE READ FOR THE RUN, NOT ONE PER CHUNK, and that is a lease
+        // constraint rather than a preference. The run holds this connection's
+        // sync-lock lease, and `sync-transaction-shape` counts the bookkeeping
+        // transactions the lease pays for (#2522) precisely because a run that
+        // opens more of them than the lease covers lets a second run start
+        // alongside it. A per-chunk read would add one transaction per chunk —
+        // up to MAX_SYNC_WRITE_CHUNKS of them — and change that arithmetic.
+        // This is the same shape pass 2's manager map already uses: one bounded
+        // read, resolved in memory, before any write transaction opens.
+        //
+        // EXACT `workEmail`, not lowercased. The upsert keys on
+        // `tenantId_workEmail` with the address as the feed sent it; the
+        // lowercasing in pass 2 is for MATCHING a managerEmail against a
+        // workEmail, a different question. Folding the two would silently miss
+        // a prior row whose stored casing differs and report that employee as
+        // unchanged forever.
+        //
+        // A TRUNCATED MAP UNDER-REPORTS, WHICH IS THE SAFE DIRECTION: an
+        // employee past the cap has no prior here, so they read as a joiner and
+        // emit nothing. A missed move is a gap; a fabricated one would be the
+        // defect this signal exists to replace.
+        //
+        // SKIPPED ENTIRELY ON AN EMPTY ROSTER: there is nothing to compare
+        // against, and opening a lease-held transaction to learn that would
+        // charge the budget below for nothing.
+        const priorRoles = roster.length
+            ? await shortTx((db) =>
+                  db.employee.findMany({
+                      where: { tenantId: ctx.tenantId },
+                      select: { id: true, workEmail: true, fullName: true, department: true, jobTitle: true },
+                      take: MANAGER_MAP_TAKE,
+                  }),
+              )
+            : [];
+        const priorByAddress = new Map(priorRoles.map((r) => [r.workEmail, r]));
+
         for (const group of chunk(roster, SYNC_UPSERT_CHUNK_SIZE)) {
+            // A ROW WITH NO PRIOR IS A JOINER, NOT A MOVER, and is skipped:
+            // arriving in the roster for the first time is not a change of
+            // role, and recording it as one would put a "moved" event on every
+            // employee of every tenant's first sync.
+            const moves = group.flatMap((e) => {
+                if (!e.workEmail) return [];
+                const prior = priorByAddress.get(e.workEmail);
+                if (!prior) return [];
+                const after = { department: e.department ?? null, jobTitle: e.jobTitle ?? null };
+                // `?? null` on both sides, matching what the upsert actually
+                // writes: undefined from the feed and null in the column are
+                // the same state, and comparing them raw would report a change
+                // on every sync for every employee whose feed omits the field.
+                const changedFields = (['department', 'jobTitle'] as const).filter(
+                    (f) => prior[f] !== after[f],
+                );
+                if (changedFields.length === 0) return [];
+                return [{ prior, after, changedFields }];
+            });
+
             upserted += await writeTx(async (db) => {
                 let n = 0;
                 for (const e of group) { // guardrail-allow: n+1 — per-employee upsert, bounded by SYNC_UPSERT_CHUNK_SIZE
@@ -389,16 +461,21 @@ export async function runHrisSync(input: {
                     // Both arms stay an INLINE OBJECT LITERAL naming every
                     // column, and what enforces that is NARROWER than it looks.
                     //
-                    // `tests/guards/employee-status-single-write-seam` does NOT
-                    // census this file's columns. It declares HRIS_SEAM (:60)
-                    // but both column-census tests read PERSONNEL_SEAM (:254,
-                    // :275); HRIS_SEAM appears only in the file-level census
-                    // (:250), which asserts WHICH FILES write an Employee row,
-                    // never which columns. Mutation-proved: replacing both arms
-                    // with `...patch` leaves that guard at 4 passed, and so
-                    // does appending a second `status` writer to this file.
-                    // The same mutant in personnel.ts DOES redden it — the
-                    // census works, it just never looks here.
+                    // `tests/guards/employee-status-single-write-seam` DOES now
+                    // census this file — that gap was closed, and the paragraph
+                    // here said otherwise for long enough to be worth
+                    // correcting rather than deleting. Its HRIS census pins the
+                    // STATUS writes (`upsert` and the reconcile's `updateMany`,
+                    // exactly two, neither opaque) and pins the reconcile's
+                    // columns exactly as `['status', 'syncedAt']`.
+                    //
+                    // What it deliberately does NOT pin is the column list of
+                    // the two arms below: it maps status writes to
+                    // `{ verb, opaque }` and says why in as many words —
+                    // pinning every mirror column "would redden this STATUS
+                    // guard on any unrelated mirror column being added, which
+                    // couples a schema addition to a safety invariant it has
+                    // nothing to do with".
                     //
                     // So the only thing pinning these two arms is
                     // tests/unit/hris-record-id-handle.test.ts, which counts
@@ -429,8 +506,70 @@ export async function runHrisSync(input: {
                     });
                     n += 1;
                 }
+
+                // ═══ WHY A SECOND AUDIT ROW, WHEN EVERY UPSERT ALREADY WRITES ONE ═══
+                //
+                // `lib/prisma.ts` carries a `$allModels` audit extension, so
+                // the upserts above are already audited. That row cannot answer
+                // this question and cannot be made to: `extractChangedFields`
+                // is `Object.keys(data)`, the keys of the PAYLOAD rather than a
+                // diff, and nothing reads the prior row. The update arm names
+                // ten columns unconditionally, so its `changedFields` says
+                // `department` and `jobTitle` changed for EVERY employee on
+                // EVERY run.
+                //
+                // An investigator asking "when did this person move" gets a hit
+                // on every sync since the tenant was onboarded. That is not a
+                // weaker signal than none — it is a misleading one, and it is
+                // why this row is worth its cost.
+                //
+                // This row names only fields that ACTUALLY differ, and carries
+                // only those in `before`/`after`. A change record that lists a
+                // field which did not change is the defect above, one layer
+                // along.
+                //
+                // BEST-EFFORT, AND NEVER FATAL. `lib/prisma.ts` states the
+                // posture for the extension it owns — "Best-effort audit
+                // logging — never throw" — and this row has to hold to it for a
+                // sharper reason than consistency: it is emitted INSIDE the
+                // chunk's write transaction, so an append that throws would
+                // roll back that chunk's upserts and fail the pass. This mirror
+                // is what the 05:00 leaver pass reads to decide whose directory
+                // account to disable. An audit row failing to write must not be
+                // able to stop offboarding.
+                for (const m of moves) { // guardrail-allow: n+1 — bounded by SYNC_UPSERT_CHUNK_SIZE
+                    const summary = `HRIS role change for ${m.prior.fullName}`;
+                    try {
+                        await logEvent(db, ctx, {
+                            action: 'UPDATE',
+                            entityType: 'Employee',
+                            entityId: m.prior.id,
+                            details: summary,
+                            detailsJson: {
+                                category: 'entity_lifecycle',
+                                entityName: 'Employee',
+                                operation: 'updated',
+                                changedFields: m.changedFields,
+                                before: Object.fromEntries(m.changedFields.map((f) => [f, m.prior[f]])),
+                                after: Object.fromEntries(m.changedFields.map((f) => [f, m.after[f]])),
+                                summary,
+                            },
+                        });
+                    } catch (auditError) {
+                        // Named at WARN with the employee id, because a move
+                        // that happened and was not recorded is exactly the gap
+                        // this signal exists to close — it must not vanish.
+                        logger.warn('hris-sync role-change audit failed', {
+                            component: 'hris-sync',
+                            tenantId: ctx.tenantId,
+                            employeeId: m.prior.id,
+                            error: auditError instanceof Error ? auditError.message : String(auditError),
+                        });
+                    }
+                }
                 return n;
             });
+            roleChanges += moves.length;
         }
 
         // Pass 2 — resolve managers by email (one query, in-memory map — no N+1).
@@ -548,7 +687,7 @@ export async function runHrisSync(input: {
                         data: {
                             status: 'PASSED',
                             errorMessage: null,
-                            resultJson: { upserted, managersLinked, managersCleared, departed: 0, total: roster.length, partial: true, resuming: true },
+                            resultJson: { upserted, managersLinked, managersCleared, roleChanges, departed: 0, total: roster.length, partial: true, resuming: true },
                             durationMs: Date.now() - start,
                             completedAt: new Date(),
                         },
@@ -563,7 +702,7 @@ export async function runHrisSync(input: {
                     upserted,
                     passStartedAt,
                 });
-                return { executionId, status: 'PARTIAL', upserted, managersLinked, managersCleared, errorMessage: msg };
+                return { executionId, status: 'PARTIAL', upserted, managersLinked, managersCleared, roleChanges, errorMessage: msg };
             }
 
             // NOT resumable — unchanged behaviour. Loud and non-retryable,
@@ -572,13 +711,13 @@ export async function runHrisSync(input: {
             await shortTx((db) =>
                 db.integrationExecution.update({
                     where: { id: executionId },
-                    data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, total: roster.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
+                    data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, roleChanges, total: roster.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
                 }),
             );
             logger.warn('hris-sync partial roster — departure reconcile skipped', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted });
             // Loud, but NOT retryable: the cap is deterministic, so a retry
             // re-reads the same too-large roster and truncates identically.
-            return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, errorMessage: msg, noRetry: true };
+            return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, roleChanges, errorMessage: msg, noRetry: true };
         }
 
         // H3 — departed-employee reconcile: a source=HRIS employee absent from a
@@ -753,6 +892,7 @@ export async function runHrisSync(input: {
                         upserted,
                         managersLinked,
                         managersCleared,
+                        roleChanges,
                         departed,
                         total: roster.length,
                         ...(refusal ? { terminateRefused: refusalReason, terminateProposed } : {}),
@@ -782,7 +922,7 @@ export async function runHrisSync(input: {
                 reason: refusalReason,
             });
         } else {
-            logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, managersLinked, managersCleared, departed });
+            logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, managersLinked, managersCleared, roleChanges, departed });
         }
 
         return {
@@ -791,6 +931,7 @@ export async function runHrisSync(input: {
             upserted,
             managersLinked,
             managersCleared,
+            roleChanges,
             departed,
             // Rides the result as well as the row: `jobs/hris-sync` returns
             // this straight to the queue, and a caller that only reads the
@@ -807,13 +948,13 @@ export async function runHrisSync(input: {
         await shortTx((db) =>
             db.integrationExecution.update({
                 where: { id: executionId },
-                data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, writePhaseFailed: true }, durationMs: Date.now() - start, completedAt: new Date() },
+                data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, roleChanges, writePhaseFailed: true }, durationMs: Date.now() - start, completedAt: new Date() },
             }),
         );
         logger.error('hris-sync write phase failed — execution recorded as ERROR', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, error: msg });
         // NO `noRetry` here. Unlike the deterministic truncation arms above, a
         // write that ran out of budget or lost the pool is exactly the shape a
         // retry fixes, so the queue must stay free to try again.
-        return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, errorMessage: msg };
+        return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, roleChanges, errorMessage: msg };
     }
 }

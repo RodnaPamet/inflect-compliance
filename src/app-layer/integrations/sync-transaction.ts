@@ -297,12 +297,19 @@ export const ROSTER_READ_PHASE_BUDGET_MS = ROSTER_READ_DEADLINE_MS + MAX_HTTP_RE
  *      `start` — the instant `ROSTER_READ_DEADLINE_MS` is measured from — is
  *      taken AFTER this transaction commits. It is inside the lease and
  *      outside the read clock.
- *   2. THE MANAGER MAP. One `findMany` between the upsert chunks and the
+ *   2. THE PRIOR-ROLE MAP. One `findMany` BEFORE the upsert chunks, holding
+ *      each employee's `department` and `jobTitle` as they stand before this
+ *      pass overwrites them. One per RUN and not one per chunk, precisely so
+ *      it costs this budget a single transaction however long the roster is;
+ *      skipped altogether on an empty roster. Same bookkeeping timeout as the
+ *      manager map, and invisible to `SYNC_WRITE_PHASE_BUDGET_MS` for the same
+ *      reason.
+ *   3. THE MANAGER MAP. One `findMany` between the upsert chunks and the
  *      manager-link chunks. Bookkeeping-budgeted, so `SYNC_WRITE_PHASE_BUDGET_MS`
  *      — which counts `writeTx` only — does not see it either.
- *   3. THE CURSOR STORE, on the resumable arm.
- *   4. THE EXECUTION FINALISE, which carries `clearAuthFailure` with it.
- *   5. THE WRITE-FAILURE FINALISE, opened when (4) THROWS.
+ *   4. THE CURSOR STORE, on the resumable arm.
+ *   5. THE EXECUTION FINALISE, which carries `clearAuthFailure` with it.
+ *   6. THE WRITE-FAILURE FINALISE, opened when (5) THROWS.
  *
  * THE FIFTH IS WHY THIS SPLIT IS 1 + 4, AND THE SENTENCE IT REPLACES WAS
  * FALSE. That sentence said the truncation-ERROR, read-failure,
@@ -336,10 +343,18 @@ export const ROSTER_READ_PHASE_BUDGET_MS = ROSTER_READ_DEADLINE_MS + MAX_HTTP_RE
 export const SYNC_BOOKKEEPING_TXS_BEFORE_READ = 1;
 
 /**
- * The manager map, the cursor store, the finalise, and the write-failure
- * finalise the catch opens when that finalise throws — see the constant above.
+ * The prior-role map, the manager map, the cursor store, the finalise, and the
+ * write-failure finalise the catch opens when that finalise throws — see the
+ * constant above.
+ *
+ * RAISED FROM 4 TO 5 when the prior-role map landed. That map is what makes a
+ * transfer distinguishable from an ordinary sync, and it is a real cost to the
+ * lease rather than a free read: five bookkeeping transactions at their full
+ * timeout is 75,000 ms of lease-held work, six is 90,000 ms. Declared here so
+ * the census in `tests/unit/sync-transaction-shape.test.ts` — which NAMES each
+ * transaction rather than counting them — and this arithmetic move together.
  */
-export const SYNC_BOOKKEEPING_TXS_AFTER_READ = 4;
+export const SYNC_BOOKKEEPING_TXS_AFTER_READ = 5;
 
 /** Every bookkeeping transaction the lease pays for outside the read window. */
 export const MAX_SYNC_BOOKKEEPING_TXS =
