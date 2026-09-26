@@ -148,7 +148,10 @@ async function rpc(
     }
 
     if (!res.ok) {
-        throw new McpClientError(`MCP server answered HTTP ${res.status} to ${method}`);
+        const challenge = describeAuthChallenge(res.headers.get('www-authenticate'));
+        throw new McpClientError(
+            `MCP server answered HTTP ${res.status} to ${method}${challenge ? ` (${challenge})` : ''}`,
+        );
     }
 
     const text = await readBounded(res, maxBytes);
@@ -254,6 +257,45 @@ async function readBounded(res: Response, maxBytes: number): Promise<string> {
 }
 
 /** Handshake. Returns the protocol version the server settled on. */
+/**
+ * The SAFE part of a `WWW-Authenticate` challenge, for an error message.
+ *
+ * A bare "answered HTTP 401" names nothing an operator can act on. A resource
+ * server uses this header to say WHICH credential problem it had — an expired
+ * token, a missing scope, an audience it does not serve — and discarding it
+ * turned one real 401 into three wrong theories before the cause was found.
+ *
+ * ── WHAT IS DELIBERATELY NOT INCLUDED ───────────────────────────────────────
+ *
+ * `error_description`, and for the reason `postToTokenEndpoint` already gives
+ * for the identical field on a token response: a description is free text
+ * chosen by the far end and can echo request parameters back, so surfacing it
+ * puts whatever we sent into our own logs and UI. The `error` TOKEN is a closed
+ * vocabulary (`invalid_token`, `insufficient_scope`, …) and carries the
+ * diagnosis without the echo. `scope` is included because a scope the server
+ * requires is the single most actionable thing it can tell us, and it describes
+ * the SERVER's requirements rather than our request.
+ *
+ * `realm` is dropped as noise, not as a risk.
+ *
+ * Returns null for an absent or unparseable header — "the server said nothing"
+ * and "the server said something I could not read" both mean there is nothing
+ * to add, and a half-parsed challenge would be worse than none.
+ */
+export function describeAuthChallenge(header: string | null | undefined): string | null {
+    if (!header) return null;
+    const scheme = header.trim().split(/[\s,]/, 1)[0];
+    const parts: string[] = [];
+    if (scheme) parts.push(scheme);
+    for (const name of ['error', 'scope'] as const) {
+        // Bounded on purpose: a hostile server could otherwise put a megabyte
+        // into a header and have us paste it into every log line.
+        const m = new RegExp(`\\b${name}="([^"]{0,200})"`, 'i').exec(header);
+        if (m) parts.push(`${name}=${m[1]}`);
+    }
+    return parts.length > 0 ? parts.join(' ') : null;
+}
+
 export async function initialize(opts: McpClientOptions): Promise<{ protocolVersion: string }> {
     const result = (await rpc(opts, 'initialize', {
         protocolVersion: LATEST_PROTOCOL_VERSION,
