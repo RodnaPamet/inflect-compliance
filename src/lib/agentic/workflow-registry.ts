@@ -11,6 +11,7 @@ import type { WorkflowDefinition } from './workflow-types';
 import { frameworkOnboardingWorkflow } from './workflows/framework-onboarding';
 import { auditPrepWorkflow } from './workflows/audit-prep';
 import { postureReviewWorkflow } from './workflows/posture-review';
+import { accessPostureWorkflow } from './workflows/access-posture';
 
 /**
  * "Diagnostic" — read the tenant's compliance posture, then synthesise a
@@ -52,6 +53,12 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
     // `DRIVER_IMPLEMENTED`, so on every deployment that has not enabled Flue
     // this runs on the static engine like its neighbours.
     [postureReviewWorkflow.key]: postureReviewWorkflow,
+    // The first definition whose objective asks the agent to reach OUTSIDE this
+    // product. It names no vendor and no external tool -- it cannot, because an
+    // external tool's name carries a runtime connection id -- so the reach is a
+    // model's choice from what a human approved and granted, which is the only
+    // route #2859 leaves open. See the header of `access-posture.ts`.
+    [accessPostureWorkflow.key]: accessPostureWorkflow,
 };
 
 /**
