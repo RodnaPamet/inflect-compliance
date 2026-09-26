@@ -152,6 +152,52 @@ export const INJECTION_RULES: ReadonlyArray<GuardRule<InjectionCategory>> = [
 // These run against the RAW outbound text (not lower-cased) via a dedicated
 // normalizer in the egress scanner, because secret shapes are case-sensitive.
 
+/**
+ * Slash density above which a candidate is a PATH rather than a secret.
+ *
+ * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+ *
+ * `/` is in the high-entropy rule's character class because base64 uses it.
+ * That also makes a REST path a candidate, and a camelCase path carrying a
+ * digit satisfies every other condition the rule asks for. Measured against
+ * Microsoft's Entra MCP server on 2026-09-26, the first external tool call
+ * this product ever made was refused on:
+ *
+ *     0/roleManagement/directory/roleAssignments
+ *
+ * — a fragment of `GET: /v1.0/roleManagement/directory/roleAssignments`. The
+ * word boundary after `v1.` starts the match at the `0`, which supplies the
+ * digit; camelCase supplies the upper and lower. Not a secret, and an external
+ * tool returns API paths as a matter of course, so every such run parked for a
+ * human review that had nothing to look at.
+ *
+ * ── WHY DENSITY, AND NOT "CONTAINS A SLASH" ─────────────────────────────────
+ *
+ * Because excluding every slash-bearing candidate would be a real loss of
+ * detection, not a noise fix. `/` is 1 of base64's 64 characters, so a 40-char
+ * secret contains one about half the time — and splitting on it leaves
+ * segments averaging ~26 characters, under the 32 threshold. That change would
+ * blind the rule to a large share of exactly what it is for.
+ *
+ * Density separates the two cleanly, because the difference is structural: a
+ * path uses `/` as a SEPARATOR between short words, a blob contains it by
+ * accident. The refused string above carries 3 slashes in 42 characters, one
+ * per 14; random base64 averages one per 64. The threshold sits between them
+ * with room on both sides.
+ *
+ * It is a heuristic and is meant to be: this rule is the generic catch-all,
+ * deliberately `medium` severity "to temper false positives", and the specific
+ * api_key / bearer_or_jwt / private_key rules above it are what actually carry
+ * the weight. A single-segment path long enough to still match remains
+ * possible, and remains a review prompt rather than a block.
+ */
+const PATH_SLASH_DENSITY = 1 / 24;
+
+function looksLikePath(token: string): boolean {
+    const slashes = (token.match(/\//g) ?? []).length;
+    return slashes > 0 && slashes / token.length > PATH_SLASH_DENSITY;
+}
+
 export const EGRESS_RULES: ReadonlyArray<GuardRule<EgressCategory>> = [
     // Cloud / provider API keys.
     {
@@ -241,6 +287,8 @@ export const EGRESS_RULES: ReadonlyArray<GuardRule<EgressCategory>> = [
             let m: RegExpExecArray | null;
             while ((m = re.exec(s)) !== null) {
                 const tok = m[0];
+                // A REST path is not a token. See `looksLikePath`.
+                if (looksLikePath(tok)) continue;
                 const hasLower = /[a-z]/.test(tok);
                 const hasUpper = /[A-Z]/.test(tok);
                 const hasDigit = /[0-9]/.test(tok);
