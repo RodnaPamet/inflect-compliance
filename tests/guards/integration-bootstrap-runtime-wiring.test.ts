@@ -50,6 +50,13 @@ const EXPECTED_PROVIDER_IDS = [
     'device',
     'training',
     'servicenow',
+    // #2859 slice two. Registered even though `supportedChecks` is empty and it
+    // routes no automationKey: `upsertIntegrationConnection` and
+    // `testConnectionCredentials` both reject a provider the registry does not
+    // know, so without this the admin screen it was written for cannot create
+    // or test one. It sat written-but-unregistered until the proving run tried
+    // to use it — which is the second direction this file now covers.
+    'mcp-server',
 ].sort();
 
 describe('integration provider fleet — runtime wiring', () => {
@@ -71,5 +78,47 @@ describe('integration provider fleet — runtime wiring', () => {
             const ids = registry.listProviders().map((p: { id: string }) => p.id).sort();
             expect(ids).toEqual(EXPECTED_PROVIDER_IDS);
         });
+    });
+
+    // ── THE OTHER DIRECTION ──────────────────────────────────────────────
+    //
+    // Everything above starts from the REGISTRY and checks the list agrees. That
+    // is blind, structurally, to a provider that is never registered at all: it
+    // never enters the registry, so the set match above is perfectly happy while
+    // the class is unreachable in production. `McpServerProvider` lived in that
+    // blind spot — fully implemented, unit-tested by direct construction (which
+    // bypasses the registry and so stayed green), and rejected at runtime with
+    // "Unknown provider: mcp-server".
+    //
+    // So this starts from the SOURCE FILES instead. The population is derived,
+    // never listed, and there is no exemption set: every provider class in the
+    // tree is registered, and a new one is red until it is wired.
+    it('every provider class in the tree is registered in bootstrap', () => {
+        const dir = path.join(ROOT, 'src/app-layer/integrations');
+        const files = fs
+            .readdirSync(dir, { recursive: true, encoding: 'utf8' })
+            .filter((f) => f.endsWith('.ts'))
+            .map((f) => path.join(dir, f));
+
+        // Comments are masked at the read seam, so a class or a registration
+        // that is commented out counts as neither present nor wired.
+        const declared = new Set<string>();
+        for (const f of files) {
+            const code = codeOf(fs.readFileSync(f, 'utf8'));
+            for (const m of code.matchAll(/export class ([A-Za-z0-9_]+Provider)\b/g)) {
+                declared.add(m[1]);
+            }
+        }
+
+        // Positive control: the scan must actually be finding classes. A silent
+        // zero here would make the assertion below vacuously true.
+        expect(declared.size).toBeGreaterThan(10);
+
+        const bootstrap = read('src/app-layer/integrations/bootstrap.ts');
+        const unregistered = [...declared]
+            .filter((cls) => !new RegExp(`registry\\.register\\(new ${cls}\\(\\)\\)`).test(bootstrap))
+            .sort();
+
+        expect(unregistered).toEqual([]);
     });
 });

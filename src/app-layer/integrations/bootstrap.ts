@@ -34,6 +34,7 @@ import { GitHubSyncOrchestrator } from './providers/github/sync';
 import { SharePointClient } from './providers/sharepoint/client';
 import { SharePointMapper } from './providers/sharepoint/mapper';
 import { ServiceNowProvider } from './providers/servicenow';
+import { McpServerProvider } from './providers/mcp-server-provider';
 import { ServiceNowClient } from './providers/servicenow/client';
 import { ServiceNowChangeMapper } from './providers/servicenow/mapper';
 
@@ -89,6 +90,13 @@ registry.register(new TrainingProvider());
 
 // ServiceNow — change-management checks (approval on production changes).
 registry.register(new ServiceNowProvider());
+
+// External MCP server — holds the address and credential of a system an AGENT
+// may be granted tools on. `supportedChecks` is empty on purpose, so this adds
+// nothing to automationKey routing; it is here because `upsertIntegrationConnection`
+// and `testConnectionCredentials` both reject a provider the registry does not
+// know, which made the admin screen the provider was written FOR unreachable.
+registry.register(new McpServerProvider());
 
 // Future providers:
 // registry.register(new GitLabProvider());
