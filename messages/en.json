@@ -5773,7 +5773,9 @@
       "undo": "Undo",
       "releaseError": "Couldn't release protection — this account is still protected.",
       "reasonLabel": "Reason",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "selfAccount": "Integration's own account",
+      "selfAccountHint": "This integration authenticates as this account. Automated offboarding already refuses to disable it — marking it protected records that decision explicitly."
     },
     "leaverPasses": {
       "linkLabel": "Leaver passes",

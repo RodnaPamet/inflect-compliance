@@ -542,8 +542,24 @@ function sameAccount(a: string, b: string): boolean {
  * Blank strings are dropped rather than compared. An account with no email and a
  * connection with no configured bind would otherwise match each other on `''`
  * and refuse every candidate in the tenant.
+ *
+ * EXPORTED, AND THAT IS THE POINT OF THE MARKER ON THE ACCOUNTS PAGE. The page
+ * shows which row this connection authenticates as by calling THIS function
+ * rather than by reasoning about binds itself, so the badge and the refusal
+ * cannot disagree: if the page marks a row, rail 0a will refuse it, and if the
+ * rail cannot recognise its own account the page shows nothing to protect —
+ * which is the operator's signal that the protection is not armed. A second
+ * implementation would be a mirror, and a mirror that drifts here reads as
+ * "you are covered" while the rail refuses nothing.
+ *
+ * The parameter is narrowed to the two fields actually compared so a caller
+ * holding a roster row need not construct a whole `DisableAccountInput`;
+ * `DisableAccountInput` satisfies it structurally.
  */
-function matchesSelf(input: DisableAccountInput, selfIds: readonly string[] | undefined): boolean {
+export function matchesSelf(
+    input: { readonly externalUserId?: string | null; readonly email?: string | null },
+    selfIds: readonly string[] | undefined,
+): boolean {
     if (!selfIds || selfIds.length === 0) return false;
     const candidateIds = [input.externalUserId, input.email].filter(
         (v): v is string => typeof v === 'string' && v.trim() !== '',
