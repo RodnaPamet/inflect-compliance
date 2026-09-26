@@ -30,6 +30,7 @@
  * @module app-layer/jobs/executor-registry
  */
 import { logger } from '@/lib/observability/logger';
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 import { recordJobMetrics } from '@/lib/observability/metrics';
 import { env } from '@/env';
 import {
@@ -1330,17 +1331,28 @@ executorRegistry.register('identity-leaver-pass', async (payload) => {
         // human-readable half, `terminatedWorkers` counts sessions actually
         // killed in a live directory, and `batchRefused` says why a batch
         // stopped. All four were computed, returned, and thrown away here.
+        // Scrubbed for the reason spelled out on the joiner's call below: this
+        // object is handed to BullMQ and retained in Redis, which is not the
+        // access-controlled operator surface the unscrubbed return value exists
+        // for. The KEYS are untouched — `LEAVER_RESULT_DISPOSITION` declares
+        // which fields reach `details` and `leaver-result-fields-reach-the-row`
+        // pins that they do, so only the values change here.
         {
             mode: r.mode,
             refusal: r.refusal,
-            detail: r.detail,
+            detail: r.detail ? redactDirectoryIdentifiers(r.detail, undefined) : r.detail,
             counts: r.counts,
             terminatedWorkers: r.terminatedWorkers,
             population: r.population,
             batchRefused: r.batchRefused,
             writeReadiness: r.writeReadiness,
         },
-        { status: r.status, errorMessage: r.errorMessage },
+        {
+            status: r.status,
+            errorMessage: r.errorMessage
+                ? redactDirectoryIdentifiers(r.errorMessage, undefined)
+                : r.errorMessage,
+        },
     );
 });
 
@@ -1403,8 +1415,37 @@ executorRegistry.register('identity-joiner-pass', async (payload) => {
         r.starters,
         r.wouldCreate,
         r.starters - r.wouldCreate,
-        { mode: r.mode, refusal: r.refusal, detail: r.detail, decisions: r.decisions },
-        { status: r.status, errorMessage: r.errorMessage },
+        // ═══ SCRUBBED ON THE WAY INTO THE JOB RESULT (#2877 f22) ═══
+        //
+        // `detail` and `errorMessage` are deliberately UNSCRUBBED coming out of
+        // the usecase, and that is correct there: a DirectoryWriteError's reason
+        // reaches an operator through a tenant-scoped, access-controlled surface
+        // where naming the account is the whole point.
+        // `identity-log-identifier-scrub` states the asymmetry and says it must
+        // not be widened into banning it.
+        //
+        // THIS is not that surface. A job result is handed to BullMQ and kept in
+        // Redis under `removeOnComplete: 500` / `removeOnFail: 1000`, so a
+        // rolling window of joiner failures would sit there carrying UPNs and
+        // DNs, in a store with none of the properties the asymmetry relies on.
+        //
+        // It costs the operator nothing, which is the part worth checking before
+        // narrowing a documented surface: the manual-run route ENQUEUES and never
+        // reads this return value, and the passes page reads the
+        // `IntegrationExecution` row — which `safeRecordErroredPass` already
+        // scrubs. The only consumers of this copy are Redis and metrics.
+        {
+            mode: r.mode,
+            refusal: r.refusal,
+            detail: redactDirectoryIdentifiers(r.detail, null),
+            decisions: r.decisions,
+        },
+        {
+            status: r.status,
+            errorMessage: r.errorMessage
+                ? redactDirectoryIdentifiers(r.errorMessage, null)
+                : r.errorMessage,
+        },
     );
 });
 
