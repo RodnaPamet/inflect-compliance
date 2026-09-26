@@ -127,7 +127,13 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
 
 const putHandler = requirePermission('admin.tenant_lifecycle', async (req: NextRequest, _ctx, requestCtx) => {
     const { direction, mode } = Body.parse(await req.json());
-    const state = await setIdentityWriteMode(requestCtx, direction, mode);
+    // The SAME constant this route publishes as `honoured.<d>.maxMode` in the
+    // GET above. Passing it rather than letting the usecase import it keeps
+    // `identity-leaver-pass` -> `identity-write-policy` acyclic, and keeps the
+    // published ceiling and the enforced ceiling one value — which is the whole
+    // of #2638's acceptance, now applied to `maxMode` as well as `implemented`.
+    const clamp = direction === 'leaver' ? LEAVER_MAX_MODE : JOINER_MAX_MODE;
+    const state = await setIdentityWriteMode(requestCtx, direction, mode, clamp);
     return jsonResponse({ direction, ...state });
 });
 
