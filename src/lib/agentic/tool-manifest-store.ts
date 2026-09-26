@@ -63,6 +63,7 @@ export async function loadApprovedManifest(
         select: {
             toolName: true,
             descriptionHash: true,
+                annotationsHash: true,
             schemaHash: true,
             manifestHash: true,
             revision: true,
@@ -84,6 +85,7 @@ export async function loadApprovedManifests(
         select: {
             toolName: true,
             descriptionHash: true,
+                annotationsHash: true,
             schemaHash: true,
             manifestHash: true,
             revision: true,

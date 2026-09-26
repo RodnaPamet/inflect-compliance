@@ -82,6 +82,21 @@ export interface McpToolDescriptor {
     description: string;
     /** JSON Schema for the tool's arguments (draft-07 subset). */
     inputSchema: Record<string, unknown>;
+    /**
+     * MCP tool annotations, as the server declared them — `readOnlyHint`,
+     * `destructiveHint`, `idempotentHint`, `openWorldHint`.
+     *
+     * Kept rather than dropped because the subsystem that governs external
+     * WRITES turns on exactly one question: is this tool a write? MCP has a
+     * declared answer and this client discarded it at the boundary, so the
+     * field could not be pinned — and a server could flip `readOnlyHint` from
+     * true to false and produce an IDENTICAL manifest hash.
+     *
+     * Advisory by the spec's own words, and treated as such: it is ATTESTED,
+     * never trusted. Measured 2026-09-26 against Microsoft's Entra MCP server,
+     * whose three tools all declare `readOnlyHint: true`.
+     */
+    annotations?: Record<string, unknown>;
 }
 
 export interface McpResourceDescriptor {

@@ -1,0 +1,25 @@
+-- MCP tool annotations, pinned on their own axis.
+--
+-- `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` are
+-- how an MCP server declares whether a tool READS or WRITES. The client
+-- discarded them at the boundary, so they were never hashed -- and a server
+-- could redeclare a read tool as a write one and produce an IDENTICAL
+-- `manifestHash`, leaving `verifyToolManifest` reporting no drift.
+--
+-- WHY A SEPARATE COLUMN RATHER THAN FOLDING IT INTO `manifestHash`
+--
+-- Folding it in would change that hash for every tool, so every pin on file
+-- would stop matching and every tool would need re-approval on the day this
+-- shipped. That is a real cost paid by humans to protect a field nothing reads
+-- yet. A separate axis buys the property -- the flip stops being silent --
+-- while leaving existing pins valid.
+--
+-- NULLABLE, AND THE NULL MEANS SOMETHING
+--
+-- Deliberately no backfill and no DEFAULT. A pin taken before this column is
+-- UNPINNED on this axis: "we never looked" is not the same answer as "they
+-- agreed", and a backfilled hash would assert an attestation no human made.
+-- `verifyToolManifest` reads NULL as unpinned and declines to compare, so an
+-- old pin keeps working and gains the attestation the next time somebody
+-- approves it.
+ALTER TABLE "McpToolManifestPin" ADD COLUMN "annotationsHash" TEXT;

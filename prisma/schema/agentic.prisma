@@ -1155,6 +1155,12 @@ model McpToolManifestPin {
   schemaHash      String
   /// SHA-256 over the domain-separated triple. What the boundary compares.
   manifestHash    String
+  /// SHA-256 over the tool's MCP annotations (readOnlyHint, destructiveHint,
+  /// idempotentHint, openWorldHint), on its OWN axis so adding it left every
+  /// existing pin valid. NULL means the pin was taken before annotations were
+  /// pinned -- "we never looked", which is not agreement and must not be read
+  /// as it.
+  annotationsHash String?
 
   /// `BASELINE` — the first definition the boundary ever observed for this tool
   /// (trust-on-first-use, no human involved). `APPROVED` — a named human

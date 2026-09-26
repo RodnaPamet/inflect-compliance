@@ -183,6 +183,7 @@ export async function listExternalMcpTools(
             select: {
                 toolName: true,
                 descriptionHash: true,
+                annotationsHash: true,
                 schemaHash: true,
                 manifestHash: true,
                 revision: true,
@@ -203,6 +204,11 @@ export async function listExternalMcpTools(
             name: t.name,
             description: t.description ?? '',
             inputSchema: (t.inputSchema ?? {}) as Record<string, unknown>,
+            // Attested on its own axis. Absent stays absent rather than
+            // becoming `{}`: a server that declares nothing and one that
+            // declares an empty object are different statements, and the hash
+            // should be able to tell them apart.
+            annotations: t.annotations,
         };
         const pin = (byName.get(qualified) ?? null) as ApprovedToolManifest | null;
         return {
@@ -304,6 +310,10 @@ export async function approveExternalToolManifest(
                 descriptionHash: tool.liveDescriptionHash,
                 schemaHash: tool.liveSchemaHash,
                 manifestHash: tool.liveManifestHash,
+                // From the SAME catalogue read the operator approved, like
+                // every other hash here — not recomputed, which would attest a
+                // definition nobody saw.
+                annotationsHash: tool.liveAnnotationsHash,
             },
             ctx.userId as string,
         ),
@@ -391,6 +401,7 @@ export async function resolveGrantedExternalTools(
             select: {
                 toolName: true,
                 descriptionHash: true,
+                annotationsHash: true,
                 schemaHash: true,
                 manifestHash: true,
                 revision: true,
@@ -467,6 +478,7 @@ export async function resolveGrantedExternalTools(
                 name: descriptor.name,
                 description: descriptor.description ?? '',
                 inputSchema: (descriptor.inputSchema ?? {}) as Record<string, unknown>,
+                annotations: descriptor.annotations,
             };
             const verdict = verifyToolManifest(def, pinByName.get(qualified) ?? null);
             if (verdict.status !== 'APPROVED') {

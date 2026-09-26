@@ -46,6 +46,8 @@ interface PinRow {
     descriptionHash: string;
     schemaHash: string;
     manifestHash: string;
+    /** Null on a pin taken before the annotations axis existed. */
+    annotationsHash: string | null;
     approvalSource: string;
     approvedByUserId: string | null;
     approvedAt: Date;
@@ -314,6 +316,13 @@ function pin(def: ToolDefinition, overrides: Partial<PinRow> = {}): void {
         descriptionHash: h.descriptionHash,
         schemaHash: h.schemaHash,
         manifestHash: h.manifestHash,
+        // A pin taken under the current code carries the annotations
+        // attestation. Omitting it here would make every fixture look like a
+        // pre-migration row, and the no-op guard would correctly report a
+        // change on every re-approval — true of an old pin, and not what these
+        // tests are about. `PinRow` allows null so a test can still say
+        // "pre-migration" explicitly.
+        annotationsHash: h.annotationsHash,
         approvalSource: 'APPROVED',
         approvedByUserId: 'user-original-approver',
         approvedAt: new Date('2026-09-01T00:00:00.000Z'),
@@ -701,6 +710,26 @@ describe('approving a manifest pin tells the workspace', () => {
 
         expect(result.changed).toBe(false);
         expect(notifications).toHaveLength(0);
+    });
+
+    it('a pin from BEFORE the annotations axis gains the attestation, and that IS a change', async () => {
+        // The no-op guard compared `manifestHash` alone. Annotations are
+        // deliberately not part of it, so without widening the guard an
+        // approval taken precisely BECAUSE a server flipped `readOnlyHint`
+        // would have matched, returned `changed: false`, and written nothing —
+        // the operator would have approved a drift and the pin would still
+        // carry the old attestation.
+        //
+        // A null here is a row written before the column existed. Gaining a
+        // hash is a real write, so it takes a revision and rings the bell once
+        // — a one-off per tool, and the alternative is a pin that silently
+        // claims an attestation nobody made.
+        pin(live, { annotationsHash: null });
+
+        const result = (await approve()) as { changed: boolean };
+
+        expect(result.changed).toBe(true);
+        expect(notifications).toHaveLength(1);
     });
 
     it('never carries the tool description — the bell is one more reader', async () => {

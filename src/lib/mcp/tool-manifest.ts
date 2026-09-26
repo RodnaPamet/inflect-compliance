@@ -75,6 +75,15 @@ export interface ToolDefinition {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
+    /**
+     * MCP tool annotations — `readOnlyHint`, `destructiveHint`,
+     * `idempotentHint`, `openWorldHint`. Optional because a tool this build
+     * defines declares none; an external server's tool usually does.
+     *
+     * They are a SEPARATE hash and deliberately NOT part of `manifestHash` —
+     * see `hashToolManifest`.
+     */
+    annotations?: Record<string, unknown>;
 }
 
 export interface ToolManifestHashes {
@@ -84,6 +93,15 @@ export interface ToolManifestHashes {
     schemaHash: string;
     /** SHA-256 over the domain-separated triple. What the gate compares. */
     manifestHash: string;
+    /**
+     * SHA-256 over the tool's ANNOTATIONS, on its own axis.
+     *
+     * Never null on a LIVE definition — a tool with no annotations hashes the
+     * absence, which is a fact worth pinning. Null only on an APPROVED pin
+     * taken before this column existed, where "we never looked" and "they
+     * agreed" are different answers and must not collapse into one.
+     */
+    annotationsHash: string | null;
 }
 
 /** The pin a tenant has on file for one tool. */
@@ -92,6 +110,8 @@ export interface ApprovedToolManifest {
     descriptionHash: string;
     schemaHash: string;
     manifestHash: string;
+    /** Null on a pin taken before annotations were pinned. */
+    annotationsHash?: string | null;
     revision: number;
     approvedByUserId: string | null;
     approvalSource: string;
@@ -113,7 +133,8 @@ export type ToolManifestStatus =
     | 'UNPINNED'
     | 'DESCRIPTION_CHANGED'
     | 'SCHEMA_CHANGED'
-    | 'DEFINITION_CHANGED';
+    | 'DEFINITION_CHANGED'
+    | 'ANNOTATIONS_CHANGED';
 
 export interface ToolManifestVerdict {
     status: ToolManifestStatus;
@@ -172,7 +193,25 @@ export function hashToolManifest(def: ToolDefinition): ToolManifestHashes {
             schemaHash,
         }),
     );
-    return { descriptionHash, schemaHash, manifestHash };
+    // ── WHY ANNOTATIONS ARE A SEPARATE HASH AND NOT PART OF `manifestHash` ──
+    //
+    // Folding them in would change `manifestHash` for every tool, so every pin
+    // on file would stop matching and every tool would need re-approval on the
+    // day this shipped. That is a real cost paid by humans, to protect a field
+    // nothing reads yet.
+    //
+    // A separate axis buys the actual property — a server that flips
+    // `readOnlyHint` from true to false can no longer do it silently — while
+    // leaving existing pins valid. `v1` is untouched on purpose: this is an
+    // ADDITIONAL attestation, not a new version of the old one.
+    //
+    // Same round-trip discipline as the schema above, for the same reason: a
+    // `toJSON` on an annotations object would otherwise hash as one thing and
+    // go out on the wire as another.
+    const annotationsHash = sha256(
+        canonicalJson(JSON.parse(JSON.stringify(def.annotations ?? null))),
+    );
+    return { descriptionHash, schemaHash, manifestHash, annotationsHash };
 }
 
 /**
@@ -215,9 +254,43 @@ export function verifyToolManifest(
         descriptionHash: approved.descriptionHash,
         schemaHash: approved.schemaHash,
         manifestHash: approved.manifestHash,
+        // `?? null` rather than a default: a pin from before the column is
+        // UNPINNED on this axis, not in agreement with whatever arrives.
+        annotationsHash: approved.annotationsHash ?? null,
     };
 
     if (live.manifestHash === approved.manifestHash) {
+        // ── THE DEFINITION AGREES. DO THE ANNOTATIONS? ──────────────────────
+        //
+        // Only askable when the pin HAS an annotations hash. A null there means
+        // the pin predates this axis, and reporting that as agreement would be
+        // the collapse this whole change exists to prevent.
+        const annotationsChanged =
+            approvedHashes.annotationsHash !== null &&
+            live.annotationsHash !== approvedHashes.annotationsHash;
+
+        if (annotationsChanged) {
+            return {
+                status: 'ANNOTATIONS_CHANGED',
+                toolName: def.name,
+                live,
+                approved: approvedHashes,
+                approvedRevision: approved.revision,
+                // NOT refused, and that is a decision rather than an oversight.
+                // Nothing in this build reads `readOnlyHint` yet, so refusing
+                // here would stop a tool whose name, description and schema are
+                // all unchanged, to enforce a field no code consumes — a rung
+                // that costs without protecting, which is exactly what #2241
+                // removed from the identity ladder. When the external WRITE
+                // path lands (#2861) and something acts on the hint, this is
+                // the line that becomes `true`.
+                mustRefuse: false,
+                // It IS an alert. A server redeclaring a read tool as a write
+                // one is a supply-chain event whether or not we act on it.
+                isSecurityEvent: true,
+            };
+        }
+
         return {
             status: 'APPROVED',
             toolName: def.name,
