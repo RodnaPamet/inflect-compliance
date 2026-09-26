@@ -1,10 +1,33 @@
 #
 # Caddy reverse proxy for inflect-compliance.
-# inflect.34-140-180-255.sslip.io is substituted by the deploy script once the VM's
-# external IP is known (pattern: <ip-with-dashes>.sslip.io).
-# Let's Encrypt issues a cert automatically on first request.
 #
-
+# TWO hostnames reach the same app, and they are NOT interchangeable:
+#
+#   app.inflect.bg                        the real production domain
+#   inflect.<ip-with-dashes>.sslip.io     the IP-derived fallback, substituted
+#                                         by the deploy script once the VM's
+#                                         external IP is known
+#
+# Let's Encrypt issues a cert for each automatically on first request.
+#
+# ── WHY THE SHARED CONFIGURATION IS A SNIPPET ───────────────────────────────
+#
+# Because the two blocks drifted, and the duplication is how. The live copy
+# grew the `app.inflect.bg` vhost by hand and never received the HTTP/3 and
+# cache-header work (#1275) the repo copy carries; the repo copy never learned
+# the vhost. `check-drift.sh` has reported the pair as UNRECONCILED ever since,
+# with the note that "each side has content the other lacks, so neither can
+# simply overwrite the other".
+#
+# Two near-identical site blocks are a standing invitation to fix one and
+# forget the other. `import` makes that impossible: there is one body, and a
+# change to it reaches both names or neither.
+#
+# NOTE, for whoever reads the drift note next: it also says the repo's retry
+# settings never reached the live copy. That is now stale — the live file
+# carries `lb_try_duration 120s` and `lb_try_interval 250ms`. What it genuinely
+# lacked was HTTP/3 and the Cache-Control matchers.
+#
 {
     # Use the production LE endpoint by default (default behaviour).
     # Set ACME_EMAIL in the env if you want certificate expiry mail.
@@ -19,7 +42,8 @@
     }
 }
 
-inflect.34-140-180-255.sslip.io {
+# Everything both hostnames serve. Imported, never copied.
+(app_site) {
     encode gzip zstd
 
     # Client-body limit roughly matches FILE_MAX_SIZE_BYTES above.
@@ -71,4 +95,14 @@ inflect.34-140-180-255.sslip.io {
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
     }
+}
+
+# ── app.inflect.bg — the real production domain ─────────────────────────────
+app.inflect.bg {
+    import app_site
+}
+
+# ── the IP-derived fallback, substituted by the deploy script ───────────────
+inflect.34-140-180-255.sslip.io {
+    import app_site
 }
