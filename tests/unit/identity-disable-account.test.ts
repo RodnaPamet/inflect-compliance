@@ -2073,3 +2073,122 @@ describe('the batch-level preflight', () => {
         expect(r.results).toEqual([]);
     });
 });
+
+/**
+ * #2881 FINDING 5 — a refusal must not strand an unsettled write.
+ *
+ * The two things an operator does after an unexplained directory write are to
+ * mark the account protected and to narrow the ladder to DISABLED. Each used to
+ * return ABOVE the only call site of `settleIndeterminateAsApplied`, so each was
+ * sufficient to freeze that account's INDETERMINATE row forever.
+ *
+ * The finding was dispositioned FIXED against the settle FUNCTION, which is
+ * sound and was never the claim — the claim is about REACHABILITY. Proved by
+ * execution before it was fixed: making the settle throw reddened the
+ * target-refusal and already-disabled tests and left every protected and mode
+ * test green.
+ */
+describe('a refusal reconciles a stranded write instead of freezing it', () => {
+    const ctx = makeRequestContext('OWNER');
+
+    /** One unsettled row, and a settle that lands. */
+    const withStrandedRow = () => {
+        db.identityWriteJournal.findFirst.mockResolvedValue({ id: 'journal-1' });
+        db.identityWriteJournal.updateMany.mockResolvedValue({ count: 1 });
+    };
+    /** Nothing outstanding for this account. */
+    const withNoRow = () => {
+        db.identityWriteJournal.findFirst.mockResolvedValue(null);
+    };
+    /** A directory that reports the account disabled, with live evidence. */
+    const disabledInDirectory = () => ({
+        enabled: false,
+        priorState: { accountEnabled: false },
+    });
+
+    it('settles the row when a PROTECTED account is found disabled', async () => {
+        withStrandedRow();
+        setMode('AUTOMATIC');
+        const w = fakeWriter({ readState: async () => disabledInDirectory() });
+        const r = await disableAccount(ctx, w, input({ isProtected: true }));
+
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+        expect(r.journalId).toBe('journal-1');
+        expect(db.identityWriteJournal.updateMany).toHaveBeenCalled();
+        // The refusal is still a refusal: nothing was written to the directory.
+        expect(w.disabled).toEqual([]);
+    });
+
+    it('settles the row when LEAVER WRITES ARE OFF and the account is disabled', async () => {
+        withStrandedRow();
+        setMode('DISABLED');
+        const w = fakeWriter({ readState: async () => disabledInDirectory() });
+        const r = await disableAccount(ctx, w, input());
+
+        expect(r.outcome).toBe('REFUSED_MODE');
+        expect(r.journalId).toBe('journal-1');
+        expect(w.disabled).toEqual([]);
+    });
+
+    it('does NOT touch the directory when there is nothing to settle', async () => {
+        // THE READ IS EARNED. This is the assertion that keeps the fix from
+        // being "every refusal now makes a network call": the indexed row check
+        // runs first, and on the overwhelmingly common refusal — a protected
+        // account with no outstanding write — no socket is opened at all.
+        withNoRow();
+        setMode('AUTOMATIC');
+        const readState = jest.fn(async () => disabledInDirectory());
+        const w = fakeWriter({ readState });
+        const r = await disableAccount(ctx, w, input({ isProtected: true }));
+
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+        expect(r.journalId).toBeUndefined();
+        expect(readState).not.toHaveBeenCalled();
+        expect(db.identityWriteJournal.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not settle an account that is still ENABLED', async () => {
+        // The account being disabled IS the evidence. Without it there is
+        // nothing to infer, and the row must stay open.
+        withStrandedRow();
+        setMode('AUTOMATIC');
+        const w = fakeWriter({ readState: async () => ({ enabled: true, priorState: {} }) });
+        const r = await disableAccount(ctx, w, input({ isProtected: true }));
+
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+        expect(r.journalId).toBeUndefined();
+        expect(db.identityWriteJournal.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not settle on STALE or ABSENT evidence', async () => {
+        // A deleted account answers `enabled: false` exactly as a disabled one
+        // does, but it is the absence of anything to observe rather than proof
+        // our write landed. Same both-keys check the already-disabled path
+        // makes; settling here would send a RECONCILED verdict on the strength
+        // of an administrator's deletion.
+        withStrandedRow();
+        setMode('AUTOMATIC');
+        const w = fakeWriter({
+            readState: async () => ({ enabled: false, priorState: { notFound: true } }),
+        });
+        const r = await disableAccount(ctx, w, input({ isProtected: true }));
+
+        expect(r.journalId).toBeUndefined();
+        expect(db.identityWriteJournal.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('a read failure leaves the row exactly as it was', async () => {
+        // Unknown must fail toward NOT settling. An unsettled row asks a human
+        // to look; a wrongly settled one tells them there is nothing to see.
+        withStrandedRow();
+        setMode('AUTOMATIC');
+        const w = fakeWriter({
+            readState: async () => { throw new Error('transient'); },
+        });
+        const r = await disableAccount(ctx, w, input({ isProtected: true }));
+
+        expect(r.outcome).toBe('REFUSED_PROTECTED');
+        expect(r.journalId).toBeUndefined();
+        expect(db.identityWriteJournal.updateMany).not.toHaveBeenCalled();
+    });
+});

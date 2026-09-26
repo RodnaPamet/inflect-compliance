@@ -675,6 +675,46 @@ export async function settleReverted(
 }
 
 /**
+ * Is there an unsettled row for this account — PENDING or INDETERMINATE?
+ *
+ * EXISTS TO MAKE A DIRECTORY READ CONDITIONAL. #2881 finding 5: the only call
+ * site of `settleIndeterminateAsApplied` sits below the protection and mode
+ * refusals, so the two actions an operator takes after an unexplained write —
+ * mark the account protected, narrow the ladder to DISABLED — each froze that
+ * account's INDETERMINATE row permanently. Fixing that means those refusal
+ * paths observe the directory, which they never did before.
+ *
+ * So the read has to be EARNED. This is one indexed lookup on a key the table
+ * is already indexed by, and it answers "is there anything here to settle?"
+ * before anything opens a socket. On the overwhelmingly common refusal — a
+ * protected account with no outstanding write — the answer is no and the
+ * directory is never touched.
+ *
+ * Deliberately NOT folded into `settleIndeterminateAsApplied`: that function
+ * settles from evidence the caller has already observed, and inverting it to
+ * fetch its own evidence would put a network call inside a function whose
+ * contract is a database predicate.
+ */
+export async function hasUnsettledWrite(
+    ctx: RequestContext,
+    provider: string,
+    externalUserId: string,
+): Promise<boolean> {
+    return runInTenantContext(ctx, async (db) => {
+        const row = await db.identityWriteJournal.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                provider,
+                externalUserId,
+                outcome: { in: ['INDETERMINATE', 'PENDING'] },
+            },
+            select: { id: true },
+        });
+        return row !== null;
+    });
+}
+
+/**
  * Resolve an earlier unconfirmed write, now that the directory has been read
  * and agrees with it.
  *
