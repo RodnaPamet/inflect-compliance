@@ -115,7 +115,11 @@ const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
     // an agent needs could not be minted here at all: the live runner key
     // carries `mcp:orchestrate` and `mcp:read`, and re-minting it from this
     // screen would have silently produced a key without them.
-    mcp:        { label: 'MCP (agent runtime)', scopes: ['mcp:read', 'mcp:propose', 'mcp:orchestrate'] },
+    // Labelled for what it DOES, not for the transport: these three decide
+    // whether a key may read through an agent, draft proposals as one, and
+    // drive a run. `agentic-naming-vocabulary` pins that rule — an operator is
+    // governing agents, not configuring a protocol.
+    mcp:        { label: 'Agent runtime', scopes: ['mcp:read', 'mcp:propose', 'mcp:orchestrate'] },
 };
 
 const EXPIRY_OPTIONS = [
