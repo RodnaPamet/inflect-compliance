@@ -21,12 +21,21 @@ import {
     initialize,
     listTools,
     callTool,
+    describeAuthChallenge,
     McpClientError,
     MCP_MAX_RESPONSE_BYTES,
 } from '@/app-layer/integrations/mcp/client';
 
 /** A Response whose body streams `text` in one chunk. */
-const bodyOf = (text: string, ok = true, status = 200, contentType = 'application/json') => ({
+const bodyOf = (
+    text: string,
+    ok = true,
+    status = 200,
+    contentType = 'application/json',
+    // Same reasoning as the content-type below, one header along: a challenge
+    // the double cannot express is a code path no test can reach.
+    extraHeaders: Record<string, string> = {},
+) => ({
     ok,
     status,
     // Headers are part of the CONTRACT, not decoration. This double carried
@@ -34,7 +43,14 @@ const bodyOf = (text: string, ok = true, status = 200, contentType = 'applicatio
     // either JSON or SSE and the content-type is how a client tells them apart,
     // so a double without headers could not express the difference — and the
     // SSE path shipped untested because no test could have reached it.
-    headers: { get: (k: string) => (k.toLowerCase() === 'content-type' ? contentType : null) },
+    headers: {
+        get: (k: string) => {
+            const key = k.toLowerCase();
+            if (key === 'content-type') return contentType;
+            const found = Object.entries(extraHeaders).find(([h]) => h.toLowerCase() === key);
+            return found ? found[1] : null;
+        },
+    },
     body: {
         getReader() {
             let sent = false;
@@ -243,5 +259,80 @@ describe('a reply delivered as an event stream', () => {
         await expect(initialize({ url: 'https://mcp.example.com' })).resolves.toEqual({
             protocolVersion: '2025-06-18',
         });
+    });
+});
+
+/**
+ * WHAT THE SERVER SAID ABOUT THE CREDENTIAL.
+ *
+ * "MCP server answered HTTP 401" names nothing an operator can act on. A real
+ * 401 from Microsoft's Entra MCP server cost three wrong theories — scope
+ * breadth, confidential-vs-public client, token lifetime — before the cause
+ * turned out to be a credential resolved from the wrong field. The server's own
+ * `WWW-Authenticate` challenge is where a resource server says WHICH credential
+ * problem it had, and the client was discarding it.
+ */
+describe('describeAuthChallenge — the safe part of a challenge', () => {
+    it.each([null, undefined, ''])('returns null for %p', (h) => {
+        expect(describeAuthChallenge(h)).toBeNull();
+    });
+
+    it('names the scheme', () => {
+        expect(describeAuthChallenge('Bearer')).toBe('Bearer');
+    });
+
+    it('carries the error TOKEN, which is a closed vocabulary', () => {
+        expect(describeAuthChallenge('Bearer realm="mcp", error="invalid_token"'))
+            .toBe('Bearer error=invalid_token');
+    });
+
+    it('carries the required scope, the most actionable thing a server can say', () => {
+        expect(
+            describeAuthChallenge('Bearer error="insufficient_scope", scope="MCP.User.Read.All"'),
+        ).toBe('Bearer error=insufficient_scope scope=MCP.User.Read.All');
+    });
+
+    it('NEVER carries error_description, which can echo our own request back', () => {
+        // The same rule `postToTokenEndpoint` applies to the identical field on
+        // a token response. A description is free text chosen by the far end.
+        const out = describeAuthChallenge(
+            'Bearer error="invalid_token", error_description="token for user alice@example.com expired"',
+        );
+        expect(out).toBe('Bearer error=invalid_token');
+        expect(out).not.toMatch(/alice@example\.com/);
+        expect(out).not.toMatch(/error_description/);
+    });
+
+    it('drops realm as noise', () => {
+        expect(describeAuthChallenge('Bearer realm="https://mcp.example.com"')).toBe('Bearer');
+    });
+
+    it('bounds a hostile value rather than pasting it into every log line', () => {
+        const huge = 'x'.repeat(5000);
+        const out = describeAuthChallenge(`Bearer error="${huge}"`);
+        expect(out).not.toBeNull();
+        expect((out as string).length).toBeLessThan(260);
+    });
+});
+
+describe('an HTTP failure reports the challenge', () => {
+    beforeEach(() => safeFetchMock.mockReset());
+
+    it('includes what the server said about the credential', async () => {
+        safeFetchMock.mockResolvedValueOnce(
+            bodyOf('', false, 401, 'application/json', {
+                'WWW-Authenticate': 'Bearer error="insufficient_scope", scope="MCP.User.Read.All"',
+            }),
+        );
+        await expect(listTools({ url: 'https://mcp.example.com' })).rejects.toThrow(
+            /401.*insufficient_scope.*MCP\.User\.Read\.All/,
+        );
+    });
+
+    it('still reports the status when the server sends no challenge', async () => {
+        safeFetchMock.mockResolvedValueOnce(bodyOf('', false, 503));
+        await expect(listTools({ url: 'https://mcp.example.com' })).rejects.toThrow(
+            /answered HTTP 503/,
+        );
     });
 });
