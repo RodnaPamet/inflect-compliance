@@ -56,6 +56,36 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+/**
+ * Reads the row a write is about to replace, FROM INSIDE THE SAME TRANSACTION.
+ *
+ * ═══ WHY THIS IS A FUNCTION IN THE CONTEXT AND NOT A CLIENT ═══
+ *
+ * The audit extension needs the prior row to report which fields actually
+ * changed, and a Prisma query extension is handed only
+ * `{ model, operation, args, query }` — no client. The obvious workaround, a
+ * module-scope client, is UNSAFE HERE and the reason is worth stating so nobody
+ * reaches for it later: writes run inside `runInTenantContext`'s transaction,
+ * which has done `SET LOCAL ROLE app_user` and `set_config('app.tenant_id')`.
+ * A read on the singleton runs on a DIFFERENT connection, outside that
+ * transaction, as the owning role — so it bypasses RLS and can return rows
+ * belonging to other tenants, whose values would then be written into this
+ * tenant's audit row as `before`. An audit improvement that leaks across
+ * tenants is worse than the imprecision it fixes.
+ *
+ * Passing a READER rather than the client keeps two properties: the extension
+ * can only read (never write) through it, and the Prisma types stay in
+ * `db-context` where the transaction lives.
+ *
+ * Absent when the write is not inside a tenant transaction — a job on the
+ * singleton, a seed, `runWithoutRls`. The extension must then say it could not
+ * diff rather than pretend it did.
+ */
+export type PriorStateReader = (
+    model: string,
+    where: unknown,
+) => Promise<Record<string, unknown> | null>;
+
 export interface AuditContextData {
     /** Tenant ID for the current request */
     tenantId?: string;
@@ -65,6 +95,8 @@ export interface AuditContextData {
     requestId?: string;
     /** Source of the operation: "api" | "job" | "seed" | "system" */
     source?: string;
+    /** See {@link PriorStateReader}. Absent outside a tenant transaction. */
+    readPriorState?: PriorStateReader;
 }
 
 /**

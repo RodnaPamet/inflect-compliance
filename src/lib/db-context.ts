@@ -1,13 +1,51 @@
 import { PrismaClient } from '@prisma/client';
 import { prisma, prismaRead } from './prisma';
 import type { RequestContext } from '@/app-layer/types';
-import { runWithAuditContext } from './audit-context';
+import { runWithAuditContext, type PriorStateReader } from './audit-context';
 import { KEK_BYPASS_SOURCES, isKekBypassSource } from './db/kek-bypass-sources';
 
 export type PrismaTx = Omit<
     PrismaClient,
     '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
 >;
+
+/**
+ * A {@link PriorStateReader} bound to ONE transaction.
+ *
+ * The audit extension calls this to learn what a row looked like before the
+ * write it is auditing, so `changedFields` can name the fields that actually
+ * changed rather than the keys the caller happened to send.
+ *
+ * ═══ WHY IT IS BUILT HERE AND NOWHERE ELSE ═══
+ *
+ * `tx` is the only client that is BOTH inside this transaction and under the
+ * RLS posture the caller just established — `SET LOCAL ROLE app_user` plus a
+ * transaction-scoped `app.tenant_id`. A Prisma query extension is handed no
+ * client at all, and the obvious workaround — reaching for the module-scope
+ * singleton — would read a different snapshot on a different connection as the
+ * OWNING role, which bypasses RLS. Rows belonging to other tenants would then
+ * be written into this tenant's audit row as `before`. An audit improvement
+ * that leaks across tenants is worse than the imprecision it set out to fix.
+ *
+ * FAILS TO NULL, NEVER THROWS. A prior-state read decorates an audit row; the
+ * write it describes has to stand whether or not the read succeeds. A `where`
+ * naming no row, a model the delegate does not carry, a read RLS refuses —
+ * each becomes "no prior state", which the extension then reports honestly
+ * instead of recording as "nothing changed".
+ */
+function priorStateReaderFor(tx: PrismaTx): PriorStateReader {
+    return async (model, where) => {
+        try {
+            const delegate = (tx as unknown as Record<string, unknown>)[
+                model.charAt(0).toLowerCase() + model.slice(1)
+            ] as { findFirst?: (a: unknown) => Promise<unknown> } | undefined;
+            if (!delegate?.findFirst) return null;
+            return ((await delegate.findFirst({ where })) as Record<string, unknown> | null) ?? null;
+        } catch {
+            return null;
+        }
+    };
+}
 
 /**
  * Runs a function within a Prisma transaction where the Postgres session
@@ -37,7 +75,15 @@ export async function withTenantDb<T>(
             // It automatically resets when the transaction commits or rolls back.
             // $executeRaw safely parameterizes the value.
             await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
-            return callback(tx);
+            // RE-BOUND INSIDE THE TRANSACTION, because `tx` does not exist
+            // until here. The outer binding carries the identifiers middleware
+            // needs before the transaction opens; this adds the one thing that
+            // can only come from inside it. Nesting SHADOWS rather than merges,
+            // so every field is restated.
+            return runWithAuditContext(
+                { tenantId, source: 'api', readPriorState: priorStateReaderFor(tx) },
+                () => callback(tx),
+            );
         })
     ) as Promise<T>;
 }
@@ -84,7 +130,21 @@ export async function runInTenantContext<T>(
                 // RLS setup from 3 round-trips to 2; the executive dashboard
                 // alone opens ~6 such contexts, removing ~6 round-trips/load.
                 await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true), set_config('app.request_id', ${ctx.requestId}, true)`;
-                return callback(tx);
+                // RE-BOUND INSIDE THE TRANSACTION, because `tx` does not exist
+                // until here. The outer binding carries the identifiers middleware
+                // needs before the transaction opens; this adds the one thing that
+                // can only come from inside it. Nesting SHADOWS rather than merges,
+                // so every field is restated.
+                return runWithAuditContext(
+                    {
+                        tenantId: ctx.tenantId,
+                        actorUserId: ctx.userId,
+                        requestId: ctx.requestId,
+                        source: 'api',
+                        readPriorState: priorStateReaderFor(tx),
+                    },
+                    () => callback(tx),
+                );
             }, txOptions)
     ) as Promise<T>;
 }
@@ -242,7 +302,21 @@ export async function runInTenantJobContext<T>(
             p.$transaction(async (tx) => {
                 await tx.$executeRaw`SET LOCAL ROLE app_user`;
                 await tx.$executeRaw`SELECT set_config('app.tenant_id', ${job.tenantId}, true), set_config('app.request_id', ${requestId}, true)`;
-                return callback(tx);
+                // RE-BOUND INSIDE THE TRANSACTION, because `tx` does not exist
+                // until here. The outer binding carries the identifiers middleware
+                // needs before the transaction opens; this adds the one thing that
+                // can only come from inside it. Nesting SHADOWS rather than merges,
+                // so every field is restated.
+                return runWithAuditContext(
+                    {
+                        tenantId: job.tenantId,
+                        actorUserId: job.actorUserId ?? undefined,
+                        requestId,
+                        source: job.source,
+                        readPriorState: priorStateReaderFor(tx),
+                    },
+                    () => callback(tx),
+                );
             }, txOptions)
     ) as Promise<T>;
 }
