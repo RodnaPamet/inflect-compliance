@@ -202,6 +202,18 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         // for some other purpose from being silently upgraded into one whose
         // leaver runs can disable any account in the directory.
         writesEnabled: { kind: 'inert' },
+        // The JOINER's opt-in, and a SEPARATE one on purpose. Entra's consent
+        // list cannot separate the directions — every permission sufficient to
+        // CREATE a user is also sufficient to DISABLE one, and a
+        // client-credentials token asks for `.default`, which returns whatever
+        // an administrator already consented rather than what this call needs.
+        // So the per-connection flag is the only place the separation can be
+        // stated, which is why there are two of them and why neither is read
+        // through a dynamic key. Spelled once in
+        // `write-direction.ENTRA_JOINER_WRITES_FIELD`; this declaration and the
+        // provider's `configSchema` are the two places that must agree with it,
+        // because `validateProviderConfig` rejects an undeclared key outright.
+        joinerWritesEnabled: { kind: 'inert' },
         enrichMfa: { kind: 'inert' },
         enrichFederation: { kind: 'inert' },
         dormantDays: { kind: 'inert' },

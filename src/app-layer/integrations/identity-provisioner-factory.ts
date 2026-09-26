@@ -88,6 +88,7 @@ import {
     AD_COLLISION_NAMESPACES,
     createActiveDirectoryProvisioner,
 } from './providers/active-directory/provisioner';
+import { createEntraIdProvisioner } from './providers/entra-id/provisioner';
 import {
     WRITABLE_IDENTITY_PROVIDERS,
     isWritableIdentityProvider,
@@ -129,14 +130,21 @@ const COLLISION_NAMESPACES: Record<string, readonly string[]> = {
 };
 
 /**
- * The providers with a LIVE create arm. A strict subset of the writable set.
+ * The providers with a LIVE create arm.
  *
- * One member today, and the asymmetry is a consent decision rather than an
- * unfinished port — see the module header. Adding a member means adding a
- * branch in `buildLiveProvisioner` below; there is no fall-through arm, so a
- * name added here alone refuses loudly instead of silently getting AD's.
+ * TWO MEMBERS SINCE #2878 f11. The asymmetry was never an unfinished port — it
+ * was a consent decision, recorded in this module's header: an Entra joiner
+ * needs a Temporary Access Pass, a pass needs `Policy.Read.All`, and nobody had
+ * decided whether to ask customers for it. That decision has been made, and the
+ * permission is now requested in the setup guide alongside a SEPARATE
+ * per-connection opt-in, because Entra's consent list cannot hold creating and
+ * disabling apart.
+ *
+ * Adding a member still means adding a branch in `buildLiveProvisioner` below;
+ * there is no fall-through arm, so a name added here alone refuses loudly
+ * instead of silently getting another provider's.
  */
-export const LIVE_PROVISIONER_PROVIDERS = ['active-directory'] as const;
+export const LIVE_PROVISIONER_PROVIDERS = ['active-directory', 'entra-id'] as const;
 
 export function hasLiveProvisioner(provider: string): boolean {
     return (LIVE_PROVISIONER_PROVIDERS as readonly string[]).includes(provider);
@@ -170,6 +178,12 @@ function buildLiveProvisioner(
 ): { provisioner: ReturnType<typeof createActiveDirectoryProvisioner> } {
     if (provider === 'active-directory') {
         return { provisioner: createActiveDirectoryProvisioner({ connection }) };
+    }
+    if (provider === 'entra-id') {
+        // Fails CLOSED on `joinerWritesEnabled` inside the factory, before it
+        // reads a credential — so a tenant that consented Policy.Read.All for
+        // any other reason still gets a refusal here, not a provisioner.
+        return { provisioner: createEntraIdProvisioner({ connection }) };
     }
     throw new Error(
         `No live provisioner is wired for ${provider}. This is a wiring bug rather than a ` +
@@ -258,12 +272,8 @@ export async function resolveDirectoryProvisioner(
             kind: 'none',
             refusal: 'NO_LIVE_PROVISIONER',
             detail:
-                `${provider} can be observed and disabled but not created in. The joining ` +
-                'credential for it is a Temporary Access Pass, which needs the ' +
-                'authentication-methods policy and therefore `Policy.Read.All` — not among the ' +
-                'permissions this connector requests, and a consent decision somebody has to ' +
-                'make. Refused rather than degraded to a password: a silent downgrade is a ' +
-                'different security posture from the one the tenant configured.',
+                `${provider} can be observed and disabled but not created in. Only ` +
+                `${LIVE_PROVISIONER_PROVIDERS.join(' and ')} have a live create arm.`,
         };
     }
 
