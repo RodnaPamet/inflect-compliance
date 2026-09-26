@@ -170,6 +170,7 @@ export const SUBPAGES: readonly string[] = [
     '/admin/devices',
     '/admin/dsar-requests',
     '/admin/entra',
+    '/admin/identity-joiner-passes',
     '/admin/identity-leaver-passes',
     '/admin/identity-write-journal',
     '/admin/identity-write-policy',

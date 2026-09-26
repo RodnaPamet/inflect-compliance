@@ -84,6 +84,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // Reached from the Integrations hub, where the identity connectors these
     // passes act on are configured — same structural parent as the synced
     // identity roster.
+    '/admin/identity-joiner-passes': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/identity-leaver-passes': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/identity-write-journal': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/identity-write-policy': { href: '/admin/integrations', label: 'Integrations' },
