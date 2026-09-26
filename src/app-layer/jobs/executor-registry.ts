@@ -1344,6 +1344,9 @@ executorRegistry.register('identity-leaver-pass', async (payload) => {
             counts: r.counts,
             terminatedWorkers: r.terminatedWorkers,
             population: r.population,
+            // #2881 f54. Beside `population` on purpose: the pair is readable
+            // as a fraction, and "0 of 34 protected" is the state worth seeing.
+            protectedInScope: r.protectedInScope,
             batchRefused: r.batchRefused,
             writeReadiness: r.writeReadiness,
         },

@@ -1237,3 +1237,90 @@ describe('the write-readiness verdict is not left in the column', () => {
         expect(screen.queryByText(/Write readiness/)).toBeNull();
     });
 });
+
+/**
+ * #2881 FINDING 54 — the rail nobody switched on.
+ *
+ * Production carries `isProtected` TRUE on 0 of 37 accounts, so the
+ * operator-flag rail that keeps break-glass and service accounts out of
+ * automated offboarding is enabled for nobody, estate-wide. The rail works.
+ * Nothing said that nobody was using it.
+ *
+ * Read off the pass ARTEFACT rather than fetched live, so a pass from three
+ * months ago reports the number as it was then.
+ */
+describe('leaver pass report — warns when no account is protected', () => {
+    const passWith = (over: Record<string, unknown>) => [
+        {
+            id: 'pass-prot',
+            provider: 'entra-id',
+            status: 'PASSED',
+            executedAt: '2026-08-19T02:00:00.000Z',
+            completedAt: '2026-08-19T02:00:03.000Z',
+            resultJson: {
+                mode: 'AUTOMATIC',
+                evidence: 'live',
+                terminatedWorkers: 0,
+                candidates: 0,
+                population: 34,
+                protectedInScope: 0,
+                batchRefused: null,
+                counts: {},
+                decisions: [],
+                ...over,
+            },
+        },
+    ];
+
+    it('warns when leaver writes are on and nothing is protected', async () => {
+        arrange(passWith({}));
+        await renderReport();
+
+        expect(await screen.findByText(M.noProtectedHeading)).toBeInTheDocument();
+        // The population is named, so the warning is checkable rather than a
+        // vague instruction — "0 of 34" is actionable, "some accounts" is not.
+        expect(
+            screen.getByText((s) => s.includes('34') && s.includes('protected')),
+        ).toBeInTheDocument();
+    });
+
+    it('stays silent when accounts ARE protected', async () => {
+        // The negative that gives the positive its meaning. A banner rendered
+        // unconditionally would satisfy the test above forever.
+        arrange(passWith({ protectedInScope: 2 }));
+        await renderReport();
+
+        // Positive control: the report really did render this pass.
+        expect(await screen.findByRole('heading', { name: M.passesHeading })).toBeInTheDocument();
+        expect(screen.queryByText(M.noProtectedHeading)).toBeNull();
+    });
+
+    it('stays silent when there are no accounts at all — zero of zero is not a finding', async () => {
+        // A tenant with no accounts for this provider must not be told to go
+        // and protect some.
+        arrange(passWith({ population: 0, protectedInScope: 0 }));
+        await renderReport();
+
+        expect(await screen.findByRole('heading', { name: M.passesHeading })).toBeInTheDocument();
+        expect(screen.queryByText(M.noProtectedHeading)).toBeNull();
+    });
+
+    it('stays silent when leaver writes are switched off', async () => {
+        // Nothing can be disabled, so nothing needs protecting from it yet.
+        arrange(passWith({ mode: 'DISABLED' }));
+        await renderReport();
+
+        expect(await screen.findByRole('heading', { name: M.passesHeading })).toBeInTheDocument();
+        expect(screen.queryByText(M.noProtectedHeading)).toBeNull();
+    });
+
+    it('warns at DRY_RUN too — the window before the ladder is widened', async () => {
+        // Deliberate, and the useful moment: an operator observing a dry run is
+        // deciding whether to widen, and that is when the rail needs to be set.
+        // Warning only at AUTOMATIC would arrive after the first live pass.
+        arrange(passWith({ mode: 'DRY_RUN' }));
+        await renderReport();
+
+        expect(await screen.findByText(M.noProtectedHeading)).toBeInTheDocument();
+    });
+});

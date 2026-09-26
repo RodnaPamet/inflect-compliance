@@ -640,6 +640,24 @@ export interface LeaverPassResult {
     readonly terminatedWorkers: number;
     readonly candidates: number;
     readonly population: number;
+    /**
+     * How many accounts IN THIS PASS'S SCOPE are marked protected.
+     *
+     * #2881 finding 54: production carries `isProtected` TRUE on 0 of 37
+     * accounts, so the operator-flag rail — the one that excludes break-glass
+     * and service accounts from automated offboarding — is switched on for
+     * nobody. The rail works; nobody has used it, and nothing ever said so.
+     *
+     * Counted in the SAME scope as `population` (tenant, provider, ACTIVE), so
+     * the two are readable as a fraction rather than as two unrelated numbers.
+     * A zero here beside a non-zero population is the state worth surfacing.
+     *
+     * On the ARTEFACT rather than fetched by the page, because it is a fact
+     * about the population AT THE TIME THE PASS RAN. An auditor reading a
+     * pass from three months ago needs the number as it was then, not as it is
+     * today.
+     */
+    readonly protectedInScope: number;
     readonly batchRefused?: string;
     readonly errorMessage?: string;
     /**
@@ -693,6 +711,7 @@ export const LEAVER_RESULT_DISPOSITION = {
     terminatedWorkers: 'details',
     candidates: 'positional',
     population: 'details',
+    protectedInScope: 'details',
     batchRefused: 'details',
     errorMessage: 'outcome',
     writeReadiness: 'details',
@@ -861,6 +880,8 @@ function refused(
         terminatedWorkers: 0,
         candidates: 0,
         population: 0,
+        // Nothing was measured: this pass did not reach the population read.
+        protectedInScope: 0,
         ...over,
     };
 }
@@ -1118,10 +1139,22 @@ export async function runIdentityLeaverPass(input: {
         // while the numerator still excludes it. Nothing writes SUSPENDED
         // today, so the two spellings agree on every current row; they stop
         // agreeing the moment one does, and only this one stays paired.
-        const population = await runInTenantContext(ctx, (db) =>
-            db.connectedIdentityAccount.count({
-                where: { tenantId: ctx.tenantId, provider: input.provider, status: 'ACTIVE' },
-            }),
+        // Both counts in ONE transaction-scoped block, against the SAME where
+        // clause plus one predicate. Two separate reads could straddle a sync
+        // and report a protected count against a population that no longer
+        // exists — a fraction whose halves were measured at different moments,
+        // which is the defect `identity-write-breaker` states at length about
+        // its own numerator and denominator.
+        const scope = {
+            tenantId: ctx.tenantId,
+            provider: input.provider,
+            status: 'ACTIVE',
+        } as const;
+        const [population, protectedInScope] = await runInTenantContext(ctx, (db) =>
+            Promise.all([
+                db.connectedIdentityAccount.count({ where: scope }),
+                db.connectedIdentityAccount.count({ where: { ...scope, isProtected: true } }),
+            ]),
         );
 
         // ── 5. The writer. DRY_RUN gets the snapshot reader and no socket.
@@ -1139,6 +1172,7 @@ export async function runIdentityLeaverPass(input: {
                 terminatedWorkers: terminated.length,
                 candidates: candidates.length,
                 population,
+                protectedInScope,
             });
         }
 
@@ -1215,6 +1249,7 @@ export async function runIdentityLeaverPass(input: {
                 terminatedWorkers: terminated.length,
                 candidates: candidates.length,
                 population,
+                protectedInScope,
                 batchRefused: outcome.refused ?? null,
                 unsettledOnEntry,
                 counts,
@@ -1242,6 +1277,7 @@ export async function runIdentityLeaverPass(input: {
                         terminatedWorkers: terminated.length,
                         candidates: candidates.length,
                         population,
+                protectedInScope,
                         batchRefused: outcome.refused ?? null,
                         counts,
                         // #2843 finding 53. `writeReadiness` was computed on
@@ -1300,6 +1336,7 @@ export async function runIdentityLeaverPass(input: {
                 terminatedWorkers: terminated.length,
                 candidates: candidates.length,
                 population,
+                protectedInScope,
                 batchRefused: outcome.refused,
                 // #2604 — surfaced on the rung that runs BEFORE anything is
                 // written. A dry run cannot verify the bind works (it opens no
@@ -1333,6 +1370,7 @@ export async function runIdentityLeaverPass(input: {
             status: 'ERROR',
             mode: 'unknown',
             counts: {},
+            protectedInScope: 0,
             terminatedWorkers: 0,
             candidates: 0,
             population: 0,

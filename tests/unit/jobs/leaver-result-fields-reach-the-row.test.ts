@@ -63,6 +63,10 @@ const FULL_RESULT: NamesEveryField<LeaverPassResult> = {
     terminatedWorkers: 3,
     candidates: 5,
     population: 9,
+    // #2881 f54. Present here because `NamesEveryField` requires it, which is
+    // the point of typing the fixture that way: a field added to the result and
+    // forgotten in `details` reddens here rather than going quietly missing.
+    protectedInScope: 3,
     batchRefused: 'fixture batch refusal',
     errorMessage: 'fixture error message',
     writeReadiness: { readiness: 'DEDICATED_WRITE_BIND', detail: 'fixture readiness detail' },

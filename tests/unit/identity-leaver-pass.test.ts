@@ -877,9 +877,31 @@ describe('the batch', () => {
         // for every other connection a tenant has.
         mockDb.connectedIdentityAccount.count.mockResolvedValue(400);
         await runIdentityLeaverPass({ tenantId: 't1', provider: 'active-directory', now: NOW });
-        expect(mockDb.connectedIdentityAccount.count).toHaveBeenLastCalledWith({
+
+        // NTH, not LAST. This read `toHaveBeenLastCalledWith` until #2881 f54
+        // added a second count beside the denominator — the protected-account
+        // tally — at which point "the last call" stopped being the denominator
+        // and this test failed while the behaviour it guards was untouched.
+        // Positional is the honest form: there are two counts now and they mean
+        // different things.
+        expect(mockDb.connectedIdentityAccount.count).toHaveBeenNthCalledWith(1, {
             where: { tenantId: 't1', provider: 'active-directory', status: 'ACTIVE' },
         });
+
+        // And the second is scoped IDENTICALLY plus one predicate, which is the
+        // property that makes the pair readable as a fraction. A protected count
+        // taken over a different set than the population would produce a share
+        // whose halves were measured against different populations — the exact
+        // defect `identity-write-breaker` states at length about its own.
+        expect(mockDb.connectedIdentityAccount.count).toHaveBeenNthCalledWith(2, {
+            where: {
+                tenantId: 't1',
+                provider: 'active-directory',
+                status: 'ACTIVE',
+                isProtected: true,
+            },
+        });
+        expect(mockDb.connectedIdentityAccount.count).toHaveBeenCalledTimes(2);
     });
 
     it('hands the batch every candidate, WITH the state the breaker counts', async () => {
