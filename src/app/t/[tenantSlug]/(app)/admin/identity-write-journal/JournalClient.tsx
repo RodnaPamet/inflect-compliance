@@ -24,7 +24,7 @@
  * needs the prior state of all hundred. Fetching it anyway would put a hundred
  * directory captures on the wire to answer "which row was it?".
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { formatDateTime } from '@/lib/format-date';
@@ -96,46 +96,54 @@ export function JournalClient() {
     const rows = data?.writes ?? [];
     const backlog = unsettled?.writes ?? [];
 
-    const columns = createColumns<JournalRow>([
-        {
-            accessorKey: 'provider',
-            header: t('integrations.colProvider'),
-            cell: ({ getValue }) => <StatusBadge variant="info">{String(getValue())}</StatusBadge>,
-        },
-        { accessorKey: 'action', header: t('identityWriteJournal.colAction') },
-        {
-            id: 'outcome',
-            accessorKey: 'outcome',
-            header: t('integrations.colStatus'),
-            cell: ({ row }) => (
-                <StatusBadge variant={OUTCOME_VARIANT[row.original.outcome] ?? 'neutral'}>
-                    {row.original.outcome}
-                </StatusBadge>
-            ),
-        },
-        {
-            accessorKey: 'attemptedAt',
-            header: t('identityWriteJournal.colAttempted'),
-            cell: ({ row }) => (
-                <span className="text-content-muted tabular-nums">
-                    {formatDateTime(row.original.attemptedAt)}
-                </span>
-            ),
-        },
-        {
-            id: 'actor',
-            accessorKey: 'actorUserId',
-            header: t('identityWriteJournal.colActor'),
-            // Null means a SCHEDULED run with no human behind it, which the
-            // schema states in as many words. Rendering it as "—" would make a
-            // pass indistinguishable from a person we failed to record.
-            cell: ({ row }) => (
-                <span className="text-sm text-content-muted">
-                    {row.original.actorUserId ?? t('identityWriteJournal.actorScheduled')}
-                </span>
-            ),
-        },
-    ]);
+    // MEMOISED, and both tables share the one definition. The columns close
+    // over `t`, so rebuilding them on every render hands DataTable a new
+    // array identity each time and defeats its own memoisation — the reason
+    // `data-table` pins this pattern across every migrated page.
+    const columns = useMemo(
+        () =>
+            createColumns<JournalRow>([
+                {
+                    accessorKey: 'provider',
+                    header: t('integrations.colProvider'),
+                    cell: ({ getValue }) => <StatusBadge variant="info">{String(getValue())}</StatusBadge>,
+                },
+                { accessorKey: 'action', header: t('identityWriteJournal.colAction') },
+                {
+                    id: 'outcome',
+                    accessorKey: 'outcome',
+                    header: t('integrations.colStatus'),
+                    cell: ({ row }) => (
+                        <StatusBadge variant={OUTCOME_VARIANT[row.original.outcome] ?? 'neutral'}>
+                            {row.original.outcome}
+                        </StatusBadge>
+                    ),
+                },
+                {
+                    accessorKey: 'attemptedAt',
+                    header: t('identityWriteJournal.colAttempted'),
+                    cell: ({ row }) => (
+                        <span className="text-content-muted tabular-nums">
+                            {formatDateTime(row.original.attemptedAt)}
+                        </span>
+                    ),
+                },
+                {
+                    id: 'actor',
+                    accessorKey: 'actorUserId',
+                    header: t('identityWriteJournal.colActor'),
+                    // Null means a SCHEDULED run with no human behind it, which the
+                    // schema states in as many words. Rendering it as "—" would make a
+                    // pass indistinguishable from a person we failed to record.
+                    cell: ({ row }) => (
+                        <span className="text-sm text-content-muted">
+                            {row.original.actorUserId ?? t('identityWriteJournal.actorScheduled')}
+                        </span>
+                    ),
+                },
+            ]),
+        [t],
+    );
 
     return (
         <div className="space-y-comfortable">
@@ -156,6 +164,7 @@ export function JournalClient() {
                         {t('identityWriteJournal.unsettledNotice', { count: backlog.length })}
                     </InlineNotice>
                     <DataTable
+                        data-testid="identity-write-journal-unsettled-table"
                         data={backlog}
                         columns={columns}
                         getRowId={(r) => r.journalId}
@@ -172,6 +181,7 @@ export function JournalClient() {
                     <InlineNotice variant="error">{t('identityWriteJournal.loadFailed')}</InlineNotice>
                 ) : (
                     <DataTable
+                        data-testid="identity-write-journal-history-table"
                         data={rows}
                         columns={columns}
                         getRowId={(r) => r.journalId}
