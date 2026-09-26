@@ -2,7 +2,6 @@ import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { listIntegrationConnections } from '@/app-layer/usecases/integrations';
-import { listRegisteredAgents } from '@/app-layer/usecases/agent-registry';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 
@@ -25,6 +24,18 @@ import { ExternalToolsClient } from './ExternalToolsClient';
  * shipped in this subsystem: `McpServerProvider` was written and never
  * registered, so the connection form could not create one. An API without its
  * operator path is not a feature, it is a feature's back half.
+ *
+ * ── IT BASELINES; THE TOOLS TAB GRANTS ──────────────────────────────────────
+ *
+ * Granting already has a surface — the agent detail page's Tools tab, which
+ * shows each tool's required rung, marks an inert grant, offers revoke and
+ * carries the register's re-assessment. This page deliberately does not
+ * duplicate a thinner copy of it.
+ *
+ * The half with no surface is the BASELINE, and the ordering is the product's
+ * own: `listAgentTools` builds the grant picker from the PIN TABLE, so an
+ * external tool becomes grantable only once somebody has approved its
+ * definition here. Approving on this page is what makes a tool appear there.
  *
  * ── WHY UNDER `/agents` AND NOT `/admin` ────────────────────────────────────
  *
@@ -61,30 +72,20 @@ export default async function ExternalToolsPage({
         );
     }
 
-    // Both lists are read here rather than in the client so the page renders
-    // with its choices already made — an empty connection picker that fills in
-    // a moment later reads as "you have no MCP servers", which is a different
-    // and wrong claim.
-    const [connections, agents] = await Promise.all([
-        listIntegrationConnections(ctx),
-        listRegisteredAgents(ctx, { take: 100 }),
-    ]);
+    // Read here rather than in the client so the page renders with its choices
+    // already made — an empty connection picker that fills in a moment later
+    // reads as "you have no tool servers", a different and wrong claim.
+    const connections = await listIntegrationConnections(ctx);
 
     const mcpConnections = connections
         .filter((c) => c.provider === MCP_SERVER_PROVIDER_ID && c.isEnabled)
         .map((c) => ({ id: c.id, name: c.name, lastTestStatus: c.lastTestStatus ?? null }));
 
-    // Only agents that could actually hold a grant. A SUSPENDED or RETIRED
-    // agent in the picker offers an action whose result nothing would honour.
-    const grantableAgents = agents
-        .filter((a) => a.status === 'ACTIVE')
-        .map((a) => ({ id: a.id, name: a.name }));
 
     return (
         <ExternalToolsClient
             tenantSlug={resolved.tenantSlug}
             connections={mcpConnections}
-            agents={grantableAgents}
             canReviewProposals={Boolean(ctx.appPermissions?.admin?.view)}
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
         />

@@ -1,15 +1,25 @@
 'use client';
 
 /**
- * The external-tool catalogue, its approvals, and the grants that follow.
+ * The external-tool catalogue and its approvals. Granting happens elsewhere.
  *
- * ── THE ORDER IS THE POINT, AND IT IS THE SERVER'S ORDER ────────────────────
+ * ── THIS PAGE BASELINES. IT DOES NOT GRANT ──────────────────────────────────
  *
- * Approve, then grant. `grantAgentTool` refuses an external name with no pin on
- * file, because the pin IS the authority — it means somebody here read that
- * tool's definition and accepted it. So the Grant control stays disabled until
- * the manifest is approved rather than being offered and refused: an action
- * that exists only to fail teaches nothing about why.
+ * Granting an external tool already has a surface, and a better one: the agent
+ * detail page's Tools tab, which shows the rung each tool requires, marks a
+ * grant the catalogue no longer declares as inert, offers revoke, and carries
+ * the re-assessment the register does when an agent's reach changes. None of
+ * that belongs in a second, thinner copy here.
+ *
+ * What has no surface is the BASELINE. `listAgentTools` builds the grant
+ * picker as `[...MCP_TOOL_NAMES, ...externalPins]` — read from the pin table,
+ * never from a live `tools/list` — so an external tool appears there only once
+ * somebody has approved its definition. Its own words: "the ordering is
+ * load-bearing: baseline, then grant. An unbaselined external tool is not
+ * offered, and a grant cannot be made for it."
+ *
+ * So this page is the first half of that ordering, and the Tools tab is the
+ * second. Approving here is what makes a tool appear there.
  *
  * ── WHAT IS SHOWN BEFORE AN APPROVAL IS ASKED FOR ───────────────────────────
  *
@@ -48,11 +58,6 @@ interface ConnectionRow {
     lastTestStatus: string | null;
 }
 
-interface AgentRow {
-    id: string;
-    name: string;
-}
-
 /** One tool as the catalogue reports it — the server's shape, not a re-model. */
 interface CatalogueTool {
     toolName: string;
@@ -81,13 +86,11 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'
 export function ExternalToolsClient({
     tenantSlug,
     connections,
-    agents,
     canReviewProposals,
     canInvestigate,
 }: {
     tenantSlug: string;
     connections: readonly ConnectionRow[];
-    agents: readonly AgentRow[];
     canReviewProposals: boolean;
     canInvestigate: boolean;
 }) {
@@ -95,12 +98,10 @@ export function ExternalToolsClient({
     const apiUrl = useTenantApiUrl();
 
     const [connectionId, setConnectionId] = useState<string>(connections[0]?.id ?? '');
-    const [agentId, setAgentId] = useState<string>(agents[0]?.id ?? '');
     const [tools, setTools] = useState<CatalogueTool[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
-    const [granted, setGranted] = useState<Record<string, boolean>>({});
 
     const loadCatalogue = useCallback(async () => {
         if (!connectionId) return;
@@ -161,33 +162,8 @@ export function ExternalToolsClient({
         }
     };
 
-    const grant = async (tool: CatalogueTool) => {
-        if (!agentId) return;
-        setBusy(tool.toolName);
-        setError(null);
-        try {
-            const res = await fetch(apiUrl(`/admin/agents/${agentId}/tools`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                // The QUALIFIED name — grants and pins are keyed on it, so that
-                // two servers advertising the same tool name stay distinct.
-                body: JSON.stringify({ toolName: tool.toolName }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                setError(data?.error?.message ?? data?.error ?? t('externalTools.grantFailed'));
-                return;
-            }
-            setGranted((g) => ({ ...g, [tool.toolName]: true }));
-        } catch {
-            setError(t('externalTools.grantFailed'));
-        } finally {
-            setBusy(null);
-        }
-    };
 
     const connectionOptions = connections.map((c) => ({ value: c.id, label: c.name }));
-    const agentOptions = agents.map((a) => ({ value: a.id, label: a.name }));
 
     return (
         <div className="space-y-section">
@@ -223,20 +199,15 @@ export function ExternalToolsClient({
                                 />
                             </FormField>
                         </div>
-                        <div className="w-full sm:w-64">
-                            <FormField label={t('externalTools.agentLabel')}>
-                                <Combobox
-                                    id="external-tools-agent"
-                                    options={agentOptions}
-                                    selected={agentOptions.find((o) => o.value === agentId) ?? null}
-                                    setSelected={(o) => o && setAgentId(String(o.value))}
-                                />
-                            </FormField>
-                        </div>
                         <Button variant="secondary" onClick={() => void loadCatalogue()} disabled={loading}>
                             {t('externalTools.refresh')}
                         </Button>
                     </div>
+
+                    {/* Says where the other half of the ordering lives, because
+                        a page that approves and never grants otherwise looks
+                        like it is missing a button. */}
+                    <p className="text-sm text-content-muted">{t('externalTools.grantHint')}</p>
 
                     {error && <p className="text-sm text-content-error">{error}</p>}
 
@@ -280,18 +251,6 @@ export function ExternalToolsClient({
                                                     {approved
                                                         ? t('externalTools.reapprove')
                                                         : t('externalTools.approve')}
-                                                </Button>
-                                                <Button
-                                                    variant="secondary"
-                                                    size="xs"
-                                                    onClick={() => void grant(tool)}
-                                                    // Grant is refused server-side without a
-                                                    // pin, so it is not offered without one.
-                                                    disabled={!approved || !agentId || busy === tool.toolName}
-                                                >
-                                                    {granted[tool.toolName]
-                                                        ? t('externalTools.granted')
-                                                        : t('externalTools.grant')}
                                                 </Button>
                                             </span>
                                         </div>
