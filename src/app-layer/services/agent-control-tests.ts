@@ -514,6 +514,7 @@ export async function checkToolManifestIntegrity(
         select: {
             toolName: true,
             descriptionHash: true,
+                annotationsHash: true,
             schemaHash: true,
             manifestHash: true,
             revision: true,

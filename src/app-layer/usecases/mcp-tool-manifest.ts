@@ -59,6 +59,7 @@ export interface ToolManifestState {
     status: ToolManifestStatus;
     /** The hash of the definition this build carries. */
     liveManifestHash: string;
+    liveAnnotationsHash: string | null;
     liveDescriptionHash: string;
     /**
      * THE LIVE TEXT, so an approval can be read rather than guessed (#2452).
@@ -83,6 +84,8 @@ export interface ToolManifestState {
     liveSchemaHash: string;
     /** The hash on file, or `null` when nothing is pinned. */
     approvedManifestHash: string | null;
+    /** Null when the pin predates the annotations axis, or when unpinned. */
+    approvedAnnotationsHash: string | null;
     approvedDescriptionHash: string | null;
     approvedSchemaHash: string | null;
     approvalSource: string | null;
@@ -112,6 +115,7 @@ export async function listToolManifests(ctx: RequestContext): Promise<ToolManife
             select: {
                 toolName: true,
                 descriptionHash: true,
+                annotationsHash: true,
                 schemaHash: true,
                 manifestHash: true,
                 revision: true,
@@ -152,11 +156,13 @@ export function manifestStateOf(
         toolName,
         status: verdict.status,
         liveManifestHash: verdict.live.manifestHash,
+        liveAnnotationsHash: verdict.live.annotationsHash,
         liveDescriptionHash: verdict.live.descriptionHash,
         liveDescription: def.description,
         liveSchema: JSON.stringify(def.inputSchema, null, 2),
         liveSchemaHash: verdict.live.schemaHash,
         approvedManifestHash: pin?.manifestHash ?? null,
+        approvedAnnotationsHash: pin?.annotationsHash ?? null,
         approvedDescriptionHash: pin?.descriptionHash ?? null,
         approvedSchemaHash: pin?.schemaHash ?? null,
         approvalSource: pin?.approvalSource ?? null,
@@ -261,10 +267,24 @@ export async function writeToolManifestPin(
 ): Promise<ApproveToolManifestResult> {
     const existing = await db.mcpToolManifestPin.findUnique({
         where: { tenantId_toolName: { tenantId: ctx.tenantId, toolName } },
-        select: { id: true, manifestHash: true, revision: true },
+        select: { id: true, manifestHash: true, annotationsHash: true, revision: true },
     });
 
-    if (existing && existing.manifestHash === live.manifestHash) {
+    // ── THE NO-OP GUARD HAS TO KNOW ABOUT BOTH AXES ─────────────────────────
+    //
+    // It compared `manifestHash` alone. Annotations are deliberately NOT part
+    // of that hash, so an approval that exists precisely BECAUSE a server
+    // flipped `readOnlyHint` would have matched here, returned `changed:
+    // false`, and written nothing — the operator would have approved a drift
+    // and the pin would still carry the old attestation.
+    //
+    // A null `annotationsHash` on the existing row is a pin from before the
+    // column, so writing one is a real change and must not short-circuit.
+    if (
+        existing &&
+        existing.manifestHash === live.manifestHash &&
+        existing.annotationsHash === live.annotationsHash
+    ) {
         return {
             toolName,
             manifestHash: existing.manifestHash,
@@ -285,6 +305,7 @@ export async function writeToolManifestPin(
                 descriptionHash: live.descriptionHash,
                 schemaHash: live.schemaHash,
                 manifestHash: live.manifestHash,
+                annotationsHash: live.annotationsHash,
                 approvalSource: 'APPROVED',
                 approvedByUserId,
                 approvedAt: new Date(),
@@ -300,6 +321,7 @@ export async function writeToolManifestPin(
                 descriptionHash: live.descriptionHash,
                 schemaHash: live.schemaHash,
                 manifestHash: live.manifestHash,
+                annotationsHash: live.annotationsHash,
                 approvalSource: 'APPROVED',
                 approvedByUserId,
                 approvedAt: new Date(),

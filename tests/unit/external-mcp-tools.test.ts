@@ -192,10 +192,16 @@ describe('approving an external definition', () => {
         expect(writePinMock).toHaveBeenCalledTimes(1);
         const [, , pinnedName, hashes, approver] = writePinMock.mock.calls[0];
         expect(pinnedName).toBe(externalToolName(CONN, 'list_alerts'));
+        // `toEqual`, not `objectContaining` — the point of this assertion is
+        // that the pin carries EXACTLY the hashes this read observed, so a
+        // fourth one appearing has to be a deliberate change to the contract.
+        // The annotations hash is that deliberate change (#2861): it is
+        // attested on its own axis, from the same read.
         expect(hashes).toEqual({
             descriptionHash: liveHashes().descriptionHash,
             schemaHash: liveHashes().schemaHash,
             manifestHash: liveHashes().manifestHash,
+            annotationsHash: liveHashes().annotationsHash,
         });
         expect(approver).toBe('usr_9');
     });
