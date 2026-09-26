@@ -36,6 +36,7 @@ import { logger } from '@/lib/observability/logger';
 import {
     LADDER,
     DIRECTION_IMPLEMENTED,
+    isAboveClamp,
     coerceStoredMode,
     type IdentityWriteMode,
     type IdentityDirection,
@@ -157,6 +158,19 @@ export function describeRefusal(
      * are not widening a mode have nothing to prove.
      */
     passesInWindow?: number,
+    /**
+     * The highest rung this direction's PASS will act at — `LEAVER_MAX_MODE` or
+     * `JOINER_MAX_MODE`, whichever belongs to `direction`.
+     *
+     * Passed in for the same reason `passesInWindow` is: the constants live
+     * beside the gate that enforces them, and `identity-leaver-pass` already
+     * imports this module, so reading them here directly would make a cycle.
+     *
+     * `undefined` skips the check, and that is safe for the same reason it is
+     * safe above — `setIdentityWriteMode` is the only write path and it always
+     * supplies it.
+     */
+    clamp?: IdentityWriteMode,
 ): string | null {
     if (current.mode === next) return null;
 
@@ -210,6 +224,38 @@ export function describeRefusal(
         // can now DECIDE a group (#2713 gave the map a home), but there is
         // no create verb behind that decision (#2714).
         return `The ${direction} direction has no implementation behind it — a ${direction} pass cannot act on the mode it reads, so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
+    }
+
+    // ═══ A WIDEN ABOVE THE PUBLISHED CEILING IS REFUSED ON THE WRITE PATH ═══
+    //
+    // The clamp has always been enforced at the PASS (gate 1, ordinally) and
+    // REPORTED to the UI as `honoured.<direction>.maxMode`. It was never
+    // enforced HERE, and until now nothing could reach the gap: the joiner was
+    // the only direction with a ceiling below the top rung, and
+    // `DIRECTION_IMPLEMENTED.joiner` refused every joiner widen above it.
+    // Flipping that flag to true is exactly what makes this reachable, so the
+    // check lands in the same diff.
+    //
+    // THIS IS #2638's DEFECT, ONE FIELD ALONG. That issue found `implemented`
+    // published as a literal in the route while the write path consulted
+    // nothing, so "the write path let a tenant climb the joiner to AUTOMATIC
+    // while this same response called it unbuilt". The fix was to make both
+    // read one constant. `maxMode` sat in the same response with the same
+    // shape and kept the same gap: a ceiling an operator is shown, that the
+    // nightly pass obeys, and that the PUT ignored.
+    //
+    // What it prevents is the state accumulation this file already warns about
+    // thirty lines up — a tenant spending the seven-day window and the evidence
+    // check to arrive at a rung where every pass refuses MODE_ABOVE_CLAMP. The
+    // dwell fires only when LEAVING DRY_RUN, so once past that rung there is no
+    // further delay: the ladder's whole point would already be spent.
+    //
+    // Ordinal, never `next !== clamp`, matching the pass. And `next` is known
+    // to be a real rung because `setIdentityWriteMode` validates it against
+    // `LADDER` before calling — which matters, since `isAboveClamp` sorts an
+    // unrecognised mode to -1 and would read it as BELOW the clamp.
+    if (clamp !== undefined && isAboveClamp(next, clamp)) {
+        return `${next} is above the highest rung the ${direction} runtime will act at (${clamp}). A tenant set to ${next} would record the wider authority while every pass refused it as above the clamp, so the ladder would be spent without ever granting anything. Raising that ceiling is a reviewed change to the ${direction} pass, not a setting.`;
     }
 
     // Widening by more than one rung skips the step whose entire purpose is to
@@ -321,6 +367,18 @@ export async function setIdentityWriteMode(
     ctx: RequestContext,
     direction: IdentityDirection,
     next: IdentityWriteMode,
+    /**
+     * This direction's published ceiling — `LEAVER_MAX_MODE` or
+     * `JOINER_MAX_MODE`. REQUIRED, so a caller cannot quietly drop the check by
+     * omitting it; the only write path is the admin route, which already
+     * imports both constants to publish them as `honoured.<d>.maxMode`.
+     *
+     * Required rather than optional is the whole defence here. `passesInWindow`
+     * gets away with being optional because it is computed in this file; this
+     * value comes from OUTSIDE, and an optional parameter that callers forget
+     * is indistinguishable from a check that was never written.
+     */
+    clamp: IdentityWriteMode,
     now: Date = new Date(),
 ): Promise<DirectionState> {
     if (!LADDER.includes(next)) throw badRequest(`Unknown identity write mode: ${next}`);
@@ -338,7 +396,7 @@ export async function setIdentityWriteMode(
             ? await countExecutedPasses(ctx, direction, current.dryRunSince)
             : undefined;
 
-    const refusal = describeRefusal(direction, current, next, now, passesInWindow);
+    const refusal = describeRefusal(direction, current, next, now, passesInWindow, clamp);
     if (refusal) throw forbidden(refusal);
 
     const f = FIELDS[direction];

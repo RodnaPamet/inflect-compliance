@@ -251,8 +251,47 @@ export const PASS_AUTOMATION_SUFFIX: Readonly<Record<IdentityDirection, string>>
  * every outcome is "I could not look up your groups" fails the second half while
  * looking like it satisfies the first. This flips when the map has somewhere to
  * live, in the diff that gives it one.
+ *
+ * ═══ FLIPPED TO TRUE — and the CEILING DELIBERATELY DID NOT MOVE ═══
+ *
+ * Every term of the conjunction above is now satisfied, which is the whole of
+ * the permission being claimed here:
+ *
+ *   · THE MAP HAS SOMEWHERE TO LIVE — #2713. This is the term that held the
+ *     flag down longest, and the reason `wouldCreate` was structurally 0 while
+ *     every plan refused `NO_DEPARTMENT_MAP`.
+ *   · A RUNTIME READS THE SETTING — #2923 wired the create verb, #2928 put a
+ *     collision probe in front of it, #2940 gave Entra a provisioner behind it.
+ *   · AN OPERATOR CAN SEE WHAT IT DID — #2944. The joiner pass report has a
+ *     page. `direction-implemented-means-what-it-says` went red the day that
+ *     page landed, pointing at this constant, exactly as it was written to.
+ *
+ * WHAT THIS BUYS, AND THE PART THAT IS EASY TO MISREAD. `JOINER_MAX_MODE` stays
+ * DRY_RUN. So this grants NO write authority whatsoever — it grants the ability
+ * to reach DRY_RUN, which no tenant could do before (#2843 finding 56: "no
+ * tenant can reach DRY_RUN through the product, so the seven-day window cannot
+ * even be started"). A direction nobody can put into DRY_RUN produces zero
+ * artefacts nightly and can never accumulate the evidence its own promotion
+ * gate asks for. That is the deadlock this breaks.
+ *
+ * THE PAIRING RULE IS UNCHANGED, AND THIS DIFF HONOURS IT RATHER THAN BENDING
+ * IT. The rule was never "these two constants move together"; it is that
+ * `implemented` must not advertise a capability nobody can reach. At ceiling
+ * DRY_RUN, DRY_RUN *is* reachable — `isAboveClamp('DRY_RUN', 'DRY_RUN')` is
+ * false — and it is a real capability: a dry-run pass decides, records, and
+ * renders on a page an operator can read. The flag is honest at this rung.
+ * Raising the ceiling to AUTOMATIC is a SEPARATE decision, and one the dwell
+ * plus the evidence check now have a way to inform, which they did not before.
+ *
+ * That is the leaver's worked example, in order: it reached AUTOMATIC by
+ * spending the window and then performing a real disable confirmed in the
+ * directory afterwards — not by having complete machinery. The joiner has had
+ * its proving run against the lab DC (#2880), and that run surfaced #2943, an
+ * account created, entitled and ENABLED with a UPN of `pj151326` and no domain
+ * suffix, confirmed by an independent `ldapsearch`. Fixed before this diff.
+ * The window is what comes next, not the writes.
  */
 export const DIRECTION_IMPLEMENTED: Readonly<Record<IdentityDirection, boolean>> = {
     leaver: true,
-    joiner: false,
+    joiner: true,
 };

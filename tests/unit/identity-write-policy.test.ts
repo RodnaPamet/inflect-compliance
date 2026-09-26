@@ -67,6 +67,8 @@ import {
     DRY_RUN_MIN_PASSES,
 } from '@/app-layer/usecases/identity-write-policy';
 import { DIRECTION_IMPLEMENTED, LADDER, type IdentityWriteMode } from '@/lib/identity/write-ladder';
+import { LEAVER_MAX_MODE } from '@/app-layer/usecases/identity-leaver-pass';
+import { JOINER_MAX_MODE } from '@/app-layer/usecases/identity-joiner-pass';
 import { makeRequestContext } from '../helpers/make-context';
 
 const NOW = new Date('2026-08-19T12:00:00Z');
@@ -321,7 +323,7 @@ describe('setIdentityWriteMode counts the passes itself — #2843 finding 31', (
             identityJoinerDryRunSince: null,
         });
 
-        await expect(setIdentityWriteMode(ctx, 'leaver', 'AUTOMATIC', NOW)).rejects.toThrow(
+        await expect(setIdentityWriteMode(ctx, 'leaver', 'AUTOMATIC', LEAVER_MAX_MODE, NOW)).rejects.toThrow(
             /recorded 0 completed leaver passes/i,
         );
     });
@@ -335,7 +337,7 @@ describe('setIdentityWriteMode counts the passes itself — #2843 finding 31', (
             identityJoinerDryRunSince: null,
         });
 
-        await setIdentityWriteMode(ctx, 'leaver', 'AUTOMATIC', NOW).catch(() => undefined);
+        await setIdentityWriteMode(ctx, 'leaver', 'AUTOMATIC', LEAVER_MAX_MODE, NOW).catch(() => undefined);
 
         const where = (executionCount.mock.calls[0][0] as { where: { automationKey: unknown } }).where;
         expect(JSON.stringify(where)).toMatch(/leaver_pass/);
@@ -353,7 +355,7 @@ describe('setIdentityWriteMode counts the passes itself — #2843 finding 31', (
             identityJoinerDryRunSince: null,
         });
 
-        await setIdentityWriteMode(ctx, 'leaver', 'DISABLED', NOW);
+        await setIdentityWriteMode(ctx, 'leaver', 'DISABLED', LEAVER_MAX_MODE, NOW);
 
         expect(executionCount).not.toHaveBeenCalled();
     });
@@ -402,32 +404,93 @@ describe('no-op', () => {
 describe('an unimplemented direction cannot be widened', () => {
     const ctx = makeRequestContext('OWNER');
 
-    it('pins the premise: the joiner is not implemented and the leaver is', () => {
-        // If this ever flips, the refusals below stop being the right behaviour
-        // and the tests that assert them should fail LOUDLY rather than be
-        // quietly rewritten to match a constant somebody moved.
+    it('the premise MOVED: both directions are implemented now', () => {
+        // The previous revision of this test said: "If this ever flips, the
+        // refusals below stop being the right behaviour and the tests that
+        // assert them should fail LOUDLY rather than be quietly rewritten to
+        // match a constant somebody moved."
         //
-        // "Not implemented" is NOT "has no runtime" any more — #2687 shipped the
-        // runtime. The flag is a conjunction, and it is the second half (an
-        // operator can see what it did) that the missing entitlement map still
-        // fails.
-        expect(DIRECTION_IMPLEMENTED.joiner).toBe(false);
+        // It flipped, and it did fail loudly — all four assertions in this
+        // block. This is the honest rewrite it asked for, and the distinction
+        // it was protecting is preserved rather than deleted: the RULE ("an
+        // unimplemented direction cannot be widened") is now exercised against
+        // an INJECTED map, because with both real directions implemented there
+        // is no live example left to lean on.
+        //
+        // That matters more than it sounds. A rule testable only through
+        // whichever direction happens to be unfinished is a rule that vanishes
+        // the moment the product finishes — and it would vanish GREEN, which is
+        // the failure mode that looks like success.
+        expect(DIRECTION_IMPLEMENTED.joiner).toBe(true);
         expect(DIRECTION_IMPLEMENTED.leaver).toBe(true);
     });
 
-    it('refuses a joiner widen at the usecase, not just in the UI', async () => {
-        await expect(setIdentityWriteMode(ctx, 'joiner', 'DRY_RUN', NOW)).rejects.toThrow(
-            /no implementation behind it/i,
-        );
+    /**
+     * The rule, against a direction unimplemented BY CONSTRUCTION.
+     *
+     * `describeRefusal` reads `DIRECTION_IMPLEMENTED[direction]` through a
+     * module binding, so re-requiring the usecase behind a doMock gives a copy
+     * whose map says what this test needs. The assertions are then about the
+     * GATE, not about which direction happens to be finished.
+     */
+    const withJoinerUnimplemented = (
+        run: (m: typeof import('@/app-layer/usecases/identity-write-policy')) => void,
+    ) => {
+        jest.isolateModules(() => {
+            jest.doMock('@/lib/identity/write-ladder', () => ({
+                ...jest.requireActual('@/lib/identity/write-ladder'),
+                DIRECTION_IMPLEMENTED: { leaver: true, joiner: false },
+            }));
+            run(require('@/app-layer/usecases/identity-write-policy'));
+        });
+        jest.dontMock('@/lib/identity/write-ladder');
+    };
+
+    it('pins the injection itself — the map really is false in there', () => {
+        // The positive control. A doMock that silently failed to apply would
+        // make every assertion below pass for the wrong reason: they would be
+        // testing the REAL map, in which the joiner is now implemented, and a
+        // refusal that never fired would read as a refusal that did.
+        withJoinerUnimplemented((m) => {
+            expect(
+                m.describeRefusal('joiner', { mode: 'DISABLED', dryRunSince: null }, 'DRY_RUN', NOW),
+            ).toMatch(/no implementation behind it/i);
+        });
+        // ...and outside the injection, the same widen is now allowed.
+        expect(describeRefusal('joiner', { mode: 'DISABLED', dryRunSince: null }, 'DRY_RUN', NOW))
+            .toBeNull();
+    });
+
+    it('refuses an unimplemented widen at the usecase, not just in the UI', async () => {
+        let thrown: unknown;
+        withJoinerUnimplemented((m) => {
+            thrown = m
+                .setIdentityWriteMode(ctx, 'joiner', 'DRY_RUN', JOINER_MAX_MODE, NOW)
+                .catch((e: unknown) => e);
+        });
+        await expect(thrown).resolves.toMatchObject({
+            message: expect.stringMatching(/no implementation behind it/i),
+        });
         // The refusal is a refusal, not a warning: nothing was written.
         expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('now ALLOWS the joiner to reach DRY_RUN, which is what this lift bought', async () => {
+        // #2843 finding 56: "no tenant can reach DRY_RUN through the product,
+        // so the seven-day window cannot even be started". This is that,
+        // asserted. A diff that moved the flag without making this reachable
+        // would have changed a label and nothing else.
+        await expect(
+            setIdentityWriteMode(ctx, 'joiner', 'DRY_RUN', JOINER_MAX_MODE, NOW),
+        ).resolves.toEqual({ mode: 'DRY_RUN', dryRunSince: NOW });
+        expect(upsert).toHaveBeenCalledTimes(1);
     });
 
     it('still allows the leaver direction, so the gate is not a blanket one', async () => {
         // The half that makes the previous assertion mean something. A gate that
         // refused BOTH directions would satisfy the joiner test while breaking
         // the only direction that works.
-        await expect(setIdentityWriteMode(ctx, 'leaver', 'DRY_RUN', NOW)).resolves.toEqual({
+        await expect(setIdentityWriteMode(ctx, 'leaver', 'DRY_RUN', LEAVER_MAX_MODE, NOW)).resolves.toEqual({
             mode: 'DRY_RUN',
             dryRunSince: NOW,
         });
@@ -440,9 +503,15 @@ describe('an unimplemented direction cannot be widened', () => {
         // tenant whose row was set before this gate existed cannot resume the
         // climb.
         settingsRow.identityJoinerMode = 'DRY_RUN';
-        await expect(setIdentityWriteMode(ctx, 'joiner', 'AUTOMATIC', NOW)).rejects.toThrow(
-            /no implementation behind it/i,
-        );
+        let thrown: unknown;
+        withJoinerUnimplemented((m) => {
+            thrown = m
+                .setIdentityWriteMode(ctx, 'joiner', 'AUTOMATIC', JOINER_MAX_MODE, NOW)
+                .catch((e: unknown) => e);
+        });
+        await expect(thrown).resolves.toMatchObject({
+            message: expect.stringMatching(/no implementation behind it/i),
+        });
         expect(upsert).not.toHaveBeenCalled();
     });
 
@@ -451,7 +520,7 @@ describe('an unimplemented direction cannot be widened', () => {
         // the old behaviour must be able to come back — a gate that trapped them
         // at AUTOMATIC would be strictly worse than the bug it replaced.
         settingsRow.identityJoinerMode = 'AUTOMATIC';
-        await expect(setIdentityWriteMode(ctx, 'joiner', 'DISABLED', NOW)).resolves.toEqual({
+        await expect(setIdentityWriteMode(ctx, 'joiner', 'DISABLED', JOINER_MAX_MODE, NOW)).resolves.toEqual({
             mode: 'DISABLED',
             dryRunSince: null,
         });
@@ -461,8 +530,11 @@ describe('an unimplemented direction cannot be widened', () => {
     it('reports the same refusal through describeRefusal, which is what the GET renders', () => {
         // One source: the sentence the write path throws is the sentence the page
         // shows beside the disabled button, because both come from here.
-        expect(describeRefusal('joiner', { mode: 'DISABLED', dryRunSince: null }, 'DRY_RUN', NOW))
-            .toMatch(/no implementation behind it/i);
+        withJoinerUnimplemented((m) => {
+            expect(
+                m.describeRefusal('joiner', { mode: 'DISABLED', dryRunSince: null }, 'DRY_RUN', NOW),
+            ).toMatch(/no implementation behind it/i);
+        });
         expect(describeRefusal('leaver', { mode: 'DISABLED', dryRunSince: null }, 'DRY_RUN', NOW))
             .toBeNull();
     });
@@ -501,7 +573,7 @@ describe('a stored PROPOSE is translated at the read, before anything ranks it',
         // therefore has to re-enter DRY_RUN and spend the seven days — the same
         // toll every other tenant pays for the same authority, which is the
         // correct answer for a rung that was reachable without paying it.
-        await expect(setIdentityWriteMode(ctx, 'leaver', 'AUTOMATIC', NOW)).rejects.toThrow(
+        await expect(setIdentityWriteMode(ctx, 'leaver', 'AUTOMATIC', LEAVER_MAX_MODE, NOW)).rejects.toThrow(
             /no recorded start/i,
         );
         expect(upsert).not.toHaveBeenCalled();
@@ -511,14 +583,14 @@ describe('a stored PROPOSE is translated at the read, before anything ranks it',
         // The half that keeps the refusal above honest: coercion must not strand
         // the tenant. Re-selecting DRY_RUN is accepted (it is a no-op on the
         // coerced state) and stamps a fresh clock.
-        await expect(setIdentityWriteMode(ctx, 'leaver', 'DRY_RUN', NOW)).resolves.toEqual({
+        await expect(setIdentityWriteMode(ctx, 'leaver', 'DRY_RUN', LEAVER_MAX_MODE, NOW)).resolves.toEqual({
             mode: 'DRY_RUN',
             dryRunSince: NOW,
         });
     });
 
     it('can still narrow all the way off', async () => {
-        await expect(setIdentityWriteMode(ctx, 'leaver', 'DISABLED', NOW)).resolves.toEqual({
+        await expect(setIdentityWriteMode(ctx, 'leaver', 'DISABLED', LEAVER_MAX_MODE, NOW)).resolves.toEqual({
             mode: 'DISABLED',
             dryRunSince: null,
         });
@@ -534,15 +606,99 @@ describe('the write refuses a mode that is not a rung', () => {
         // future internal caller. A `PROPOSE` that got written back would be a
         // row nothing on the ladder can act on.
         await expect(
-            setIdentityWriteMode(ctx, 'leaver', 'PROPOSE' as IdentityWriteMode, NOW),
+            setIdentityWriteMode(ctx, 'leaver', 'PROPOSE' as IdentityWriteMode, LEAVER_MAX_MODE, NOW),
         ).rejects.toThrow(/Unknown identity write mode/i);
         expect(upsert).not.toHaveBeenCalled();
     });
 
     it('rejects anything else off the ladder too', async () => {
         await expect(
-            setIdentityWriteMode(ctx, 'leaver', 'SUPERUSER' as IdentityWriteMode, NOW),
+            setIdentityWriteMode(ctx, 'leaver', 'SUPERUSER' as IdentityWriteMode, LEAVER_MAX_MODE, NOW),
         ).rejects.toThrow(/Unknown identity write mode/i);
         expect(upsert).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * THE PUBLISHED CEILING IS NOW ENFORCED ON THE WRITE PATH, NOT ONLY AT THE PASS.
+ *
+ * The clamp was always enforced at the pass's gate 1 and always REPORTED to the
+ * UI as `honoured.<direction>.maxMode`. Nothing enforced it on the PUT, and
+ * until the joiner became implemented nothing could reach the gap — the
+ * unimplemented-direction refusal caught every joiner widen first.
+ *
+ * This is #2638's defect one field along. That issue found `implemented`
+ * published as a literal while the write path consulted nothing, so a tenant
+ * could climb the joiner to AUTOMATIC while the same response called it
+ * unbuilt. `maxMode` sat in that same response with the same shape and kept the
+ * same gap.
+ *
+ * What it prevents: a tenant spending the seven-day window AND the evidence
+ * check to arrive at a rung where every nightly pass refuses MODE_ABOVE_CLAMP.
+ * The dwell fires only when LEAVING DRY_RUN, so past that rung there is no
+ * further delay — the ladder would be wholly spent for nothing.
+ */
+describe('a widen above the published ceiling is refused', () => {
+    const ctx = makeRequestContext('OWNER');
+
+    it('refuses the joiner at AUTOMATIC, because its ceiling is DRY_RUN', async () => {
+        // Reached legitimately: seven days in DRY_RUN with evidence behind it.
+        // The point is that even a tenant who has EARNED the widen is refused,
+        // because the rung they would arrive at does nothing.
+        settingsRow.identityJoinerMode = 'DRY_RUN';
+        await expect(
+            setIdentityWriteMode(ctx, 'joiner', 'AUTOMATIC', JOINER_MAX_MODE, NOW),
+        ).rejects.toThrow(/above the highest rung/i);
+        expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('names the ceiling it is refusing against', async () => {
+        // A refusal an operator cannot act on is a dead end. It has to say
+        // which rung the runtime stops at, and that raising it is a code
+        // change rather than a setting they have failed to find.
+        settingsRow.identityJoinerMode = 'DRY_RUN';
+        const err = await setIdentityWriteMode(
+            ctx, 'joiner', 'AUTOMATIC', JOINER_MAX_MODE, NOW,
+        ).catch((e: Error) => e);
+        expect((err as Error).message).toContain(JOINER_MAX_MODE);
+        expect((err as Error).message).toMatch(/reviewed change/i);
+    });
+
+    it('does NOT refuse the leaver at AUTOMATIC — the check is not a blanket one', async () => {
+        // The half that makes the assertions above mean something. A check that
+        // refused every widen would satisfy them while breaking the direction
+        // that legitimately reaches the top rung. The leaver's ceiling IS
+        // AUTOMATIC, so nothing is above it.
+        settingsRow.identityLeaverMode = 'DRY_RUN';
+        await expect(
+            describeRefusal(
+                'leaver',
+                { mode: 'DRY_RUN', dryRunSince: daysAgo(DRY_RUN_MIN_DAYS + 1) },
+                'AUTOMATIC',
+                NOW,
+                DRY_RUN_MIN_PASSES + 1,
+                LEAVER_MAX_MODE,
+            ),
+        ).toBeNull();
+    });
+
+    it('still lets a tenant parked ABOVE the ceiling narrow back down', async () => {
+        // Narrowing returns before this check, deliberately. A tenant sitting at
+        // AUTOMATIC — set before this gate existed — must be able to come back,
+        // or the gate would trap them at the very rung it calls unreachable.
+        settingsRow.identityJoinerMode = 'AUTOMATIC';
+        await expect(
+            setIdentityWriteMode(ctx, 'joiner', 'DRY_RUN', JOINER_MAX_MODE, NOW),
+        ).resolves.toEqual({ mode: 'DRY_RUN', dryRunSince: NOW });
+    });
+
+    it('is ORDINAL, not an equality check against the ceiling', async () => {
+        // `mode !== clamp` would be correct by coincidence while the ceiling sits
+        // one rung up, and would refuse DISABLED->DRY_RUN the moment it moved.
+        // The pass pays for this distinction too; both use `isAboveClamp`.
+        settingsRow.identityJoinerMode = 'DISABLED';
+        await expect(
+            setIdentityWriteMode(ctx, 'joiner', 'DRY_RUN', JOINER_MAX_MODE, NOW),
+        ).resolves.toEqual({ mode: 'DRY_RUN', dryRunSince: NOW });
     });
 });
