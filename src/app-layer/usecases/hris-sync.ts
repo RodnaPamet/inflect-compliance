@@ -167,7 +167,12 @@ export const MAX_TERMINATE_SHARE = 0.1;
 export const TERMINATE_SHARE_FLOOR = 5;
 
 /** Employees pulled into the manager map in one statement. */
-const MANAGER_MAP_TAKE = 10000;
+/**
+ * Bound on the manager-resolution map read. EXPORTED so the suite that proves
+ * clears are withheld at the cap binds this number instead of mirroring it —
+ * a test carrying its own `10000` would keep passing if this one changed.
+ */
+export const MANAGER_MAP_TAKE = 10000;
 
 export interface HrisSyncResult {
     executionId: string;
@@ -201,6 +206,12 @@ export interface HrisSyncResult {
     noRetry?: boolean;
     upserted: number;
     managersLinked: number;
+    /**
+     * Manager links this pass found stale and REMOVED — see the three-case
+     * loop in pass 2. Reported separately from `managersLinked` because a
+     * severed link and an established one are opposite events.
+     */
+    managersCleared: number;
     /**
      * Employees this pass marked TERMINATED — ZERO when the blast-radius rail
      * refused, and absent on the arms that never reach the reconcile.
@@ -253,7 +264,7 @@ export async function runHrisSync(input: {
         return { ok: true as const, conn, executionId: execution.id };
     });
     if (!opened.ok) {
-        return { executionId: opened.executionId, status: 'ERROR', upserted: 0, managersLinked: 0, errorMessage: 'HRIS connection not found' };
+        return { executionId: opened.executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, errorMessage: 'HRIS connection not found' };
     }
     const { conn, executionId } = opened;
 
@@ -263,7 +274,7 @@ export async function runHrisSync(input: {
     const resolved = input.provider ?? registry.getProvider(conn.provider);
     if (!resolved || !isHrisSyncProvider(resolved)) {
         await shortTx((db) => db.integrationExecution.update({ where: { id: executionId }, data: { status: 'ERROR', errorMessage: 'Provider does not support HRIS sync', completedAt: new Date() } }));
-        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, errorMessage: 'Provider does not support HRIS sync' };
+        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, errorMessage: 'Provider does not support HRIS sync' };
     }
 
     const start = Date.now();
@@ -339,7 +350,7 @@ export async function runHrisSync(input: {
         });
         // This usecase CATCHES the provider error, so the classification has
         // to ride the result or the queue-level bypass never sees it.
-        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
+        return { executionId, status: 'ERROR', upserted: 0, managersLinked: 0, managersCleared: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
     }
 
     // Declared outside the try so the write-failure arm can report what
@@ -347,6 +358,7 @@ export async function runHrisSync(input: {
     // half-written pass as a run that did nothing.
     let upserted = 0;
     let managersLinked = 0;
+    let managersCleared = 0;
 
     // ── 3. The write phase ───────────────────────────────────────────────
     // Wrapped in a catch, because the RUNNING row is now COMMITTED. Before this
@@ -425,18 +437,66 @@ export async function runHrisSync(input: {
         // The read runs after every upsert chunk has committed, so employees
         // this run created are already in the map.
         const emailToId = new Map<string, string>();
-        const all = await shortTx((db) => db.employee.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true, workEmail: true }, take: MANAGER_MAP_TAKE }));
+        const all = await shortTx((db) => db.employee.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true, workEmail: true, managerEmployeeId: true }, take: MANAGER_MAP_TAKE }));
         for (const r of all) emailToId.set(r.workEmail.toLowerCase(), r.id);
+        const currentManagerId = new Map(all.map((r) => [r.id, r.managerEmployeeId]));
+        // WHETHER THE MAP IS WHOLE DECIDES WHETHER A CLEAR IS SAFE.
+        // `take` is a silent cap, and at the cap "this manager is not an
+        // employee of this tenant" and "this manager is past row 10000" are
+        // the same observation. The first means the link is stale; the second
+        // means the link is fine and the map is short. LINKING is unaffected
+        // either way — a manager that resolved, resolved — but CLEARING on a
+        // truncated map would delete good links by the thousand, so clears are
+        // withheld unless the map is known whole. The cap bounds the read, and
+        // must never be read as a bound on the truth.
+        const mapIsWhole = all.length < MANAGER_MAP_TAKE;
         // Resolved in memory BEFORE any transaction opens, so the write
         // transactions below carry writes only. Deciding what to link is not
         // work a held transaction should be paying for.
-        const managerLinks: Array<{ selfId: string; managerId: string }> = [];
+        //
+        // A MOVE IS A CHANGE OF MANAGER, AND THIS LOOP COULD ONLY EVER SET ONE.
+        // Every branch that failed to resolve a manager did `continue`, which
+        // leaves whatever the row already held — so a worker who transferred to
+        // a manager outside the synced roster kept their FORMER manager on
+        // record indefinitely. Not cosmetic staleness: `notifications/leaver.ts`
+        // addresses the termination notice to `Employee.managerEmployeeId`, so
+        // the one mail this product aims at exactly one human was aimed at the
+        // wrong one — a former manager learning of a departure they no longer
+        // have any business knowing about. (#2879 finding 59.)
+        //
+        // THE FEED IS AUTHORITATIVE ABOUT ROWS IT SENDS, and the three outcomes
+        // are not the same thing:
+        //
+        //   · names a manager we resolve            → link it (unchanged)
+        //   · names a manager we CANNOT resolve, or names the worker
+        //     themselves (how some feeds encode top-of-tree — see the note in
+        //     notifications/leaver.ts) → the feed has just said the manager is
+        //     not who we hold, so what we hold is stale       → CLEAR
+        //   · says nothing at all → SILENCE IS NOT AN ASSERTION → leave it
+        //
+        // The third branch is why this is three cases and not two. `managerEmail`
+        // is `?: string | null`, so a feed that omits the field is
+        // indistinguishable from one that sends it empty — and #2492 added a
+        // SECOND writer to this column, `personnel.ts::setEmployeeManager`,
+        // gated on `personnel.manage`. Clearing on silence would let every
+        // sync quietly undo a manager a human deliberately set, on a feed that
+        // never carried the field at all. Declining to act on silence costs
+        // only that a feed which genuinely empties the field keeps a stale
+        // link; acting on it would delete human intent on a schedule.
+        const managerLinks: Array<{ selfId: string; managerId: string | null }> = [];
         for (const e of roster) {
+            const selfId = emailToId.get(e.workEmail.toLowerCase());
+            if (!selfId) continue;
             if (!e.managerEmail) continue;
             const managerId = emailToId.get(e.managerEmail.toLowerCase());
-            const selfId = emailToId.get(e.workEmail.toLowerCase());
-            if (!managerId || !selfId || managerId === selfId) continue;
-            managerLinks.push({ selfId, managerId });
+            if (managerId && managerId !== selfId) {
+                managerLinks.push({ selfId, managerId });
+                continue;
+            }
+            if (!mapIsWhole) continue;
+            // Nothing on the row to go stale, so no write to make.
+            if (currentManagerId.get(selfId) == null) continue;
+            managerLinks.push({ selfId, managerId: null });
         }
         for (const group of chunk(managerLinks, SYNC_UPSERT_CHUNK_SIZE)) {
             await writeTx(async (db) => {
@@ -444,7 +504,13 @@ export async function runHrisSync(input: {
                     await db.employee.update({ where: { id: link.selfId }, data: { managerEmployeeId: link.managerId } });
                 }
             });
-            managersLinked += group.length;
+            // Counted apart, because to an operator reading `resultJson` they
+            // are different events: a link is an org chart being filled in, a
+            // clear is a link this run found stale and severed. One number for
+            // both would make a run that cut fifty manager links look exactly
+            // like a run that established fifty.
+            managersLinked += group.filter((l) => l.managerId !== null).length;
+            managersCleared += group.filter((l) => l.managerId === null).length;
         }
 
         // H3 — a truncated roster must not report a green PASSED and must NOT
@@ -482,7 +548,7 @@ export async function runHrisSync(input: {
                         data: {
                             status: 'PASSED',
                             errorMessage: null,
-                            resultJson: { upserted, managersLinked, departed: 0, total: roster.length, partial: true, resuming: true },
+                            resultJson: { upserted, managersLinked, managersCleared, departed: 0, total: roster.length, partial: true, resuming: true },
                             durationMs: Date.now() - start,
                             completedAt: new Date(),
                         },
@@ -497,7 +563,7 @@ export async function runHrisSync(input: {
                     upserted,
                     passStartedAt,
                 });
-                return { executionId, status: 'PARTIAL', upserted, managersLinked, errorMessage: msg };
+                return { executionId, status: 'PARTIAL', upserted, managersLinked, managersCleared, errorMessage: msg };
             }
 
             // NOT resumable — unchanged behaviour. Loud and non-retryable,
@@ -506,13 +572,13 @@ export async function runHrisSync(input: {
             await shortTx((db) =>
                 db.integrationExecution.update({
                     where: { id: executionId },
-                    data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, total: roster.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
+                    data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, total: roster.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
                 }),
             );
             logger.warn('hris-sync partial roster — departure reconcile skipped', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted });
             // Loud, but NOT retryable: the cap is deterministic, so a retry
             // re-reads the same too-large roster and truncates identically.
-            return { executionId, status: 'ERROR', upserted, managersLinked, errorMessage: msg, noRetry: true };
+            return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, errorMessage: msg, noRetry: true };
         }
 
         // H3 — departed-employee reconcile: a source=HRIS employee absent from a
@@ -686,6 +752,7 @@ export async function runHrisSync(input: {
                     resultJson: {
                         upserted,
                         managersLinked,
+                        managersCleared,
                         departed,
                         total: roster.length,
                         ...(refusal ? { terminateRefused: refusalReason, terminateProposed } : {}),
@@ -715,7 +782,7 @@ export async function runHrisSync(input: {
                 reason: refusalReason,
             });
         } else {
-            logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, managersLinked, departed });
+            logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, managersLinked, managersCleared, departed });
         }
 
         return {
@@ -723,6 +790,7 @@ export async function runHrisSync(input: {
             status: refusal ? ('PARTIAL' as const) : ('PASSED' as const),
             upserted,
             managersLinked,
+            managersCleared,
             departed,
             // Rides the result as well as the row: `jobs/hris-sync` returns
             // this straight to the queue, and a caller that only reads the
@@ -739,13 +807,13 @@ export async function runHrisSync(input: {
         await shortTx((db) =>
             db.integrationExecution.update({
                 where: { id: executionId },
-                data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, writePhaseFailed: true }, durationMs: Date.now() - start, completedAt: new Date() },
+                data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, managersLinked, managersCleared, writePhaseFailed: true }, durationMs: Date.now() - start, completedAt: new Date() },
             }),
         );
         logger.error('hris-sync write phase failed — execution recorded as ERROR', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, error: msg });
         // NO `noRetry` here. Unlike the deterministic truncation arms above, a
         // write that ran out of budget or lost the pool is exactly the shape a
         // retry fixes, so the queue must stay free to try again.
-        return { executionId, status: 'ERROR', upserted, managersLinked, errorMessage: msg };
+        return { executionId, status: 'ERROR', upserted, managersLinked, managersCleared, errorMessage: msg };
     }
 }
