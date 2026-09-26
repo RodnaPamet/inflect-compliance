@@ -129,6 +129,21 @@ interface PassResult {
     candidates?: number;
     population?: number;
     batchRefused?: string | null;
+    /**
+     * Whether this connection could write at all, as the pass found it.
+     *
+     * DECLARED, which is the whole of finding 53's remaining half. #2604
+     * computed it so an operator could tell a pass that disabled nobody
+     * because there was nobody from one that disabled nobody because the
+     * credential cannot write; #2843 f53 found it reaching no surface, and the
+     * pass now persists BOTH halves onto the row. This interface not declaring
+     * it is exactly how `journalId` was lost — see the note on `PassDecision`:
+     * "this interface did not declare it, so the second place did not exist."
+     *
+     * Optional because it is genuinely absent on rows written before the pass
+     * began persisting it, not because the column is unreliable.
+     */
+    writeReadiness?: { readiness?: string; detail?: string };
     counts?: Record<string, number>;
     decisions?: PassDecision[];
     decisionsTruncated?: boolean;
@@ -517,6 +532,22 @@ export function LeaverPassesClient() {
     const selectedTruncated = selectedResult.decisionsTruncated === true;
     const selectedSync = readSyncSignal(selectedResult);
     const selectedUnsettled = readUnsettled(selectedResult);
+    /**
+     * The readiness verdict, when it is one worth showing.
+     *
+     * `DEDICATED_WRITE_BIND` is the healthy answer and says nothing an operator
+     * needs to act on, so it is filtered out here rather than rendered and
+     * ignored. Everything else — a read bind doing write duty, an application
+     * credential, or a verdict that could not be reached — changes how "0
+     * disabled" should be read.
+     */
+    const selectedReadiness = (() => {
+        const r = selectedResult.writeReadiness;
+        if (!r || typeof r !== 'object') return null;
+        if (!r.detail) return null;
+        if (r.readiness === 'DEDICATED_WRITE_BIND') return null;
+        return r;
+    })();
     // Read from the REFUSAL alone, not from `selectedSync`. The two answer
     // different questions and only this one may re-tone the refusal notice: a
     // pass whose DECISIONS went stale usually carries no refusal at all, and
@@ -920,6 +951,34 @@ export function LeaverPassesClient() {
                                 `leaverPasses.${SYNC_SIGNAL_META[selectedSync.signal].noticeBodyKey}`,
                                 { count: selectedSync.decisions },
                             )}
+                        </InlineNotice>
+                    )}
+
+                    {selectedReadiness && (
+                        // BELOW the unsettled notices and ABOVE the refusal,
+                        // because it explains a refusal rather than being one:
+                        // an operator reading "0 disabled" needs to know
+                        // whether the answer is "nobody was leaving" or "this
+                        // credential cannot write", and that distinction is the
+                        // reason the verdict was computed in the first place.
+                        //
+                        // Rendered ONLY when the verdict is not the healthy
+                        // one. A notice on every pass saying the credential is
+                        // fine is a notice nobody reads, and the state worth
+                        // surfacing is the one that would otherwise look like a
+                        // quiet night.
+                        //
+                        // BOTH HALVES, because the enum alone repeats the
+                        // original mistake one layer along: `readiness` is
+                        // machine-comparable and `detail` is the sentence that
+                        // says what to do about it.
+                        <InlineNotice
+                            variant={selectedReadiness.readiness === 'UNKNOWN' ? 'warning' : 'info'}
+                            title={t('leaverPasses.readinessHeading', {
+                                readiness: selectedReadiness.readiness ?? '',
+                            })}
+                        >
+                            {selectedReadiness.detail ?? ''}
                         </InlineNotice>
                     )}
 
