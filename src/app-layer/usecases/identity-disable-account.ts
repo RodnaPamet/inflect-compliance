@@ -266,6 +266,38 @@ export interface DirectoryWriter {
     /** Perform the disable. Resolves on success, throws on refusal. */
     disable(externalUserId: string, prior: DirectoryAccountState): Promise<void>;
     /**
+     * Put back the state a disable replaced. OPTIONAL: a writer that cannot do
+     * it safely omits it, and the orchestrator refuses by name rather than
+     * degrading.
+     *
+     * ═══ WHY THIS EXISTED AS PROSE FOR SO LONG ═══
+     *
+     * `DirectoryWriter` deliberately declared no enable verb, and the reasoning
+     * was sound while it held: re-enabling accounts is a capability worth
+     * choosing on purpose, not one that arrives as a side effect of closing a
+     * finding. It is chosen now (#2877 f26), and what makes it safe is that it
+     * is not an ENABLE — it is a RESTORE, and the difference is the whole
+     * design. An enable sets a bit. A restore puts back a specific captured
+     * value, and refuses if the account is not still exactly as this product
+     * left it.
+     *
+     * ═══ THE CAS ANCHOR IS DIFFERENT FROM `disable`'s, DELIBERATELY ═══
+     *
+     * `disable` compares against the value it journalled seconds earlier, on
+     * the same socket, and refuses across domain controllers because a
+     * comparand that has not replicated is not a comparison.
+     *
+     * A restore happens DAYS later. The captured DC is long gone and the
+     * session is not the same one, so that check would refuse every restore
+     * that ever mattered. The equivalent guarantee is obtained differently:
+     * read the account FRESH on the connection about to be written through,
+     * and proceed only if what is there is EXACTLY what this product wrote when
+     * it disabled. Anything else — a helpdesk edit, a GPO, a second disable —
+     * means the account has moved on, and putting a days-old value back over it
+     * would be the unconditional clobber the CAS exists to prevent.
+     */
+    restore?(externalUserId: string, captured: DirectoryAccountState): Promise<void>;
+    /**
      * Settle, once for the batch, anything about the CREDENTIAL that would
      * refuse every candidate identically. Optional: a writer that omits it is
      * not less safe, only less efficient.

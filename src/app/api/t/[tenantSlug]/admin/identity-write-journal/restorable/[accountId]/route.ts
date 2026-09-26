@@ -2,7 +2,8 @@ import { getRestorableStateForAccount } from '@/app-layer/usecases/identity-writ
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
-import { notFound } from '@/lib/errors/types';
+import { conflict, notFound } from '@/lib/errors/types';
+import { restoreAccount } from '@/app-layer/usecases/identity-restore-account';
 
 type RestorableParams = { tenantSlug: string; accountId: string };
 
@@ -84,6 +85,92 @@ export const GET = withApiErrorHandling(
                     outcome: lookup.outcome,
                 },
             });
+        },
+    ),
+);
+
+/**
+ * POST /api/t/:tenantSlug/admin/identity-write-journal/restorable/:accountId
+ *
+ * PUT THE CAPTURED STATE BACK.
+ *
+ * ═══ WHY A WRITE LIVES BESIDE THE READ ═══
+ *
+ * The GET above answers "what did a disable replace"; this answers the request
+ * the DISABLED notification has been making all along — "quote that reference
+ * to your platform administrator, who can read the captured state **and
+ * re-apply it**". Until now only the first half was true. A read surface built
+ * for an instruction whose second half nothing could honour is the same defect
+ * this route was created to fix, one step along.
+ *
+ * ═══ IT IS NOT AN ENABLE ═══
+ *
+ * The verb underneath writes one specific captured value and refuses unless
+ * the account is still exactly as this product left it — a compare-and-swap on
+ * Active Directory, a checked read on Entra, where Graph offers no equivalent
+ * and the writer says so. An enable can be pointed at any account; a restore
+ * can only undo something this product did and can still prove it did.
+ *
+ * ═══ STATUSES ═══
+ *
+ * 404 for an account this tenant cannot see, matching the GET and keeping the
+ * response from becoming an oracle for cuids in other tenants. 409 for an
+ * account that exists with nothing to undo, and for a directory that refused —
+ * both are "the state of the world does not permit this", and neither is the
+ * caller having sent something malformed. 200 carries the journal ids, so the
+ * operator who asked can point at both rows: the restore, and the disable it
+ * reverted.
+ *
+ * GATED `admin.tenant_lifecycle`, inherited from the prefix rule over
+ * `admin/identity-write-journal` — OWNER-only, the same key as the reads beside
+ * it. Deliberately NOT a second, weaker gate for the write: reading what was
+ * replaced and putting it back are the same authority over the same fact.
+ */
+export const POST = withApiErrorHandling(
+    requirePermission<RestorableParams>(
+        'admin.tenant_lifecycle',
+        async (_req, { params }, ctx) => {
+            const { accountId } = params;
+            const result = await restoreAccount(ctx, accountId);
+
+            switch (result.kind) {
+                case 'NO_ACCOUNT':
+                    // Truncated, like the GET: this echoes a caller-controlled
+                    // path segment into a response AND a structured log line.
+                    throw notFound(
+                        `No connected identity account for reference ${accountId.slice(0, 64)}`,
+                    );
+                case 'NO_CAPTURE':
+                    throw conflict(
+                        'This product has no captured prior state for that account, so there is nothing to ' +
+                            'put back. Only a disable it performed and journalled can be restored.',
+                    );
+                case 'UNSUPPORTED':
+                case 'REFUSED':
+                    throw conflict(result.detail);
+                case 'FAILED':
+                    // The directory positively did not change, and the journal
+                    // row says so. Named rather than folded into REFUSED
+                    // because a row exists to point at.
+                    throw conflict(`${result.detail} (journal reference ${result.journalId})`);
+                case 'INDETERMINATE':
+                    // NOT an error status. The call did not report back, so the
+                    // directory may have changed — telling the caller it failed
+                    // would assert something nobody verified, and this is
+                    // exactly the state a human has to look at.
+                    return jsonResponse({
+                        restored: false,
+                        indeterminate: true,
+                        journalId: result.journalId,
+                        detail: result.detail,
+                    });
+                case 'RESTORED':
+                    return jsonResponse({
+                        restored: true,
+                        journalId: result.journalId,
+                        revertedJournalId: result.revertedJournalId,
+                    });
+            }
         },
     ),
 );

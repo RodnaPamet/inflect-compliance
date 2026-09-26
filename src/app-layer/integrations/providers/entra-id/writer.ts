@@ -1139,6 +1139,110 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         throw await this.classifyGraphFailure(res, token, id, 'write');
     }
 
+    /**
+     * Put back the `accountEnabled` this writer replaced.
+     *
+     * ═══ A WEAKER GUARANTEE THAN THE AD PATH, AND IT SAYS SO ═══
+     *
+     * The Active Directory restore is a compare-and-swap: the modify refuses
+     * unless `userAccountControl` is still exactly the integer we wrote. Graph
+     * offers no equivalent — directory objects carry no ETag and `PATCH
+     * /users/{id}` takes no `If-Match`, which is the same limitation `disable`
+     * records for its own readState → PATCH window.
+     *
+     * So this is CHECK-THEN-ACT: read the account, refuse unless it is
+     * currently disabled, then set it back. Between those two a second party
+     * could disable it again for an unrelated reason and this restore would
+     * undo them. The window is small and the alternative — refusing every
+     * Entra restore — would leave the mail's instruction ("quote that reference
+     * to your platform administrator, who can read the captured state and
+     * re-apply it") unhonourable on the directory where the product has done
+     * most of its disabling. Named rather than hidden, which is the standard
+     * this file already holds `disable` to.
+     *
+     * ═══ THE ON-PREM REFUSALS APPLY UNCHANGED ═══
+     *
+     * A directory-synced account restored through Graph is reverted at the next
+     * Azure AD Connect cycle, exactly as a disable would be — and would report
+     * success while the account stayed disabled. Unknown is refused for the
+     * same reason it is on the way down: it is not the same as cloud-only, and
+     * the two differ precisely where it matters.
+     */
+    async restore(externalUserId: string, captured: DirectoryAccountState): Promise<void> {
+        const id = assertEntraObjectId(externalUserId);
+
+        if (captured.enabled !== true) {
+            // The capture is what a restore restores TO. If it says the account
+            // was already disabled when we looked, putting it back changes
+            // nothing while reporting that access was returned.
+            throw new DirectoryWriteError(
+                `Refusing to restore account ${id} to a captured state that is itself disabled: the restore ` +
+                    'would leave the account exactly as it is now while reporting that access was put back.',
+                { definitivelyNotApplied: true },
+            );
+        }
+
+        const onPrem = captured.priorState.onPremisesSyncEnabled;
+        if (onPrem === true) {
+            throw new DirectoryWriteError(
+                `Refusing to restore account ${id} through Graph: it is directory-synced ` +
+                    '(onPremisesSyncEnabled: true), so it is mastered on-premises and this write would be ' +
+                    'reverted at the next Azure AD Connect cycle — the account would report enabled and then ' +
+                    'disable itself again, with an audit trail saying the restore succeeded. Restore it in ' +
+                    'Active Directory instead.',
+                { definitivelyNotApplied: true },
+            );
+        }
+
+        let token = await this.tokenForWrite(id);
+        if (EntraIdDirectoryWriter.hasWriteRole(token.roles) === false) {
+            throw new EntraWritePermissionMissingError();
+        }
+
+        // THE CHECK. Read what is there now, and refuse unless this account is
+        // actually disabled. Without it a restore issued twice, or issued
+        // against an account somebody already re-enabled, is indistinguishable
+        // from one that did the work.
+        const current = await this.readState(externalUserId);
+        if (current.enabled !== false) {
+            throw new DirectoryWriteError(
+                `Refusing to restore account ${id}: it is already enabled. Either the restore has already run ` +
+                    'or somebody re-enabled the account by hand, and repeating the write would record a ' +
+                    'recovery that did not happen.',
+                { definitivelyNotApplied: true },
+            );
+        }
+
+        // Pre-serialized and absolute, for the same reason the disable body is:
+        // `createResilientFetch` reuses one `init` across attempts, and
+        // `{"accountEnabled": true}` applied twice yields the same state.
+        const body = JSON.stringify({ accountEnabled: true });
+        const url = this.userUrl(id);
+
+        let res: Response;
+        try {
+            res = await this.patch(url, token.token, body);
+        } catch (err) {
+            return await this.settleLostResponse(err, id);
+        }
+
+        // 401 is the one status safe to retry after — it proves the request was
+        // refused at the edge without being processed. Same reasoning as the
+        // disable path, and the same reason a 5xx is NOT retried here.
+        if (res.status === 401) {
+            token = await this.tokenForWrite(id, true);
+            try {
+                res = await this.patch(url, token.token, body);
+            } catch (retryErr) {
+                return await this.settleLostResponse(retryErr, id);
+            }
+        }
+
+        if (res.ok) return;
+
+        throw await this.classifyGraphFailure(res, token, id, 'write');
+    }
+
     /** The token, with an acquisition failure reported as pre-network. */
     private async tokenForWrite(id: string, forceRefresh = false): Promise<CachedToken> {
         try {

@@ -1048,6 +1048,134 @@ export function createActiveDirectoryWriter(
             });
         },
 
+        /**
+         * Put back the userAccountControl this product replaced.
+         *
+         * ═══ NOT AN ENABLE ═══
+         *
+         * It does not set a bit; it writes back one specific captured integer,
+         * and refuses unless the account is still exactly as the disable left
+         * it. That distinction is what makes the capability safe to have at
+         * all: an enable verb can be pointed at any account, a restore can only
+         * undo something this product did and can still prove it did.
+         *
+         * ═══ WHY THE CAS ANCHOR DIFFERS FROM `disable`'s ═══
+         *
+         * `disable` compares against the value journalled seconds earlier and
+         * refuses across domain controllers, because a comparand that has not
+         * replicated is not a comparison. A restore happens DAYS later: the
+         * captured DC is long gone and the session is certainly not the same,
+         * so that test would refuse every restore anyone ever wanted.
+         *
+         * The equivalent guarantee is taken differently — read the account
+         * FRESH on the connection about to be written through, and proceed only
+         * if what is there is EXACTLY `captured | ACCOUNTDISABLE`, the value
+         * this writer wrote. A helpdesk edit, a GPO, a second disable: each
+         * leaves a different integer and each refuses here by name.
+         *
+         * THE FRESH READ IS FOR THE MESSAGE; THE CAS IS THE GUARANTEE. Between
+         * that read and this modify the value could still change, which is
+         * precisely what the value-specific delete catches — it fails with
+         * noSuchAttribute unless the stored value is still the one being
+         * removed. The read exists so an operator is told WHICH integer stopped
+         * the restore, instead of reading result 16 out of a log.
+         */
+        async restore(externalUserId: string, captured: DirectoryAccountState): Promise<void> {
+            const cap = asAdPriorState(captured.priorState);
+            if (!cap) {
+                throw new DirectoryWriteError(
+                    'Refusing to restore an Active Directory account from a prior-state capture this writer did ' +
+                        'not produce. Without the journalled userAccountControl there is no value to put back, ' +
+                        'and no comparand to prove the account is still as we left it.',
+                    { definitivelyNotApplied: true },
+                );
+            }
+
+            if ((cap.userAccountControl & UAC_ACCOUNTDISABLE) !== 0) {
+                // `disable` already refuses to journal a disabled account as the
+                // prior state, for exactly this reason. Reaching it here means a
+                // capture from before that rail, or a forged one — and restoring
+                // TO disabled would be a no-op wearing the costume of a recovery.
+                throw new DirectoryWriteError(
+                    'Refusing to restore to a captured state that is itself disabled: the restore would leave ' +
+                        'the account exactly as it is now while reporting that access was put back.',
+                    { definitivelyNotApplied: true },
+                );
+            }
+
+            const { client: c, dc: sessionDc } = await session();
+            if (!c.modify) {
+                throw new DirectoryWriteError(
+                    'The configured Active Directory client cannot perform a modify, so no restore was attempted.',
+                    { definitivelyNotApplied: true },
+                );
+            }
+
+            try {
+                // Same reasoning as the disable path: this DN came out of a
+                // plaintext journal column, so containment is the only thing
+                // standing between a tampered capture and a ModifyRequest
+                // addressed anywhere in the directory.
+                assertUnderBaseDn(cap.distinguishedName, "the capture's DN");
+            } catch (err) {
+                throw new DirectoryWriteError(err instanceof Error ? err.message : String(err), {
+                    definitivelyNotApplied: true,
+                });
+            }
+
+            const entry = await findAccount(externalUserId);
+            const currentUac = parseUac(entry.userAccountControl);
+            if (currentUac === null) {
+                throw new DirectoryWriteError(
+                    `Active Directory returned no readable userAccountControl for ${externalUserId}. Refusing to ` +
+                        'restore an account whose current state could not be read — there would be nothing to ' +
+                        'prove it is still as this product left it.',
+                    { definitivelyNotApplied: true },
+                );
+            }
+
+            const expected = cap.userAccountControl | UAC_ACCOUNTDISABLE;
+            if (currentUac !== expected) {
+                throw new DirectoryWriteError(
+                    `Refusing to restore: userAccountControl is ${currentUac}, not the ${expected} this product ` +
+                        `wrote when it disabled the account. Something has changed it since — a helpdesk edit, a ` +
+                        'Group Policy, or a second disable — and writing the captured value over that would ' +
+                        'silently revert whoever made the change. Read the journal entry and put the account ' +
+                        'back by hand if that is still the right outcome.',
+                    { definitivelyNotApplied: true },
+                );
+            }
+
+            const changes: readonly LdapModification[] = [
+                // The compare: fails with noSuchAttribute (16) unless the stored
+                // value is still exactly what we wrote, closing the window
+                // between the read above and this modify.
+                { operation: 'delete', type: 'userAccountControl', values: [String(expected)] },
+                // The swap: the captured integer, whole — every bit that was set
+                // when we read it, including the ones this product never touched.
+                {
+                    operation: 'add',
+                    type: 'userAccountControl',
+                    values: [String(cap.userAccountControl)],
+                },
+            ];
+
+            try {
+                await c.modify(cap.distinguishedName, changes);
+            } catch (err) {
+                throw classifyModifyFailure(err, cap, usingDedicatedWriteBind);
+            }
+
+            logger.info('active directory account restored', {
+                component: 'integration-active-directory-writer',
+                provider: AD_PROVIDER_ID,
+                externalUserId,
+                disabledUserAccountControl: expected,
+                userAccountControl: cap.userAccountControl,
+                dc: sessionDc,
+            });
+        },
+
         async close(): Promise<void> {
             const c = client;
             client = null;
