@@ -619,6 +619,8 @@ export async function runIdentityJoinerPass(input: {
                 created: execution.created,
                 partial: execution.partial,
                 refused: execution.refused,
+                collided: execution.collided,
+                unverifiable: execution.unverifiable,
                 refusalDetail: execution.refusalDetail,
             });
         }
@@ -659,6 +661,25 @@ export interface CreateExecution {
     readonly created: number;
     readonly partial: number;
     readonly refused: number;
+    /**
+     * The directory said the intended identifier is ALREADY TAKEN.
+     *
+     * Counted apart from `refused` because they are different operational
+     * situations: a refusal is this product declining to act, a collision is
+     * the directory declining to accept — and the second means somebody has to
+     * pick a different address, which is work for a human rather than a setting
+     * to change.
+     */
+    readonly collided: number;
+    /**
+     * The directory could not be asked whether the identifier is free.
+     *
+     * Its own counter for the reason `IdentifierProbe` makes `unknown` a value
+     * rather than an absence: "cannot tell" is not "free", and folding it into
+     * either neighbour would make a namespace that went unread look like one
+     * that answered.
+     */
+    readonly unverifiable: number;
     readonly refusalDetail: string | null;
 }
 
@@ -667,6 +688,8 @@ const NOTHING_EXECUTED: CreateExecution = {
     created: 0,
     partial: 0,
     refused: 0,
+    collided: 0,
+    unverifiable: 0,
     refusalDetail: null,
 };
 
@@ -747,6 +770,8 @@ async function executePlannedCreates(
     let created = 0;
     let partial = 0;
     let refused = 0;
+    let collided = 0;
+    let unverifiable = 0;
     try {
         for (const decision of planned) {
             const starter = byId.get(decision.employeeId);
@@ -757,6 +782,54 @@ async function executePlannedCreates(
                 refused += 1;
                 continue;
             }
+            // ═══ ASK THE DIRECTORY BEFORE ASKING IT TO CREATE ═══
+            //
+            // `predictionLimits` says of every plan this pass emits that the
+            // collision read "covers the stored `email` column only", while
+            // create-time uniqueness is enforced on `userPrincipalName`,
+            // `mailNickname`, `proxyAddresses` and most often on
+            // `sAMAccountName` — "a plan that found no conflict is NOT a
+            // statement that the address is available". `probeIdentifier` is
+            // the seam built to retire that caveat, and it had no caller in
+            // `src/`: the branch that finally creates accounts (#2923) went
+            // straight from a roster-derived plan to a create, leaving AD's
+            // result 68 as the only thing between a stale plan and a
+            // half-made account.
+            //
+            // UNKNOWN IS NOT FREE, and that is the whole reason the probe
+            // returns three values instead of a boolean. A namespace that
+            // could not be read is recorded as unread and the candidate is
+            // left alone — treating it as available is exactly the "positive
+            // negative" this subsystem has been bitten by before, where an
+            // unread answer became an authoritative one.
+            const probe = await provisioning.provisioner.probeIdentifier(decision.intendedAddress);
+            if (probe.kind === 'taken') {
+                collided += 1;
+                // The NAMESPACE and the employee, never the address:
+                // `identity-joiner-run.ts` is in the population of
+                // `tests/guards/identity-log-identifier-scrub`, and the
+                // intended address is a directory identifier.
+                logger.warn('joiner create skipped: identifier already taken', {
+                    component: 'identity-joiner-pass',
+                    tenantId: ctx.tenantId,
+                    provider,
+                    employeeId: decision.employeeId,
+                    namespace: probe.namespace,
+                });
+                continue;
+            }
+            if (probe.kind === 'unknown') {
+                unverifiable += 1;
+                logger.warn('joiner create skipped: identifier could not be checked', {
+                    component: 'identity-joiner-pass',
+                    tenantId: ctx.tenantId,
+                    provider,
+                    employeeId: decision.employeeId,
+                    namespacesUnavailable: probe.namespacesUnavailable,
+                });
+                continue;
+            }
+
             const outcome = await createDirectoryAccount(ctx, {
                 provisioner: provisioning.provisioner,
                 candidate: {
@@ -788,7 +861,7 @@ async function executePlannedCreates(
         await provisioning.close();
     }
 
-    return { attempted: planned.length, created, partial, refused, refusalDetail: null };
+    return { attempted: planned.length, created, partial, refused, collided, unverifiable, refusalDetail: null };
 }
 
 /** The plan, as the job result. ONE derivation, so the row and the return agree. */
