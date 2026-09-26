@@ -8133,7 +8133,8 @@
       "receipts": "Receipts",
       "quarantine": "Quarantine",
       "reviewQuality": "Review quality",
-      "decisions": "AI decision log"
+      "decisions": "AI decision log",
+      "externalTools": "External tools"
     },
     "reviewQuality": {
       "accessTitle": "Agent register access required",
@@ -8342,6 +8343,28 @@
         "EDITED": "edited",
         "REJECTED": "rejected"
       }
+    },
+    "externalTools": {
+      "title": "External tools",
+      "description": "Review what an external server advertises, approve a tool definition, and grant it to an agent.",
+      "connectionLabel": "Tool server",
+      "agentLabel": "Grant to agent",
+      "refresh": "Refresh catalogue",
+      "loading": "Reading the server catalogue…",
+      "loadFailed": "Could not read the catalogue from this server.",
+      "approve": "Approve",
+      "reapprove": "Re-approve",
+      "approveFailed": "Could not approve this definition.",
+      "grant": "Grant",
+      "granted": "Granted",
+      "grantFailed": "Could not grant this tool.",
+      "schemaLabel": "Arguments",
+      "revision": "revision {revision}",
+      "blocked": "Blocked — the definition changed since it was approved.",
+      "emptyTitle": "This server advertises no tools",
+      "emptyDesc": "The connection works, but the server returned an empty catalogue.",
+      "noConnectionsTitle": "No tool servers connected",
+      "noConnectionsDesc": "Add an external tool server under Integrations, authorize it, and test it before granting tools from it."
     }
   },
   "securityTesting": {

@@ -46,6 +46,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // them as unlisted. A SUBPAGE owes a canonical parent, and both are
     // reached from the register exactly as their siblings are.
     '/agents/decisions': { href: '/agents', label: 'Agents' },
+    '/agents/external-tools': { href: '/agents', label: 'Agents' },
     '/agents/proposals': { href: '/agents', label: 'Agents' },
     '/agents/reports': { href: '/agents', label: 'Agents' },
     '/agents/runs': { href: '/agents', label: 'Agents' },

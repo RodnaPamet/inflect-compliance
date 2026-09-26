@@ -62,7 +62,8 @@ export type AgentsViewRoute =
     | 'quarantine'
     | 'review-quality'
     | 'reports'
-    | 'decisions';
+    | 'decisions'
+    | 'external-tools';
 
 export interface AgentsViewsMenuProps {
     current: AgentsViewRoute;
@@ -110,6 +111,18 @@ export function AgentsViewsMenu({
                                     ? proposalsAwaitingReview
                                     : undefined,
                             badgeLabel: t('views.proposalsBadgeLabel'),
+                        },
+                        // Gated on `canInvestigate` — the `admin.agent_registry`
+                        // key — because that is what its destination asks, not
+                        // because it is an assurance surface. It sits in OPERATE
+                        // because approving a manifest and granting a tool are
+                        // acts somebody performs, not a record they audit.
+                        canInvestigate && {
+                            id: 'agents-view-external-tools',
+                            label: t('views.externalTools'),
+                            icon: <Workflow className="size-4" />,
+                            href: href('/agents/external-tools'),
+                            selected: current === 'external-tools',
                         },
                         canReviewProposals && {
                             id: 'agents-view-runs',
