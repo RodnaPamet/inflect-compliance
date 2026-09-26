@@ -198,7 +198,7 @@ a file that had never run.
 | | |
 | --- | --- |
 | `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). |
-| `deploy/check-drift.sh` | Compares repo against VM by sha256. Exit 0 in sync, 1 drift in a file `apply.sh` can push, 2 the VM was unreachable (UNKNOWN — never read as "no drift"), 3 only the unreconciled Caddyfile differs. |
+| `deploy/check-drift.sh` | Compares repo against VM by sha256. Exit 0 in sync, 1 drift in a file `apply.sh` can push, 2 the VM was unreachable (UNKNOWN — never read as "no drift"), 3 only an `UNRECONCILED` file differs — today just the Caddyfile, whose content is reconciled while `apply.sh` has no path that pushes it. |
 
 Run `check-drift.sh` on a weekly cadence so a hand-edit on the VM surfaces in
 days rather than during an incident. It runs from an operator's machine or a
@@ -275,17 +275,28 @@ Two things need an operator, and `apply.sh` refuses to proceed past the first.
    by design; do it by hand. Until then `apply.sh` stops in preflight having
    changed nothing, which is the fail-fast working.
 
-2. **`deploy/caddy/Caddyfile` diverges from `/opt/inflect/caddy/Caddyfile` in
-   both directions.** The live copy serves a second vhost, `app.inflect.bg`
-   (answering 200), that the repo copy does not define; the repo copy carries
-   the retry and HTTP/3 settings from #1814 and #1275 that the live copy never
-   received. Each side holds content the other lacks, so neither can overwrite
-   the other. `apply.sh` deliberately does **not** push it — pushing the repo
-   copy would delete a live production hostname. `check-drift.sh` reports it
-   separately and exits 3, so it stays visible instead of being quietly
-   applied. Merging the two is a decision with a TLS blast radius; once merged,
-   move the entry from `UNRECONCILED` to `APPLIABLE` in `check-drift.sh` and
-   add it to `CANONICAL_SET` in `apply.sh`.
+2. **`deploy/caddy/Caddyfile` — CONTENT reconciled 2026-09-26, push still
+   blocked.** It used to diverge in both directions: the live copy served a
+   second vhost, `app.inflect.bg`, the repo copy did not define, and the repo
+   copy carried work the live copy never received. The repo copy is now the
+   **superset** — it defines both hostnames through one shared `(app_site)`
+   snippet, so a change reaches both names or neither, which is how they drifted
+   in the first place. Validated with `caddy validate`, and both configs adapt
+   to the same two hostnames.
+
+   One correction to the old note while it was being acted on: it said the live
+   copy never received the retry settings. It had them — `lb_try_duration 120s`
+   and `lb_try_interval 250ms`. What it genuinely lacked was HTTP/3 and the
+   Cache-Control matchers.
+
+   It stays in `UNRECONCILED` and `apply.sh` still does not push it, for a
+   MECHANICAL reason rather than a decision: the push loop stages through
+   `/tmp/${remote_base}.new.${TS}`, which for a nested path becomes
+   `/tmp/caddy/Caddyfile.new.…` — a directory that does not exist on the VM.
+   Pushing needs a flattened staging name first, and `apply.sh` is the push
+   path for every other canonical file, so that change wants its own diff and
+   its own review. Until then the VM keeps its hand-edited copy, which serves
+   both hostnames correctly and lacks only HTTP/3 and the cache headers.
 
 ### The pipelock overlay
 
