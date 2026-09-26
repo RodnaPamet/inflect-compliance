@@ -92,6 +92,34 @@ export interface ExternalToolManifestState extends ToolManifestState {
  * somebody else's system (their logs, their rate limits), and it returns
  * instruction text from a third party. None of that is a plain read.
  */
+/**
+ * Persist a refresh token Entra rotated during an exchange.
+ *
+ * ONE helper rather than a copy per call site. Entra may hand back a NEW
+ * refresh token on any exchange, and dropping it strands the connection at the
+ * next expiry — hours later, with nothing pointing back at the code that
+ * dropped it. Both the catalogue and the runtime mint through
+ * `authorizationFor`, so both owe this callback.
+ */
+function persistRotatedRefreshToken(
+    ctx: RequestContext,
+    connectionId: string,
+    secrets: Record<string, unknown>,
+): (rotated: string) => Promise<void> {
+    return async (rotated) => {
+        await runInTenantContext(ctx, (db) =>
+            db.integrationConnection.update({
+                where: { id: connectionId },
+                data: {
+                    secretEncrypted: encryptField(
+                        JSON.stringify({ ...secrets, refreshToken: rotated }),
+                    ),
+                },
+            }),
+        );
+    };
+}
+
 export async function listExternalMcpTools(
     ctx: RequestContext,
     connectionId: string,
@@ -118,10 +146,26 @@ export async function listExternalMcpTools(
     const secrets = connection.secretEncrypted
         ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
         : {};
-    const authorization =
-        typeof secrets.authorization === 'string' && secrets.authorization.trim()
-            ? secrets.authorization.trim()
-            : undefined;
+    // Through the SHARED resolver, exactly as the runtime does.
+    //
+    // Reading `secrets.authorization` directly here is what made this function
+    // answer 401 against every Entra-backed connection, and it is precisely the
+    // split `token.ts` warns about: "Two would be the shape where Test
+    // connection succeeds and the agent fails." That field is the STATIC-header
+    // credential; a connection using the refresh-token flow does not have one,
+    // so this read produced `undefined` and the request went out with no
+    // Authorization header at all. The Test button minted a token and passed;
+    // the catalogue an operator needs in order to APPROVE anything did not.
+    //
+    // Measured 2026-09-26 against Microsoft's Entra MCP server: Test ok at
+    // 11:51:25, this function 401 at 11:55:12, Test ok again at 11:59:46 —
+    // same connection, same refresh token, the path as the only variable.
+    const authorization = await authorizationFor(
+        connection.id,
+        (connection.configJson ?? {}) as Record<string, unknown>,
+        secrets,
+        persistRotatedRefreshToken(ctx, connection.id, secrets),
+    );
 
     const advertised = await listTools({ url, authorization });
     const considered = advertised.slice(0, MAX_EXTERNAL_TOOLS);
@@ -388,18 +432,7 @@ export async function resolveGrantedExternalTools(
                 // Dropping it strands the connection at the next expiry, hours
                 // later, with nothing pointing back here — so it is persisted
                 // before the token it came with is used.
-                async (rotated) => {
-                    await runInTenantContext(ctx, (db) =>
-                        db.integrationConnection.update({
-                            where: { id: connection.id },
-                            data: {
-                                secretEncrypted: encryptField(
-                                    JSON.stringify({ ...secrets, refreshToken: rotated }),
-                                ),
-                            },
-                        }),
-                    );
-                },
+                persistRotatedRefreshToken(ctx, connection.id, secrets),
             );
         } catch (err) {
             // Same shape as an unreachable server: this connection contributes

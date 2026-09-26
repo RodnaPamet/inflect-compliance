@@ -22,6 +22,7 @@ jest.mock('@/app-layer/automation/webhook-safety', () => ({
 }));
 
 import {
+    authorizationFor,
     authorizationForConnection,
     mintAccessToken,
     McpTokenError,
@@ -167,5 +168,87 @@ describe('caching', () => {
             persisted.push(rt);
         });
         expect(persisted).toEqual(['refresh-2']);
+    });
+});
+
+/**
+ * THE BRANCHING RESOLVER.
+ *
+ * `authorizationFor` decides WHICH credential a connection means, and until now
+ * nothing tested it — only `authorizationForConnection` (minting, caching,
+ * rotation) and `mintAccessToken` below it had coverage.
+ *
+ * That gap had a cost. `listExternalMcpTools` bypassed this function entirely
+ * and read `secrets.authorization` itself, so an Entra-backed connection got no
+ * header at all and the server answered 401 — while "Test connection", which
+ * minted through a second copy of the logic, stayed green. This function's own
+ * docstring names that hazard ("Two would be the shape where 'Test connection'
+ * succeeds and the agent fails"); it was true and untested at the same time.
+ */
+describe('authorizationFor — which credential a connection means', () => {
+    const OAUTH_CONFIG = { tenantId: TENANT, clientId: 'client-1' };
+    const OAUTH_SECRETS = { clientSecret: 'secret-1', refreshToken: 'refresh-1' };
+
+    it('returns the static header when that is all the connection carries', async () => {
+        const out = await authorizationFor('conn-1', {}, { authorization: 'Bearer pasted' });
+        expect(out).toBe('Bearer pasted');
+        expect({ requests: safeFetchMock.mock.calls.length }).toEqual({ requests: 0 });
+    });
+
+    it('trims a static header rather than sending stray whitespace', async () => {
+        expect(await authorizationFor('conn-1', {}, { authorization: '  Bearer pasted  ' }))
+            .toBe('Bearer pasted');
+    });
+
+    it('returns undefined when the connection carries no credential at all', async () => {
+        expect(await authorizationFor('conn-1', {}, {})).toBeUndefined();
+        expect({ requests: safeFetchMock.mock.calls.length }).toEqual({ requests: 0 });
+    });
+
+    it('MINTS for an OAuth connection, which is the case the catalogue used to miss', async () => {
+        safeFetchMock.mockResolvedValueOnce(
+            tokenResponse({ access_token: 'at-oauth', expires_in: 3600 }),
+        );
+        expect(await authorizationFor('conn-1', OAUTH_CONFIG, OAUTH_SECRETS))
+            .toBe('Bearer at-oauth');
+    });
+
+    it('prefers the refresh flow over a static header when both are present', async () => {
+        // A connection carrying both has been migrated from a pasted token to a
+        // real flow, and the flow is the one that still works tomorrow.
+        safeFetchMock.mockResolvedValueOnce(
+            tokenResponse({ access_token: 'at-oauth', expires_in: 3600 }),
+        );
+        const out = await authorizationFor(
+            'conn-1',
+            OAUTH_CONFIG,
+            { ...OAUTH_SECRETS, authorization: 'Bearer stale-pasted' },
+        );
+        expect(out).toBe('Bearer at-oauth');
+        expect(out).not.toBe('Bearer stale-pasted');
+    });
+
+    it.each([
+        ['no clientId', { tenantId: TENANT }, { clientSecret: 's', refreshToken: 'r' }],
+        ['no refreshToken', OAUTH_CONFIG, { clientSecret: 's' }],
+        ['no clientSecret', OAUTH_CONFIG, { refreshToken: 'r' }],
+        ['only a tenantId', { tenantId: TENANT }, {}],
+    ])('refuses a PARTIAL OAuth connection (%s) rather than falling back', async (_l, cfg, sec) => {
+        // Falling back to the static header here would work until the pasted
+        // token died and then look like a server problem.
+        await expect(authorizationFor('conn-1', cfg, { ...sec, authorization: 'Bearer pasted' }))
+            .rejects.toThrow(McpTokenError);
+        expect({ requests: safeFetchMock.mock.calls.length }).toEqual({ requests: 0 });
+    });
+
+    it('passes a rotation callback through to the minting layer', async () => {
+        safeFetchMock.mockResolvedValueOnce(
+            tokenResponse({ access_token: 'at-1', expires_in: 3600, refresh_token: 'rt-2' }),
+        );
+        const rotated: string[] = [];
+        await authorizationFor('conn-1', OAUTH_CONFIG, OAUTH_SECRETS, async (rt) => {
+            rotated.push(rt);
+        });
+        expect(rotated).toEqual(['rt-2']);
     });
 });

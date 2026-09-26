@@ -30,6 +30,15 @@ jest.mock('@/lib/security/encryption', () => ({
     decryptField: (s: string) => s,
 }));
 
+// The shared credential resolver. Mocked rather than stubbed at the network,
+// because what these tests assert is that the catalogue GOES THROUGH it — the
+// thing that was missing — not how it mints.
+const authorizationForMock = jest.fn();
+jest.mock('@/app-layer/integrations/mcp/token', () => ({
+    ...jest.requireActual('@/app-layer/integrations/mcp/token'),
+    authorizationFor: (...a: unknown[]) => authorizationForMock(...a),
+}));
+
 jest.mock('@/app-layer/policies/common', () => ({
     ...jest.requireActual('@/app-layer/policies/common'),
     assertCanAdmin: jest.fn(),
@@ -153,7 +162,12 @@ describe('bounds and refusals', () => {
         expect({ calls: listToolsMock.mock.calls.length }).toEqual({ calls: 0 });
     });
 
-    it('passes the decrypted authorization to the transport', async () => {
+    it('passes the RESOLVED credential to the transport', async () => {
+        // Resolution itself moved to `authorizationFor`, which is where the
+        // static-header / OAuth / partial-refusal branches are now tested
+        // (`mcp-connection-token.test.ts`). What this file still owns is that
+        // whatever the resolver returns is what reaches the wire.
+        authorizationForMock.mockResolvedValue('Bearer abc');
         await listExternalMcpTools(ctx, CONN);
         expect(listToolsMock).toHaveBeenCalledWith({
             url: 'https://mcp.example.com',
@@ -239,5 +253,85 @@ describe('approving an external definition', () => {
             }),
         ).rejects.toThrow(/approving user/);
         expect({ writes: writePinMock.mock.calls.length }).toEqual({ writes: 0 });
+    });
+});
+
+/**
+ * THE CATALOGUE MUST AUTHORISE THROUGH THE SHARED RESOLVER.
+ *
+ * `listExternalMcpTools` read `secrets.authorization` directly — the STATIC
+ * header credential — and so sent no Authorization header at all for a
+ * connection using the Entra refresh-token flow. Microsoft answered 401, and
+ * because `approveExternalToolManifest` reads the catalogue first, an operator
+ * could not approve anything either.
+ *
+ * It is the split `token.ts` names in its own comment: "Two would be the shape
+ * where 'Test connection' succeeds and the agent fails — a green button over a
+ * broken path." The Test button minted a token through a second copy of the
+ * resolution logic and stayed green throughout.
+ *
+ * Measured against the live server: Test ok 11:51:25, catalogue 401 11:55:12,
+ * Test ok 11:59:46 — same connection, same refresh token, path the only
+ * variable.
+ */
+describe('external tool catalogue — credential resolution', () => {
+    const OAUTH_ROW = {
+        id: CONN,
+        configJson: {
+            url: 'https://mcp.example.com',
+            tenantId: '00000000-0000-0000-0000-000000000001',
+            clientId: '00000000-0000-0000-0000-000000000002',
+        },
+        // No `authorization` key: an Entra-backed connection has no static
+        // header, which is exactly the case the old code turned into undefined.
+        secretEncrypted: JSON.stringify({ clientSecret: 's3cret', refreshToken: 'rt-1' }),
+    };
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        authorizationForMock.mockReset();
+        listToolsMock.mockReset();
+        mockTx.integrationConnection.findFirst.mockResolvedValue(OAUTH_ROW);
+        mockTx.mcpToolManifestPin.findMany.mockResolvedValue([]);
+        listToolsMock.mockResolvedValue([]);
+    });
+
+    it('passes the resolver the connection id, config and secrets', async () => {
+        authorizationForMock.mockResolvedValue('Bearer minted-abc');
+        await listExternalMcpTools(ctx, CONN);
+
+        expect(authorizationForMock).toHaveBeenCalledTimes(1);
+        const [connectionId, config, secrets] = authorizationForMock.mock.calls[0];
+        expect(connectionId).toBe(CONN);
+        expect(config).toMatchObject({ tenantId: expect.any(String), clientId: expect.any(String) });
+        expect(secrets).toMatchObject({ refreshToken: 'rt-1' });
+    });
+
+    it('sends the MINTED header to the server, not the absent static one', async () => {
+        authorizationForMock.mockResolvedValue('Bearer minted-abc');
+        await listExternalMcpTools(ctx, CONN);
+
+        expect(listToolsMock).toHaveBeenCalledTimes(1);
+        expect(listToolsMock.mock.calls[0][0]).toEqual(
+            expect.objectContaining({ authorization: 'Bearer minted-abc' }),
+        );
+    });
+
+    it('never calls tools/list with no credential when the connection has OAuth config', async () => {
+        // The defect, stated as the thing that must not happen. An undefined
+        // authorization here is a request that goes out bare and comes back 401.
+        authorizationForMock.mockResolvedValue('Bearer minted-abc');
+        await listExternalMcpTools(ctx, CONN);
+
+        const sent = listToolsMock.mock.calls[0][0] as { authorization?: string };
+        expect(sent.authorization).toBeDefined();
+        expect(sent.authorization).not.toBe('');
+    });
+
+    it('hands the resolver a rotation callback, so a rotated token is not dropped', async () => {
+        authorizationForMock.mockResolvedValue('Bearer minted-abc');
+        await listExternalMcpTools(ctx, CONN);
+
+        expect(typeof authorizationForMock.mock.calls[0][3]).toBe('function');
     });
 });
