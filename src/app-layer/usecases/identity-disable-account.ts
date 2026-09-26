@@ -38,7 +38,12 @@ import {
     type WriteTarget,
     type WriteTargetBasis,
 } from './identity-write-target';
-import { beginWrite, settleIndeterminateAsApplied, type WriteHandle } from './identity-write-journal';
+import {
+    beginWrite,
+    hasUnsettledWrite,
+    settleIndeterminateAsApplied,
+    type WriteHandle,
+} from './identity-write-journal';
 import { getIdentityWritePolicy, type IdentityWriteMode } from './identity-write-policy';
 import { checkDisableBlastRadius } from './identity-write-breaker';
 import {
@@ -563,6 +568,91 @@ function sameAccount(a: string, b: string): boolean {
 }
 
 /**
+ * Close out a stranded write on a path that is about to REFUSE.
+ *
+ * #2881 finding 5. `settleIndeterminateAsApplied` has one call site, in
+ * `decideWithTarget`, which is reached only at line 783 — below the
+ * self-account refusal, the operator-flag refusal and the mode refusal. So the
+ * two things an operator does after an unexplained directory write are each
+ * sufficient to freeze that account's INDETERMINATE row forever:
+ *
+ *   · mark the account protected  -> REFUSED_PROTECTED, returns above the settle
+ *   · narrow the ladder to DISABLED -> REFUSED_MODE, returns above the settle
+ *
+ * The captured prior state stays reachable and the row never resolves. The
+ * finding's disposition was recorded as FIXED against the settle FUNCTION,
+ * which is sound and was never what the finding claimed — it is a statement
+ * about REACHABILITY. Proved by execution, not by reading: making the settle
+ * throw reddens the target-refusal and already-disabled tests and leaves every
+ * protected and mode test green.
+ *
+ * WHY A REFUSAL MAY READ THE DIRECTORY AT ALL, since this is the part that
+ * needed a decision rather than a patch. The ladder governs WRITES. Reading an
+ * account to resolve an ambiguity WE created is not disabling it, and it is
+ * not the tenant's write authority being exercised — a row exists here only
+ * because a write was once attempted and never reported back. Refusing to
+ * write to a protected account is the policy; leaving our own unanswered
+ * question open forever is not part of it.
+ *
+ * AND THE READ IS EARNED, NOT ASSUMED. `hasUnsettledWrite` is one indexed
+ * lookup, and on the common refusal — a protected account with nothing
+ * outstanding — it returns false and no socket is opened. The directory is
+ * touched only for the accounts that actually have a question hanging over
+ * them.
+ *
+ * SETTLING OFF THE ROSTER MIRROR IS NOT AN OPTION, and it is worth writing
+ * down because it looks like the cheap alternative. The mirror lags a write by
+ * design, so an account re-enabled this morning still reads disabled in last
+ * night's enumeration — which is exactly the stale-evidence inversion
+ * `decideWithTarget` already guards against. Only a live read is evidence.
+ *
+ * Fails toward NOT settling on every uncertainty: no row, a read that throws,
+ * an account that is not disabled, or evidence marked stale or absent. An
+ * unsettled row asks a human to look; a wrongly settled one tells them there
+ * is nothing to look at.
+ */
+async function reconcileStrandedWrite(
+    ctx: RequestContext,
+    writer: DirectoryWriter,
+    input: DisableAccountInput,
+): Promise<string | undefined> {
+    if (!(await hasUnsettledWrite(ctx, writer.provider, input.externalUserId))) {
+        return undefined;
+    }
+
+    let state: DirectoryAccountState;
+    try {
+        state = await writer.readState(input.externalUserId);
+    } catch (err) {
+        // A read failure leaves the row exactly as it was, which is correct:
+        // we still do not know. Logged rather than swallowed, because a refusal
+        // that silently failed to reconcile looks identical to one with nothing
+        // to reconcile.
+        logger.warn('refusal could not read account state to reconcile a stranded write', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+            linkId: input.linkId,
+            error: scrubbed(err instanceof Error ? err.message : String(err), input.externalUserId),
+        });
+        return undefined;
+    }
+
+    if (state.enabled) return undefined;
+
+    // The same both-keys check `decideWithTarget` makes, and for the same
+    // reason: a DELETED account answers `enabled: false` exactly as a disabled
+    // one does, but it is the absence of anything to observe rather than
+    // evidence our write landed.
+    const prior = state.priorState as { staleEvidence?: unknown; notFound?: unknown } | null;
+    if (prior?.staleEvidence === true || prior?.notFound === true) return undefined;
+
+    return (
+        (await settleIndeterminateAsApplied(ctx, writer.provider, input.externalUserId)) ?? undefined
+    );
+}
+
+/**
  * Is this candidate one of the accounts the connection authenticates as?
  *
  * Every identity the orchestrator holds for the candidate, against every
@@ -657,9 +747,16 @@ async function decideAndDisable(
             // run still needs to know WHICH candidate tripped the refusal.
             linkId: input.linkId,
         });
+        // Reconciled even here. A row exists only where a write was once
+        // attempted, so an account that is the bind account NOW may have been
+        // written to before it was identified as one — and that row would
+        // otherwise be the most permanently stranded of all, on the one account
+        // no future pass will ever write to again.
+        const settledSelf = await reconcileStrandedWrite(ctx, writer, input);
         return {
             outcome: 'REFUSED_PROTECTED',
             protection: 'SELF_ACCOUNT',
+            ...(settledSelf ? { journalId: settledSelf } : {}),
             reason:
                 'Refusing to disable the account this integration authenticates as. Doing so would lock the ' +
                 'product out of this directory by its own hand — the next sync could not authenticate, so ' +
@@ -675,9 +772,11 @@ async function decideAndDisable(
             provider: writer.provider,
             linkId: input.linkId,
         });
+        const settledFlagged = await reconcileStrandedWrite(ctx, writer, input);
         return {
             outcome: 'REFUSED_PROTECTED',
             protection: 'OPERATOR_FLAG',
+            ...(settledFlagged ? { journalId: settledFlagged } : {}),
             reason:
                 'Refusing to disable an account marked protected. Break-glass and service accounts are ' +
                 'excluded from automated offboarding by policy, not by accident.',
@@ -687,7 +786,12 @@ async function decideAndDisable(
     // ── 1. The ladder. Free, and refuses the most common case. ──
     const policy = (await getIdentityWritePolicy(ctx)).leaver;
     if (policy.mode === 'DISABLED') {
-        return { outcome: 'REFUSED_MODE', reason: 'Leaver writes are switched off for this tenant.' };
+        const settledOff = await reconcileStrandedWrite(ctx, writer, input);
+        return {
+            outcome: 'REFUSED_MODE',
+            reason: 'Leaver writes are switched off for this tenant.',
+            ...(settledOff ? { journalId: settledOff } : {}),
+        };
     }
     // The PROPOSE arm stood here and refused every candidate, because PROPOSE
     // meant "a human approves each one" and this function is not that queue. The
