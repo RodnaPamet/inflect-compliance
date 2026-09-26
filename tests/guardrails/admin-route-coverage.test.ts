@@ -178,6 +178,7 @@ const ADMIN_ONLY_ROUTES = [
     'admin/identity-write-journal/route.ts',
     'admin/identity-write-journal/[journalId]/route.ts',
     'admin/identity-write-journal/restorable/[accountId]/route.ts',
+    'admin/identity-write-journal/unsettled/route.ts',
     'admin/billing/plan/route.ts',
     'admin/rotate-dek/route.ts',
     'admin/sessions/route.ts',
