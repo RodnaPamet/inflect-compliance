@@ -5842,7 +5842,8 @@
       "unsettledHeading": "Directory writes from an earlier pass were never confirmed",
       "unsettledBody": "When this pass started, {count} write(s) against this directory had been waiting over an hour with no outcome recorded. Each one captured the account’s state BEFORE the change, so the account may or may not have been altered — the only way to settle it is to read the account in the directory itself and compare. These are not decisions this pass made, and re-running it will not clear them.",
       "unsettledUnknownHeading": "The unconfirmed-write backlog could not be read",
-      "unsettledUnknownBody": "This pass could not count the directory writes still waiting for an outcome, so this report cannot say whether there are any. That is not the same as none. Nothing was stopped — the read is deliberately allowed to fail rather than end an offboarding — but treat the figure as unknown, not as zero."
+      "unsettledUnknownBody": "This pass could not count the directory writes still waiting for an outcome, so this report cannot say whether there are any. That is not the same as none. Nothing was stopped — the read is deliberately allowed to fail rather than end an offboarding — but treat the figure as unknown, not as zero.",
+      "readinessHeading": "Write readiness: {readiness}"
     },
     "section": {
       "identity": "Identity & access",

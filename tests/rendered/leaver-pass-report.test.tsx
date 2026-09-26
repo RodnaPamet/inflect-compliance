@@ -1159,3 +1159,81 @@ describe('an unconfirmed-write backlog is not silence', () => {
         expect(unknownFact!.textContent).not.toContain('0');
     });
 });
+
+/**
+ * #2881 finding 53 — the readiness verdict reaches an operator.
+ *
+ * `writeReadiness` has been computed on every pass since #2604, for one
+ * reason: so somebody reading "0 disabled" can tell a pass that disabled nobody
+ * because there was nobody from one that disabled nobody because the credential
+ * cannot write. The pass now persists both halves onto the durable row.
+ *
+ * It still reached no screen. `PassResult` did not declare the field — the
+ * identical failure this file already records for `journalId`: *"this interface
+ * did not declare it, so the second place did not exist."* A verdict that exists
+ * only in a column is a verdict nobody has.
+ */
+describe('the write-readiness verdict is not left in the column', () => {
+    const readinessPass = (readiness: string | undefined, detail: string | undefined) => ({
+        ...UNSETTLED_CLEAR_PASS,
+        id: `pass-readiness-${readiness ?? 'absent'}`,
+        provider: 'entra_readiness',
+        resultJson: {
+            ...UNSETTLED_CLEAR_PASS.resultJson,
+            ...(readiness === undefined && detail === undefined
+                ? {}
+                : { writeReadiness: { readiness, detail } }),
+        },
+    });
+
+    it('names a credential that cannot write, with BOTH halves', async () => {
+        // The enum is machine-comparable and the detail is the sentence that
+        // says what to do about it. Rendering the enum alone would repeat the
+        // original mistake one layer along, leaving the actionable half
+        // unreachable.
+        arrange([readinessPass('READ_BIND_ONLY', 'Only the read bind exists; every write runs as it.')]);
+        await renderReport();
+
+        expect(
+            await screen.findByText(M.readinessHeading.replace('{readiness}', 'READ_BIND_ONLY')),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText('Only the read bind exists; every write runs as it.'),
+        ).toBeInTheDocument();
+    });
+
+    it('says nothing when the credential is healthy', async () => {
+        // PAIRED POSITIVE FIRST: the detail panel rendered, so the absence
+        // below is an absence on a page that exists. A notice on every pass
+        // saying the credential is fine is a notice nobody reads.
+        arrange([readinessPass('DEDICATED_WRITE_BIND', 'A dedicated write credential is configured.')]);
+        await renderReport();
+
+        expect(await screen.findByText('lnk-disabled')).toBeInTheDocument();
+        expect(
+            screen.queryByText(M.readinessHeading.replace('{readiness}', 'DEDICATED_WRITE_BIND')),
+        ).toBeNull();
+    });
+
+    it('surfaces UNKNOWN, which is the state that otherwise looks like a quiet night', async () => {
+        // "We could not tell" is not "nothing to do". It is the answer a failed
+        // secret read produces, and the one most easily mistaken for a pass
+        // with nobody to disable.
+        arrange([readinessPass('UNKNOWN', 'This connection’s secrets could not be read.')]);
+        await renderReport();
+
+        expect(
+            await screen.findByText(M.readinessHeading.replace('{readiness}', 'UNKNOWN')),
+        ).toBeInTheDocument();
+    });
+
+    it('renders nothing for a row written before the field existed', async () => {
+        // Genuinely absent, not unreliable. An older row must degrade to a
+        // thinner render rather than a thrown page or an invented verdict.
+        arrange([readinessPass(undefined, undefined)]);
+        await renderReport();
+
+        expect(await screen.findByText('lnk-disabled')).toBeInTheDocument();
+        expect(screen.queryByText(/Write readiness/)).toBeNull();
+    });
+});
