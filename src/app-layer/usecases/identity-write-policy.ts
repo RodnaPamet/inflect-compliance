@@ -257,15 +257,26 @@ export function describeRefusal(
             const left = Math.ceil(DRY_RUN_MIN_DAYS - days);
             // "so there is TIME FOR" rather than "to observe" — #2843 finding 31.
             //
-            // This gate measures elapsed days and nothing else; it never reads
-            // `IntegrationExecution` and cannot tell whether a single pass ran.
-            // That is deliberate and tested (`is measured in days, not runs`):
-            // a termination-and-hire cycle takes calendar time, so calendar
-            // time is the proxy. But the sentence said the POINT IS TO OBSERVE,
-            // which reads as a claim that observation happened — and an
+            // THIS BRANCH measures elapsed days and nothing else, and that is
+            // deliberate: a termination-and-hire cycle takes calendar time, so
+            // calendar time is the proxy, and running the pass more often does
+            // not buy the window. The original sentence said the POINT IS TO
+            // OBSERVE, which reads as a claim that observation happened — an
             // operator treating a passed gate as evidence of a watched cycle is
             // believing something nobody measured.
-            return `Dry-run has been active for ${Math.floor(days)} of ${DRY_RUN_MIN_DAYS} required days. ${left} more before this direction can widen — the window exists so there is time for a real termination-and-hire cycle to happen and be compared against what HR and IT actually did. It counts days, not passes.`;
+            //
+            // BUT THE GATE IS NO LONGER ONE TERM. The comment here used to add
+            // that it "never reads `IntegrationExecution` and cannot tell
+            // whether a single pass ran", and the sentence below ended "It
+            // counts days, not passes." Both were true until the evidence check
+            // twelve lines above landed, and neither was updated with it — so
+            // this gate spent a release telling operators, in its own refusal
+            // text, that it does not do the thing it had just started doing.
+            // That is the SAME defect finding 31 filed, pointing the other way:
+            // last time the sentence over-claimed, this time it under-claimed.
+            // A refusal an operator can disprove by reading the refusal next to
+            // it is worth no more than a wrong one.
+            return `Dry-run has been active for ${Math.floor(days)} of ${DRY_RUN_MIN_DAYS} required days. ${left} more before this direction can widen — the window exists so there is time for a real termination-and-hire cycle to happen and be compared against what HR and IT actually did. This branch counts elapsed days, so running more passes does not shorten it — though widening also requires the window to contain real passes, which is checked separately.`;
         }
     }
 
