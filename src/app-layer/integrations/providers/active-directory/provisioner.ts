@@ -294,6 +294,36 @@ export function createActiveDirectoryProvisioner(
         },
 
         async createBlockedAccount(input: CreateAccountInput): Promise<CreateAccountStep> {
+            // ═══ THE IDENTIFIER MUST BE A QUALIFIED userPrincipalName ═══
+            //
+            // It is written to `userPrincipalName` VERBATIM, and Active
+            // Directory accepts a bare string there without complaint. Found by
+            // the joiner proving run against the lab DC (#2880): a create given
+            // `pj151326` produced an account whose UPN was `pj151326`, with
+            // `userAccountControl: 512` — created, entitled and ENABLED, and
+            // nobody can sign in as it.
+            //
+            // That is the precise failure the blocked-first sequence exists to
+            // prevent, arriving from a direction the sequence cannot see. An
+            // account nobody can authenticate as is not recoverable by noticing
+            // it: it looks finished.
+            //
+            // The planner derives an email today, so this refuses nothing that
+            // reaches it now. It is a rail for the derivation CHANGING — and a
+            // rail whose absence is invisible until somebody reads the UPN of
+            // an account that has already been handed to a new starter.
+            const upn = input.identifier.trim();
+            const at = upn.indexOf('@');
+            if (at <= 0 || at !== upn.lastIndexOf('@') || !upn.slice(at + 1).includes('.')) {
+                return {
+                    kind: 'refused',
+                    detail:
+                        `Refusing to create an account for "${upn}": a userPrincipalName needs a local part ` +
+                        'and a dotted domain suffix. Active Directory accepts a bare string here and the ' +
+                        'account would be created, enabled, and impossible to sign in as.',
+                };
+            }
+
             // THE CREATION OU IS CONTAINED, for the reason `assignGroup` below
             // is (#2843 finding 51). Both are operator-supplied DNs that reach
             // the directory unchecked otherwise, and this one decides where a

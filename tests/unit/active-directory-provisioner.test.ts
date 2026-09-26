@@ -668,3 +668,63 @@ describe('AD provisioner — each of the four steps fails independently', () => 
         expect(outcome.detail).toContain('LDAP result 50');
     });
 });
+
+/**
+ * The identifier must be a qualified userPrincipalName — found by the joiner
+ * PROVING RUN against the lab domain controller (#2880, 2026-09-26).
+ *
+ * The run drove this provisioner end to end against a real DC and then checked
+ * the directory independently with `ldapsearch`, rather than trusting what the
+ * pass reported. The account existed, `userAccountControl` was 512 — genuinely
+ * enabled — and its `userPrincipalName` was `pj151326`, with no domain suffix.
+ * Active Directory had accepted a bare string without complaint.
+ *
+ * WHY THAT IS THE WORST SHAPE OF FAILURE THIS SEQUENCE HAS. The blocked-first
+ * ordering exists so the unrecoverable half is never left half-done: an account
+ * nobody can sign into is recoverable by a human. An account that is created,
+ * entitled, ENABLED and impossible to authenticate as is not — it looks
+ * finished. Nothing downstream reports it, because every step succeeded.
+ *
+ * The planner derives an email today, so this refuses nothing that currently
+ * reaches it. It is a rail for the derivation changing, and the proving run is
+ * the only reason anybody knows it was missing.
+ */
+describe('AD provisioner — the identifier must be a usable userPrincipalName', () => {
+    it.each([
+        ['pj151326', 'the exact value the proving run produced — a bare sAMAccountName'],
+        ['', 'empty'],
+        ['@corp.example.test', 'no local part'],
+        ['person@corp', 'a domain with no dot is not a UPN suffix'],
+        ['a@b@corp.example.test', 'two at-signs'],
+    ])('REFUSES %s (%s), and creates nothing', async (identifier) => {
+        const f = fakeAd();
+
+        const r = await make(f).createBlockedAccount({
+            identifier,
+            displayName: 'Someone',
+            employeeId: 'emp-1',
+        });
+
+        expect(r.kind).toBe('refused');
+        // The assertion that matters: the refusal arrives BEFORE the write, so
+        // there is no account to find and nothing to undo.
+        expect(f.adds).toHaveLength(0);
+    });
+
+    it('accepts a qualified UPN — the positive control', async () => {
+        // Without this, every refusal above could be satisfied by a provisioner
+        // that never creates anything at all.
+        const f = fakeAd();
+
+        const r = await make(f).createBlockedAccount({
+            identifier: 'new.person@corp.example.test',
+            displayName: 'New Person',
+            employeeId: 'emp-1',
+        });
+
+        expect(r.kind).toBe('applied');
+        expect(f.adds[0].attributes?.userPrincipalName).toBe('new.person@corp.example.test');
+        // And the sAMAccountName is still the local part, unchanged.
+        expect(f.adds[0].attributes?.sAMAccountName).toBe('new.person');
+    });
+});
