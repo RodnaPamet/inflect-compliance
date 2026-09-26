@@ -42,6 +42,19 @@ export const UpdateTenantSecuritySettingsInput = z
         aiLocalBaseUrl: z.string().url().nullable().optional(),
         aiLocalModel: z.string().min(1).max(200).nullable().optional(),
 
+        /**
+         * The user accountable for recertifications this product raises
+         * without a human asking. Null clears it, which turns automated
+         * recertification off for the tenant.
+         *
+         * SHAPE ONLY here. Whether the id names an ACTIVE member of THIS
+         * tenant is a tenant-scoped question the usecase answers against the
+         * membership table, for the same reason the audit-stream URL's
+         * destination check lives there: Zod can say what a cuid looks like,
+         * not who holds a seat.
+         */
+        recertificationOwnerUserId: z.string().cuid().nullable().optional(),
+
         /** When true, an MFA verification failure denies rather than degrades. */
         mfaFailClosed: z.boolean().optional(),
         /**

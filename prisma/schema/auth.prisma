@@ -1486,6 +1486,17 @@ model TenantSecuritySettings {
   /// every read site then has to negate it, and a negated flag read under
   /// pressure is how a kill switch gets inverted.
   requireRegisteredAgent       Boolean           @default(true)
+  /// The user accountable for recertifications this product raises WITHOUT a
+  /// human asking — see the migration that added it.
+  ///
+  /// A NAME, NOT A GRANT. The resolution path runs it through
+  /// `resolveMemberContext`, which reads the principal's real membership and
+  /// refuses by returning null, so a demoted or removed user loses the ability
+  /// rather than keeping an ADMIN context nobody re-checked.
+  ///
+  /// Null means no automated recertification is raised for this tenant, and
+  /// that is REPORTED on the sync's execution row rather than skipped quietly.
+  recertificationOwnerUserId   String?
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt
   mfaFailClosed                Boolean           @default(false)
