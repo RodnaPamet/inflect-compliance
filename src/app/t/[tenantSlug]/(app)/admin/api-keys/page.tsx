@@ -102,7 +102,24 @@ const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
     frameworks: { label: 'Frameworks', scopes: ['frameworks:read', 'frameworks:write'] },
     audits:     { label: 'Audits',     scopes: ['audits:read', 'audits:write'] },
     reports:    { label: 'Reports',    scopes: ['reports:read', 'reports:write'] },
-    admin:      { label: 'Admin',      scopes: ['admin:read', 'admin:write'] },
+    // `admin:external_tools` is listed SEPARATELY from `admin:write` because it
+    // is a separate action server-side, and for the reason it is: it decides
+    // whether a credential may reach a tool on somebody else's MCP server. An
+    // operator ticking it is deciding this key may leave the tenant, which is
+    // not something to fold into "can edit tenant settings".
+    admin:      { label: 'Admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools'] },
+    // The MCP capability markers. They map to NO permissions in
+    // SCOPE_ACTION_MAP — each one is an empty action list — because they are
+    // checked as capabilities by the MCP boundary rather than granting anything
+    // in PermissionSet. They were missing from this picker entirely, so a key
+    // an agent needs could not be minted here at all: the live runner key
+    // carries `mcp:orchestrate` and `mcp:read`, and re-minting it from this
+    // screen would have silently produced a key without them.
+    // Labelled for what it DOES, not for the transport: these three decide
+    // whether a key may read through an agent, draft proposals as one, and
+    // drive a run. `agentic-naming-vocabulary` pins that rule — an operator is
+    // governing agents, not configuring a protocol.
+    mcp:        { label: 'Agent runtime', scopes: ['mcp:read', 'mcp:propose', 'mcp:orchestrate'] },
 };
 
 const EXPIRY_OPTIONS = [
