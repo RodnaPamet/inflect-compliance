@@ -84,6 +84,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // passes act on are configured — same structural parent as the synced
     // identity roster.
     '/admin/identity-leaver-passes': { href: '/admin/integrations', label: 'Integrations' },
+    '/admin/identity-write-journal': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/identity-write-policy': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/integrations': { href: '/admin', label: 'Admin' },
     '/admin/integrations/sharepoint-health': { href: '/admin/integrations', label: 'Integrations' },

@@ -57,6 +57,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — chronological audit log; parent page owns chrome.',
     'admin/dsar-requests/DsarRegisterClient.tsx':
         '(c) admin register still without a toolbar — small rights-request queue (GDPR Art.15/17); the gear lands when a toolbar does.',
+    'admin/identity-write-journal/JournalClient.tsx':
+        '(b) multi-table — the unsettled backlog and the history share one fixed column set, and every column is evidence: which directory, what was attempted, how it settled, and whether a human or a scheduled run did it. Hiding any of them hides the answer somebody came to the page for.',
     'admin/identity-leaver-passes/LeaverPassesClient.tsx':
         '(b) multi-table — a passes list plus the selected pass\u2019s decisions table, both with fixed derived columns an operator is meant to read in full; hiding a column here hides evidence.',
     'admin/billing/BillingEventLog.tsx':

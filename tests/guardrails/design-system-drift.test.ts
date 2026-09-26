@@ -22,6 +22,15 @@ const COMPONENTS_DIR = path.resolve(__dirname, '../../src/components');
  * These pages must NOT regress to raw color utilities.
  */
 const MIGRATED_PAGES = [
+    // Identity write journal (#2877 f52) — the surface for what a disable
+    // replaced and which writes never settled. Design-system-native from
+    // birth: semantic tokens only (content/surface/space), Card / Heading /
+    // DataTable / StatusBadge / InlineNotice / CopyText primitives, no raw
+    // colours and no legacy btn or badge classes. Listed so the two
+    // assertions below actually run against it, rather than counted as debt
+    // it does not carry.
+    'admin/identity-write-journal/page.tsx',
+    'admin/identity-write-journal/JournalClient.tsx',
     // readiness-reconcile — the audit-hub readiness overview; design-system-
     // native from birth (semantic tokens + Card/KPIStat/StatusBadge/PageHeader/
     // InfoTooltip primitives only, no raw colours or legacy btn/badge).

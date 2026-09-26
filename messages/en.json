@@ -6013,7 +6013,25 @@
         "DIFF_EXPANSION": "Whether a reviewer actually looked at the proposed content before approving it. The queue renders every payload in full with nothing to expand, and nothing records that a proposal was read — only that it was decided. No number here is a stand-in for that: a fast decision is reported as a fast decision, not as an unread one."
       }
     },
-    "agentRegisterLink": "Agent register"
+    "agentRegisterLink": "Agent register",
+    "identityWriteJournal": {
+      "forbidden": "Reading the identity write journal is restricted to owners. A row here names a change made to one of your people’s accounts.",
+      "breadcrumb": "Identity write journal",
+      "title": "Identity write journal",
+      "intro": "What this product replaced when it wrote to your directory, and which writes never reported back. The reference quoted in a disable notification resolves here.",
+      "unsettledTitle": "Writes that never reported an outcome",
+      "unsettledNotice": "{count, plural, one {# account may or may not have been changed. Check it in the directory — this product could not confirm the write either way.} other {# accounts may or may not have been changed. Check them in the directory — this product could not confirm the writes either way.}}",
+      "unsettledEmpty": "Nothing outstanding.",
+      "historyTitle": "History",
+      "capturedTitle": "Captured prior state",
+      "colAction": "Action",
+      "colAttempted": "Attempted",
+      "colActor": "Actor",
+      "actorScheduled": "Scheduled run",
+      "loading": "Loading…",
+      "loadFailed": "The journal could not be loaded.",
+      "empty": "No directory writes have been journalled for this tenant."
+    }
   },
   "riskManager": {
     "title": "Risks",
