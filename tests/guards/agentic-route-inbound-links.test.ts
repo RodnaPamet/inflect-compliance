@@ -92,6 +92,12 @@ const AGENTIC_ROUTES: readonly string[] = [
     // The EU AI Act record, readable. Linked from the Views menu's Assurance
     // group beside the other read-only surfaces.
     '/agents/decisions',
+    // The external-tool catalogue: approve a definition, grant it to an agent.
+    // Linked from the Views menu's OPERATE group, because both are acts
+    // somebody performs rather than a record they audit. Gated on
+    // `admin.agent_registry` like its siblings — and unreachable by any API
+    // key, since that flag is subtracted from even a `*` credential.
+    '/agents/external-tools',
 ] as const;
 
 /**

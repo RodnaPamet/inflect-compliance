@@ -62,7 +62,8 @@ export type AgentsViewRoute =
     | 'quarantine'
     | 'review-quality'
     | 'reports'
-    | 'decisions';
+    | 'decisions'
+    | 'external-tools';
 
 export interface AgentsViewsMenuProps {
     current: AgentsViewRoute;
@@ -162,6 +163,22 @@ export function AgentsViewsMenu({
                             icon: <Gauge6 className="size-4" />,
                             href: href('/agents/review-quality'),
                             selected: current === 'review-quality',
+                        },
+                        canInvestigate && {
+                            // Baselining an external tool's definition: reading
+                            // the instruction text a third party will hand the
+                            // model, and accepting it. ASSURANCE rather than
+                            // OPERATE — this group is "whether the approvals
+                            // mean anything", and an approval is exactly what
+                            // this surface records. It also keeps each group
+                            // gate-homogeneous: everything here asks
+                            // `admin.agent_registry`, which is what its
+                            // destination asks.
+                            id: 'agents-view-external-tools',
+                            label: t('views.externalTools'),
+                            icon: <Workflow className="size-4" />,
+                            href: href('/agents/external-tools'),
+                            selected: current === 'external-tools',
                         },
                     ],
                 },

@@ -490,10 +490,20 @@ describe('New page token discipline', () => {
         //     surface is new and not yet promoted to MIGRATED_PAGES. The
         //     NewAgentModal beside them is a modal, not a page, so it is
         //     outside this tally.
+        //   - 139 (+2): External tools — agents/external-tools/page.tsx +
+        //     ExternalToolsClient.tsx, the operator surface for approving an
+        //     external tool's manifest and granting it to an agent. It exists
+        //     because #2921 shipped that API with no human surface at all, so
+        //     the only way to approve anything was a hand-written fetch in a
+        //     browser console. Token-clean (semantic content-*/bg-*/border-*
+        //     only; PageHeader + FormField + Combobox + StatusBadge +
+        //     EmptyState + cardVariants primitives, no legacy
+        //     btn/badge/glass-card); in the unmigrated tally only because the
+        //     surface is new and not yet promoted to MIGRATED_PAGES.
         // Each increment names the epic + page + reason; promotion
         // to MIGRATED_PAGES is the path forward, never silent
         // floor-bumping.
-        expect(unmigrated.length).toBeLessThanOrEqual(137);
+        expect(unmigrated.length).toBeLessThanOrEqual(139);
     });
 
     it('migrated page count is at least 4', () => {

@@ -212,6 +212,7 @@ export const SUBPAGES: readonly string[] = [
     // `/agents/[agentId]` because `matchesPattern` skips `[param]` segments,
     // so the completeness scan classified them and nobody added an entry.
     '/agents/decisions',
+    '/agents/external-tools',
     '/agents/proposals',
     '/agents/quarantine',
     '/agents/receipts',
