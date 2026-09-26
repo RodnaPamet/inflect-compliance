@@ -96,6 +96,13 @@ describe('EntraIdProvider — descriptor', () => {
             // rule in CONFIG_FIELD_RULES — validateProviderConfig rejects an
             // undeclared key outright — so this list and that map move together.
             'writesEnabled',
+            // The JOINER's opt-in, declared in #2878 f11. Separate from
+            // `writesEnabled` by construction: Entra's consent list cannot
+            // hold the two directions apart, because every permission
+            // sufficient to create a user is also sufficient to disable one.
+            // The per-connection flag is the only place that separation can be
+            // stated, so there are two keys and neither is read dynamically.
+            'joinerWritesEnabled',
         ]);
     });
 

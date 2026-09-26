@@ -183,27 +183,31 @@ describe('#2750 — AUTOMATIC resolves the live arm, through the factory', () =>
     });
 });
 
-describe('#2750 — Entra refuses to create rather than degrading', () => {
-    it('refuses NO_LIVE_PROVISIONER at AUTOMATIC, and builds nothing', async () => {
-        const r = await resolveDirectoryProvisioner({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
+describe('#2878 f11 — Entra has a live create arm, behind its own consent', () => {
+    it('builds the ENTRA provisioner at AUTOMATIC, never the AD one', async () => {
+        // INVERTED from "#2750 — Entra refuses to create rather than
+        // degrading". That refusal was right for as long as nobody had decided
+        // whether to ask customers for `Policy.Read.All`; the decision was made
+        // in #2878 f11 and the permission is now requested, alongside a
+        // SEPARATE per-connection opt-in.
+        //
+        // What has NOT changed is the failure the old test named: an Entra
+        // create must never be handed to the AD arm, which would bind LDAPS to
+        // a host the connection does not have and set a PASSWORD where the
+        // design says a Temporary Access Pass or nothing. There is still no
+        // fall-through branch.
+        await resolveDirectoryProvisioner({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
 
-        if (r.kind !== 'none') throw new Error('narrowing');
-        expect(r.refusal).toBe('NO_LIVE_PROVISIONER');
-        // The failure this prevents: an Entra create handed to the AD arm,
-        // which would bind LDAPS to a host the connection does not have and
-        // set a PASSWORD where the design says a TAP or nothing.
         expect(createAdProvisioner).not.toHaveBeenCalled();
     });
 
-    it('NO_LIVE_PROVISIONER is not UNSUPPORTED_PROVIDER — Entra IS writable', async () => {
-        const r = await resolveDirectoryProvisioner({ ctx, provider: 'entra-id', mode: 'AUTOMATIC' });
-        if (r.kind !== 'none') throw new Error('narrowing');
-
-        // Reporting "entra-id has no directory writer" would be false and
-        // would send an operator to the wrong setting entirely.
-        expect(r.refusal).not.toBe('UNSUPPORTED_PROVIDER');
+    it('is in the live set, and the refusal vocabulary still distinguishes the two cases', async () => {
+        // `NO_LIVE_PROVISIONER` has not been deleted: it is what a writable
+        // provider without a create arm still gets, and reporting
+        // UNSUPPORTED_PROVIDER for one would be false and send an operator to
+        // the wrong setting entirely.
         expect(WRITABLE_IDENTITY_PROVIDERS).toContain('entra-id');
-        expect(hasLiveProvisioner('entra-id')).toBe(false);
+        expect(hasLiveProvisioner('entra-id')).toBe(true);
     });
 
     it('but Entra still gets a DRY_RUN arm — observation must not be blocked', async () => {
@@ -215,13 +219,24 @@ describe('#2750 — Entra refuses to create rather than degrading', () => {
         expect(r.kind).toBe('snapshot');
     });
 
-    it('the live set is a strict subset of the writable set', () => {
+    it('the live set is a SUBSET of the writable set — no longer a strict one', () => {
+        // The containment is the invariant that matters and it is unchanged:
+        // you cannot create in a directory this product cannot write to.
         for (const p of LIVE_PROVISIONER_PROVIDERS) {
             expect(WRITABLE_IDENTITY_PROVIDERS).toContain(p);
         }
-        expect(LIVE_PROVISIONER_PROVIDERS.length).toBeLessThan(
+
+        // STRICTNESS was never the invariant — it was a fact about there being
+        // one create arm, and asserting it pinned the gap rather than the rule.
+        // The two sets now coincide, and the meaningful statement is the one
+        // below: a directory nobody writes to is in neither.
+        expect(LIVE_PROVISIONER_PROVIDERS.length).toBeLessThanOrEqual(
             WRITABLE_IDENTITY_PROVIDERS.length,
         );
+        for (const p of ['okta', 'google-workspace']) {
+            expect(WRITABLE_IDENTITY_PROVIDERS).not.toContain(p);
+            expect(hasLiveProvisioner(p)).toBe(false);
+        }
     });
 });
 

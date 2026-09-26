@@ -208,13 +208,27 @@ describe('#2674 — the refusal names the direction and stays classifiable', () 
         expect(err?.message).toMatch(/User.EnableDisableAccount.All/);
     });
 
-    it('the joiner refusal says the switch does not exist yet, rather than pointing at one', () => {
-        // An operator told to "turn on joiner writes" would go looking for a
-        // control that is deliberately not on the form. The refusal has to say
-        // that instead, or it sends them hunting.
+    it('the joiner refusal points at the switch, and names BOTH permissions', () => {
+        // INVERTED with the checkbox (#2878 f11). It used to assert "no switch
+        // for this direction", which was the honest sentence while the field
+        // was undeclared — telling an operator to turn on a control that does
+        // not exist sends them hunting. Now there is one, and the refusal has
+        // to point at it.
         const refusal = directionWriteRefusal({}, 'joiner') ?? '';
-        expect(refusal).toContain('no switch for this direction');
-        expect(refusal).toContain(ENTRA_JOINER_WRITES_FIELD);
+        expect(refusal).toContain('Allow joiner credential issuance');
+        expect(refusal).not.toContain('no switch for this direction');
+
+        // BOTH permissions, because consenting only one leaves the operator
+        // with a refusal they cannot act on. Creating needs User.ReadWrite.All;
+        // the Temporary Access Pass needs Policy.Read.All, since it is governed
+        // by the authentication-methods policy.
+        expect(refusal).toContain('User.ReadWrite.All');
+        expect(refusal).toContain('Policy.Read.All');
+
+        // And it still says the permissions are not enough on their own — the
+        // separation between the directions lives in the flag, not the consent
+        // list.
+        expect(refusal).toMatch(/permissions alone grants nothing/i);
     });
 });
 
@@ -239,25 +253,26 @@ describe('#2674 — the stored-value diagnostic follows the field it is about', 
         expect(describeStoredWriteFlag('leaver', {})).not.toContain('Re-save the connection');
     });
 
-    it('does not tell a JOINER operator to look at a checkbox that is not on the form', () => {
-        // The sentence was parameterised by FIELD NAME but carried leaver
-        // facts: an admin-UI control showing ON, and "re-save the connection"
-        // as the fix. Neither is true for `joinerWritesEnabled`, which is
-        // deliberately undeclared — `validateProviderConfig` rejects the key,
-        // so no form control shows it and re-saving would not rewrite it.
+    it('tells a JOINER operator to re-save, now that the checkbox IS on the form', () => {
+        // INVERTED ON PURPOSE (#2878 f11). This used to assert the opposite,
+        // and it was right for as long as the field was undeclared: the
+        // sentence promised an admin-UI control that did not exist and a
+        // re-save that would not rewrite anything. Declaring the checkbox made
+        // both halves true, and this test failing on that day is the guard
+        // working — the copy and the form moved together because it refused to
+        // let them separate.
         const joiner = describeStoredWriteFlag('joiner', 'true');
-        expect(joiner).toContain('no control for this field on the connection form');
-        expect(joiner).not.toContain('Re-save the connection');
+        expect(joiner).toContain('Re-save the connection');
+        expect(joiner).not.toContain('no control for this field on the connection form');
 
-        // The positive control for this pair: the leaver sentence DOES make
-        // both of those claims, so the assertions above are separating the two
-        // directions rather than matching a sentence nobody emits.
+        // Both directions now give the same remedy, because the cause is the
+        // same: a string-coercing helper elsewhere on the connection makes the
+        // checkbox look inconsistent with the behaviour.
         const leaver = describeStoredWriteFlag('leaver', 'true');
         expect(leaver).toContain('Re-save the connection');
-        expect(leaver).not.toContain('no control for this field on the connection form');
     });
 
-    it('is unreachable for the joiner today, and that is asserted rather than assumed', () => {
+    it('is REACHABLE for the joiner now, and that is asserted rather than assumed', () => {
         // Two independent reasons, both of which would have to stop being true
         // before the sentence above could reach an operator.
         //
@@ -266,15 +281,22 @@ describe('#2674 — the stored-value diagnostic follows the field it is about', 
         //    passes 'leaver' — asserted by the cross tests at the top of this
         //    file, which build a writer from a joiner-only config and get a
         //    refusal naming the LEAVER direction.
-        // 2. The field cannot be stored. `joinerWritesEnabled` is not a
-        //    declared config field, and an undeclared key is rejected outright
-        //    rather than ignored.
-        expect(new EntraIdProvider().configSchema.configFields.map((f) => f.key)).not.toContain(
+        // 2. The field CAN now be stored: `joinerWritesEnabled` is a declared
+        //    config field, so `validateProviderConfig` accepts it rather than
+        //    rejecting the key outright. That is the change #2878 f11 made, and
+        //    it is what puts the sentence in front of an operator at all.
+        expect(new EntraIdProvider().configSchema.configFields.map((f) => f.key)).toContain(
             ENTRA_JOINER_WRITES_FIELD,
         );
         expect(() =>
             validateProviderConfig('entra-id', { [ENTRA_JOINER_WRITES_FIELD]: 'true' }),
-        ).toThrow(/Unknown configuration field/);
+        ).not.toThrow();
+
+        // AND THE KEY IS STILL NOT A SHARED ONE. Declaring the joiner's flag
+        // must not have widened the leaver's: a connection storing only the
+        // joiner opt-in grants no disable authority, which is the separation
+        // this whole module exists to hold.
+        expect(ENTRA_JOINER_WRITES_FIELD).not.toBe(ENTRA_LEAVER_WRITES_FIELD);
 
         // The positive control: the SAME call shape with the declared leaver
         // field is accepted, so the throw above is about this key and not about
@@ -295,12 +317,22 @@ describe('#2674 — the joiner field is NOT on the connection form, and that is 
         expect(configFieldKeys()).toContain(ENTRA_LEAVER_WRITES_FIELD);
     });
 
-    it('does NOT declare the joiner opt-in', () => {
-        // Deliberate, per `write-direction.ts`: a checkbox is a question put to
-        // a customer, and there is no create verb behind this direction yet. A
-        // box ticked today would authorise nothing today and would ALREADY be
-        // ticked on the day it gains meaning. It arrives in the diff that ships
-        // the create verb — which is this assertion going red, on purpose.
-        expect(configFieldKeys()).not.toContain(ENTRA_JOINER_WRITES_FIELD);
+    it('DECLARES the joiner opt-in, separately from the leaver’s', () => {
+        // THIS IS THE DIFF THE OLD ASSERTION NAMED. It read `.not.toContain`,
+        // and its comment said: "A box ticked today would authorise nothing
+        // today and would ALREADY be ticked on the day it gains meaning. It
+        // arrives in the diff that ships the create verb — which is this
+        // assertion going red, on purpose." That day is #2878 f11, and the
+        // assertion went red exactly as written.
+        expect(configFieldKeys()).toContain(ENTRA_JOINER_WRITES_FIELD);
+
+        // SEPARATELY is the load-bearing word. Two distinct keys, so a
+        // connection can consent to creating without consenting to disabling —
+        // which the CONSENT LIST cannot express, since `User.ReadWrite.All` is
+        // itself a member of the writer's WRITE_ROLES. The flag is the only
+        // place the directions can be held apart, and a single shared key
+        // would quietly collapse them.
+        expect(configFieldKeys()).toContain(ENTRA_LEAVER_WRITES_FIELD);
+        expect(ENTRA_JOINER_WRITES_FIELD).not.toBe(ENTRA_LEAVER_WRITES_FIELD);
     });
 });

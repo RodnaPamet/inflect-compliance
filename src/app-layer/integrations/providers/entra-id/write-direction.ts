@@ -143,6 +143,24 @@ export const ENTRA_JOINER_WRITES_FIELD = 'joinerWritesEnabled';
  */
 export const LEAST_PRIVILEGE_WRITE_ROLE = 'User.EnableDisableAccount.All';
 
+/**
+ * What an admin must consent for the JOINER direction, named in operator copy.
+ *
+ * TWO permissions, and neither is the leaver's. Creating a user needs
+ * `User.ReadWrite.All`; minting a Temporary Access Pass needs
+ * `Policy.Read.All`, because a TAP is governed by the authentication-methods
+ * policy and cannot be issued without reading it.
+ *
+ * THERE IS NO LEAST-PRIVILEGE SEPARATION TO BE HAD HERE, and saying so is the
+ * point of this module: `User.ReadWrite.All` is itself a member of the
+ * writer's `WRITE_ROLES`, so any consent sufficient to CREATE is sufficient to
+ * DISABLE. The per-connection flag is the only place the directions can be
+ * held apart, which is why it is a separate checkbox rather than a widening of
+ * the leaver's.
+ */
+export const JOINER_CREATE_ROLE = 'User.ReadWrite.All';
+export const JOINER_CREDENTIAL_ROLE = 'Policy.Read.All';
+
 /** The field each direction is consented through. Never shared, by construction. */
 export const ENTRA_WRITE_FLAG_FIELD: Readonly<Record<IdentityDirection, string>> = {
     leaver: ENTRA_LEAVER_WRITES_FIELD,
@@ -243,9 +261,15 @@ const DIRECTION_STORED_VALUE_REMEDY: Readonly<Record<IdentityDirection, string>>
         'be on, which is why the checkbox looks inconsistent with the behaviour. Re-save the ' +
         'connection, or correct the stored value to a JSON boolean.',
     joiner:
-        'There is no control for this field on the connection form, so re-saving will not rewrite ' +
-        'it — the value did not come from the form, and the form would reject the key. Correct the ' +
-        'stored value to a JSON boolean, or remove it.',
+        // Was "there is no control for this field on the connection form",
+        // which stopped being true the day the checkbox was declared
+        // (#2878 f11). The remedy is now the leaver's, because the cause is:
+        // other booleans on this connection are read through a string-coercing
+        // helper and will be on, so the checkbox looks inconsistent with the
+        // behaviour.
+        'Other booleans on this same connection are read through a string-coercing helper and WILL ' +
+        'be on, which is why the checkbox looks inconsistent with the behaviour. Re-save the ' +
+        'connection, or correct the stored value to a JSON boolean.',
 };
 
 /**
@@ -294,10 +318,13 @@ const DIRECTION_COPY: Readonly<
     joiner: {
         act: 'CREATE an account',
         instruction:
-            `There is no switch for this direction on the connection yet: ${ENTRA_JOINER_WRITES_FIELD} ` +
-            'is deliberately undeclared until the create verb exists (#2674, blocked on #2608), because ' +
-            'a box ticked for a capability that does not exist would already be ticked on the day it ' +
-            'gains one. Until then this direction refuses for every connection.',
+            'Turn on "Allow joiner credential issuance" on the connection, and make sure an ' +
+            `administrator has consented ${JOINER_CREATE_ROLE} and ${JOINER_CREDENTIAL_ROLE}. ` +
+            'The joining credential is a Temporary Access Pass, which is governed by the ' +
+            'authentication-methods policy and cannot be minted without reading it. Consenting the ' +
+            'permissions alone grants nothing here: the switch is a separate statement, because ' +
+            'every permission sufficient to create a user in this directory is also sufficient to ' +
+            'disable one.',
     },
 };
 
