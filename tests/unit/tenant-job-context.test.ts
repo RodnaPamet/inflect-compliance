@@ -150,11 +150,17 @@ describe('runInTenantJobContext binds the audit context the extensions read', ()
             { customPrisma: mockPrisma },
         );
 
+        // EXACT, deliberately — this pins what a job binds, so a field
+        // arriving unannounced fails here rather than travelling silently into
+        // every extension that reads the store. `readPriorState` is named
+        // because it was added on purpose: it lets the audit extension read the
+        // row a write is replacing, through THIS transaction's client.
         expect(seen).toEqual({
             tenantId: 'tenant-a',
             actorUserId: 'user-operator',
             requestId: 'run-77',
             source: 'av-rescan',
+            readPriorState: expect.any(Function),
         });
     });
 

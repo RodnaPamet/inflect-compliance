@@ -80,7 +80,13 @@ jest.mock('@/lib/observability/metrics', () => ({
     recordSlowQuery: (model: string) => recordSlowQueryMock(model),
 }));
 
-const auditContext: { tenantId?: string; actorUserId?: string; requestId?: string; source?: string } = {};
+const auditContext: {
+    tenantId?: string;
+    actorUserId?: string;
+    requestId?: string;
+    source?: string;
+    readPriorState?: (model: string, where: unknown) => Promise<Record<string, unknown> | null>;
+} = {};
 jest.mock('@/lib/audit-context', () => ({
     getAuditContext: () => ({ ...auditContext }),
 }));
@@ -95,7 +101,14 @@ interface AuditEntry {
     requestId: string | null;
     recordIds: { count: number } | null;
     metadataJson: Record<string, unknown>;
-    diffJson: { changedFields: string[]; after: Record<string, unknown> } | null;
+    diffJson: {
+        changedFields: string[];
+        after: Record<string, unknown>;
+        /** Whether the fields above were COMPARED against the prior row, or merely named. */
+        changedFieldsAreDiffed?: boolean;
+        /** Present only when they were compared. */
+        before?: Record<string, unknown>;
+    } | null;
     detailsJson: Record<string, unknown>;
 }
 const appendAuditEntryMock = jest.fn<Promise<void>, [AuditEntry]>(
@@ -390,9 +403,16 @@ describe('audit extension — the changed-field diff', () => {
         });
 
         const entry = soleAuditEntry();
+        // `changedFieldsAreDiffed: false` is the honest half of this row.
+        // This harness drives the extension with no tenant transaction, so
+        // there is no prior-state reader and `changedFields` is the payload's
+        // keys rather than a comparison. Asserted rather than tolerated: a
+        // consumer cannot tell a compared field list from a restatement of the
+        // request by looking at the list, so the row has to say which it is.
         expect(entry.diffJson).toStrictEqual({
             changedFields: ['title'],
             after: { title: 'updated title' },
+            changedFieldsAreDiffed: false,
         });
     });
 
@@ -597,5 +617,84 @@ describe('slow-query listener', () => {
         expect(fields.query).toHaveLength(500);
         expect(fields.params).toHaveLength(200);
         expect(fields.durationMs).toBe(120);
+    });
+});
+
+/**
+ * The chain end to end: a reader in the context, the REAL extension handler,
+ * and an audit row that names what changed.
+ *
+ * `buildDiffJson` is unit-tested beside this, but a correct comparison reached
+ * by nothing improves no trail. These drive the registered handler with a
+ * reader attached, which is the only place the two halves meet.
+ */
+describe('audit extension — with a prior-state reader in the context', () => {
+    it('names only the field that actually changed, and carries the before', async () => {
+        auditContext.readPriorState = async () => ({ title: 'old title', status: 'OPEN' });
+
+        await op('update')({
+            model: 'Risk',
+            operation: 'update',
+            args: { where: { id: 'r1' }, data: { title: 'new title', status: 'OPEN' } },
+            query: async (): Promise<unknown> => ({ id: 'r1', title: 'new title', status: 'OPEN' }),
+        });
+
+        const entry = soleAuditEntry();
+        expect(entry.diffJson?.changedFields).toStrictEqual(['title']);
+        expect(entry.diffJson?.changedFieldsAreDiffed).toBe(true);
+        expect(entry.diffJson?.before).toStrictEqual({ title: 'old title' });
+    });
+
+    it('writes NO diff when the statement changes nothing', async () => {
+        // The whole finding, at the seam that produces the row: an HRIS upsert
+        // naming ten columns unconditionally used to claim all ten changed on
+        // every run. With a reader, a statement that writes what is already
+        // stored says so by saying nothing.
+        auditContext.readPriorState = async () => ({ title: 'same', status: 'OPEN' });
+
+        await op('update')({
+            model: 'Risk',
+            operation: 'update',
+            args: { where: { id: 'r1' }, data: { title: 'same', status: 'OPEN' } },
+            query: async (): Promise<unknown> => ({ id: 'r1', title: 'same', status: 'OPEN' }),
+        });
+
+        expect(soleAuditEntry().diffJson).toBeNull();
+    });
+
+    it('asks the reader for THIS model and THIS row', async () => {
+        const seen: Array<{ model: string; where: unknown }> = [];
+        auditContext.readPriorState = async (model, where) => {
+            seen.push({ model, where });
+            return { title: 'old title' };
+        };
+
+        await op('update')({
+            model: 'Risk',
+            operation: 'update',
+            args: { where: { id: 'r1' }, data: { title: 'new title' } },
+            query: async (): Promise<unknown> => ({ id: 'r1', title: 'new title' }),
+        });
+
+        expect(seen).toStrictEqual([{ model: 'Risk', where: { id: 'r1' } }]);
+    });
+
+    it('does NOT read for updateMany, whose row set is unbounded', async () => {
+        // A per-row before-image over an unbounded statement is unbounded work
+        // on the write path.
+        const seen: string[] = [];
+        auditContext.readPriorState = async (model) => {
+            seen.push(model);
+            return null;
+        };
+
+        await op('updateMany')({
+            model: 'Risk',
+            operation: 'updateMany',
+            args: { where: { status: 'OPEN' }, data: { status: 'CLOSED' } },
+            query: async (): Promise<unknown> => ({ count: 12 }),
+        });
+
+        expect(seen).toStrictEqual([]);
     });
 });

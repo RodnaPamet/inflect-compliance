@@ -48,26 +48,68 @@ const EXCLUDED_MODELS = new Set([
 /**
  * Build diff JSON for update/upsert operations.
  *
- * Strategy (pragmatic):
- * - Extract changedFields from params.args.data keys
- * - Extract redacted "after" values from the operation result
- * - Optionally include "before" snapshot for single-record updates
- *   (only if we can fetch it cheaply via the where clause)
+ * ═══ WHAT `changedFields` USED TO MEAN, AND WHY IT HAD TO CHANGE ═══
  *
- * LIMITATION: We do NOT fetch "before" from the DB because:
- * 1. It would add latency to every update
- * 2. The record might already be changed by the time we read it
- * 3. For multi-tenant RLS contexts, a separate query might fail
- * Instead we capture changedFields + after snapshot.
+ * It was `Object.keys(payload)` — the keys the CALLER SENT, never a
+ * comparison. The paragraph this replaces was honest about choosing that and
+ * gave three reasons for not reading the prior row: added latency, the row may
+ * have moved on, and "for multi-tenant RLS contexts, a separate query might
+ * fail". The third is the real one and it was right: a read issued from a
+ * Prisma query extension has no client of its own, so it would have run on the
+ * module-scope singleton — a different connection, outside the caller's
+ * transaction, as the OWNING role, which bypasses RLS. Rows from other tenants
+ * would have been written into this tenant's audit row as `before`.
+ *
+ * The cost of the old choice was a trail that says the same thing every time.
+ * An HRIS upsert names ten columns unconditionally, so every audit row it wrote
+ * claimed `department` and `jobTitle` changed for every employee on every run;
+ * somebody asking when a person moved got a hit on every sync since the tenant
+ * was onboarded. A trail that answers every question affirmatively is not a
+ * weaker signal than none — it is a misleading one.
+ *
+ * ═══ WHAT MAKES THE READ SAFE NOW ═══
+ *
+ * `runInTenantContext` and its siblings bind a {@link PriorStateReader} into
+ * the audit context from INSIDE the transaction, closing over `tx` — the one
+ * client that is both in this transaction and under `SET LOCAL ROLE app_user`
+ * with a transaction-scoped `app.tenant_id`. The extension reads through that
+ * and nothing else. The first two objections stand and are answered in kind:
+ * the read costs one round trip on update/upsert paths, and it is taken BEFORE
+ * the write so "the row may have moved on" cannot apply within the transaction.
+ *
+ * ═══ AND WHEN THERE IS NO READER ═══
+ *
+ * Writes that do not run in a tenant transaction — a seed, `runWithoutRls`, a
+ * job on the singleton — have no reader. Those fall back to payload keys AND
+ * SAY SO on the row (`changedFieldsAreDiffed: false`). Falling back silently
+ * would reintroduce the original defect wearing the fix's clothes, which is
+ * the one outcome worth engineering against here.
  */
-function buildDiffJson(
+/**
+ * EXPORTED FOR ITS TESTS, and the export is the smaller cost.
+ *
+ * The alternative is driving it through a real Prisma client extension with a
+ * faked `query`, which pins the wiring rather than the comparison — and the
+ * comparison is where every interesting case lives (a payload operator, a Date,
+ * null against undefined, a value already equal to what is stored). A guard
+ * that cannot reach those cases is the kind that stays green while the rule
+ * rots.
+ */
+export function buildDiffJson(
     action: string,
     data: Record<string, unknown> | null | undefined,
     result: unknown,
+    priorState?: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
     if (!DIFF_ACTIONS.has(action) || !data) return null;
 
-    const changedFields = extractChangedFields(data);
+    // `priorState === undefined` means no reader was available; `null` means
+    // the reader ran and found no row. Only the first is a fallback — the
+    // second is an upsert that inserted, where every payload key IS new.
+    const diffed = priorState !== undefined && priorState !== null;
+    const changedFields = diffed
+        ? extractChangedFields(data).filter((f) => !sameStoredValue(priorState[f], data[f]))
+        : extractChangedFields(data);
     if (changedFields.length === 0) return null;
 
     // Build redacted "after" snapshot from result, limited to changed fields
@@ -83,7 +125,52 @@ function buildDiffJson(
     return {
         changedFields,
         after,
+        // ON THE ROW, not inferred by a reader. Whether these fields were
+        // COMPARED or merely NAMED is the difference between evidence and a
+        // restatement of the request, and a consumer cannot tell them apart
+        // from the field list alone.
+        changedFieldsAreDiffed: diffed,
+        ...(diffed ? { before: redactSensitiveFields(pick(priorState, changedFields)) } : {}),
     };
+}
+
+/** Narrow a row to the fields a diff named. */
+function pick(row: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const f of fields) if (f in row) out[f] = row[f];
+    return out;
+}
+
+/**
+ * Is the stored value already what this payload would write?
+ *
+ * Deliberately conservative: anything it cannot confidently call EQUAL is
+ * reported as changed. Under-reporting a change would hide it from the trail,
+ * which is the failure this whole function exists to end; over-reporting one
+ * costs a field name in a list.
+ *
+ * Prisma payload values are not always scalars. `{ set: v }` is unwrapped
+ * because it is exactly an assignment; every other operator form
+ * (`increment`, `connect`, `push`, …) is treated as a change without
+ * inspection, since computing the result would mean reimplementing the
+ * database.
+ */
+function sameStoredValue(prior: unknown, next: unknown): boolean {
+    if (next !== null && typeof next === 'object' && !(next instanceof Date)) {
+        const op = next as Record<string, unknown>;
+        if ('set' in op && Object.keys(op).length === 1) return sameStoredValue(prior, op.set);
+        return false;
+    }
+    if (prior instanceof Date && next instanceof Date) return prior.getTime() === next.getTime();
+    if (prior instanceof Date || next instanceof Date) return false;
+    // STRICT, and the loose version was a bug worth recording. An earlier
+    // draft had `if (prior == null && next == null) return true;`, which is
+    // redundant for null-against-null — `===` already says so — and WRONG when
+    // `prior` is `undefined`, meaning the row carried no such field. That is
+    // "we do not know", and calling it equal hides a change, which is the one
+    // direction this function is not allowed to err in. A mutation deleting
+    // the line stayed green, which is how it was found.
+    return prior === next;
 }
 
 /**
@@ -155,6 +242,25 @@ function buildAuditExtension() {
                 ? (argsRecord.update as Record<string, unknown> | null | undefined) ?? null
                 : (argsRecord.data as Record<string, unknown> | null | undefined) ?? null;
 
+        // ═══ THE PRIOR ROW, READ BEFORE THE WRITE ═══
+        //
+        // Taken here and not after, because after is too late: the row this
+        // statement is about to replace exists only until `query` runs.
+        //
+        // Through the context's reader and nothing else — see
+        // {@link PriorStateReader}. Absent outside a tenant transaction, in
+        // which case `priorState` stays `undefined` and the diff below
+        // degrades to payload keys and says so.
+        //
+        // Only for `update` / `upsert`, and only with a `where`. `updateMany`
+        // and `deleteMany` touch an unbounded set, so a per-row before-image
+        // is unbounded work on the write path; they keep the behaviour they
+        // have. `create` has no prior row by definition.
+        let priorState: Record<string, unknown> | null | undefined;
+        if (DIFF_ACTIONS.has(operation) && ctx?.readPriorState && argsRecord.where) {
+            priorState = await ctx.readPriorState(model, argsRecord.where);
+        }
+
         // Execute the original operation first — never block it
         const result = await query(args);
 
@@ -190,7 +296,7 @@ function buildAuditExtension() {
                 metadataJson.filterKeys = Object.keys(argsWhere);
             }
 
-            const diffJson = buildDiffJson(operation, updateData, result);
+            const diffJson = buildDiffJson(operation, updateData, result, priorState);
 
             const detailsJson: Record<string, unknown> = {
                 category: 'entity_lifecycle',
