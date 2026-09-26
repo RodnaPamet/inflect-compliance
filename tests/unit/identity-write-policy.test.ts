@@ -64,6 +64,7 @@ import {
     getIdentityWritePolicy,
     setIdentityWriteMode,
     DRY_RUN_MIN_DAYS,
+    DRY_RUN_MIN_PASSES,
 } from '@/app-layer/usecases/identity-write-policy';
 import { DIRECTION_IMPLEMENTED, LADDER, type IdentityWriteMode } from '@/lib/identity/write-ladder';
 import { makeRequestContext } from '../helpers/make-context';
@@ -177,10 +178,24 @@ describe('dry-run is time-boxed, and the clock is real', () => {
         ).toBeNull();
     });
 
-    it('is measured in days, not runs', () => {
+    it('time is not buyable with runs — the day branch fires with the evidence bar already met', () => {
         // A tenant with a quiet week has observed nothing by running the job
         // seven times. The window exists to span a real termination/hire cycle.
-        const almost = describeRefusal('leaver', { mode: 'DRY_RUN', dryRunSince: daysAgo(DRY_RUN_MIN_DAYS - 0.5) }, 'AUTOMATIC', NOW);
+        //
+        // PASSES THE EVIDENCE BAR ON PURPOSE. This used to call `describeRefusal`
+        // with no `passesInWindow` at all, which skipped the evidence branch via
+        // its `!== undefined` guard and so proved the day branch fires only in a
+        // shape the real caller never produces (it always supplies a count when
+        // leaving DRY_RUN). Handing it a satisfying count instead isolates the
+        // property actually claimed: with evidence ALREADY sufficient, elapsed
+        // time still refuses. That is what makes days non-substitutable.
+        const almost = describeRefusal(
+            'leaver',
+            { mode: 'DRY_RUN', dryRunSince: daysAgo(DRY_RUN_MIN_DAYS - 0.5) },
+            'AUTOMATIC',
+            NOW,
+            DRY_RUN_MIN_PASSES + 5,
+        );
         expect(almost).toMatch(/required days/);
     });
 
@@ -195,8 +210,24 @@ describe('dry-run is time-boxed, and the clock is real', () => {
         // The behaviour is deliberate and stays — the test above pins it. What
         // changed is the sentence, so a passed gate is not read as evidence of
         // something nobody measured.
-        const why = describeRefusal('leaver', { mode: 'DRY_RUN', dryRunSince: daysAgo(2) }, 'AUTOMATIC', NOW);
-        expect(why).toMatch(/counts days, not passes/i);
+        //
+        // AND THEN THE GATE GREW A SECOND TERM. This assertion read
+        // `/counts days, not passes/i` — a sentence that became FALSE the day
+        // the evidence check landed, and this test is what would have kept it
+        // in the product. A test pinning the exact wording of a claim has to
+        // move when the claim does, or it stops guarding the property and
+        // starts guarding the typo. Pin BOTH halves instead: the day branch
+        // says what it measures, and does not deny the other term.
+        const why = describeRefusal(
+            'leaver',
+            { mode: 'DRY_RUN', dryRunSince: daysAgo(2) },
+            'AUTOMATIC',
+            NOW,
+            DRY_RUN_MIN_PASSES + 5,
+        );
+        expect(why).toMatch(/counts elapsed days/i);
+        expect(why).toMatch(/requires the window to contain real passes/i);
+        expect(why).not.toMatch(/counts days, not passes/i);
         expect(why).not.toMatch(/the point is to observe/i);
     });
 
