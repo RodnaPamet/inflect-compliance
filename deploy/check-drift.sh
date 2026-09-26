@@ -25,8 +25,10 @@
 #   0 = in sync
 #   1 = drift in a file apply.sh can push (reconcile, then run apply.sh)
 #   2 = could not reach the VM (UNKNOWN — never read this as "no drift")
-#   3 = the only difference is the known-unreconciled Caddyfile, which is
-#       an outstanding decision, not something apply.sh can fix
+#   3 = the only differences are in UNRECONCILED files — an outstanding
+#       decision, not something apply.sh can fix. That array is EMPTY as of
+#       2026-09-26 (the Caddyfile was reconciled), so this exit is currently
+#       unreachable; the code stays because the next such file will need it.
 set -euo pipefail
 
 VM_NAME="${VM_NAME:-inflect-compliance}"
@@ -64,7 +66,7 @@ APPLIABLE=(
 # reason, because an un-actionable warning that outlives its explanation is
 # how a check becomes noise people filter out.
 UNRECONCILED=(
-    "${SCRIPT_DIR}/caddy/Caddyfile:${REMOTE_DIR}/caddy/Caddyfile:the live copy serves a second vhost (app.inflect.bg) the repo copy does not define, and the repo copy carries retry/HTTP-3 settings from #1814/#1275 the live copy never received — each side has content the other lacks, so neither can simply overwrite the other"
+    "${SCRIPT_DIR}/caddy/Caddyfile:${REMOTE_DIR}/caddy/Caddyfile:the CONTENT is reconciled as of 2026-09-26 — the repo copy is now the superset, defining both hostnames and carrying the HTTP/3 and Cache-Control work — but apply.sh still cannot push it: its push loop stages through /tmp/\${remote_base}.new.\${TS}, which for a nested path becomes /tmp/caddy/Caddyfile.new.… and that directory does not exist on the VM. Pushing needs a flattened staging name first, and apply.sh is the push path for every other canonical file, so that change wants its own diff"
 )
 
 remote_sha() {
