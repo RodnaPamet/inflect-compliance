@@ -414,6 +414,13 @@ describe('getRestorableStateForAccount — the restore read, keyed by account', 
             kind: 'found',
             accountId: 'acc-1',
             provider: 'active-directory',
+            // NAMED because it was added on purpose (#2877 f26): the restore
+            // has to address the directory, and only the directory understands
+            // this identifier. It must not reach a response body — the route
+            // beside this picks fields explicitly rather than spreading the
+            // lookup, which is what keeps that true, and the suite for that
+            // route asserts the absence.
+            externalUserId: 'guid-9',
             journalId: 'jrn-7',
             priorState: { userAccountControl: 512 },
             attemptedAt: new Date('2026-09-12T05:00:00.000Z'),

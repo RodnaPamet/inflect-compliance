@@ -481,6 +481,17 @@ export type RestorableLookup =
           readonly kind: 'found';
           readonly accountId: string;
           readonly provider: string;
+          /**
+           * The raw directory identifier, FOR A CALLER THAT WRITES — the
+           * restore has to address the directory, and only the directory
+           * understands this.
+           *
+           * It must not reach a response body. The route beside this picks
+           * fields explicitly rather than spreading the lookup, which is what
+           * keeps that true; the index and by-id reads exclude it for the same
+           * reason, stated on `JOURNAL_INDEX_SELECT`.
+           */
+          readonly externalUserId: string;
           readonly journalId: string;
           readonly priorState: Record<string, unknown>;
           readonly attemptedAt: Date;
@@ -541,6 +552,7 @@ export async function getRestorableStateForAccount(
         kind: 'found',
         accountId: account.id,
         provider: account.provider,
+        externalUserId: account.externalUserId,
         journalId: restorable.journalId,
         priorState: restorable.priorState,
         attemptedAt: restorable.attemptedAt,
@@ -616,6 +628,51 @@ export async function listUnsettledWrites(
     return rows;
 }
 
+
+/**
+ * Mark an APPLIED write as undone, because a restore has put the captured state
+ * back.
+ *
+ * ═══ THIS IS CORRECTNESS, NOT BOOKKEEPING ═══
+ *
+ * `findRestorableState` selects `APPLIED` and `INDETERMINATE`. A restore that
+ * left the original row APPLIED would leave it discoverable, and the next
+ * restore of the same account would set out to undo a disable that has already
+ * been undone. The writer's compare-and-swap would refuse it — but as a
+ * directory error about an unexpected value, not as "there is nothing here to
+ * put back". Settling REVERTED is what lets the second attempt say the true
+ * thing.
+ *
+ * PREDICATED ON THE PRIOR OUTCOME, so this cannot rewrite a row another actor
+ * has already resolved, and returns false rather than throwing when it changed
+ * nothing — a caller that has just completed a directory write must not have
+ * that write reported as a failure because the bookkeeping raced.
+ */
+export async function settleReverted(
+    ctx: RequestContext,
+    journalId: string,
+    detail: string,
+): Promise<boolean> {
+    return runInTenantContext(ctx, async (db) => {
+        const moved = await db.identityWriteJournal.updateMany({
+            where: {
+                id: journalId,
+                tenantId: ctx.tenantId,
+                outcome: { in: ['APPLIED', 'INDETERMINATE'] },
+            },
+            data: { outcome: 'REVERTED', settledAt: new Date(), detail },
+        });
+        if (moved.count === 0) {
+            logger.warn('restore could not mark the original write reverted', {
+                component: 'identity-write-journal',
+                tenantId: ctx.tenantId,
+                journalId,
+            });
+            return false;
+        }
+        return true;
+    });
+}
 
 /**
  * Resolve an earlier unconfirmed write, now that the directory has been read
