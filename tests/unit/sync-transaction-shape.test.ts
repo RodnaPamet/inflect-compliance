@@ -438,10 +438,11 @@ describe('the bookkeeping transactions the lease pays for are COUNTED (#2522)', 
         // joined or left the lease-held path.
         expect(bookkeepingOutsideRead(window).map((t) => firstOpOf(t.index))).toEqual([
             'integrationConnection.findFirst', // 1. the run-open, before `start`
-            'employee.findMany', //               2. the manager map
-            'integrationConnection.updateMany', // 3. the cursor store
-            'integrationExecution.update', //      4. the execution finalise, which throws
-            'integrationExecution.update', //      5. the write-failure finalise
+            'employee.findMany', //               2. the prior-role map
+            'employee.findMany', //               3. the manager map
+            'integrationConnection.updateMany', // 4. the cursor store
+            'integrationExecution.update', //      5. the execution finalise, which throws
+            'integrationExecution.update', //      6. the write-failure finalise
         ]);
         expect(bookkeepingOutsideRead(window)).toHaveLength(MAX_SYNC_BOOKKEEPING_TXS);
     });
@@ -462,9 +463,10 @@ describe('the bookkeeping transactions the lease pays for are COUNTED (#2522)', 
         expect(window.from).toBeGreaterThanOrEqual(0);
         expect(bookkeepingOutsideRead(window).map((t) => firstOpOf(t.index))).toEqual([
             'integrationConnection.findFirst', // 1. the run-open, before `start`
-            'employee.findMany', //               2. the manager map
-            'integrationConnection.updateMany', // 3. the cursor store
-            'integrationExecution.update', //      4. the execution finalise
+            'employee.findMany', //               2. the prior-role map
+            'employee.findMany', //               3. the manager map
+            'integrationConnection.updateMany', // 4. the cursor store
+            'integrationExecution.update', //      5. the execution finalise
         ]);
         expect(bookkeepingOutsideRead(window)).toHaveLength(MAX_SYNC_BOOKKEEPING_TXS - 1);
     });
