@@ -118,6 +118,18 @@ export async function loadApprovedManifests(
 export async function recordBaselinePins(
     tenantId: string,
     defs: readonly ToolDefinition[],
+    /**
+     * The name each pin is KEYED under, when that differs from the name it is
+     * HASHED under. Positional against `defs`.
+     *
+     * They differ for exactly one thing, and it is not cosmetic: an external
+     * tool is hashed under the name the SERVER advertised — the attestation is
+     * about what the far end said — and keyed under our qualified
+     * `mcp__<connectionId>__<tool>`, so two servers advertising `list_alerts`
+     * stay distinct. Defaults to the hashed name, which is right for every
+     * built-in.
+     */
+    keyNames?: readonly string[],
 ): Promise<void> {
     if (defs.length === 0) return;
     try {
@@ -131,11 +143,11 @@ export async function recordBaselinePins(
         // ignore the signal that catches the real thing.
         await runWithAuditContext({ tenantId, source: 'mcp-tool-manifest' }, () =>
             prisma.mcpToolManifestPin.createMany({
-                data: defs.map((def) => {
+                data: defs.map((def, i) => {
                     const hashes = hashToolManifest(def);
                     return {
                         tenantId,
-                        toolName: def.name,
+                        toolName: keyNames?.[i] ?? def.name,
                         descriptionHash: hashes.descriptionHash,
                         schemaHash: hashes.schemaHash,
                         manifestHash: hashes.manifestHash,
@@ -172,11 +184,37 @@ export async function recordBaselinePins(
 export async function verifyToolManifestForTenant(
     tenantId: string,
     def: ToolDefinition,
+    /**
+     * The name the pin is KEYED under, when it differs from `def.name`.
+     *
+     * ── WHY THESE ARE TWO NAMES AND NOT ONE ─────────────────────────────────
+     *
+     * `manifestHash` folds the tool's NAME in, and an external tool has two:
+     * the one its server advertised, and the qualified
+     * `mcp__<connectionId>__<tool>` we key grants and pins on. The catalogue
+     * pins deliberately under the SERVER's — "the attestation is about what the
+     * far end said, not about our naming scheme" — while the funnel hands the
+     * model the QUALIFIED one.
+     *
+     * Conflating them made every external tool call refuse, permanently:
+     * the pin hashed `microsoft_graph_suggest_queries`, the enforcement hashed
+     * `mcp__<id>__microsoft_graph_suggest_queries`, the two hashes differed and
+     * the verdict read as "the definition changed since it was approved". It
+     * could not be cleared by re-approving, because re-approving wrote the pin
+     * under the server name again.
+     *
+     * NOTE the direction that makes the split necessary rather than tidy: the
+     * lookup MUST use the qualified name. Looking up by the server's name would
+     * miss the pin, report UNPINNED, and fall into the baseline write below --
+     * which does not refuse. A false drift refuses a legitimate call; that
+     * mistake would have ALLOWED one and written a pin nobody approved.
+     */
+    keyName: string = def.name,
 ): Promise<ToolManifestVerdict> {
-    const approved = await loadApprovedManifest(tenantId, def.name);
+    const approved = await loadApprovedManifest(tenantId, keyName);
     const verdict = verifyToolManifest(def, approved);
     if (verdict.status === 'UNPINNED') {
-        await recordBaselinePins(tenantId, [def]);
+        await recordBaselinePins(tenantId, [def], [keyName]);
     }
     return verdict;
 }

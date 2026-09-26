@@ -152,6 +152,7 @@ import type { McpReadTool } from './tools/types';
 import type { AgentPrincipal } from '@/lib/agentic/agent-authority';
 
 import { enforceMcpCapability } from './auth';
+import { parseExternalToolName } from './external-tool-name';
 import {
     toolIsLoadable,
     loadableToolsDigest,
@@ -932,11 +933,32 @@ async function assertToolManifestPinned(
     inv: McpInvocation,
     tool: ToolDefinition,
 ): Promise<void> {
-    const verdict = await verifyToolManifestForTenant(inv.ctx.tenantId, {
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-    });
+    // ── HASHED UNDER THE SERVER'S NAME, KEYED UNDER OURS ────────────────────
+    //
+    // `tool.name` here is the FUNNEL's name, which for an external tool is the
+    // qualified `mcp__<connectionId>__<tool>`. The catalogue pinned it under
+    // the name the SERVER advertised, on purpose: the attestation is about what
+    // the far end said, not about our naming scheme.
+    //
+    // `manifestHash` folds the name in, so hashing the qualified name here
+    // compared a hash of OUR string against a pin taken over THEIRS. Every
+    // external tool call refused with "the definition has changed since it was
+    // approved", permanently and un-clearably — re-approving rewrote the pin
+    // under the server name again. Found by the first external call that ever
+    // reached this line (2026-09-26): all three of a live server's tools
+    // refused with description and schema hashes that matched exactly.
+    const externalRef = parseExternalToolName(tool.name);
+    const verdict = await verifyToolManifestForTenant(
+        inv.ctx.tenantId,
+        {
+            name: externalRef ? externalRef.toolName : tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+        },
+        // The KEY stays qualified — that is how pins are stored, and looking up
+        // by the server's name would miss and fall through to a baseline write.
+        tool.name,
+    );
 
     if (!verdict.mustRefuse) return;
 
