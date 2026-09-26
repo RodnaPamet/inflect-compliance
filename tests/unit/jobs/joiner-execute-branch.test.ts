@@ -118,9 +118,15 @@ import { runIdentityJoinerPass } from '@/app-layer/usecases/identity-joiner-run'
 const closeProv = jest.fn(async () => undefined);
 const closeWriter = jest.fn(async () => undefined);
 
+const mockProbe = jest.fn();
+
 const liveProvisioner = () => ({
     kind: 'live' as const,
-    provisioner: { provider: 'active-directory' },
+    // `probeIdentifier` is named here because the create path now REQUIRES it:
+    // a fixture without it fails as "not a function" at the call, which is the
+    // honest failure for a provisioner that cannot answer the question the
+    // create depends on.
+    provisioner: { provider: 'active-directory', probeIdentifier: mockProbe },
     close: closeProv,
 });
 const liveWriter = () => ({
@@ -147,6 +153,9 @@ describe('the joiner acts on its plan once the clamp permits', () => {
         mockResolveProvisioner.mockResolvedValue(liveProvisioner());
         mockResolveWriter.mockResolvedValue(liveWriter());
         mockCreateAccount.mockResolvedValue({ kind: 'APPLIED', externalUserId: 'ext-1' });
+        // FREE by default, so every test that is not about the probe exercises
+        // the path where the directory said the address is available.
+        mockProbe.mockResolvedValue({ kind: 'free', namespacesChecked: ['userPrincipalName', 'sAMAccountName'] });
     });
 
     it('resolves a provisioner at all — which nothing in src/ did before', async () => {
@@ -229,5 +238,90 @@ it('CREATES for a planned decision — the call nothing in src/ made before', as
 
         expect(mockResolveProvisioner).not.toHaveBeenCalled();
         expect(mockCreateAccount).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * #2881 finding 57 — `probeIdentifier` had no caller in `src/`.
+ *
+ * The seam exists to retire a caveat `predictionLimits` puts on every plan this
+ * pass emits: the collision read "covers the stored `email` column only", while
+ * create-time uniqueness is enforced on `userPrincipalName`, `mailNickname`,
+ * `proxyAddresses` and most often `sAMAccountName` — so "no conflict found" was
+ * never a statement that the address was available. Until this wiring, the
+ * branch that creates accounts (#2923) went from a roster-derived plan straight
+ * to a create, leaving AD's result 68 as the only thing between a stale plan and
+ * a half-made account.
+ */
+describe('the create asks the directory whether the identifier is free', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockPolicy.mockResolvedValue({
+            joiner: { mode: 'AUTOMATIC', dryRunSince: null },
+            leaver: { mode: 'DISABLED', dryRunSince: null },
+        });
+        mockResolveProvisioner.mockResolvedValue(liveProvisioner());
+        mockResolveWriter.mockResolvedValue(liveWriter());
+        mockCreateAccount.mockResolvedValue({ kind: 'APPLIED', externalUserId: 'ext-1' });
+        mockProbe.mockResolvedValue({ kind: 'free', namespacesChecked: ['userPrincipalName'] });
+    });
+
+    it('probes BEFORE creating, and creates when the answer is free', async () => {
+        const r = await run();
+
+        expect(mockProbe).toHaveBeenCalled();
+        expect(mockCreateAccount).toHaveBeenCalled();
+        expect(r.created).toBe(1);
+        // Order is the claim: a probe after the create would prove nothing.
+        expect(mockProbe.mock.invocationCallOrder[0]).toBeLessThan(
+            mockCreateAccount.mock.invocationCallOrder[0],
+        );
+    });
+
+    it('does NOT create when the directory says the identifier is taken', async () => {
+        mockProbe.mockResolvedValue({
+            kind: 'taken',
+            namespace: 'sAMAccountName',
+            externalUserId: 'ext-existing',
+            detail: 'held by an existing account',
+        });
+
+        const r = await run();
+
+        expect(mockCreateAccount).not.toHaveBeenCalled();
+        expect(r.created).toBe(0);
+    });
+
+    it('does NOT create when the directory could not be asked — unknown is not free', async () => {
+        // The assertion the three-valued probe exists for. Treating an unread
+        // namespace as available is the "positive negative" this subsystem has
+        // been bitten by before: an answer nobody got, recorded as a good one.
+        mockProbe.mockResolvedValue({
+            kind: 'unknown',
+            namespacesUnavailable: ['sAMAccountName'],
+            detail: 'the attribute could not be read',
+        });
+
+        const r = await run();
+
+        expect(mockCreateAccount).not.toHaveBeenCalled();
+        expect(r.created).toBe(0);
+    });
+
+    it('still closes both grants when every candidate is skipped by the probe', async () => {
+        // The skip path is a `continue` inside the try, so the finally still
+        // runs — but a future early return there would strand two open
+        // connections, which is what this pins.
+        mockProbe.mockResolvedValue({
+            kind: 'taken',
+            namespace: 'userPrincipalName',
+            externalUserId: null,
+            detail: 'taken',
+        });
+
+        await run();
+
+        expect(closeWriter).toHaveBeenCalled();
+        expect(closeProv).toHaveBeenCalled();
     });
 });
