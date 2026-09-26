@@ -256,6 +256,28 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         repo: { kind: 'inert' },
         branch: { kind: 'inert' },
     },
+    'mcp-server': {
+        // Where a granted agent's tool calls are SENT, so the one field here
+        // that carries reach. No vendor allowlist can apply — an MCP server is
+        // the customer's own or a third party's, and pinning it to hosts we
+        // know today would make the provider useless for the next one — so the
+        // scheme is what is settleable at write time, exactly as for the LDAPS
+        // bind target. Everything else the endpoint refuses is checked at
+        // CONNECT time by `safeFetch`, which the provider routes through:
+        // private and link-local addresses are rejected and redirects are not
+        // followed, neither of which a string check at write time can settle.
+        url: { kind: 'internalOrigin', scheme: 'https:' },
+        // Both are GUIDs naming an Entra directory and an app registration.
+        // Inert as strings and inert in consequence: they select which tenant
+        // and client a token is minted for, and a token minted for the wrong
+        // one simply fails to authorize.
+        tenantId: { kind: 'inert' },
+        clientId: { kind: 'inert' },
+        // NOTE what is absent: `authorization`, `clientSecret` and
+        // `refreshToken` are `secretFields` on the descriptor and must never
+        // gain a rule here — a credential in `configJson` is returned by the
+        // admin API, and the classification guard fails CI if one appears.
+    },
 };
 
 /**
