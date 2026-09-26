@@ -50,16 +50,26 @@ const SRC = codeOf(fs.readFileSync(REGISTRY, 'utf8'));
 const IDENTITY_EXECUTORS = ['identity-joiner-pass', 'identity-leaver-pass'] as const;
 
 /**
- * A field handed over RAW — the exact shape this guard exists to refuse.
+ * The two fields handed over RAW — the exact shape this guard exists to refuse.
  *
- * The TERMINATOR is the whole subtlety. `${field}: r.${field}` alone also
- * matches `detail: r.detail ? redactDirectoryIdentifiers(r.detail, …) : r.detail`,
- * which is the CORRECT form for a field that may be undefined — so the first
- * draft of this guard reddened on the very code it was written to bless.
- * Requiring a comma or a closing brace pins "handed straight over" and lets the
- * guarded ternary through, because there the next token is `?`.
+ * THE TERMINATOR IS THE SUBTLETY. `detail: r.detail` alone also matches
+ * `detail: r.detail ? redactDirectoryIdentifiers(r.detail, …) : r.detail`, which
+ * is the CORRECT form for a field that may be undefined — so the first draft of
+ * this guard reddened on the very code it was written to bless. Requiring a
+ * comma or a closing brace pins "handed straight over" and lets the guarded
+ * ternary through, because there the next token is `?`.
+ *
+ * LITERAL CONSTS, NOT A `(field: string) => new RegExp(...)` HELPER. That is
+ * what these were, and it cost a red `Ratchets` job: the Class D
+ * assertion-reach analyser reads a regex only as a literal at the `toMatch`
+ * call site or as a `const NAME = /…/` in the same lexical scope. A computed
+ * `new RegExp` is un-analysable, so both assertions below became blind spots in
+ * the analyser's own accounting and the un-analysable ceiling grew. Two fields
+ * do not justify a factory, and the factory was hiding the assertions from the
+ * ratchet that exists to notice exactly that.
  */
-const BARE = (field: string) => new RegExp(`${field}:\\s*r\\.${field}\\s*[,}]`);
+const BARE_DETAIL = /detail:\s*r\.detail\s*[,}]/;
+const BARE_ERROR_MESSAGE = /errorMessage:\s*r\.errorMessage\s*[,}]/;
 
 /**
  * One executor's registration body.
@@ -82,8 +92,8 @@ describe('identity job results are scrubbed before they reach BullMQ', () => {
     it.each(IDENTITY_EXECUTORS)('%s hands over no raw detail or errorMessage', (job) => {
         const block = registrationOf(job);
 
-        expect(block).not.toMatch(BARE('detail'));
-        expect(block).not.toMatch(BARE('errorMessage'));
+        expect(block).not.toMatch(BARE_DETAIL);
+        expect(block).not.toMatch(BARE_ERROR_MESSAGE);
         // ...and the scrubber is actually present, so deleting the fields
         // entirely would not be read as compliance.
         expect(block).toContain('redactDirectoryIdentifiers(');
@@ -100,7 +110,7 @@ describe('identity job results are scrubbed before they reach BullMQ', () => {
         // the control rather than deleting it: an all-green `not.toMatch` suite
         // with no control is indistinguishable from a broken regex.
         const block = registrationOf('hris-sync');
-        expect(block).toMatch(BARE('errorMessage'));
+        expect(block).toMatch(BARE_ERROR_MESSAGE);
     });
 
     it('both executors were actually found — an empty block passes everything', () => {
