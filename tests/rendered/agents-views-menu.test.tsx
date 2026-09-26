@@ -86,6 +86,7 @@ const ENTRY_IDS = [
     'agents-view-decisions',
     'agents-view-reports',
     'agents-view-review-quality',
+    'agents-view-external-tools',
 ] as const;
 
 async function openMenu(
@@ -114,7 +115,7 @@ async function openMenu(
 /** The rendered menu-item rows, in DOM order. */
 const items = () => screen.queryAllByRole('menuitem');
 
-describe('seven entries in two labelled groups', () => {
+describe('eight entries in two labelled groups', () => {
     it('renders exactly those, in order', async () => {
         await openMenu();
         // The ids, as an exact ordered list — a count would pass for six rows
@@ -134,6 +135,7 @@ describe('seven entries in two labelled groups', () => {
             '/t/acme/agents/decisions',
             '/t/acme/agents/reports',
             '/t/acme/agents/review-quality',
+            '/t/acme/agents/external-tools',
         ]);
     });
 
@@ -153,6 +155,7 @@ describe('seven entries in two labelled groups', () => {
             VIEWS.decisions,
             VIEWS.reports,
             VIEWS.reviewQuality,
+            VIEWS.externalTools,
         ]);
     });
 });
@@ -192,6 +195,7 @@ describe('a permission-absent entry is NOT RENDERED', () => {
             'agents-view-decisions',
             'agents-view-reports',
             'agents-view-review-quality',
+            'agents-view-external-tools',
         ]);
     });
 

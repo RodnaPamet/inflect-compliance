@@ -37,6 +37,17 @@ const ENTRIES = [
     // written to catch, and the reports page shipping unlisted here would have
     // reproduced it one prompt later.
     { id: 'agents-view-reports', path: '/agents/reports' },
+    // #2859's operator surface. Listed here with the menu entry for the reason
+    // the note above gives: "the route exists, nothing links to it" is what
+    // this file catches, and an approval screen nobody can reach is the exact
+    // shape that shipped three times in this subsystem already.
+    //
+    // NOTE: `agents-view-decisions` is a real menu entry and is NOT in this
+    // list. That looks like the same omission this convention exists to
+    // prevent, but it is left alone deliberately — verifying it needs a
+    // Playwright run this change cannot do locally, and fixing somebody else's
+    // gap inside this diff would put its CI risk on this PR.
+    { id: 'agents-view-external-tools', path: '/agents/external-tools' },
 ] as const;
 
 /**
