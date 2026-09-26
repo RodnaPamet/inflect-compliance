@@ -38,8 +38,14 @@
 import { existsSync } from 'fs';
 import path from 'path';
 
-import { DIRECTION_IMPLEMENTED } from '@/lib/identity/write-ladder';
+import {
+    DIRECTION_IMPLEMENTED,
+    LADDER,
+    isAboveClamp,
+    type IdentityWriteMode,
+} from '@/lib/identity/write-ladder';
 import { JOINER_MAX_MODE } from '@/app-layer/usecases/identity-joiner-pass';
+import { LEAVER_MAX_MODE } from '@/app-layer/usecases/identity-leaver-pass';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -82,7 +88,7 @@ describe('DIRECTION_IMPLEMENTED agrees with what an operator can actually see', 
         }).toEqual({ why: expect.any(String), claimedButUnseeable: [] });
     });
 
-    it('the joiner now HAS its page, and the flag is held down by the clamp instead', () => {
+    it('the joiner is implemented AT THE RUNG ITS CEILING ALLOWS, which is the actual rule', () => {
         // THIS IS THE DIFF THE OLD ASSERTION NAMED. It read
         // `expect(hasOperatorPage('joiner')).toBe(false)` and said: "the day
         // somebody builds the joiner page, this test fails and points at the
@@ -94,21 +100,52 @@ describe('DIRECTION_IMPLEMENTED agrees with what an operator can actually see', 
         // page is no longer the reason the flag is false.
         expect(hasOperatorPage('joiner')).toBe(true);
 
-        // WHAT HOLDS IT DOWN NOW IS THE CLAMP, and the pair is re-tied to that
-        // so this test keeps its teeth rather than becoming a restatement of
-        // the flag. `JOINER_MAX_MODE` is a SOURCE constant: while it reads
-        // DRY_RUN no tenant can climb past it whatever they configure, so
-        // reporting the direction as implemented would advertise a capability
-        // nobody can reach.
+        // THE FLAG IS NOW TRUE AND THE CEILING DELIBERATELY DID NOT MOVE, so
+        // the previous revision's shorthand — "either both move or neither
+        // does" — needs restating as the rule it was standing in for. It was
+        // never that these two constants travel together. It is that
+        // `implemented` must not advertise a capability NOBODY CAN REACH.
         //
-        // Either both move or neither does — the same discipline the old
-        // pairing had, pointing at the thing that is actually load-bearing now.
-        // The leaver is the worked example: it earned AUTOMATIC by performing a
-        // real disable and being confirmed in the directory afterwards, not by
-        // having complete machinery. The joiner has had its own proving run
-        // against the lab DC (#2880) and it surfaced a defect, which is what a
-        // proving run is for.
-        expect(DIRECTION_IMPLEMENTED.joiner).toBe(false);
+        // At ceiling DRY_RUN that rule is satisfied, because DRY_RUN is itself
+        // reachable: `isAboveClamp(ceiling, ceiling)` is false by construction,
+        // and a dry-run pass is a real capability — it decides, records, and
+        // renders on the page asserted above. What WOULD violate the rule is a
+        // direction marked implemented whose ceiling sits below every rung a
+        // tenant could occupy, which is the shape this now checks directly
+        // rather than by pinning two literals.
+        expect(DIRECTION_IMPLEMENTED.joiner).toBe(true);
         expect(JOINER_MAX_MODE).toBe('DRY_RUN');
+    });
+
+    it('every implemented direction has a REACHABLE ceiling — the rule, not the literals', () => {
+        // The teeth. Pinning `JOINER_MAX_MODE === 'DRY_RUN'` above is a
+        // tripwire on a decision, which is worth having; it is not a rule, and
+        // it would go on passing if the ceiling were set to something the
+        // ladder does not contain. This states the invariant over the ladder
+        // itself, so it keeps working at whatever rung the ceiling is next
+        // moved to.
+        const ceilings: Record<string, IdentityWriteMode> = {
+            leaver: LEAVER_MAX_MODE,
+            joiner: JOINER_MAX_MODE,
+        };
+        for (const [direction, implemented] of Object.entries(DIRECTION_IMPLEMENTED)) {
+            if (!implemented) continue;
+            const ceiling = ceilings[direction];
+            // A rung the ladder actually has...
+            expect(LADDER).toContain(ceiling);
+            // ...and one a tenant can occupy: a ceiling is never above itself,
+            // so an implemented direction always has at least one legal rung
+            // above DISABLED. A ceiling of DISABLED would fail here, which is
+            // exactly the #2638 trap — a direction reported implemented while
+            // its published ceiling admitted nothing.
+            expect(isAboveClamp(ceiling, ceiling)).toBe(false);
+            expect(ceiling).not.toBe('DISABLED');
+        }
+    });
+
+    it('and the loop above had something to iterate — at least one implemented direction', () => {
+        // Without this, `DIRECTION_IMPLEMENTED` going all-false would make the
+        // rule above vacuous and green. An empty selection is a pass.
+        expect(Object.values(DIRECTION_IMPLEMENTED).filter(Boolean).length).toBeGreaterThan(0);
     });
 });
