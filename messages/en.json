@@ -5843,7 +5843,9 @@
       "unsettledBody": "When this pass started, {count} write(s) against this directory had been waiting over an hour with no outcome recorded. Each one captured the account’s state BEFORE the change, so the account may or may not have been altered — the only way to settle it is to read the account in the directory itself and compare. These are not decisions this pass made, and re-running it will not clear them.",
       "unsettledUnknownHeading": "The unconfirmed-write backlog could not be read",
       "unsettledUnknownBody": "This pass could not count the directory writes still waiting for an outcome, so this report cannot say whether there are any. That is not the same as none. Nothing was stopped — the read is deliberately allowed to fail rather than end an offboarding — but treat the figure as unknown, not as zero.",
-      "readinessHeading": "Write readiness: {readiness}"
+      "readinessHeading": "Write readiness: {readiness}",
+      "noProtectedHeading": "No account here is marked protected",
+      "noProtectedBody": "Leaver writes are enabled for this direction and none of the {population} active account(s) in scope is marked protected. The account this integration signs in as is still protected automatically — that rail is separate and always on. Everything else is not: a break-glass account, a shared service account or a contractor identity that appears in an HR export as a leaver will be disabled by an automated pass with nothing to stop it. Mark those accounts protected on the connected accounts page before this direction runs unattended."
     },
     "section": {
       "identity": "Identity & access",

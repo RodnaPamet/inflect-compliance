@@ -128,6 +128,12 @@ interface PassResult {
     terminatedWorkers?: number;
     candidates?: number;
     population?: number;
+    /**
+     * #2881 f54. How many accounts in this pass's scope are marked protected.
+     * Read off the ARTEFACT rather than fetched live, so a pass from three
+     * months ago reports the number as it was then.
+     */
+    protectedInScope?: number;
     batchRefused?: string | null;
     /**
      * Whether this connection could write at all, as the pass found it.
@@ -541,6 +547,36 @@ export function LeaverPassesClient() {
      * credential, or a verdict that could not be reached — changes how "0
      * disabled" should be read.
      */
+    /**
+     * Leaver writes are on for this tenant, and NOT ONE account is protected.
+     *
+     * #2881 finding 54, confirmed against production: `isProtected` is TRUE on
+     * 0 of 37 accounts. The operator-flag rail — the one that keeps break-glass
+     * and service accounts out of automated offboarding — is switched on for
+     * nobody, estate-wide. The rail works; nobody has used it, and until now
+     * nothing said so anywhere an operator would look.
+     *
+     * The SELF-ACCOUNT rail is unaffected and still protects the bind account
+     * automatically, which is why this is a warning and not an error: the
+     * catastrophic case (locking the product out of the directory by its own
+     * hand) is already covered. What is uncovered is every OTHER account that
+     * should never be offboarded automatically.
+     *
+     * GATED ON A POPULATION, so a tenant with no accounts for this provider is
+     * not told to go and protect some. Zero of zero is not a finding.
+     *
+     * Deliberately NOT gated on the pass having disabled anybody. The state
+     * worth warning about is the one that looks like a quiet night — the pass
+     * that disabled nobody today is exactly the pass whose operator has no
+     * reason to check the rail before tomorrow's runs.
+     */
+    const noAccountsProtected =
+        selectedResult.mode !== undefined &&
+        selectedResult.mode !== 'DISABLED' &&
+        selectedResult.mode !== 'unknown' &&
+        (selectedResult.population ?? 0) > 0 &&
+        selectedResult.protectedInScope === 0;
+
     const selectedReadiness = (() => {
         const r = selectedResult.writeReadiness;
         if (!r || typeof r !== 'object') return null;
@@ -951,6 +987,22 @@ export function LeaverPassesClient() {
                                 `leaverPasses.${SYNC_SIGNAL_META[selectedSync.signal].noticeBodyKey}`,
                                 { count: selectedSync.decisions },
                             )}
+                        </InlineNotice>
+                    )}
+
+                    {noAccountsProtected && (
+                        // ABOVE the readiness notice: readiness explains why a
+                        // pass could not write, and this explains what would
+                        // happen if it could. An operator reading "0 disabled"
+                        // needs the second question answered before they widen
+                        // the ladder, not after.
+                        <InlineNotice
+                            variant="warning"
+                            title={t('leaverPasses.noProtectedHeading')}
+                        >
+                            {t('leaverPasses.noProtectedBody', {
+                                population: selectedResult.population ?? 0,
+                            })}
                         </InlineNotice>
                     )}
 
