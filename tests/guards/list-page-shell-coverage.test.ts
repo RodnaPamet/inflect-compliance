@@ -94,6 +94,8 @@ const EXEMPTIONS: Record<string, string> = {
     // clamping the table to the viewport would fight the notices above it.
     'admin/integrations/identity-accounts/page.tsx':
         'admin sub-page — header + filter toolbar + standing cap notice above one table, not a viewport-clamped list',
+    'admin/identity-joiner-passes/JoinerPassesClient.tsx':
+        'master/detail report — passes table plus the selected pass’s decisions table; clamping either would scroll one while the other stayed still',
     'admin/identity-write-journal/JournalClient.tsx':
         'master/detail report — backlog table, history table, and the selected row’s captured state; clamping any one of the three would scroll it while the others stayed still',
     'admin/identity-leaver-passes/LeaverPassesClient.tsx':

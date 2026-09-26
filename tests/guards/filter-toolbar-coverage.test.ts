@@ -59,6 +59,8 @@ const EXEMPTIONS: Record<string, string> = {
         "Detail-page Vulnerabilities sub-table (asset 360° view) — the CVE list for one asset; EntityDetailLayout owns the chrome, not a faceted-filter list surface.",
     "src/app/t/[tenantSlug]/(app)/audits/nis2-gap/Nis2GapLifecycleClient.tsx":
         "NIS2 gap-lifecycle surface — run-history + prioritized-gap sub-tables on a multi-section detail view (KPIs + trend + radar + propose-not-commit review); not a faceted-filter list.",
+    "src/app/t/[tenantSlug]/(app)/admin/identity-joiner-passes/JoinerPassesClient.tsx":
+        "Joiner pass report — a master/detail pair (the passes a tenant has run, capped by the read, plus the selected pass’s per-starter decisions). The whole point is reading every pass in the seven-day window, so a facet that hides one is a facet that hides evidence; the list is already bounded and ordered most-recent-first.",
     "src/app/t/[tenantSlug]/(app)/admin/identity-write-journal/JournalClient.tsx":
         "Identity write journal — an unsettled backlog above a bounded history. The backlog is the section that asks somebody to act and is short by construction (only writes that never reported an outcome reach it); faceting it would let an operator hide the very rows that need looking at. The history is capped at 100 by the read and ordered most-recent-first, and the endpoint already takes a provider scope for the one narrowing that makes sense.",
     "src/app/t/[tenantSlug]/(app)/admin/identity-leaver-passes/LeaverPassesClient.tsx":

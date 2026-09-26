@@ -6031,6 +6031,25 @@
       "loading": "Loading…",
       "loadFailed": "The journal could not be loaded.",
       "empty": "No directory writes have been journalled for this tenant."
+    },
+    "joinerPasses": {
+      "forbidden": "Reading joiner pass reports is restricted to owners. The report names which of your people the product would create an account for, and at what address.",
+      "breadcrumb": "Joiner passes",
+      "title": "Joiner passes",
+      "intro": "What each joiner pass would have created, and for whom. While the direction is in dry run nothing is created — the report is how you compare the pass against what HR and IT actually did before widening it.",
+      "decisionsTitle": "Per-starter decisions",
+      "colMode": "Mode",
+      "colStarters": "Starters",
+      "colWouldCreate": "Would create / created",
+      "colRan": "Ran",
+      "colOutcome": "Outcome",
+      "colIntendedAddress": "Intended address",
+      "colRosterAddress": "Roster address",
+      "colReason": "Reason",
+      "loading": "Loading…",
+      "loadFailed": "The joiner pass report could not be loaded.",
+      "empty": "No joiner pass yet",
+      "noDecisions": "No per-starter decisions yet"
     }
   },
   "riskManager": {

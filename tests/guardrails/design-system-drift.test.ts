@@ -29,6 +29,12 @@ const MIGRATED_PAGES = [
     // colours and no legacy btn or badge classes. Listed so the two
     // assertions below actually run against it, rather than counted as debt
     // it does not carry.
+    // Joiner pass report (#2881 f12) — design-system-native from birth:
+    // semantic tokens only, Card / Heading / DataTable / StatusBadge /
+    // InlineNotice primitives, no raw colours or legacy classes. Listed so
+    // the two assertions below run against it.
+    'admin/identity-joiner-passes/page.tsx',
+    'admin/identity-joiner-passes/JoinerPassesClient.tsx',
     'admin/identity-write-journal/page.tsx',
     'admin/identity-write-journal/JournalClient.tsx',
     // readiness-reconcile — the audit-hub readiness overview; design-system-

@@ -39,6 +39,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 
 import { DIRECTION_IMPLEMENTED } from '@/lib/identity/write-ladder';
+import { JOINER_MAX_MODE } from '@/app-layer/usecases/identity-joiner-pass';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -81,13 +82,33 @@ describe('DIRECTION_IMPLEMENTED agrees with what an operator can actually see', 
         }).toEqual({ why: expect.any(String), claimedButUnseeable: [] });
     });
 
-    it('the joiner is currently false, and its page absence is why', () => {
-        // Pinned as a PAIR rather than asserting the flag alone. Either both
-        // move or neither does: the day somebody builds the joiner page, this
-        // test fails and points at the flag; the day somebody flips the flag,
-        // the test above fails and points at the page. Asserting only the flag
-        // would go stale the moment the page landed.
+    it('the joiner now HAS its page, and the flag is held down by the clamp instead', () => {
+        // THIS IS THE DIFF THE OLD ASSERTION NAMED. It read
+        // `expect(hasOperatorPage('joiner')).toBe(false)` and said: "the day
+        // somebody builds the joiner page, this test fails and points at the
+        // flag". That day is #2881 f12, and it failed exactly as written.
+        //
+        // The CONJUNCTION is now satisfied on both halves: a runtime reads the
+        // setting (#2923 wired the create verb, #2928 put a collision probe in
+        // front of it) and an operator can see what it did (this page). So the
+        // page is no longer the reason the flag is false.
+        expect(hasOperatorPage('joiner')).toBe(true);
+
+        // WHAT HOLDS IT DOWN NOW IS THE CLAMP, and the pair is re-tied to that
+        // so this test keeps its teeth rather than becoming a restatement of
+        // the flag. `JOINER_MAX_MODE` is a SOURCE constant: while it reads
+        // DRY_RUN no tenant can climb past it whatever they configure, so
+        // reporting the direction as implemented would advertise a capability
+        // nobody can reach.
+        //
+        // Either both move or neither does — the same discipline the old
+        // pairing had, pointing at the thing that is actually load-bearing now.
+        // The leaver is the worked example: it earned AUTOMATIC by performing a
+        // real disable and being confirmed in the directory afterwards, not by
+        // having complete machinery. The joiner has had its own proving run
+        // against the lab DC (#2880) and it surfaced a defect, which is what a
+        // proving run is for.
         expect(DIRECTION_IMPLEMENTED.joiner).toBe(false);
-        expect(hasOperatorPage('joiner')).toBe(false);
+        expect(JOINER_MAX_MODE).toBe('DRY_RUN');
     });
 });
