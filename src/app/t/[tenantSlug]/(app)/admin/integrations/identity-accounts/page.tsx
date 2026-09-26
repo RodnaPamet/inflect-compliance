@@ -20,6 +20,7 @@ import { useTranslations } from 'next-intl';
 import { formatDateTime } from '@/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns } from '@/components/ui/table';
+import { Tooltip } from '@/components/ui/tooltip';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
@@ -61,6 +62,7 @@ interface AccountRow {
     lastActiveAt: string | null;
     syncedAt: string | null;
     isProtected: boolean;
+    isSelfAccount: boolean;
     protectionReason: string | null;
     /** Live, from the link relation — authoritative. */
     linked: boolean;
@@ -420,6 +422,36 @@ function IdentityAccountsContent() {
             // controls where there is one.
             cell: ({ row }) => (
                 <div className="flex items-center gap-tight">
+                    {/*
+                      * WHICH ROW IS THE INTEGRATION'S OWN (#2881 f54).
+                      *
+                      * Plain text, not a StatusBadge — this page sits at the
+                      * badge-density cap of 5 for the reason given below, and
+                      * this is information beside an action rather than a
+                      * status of its own.
+                      *
+                      * The hint rides `<Tooltip>` rather than a native
+                      * `title=`: `no-ad-hoc-tooltip-title` caps HTML `title=`
+                      * attributes in `src/app/` at 1 and says never to raise
+                      * it, the remaining one being a density heatmap cell.
+                      * Reaching for the attribute here would have spent that
+                      * budget on an ordinary hover hint, which is exactly what
+                      * the primitive exists to absorb.
+                      *
+                      * It is computed through the self-lockout rail's own
+                      * `matchesSelf`, so it says exactly what the rail would
+                      * say: a marked row is one automated offboarding already
+                      * refuses. It is shown because in production nobody had
+                      * protected anything — 0 of 37 — and no operator could
+                      * tell which of the AD rows was the service account.
+                      */}
+                    {row.original.isSelfAccount && (
+                        <Tooltip content={t('identityAccounts.selfAccountHint')}>
+                            <span className="text-sm font-medium text-content-default">
+                                {t('identityAccounts.selfAccount')}
+                            </span>
+                        </Tooltip>
+                    )}
                     {row.original.isProtected && (
                         <span className="text-sm text-content-default" title={row.original.protectionReason ?? undefined}>
                             {t('identityAccounts.protected')}

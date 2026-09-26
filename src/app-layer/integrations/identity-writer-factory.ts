@@ -322,7 +322,7 @@ function mergedOrNull(conn: {
     }
 }
 
-function selfAccountIdsFromConnection(conn: {
+export function selfAccountIdsFromConnection(conn: {
     configJson: unknown;
     secretEncrypted: string | null;
 }): string[] {

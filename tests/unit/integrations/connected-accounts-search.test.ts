@@ -27,6 +27,12 @@ const findManyWrites = jest.fn();
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>
         fn({
+            // `listConnectedAccounts` reads the connections behind the rows
+            // to mark which account the integration authenticates AS (#2881
+            // f54). Empty here: these suites are about other columns, and an
+            // empty list means no row is marked, which is the shape they all
+            // assert today.
+            integrationConnection: { findMany: jest.fn(async () => []) },
             connectedIdentityAccount: { findMany: (...a: unknown[]) => findManyAccounts(...a) },
             integrationExecution: { findMany: (...a: unknown[]) => findManyExecutions(...a) },
             // #2480 — the roster now reads what WE last did, beside what the
