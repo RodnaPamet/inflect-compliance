@@ -101,7 +101,14 @@ interface AuditEntry {
     requestId: string | null;
     recordIds: { count: number } | null;
     metadataJson: Record<string, unknown>;
-    diffJson: { changedFields: string[]; after: Record<string, unknown> } | null;
+    diffJson: {
+        changedFields: string[];
+        after: Record<string, unknown>;
+        /** Whether the fields above were COMPARED against the prior row, or merely named. */
+        changedFieldsAreDiffed?: boolean;
+        /** Present only when they were compared. */
+        before?: Record<string, unknown>;
+    } | null;
     detailsJson: Record<string, unknown>;
 }
 const appendAuditEntryMock = jest.fn<Promise<void>, [AuditEntry]>(

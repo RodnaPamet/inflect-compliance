@@ -129,12 +129,13 @@ describe('the read-replica context', () => {
         // It takes no writes, and a `before` sourced from a replica could lag
         // the write it claims to describe. Asserted rather than left to the
         // absence of a line in db-context.
-        const { client } = fakeClient({ department: 'Sales' });
-
+        // No client is injected: `runInTenantReadContext` takes no
+        // `customPrisma` and always opens on `prismaRead`, which is why the
+        // replica is mocked with its own `$transaction` at the top of this
+        // file. Passing one here typechecked as `never` and did nothing.
         const seen = await runInTenantReadContext(
             ctx,
             async () => getAuditContext()?.readPriorState,
-            { customPrisma: client as never },
         );
 
         expect(seen).toBeUndefined();
