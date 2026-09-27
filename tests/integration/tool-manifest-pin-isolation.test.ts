@@ -29,7 +29,7 @@ import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { hashToolManifest, type ToolDefinition } from '@/lib/mcp/tool-manifest';
+import { hashToolManifest, verifyToolManifest, type ToolDefinition } from '@/lib/mcp/tool-manifest';
 import { toolDefinitionByName } from '@/lib/mcp/tool-definitions';
 import {
     loadApprovedManifest,
@@ -230,5 +230,94 @@ describe('the accountability invariant is enforced at the database', () => {
                 seeded[T1],
             ),
         ).rejects.toThrow();
+    });
+});
+
+/**
+ * A BASELINE PIN RECORDS THE ANNOTATIONS AXIS, LIKE THE OTHER PRODUCER DOES.
+ *
+ * Two things write an `McpToolManifestPin`. `approveExternalToolManifest`
+ * persisted `annotationsHash`; `recordBaselinePins` computed it, via the same
+ * `hashToolManifest` call, and then left it out of the row. So the same column
+ * meant different things depending on which producer wrote it, and a baseline
+ * pin could never detect an annotations change at all — a stored NULL is
+ * deliberately not compared, so the verdict is APPROVED however the hints move.
+ *
+ * It cost nothing yet: no tool this build defines declares annotations, so NULL
+ * and `hash(null)` both verify APPROVED. That is why it survived — the omission
+ * is only reachable by the first internal tool to declare a hint, and there is
+ * none. Two PRODUCERS of one attestation disagreeing is the same shape as #2957,
+ * where two CONSUMERS of it disagreed, and that one was load-bearing.
+ *
+ * Driven against Postgres because the claim is about the ROW: the hash is
+ * computed in memory either way, and the defect was that it never reached the
+ * column.
+ */
+describe('a baseline pin carries the annotations axis', () => {
+    /** As an external server advertises one: hints declared. */
+    const annotated: ToolDefinition = {
+        name: 'baseline_annotated_tool',
+        description: 'A tool whose server declares it read-only.',
+        inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
+        annotations: { readOnlyHint: true },
+    };
+    /** The same tool, redeclared as a write — the event the axis exists for. */
+    const flipped: ToolDefinition = { ...annotated, annotations: { readOnlyHint: false } };
+
+    beforeEach(async () => {
+        await prisma.mcpToolManifestPin.deleteMany({
+            where: { tenantId: T1, toolName: annotated.name },
+        });
+        await recordBaselinePins(T1, [annotated]);
+    });
+
+    it('writes a NON-NULL annotationsHash, equal to the hash of the declared hints', async () => {
+        const pin = await loadApprovedManifest(T1, annotated.name);
+        // Positive control: the row exists at all, so the assertions below are
+        // about its CONTENT and not about an absent pin.
+        expect(pin).not.toBeNull();
+        expect(pin?.manifestHash).toBe(hashToolManifest(annotated).manifestHash);
+
+        expect(pin?.annotationsHash).toBe(hashToolManifest(annotated).annotationsHash);
+        expect(pin?.annotationsHash).not.toBeNull();
+    });
+
+    it('so a flipped readOnlyHint is DETECTED against a baseline pin', async () => {
+        // The behavioural consequence, and the reason a source assertion would
+        // not have done: with the column NULL this returned APPROVED, because a
+        // null must not be compared.
+        const pin = await loadApprovedManifest(T1, annotated.name);
+        const verdict = verifyToolManifest(flipped, pin);
+        expect(verdict.status).toBe('ANNOTATIONS_CHANGED');
+        expect(verdict.isSecurityEvent).toBe(true);
+    });
+
+    it('and the unchanged tool still verifies APPROVED — the two cases DIFFER', async () => {
+        // Discriminating power, asserted rather than assumed: a detector that
+        // answered the same in both worlds would satisfy the test above while
+        // being useless.
+        const pin = await loadApprovedManifest(T1, annotated.name);
+        expect(verifyToolManifest(annotated, pin).status).toBe('APPROVED');
+        expect(verifyToolManifest(annotated, pin).status).not.toBe(
+            verifyToolManifest(flipped, pin).status,
+        );
+    });
+
+    it('a tool that declares NOTHING pins the hash of null, not a NULL column', async () => {
+        // The internal-tool case, which is every tool this build defines today.
+        // Storing `hash(null)` rather than NULL is what makes a tool that LATER
+        // starts declaring hints detectable; a NULL would skip the comparison
+        // for ever.
+        const bare: ToolDefinition = { ...annotated, name: 'baseline_bare_tool', annotations: undefined };
+        await prisma.mcpToolManifestPin.deleteMany({ where: { tenantId: T1, toolName: bare.name } });
+        await recordBaselinePins(T1, [bare]);
+
+        const pin = await loadApprovedManifest(T1, bare.name);
+        expect(pin?.annotationsHash).toBe(hashToolManifest(bare).annotationsHash);
+        expect(pin?.annotationsHash).toEqual(expect.any(String));
+
+        // …and it is therefore caught if it starts declaring.
+        const nowDeclares: ToolDefinition = { ...bare, annotations: { readOnlyHint: true } };
+        expect(verifyToolManifest(nowDeclares, pin).status).toBe('ANNOTATIONS_CHANGED');
     });
 });
