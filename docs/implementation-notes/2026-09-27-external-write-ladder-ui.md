@@ -89,6 +89,32 @@ than after it. Two precedents in this repo:
   as an empty selection, which is a PASS. Checked each path existed, then ran the
   missing one on its own.
 
+## What one new admin page actually owed
+
+Nine registrations, none of which a symbol-grep would find, and CI found them in
+two rounds because each fix pulled in the next. Written down because the next
+person adding an admin page will pay the same toll:
+
+| guard | what it wanted |
+| --- | --- |
+| `admin-layout-guard` | `STRICTER_GUARD_PAGES` entry — a page-level `RequirePermission` for an admin resource is forbidden unless it is genuinely NARROWER than the layout's `admin.view` |
+| `design-system-drift` | unmigrated page tally 139 → 141, with the page and reason named inline |
+| `rendered-coverage-floor` | `RENDERED_TEST_FLOOR` 289 → 290 (zero slack by design) |
+| `entity-detail-shell-coverage` | `KNOWN_NON_PRIMARY_DETAIL` — two `[param]` segments make it look like a detail page |
+| `primary-secondary-ratio` | `MAX_PRIMARY_COUNT` 174 → 175, bumped by hand with a written reason |
+| `instant-nav` | a `loading.tsx` for the route |
+| `empty-state-tone` | `noDispatch` renamed — a key matching `/^no[A-Z]/` is policed as an empty-state TITLE |
+| `rq4-1-page-segregation` | `SUBPAGES` entry, at the FULL route including `[connectionId]` |
+| `rq4-4-back-affordance` | a `CANONICAL_PARENT_MAP_INTERNAL` entry |
+
+The last one changed the design rather than just satisfying a list. It forced the
+question "what is this page's parent?", and the honest answer is the page the
+inbound link lives on — `/agents/external-tools` — not `/admin/integrations`,
+which is what the breadcrumb said because it was the label key nearest to hand.
+Back and the breadcrumb now name the same target from two sources that cannot
+drift, and the page got its own `parentLabel` key instead of borrowing one from
+the wrong namespace.
+
 ## Risk assessment and rollback
 
 STANDARD. One new page and client component, one link added to an existing page,

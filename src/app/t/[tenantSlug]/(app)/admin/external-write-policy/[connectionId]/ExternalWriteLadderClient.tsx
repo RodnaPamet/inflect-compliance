@@ -160,12 +160,13 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
             <BackAffordance />
             <PageBreadcrumbs
                 items={[
-                    // `integrations.title`, the same parent the identity
-                    // ladder uses. NOT `externalTools.title`: that key lives
-                    // under the `agents` namespace, and this component reads
-                    // `admin` — so it would have resolved to nothing and
-                    // rendered the raw key as a breadcrumb label.
-                    { label: t('integrations.title'), href: tenantHref('/admin/integrations') },
+                    // The SAME target `canonical-parents.ts` gives this route,
+                    // so Back and the breadcrumb cannot point at different
+                    // places. Its own label key rather than
+                    // `externalTools.title`, which lives under the `agents`
+                    // namespace while this component reads `admin` — that
+                    // would have resolved to nothing and rendered the raw key.
+                    { label: t('externalWriteLadder.parentLabel'), href: tenantHref('/agents/external-tools') },
                     { label: t('externalWriteLadder.breadcrumb') },
                 ]}
             />
@@ -192,7 +193,7 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
                         an operator reads the two greyed rungs as a bug. */}
                     {!data.honoured.dispatchImplemented && (
                         <InlineNotice variant="info">
-                            {t('externalWriteLadder.noDispatch', {
+                            {t('externalWriteLadder.ceilingNotice', {
                                 mode: t(`externalWriteLadder.mode.${data.honoured.maxMode}`),
                             })}
                         </InlineNotice>

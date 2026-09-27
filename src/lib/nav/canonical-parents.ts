@@ -87,6 +87,11 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/admin/identity-joiner-passes': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/identity-leaver-passes': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/identity-write-journal': { href: '/admin/integrations', label: 'Integrations' },
+    // #2861 — the parent is the page the inbound link LIVES on, not
+    // /admin/integrations. An operator reaches this from the external-tools
+    // surface for a specific connection, so that is where Back belongs; the
+    // breadcrumb names the same target, so the two cannot disagree.
+    '/admin/external-write-policy/[connectionId]': { href: '/agents/external-tools', label: 'External tools' },
     '/admin/identity-write-policy': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/modules': { href: '/admin', label: 'Admin' },
     '/admin/integrations': { href: '/admin', label: 'Admin' },

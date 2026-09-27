@@ -5985,6 +5985,7 @@
     },
     "externalWriteLadder": {
       "breadcrumb": "External write policy",
+      "parentLabel": "External tools",
       "title": "External write policy",
       "intro": "Whether an agent may change a configuration in this connected system, and how far. The ladder widens one rung at a time; narrowing is always available and takes effect immediately.",
       "forbidden": "Only an owner can view or change the external write policy.",
@@ -5996,7 +5997,7 @@
       "narrowTo": "Narrow to {mode}",
       "confirmTitle": "Widen to {mode}?",
       "since": "On this rung since {date}. A connection must sit here {days} days before it can widen.",
-      "noDispatch": "No external write is dispatched by this build yet, so the ladder is capped at {mode}. The rungs above it would change the policy and nothing else, which is why they are unavailable rather than merely refused.",
+      "ceilingNotice": "No external write is dispatched by this build yet, so the ladder is capped at {mode}. The rungs above it would change the policy and nothing else, which is why they are unavailable rather than merely refused.",
       "mode": {
         "DISABLED": "Off",
         "DRY_RUN": "Dry run",
