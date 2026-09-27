@@ -237,8 +237,33 @@ export function refusalForMove(
         );
     }
 
-    if (!current.modeSince) {
-        return `${current.mode} has no recorded start. Re-select ${current.mode} to open the observation window.`;
+    // ── DISABLED HAS NO OBSERVATION WINDOW, BECAUSE IT OBSERVES NOTHING ─────
+    //
+    // Owner decision, 2026-09-27. The dwell exists so that "what this rung
+    // records can be read before a wider one acts on it" — and `DISABLED`
+    // records nothing BY CONSTRUCTION. `MODE_MIN_EVIDENCE` already exempts it
+    // for precisely that reason, so the evidence axis had reached this
+    // conclusion and the elapsed-days axis had not.
+    //
+    // What it cost while both applied: a connection that had never been set has
+    // no `modeSince`, so its FIRST widen was refused and the operator was sent
+    // to re-select `DISABLED` as a no-op, then wait seven days — a week spent
+    // at a rung that produces nothing to read. The rung above it, `DRY_RUN`,
+    // sends nothing either, so the week bought no safety it did not already
+    // have.
+    //
+    // The protection is untouched. `DRY_RUN → PROPOSE_ONLY` and above still
+    // require the full seven days AND recorded intents, which is where the
+    // authority actually begins, and narrowing is still never gated.
+    //
+    // This also makes the connection gate deployable: with the rung governing
+    // whether an agent may call a connection at all, a seven-day wait at
+    // `DISABLED` would be seven days of outage for every connection that needs
+    // widening.
+    if (current.mode !== 'DISABLED') {
+        if (!current.modeSince) {
+            return `${current.mode} has no recorded start. Re-select ${current.mode} to open the observation window.`;
+        }
     }
 
     // Evidence BEFORE elapsed days, so an operator who has waited the week with
@@ -263,7 +288,13 @@ export function refusalForMove(
         }
     }
 
-    const days = (now.getTime() - current.modeSince.getTime()) / 86_400_000;
+    // `DISABLED` reaches here with a possibly-null `modeSince` and no dwell to
+    // serve — see the block above. Every other rung has been proved non-null by
+    // it, so the non-null assertion is the narrowest way to say that without
+    // widening the type for one exempt case.
+    if (current.mode === 'DISABLED') return null;
+
+    const days = (now.getTime() - current.modeSince!.getTime()) / 86_400_000;
     if (days < MODE_MIN_DAYS) {
         const left = Math.ceil(MODE_MIN_DAYS - days);
         return (
