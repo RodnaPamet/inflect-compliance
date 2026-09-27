@@ -1843,3 +1843,33 @@ enum AgentRiskTier {
   HIGH
   CRITICAL
 }
+
+/// What became of one agent-driven write to a customer's third-party system
+/// (#2861). Modelled on `IdentityWriteOutcome`, including the distinction that
+/// enum paid for.
+enum ExternalWriteOutcome {
+  /// Journalled; the far end has not reported back yet.
+  PENDING
+  /// The rung was DRY_RUN, so the intent was recorded and NOTHING was sent.
+  ///
+  /// Its own value rather than a flag beside APPLIED, because this is what the
+  /// ladder's dwell COUNTS as evidence: "what has DRY_RUN recorded since the
+  /// window opened" is a query over exactly these rows. Folding it into FAILED
+  /// would make a dry run look like a refusal; folding it into APPLIED would
+  /// claim a change nobody made.
+  RECORDED_ONLY
+  /// The far end accepted the change.
+  APPLIED
+  /// The far end refused BEFORE mutating anything. A positive claim that the
+  /// system is unchanged — usable only when the far end proved it, e.g. a 4xx
+  /// with a body, never a lost response.
+  FAILED
+  /// The call did not report back. We do not know whether anything changed.
+  ///
+  /// This exists for the reason `IdentityWriteOutcome` spells out: collapsing a
+  /// lost response into FAILED is a lie with teeth. FAILED means "unchanged", so
+  /// an operator filtering on it to decide what needs restoring would never see
+  /// the captured prior state, and the PENDING sweep would never surface the row
+  /// either — invisible to both readers at once.
+  INDETERMINATE
+}

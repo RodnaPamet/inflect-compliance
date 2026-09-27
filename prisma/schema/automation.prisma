@@ -183,6 +183,7 @@ model IntegrationConnection {
   executions        IntegrationExecution[]
   syncMappings      IntegrationSyncMapping[]
   identityAccounts  ConnectedIdentityAccount[]
+  externalWriteJournal ExternalWriteJournal[]
 
   @@unique([tenantId, provider, name])
   @@index([tenantId])

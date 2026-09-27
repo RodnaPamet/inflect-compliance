@@ -185,6 +185,29 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  explicit `secretEncrypted` shape IntegrationConnection uses, not into
     //  this list.
     IdentityWriteJournal: ['detail'],
+
+    // ─── Agent-driven external writes (#2861) ──────────
+    //  `detail` for the same reason as `IdentityWriteJournal.detail` one entry
+    //  up: it is the far end's rejection message, and third-party errors
+    //  routinely echo the record they refused back at you.
+    //
+    //  `argumentsJson` and `priorStateJson` DEPART from the identity journal,
+    //  which leaves its `priorStateJson` unencrypted, and the departure is the
+    //  point rather than an inconsistency. That decision turned on CONTENT —
+    //  "structured directory attributes (`accountEnabled`,
+    //  `userAccountControl`, group names) rather than credentials" — and this
+    //  column holds whatever an ARBITRARY third-party system returns for the
+    //  object being changed. The first writable far end here is an HRIS, where
+    //  a contact-details record is a person's work email, personal email and
+    //  phone numbers. Same RLS scoping, different content, so the reasoning
+    //  does not carry.
+    //
+    //  Both are `String` columns of serialised JSON rather than `Json`, because
+    //  this manifest encrypts STRING fields only — the same reason
+    //  `AgentProposal.payloadJson` and `WorkflowStep.inputJson` are strings
+    //  despite their names. No repository searches either column, and the table
+    //  is new, so nothing needs backfilling.
+    ExternalWriteJournal: ['detail', 'argumentsJson', 'priorStateJson'],
     // Operator free text saying WHY an account must never be offboarded. It
     // routinely names a person or the purpose of a credential — "Alice's
     // break-glass admin", "shared ops mailbox, do not disable" — which is the

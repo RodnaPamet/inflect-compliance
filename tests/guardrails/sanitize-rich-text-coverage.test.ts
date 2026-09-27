@@ -98,6 +98,22 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/identity-write-journal.ts'],
         sanitizer: 'sanitizePlainText',
     },
+    // #2861 — `detail` is the FAR END's rejection message, never operator free
+    // text, and that is a STRONGER reason to sanitise rather than a weaker one:
+    // untrusted text written by a third party, stored, and later rendered on an
+    // operator surface. Sanitised at `settleWrite`, the one seam that can write
+    // the column.
+    //
+    // `redactDirectoryIdentifiers` is deliberately NOT applied, unlike the
+    // identity journal above. That redactor exists because a directory rejection
+    // has a known grammar to match (a UPN, a DN — #2843 finding 22). An arbitrary
+    // third-party system has none, so a redactor here would be a pattern list
+    // pretending to be a control. The column is encrypted at rest instead, which
+    // does not depend on guessing the format.
+    ExternalWriteJournal: {
+        usecases: ['src/app-layer/usecases/external-write-journal.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     // `description` on a registered agent is the operator's own account of what
     // the agent does and what it may touch. Sanitised at the single
     // agent-registry write seam before the Epic B middleware encrypts it — the

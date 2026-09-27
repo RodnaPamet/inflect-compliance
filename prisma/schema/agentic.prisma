@@ -1779,3 +1779,122 @@ model AgenticEvidenceArtefact {
   /// page needs to say "this row was emitted, it was not uploaded".
   @@index([tenantId, evidenceId])
 }
+
+/// WHAT AN AGENT CHANGED IN A SYSTEM THAT IS NOT OURS (#2861).
+///
+/// The Art 12 / Art 14 record for an autonomous change to a customer's
+/// third-party system, and the owner's decision on 2026-09-27 was to mirror
+/// `IdentityWriteJournal` rather than invent a format: actor, agent, connection,
+/// tool, arguments sent, prior state, outcome, and the rung it ran under. That
+/// shape has already survived a real regulator-facing directory disable, and it
+/// reuses a surface operators know.
+///
+/// ROLLBACK IS CAPTURE, NOT AUTO-REVERT — also decided 2026-09-27. This table
+/// records what a write REPLACED so a human can re-apply it in the far system;
+/// nothing here re-sends anything. That mirrors the identity journal, whose
+/// `DirectoryWriter` declares no `enable()` verb for the same reason. So there is
+/// deliberately no `REVERTED` outcome: nothing could set it, and #2241's lesson
+/// is what a value that enforces nothing costs. Adding an enum value later is an
+/// append; dropping one is the hazard.
+model ExternalWriteJournal {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The connection the write went through. NULLABLE so the journal OUTLIVES it:
+  /// a connection deleted after a change was made must not erase the record that
+  /// we made it, which is usually the evidence somebody wants.
+  connectionId String?
+
+  /// Denormalised, so a row still says WHAT was written to after the connection
+  /// is gone. Duplicated on purpose rather than joined.
+  connectionName String
+  /// The endpoint at the time of the write, for the same reason.
+  endpointUrl    String
+
+  /// Both names the tool had. `toolName` is our qualified
+  /// `mcp__<connectionId>__<tool>`; `advertisedToolName` is what the SERVER
+  /// called it — the only one meaningful to whoever has to look at the far end.
+  toolName           String
+  advertisedToolName String
+
+  /// The rung this ran under. A STRING, matching
+  /// `IntegrationConnection.externalWriteMode`: an enum value cannot be dropped
+  /// without recreating the type, and `coerceStoredMode` already reads a string.
+  mode String
+
+  /// What was sent. Scanned for egress before it left, so this is the post-scan
+  /// payload — what the far end actually received.
+  ///
+  /// A `String` holding serialised JSON, NOT a `Json` column, and the difference
+  /// is what makes it encryptable. `encrypted-fields.ts` states the constraint:
+  /// "this manifest encrypts STRING fields only" — which is why
+  /// `AgentProposal.payloadJson`, `WorkflowRun.contextJson` and
+  /// `WorkflowStep.inputJson` are all `String` despite their names, and why
+  /// `IdentityWriteJournal.priorStateJson` is `Json` and "cannot be" encrypted.
+  ///
+  /// What that costs: no jsonb querying inside the payload. Nothing needs it —
+  /// the journal is read a row at a time by an operator, and the dwell counts
+  /// rows by `mode` and `outcome`, never by payload contents.
+  argumentsJson String
+
+  /// The state this write REPLACED, read from the far end immediately before.
+  ///
+  /// Not nullable, and that is the owner's decision 2 made structural: reading
+  /// prior state is a PRECONDITION of dispatching, and unreadability is a
+  /// refusal rather than a warning. A row without it could only exist if
+  /// something wrote blind, so the column makes that unrepresentable instead of
+  /// merely discouraged.
+  ///
+  /// Opaque on purpose: the far end that produced it is the only thing that can
+  /// interpret it, and freezing a schema across arbitrary third-party systems
+  /// would date badly.
+  ///
+  /// ── WHY THIS IS ENCRYPTED WHERE THE IDENTITY JOURNAL'S IS NOT ────────────
+  ///
+  /// `IdentityWriteJournal.priorStateJson` is deliberately unencrypted, and its
+  /// manifest comment gives the reason: it "holds structured directory
+  /// attributes (`accountEnabled`, `userAccountControl`, group names) rather
+  /// than credentials, and the table is RLS-scoped".
+  ///
+  /// That reasoning does not transfer. This column holds whatever an ARBITRARY
+  /// third-party system returns for the object being changed — and the first
+  /// writable far end this product has is an HRIS, where the prior state of a
+  /// contact-details record is a person's work email, personal email and phone
+  /// numbers. RLS scoping is the same; the CONTENT is not, and a decision that
+  /// turned on content cannot be copied to different content.
+  ///
+  /// So it is a `String` of serialised JSON and it is in `ENCRYPTED_FIELDS`.
+  priorStateJson String
+
+  outcome ExternalWriteOutcome @default(PENDING)
+  /// Why a FAILED write failed, or what an INDETERMINATE one was last seen doing.
+  detail  String?
+
+  attemptedAt DateTime  @default(now())
+  settledAt   DateTime?
+
+  /// Which governed agent decided it, and which run it belonged to. Nullable
+  /// because a write could in principle be driven by an operator action rather
+  /// than a run.
+  agentId String?
+  runId   String?
+
+  /// The human behind it, where there was one. Null for an unattended run, which
+  /// is the case this whole subsystem exists to govern.
+  actorUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant                @relation(fields: [tenantId], references: [id])
+  connection IntegrationConnection? @relation(fields: [connectionId, tenantId], references: [id, tenantId])
+
+  /// "What did we last do through this connection?" — the operator's first
+  /// question, and the restore lookup.
+  @@index([tenantId, connectionId, attemptedAt])
+  /// The sweep: "what is still PENDING or INDETERMINATE and needs a human?"
+  @@index([tenantId, outcome])
+  /// The dwell's evidence query: RECORDED_ONLY rows since a window opened.
+  @@index([tenantId, mode, attemptedAt])
+  @@index([connectionId])
+}
