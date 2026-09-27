@@ -30,15 +30,19 @@ annotationsHash   MISMATCH   ← a constant, not an observation
 → ANNOTATIONS_CHANGED, isSecurityEvent: true, mustRefuse: false
 ```
 
-Two consequences, and the second is the one that matters:
+**The axis had no working configuration.** Because the live side was a constant,
+both possible states of a pin failed, in opposite directions:
 
-1. every external call reported that the far end had changed its hints, when
-   nothing had;
-2. therefore a call where the far end **genuinely flipped `readOnlyHint`** was
-   reported identically. The live side being a constant means the axis had **no
-   discriminating power at all** at the one place a tool call is authorized —
-   the exact thing it was added to detect was indistinguishable from the normal
-   state.
+| pin's `annotationsHash` | what the funnel did |
+| --- | --- |
+| `NULL` — every production pin today | `verifyToolManifest` skips the comparison (a null must not be compared, or pre-#2941 pins would all report drift). So the axis never fires, and a genuine flip is **never caught**. |
+| non-`NULL` — any approval under #2941's code | live `hash(null)` ≠ the pin, so **every** call to that tool mismatches, permanently and un-clearably: re-approving writes the real hash again. |
+
+A pin can only move from the first row to the second by being approved, so there
+is no state in which the axis correctly reports. It is quiet until somebody
+re-approves a tool and then wrong about every call — and in neither regime can it
+distinguish a far end that genuinely flipped `readOnlyHint: true → false` from one
+that changed nothing, because the side it compares against never varies.
 
 And it was silent, because `mustRefuse: false` had been implemented as an early
 `return` sitting *above* the recording:
@@ -66,7 +70,23 @@ offered the tools. The funnel then mismatched, computed a security event, and
 discarded it. Only the quiet seam was wrong, which is why a green run and a
 green suite both held.
 
-Measured against the pins that run left on file.
+**Measured against the pins that run actually left on file, which is what
+corrected the first version of this note.** I had written that the mismatch fired
+on every external call. It has not fired in production even once: all three Entra
+pins carry `annotationsHash = NULL` (approved 2026-09-26 15:06, before #2941's
+code was deployed), so production sits in the first row of the table above — the
+quiet failure, not the loud one. `approveExternalToolManifest` does persist the
+column, so those NULLs are historical and the loud failure arrives with the next
+re-approval; but "every call reported drift" was a claim about a state the
+database was not in, and the table is what is actually true.
+
+One inconsistency found while checking that, and named rather than fixed here:
+`recordBaselinePins` writes `descriptionHash`, `schemaHash` and `manifestHash`
+and omits `annotationsHash`, so a baseline pin never carries the axis. It changes
+no behaviour today — external tools cannot reach that path (the resolver refuses
+anything not `APPROVED`), and internal tools declare no annotations, so a stored
+`NULL` and a stored `hash(null)` both verify `APPROVED`. It is the same
+two-writers-disagreeing shape as the defect above and belongs in its own diff.
 
 ## Files
 
