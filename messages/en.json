@@ -8448,7 +8448,8 @@
       "emptyDesc": "The connection works, but the server returned an empty catalogue.",
       "noConnectionsTitle": "No tool servers connected",
       "noConnectionsDesc": "Add an external tool server under Integrations, authorize it, and test it before granting tools from it.",
-      "grantHint": "Approving a definition makes the tool grantable on an agent’s Tools tab."
+      "grantHint": "Approving a definition makes the tool grantable on an agent’s Tools tab.",
+      "writePolicyLink": "External write policy"
     }
   },
   "securityTesting": {

@@ -40,7 +40,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
@@ -225,13 +226,20 @@ export function ExternalToolsClient({
                             discover that the setting exists or who can change
                             it, which is a worse answer than a clear refusal. */}
                         {connectionId && (
-                            <Button
-                                variant="secondary"
+                            // `Link` + `buttonVariants`, not `<Button href>` —
+                            // the Button primitive renders a <button> and takes
+                            // no href. This is the repo's idiom for a navigating
+                            // control (see ReadinessOverviewClient), and it
+                            // matters beyond styling: a real anchor is
+                            // middle-clickable, focusable in document order and
+                            // announced as a link.
+                            <Link
                                 href={tenantHref(`/admin/external-write-policy/${connectionId}`)}
                                 id="external-tools-write-policy-link"
+                                className={buttonVariants({ variant: 'secondary' })}
                             >
                                 {t('externalTools.writePolicyLink')}
-                            </Button>
+                            </Link>
                         )}
                     </div>
 

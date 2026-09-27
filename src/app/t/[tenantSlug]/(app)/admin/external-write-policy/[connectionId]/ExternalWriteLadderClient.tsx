@@ -160,7 +160,12 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
             <BackAffordance />
             <PageBreadcrumbs
                 items={[
-                    { label: t('externalTools.title'), href: tenantHref('/agents/external-tools') },
+                    // `integrations.title`, the same parent the identity
+                    // ladder uses. NOT `externalTools.title`: that key lives
+                    // under the `agents` namespace, and this component reads
+                    // `admin` — so it would have resolved to nothing and
+                    // rendered the raw key as a breadcrumb label.
+                    { label: t('integrations.title'), href: tenantHref('/admin/integrations') },
                     { label: t('externalWriteLadder.breadcrumb') },
                 ]}
             />
