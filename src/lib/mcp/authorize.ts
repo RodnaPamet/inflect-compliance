@@ -954,13 +954,52 @@ async function assertToolManifestPinned(
             name: externalRef ? externalRef.toolName : tool.name,
             description: tool.description,
             inputSchema: tool.inputSchema,
+            // ── AND THE ANNOTATIONS, FOR THE SAME REASON AS THE NAME ────────
+            //
+            // The pin hashes these on their own axis (#2941) and the catalogue
+            // took it over what the SERVER declared. Omitting them here hashed
+            // `null` against that, so the axis mismatched on EVERY external
+            // call: `ANNOTATIONS_CHANGED` for a tool nothing had touched, and —
+            // because the live side was a constant — no way to tell a genuine
+            // `readOnlyHint: true → false` flip from the normal state. The axis
+            // added to catch a read tool redeclared as a write could not, at
+            // the one seam that guards a call.
+            //
+            // It did not refuse anything, which is why it was invisible: the
+            // verdict is `mustRefuse: false` by design, so the call went out and
+            // the early return below dropped the finding on the floor.
+            annotations: tool.annotations,
         },
         // The KEY stays qualified — that is how pins are stored, and looking up
         // by the server's name would miss and fall through to a baseline write.
         tool.name,
     );
 
-    if (!verdict.mustRefuse) return;
+    if (!verdict.mustRefuse) {
+        // ── A FINDING THAT DOES NOT REFUSE IS STILL A FINDING ───────────────
+        //
+        // `ANNOTATIONS_CHANGED` is `isSecurityEvent: true, mustRefuse: false`
+        // on purpose — refusing a tool whose name, description and schema all
+        // still match its pin, to enforce a field no dispatch yet reads, is the
+        // rung #2241 removed from the identity ladder. But "does not refuse"
+        // was implemented as "is not recorded", so the one verdict the axis
+        // exists to produce reached no metric, no log and no operator.
+        //
+        // A server redeclaring a read tool as a write is the event #2941 was
+        // built for. It is reported here and the call proceeds.
+        if (verdict.isSecurityEvent) {
+            recordToolManifestDrift({ tool: tool.name, status: verdict.status });
+            logger.warn('mcp: tool manifest annotations changed — the far end redeclared its hints', {
+                tenantId: inv.ctx.tenantId,
+                tool: tool.name,
+                status: verdict.status,
+                // Digests only, for the reason the refusal path gives below.
+                approvedAnnotationsHash: verdict.approved?.annotationsHash ?? null,
+                liveAnnotationsHash: verdict.live.annotationsHash,
+            });
+        }
+        return;
+    }
 
     recordToolManifestDrift({ tool: tool.name, status: verdict.status });
     logger.error('mcp: tool manifest drift — refusing tool until re-approved', {
@@ -1059,6 +1098,19 @@ export async function authorizeToolCall(
          */
         description: string;
         inputSchema: Record<string, unknown>;
+        /**
+         * And the declared annotations, for the reason the comment above gives
+         * about the description: they are IN THE PIN (#2941).
+         *
+         * Declared rather than left to the spread every caller happens to use.
+         * Both call sites pass `{ ...tool, … }`, so the value arrives at runtime
+         * whether this line exists or not — which is exactly the problem. With
+         * the field absent from the contract, a caller that builds the object
+         * field-by-field drops a pinned axis and the compiler says nothing,
+         * reintroducing the defect this parameter list was enumerated to
+         * prevent. The enumeration is the safety; an omission from it is not.
+         */
+        annotations?: Record<string, unknown>;
         authorize: McpToolAuthorization;
         resourceScope: { resource: string; action: ScopeAction };
         /** Propose tools only — the MCP capability the credential must carry. */

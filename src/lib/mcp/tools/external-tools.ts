@@ -94,7 +94,12 @@ export async function resolveExternalReadTools(
 /** One approved external tool, in the shape the funnel already knows. */
 function adapterFor(
     qualified: string,
-    def: { name: string; description: string; inputSchema: Record<string, unknown> },
+    def: {
+        name: string;
+        description: string;
+        inputSchema: Record<string, unknown>;
+        annotations?: Record<string, unknown>;
+    },
     transport: { url: string; authorization?: string },
     parameterSets: ReadonlyArray<{ label: string; parameters: Record<string, unknown> }> = [],
 ): McpReadTool<Record<string, unknown>> {
@@ -137,6 +142,16 @@ function adapterFor(
                   additionalProperties: false,
               }
             : def.inputSchema,
+        // The far end's own declaration, forwarded UNCHANGED even when saved
+        // parameter sets have replaced the advertised `inputSchema` above.
+        //
+        // That asymmetry is deliberate. `inputSchema` is rewritten because it is
+        // what the MODEL reads, and with sets in force the model's only choice
+        // is a label. `annotations` is what the manifest pin hashes, and the pin
+        // was taken over what the SERVER said — so narrowing it here would
+        // reintroduce, for exactly the tools a tenant has constrained most, the
+        // mismatch this field exists to remove.
+        annotations: def.annotations,
         argsSchema: hasSets
             ? (z
                   .object({ parameterSet: z.enum(labels as [string, ...string[]]) })
