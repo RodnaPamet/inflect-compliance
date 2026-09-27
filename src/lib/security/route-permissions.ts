@@ -486,6 +486,24 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'admin.manage and document a weaker gate than the handler enforces.',
     },
 
+    // ── External-write ladder, per MCP connection (#2861) ───────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/external-write-policy(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'How far an AGENT may go when driving a write to a customer\'s own ' +
+            'third-party system, per MCP connection. Same OWNER-only key as the ' +
+            'identity write policy, for the same reason: this grants the product ' +
+            'authority to CHANGE something in a system that is not ours, which is ' +
+            'authority of the same class as disabling an account in their ' +
+            'directory. A SIBLING path rather than nested under ' +
+            'admin/integrations/<id> on purpose — matching is first-match-wins and ' +
+            'that rule resolves to admin.manage, so nesting would document a ' +
+            'weaker gate here than the handler enforces. Subtree rule, so the ' +
+            'per-connection path is gated identically to any future index rather ' +
+            'than by a second rule that could drift.',
+    },
+
     // ── Per-tenant DEK rotation (Epic F.2 follow-up) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/tenant-dek-rotation(\\/.*)?$`),

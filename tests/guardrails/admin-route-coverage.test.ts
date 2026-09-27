@@ -150,6 +150,18 @@ const ADMIN_ONLY_ROUTES = [
     // narrower key here would be a way to read what tenant_lifecycle guards.
     'admin/flue-wiring/route.ts',
     'admin/identity-write-policy/route.ts',
+    // #2861 — the same ladder shape as the identity write policy above, for a
+    // different authority: how far an AGENT may go when driving a write to a
+    // customer's own third-party system. Same OWNER-only key, because granting
+    // the product authority to CHANGE something in a system that is not ours is
+    // authority of the same class as disabling an account in their directory.
+    //
+    // A SIBLING path rather than nested under admin/integrations/<id> on
+    // purpose: route-permission matching is first-match-wins and that rule
+    // resolves to admin.manage, so nesting would document a weaker gate than
+    // the handler enforces. The two identity routes below are siblings for
+    // exactly this reason and say so in their own notes.
+    'admin/external-write-policy/[connectionId]/route.ts',
     'admin/identity-leaver-passes/route.ts',
     // #2687 — the joiner's half of the same pair. The report names which of a
     // customer's people the product would create an account for and at what
