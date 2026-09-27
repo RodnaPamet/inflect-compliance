@@ -134,6 +134,26 @@ export interface McpReadTool<TArgs = unknown> {
     description: string;
     /** JSON Schema (draft-07 subset) for the tool arguments. */
     inputSchema: Record<string, unknown>;
+    /**
+     * MCP tool annotations — `readOnlyHint`, `destructiveHint`, and friends —
+     * exactly as the declaring server sent them, or absent for a tool this
+     * build defines itself.
+     *
+     * Present because the manifest pin hashes them on their own axis (#2941),
+     * and the boundary re-verifies a tool against its pin at call time from
+     * THIS object. Without the field the enforcement path could only ever hash
+     * `null`, so it compared a constant against a pin taken over the real
+     * hints: the axis mismatched on every external call, reported
+     * ANNOTATIONS_CHANGED for a tool nothing had touched, and was therefore
+     * unable to report a genuine flip differently from the normal state. The
+     * catalogue resolver never had the bug — it verifies from the live
+     * descriptor, annotations included — so the two seams disagreed about the
+     * same pin.
+     *
+     * Internal tools set nothing and hash `null` on both sides, which is why
+     * adding the axis re-approved nothing.
+     */
+    annotations?: Record<string, unknown>;
     /** Zod schema mirroring `inputSchema` — the runtime validation. */
     argsSchema: ZodType<TArgs>;
     /**

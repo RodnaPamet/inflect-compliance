@@ -337,8 +337,19 @@ export async function approveExternalToolManifest(
 export interface GrantedExternalTool {
     /** `mcp__<connectionId>__<toolName>` — our key for grants and pins. */
     qualified: string;
-    /** Exactly what the server advertised, under the name IT used. */
-    def: { name: string; description: string; inputSchema: Record<string, unknown> };
+    /**
+     * Exactly what the server advertised, under the name IT used.
+     *
+     * `annotations` was always populated here at runtime and merely absent from
+     * this type, so it type-checked while being invisible to every consumer —
+     * which is how the funnel came to hash `null` for the annotations axis.
+     */
+    def: {
+        name: string;
+        description: string;
+        inputSchema: Record<string, unknown>;
+        annotations?: Record<string, unknown>;
+    };
     transport: { url: string; authorization?: string };
     /**
      * The tenant's APPROVED parameter sets for this tool, if any.

@@ -857,7 +857,10 @@ export function recordToolManifestDrift(attrs: { tool: string; status: string })
     if (!_toolManifestDrift) {
         _toolManifestDrift = getMeter().createCounter('agentic.tool_manifest.drift', {
             description:
-                'MCP tool calls refused because the tool definition no longer matches the tenant-approved manifest',
+                'MCP tool calls whose definition no longer matches the tenant-approved manifest. ' +
+                'Most statuses refuse the call; ANNOTATIONS_CHANGED does not, and is counted here ' +
+                'so a far end redeclaring a read tool as a write is visible without blocking it. ' +
+                'Read the `status` attribute — it is the difference.',
             unit: '1',
         });
     }
