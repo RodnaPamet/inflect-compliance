@@ -15,6 +15,9 @@
  * about the control, and the control exists before the authority on purpose —
  * #2241's lesson is what a rung costs when it arrives after.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -24,6 +27,7 @@ import {
     getExternalWritePolicy,
     setExternalWriteMode,
 } from '@/app-layer/usecases/external-write-policy';
+import { sqlCodeOf } from '../helpers/source-blocks';
 import { EXTERNAL_MAX_MODE, MODE_MIN_DAYS } from '@/lib/integrations/external-write-ladder';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 
@@ -115,47 +119,50 @@ async function armAndBackdate(connectionId: string, rung: 'DISABLED' | 'DRY_RUN'
     });
 }
 
-describe('a connection that was never set cannot be widened immediately', () => {
+describe('a connection that was never set CAN be widened immediately', () => {
     /**
-     * PINNED, not endorsed. `refusalForMove` refuses any widen while
-     * `modeSince` is null, and a connection that has never been set has none —
-     * so the FIRST move on every connection is refused, pointing the operator at
-     * a no-op re-selection to open the window, followed by seven days.
+     * FLIPPED by owner decision on 2026-09-27, and the reasoning is worth keeping
+     * beside the assertion because the previous behaviour was pinned here too.
      *
-     * Worth a decision rather than an assumption, and it is raised in the PR:
-     * the dwell's stated purpose is "time for what this rung records to be read
-     * before a wider one acts on it", and DISABLED records nothing by
-     * construction — the evidence table exempts it for exactly that reason. A
-     * week spent at a rung that observes nothing may be a deliberate
-     * cooling-off before any external-write authority, or it may be the general
-     * rule catching a rung it was not aimed at.
+     * `refusalForMove` used to refuse any widen while `modeSince` was null, and a
+     * connection that had never been set has none — so the FIRST move on every
+     * connection was refused, pointing the operator at a no-op re-selection of
+     * `DISABLED` followed by seven days.
      *
-     * Either way it is the merged ladder's behaviour, it is asserted here so it
-     * cannot change silently, and changing it is a decision about #2933 rather
-     * than about this storage.
+     * The dwell exists so that what a rung RECORDS can be read before a wider one
+     * acts on it. `DISABLED` records nothing by construction — `MODE_MIN_EVIDENCE`
+     * already exempted it for exactly that reason — so the week bought no
+     * observation, and the rung above it sends nothing either.
+     *
+     * It is also what makes the connection gate deployable: with the rung
+     * governing whether an agent may call a connection at all, seven days at
+     * `DISABLED` is seven days of outage for anything that needs widening.
      */
-    it('refuses, and names the no-op selection that opens the window', async () => {
-        await expect(
-            setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE),
-        ).rejects.toThrow(/DISABLED has no recorded start/);
+    it('goes straight to DRY_RUN, with no no-op selection and no wait', async () => {
+        const after = await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
+        expect(after.mode).toBe('DRY_RUN');
+        expect(after.modeSince).toBeInstanceOf(Date);
     });
 
-    it('re-selecting the CURRENT rung is permitted and opens the window', async () => {
+    it('but the rung ABOVE DRY_RUN still costs the full window', async () => {
+        // The protection that matters is untouched, and this is the assertion
+        // that says so. Exempting DISABLED must not exempt anything else.
+        await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
+        await expect(
+            setExternalWriteMode(ctx1, conn1, 'PROPOSE_ONLY', 'AUTOMATIC'),
+        ).rejects.toThrow(/recorded 0 of the 1 required|held for 0 of the 7/);
+    });
+
+    it('re-selecting DISABLED is still permitted, and still stamps the window', async () => {
+        // No longer REQUIRED, but it must not have become an error either.
         const opened = await setExternalWriteMode(ctx1, conn1, 'DISABLED', EXTERNAL_MAX_MODE);
         expect(opened.mode).toBe('DISABLED');
         expect(opened.modeSince).toBeInstanceOf(Date);
-    });
-
-    it('and once the window has run, the widen is permitted', async () => {
-        await armAndBackdate(conn1, 'DISABLED');
-        const after = await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
-        expect(after.mode).toBe('DRY_RUN');
     });
 });
 
 describe('moving up the ladder', () => {
     it('DISABLED → DRY_RUN is permitted, and lands in the column', async () => {
-        await armAndBackdate(conn1, 'DISABLED');
         const after = await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
         expect(after.mode).toBe('DRY_RUN');
         expect(after.modeSince).toBeInstanceOf(Date);
@@ -181,7 +188,6 @@ describe('moving up the ladder', () => {
         // without the clamp this would be refused only on the dwell, telling an
         // operator to wait seven days for a rung that would still be refused
         // afterwards.
-        await armAndBackdate(conn1, 'DISABLED');
         await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
         await expect(
             setExternalWriteMode(ctx1, conn1, 'PROPOSE_ONLY', EXTERNAL_MAX_MODE),
@@ -193,7 +199,6 @@ describe('moving up the ladder', () => {
         // evidence. This is the state #2933's note predicted: "a connection can
         // be armed to DRY_RUN and cannot climb further. That is the ladder
         // working, not a gap."
-        await armAndBackdate(conn1, 'DISABLED');
         await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
         const longAgo = new Date(Date.now() - (MODE_MIN_DAYS + 30) * 86_400_000);
         await prisma.integrationConnection.update({
@@ -217,7 +222,6 @@ describe('moving up the ladder', () => {
 
 describe('moving down the ladder', () => {
     it('is never gated — an operator revoking an authority is not told to wait', async () => {
-        await armAndBackdate(conn1, 'DISABLED');
         await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
         // Immediately, with no dwell served and no evidence recorded.
         const after = await setExternalWriteMode(ctx1, conn1, 'DISABLED', EXTERNAL_MAX_MODE);
@@ -225,7 +229,6 @@ describe('moving down the ladder', () => {
     });
 
     it('RESTARTS the window, so a rung cannot be re-entered to inherit old days', async () => {
-        await armAndBackdate(conn1, 'DISABLED');
         await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
         const longAgo = new Date(Date.now() - (MODE_MIN_DAYS + 30) * 86_400_000);
         await prisma.integrationConnection.update({
@@ -239,13 +242,21 @@ describe('moving down the ladder', () => {
         expect(narrowed.modeSince!.getTime()).toBeGreaterThan(longAgo.getTime());
         expect(Date.now() - narrowed.modeSince!.getTime()).toBeLessThan(60_000);
 
-        // And the consequence, which is the property that matters: re-widening
-        // immediately is REFUSED, on a dwell that starts from zero. Asserting the
-        // refusal rather than a timestamp is what makes this a test of the rule
-        // instead of a test of the column.
+        // Re-widening to DRY_RUN is now PERMITTED — DISABLED imposes no wait
+        // since the 2026-09-27 exemption, and DRY_RUN sends nothing, so nothing
+        // is granted that was not already there.
+        const back = await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
+        expect(back.mode).toBe('DRY_RUN');
+
+        // The property that MATTERS survives, and this is where it bites: the
+        // re-entered DRY_RUN carries a fresh window, so the rung above it is
+        // refused on a dwell that starts from zero rather than inheriting the
+        // thirty-seven days the first stay had accrued. Clamp raised for this call
+        // only, so what refuses is the WINDOW and not the build's ceiling.
+        expect(Date.now() - back.modeSince!.getTime()).toBeLessThan(60_000);
         await expect(
-            setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE),
-        ).rejects.toThrow(/held for 0 of the 7 required days/);
+            setExternalWriteMode(ctx1, conn1, 'PROPOSE_ONLY', 'AUTOMATIC'),
+        ).rejects.toThrow(/recorded 0 of the 1 required|held for 0 of the 7/);
     });
 });
 
@@ -282,25 +293,24 @@ describe('the change is audited', () => {
         // foreign keys, so a tidy-up deleteMany fails on 23503 — the immutability
         // is the feature. Scope the read to THIS connection instead, and take the
         // row the widen wrote.
-        await armAndBackdate(conn1, 'DISABLED');
         await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
         const rows = await prisma.auditLog.findMany({
             where: { tenantId: T1, action: 'EXTERNAL_WRITE_MODE_CHANGED', entityId: conn1 },
             orderBy: { createdAt: 'asc' },
             select: { entityId: true, detailsJson: true },
         });
-        // Two: the no-op selection that opened the window, then the widen.
-        expect(rows).toHaveLength(2);
-        expect(rows[1].entityId).toBe(conn1);
+        // One: the widen. There is no longer a no-op DISABLED selection in front
+        // of it — that was the observation window the exemption removed.
+        expect(rows).toHaveLength(1);
+        expect(rows[0].entityId).toBe(conn1);
         // `access`, not `configuration`: widening this grants authority to change
         // something in a system that is not ours, and an access-review reader is
         // the audience for that.
-        expect((rows[1].detailsJson as Record<string, unknown>).category).toBe('access');
-        expect((rows[1].detailsJson as Record<string, unknown>).operation).toBe('grant');
+        expect((rows[0].detailsJson as Record<string, unknown>).category).toBe('access');
+        expect((rows[0].detailsJson as Record<string, unknown>).operation).toBe('grant');
     });
 
     it('records a narrowing as a REVOKE, not a grant', async () => {
-        await armAndBackdate(conn1, 'DISABLED');
         await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
         await setExternalWriteMode(ctx1, conn1, 'DISABLED', EXTERNAL_MAX_MODE);
         const rows = await prisma.auditLog.findMany({
@@ -308,11 +318,75 @@ describe('the change is audited', () => {
             orderBy: { createdAt: 'asc' },
             select: { detailsJson: true },
         });
-        // open the window, widen, narrow.
-        expect(rows).toHaveLength(3);
-        expect((rows[2].detailsJson as Record<string, unknown>).operation).toBe('revoke');
+        // widen, then narrow.
+        expect(rows).toHaveLength(2);
+        expect((rows[1].detailsJson as Record<string, unknown>).operation).toBe('revoke');
         // …and the widen before it was a grant, so the two are distinguishable
         // rather than both defaulting to one value.
-        expect((rows[1].detailsJson as Record<string, unknown>).operation).toBe('grant');
+        expect((rows[0].detailsJson as Record<string, unknown>).operation).toBe('grant');
+    });
+});
+
+/**
+ * THE BACKFILL'S PREDICATE, PINNED.
+ *
+ * A one-shot data migration cannot be verified by a test that runs after it: the
+ * rows it touched are indistinguishable from rows that were always that way. What
+ * CAN be pinned is the predicate, and two parts of it are load-bearing in a way
+ * that is invisible once the migration has run.
+ *
+ * Measured against production before shipping: the predicate matches exactly ONE
+ * row, `Entra MCP` — the connection that produced the 2026-09-26 proving run and
+ * the one that would otherwise go dark when the rung starts gating reads. The
+ * `active-directory` and `entra-id` connections are outside it.
+ */
+describe('the backfill migration', () => {
+    // MASKED at the read seam with `sqlCodeOf`, not read raw — and for this file
+    // it is not a formality. The migration is four-fifths comment: it argues at
+    // length about DRY_RUN, about NULL coercing to DISABLED, and about which
+    // providers are in scope. Every needle below would have been satisfiable by
+    // that prose, so deleting the UPDATE and leaving the header would have kept
+    // these assertions green. That is the Class A defect exactly
+    // (`raw-source-assertion-ratchet`), and masking converts the whole file at
+    // once rather than per-assertion.
+    const SQL = sqlCodeOf(
+        fs.readFileSync(
+            path.resolve(
+                __dirname,
+                '../../prisma/migrations/20260927170000_backfill_external_write_mode_for_existing_connections/migration.sql',
+            ),
+            'utf8',
+        ),
+    );
+
+    it('is scoped to mcp-server connections, so no other provider is touched', () => {
+        // Positive control: the file really is the migration, not an empty read.
+        expect(SQL).toMatch(/UPDATE "IntegrationConnection"/);
+        expect(SQL).toMatch(/"provider" = 'mcp-server'/);
+    });
+
+    it('carries the IS NULL guard, which is what makes re-running it safe', () => {
+        // Without it the UPDATE re-stamps `externalWriteModeSince` on every
+        // mcp-server connection, resetting every observation window that had
+        // started — so a tenant mid-dwell silently goes back to day zero. Prisma
+        // will not re-run an applied migration, but a copy-paste into a later one
+        // or a manual replay would, and the guard is the only thing standing
+        // between that and a reset.
+        expect(SQL).toMatch(/"externalWriteMode" IS NULL/);
+    });
+
+    it('sets DRY_RUN and nothing wider', () => {
+        // The smallest rung that avoids the outage. DRY_RUN permits reads and
+        // sends no write, which is an accurate description of every connection
+        // this touches: the only writable far end is a lab fixture nobody has
+        // stood up, and the live Entra server's three tools all declare
+        // readOnlyHint: true.
+        expect(SQL).toMatch(/SET "externalWriteMode" = 'DRY_RUN'/);
+        expect(SQL).not.toMatch(/'AUTOMATIC'|'PROPOSE_ONLY'/);
+    });
+
+    it('stamps a window, because DRY_RUN cannot be widened off without one', () => {
+        // DISABLED is exempt from the window as of 2026-09-27; DRY_RUN is not.
+        expect(SQL).toMatch(/"externalWriteModeSince" = NOW\(\)/);
     });
 });

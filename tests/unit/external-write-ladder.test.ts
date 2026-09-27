@@ -220,3 +220,57 @@ describe('refusalForMove — widening', () => {
         expect(MODE_MIN_EVIDENCE.DISABLED).toBeUndefined();
     });
 });
+
+/**
+ * DISABLED HAS NO OBSERVATION WINDOW (owner decision, 2026-09-27).
+ *
+ * The dwell exists so what a rung RECORDS can be read before a wider one acts on
+ * it, and `DISABLED` records nothing by construction. `MODE_MIN_EVIDENCE` had
+ * already reached that conclusion on the evidence axis; the elapsed-days axis had
+ * not, so a never-set connection's first widen was refused and the operator was
+ * sent to re-select `DISABLED` and wait a week at a rung that observes nothing.
+ *
+ * Every assertion here has a paired one proving the exemption did not leak to a
+ * rung that DOES record something.
+ */
+describe('DISABLED is exempt from the observation window', () => {
+    const NOW = new Date('2026-09-27T12:00:00.000Z');
+
+    it('permits DISABLED → DRY_RUN with a NULL modeSince', () => {
+        expect(refusalForMove({ mode: 'DISABLED', modeSince: null }, 'DRY_RUN', NOW)).toBeNull();
+    });
+
+    it('permits it with a modeSince seconds old, so no dwell is served', () => {
+        const justNow = new Date(NOW.getTime() - 1_000);
+        expect(refusalForMove({ mode: 'DISABLED', modeSince: justNow }, 'DRY_RUN', NOW)).toBeNull();
+    });
+
+    it('still refuses DRY_RUN → PROPOSE_ONLY on a NULL modeSince', () => {
+        // The paired assertion. Exempting DISABLED must not exempt the rung that
+        // actually records something.
+        expect(
+            refusalForMove({ mode: 'DRY_RUN', modeSince: null, evidenceInWindow: 5 }, 'PROPOSE_ONLY', NOW),
+        ).toMatch(/no recorded start/);
+    });
+
+    it('still refuses DRY_RUN → PROPOSE_ONLY on an unserved dwell', () => {
+        const justNow = new Date(NOW.getTime() - 1_000);
+        expect(
+            refusalForMove({ mode: 'DRY_RUN', modeSince: justNow, evidenceInWindow: 5 }, 'PROPOSE_ONLY', NOW),
+        ).toMatch(/held for 0 of the 7/);
+    });
+
+    it('still refuses a two-rung jump FROM DISABLED', () => {
+        // The exemption is about the window, not about the one-rung rule.
+        expect(refusalForMove({ mode: 'DISABLED', modeSince: null }, 'PROPOSE_ONLY', NOW)).toMatch(
+            /one level at a time/,
+        );
+    });
+
+    it('still refuses DRY_RUN → PROPOSE_ONLY on missing evidence, dwell served', () => {
+        const longAgo = new Date(NOW.getTime() - 30 * 86_400_000);
+        expect(
+            refusalForMove({ mode: 'DRY_RUN', modeSince: longAgo, evidenceInWindow: 0 }, 'PROPOSE_ONLY', NOW),
+        ).toMatch(/recorded 0 of the 1 required/);
+    });
+});
