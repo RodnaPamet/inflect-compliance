@@ -75,10 +75,24 @@ jest.mock('next/navigation', () => ({
 }));
 
 const mockPerms = jest.fn();
+// SPREAD THE REAL MODULE, override only what this file asserts on.
+//
+// This factory used to LIST its three exports, which is a snapshot of the
+// module as it looked the day it was written — #2050's lesson, already paid for
+// once in `identity-disable-account.test.ts`. `useModules` was added for the
+// process-canvas module (#2964), `useNavSections` began calling it, and every
+// test here failed on an export the factory did not know about.
+//
+// `processCanvas: true` because this file asserts the Agent entry sits BETWEEN
+// vendors and processes. With the module off the Processes entry is absent and
+// "between vendors and processes" has no second endpoint — the assertion would
+// not be wrong so much as meaningless.
 jest.mock('@/lib/tenant-context-provider', () => ({
+    ...jest.requireActual('@/lib/tenant-context-provider'),
     useTenantHref: () => (p: string) => `/t/acme${p}`,
     useTenantContext: () => ({ tenantSlug: 'acme', tenantId: 'tenant-1' }),
     usePermissions: () => mockPerms(),
+    useModules: () => ({ processCanvas: true }),
 }));
 
 // The calendar badge fires a fetch on mount; the sidebar's nav data does not

@@ -103,6 +103,7 @@ const TENANT_CTX = {
     role: 'OWNER' as const,
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
     appPermissions: getPermissionsForRole('OWNER'),
+    modules: { processCanvas: false },
 };
 
 /** The server's pack, mutated by the fake freeze so re-reads see the new state. */

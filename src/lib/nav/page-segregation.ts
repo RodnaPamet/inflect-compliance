@@ -174,6 +174,7 @@ export const SUBPAGES: readonly string[] = [
     '/admin/identity-leaver-passes',
     '/admin/identity-write-journal',
     '/admin/identity-write-policy',
+    '/admin/modules',
     '/admin/integrations',
     '/admin/integrations/sharepoint-health',
     '/admin/integrations/[connectionId]',

@@ -334,6 +334,7 @@ const TENANT_CTX = {
     role: 'OWNER' as const,
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
     appPermissions: getPermissionsForRole('OWNER'),
+    modules: { processCanvas: false },
 };
 
 const mutate = jest.fn();

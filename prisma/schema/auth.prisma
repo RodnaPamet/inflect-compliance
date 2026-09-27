@@ -1394,6 +1394,18 @@ model TenantSecuritySettings {
   /// as long as it takes someone to notice; a wrongful create spends money on a
   /// licence and leaves an unowned account in the directory. A tenant may
   /// rationally accept one unattended and not the other.
+  /// Is the process canvas surface available to this tenant at all?
+  ///
+  /// A MODULE SWITCH, not a permission. Permissions decide who may use a
+  /// surface the product offers; this decides whether the product offers it
+  /// here. Default FALSE — a tenant gets the canvas only when somebody turns
+  /// it on, which is the opposite of every other surface and is deliberate.
+  ///
+  /// It governs the SURFACE ONLY. `ProcessNode` / `ProcessEdge` rows are
+  /// untouched by it, and coverage, traceability and the audit pack keep
+  /// reading them whether this is true or false. Turning the module off is not
+  /// a delete, and turning it back on must show the same map.
+  processCanvasEnabled         Boolean           @default(false)
   identityLeaverMode           IdentityWriteMode @default(DISABLED)
   identityJoinerMode           IdentityWriteMode @default(DISABLED)
 

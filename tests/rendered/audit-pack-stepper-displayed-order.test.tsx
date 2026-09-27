@@ -107,6 +107,7 @@ const TENANT_CTX = {
     role: 'OWNER' as const,
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
     appPermissions: getPermissionsForRole('OWNER'),
+    modules: { processCanvas: false },
 };
 
 /** The packs the cycle page paints, in the order it paints them. */
