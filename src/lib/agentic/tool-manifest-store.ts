@@ -151,6 +151,23 @@ export async function recordBaselinePins(
                         descriptionHash: hashes.descriptionHash,
                         schemaHash: hashes.schemaHash,
                         manifestHash: hashes.manifestHash,
+                        // The annotations axis (#2941), which this writer
+                        // computed and then dropped.
+                        //
+                        // `approveExternalToolManifest` persists it and this did
+                        // not, so the same row meant different things depending
+                        // on which producer wrote it — and a baseline pin could
+                        // never detect an annotations change, because a stored
+                        // NULL is deliberately not compared. That was invisible:
+                        // no tool this build defines declares annotations, so
+                        // NULL and hash(null) both verify APPROVED and the
+                        // omission cost nothing until the first one does.
+                        //
+                        // Two producers of one attestation disagreeing is the
+                        // shape that produced #2957 (two CONSUMERS of it
+                        // disagreeing). Cheaper to make them agree than to keep
+                        // establishing that it does not matter yet.
+                        annotationsHash: hashes.annotationsHash,
                         approvalSource: 'BASELINE',
                         approvedByUserId: null,
                         revision: 1,
