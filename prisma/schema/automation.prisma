@@ -161,6 +161,22 @@ model IntegrationConnection {
   // Both NULL means "no pass in flight". See usecases/identity-sync.ts.
   syncCursor        String?
   syncPassStartedAt DateTime?
+  /// #2861 — how far this connection may go when an AGENT drives a write to it.
+  ///
+  /// A STRING, not a Postgres enum, and that is the lesson the identity ladder
+  /// paid for: an enum value cannot be dropped without recreating the type, and
+  /// an `ALTER TYPE` mid-rolling-deploy makes still-running old containers fail
+  /// with SQLSTATE 42704. `coerceStoredMode` already takes a string and fails
+  /// CLOSED to DISABLED for anything it does not recognise, so a rung this build
+  /// has never heard of reads as "off" rather than as the widest authority.
+  ///
+  /// NULL means never set, which coerces to DISABLED — the same answer, so a
+  /// backfill is not needed and was not written.
+  externalWriteMode      String?
+  /// When this connection entered `externalWriteMode`. The ladder's dwell is
+  /// measured from here, and any move — including NARROWING — restarts it, so a
+  /// rung cannot be re-entered to inherit an old window's elapsed days.
+  externalWriteModeSince DateTime?
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   tenant            Tenant                   @relation(fields: [tenantId], references: [id])
