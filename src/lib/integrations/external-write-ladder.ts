@@ -67,6 +67,48 @@ export const RETIRED_MODES: Readonly<Record<string, ExternalWriteMode>> = {};
 export const MODE_MIN_DAYS = 7;
 
 /**
+ * The furthest rung this BUILD will store, whatever a caller asks for.
+ *
+ * A SOURCE CONSTANT, not configuration, and modelled on `LEAVER_MAX_MODE` in
+ * `src/lib/identity/write-ladder.ts` — including the reason it is a constant:
+ * raising it must be a diff somebody reviews, not a row somebody edits.
+ *
+ * `DRY_RUN` today, because that is the honest ceiling. There is no external
+ * write DISPATCH in this build: nothing reads this rung to decide whether to
+ * send, so `PROPOSE_ONLY` and `AUTOMATIC` would name authorities that cannot be
+ * exercised. Publishing a rung a tenant can select and the product then ignores
+ * is precisely the shape #2241 deleted from the identity ladder — a rung that
+ * looks like a control and enforces nothing.
+ *
+ * It also composes correctly with the dwell rather than around it. A connection
+ * armed to `DRY_RUN` cannot climb off it, because `MODE_MIN_EVIDENCE.DRY_RUN` is
+ * 1 and nothing records a dry-run intent until the dispatch ships — so the
+ * ladder refuses the widen on evidence, before the clamp is even consulted. That
+ * is the ladder working, not a gap, and it means raising this constant without
+ * the dispatch would still grant nothing.
+ *
+ * Raise it in the same diff that lands the dispatch which reads it.
+ */
+export const EXTERNAL_MAX_MODE: ExternalWriteMode = 'DRY_RUN';
+
+/**
+ * The `IntegrationExecution.automationKey` suffix an external-write pass records
+ * under, and therefore what the dwell COUNTS as evidence.
+ *
+ * Declared here, beside the rung it gates, rather than in the dispatch that will
+ * write it — so the reader and the writer cannot disagree about the string. The
+ * identity ladder keeps `PASS_AUTOMATION_SUFFIX` in exactly the same place for
+ * the same reason.
+ *
+ * Nothing writes it yet, which is why a `DRY_RUN` connection cannot climb: the
+ * count is a real query that returns 0, so the ladder refuses on evidence rather
+ * than on elapsed days. The alternative — a literal 0 in the counter — would
+ * refuse identically today and then go on refusing after the dispatch shipped,
+ * silently, until somebody remembered the line.
+ */
+export const EXTERNAL_WRITE_AUTOMATION_SUFFIX = ':external-write';
+
+/**
  * Evidence a rung must have PRODUCED before it may be widened off.
  *
  * Elapsed time alone is the gap #2843 finding 31 closed on the identity dwell:
