@@ -1,0 +1,180 @@
+#
+# OPT-IN OVERLAY — the OrangeHRM lab fixture and its MCP adapter.
+#
+# Usage (only after the preconditions below are met):
+#
+#   docker compose --env-file .env --env-file .env.prod \
+#     -f docker-compose.prod.yml \
+#     -f docker-compose.orangehrm-lab.yml up -d
+#
+# ── WHAT THIS IS FOR ──────────────────────────────────────────────────
+#
+# #2861 governs an agent CHANGING a configuration in an external system.
+# The first production proving run (2026-09-26) established that
+# Microsoft's Entra MCP server exposes NO write verb: three tools, all
+# declaring `readOnlyHint: true`, none taking a method or a body. A
+# ladder whose top rung dispatches unattended writes cannot be proven
+# against a far end that cannot be written to.
+#
+# OrangeHRM can be written to, which is the entire reason
+# `providers/orangehrm` exists (#2548). This stands one up, puts a thin
+# MCP server in front of it, and gives the ladder a real far end.
+#
+# ── WHY AN OVERLAY AND NOT docker-compose.prod.yml ────────────────────
+#
+# The same argument `docker-compose.pipelock.yml` makes, and it applies
+# harder here. This is a LAB FIXTURE — a third-party PHP application and
+# a service whose whole purpose is accepting writes. It has no business
+# starting because somebody ran the canonical deploy. Splitting it out
+# means the thing we push is the thing that runs, and enabling the lab
+# stays a deliberate act by a person who knows what it is.
+#
+# ── WHAT IS AND IS NOT INTERNET-FACING ────────────────────────────────
+#
+# ONLY the adapter, and only through Caddy. Neither `orangehrm` nor
+# `orangehrm-db` publishes a port: they are reachable on the Compose
+# network by service name and nowhere else. The agent reaches the
+# adapter over public HTTPS; the adapter reaches OrangeHRM over a
+# private bridge.
+#
+# That split is the whole reason these are separate processes rather
+# than one. The fixture holds invented employees, but it is an
+# internet-exposed PHP application the moment it is published, and it
+# does not need to be published for any of this to work.
+#
+# ── PRECONDITIONS BEFORE ENABLING ─────────────────────────────────────
+#   [ ] A DNS A record for the adapter's hostname pointing at this VM.
+#   [ ] A vhost in `caddy/Caddyfile`. It is NOT pre-added, for the
+#       reason `allowed-host.ts` gives about this same fixture: the
+#       domain "is not this module's to" pre-empt. One block:
+#
+#         hrm-mcp.<your-domain> {
+#             encode gzip zstd
+#             header {
+#                 Strict-Transport-Security "max-age=31536000; includeSubDomains"
+#                 X-Content-Type-Options    "nosniff"
+#                 -Server
+#             }
+#             reverse_proxy orangehrm-mcp:8080
+#         }
+#
+#       Deliberately NOT `import app_site`: that snippet carries the
+#       product's cache rules and a 110MB body limit, none of which
+#       belong on a JSON-RPC endpoint.
+#   [ ] These in /opt/inflect/.env.prod (the file is root-owned 0600 and
+#       is never written by apply.sh — do it by hand):
+#         ORANGEHRM_DB_ROOT_PASSWORD   generated, not reused
+#         ORANGEHRM_DB_PASSWORD        generated, not reused
+#         ORANGEHRM_MCP_BEARER         generated; this is the credential
+#                                      IC stores as the connection's
+#                                      `authorization` secret
+#         ORANGEHRM_OAUTH_CLIENT_ID    created in OrangeHRM's admin UI
+#         ORANGEHRM_OAUTH_CLIENT_SECRET          after first boot
+#   [ ] `/opt/inflect/orangehrm-mcp/server.mjs` exists on the VM. This
+#       is the trap pipelock's header names, and this overlay shares it:
+#       a bind mount whose SOURCE IS MISSING does not fail loudly —
+#       Docker creates an empty DIRECTORY at that path and mounts it. The
+#       container then starts, finds no `server.mjs`, and restart-loops.
+#       `docker compose config` validates syntax and says nothing about
+#       bind-mount sources, so it passes every check short of `up`.
+#
+#       `apply.sh` does not push it: its CANONICAL_SET stages through
+#       `/tmp/${remote_base}.new.${TS}`, which breaks on a nested path
+#       (see docs/deployment.md on the Caddyfile). Copy it by hand:
+#         gcloud compute scp deploy/orangehrm-mcp/server.mjs \
+#           inflect-compliance:/tmp/server.mjs --tunnel-through-iap
+#         # then, on the VM:
+#         sudo mkdir -p /opt/inflect/orangehrm-mcp
+#         sudo mv /tmp/server.mjs /opt/inflect/orangehrm-mcp/server.mjs
+#   [ ] First boot completes OrangeHRM's installer, then an OAuth2
+#       client is registered in its admin UI. The adapter mints a
+#       client-credentials token per call and persists nothing.
+#
+# ── WHAT IS DELIBERATELY NOT HERE ─────────────────────────────────────
+#
+# No `.orangehrm-lab` suffix is added to `ORANGEHRM_HOSTS` in
+# `allowed-host.ts`. That allowlist governs IC's own HRIS CONNECTOR
+# reaching an OrangeHRM instance directly, which is a different path
+# from an agent reaching this ADAPTER: the adapter is an `mcp-server`
+# connection, whose `url` is classified `internalOrigin` and carries no
+# vendor allowlist. Adding a suffix here would widen the connector for a
+# fixture the connector is not being pointed at.
+#
+services:
+  # The fixture's database. Never published; reachable only on the
+  # Compose network.
+  orangehrm-db:
+    image: mariadb:10.11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${ORANGEHRM_DB_ROOT_PASSWORD:?ORANGEHRM_DB_ROOT_PASSWORD is required}
+      MARIADB_DATABASE: orangehrm
+      MARIADB_USER: orangehrm
+      MARIADB_PASSWORD: ${ORANGEHRM_DB_PASSWORD:?ORANGEHRM_DB_PASSWORD is required}
+    volumes:
+      - orangehrm-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+
+  # The fixture itself. PINNED to a minor, not `:latest` — the same note
+  # pipelock carries, and #2587's findings are specific to 5.9: the
+  # connector's field mapping was corrected against THAT version, so a
+  # silent major bump would invalidate the evidence it produced.
+  #
+  # No `ports:`. It is addressed as `orangehrm:80` by the adapter and is
+  # not reachable from outside this host.
+  orangehrm:
+    image: orangehrm/orangehrm:5.9
+    restart: unless-stopped
+    depends_on:
+      orangehrm-db:
+        condition: service_healthy
+    environment:
+      ORANGEHRM_DATABASE_HOST: orangehrm-db
+      ORANGEHRM_DATABASE_NAME: orangehrm
+      ORANGEHRM_DATABASE_USER: orangehrm
+      ORANGEHRM_DATABASE_PASSWORD: ${ORANGEHRM_DB_PASSWORD:?ORANGEHRM_DB_PASSWORD is required}
+    volumes:
+      - orangehrm-data:/var/www/html
+
+  # The MCP adapter. The ONLY service here Caddy proxies to.
+  #
+  # `node:24-alpine` with the source mounted read-only: no build, no
+  # package.json, no lockfile, no dependencies. MCP over HTTP is JSON-RPC
+  # in a POST body and Node's own `http` module serves that — a build
+  # step would be a supply-chain surface and a thing to keep current, for
+  # a lab fixture.
+  orangehrm-mcp:
+    image: node:24-alpine
+    restart: unless-stopped
+    depends_on:
+      - orangehrm
+    working_dir: /srv
+    command: ["node", "/srv/server.mjs"]
+    environment:
+      PORT: "8080"
+      ORANGEHRM_BASE: http://orangehrm:80
+      # Fails CLOSED when unset — the adapter refuses every call with 503
+      # rather than serving anonymously. The `:?` makes that a start-time
+      # error instead of a runtime surprise.
+      MCP_BEARER: ${ORANGEHRM_MCP_BEARER:?ORANGEHRM_MCP_BEARER is required}
+      ORANGEHRM_CLIENT_ID: ${ORANGEHRM_OAUTH_CLIENT_ID:?ORANGEHRM_OAUTH_CLIENT_ID is required}
+      ORANGEHRM_CLIENT_SECRET: ${ORANGEHRM_OAUTH_CLIENT_SECRET:?ORANGEHRM_OAUTH_CLIENT_SECRET is required}
+    volumes:
+      # DIRECTORY, not the file — the same inode lesson the Caddyfile
+      # mount carries: a single-file bind mount binds the inode, and any
+      # editor that writes-and-renames leaves the container on the old
+      # content.
+      - ./orangehrm-mcp:/srv:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  orangehrm-db-data:
+  orangehrm-data:
