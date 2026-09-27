@@ -48,7 +48,9 @@ describe('createBia — persisted payload', () => {
     function createDb(over: Record<string, unknown> = {}) {
         return withDb({
             processNode: {
-                findFirst: jest.fn().mockResolvedValue({ id: 'node-1' }),
+                // Returns the NATURAL key now (#2971): one lookup both
+                // validates the id and translates it into what is stored.
+                findFirst: jest.fn().mockResolvedValue({ processMapId: 'map-1', nodeKey: 'n1' }),
                 findMany: jest.fn().mockResolvedValue([]),
             },
             asset: { findMany: jest.fn().mockResolvedValue([]) },
@@ -87,7 +89,10 @@ describe('createBia — persisted payload', () => {
                 tenantId: 't-acme',
                 name: 'Payroll run',
                 criticality: 'CRITICAL',
-                processNodeId: 'node-1',
+                // The WIRE still sends `processNodeId: 'node-1'`; the STORAGE
+                // is the pair it resolves to (#2971).
+                processMapId: 'map-1',
+                processNodeKey: 'n1',
                 rtoHours: 4,
                 // 0 is falsy and must still be written — a `data.rpoHours &&`
                 // refactor would silently turn "no downtime tolerated" into null.
@@ -122,7 +127,8 @@ describe('createBia — persisted payload', () => {
                 tenantId: 't-acme',
                 name: 'Payroll',
                 criticality: 'LOW',
-                processNodeId: null,
+                processMapId: null,
+                processNodeKey: null,
                 rtoHours: null,
                 rpoHours: null,
                 mtpdHours: null,
@@ -221,7 +227,10 @@ describe('createBia — persisted payload', () => {
         expect((err as ValidationError).details).toBe('Process node not found in this tenant');
         expect(db.processNode.findFirst.mock.calls[0][0]).toStrictEqual({
             where: { id: 'node-other-tenant', tenantId: 't-acme' },
-            select: { id: true },
+            // One lookup, two jobs (#2971): it validates the id AND returns the
+            // natural key the row now stores, instead of confirming existence
+            // and then querying again to translate.
+            select: { processMapId: true, nodeKey: true },
         });
         expect(db.businessImpactAnalysis.create).not.toHaveBeenCalled();
     });
@@ -245,7 +254,7 @@ describe('updateBia — patch semantics', () => {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 update: jest.fn(async ({ data }: any) => ({ id: 'bia-1', name: data.name ?? 'Payroll' })),
             },
-            processNode: { findFirst: jest.fn().mockResolvedValue({ id: 'node-2' }) },
+            processNode: { findFirst: jest.fn().mockResolvedValue({ processMapId: 'map-1', nodeKey: 'n2' }) },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
     }
@@ -272,7 +281,10 @@ describe('updateBia — patch semantics', () => {
             data: {
                 name: 'Payroll v2',
                 criticality: 'MEDIUM',
-                processNodeId: 'node-2',
+                // Patched by cuid on the wire, stored as the natural key
+                // (#2971) — the mocked node resolves to (map-1, n2).
+                processMapId: 'map-1',
+                processNodeKey: 'n2',
                 rtoHours: 1,
                 rpoHours: 0,
                 mtpdHours: 12,
@@ -314,7 +326,10 @@ describe('updateBia — patch semantics', () => {
         expect(db.businessImpactAnalysis.update.mock.calls[0][0]).toStrictEqual({
             where: { id: 'bia-1' },
             data: {
-                processNodeId: null,
+                // Clearing the link clears BOTH columns (#2971). A half-null pair
+                // would name a map with no node, or a node with no map.
+                processMapId: null,
+                processNodeKey: null,
                 // A JSON column cannot be cleared with `null` through Prisma's
                 // default JSON semantics, so a null patch means "leave it".
                 impactProfile: undefined,
@@ -339,7 +354,7 @@ describe('updateBia — patch semantics', () => {
         expect((err as ValidationError).message).toBe('INVALID_PROCESS_NODE');
         expect(db.processNode.findFirst.mock.calls[0][0]).toStrictEqual({
             where: { id: 'node-other-tenant', tenantId: 't-acme' },
-            select: { id: true },
+            select: { processMapId: true, nodeKey: true },
         });
         expect(db.businessImpactAnalysis.update).not.toHaveBeenCalled();
         expect(logEvent).not.toHaveBeenCalled();

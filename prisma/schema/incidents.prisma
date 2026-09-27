@@ -141,7 +141,37 @@ model BusinessImpactAnalysis {
   tenantId      String
   /// Attach to a modeled process node (preferred). Null = free-standing
   /// service not yet on a process map.
-  processNodeId String?
+  /// The process node this BIA analyses, by the NATURAL key rather than the
+  /// row cuid (#2971).
+  ///
+  /// It referenced `ProcessNode.id` until now, and that was the one reference
+  /// in the schema pointing at a storage detail — everything else in the graph
+  /// (`ProcessEdge.sourceKey`/`targetKey`, `ProcessNode.parentNodeKey`) uses
+  /// `nodeKey`. The difference was not academic: saving a map deleted and
+  /// recreated every node with a fresh cuid, so every save silently unlinked
+  /// every BIA on the map (#2967).
+  ///
+  /// #2967 stopped the id churn. This removes the reason it mattered, so a
+  /// future bulk import, restore or migration that legitimately recreates nodes
+  /// cannot reintroduce it.
+  ///
+  /// THE MAP IS A HARD REFERENCE, THE NODE IS A SOFT ONE, and the split is the
+  /// whole point. A foreign key on the NODE would carry `ON DELETE SET NULL`,
+  /// so deleting and recreating a node under the same key — which a bulk
+  /// import, a restore path or a migration may legitimately do — unlinks the
+  /// BIA before the replacement exists. That is the defect one layer along.
+  ///
+  /// Naming the node by key instead makes "does this node exist right now" a
+  /// READ-time question, which is what it actually is. A node genuinely removed
+  /// from the map resolves to nothing; a node recreated under the same key
+  /// resolves again, because as far as the product is concerned it is the same
+  /// node.
+  ///
+  /// `processMapId` keeps a real FK so tenant isolation still fails on
+  /// referential integrity rather than on RLS alone, and deleting a map still
+  /// clears both columns.
+  processMapId    String?
+  processNodeKey  String?
   name          String
   /// CRITICAL | HIGH | MEDIUM | LOW.
   criticality   String
@@ -164,7 +194,7 @@ model BusinessImpactAnalysis {
   updatedAt     DateTime  @updatedAt
 
   tenant        Tenant                @relation(fields: [tenantId], references: [id])
-  processNode   ProcessNode?          @relation(fields: [processNodeId, tenantId], references: [id, tenantId])
+  processMap    ProcessMap?           @relation(fields: [processMapId, tenantId], references: [id, tenantId])
   ownerUser     User?                 @relation("BiaOwner", fields: [ownerUserId], references: [id])
   dependencies  BiaDependency[]
   /// BIA-as-evidence: the continuity control (NIS2 Art.21(2)(c)) links
@@ -172,7 +202,7 @@ model BusinessImpactAnalysis {
   evidenceLinks ControlEvidenceLink[]
 
   @@index([tenantId, criticality])
-  @@index([tenantId, processNodeId])
+  @@index([tenantId, processMapId, processNodeKey])
   @@index([tenantId, ownerUserId])
 
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child

@@ -106,10 +106,13 @@ describeFn('a BIA linked to a process node, across a save of that map', () => {
                 tenantId: TENANT_ID,
                 name: 'Payroll BIA',
                 criticality: 'HIGH',
-                processNodeId: node.id,
+                // The NATURAL key (#2971). This was `processNodeId: node.id`
+                // until the reference moved off the row cuid.
+                processMapId: mapId,
+                processNodeKey: NODE.nodeKey,
             },
         });
-        expect(bia.processNodeId).toBe(node.id);
+        expect(bia.processNodeKey).toBe(NODE.nodeKey);
 
         // THE SAVE. Identical graph, no user edit — the most innocuous save
         // there is, and the one autosave performs constantly.
@@ -127,8 +130,8 @@ describeFn('a BIA linked to a process node, across a save of that map', () => {
         // Diagnostic first: whichever way this goes, the numbers say why.
         expect({
             nodeIdChanged: nodeAfter.id !== node.id,
-            biaStillLinked: after.processNodeId !== null,
-            biaPointsAtCurrentNode: after.processNodeId === nodeAfter.id,
+            biaStillLinked: after.processNodeKey !== null,
+            biaPointsAtCurrentNode: after.processNodeKey === nodeAfter.nodeKey,
         }).toEqual({
             nodeIdChanged: false,
             biaStillLinked: true,
@@ -177,6 +180,70 @@ describeFn('a BIA linked to a process node, across a save of that map', () => {
             where: { processMapId: map.id, tenantId: TENANT_ID },
         });
         expect(remaining.map((n) => n.nodeKey)).toEqual(['node-1']);
+    });
+
+    it('survives the node being DELETED AND RECREATED — the class, not the instance', async () => {
+        // #2967 stopped `replaceGraph` churning node ids, which fixed the bug
+        // that was happening. #2971 removes the reason it COULD happen: the
+        // reference is the natural key, so a new row id is not a new node.
+        //
+        // This simulates what #2967's fix no longer does but a bulk import, a
+        // restore path or a future migration legitimately might — delete the
+        // node row and recreate it under the same key. Before #2971 the FK's
+        // ON DELETE SET NULL would have unlinked the BIA here with nothing
+        // failing. Now the link is re-established by the key itself.
+        const ctx = makeRequestContext('OWNER', {
+            tenantId: TENANT_ID,
+            userId: USER_ID,
+            role: 'OWNER',
+        });
+        const map = await runInTenantContext(ctx, (db) =>
+            ProcessMapRepository.create(db, ctx, {
+                name: `recreate ${randomUUID().slice(0, 6)}`,
+                description: null,
+                createdByUserId: USER_ID,
+            }),
+        );
+        await runInTenantContext(ctx, (db) =>
+            ProcessMapRepository.replaceGraph(db, ctx, map.id, { nodes: [NODE], edges: [] }),
+        );
+        const before = await globalPrisma.processNode.findFirstOrThrow({
+            where: { processMapId: map.id, tenantId: TENANT_ID, nodeKey: NODE.nodeKey },
+        });
+        const bia = await globalPrisma.businessImpactAnalysis.create({
+            data: {
+                tenantId: TENANT_ID,
+                name: 'Recreate BIA',
+                criticality: 'HIGH',
+                processMapId: map.id,
+                processNodeKey: NODE.nodeKey,
+            },
+        });
+
+        // Delete the row outright and put an identical node back under the same
+        // key — a different cuid, the same node as far as the product is
+        // concerned.
+        await globalPrisma.processNode.delete({ where: { id: before.id } });
+        const recreated = await globalPrisma.processNode.create({
+            data: {
+                tenantId: TENANT_ID,
+                processMapId: map.id,
+                nodeKey: NODE.nodeKey,
+                nodeType: NODE.nodeType,
+                label: NODE.label,
+                posX: NODE.posX,
+                posY: NODE.posY,
+            },
+        });
+        expect(recreated.id).not.toBe(before.id);
+
+        const after = await globalPrisma.businessImpactAnalysis.findUniqueOrThrow({
+            where: { id: bia.id },
+        });
+        expect({
+            rowIdChanged: recreated.id !== before.id,
+            stillLinked: after.processNodeKey === NODE.nodeKey && after.processMapId === map.id,
+        }).toEqual({ rowIdChanged: true, stillLinked: true });
     });
 
     it('an EMPTY payload clears the map — the case `notIn: []` would not cover', async () => {

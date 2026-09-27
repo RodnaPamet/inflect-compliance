@@ -51,7 +51,11 @@ const SITES: ReadonlyArray<{ conname: string; child: string; col: string; parent
     { conname: 'AuditPackShareComment_auditPackItemId_tenantId_fkey', child: 'AuditPackShareComment', col: 'auditPackItemId', parent: 'AuditPackItem' },
     { conname: 'AutomationRule_nextRuleId_tenantId_fkey', child: 'AutomationRule', col: 'nextRuleId', parent: 'AutomationRule' },
     { conname: 'AutomationRule_elseRuleId_tenantId_fkey', child: 'AutomationRule', col: 'elseRuleId', parent: 'AutomationRule' },
-    { conname: 'BusinessImpactAnalysis_processNodeId_tenantId_fkey', child: 'BusinessImpactAnalysis', col: 'processNodeId', parent: 'ProcessNode' },
+    // #2971 — a BIA now names its node by the natural key, so the hard
+    // reference moved from the NODE to the MAP. A constraint on the node would
+    // carry ON DELETE SET NULL, which unlinks a BIA when a node is deleted and
+    // recreated under the same key — the defect this issue exists to remove.
+    { conname: 'BusinessImpactAnalysis_processMapId_tenantId_fkey', child: 'BusinessImpactAnalysis', col: 'processMapId', parent: 'ProcessMap' },
     { conname: 'Device_employeeId_tenantId_fkey', child: 'Device', col: 'employeeId', parent: 'Employee' },
     { conname: 'Employee_managerEmployeeId_tenantId_fkey', child: 'Employee', col: 'managerEmployeeId', parent: 'Employee' },
     { conname: 'IdentityWriteJournal_linkId_tenantId_fkey', child: 'IdentityWriteJournal', col: 'linkId', parent: 'IdentityAccountLink' },

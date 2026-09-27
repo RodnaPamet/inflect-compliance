@@ -116,7 +116,9 @@ describe('listBias — recovery ordering', () => {
         expect(db.businessImpactAnalysis.findMany.mock.calls[0][0]).toStrictEqual({
             where: { tenantId: 't-acme', criticality: 'HIGH' },
             include: {
-                processNode: { select: { id: true, label: true } },
+                // No `processNode` include: a BIA names its node by natural
+                // key now, which Prisma cannot join. attachProcessNodes()
+                // fetches them in one OR-of-pairs query instead (#2971).
                 ownerUser: { select: { id: true, name: true, email: true } },
                 _count: { select: { dependencies: true } },
             },
@@ -328,7 +330,7 @@ describe('getControlBiaSurface — the no-dead-tab ladder', () => {
                 processMapId: { in: ['map-1'] },
                 nodeKey: { in: ['step-a', 'step-b', 'step-c'] },
             },
-            select: { id: true, label: true },
+            select: { processMapId: true, nodeKey: true, label: true },
             take: 400,
         });
         expect(db.businessImpactAnalysis.findMany).not.toHaveBeenCalled();
@@ -337,15 +339,20 @@ describe('getControlBiaSurface — the no-dead-tab ladder', () => {
     it('stops at none when the protected nodes carry no BIA, without ranking the tenant set', async () => {
         const db = surfaceDb({
             processEdge: { findMany: jest.fn().mockResolvedValue([{ processMapId: 'map-1', sourceKey: 'step-a', targetKey: 'step-b' }]) },
-            processNode: { findMany: jest.fn().mockResolvedValue([{ id: 'node-1', label: 'Payroll run' }]) },
+            processNode: { findMany: jest.fn().mockResolvedValue([{ processMapId: 'map-1', nodeKey: 'step-a', label: 'Payroll run' }]) },
         });
 
         await expect(getControlBiaSurface(ctx, 'c-1')).resolves.toStrictEqual({ kind: 'none' });
 
         expect(db.businessImpactAnalysis.findMany).toHaveBeenCalledTimes(1);
         expect(db.businessImpactAnalysis.findMany.mock.calls[0][0]).toStrictEqual({
-            where: { tenantId: 't-acme', processNodeId: { in: ['node-1'] } },
-            select: { id: true, name: true, criticality: true, mtpdHours: true, rtoHours: true, processNodeId: true },
+            // An OR of PAIRS. `mapId in [...] AND nodeKey in [...]` would be a
+            // cross-product matching nodes that do not exist (#2971).
+            where: { tenantId: 't-acme', OR: [{ processMapId: 'map-1', processNodeKey: 'step-a' }] },
+            select: {
+                id: true, name: true, criticality: true, mtpdHours: true,
+                rtoHours: true, processMapId: true, processNodeKey: true,
+            },
             take: 100,
         });
         expect(mockDerive).not.toHaveBeenCalled();
@@ -358,13 +365,13 @@ describe('getControlBiaSurface — the no-dead-tab ladder', () => {
         // node query's own take, so there is no label to show for it.
         const db = surfaceDb({
             processEdge: { findMany: jest.fn().mockResolvedValue([{ processMapId: 'map-1', sourceKey: 'step-a', targetKey: 'step-b' }]) },
-            processNode: { findMany: jest.fn().mockResolvedValue([{ id: 'node-1', label: 'Payroll run' }]) },
+            processNode: { findMany: jest.fn().mockResolvedValue([{ processMapId: 'map-1', nodeKey: 'step-a', label: 'Payroll run' }]) },
             businessImpactAnalysis: {
                 findMany: jest
                     .fn()
                     .mockResolvedValueOnce([
-                        { id: 'bia-ghost', name: 'Ghost BIA', criticality: 'CRITICAL', mtpdHours: 1, rtoHours: 1, processNodeId: 'node-1' },
-                        { id: 'bia-top', name: 'Payroll BIA', criticality: 'HIGH', mtpdHours: 4, rtoHours: 2, processNodeId: 'node-unresolved' },
+                        { id: 'bia-ghost', name: 'Ghost BIA', criticality: 'CRITICAL', mtpdHours: 1, rtoHours: 1, processMapId: 'map-1', processNodeKey: 'step-a' },
+                        { id: 'bia-top', name: 'Payroll BIA', criticality: 'HIGH', mtpdHours: 4, rtoHours: 2, processMapId: 'map-1', processNodeKey: 'step-unresolved' },
                     ])
                     .mockResolvedValueOnce([
                         { id: 'bia-top', criticality: 'HIGH', mtpdHours: 4, rtoHours: 2 },
@@ -428,7 +435,7 @@ describe('getIncidentBiaContext — recovery deadline chain', () => {
 
         expect(db.processNode.findMany.mock.calls[0][0]).toStrictEqual({
             where: { tenantId: 't-acme', processMapId: { in: ['map-1'] }, nodeKey: { in: ['step-a', 'step-b'] } },
-            select: { id: true },
+            select: { processMapId: true, nodeKey: true },
             take: 500,
         });
         expect(db.businessImpactAnalysis.findMany).not.toHaveBeenCalled();
@@ -438,14 +445,20 @@ describe('getIncidentBiaContext — recovery deadline chain', () => {
         const rows = [{ id: 'bia-1', name: 'Payroll', criticality: 'CRITICAL', mtpdHours: 2, rtoHours: 1 }];
         const db = incidentDb({
             processEdge: { findMany: jest.fn().mockResolvedValue([{ processMapId: 'map-1', sourceKey: 'step-a', targetKey: 'step-b' }]) },
-            processNode: { findMany: jest.fn().mockResolvedValue([{ id: 'node-1' }, { id: 'node-2' }]) },
+            processNode: { findMany: jest.fn().mockResolvedValue([{ processMapId: 'map-1', nodeKey: 'step-a' }, { processMapId: 'map-1', nodeKey: 'step-b' }]) },
             businessImpactAnalysis: { findMany: jest.fn().mockResolvedValue(rows) },
         });
 
         await expect(getIncidentBiaContext(ctx, 'inc-1')).resolves.toStrictEqual(rows);
 
         expect(db.businessImpactAnalysis.findMany.mock.calls[0][0]).toStrictEqual({
-            where: { tenantId: 't-acme', processNodeId: { in: ['node-1', 'node-2'] } },
+            where: {
+                tenantId: 't-acme',
+                OR: [
+                    { processMapId: 'map-1', processNodeKey: 'step-a' },
+                    { processMapId: 'map-1', processNodeKey: 'step-b' },
+                ],
+            },
             select: { id: true, name: true, criticality: true, mtpdHours: true, rtoHours: true },
             orderBy: { mtpdHours: 'asc' },
             take: 20,

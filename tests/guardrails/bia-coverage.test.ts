@@ -44,19 +44,38 @@ describe('BIA — schema + RLS + encryption + process attach', () => {
         expect(COMPLIANCE_SCHEMA).toMatch(/model\s+BiaDependency\s*\{/);
     });
 
-    it('the BIA attaches to a ProcessNode (reuse, not a parallel process concept)', () => {
+    it('the BIA attaches to a modelled process node (reuse, not a parallel concept)', () => {
+        // STILL THE SAME LOCK, by a different column (#2971). The point of this
+        // assertion is that a BIA reuses the modelled-process concept instead
+        // of inventing a parallel one — that is unchanged. What changed is
+        // WHICH identifier it reuses.
+        //
+        // It named `ProcessNode.id`, the row cuid. That was the one reference
+        // in the schema pointing at a storage detail, and it cost: until #2967,
+        // every save of a map recreated its nodes with fresh cuids and the FK's
+        // ON DELETE SET NULL silently unlinked every BIA on it.
+        //
+        // It now names the node the way the rest of the graph does —
+        // `ProcessEdge.sourceKey`/`targetKey` and `parentNodeKey` all use
+        // `nodeKey` — with the hard FK on the MAP, because a constraint on the
+        // node would reintroduce the unlink on any delete-and-recreate.
         const bia = COMPLIANCE_SCHEMA.match(/model\s+BusinessImpactAnalysis\s*\{[\s\S]*?\n\}/)![0];
-        expect(bia).toMatch(/processNodeId\s+String\?/);
-        expect(bia).toMatch(/processNode\s+ProcessNode\?/);
-        // ProcessNode carries the back-relation (the canvas cross-link).
+        expect(bia).toMatch(/processMapId\s+String\?/);
+        expect(bia).toMatch(/processNodeKey\s+String\?/);
+        expect(bia).toMatch(/processMap\s+ProcessMap\?/);
+        // The map carries the back-relation now; the node cannot, because the
+        // node reference is deliberately not a foreign key.
         expect(PROCESSES_SCHEMA).toMatch(/businessImpactAnalyses\s+BusinessImpactAnalysis\[\]/);
+        // And the cuid is GONE, not merely unused — a column nothing writes
+        // drifts from the truth the moment the first row is created without it.
+        expect(bia).not.toMatch(/processNodeId/);
     });
 
     it('is tenant-scoped with tenantId-leading indexes', () => {
         const bia = COMPLIANCE_SCHEMA.match(/model\s+BusinessImpactAnalysis\s*\{[\s\S]*?\n\}/)![0];
         expect(bia).toMatch(/tenantId\s+String/);
         expect(bia).toMatch(/@@index\(\[tenantId, criticality\]\)/);
-        expect(bia).toMatch(/@@index\(\[tenantId, processNodeId\]\)/);
+        expect(bia).toMatch(/@@index\(\[tenantId, processMapId, processNodeKey\]\)/);
     });
 
     it('encrypts the free-text notes (Epic B manifest)', () => {
