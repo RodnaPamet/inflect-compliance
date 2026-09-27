@@ -114,7 +114,13 @@ describe('DIRECTION_IMPLEMENTED agrees with what an operator can actually see', 
         // tenant could occupy, which is the shape this now checks directly
         // rather than by pinning two literals.
         expect(DIRECTION_IMPLEMENTED.joiner).toBe(true);
-        expect(JOINER_MAX_MODE).toBe('DRY_RUN');
+        // Raised to AUTOMATIC by owner decision. The flag was already true — it
+        // was lifted one release earlier, with the ceiling deliberately held at
+        // DRY_RUN so a tenant could start the seven-day window without any
+        // write authority. This is the second half, taken separately and on
+        // purpose: the rule below is what the pairing was ever standing in for,
+        // and it holds at either ceiling.
+        expect(JOINER_MAX_MODE).toBe('AUTOMATIC');
     });
 
     it('every implemented direction has a REACHABLE ceiling — the rule, not the literals', () => {

@@ -64,17 +64,44 @@ import { emailKey } from '@/lib/identity/email-key';
 /**
  * The highest rung this pass will act at.
  *
- * DRY_RUN, and the reason is not caution for its own sake: there is no create
- * verb behind this module, so AUTOMATIC would name an authority nothing can
- * exercise. A constant rather than config, for the same reason
- * `LEAVER_MAX_MODE` is one — raising it is a reviewed diff and a deploy.
+ * AUTOMATIC. This read DRY_RUN for as long as there was no create verb behind
+ * this module, because AUTOMATIC would then have named an authority nothing
+ * could exercise. That reason is spent — #2923 wired the verb, #2928 put a
+ * collision probe in front of it, #2940 gave Entra a provisioner, #2944 gave
+ * the pass report a page, and the lab proving run drove the whole path end to
+ * end and surfaced #2943 before any of it went live.
+ *
+ * A constant rather than config, for the same reason `LEAVER_MAX_MODE` is one:
+ * raising it is a reviewed diff and a deploy, which is what this was. It moved
+ * in a SEPARATE diff from `DIRECTION_IMPLEMENTED.joiner`, one release later and
+ * on an explicit decision — the flag was lifted first with this ceiling held at
+ * DRY_RUN, so tenants could spend the seven-day window and accumulate the
+ * evidence the promotion gate asks for before any write authority existed.
+ * Window first, promotion second, on evidence: the leaver's order.
+ *
+ * ═══ A CEILING, NOT A MODE — and at the TOP rung it constrains nothing ═══
+ *
+ * Nothing here is automatic for anybody. Every tenant remains DISABLED, and the
+ * one-rung rule, the seven-day dwell and the evidence check all still sit
+ * between DISABLED and this rung. What changed is only that the rung is now
+ * REACHABLE by an owner who walks the ladder to it.
+ *
+ * But be clear about what was given up: with the clamp on LADDER's last rung,
+ * `isAboveClamp` can never be true, so the clamp no longer refuses anything and
+ * `MODE_ABOVE_CLAMP` is unreachable — the state the leaver has been in since
+ * #2487. What protects this direction from here is the ladder, the dwell and
+ * the evidence check, NOT this constant. The constant's remaining job is to be
+ * the brake: narrowing it is a reviewed diff somebody can ship in a hurry, and
+ * that is why the branch it feeds is kept rather than deleted for being inert.
  *
  * It is enforced at gate 1 below, ORDINALLY (`isAboveClamp`), never
  * `mode !== JOINER_MAX_MODE`. The leaver paid for that distinction: with the
  * clamp at the second rung the inequality is correct by coincidence, and the
- * coincidence breaks the moment the clamp moves.
+ * coincidence breaks the moment the clamp moves — as it just did. At the top
+ * rung the two forms disagree on every rung below it, so the ordinal spelling
+ * is now load-bearing rather than merely correct.
  */
-export const JOINER_MAX_MODE = 'DRY_RUN' as const;
+export const JOINER_MAX_MODE = 'AUTOMATIC' as const;
 
 /**
  * Decision 7 — the cap is 5 creations PER RUN.
@@ -653,6 +680,34 @@ function decide(
 
 
 /**
+ * The sentence an operator reads when the joiner pass is clamped below their
+ * configured mode.
+ *
+ * LIFTED OUT OF THE BRANCH ON PURPOSE, mirroring `clampRefusalDetail` in
+ * `identity-leaver-pass`. The branch that uses it is unreachable while
+ * `JOINER_MAX_MODE` sits on LADDER's top rung, so inline the string would have
+ * no reader at all — and the leaver paid for that: its clamp sentence went on
+ * asserting something that had stopped being true, because nothing could call
+ * it and nothing could assert on it.
+ *
+ * Takes the clamp as a PARAMETER rather than reading the constant, which is
+ * what lets a test call it with the clamp LOWERED — the incident rollback that
+ * wakes the branch up. That is not a shape invented for a test: the constant is
+ * a source value specifically so it can be narrowed in a reviewed diff when a
+ * pass misbehaves, and the operator reading this sentence is doing so in the
+ * minutes after that ships.
+ */
+export function clampRefusalDetail(mode: string, clamp: string, starters: number): string {
+    return (
+        `This tenant is configured at ${mode}, but the joiner pass is clamped at ` +
+        `${clamp}. The clamp is a source constant, not a tenant setting — raising ` +
+        'it is a reviewed code change and a deploy, not something an administrator can ' +
+        `switch on. ${starters} starter(s) were assembled; nothing was created, and nothing ` +
+        'was sent to any directory.'
+    );
+}
+
+/**
  * Plan one DRY_RUN joiner pass. Pure: no IO, no directory, no clock of its own.
  *
  * ═══ GATE ORDER, AND WHY ASSEMBLY COMES FIRST ═══
@@ -690,14 +745,31 @@ export function planJoinerPass(input: JoinerPlanInput): JoinerPlan {
         );
     }
     if (isAboveClamp(input.mode, JOINER_MAX_MODE)) {
-        return refuse(
-            'MODE_ABOVE_CLAMP',
-            `This tenant is configured at ${input.mode}, but the joiner pass is clamped at ` +
-                `${JOINER_MAX_MODE}. The clamp is a source constant, not a tenant setting — raising ` +
-                'it is a reviewed code change and a deploy, not something an administrator can ' +
-                `switch on. ${starters} starter(s) were assembled; nothing was created, and nothing ` +
-                'was sent to any directory.',
-        );
+        // ═══ UNREACHABLE SINCE JOINER_MAX_MODE REACHED THE TOP RUNG ═══
+        //
+        // Exactly the state `identity-leaver-pass` has been in since #2487, and
+        // kept for exactly its reasons. `isAboveClamp` cannot return true while
+        // the clamp is LADDER's last rung, and an invented out-of-ladder mode
+        // does not reach it either — `indexOf` returns -1, which reads as BELOW
+        // the clamp, the permissive direction.
+        //
+        // KEPT ANYWAY, because the unreachability is not structural. It is
+        // derived from two values a single token apart from moving:
+        //
+        //   · LOWERING the clamp. `JOINER_MAX_MODE` is a source constant
+        //     precisely so narrowing it is a reviewed diff somebody can ship in
+        //     a hurry — the brake you reach for after a pass creates something
+        //     it should not have. Delete this branch and that edit compiles,
+        //     ships, reads as a ceiling everywhere, and clamps NOTHING.
+        //   · GROWING the ladder. A rung above AUTOMATIC sorts above the clamp
+        //     on the day it lands, with no diff to this file.
+        //
+        // `clampRefusalDetail` is lifted out so the sentence has a READER while
+        // the branch has none — the leaver's own lesson, where an unreadable
+        // string went on telling operators something that had stopped being
+        // true. `no rung is above the clamp` in the tests is the tripwire that
+        // announces the day this is live again.
+        return refuse('MODE_ABOVE_CLAMP', clampRefusalDetail(input.mode, JOINER_MAX_MODE, starters));
     }
 
     // ── 2. Nobody to plan for. The boring daily row that proves the pass ran.

@@ -423,15 +423,27 @@ describe('the ladder, and what it does and does not record', () => {
         expect(r.starters).toBe(POPULATION.length);
     });
 
-    it('refuses a tenant above the ceiling and writes NO execution row', async () => {
-        joinerMode.value = 'AUTOMATIC';
-
-        const r = await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
-
-        expect(r.refusal).toBe('MODE_ABOVE_CLAMP');
-        expect(r.starters).toBe(POPULATION.length);
-        expect(mockDb.integrationExecution.create).not.toHaveBeenCalled();
-    });
+    // ═══ REMOVED: 'refuses a tenant above the ceiling and writes NO row' ═══
+    //
+    // It set `AUTOMATIC` and asserted `MODE_ABOVE_CLAMP`. Raising
+    // `JOINER_MAX_MODE` to the top rung makes that refusal unreachable, so the
+    // test could only ever have been rewritten or deleted — and neither half of
+    // what it covered is lost:
+    //
+    //   · "a refusal writes NO execution row" is pinned one test UP, on
+    //     MODE_DISABLED, which is a refusal a tenant can still reach. This was
+    //     the unreachable duplicate of it.
+    //   · "a tenant at AUTOMATIC executes" belongs to
+    //     tests/unit/jobs/joiner-execute-branch.test.ts, which mocks a
+    //     provisioner. It cannot live here: this file's `mockDb` has no
+    //     connection model, so driving AUTOMATIC through it returns
+    //     status ERROR with "Cannot read properties of undefined (reading
+    //     'findMany')" — a green-looking assertion about a crash, not about the
+    //     ladder.
+    //
+    // Deleted rather than left asserting the crash, because a test whose
+    // subject has become unreachable is worse than no test: it goes on looking
+    // like coverage of the thing it names.
 });
 
 describe('a pass that fails still leaves a trace', () => {

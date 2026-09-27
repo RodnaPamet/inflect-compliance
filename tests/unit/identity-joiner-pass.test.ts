@@ -35,6 +35,7 @@ import {
     planJoinerPass,
     type JoinerCandidate,
     type JoinerPlanInput,
+    clampRefusalDetail,
 } from '@/app-layer/usecases/identity-joiner-pass';
 import { LADDER, isAboveClamp } from '@/lib/identity/write-ladder';
 import {
@@ -86,25 +87,61 @@ const outcomeFor = (plan: ReturnType<typeof planJoinerPass>, employeeId: string)
     plan.decisions.find((d) => d.employeeId === employeeId);
 
 describe('the clamp, and the fact that it is ordinal', () => {
-    it('is DRY_RUN — a rung the ladder actually has', () => {
+    it('is AUTOMATIC — and moving it is a reviewed diff, not a setting', () => {
         // A clamp off the ladder sorts to -1 in `isAboveClamp`, i.e. nothing is
         // ever above it, i.e. the gate is silently inert rather than loudly
         // wrong. The leaver's own tests pin the same property for the same
         // reason.
         expect(LADDER).toContain(JOINER_MAX_MODE);
-        expect(JOINER_MAX_MODE).toBe('DRY_RUN');
+        // Pinned as a VALUE because it is the single line that decides whether
+        // this subsystem may create accounts in a customer's directory
+        // unattended. A change here should be deliberate enough to update a
+        // test in the same diff — which is how this one came to be edited.
+        expect(JOINER_MAX_MODE).toBe('AUTOMATIC');
     });
 
-    it('refuses AUTOMATIC and carries the starter count', () => {
+    it('does NOT refuse AUTOMATIC any more — the clamp reached the top rung', () => {
+        // THIS TEST USED TO ASSERT THE OPPOSITE, and the inversion is the whole
+        // content of raising the clamp. It read:
+        //
+        //     expect(plan.refusal).toBe('MODE_ABOVE_CLAMP');
+        //     expect(plan.detail).toMatch(/clamped at DRY_RUN/);
+        //
+        // With the clamp on LADDER's last rung nothing sorts above it, so
+        // MODE_ABOVE_CLAMP is unreachable for the joiner exactly as it has been
+        // for the leaver since #2487. Rewritten to state that rather than
+        // deleted, because a reader asking "what happened to the clamp refusal"
+        // deserves to find the answer here.
+        //
+        // The starter count that made the old refusal actionable is still
+        // asserted — on a plan that now PROCEEDS.
         const plan = planJoinerPass(input({ mode: 'AUTOMATIC' }));
-        expect(plan.refusal).toBe('MODE_ABOVE_CLAMP');
-        expect(plan.detail).toMatch(/clamped at DRY_RUN/);
-        // The count is the point of the divergence from the leaver: a refusal
-        // that says "1 starter" is actionable, and one that says nothing is
-        // indistinguishable from a dead worker on the morning somebody is
-        // sitting at a desk with no account.
+        expect(plan.refusal).toBeNull();
         expect(plan.starters).toBe(1);
-        expect(plan.wouldCreate).toBe(0);
+    });
+
+    it('no rung is above the clamp — the tripwire for the day one is', () => {
+        // WHAT THIS IS FOR. `MODE_ABOVE_CLAMP` in the pass is unreachable while
+        // the clamp sits on the TOP rung, and that branch is kept anyway rather
+        // than deleting a safety refusal for being temporarily inert — the
+        // leaver made the same call in #2487. Keeping dead code is only
+        // defensible if something announces the moment it stops being dead.
+        // This is that something.
+        //
+        // DERIVED FROM LADDER, never a literal list: a rung added ABOVE
+        // AUTOMATIC would satisfy any by-name assertion unchanged, because the
+        // new rung is simply not in the set being named. Filtering for what IS
+        // above the clamp has no such blind spot.
+        //
+        // When it goes red, that is not a broken test. It means the clamp
+        // branch in `planJoinerPass` is live again — go read the note on it and
+        // check the sentence is still what you want an operator to find
+        // mid-incident.
+        //
+        // POSITIVE CONTROL FIRST: the assertion below passes when the selection
+        // is empty, and an empty LADDER would satisfy it vacuously.
+        expect(LADDER.length).toBeGreaterThan(0);
+        expect(LADDER.filter((m) => isAboveClamp(m, JOINER_MAX_MODE))).toEqual([]);
     });
 
     it('does NOT refuse the rung it is clamped AT — the ordinal half', () => {
@@ -116,10 +153,56 @@ describe('the clamp, and the fact that it is ordinal', () => {
     });
 
     it('agrees with `isAboveClamp` on every rung, so the ceiling is one answer', () => {
+        // HALF-VACUOUS NOW, AND SAYING SO IS THE HONEST THING. With the clamp on
+        // the top rung the right-hand side is false for every rung, so this
+        // proves only that no rung is WRONGLY refused — the permissive
+        // direction. The other half, that a rung above the clamp IS refused, is
+        // unreachable and is covered instead by `clampRefusalDetail` below,
+        // called with the clamp lowered.
+        //
+        // Kept because the direction it still proves is the one that would hurt:
+        // a joiner pass refusing MODE_ABOVE_CLAMP at a rung it should accept
+        // means every tenant at that rung silently provisions nobody.
         for (const rung of LADDER) {
             const plan = planJoinerPass(input({ mode: rung }));
             expect(plan.refusal === 'MODE_ABOVE_CLAMP').toBe(isAboveClamp(rung, JOINER_MAX_MODE));
         }
+    });
+
+    describe('the refusal text nobody can reach today', () => {
+        // Called with the clamp LOWERED to DRY_RUN: the incident rollback that
+        // wakes the branch up. Not a hypothetical shape invented for a test —
+        // `JOINER_MAX_MODE` is a source constant specifically so it can be
+        // narrowed in a reviewed diff when a pass misbehaves, and the operator
+        // reading this sentence is doing so in the minutes after that ships.
+        const LOWERED = 'DRY_RUN';
+        const detail = clampRefusalDetail('AUTOMATIC', LOWERED, 3);
+
+        it('names both the configured mode and the clamp, and the starter count', () => {
+            // Neither rung alone is actionable: "you are clamped" without both
+            // leaves the operator unable to tell whether to change a setting or
+            // escalate for a deploy, which is the only decision this message
+            // exists to inform. The count is the joiner's own addition — a
+            // refusal that says "3 starter(s)" tells them how many people are
+            // sitting at a desk with no account.
+            expect(detail).toContain('AUTOMATIC');
+            expect(detail).toContain(LOWERED);
+            expect(detail).toContain('3 starter(s)');
+        });
+
+        it('says plainly that nothing reached a directory', () => {
+            // The question an operator actually has mid-incident is not "why",
+            // it is "did anything happen". This sentence has to answer that
+            // before it explains itself.
+            expect(detail).toMatch(/nothing was created/i);
+            expect(detail).toMatch(/nothing.*sent to any directory/i);
+        });
+
+        it('does not call the clamp a setting an administrator can change', () => {
+            // The one claim in here that could send an operator hunting through
+            // an admin page for a control that does not exist.
+            expect(detail).toMatch(/reviewed code change/i);
+        });
     });
 
     it('refuses DISABLED separately, and carries the count there too', () => {
@@ -477,9 +560,16 @@ describe('what the dry run says it could not know', () => {
         // `predictionLimits`, so the refused artefact can lose them while the
         // clean one keeps them, and the refused artefact is the one most likely
         // to be trimmed. One case per gate that can produce a plan.
+        //
+        // `{ mode: 'AUTOMATIC' }` WAS IN THIS LIST as the MODE_ABOVE_CLAMP case
+        // and is gone, because AUTOMATIC no longer refuses — the clamp reached
+        // the top rung. That gate is now unreachable, so it cannot be exercised
+        // here by any input; its own coverage is `clampRefusalDetail`, called
+        // directly with the clamp lowered. Removed rather than swapped for an
+        // invented out-of-ladder mode, which does not reach the branch either:
+        // `isAboveClamp` sorts an unknown value to -1 and reads it as BELOW.
         const refusals: Partial<JoinerPlanInput>[] = [
             { mode: 'DISABLED' },
-            { mode: 'AUTOMATIC' },
             { starters: [] },
             { departmentGroups: null },
             { defaultGroupId: null },

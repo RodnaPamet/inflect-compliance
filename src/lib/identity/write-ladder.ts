@@ -290,6 +290,25 @@ export const PASS_AUTOMATION_SUFFIX: Readonly<Record<IdentityDirection, string>>
  * account created, entitled and ENABLED with a UPN of `pj151326` and no domain
  * suffix, confirmed by an independent `ldapsearch`. Fixed before this diff.
  * The window is what comes next, not the writes.
+ *
+ * ═══ AND THE SEPARATE DECISION WAS TAKEN: the ceiling is now AUTOMATIC ═══
+ *
+ * Everything above is accurate history and is kept as such — the flag and the
+ * ceiling moved in two diffs, one release apart, which is the order this
+ * paragraph argued for. The second has now happened on an explicit owner
+ * decision, so `JOINER_MAX_MODE` is AUTOMATIC and the joiner may be widened all
+ * the way by an owner who walks the ladder.
+ *
+ * READ THE CLAMP'S OWN DOCBLOCK in `identity-joiner-pass` before reasoning
+ * about what still protects this direction, because the answer changed: at the
+ * TOP rung `isAboveClamp` can never be true, so the clamp refuses nothing and
+ * `MODE_ABOVE_CLAMP` is unreachable — the leaver's state since #2487. The
+ * guards protecting the joiner from here are the one-rung rule, the seven-day
+ * dwell and the evidence check. Not this constant.
+ *
+ * The pairing rule stated above is unaffected, and this diff satisfies it for
+ * the same reason the last one did: AUTOMATIC is reachable, so `implemented`
+ * still advertises nothing nobody can get to.
  */
 export const DIRECTION_IMPLEMENTED: Readonly<Record<IdentityDirection, boolean>> = {
     leaver: true,
