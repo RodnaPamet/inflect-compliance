@@ -173,6 +173,10 @@ export const SUBPAGES: readonly string[] = [
     '/admin/identity-joiner-passes',
     '/admin/identity-leaver-passes',
     '/admin/identity-write-journal',
+    // #2861 — reached from the external-tools page for one connection, never
+    // from the nav. The sibling of identity-write-policy below it, for the
+    // third-party-system authority rather than the directory one.
+    '/admin/external-write-policy/[connectionId]',
     '/admin/identity-write-policy',
     '/admin/modules',
     '/admin/integrations',
