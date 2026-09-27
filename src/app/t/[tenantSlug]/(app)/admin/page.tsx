@@ -65,6 +65,11 @@ export default async function AdminPage({
                 { href: '/admin/api-keys', id: 'api-keys-pill-btn', icon: <KeyRound className={iconCls} />, label: t('nav.apiKeys') },
                 { href: '/admin/billing', id: 'billing-pill-btn', icon: <CreditCard className={iconCls} />, label: t('nav.billing') },
                 { href: '/admin/notifications', id: 'notifications-pill-btn', icon: <Bell className={iconCls} />, label: t('nav.notifications') },
+                // Optional product modules. Under `organization` rather than a
+                // section of its own: what the workspace HAS sits with the other
+                // workspace-shaped settings, and one module does not make a
+                // category.
+                { href: '/admin/modules', id: 'modules-pill-btn', icon: <Grid3x3 className={iconCls} />, label: t('nav.modules') },
             ],
         },
         {

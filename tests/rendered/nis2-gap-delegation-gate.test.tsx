@@ -144,6 +144,7 @@ function ctxFor(role: 'OWNER' | 'EDITOR') {
             canExport: true,
         },
         appPermissions: getPermissionsForRole(role),
+        modules: { processCanvas: false },
     };
 }
 

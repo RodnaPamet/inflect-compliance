@@ -150,6 +150,7 @@ const ADMIN_ONLY_ROUTES = [
     // narrower key here would be a way to read what tenant_lifecycle guards.
     'admin/flue-wiring/route.ts',
     'admin/identity-write-policy/route.ts',
+    'admin/process-canvas-module/route.ts',
     // #2861 — the same ladder shape as the identity write policy above, for a
     // different authority: how far an AGENT may go when driving a write to a
     // customer's own third-party system. Same OWNER-only key, because granting

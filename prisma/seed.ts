@@ -110,6 +110,30 @@ async function main() {
     });
     console.log('✅ Tenant:', tenant.name, '(OWNER:', admin.email + ')');
 
+    // ─── Optional modules: the dev/E2E tenant gets the process canvas ───
+    //
+    // `processCanvasEnabled` defaults to FALSE in production, deliberately —
+    // the editor behind that surface is licensed and must not reach customers
+    // without a key. The dev and E2E tenant is neither, and several things
+    // depend on the surface being reachable here:
+    //
+    //   · `tests/e2e/page-load-budget.spec.ts` sweeps `processes` and
+    //     `processes/governance`. With the module off those routes 404 and the
+    //     budget sweep measures an error page — a green-looking run over a
+    //     surface nobody rendered.
+    //   · Anyone developing the canvas would otherwise open the app and find
+    //     the page gone, with nothing saying why.
+    //
+    // Turned on HERE rather than by lowering the production default, because
+    // the default is the licence control and a seed is the right place for
+    // "this particular tenant is ours".
+    await prisma.tenantSecuritySettings.upsert({
+        where: { tenantId: tenant.id },
+        create: { tenantId: tenant.id, processCanvasEnabled: true },
+        update: { processCanvasEnabled: true },
+    });
+    console.log('✅ Modules: process canvas enabled for the seed tenant');
+
     // ─── Tenant Memberships (non-owner roles) ───
     //
     // The OWNER membership for `admin` was created atomically inside
