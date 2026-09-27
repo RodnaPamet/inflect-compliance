@@ -1,0 +1,31 @@
+-- THE PROCESS CANVAS BECOMES A MODULE A TENANT EITHER HAS OR DOES NOT.
+--
+-- Every other surface in this product is offered to every tenant and gated by
+-- PERMISSION — who may use it. This column answers a different question: is the
+-- surface offered here at all. That distinction is why it is not a role, not a
+-- permission and not a plan tier; those all decide access to something the
+-- product provides, and this decides whether it provides it.
+--
+-- DEFAULT FALSE, which is the opposite of every other surface. Two reasons, and
+-- the second is the load-bearing one:
+--
+--   · The canvas is the largest single surface in the app and nothing until now
+--     let a tenant simply not have it.
+--   · The editor behind it is licensed software. Under the hobby licence the
+--     product may not put it in front of customers — the licence permits a
+--     "Development Environment ... not accessible to end users, customers, or
+--     the public" and forbids Production use without a paid key. Defaulting to
+--     TRUE would make every new tenant a licence violation on creation, which
+--     is not a state any default should be able to reach.
+--
+-- IT GOVERNS THE SURFACE, NEVER THE ROWS. `ProcessNode`, `ProcessEdge` and
+-- `ProcessEdgeControl` are untouched by this flag. Coverage, traceability and
+-- the audit-pack renderer read those rows directly and must keep working with
+-- the module off — if disabling a module changes a coverage report, the flag
+-- has been wired too deep. Off is not a delete; on again shows the same map.
+--
+-- NOT NULL with a default rather than nullable: there is no third state here.
+-- A tenant either has the module or does not, and a NULL that some reader
+-- coerces to true is exactly the ambiguity the licence position cannot afford.
+ALTER TABLE "TenantSecuritySettings"
+    ADD COLUMN "processCanvasEnabled" BOOLEAN NOT NULL DEFAULT false;

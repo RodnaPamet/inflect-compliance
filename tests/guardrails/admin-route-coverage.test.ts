@@ -150,6 +150,7 @@ const ADMIN_ONLY_ROUTES = [
     // narrower key here would be a way to read what tenant_lifecycle guards.
     'admin/flue-wiring/route.ts',
     'admin/identity-write-policy/route.ts',
+    'admin/process-canvas-module/route.ts',
     'admin/identity-leaver-passes/route.ts',
     // #2687 — the joiner's half of the same pair. The report names which of a
     // customer's people the product would create an account for and at what

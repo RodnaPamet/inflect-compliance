@@ -52,6 +52,21 @@ export interface TenantServerContext {
     permissions: Permissions;
     /** Fine-grained UI permission set */
     appPermissions: PermissionSet;
+    /**
+     * Optional modules this tenant has.
+     *
+     * NOT a permission, and kept out of `appPermissions` for that reason: a
+     * permission says whether this USER may act, a module says whether the
+     * product offers the surface to this TENANT at all. Conflating them makes
+     * an absent module look like a denied user.
+     */
+    modules: TenantModules;
+}
+
+/** @see TenantServerContext.modules */
+export interface TenantModules {
+    /** The process canvas surface. Defaults OFF — see `process-canvas-module`. */
+    processCanvas: boolean;
 }
 
 // ─── Resolvers ───
@@ -117,6 +132,19 @@ export async function getTenantServerContext(params: {
         params.userId,
     );
 
+    // One extra indexed read on a table already keyed by tenantId. It happens
+    // here rather than in the consuming layout so there is a single place that
+    // decides what a tenant's modules are — a second reader would drift, and
+    // the nav and the route guard disagreeing about whether a module is on is
+    // the worst version of this bug: a visible link to a 404.
+    //
+    // ABSENT ROW READS AS OFF, matching `isProcessCanvasEnabled`. A tenant
+    // nobody has configured has not been given the module.
+    const settings = await prisma.tenantSecuritySettings.findUnique({
+        where: { tenantId: ctx.tenant.id },
+        select: { processCanvasEnabled: true },
+    });
+
     // Map to a plain serializable shape (strip Prisma model internals)
     return {
         tenant: {
@@ -128,5 +156,6 @@ export async function getTenantServerContext(params: {
         role: ctx.role,
         permissions: ctx.permissions,
         appPermissions: ctx.appPermissions,
+        modules: { processCanvas: settings?.processCanvasEnabled === true },
     };
 }

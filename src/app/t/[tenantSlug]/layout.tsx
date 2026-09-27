@@ -65,6 +65,7 @@ export default async function TenantLayout({
             plan,
             permissions: serverCtx.permissions,
             appPermissions: serverCtx.appPermissions,
+            modules: serverCtx.modules,
         }}>
             {children}
         </TenantProvider>

@@ -5701,6 +5701,7 @@
       "vendorTemplates": "Assessment Templates",
       "vendorReviews": "Assessment Reviews",
       "notifications": "Notifications",
+      "modules": "Modules",
       "theme": "Theme",
       "privacy": "Privacy & data protection",
       "dsarRequests": "Data subject requests",
@@ -5981,6 +5982,25 @@
         "AUTOMATIC": "The product will write to your directory without asking. Nothing stands between a terminated worker in the HR feed and a disabled account, except the safety rails. You can narrow this at any time."
       },
       "linkLabel": "Write policy"
+    },
+    "modules": {
+      "forbidden": "Only a workspace owner can turn product modules on or off. An administrator cannot grant this.",
+      "heading": "Modules",
+      "intro": "Optional parts of the product. A module that is off is not available to anyone in this workspace, whatever their role — it is not a permission, and turning it off does not delete anything.",
+      "loadFailed": "Module settings could not be loaded",
+      "on": "On",
+      "off": "Off",
+      "turnOn": "Turn on",
+      "turnOff": "Turn off",
+      "saveFailedHeading": "That change was not saved",
+      "saveFailedBody": "The module is still in its previous state. Try again, and if it keeps failing the setting has not been changed — do not assume it applied.",
+      "processCanvas": {
+        "name": "Process canvas",
+        "description": "Map business and IT processes as a diagram, with controls placed on the connections between steps. Turning this off hides the surface; your process data is kept and reappears unchanged if you turn it back on.",
+        "licenceHeading": "Check the licence before enabling this for a customer",
+        "licenceBody": "The diagram editor behind this canvas is licensed software. The current licence covers internal use only — it does not permit putting the canvas in front of customers or the public. Enabling this for a customer workspace needs a paid licence first."
+      },
+      "breadcrumb": "Modules"
     },
     "reviewQuality": {
       "title": "Review quality",

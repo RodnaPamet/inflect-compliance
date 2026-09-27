@@ -22,6 +22,13 @@ const COMPONENTS_DIR = path.resolve(__dirname, '../../src/components');
  * These pages must NOT regress to raw color utilities.
  */
 const MIGRATED_PAGES = [
+    // Optional product modules (#2964). Design-system-native from birth:
+    // semantic spacing and content tokens only, Heading / Button /
+    // StatusBadge / InlineNotice primitives, no raw palette greys. Listed so
+    // the two assertions below actually RUN against it, rather than counted
+    // as debt it never incurred.
+    'admin/modules/page.tsx',
+    'admin/modules/ModulesClient.tsx',
     // Identity write journal (#2877 f52) — the surface for what a disable
     // replaced and which writes never settled. Design-system-native from
     // birth: semantic tokens only (content/surface/space), Card / Heading /

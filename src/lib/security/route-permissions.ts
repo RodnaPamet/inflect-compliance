@@ -364,6 +364,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             + 'tenant-lifecycle guards.',
     },
 
+    // ── Optional product modules (per tenant) ───────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/process-canvas-module(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Grants or removes a whole product surface for the tenant. ' +
+            'OWNER-only on the same key as tenant deletion and the identity ' +
+            'write ladder, because adding or removing a surface is authority ' +
+            'of that class rather than day-to-day administration. It is also ' +
+            'a licence control: the editor behind the process canvas may not ' +
+            'be put in front of customers without a paid key, so the switch ' +
+            'that decides whether a customer sees it cannot sit below OWNER.',
+    },
+
     // ── JML identity-write authority (per direction) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/identity-write-policy(\\/.*)?$`),

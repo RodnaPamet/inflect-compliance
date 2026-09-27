@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useTenantContext, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
+import { useTenantContext, useTenantHref, usePermissions, useModules } from '@/lib/tenant-context-provider';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import { StartTourButton } from '@/components/ui/OnboardingTour';
@@ -69,6 +69,7 @@ interface NavSectionDef {
 export function useNavSections(): NavSectionDef[] {
     const tenantHref = useTenantHref();
     const perms = usePermissions();
+    const modules = useModules();
     const tenant = useTenantContext();
     // Nav labels + section eyebrows are localised via the `nav` catalog
     // (messages/{en,bg}.json). Hrefs — and therefore `data-testid="nav-<slug>"`
@@ -170,7 +171,23 @@ export function useNavSections(): NavSectionDef[] {
                 // the connections between steps. Sits under Manage
                 // alongside Policy + Vendor — same governance-tool
                 // tier.
-                { href: tenantHref('/processes'), label: t('processes'), icon: Workflow },
+                //
+                // GATED ON A MODULE, NOT A PERMISSION, and it is the only entry
+                // here that is. The surrounding items ask whether this USER may
+                // open a surface the product offers everyone; this one asks
+                // whether the tenant HAS the surface at all. `modules` is a
+                // separate bag on the tenant context for exactly that reason.
+                //
+                // The same value gates the route itself (the `processes/`
+                // layout calls `notFound()`), read from one place server-side —
+                // so this cannot become a visible link to a 404, which is the
+                // worst failure available to a nav gate.
+                {
+                    href: tenantHref('/processes'),
+                    label: t('processes'),
+                    icon: Workflow,
+                    visible: modules.processCanvas === true,
+                },
                 { href: tenantHref('/reports'), label: t('reports'), icon: SquareChart, visible: perms.reports.view },
             ].filter(item => {
                 // DEFENSE-IN-DEPTH (Layer 2 of 2):

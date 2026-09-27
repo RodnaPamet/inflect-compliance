@@ -88,6 +88,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/admin/identity-leaver-passes': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/identity-write-journal': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/identity-write-policy': { href: '/admin/integrations', label: 'Integrations' },
+    '/admin/modules': { href: '/admin', label: 'Admin' },
     '/admin/integrations': { href: '/admin', label: 'Admin' },
     '/admin/integrations/sharepoint-health': { href: '/admin/integrations', label: 'Integrations' },
     '/admin/integrations/[connectionId]': { href: '/admin/integrations', label: 'Integrations' },

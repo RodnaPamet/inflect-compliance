@@ -74,6 +74,8 @@ describe('No duplicate admin guards on pages', () => {
      * affordance leading somewhere stricter.
      */
     const STRICTER_GUARD_PAGES: Record<string, string> = {
+        'modules/page.tsx':
+            'OWNER-only (admin.tenant_lifecycle) — turning a product module on or off grants or removes a whole surface for the tenant, which is authority of the same class as tenant deletion; an ADMIN who is not an OWNER would otherwise reach the page and read the API 403 as a broken backend',
         'identity-leaver-passes/page.tsx':
             'OWNER-only (admin.tenant_lifecycle) — the report names which of a customer’s people a leaver pass would have disabled; without the page gate a non-OWNER admin sees the API 403 as a load failure',
         'identity-joiner-passes/page.tsx':
