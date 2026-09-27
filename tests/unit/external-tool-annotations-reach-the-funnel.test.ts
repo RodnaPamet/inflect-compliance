@@ -37,7 +37,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf, functionBodyOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, functionBodyOf } from '../helpers/source-blocks';
 import {
     hashToolManifest,
     verifyToolManifest,
@@ -171,6 +171,29 @@ describe('assertToolManifestPinned passes the declared hints through', () => {
         // Twice: once on the non-refusing security path, once on the refusal.
         expect(recordCalls).toHaveLength(2);
         expect(body).toMatch(/liveAnnotationsHash/);
+    });
+
+    it('the GATE\'S CONTRACT declares the field, so the spread is not the guarantee', () => {
+        // `authorizeToolCall`'s tool parameter enumerates the fields the pin
+        // compares -- its own docstring says naming only some of them is how the
+        // description nearly got left out. Both call sites pass `{ ...tool }`, so
+        // annotations reach the gate at runtime whether the type mentions them or
+        // not, which is precisely why the type must: a caller that builds the
+        // object field-by-field would drop a pinned axis with NO type error, and
+        // that is the defect above, reintroduced.
+        //
+        // Bounded to the PARAMETER'S OWN BRACES, never a whole-file needle --
+        // `annotations` appears many times in this file, so a file-wide read
+        // would be satisfied by the call site the test above already covers.
+        const param = braceBlockAfter(
+            codeOf(fs.readFileSync(path.join(ROOT, 'src/lib/mcp/authorize.ts'), 'utf8')),
+            'tool: \\{',
+        );
+        // Positive control: the sibling fields the gate compares must be in
+        // there, or the block was not the one this test means.
+        expect(param).toMatch(/description:\s*string;/);
+        expect(param).toMatch(/inputSchema:\s*Record<string, unknown>;/);
+        expect(param).toMatch(/annotations\?:\s*Record<string, unknown>;/);
     });
 
     it('and the bare early return is gone', () => {

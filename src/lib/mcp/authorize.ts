@@ -1098,6 +1098,19 @@ export async function authorizeToolCall(
          */
         description: string;
         inputSchema: Record<string, unknown>;
+        /**
+         * And the declared annotations, for the reason the comment above gives
+         * about the description: they are IN THE PIN (#2941).
+         *
+         * Declared rather than left to the spread every caller happens to use.
+         * Both call sites pass `{ ...tool, … }`, so the value arrives at runtime
+         * whether this line exists or not — which is exactly the problem. With
+         * the field absent from the contract, a caller that builds the object
+         * field-by-field drops a pinned axis and the compiler says nothing,
+         * reintroducing the defect this parameter list was enumerated to
+         * prevent. The enumeration is the safety; an omission from it is not.
+         */
+        annotations?: Record<string, unknown>;
         authorize: McpToolAuthorization;
         resourceScope: { resource: string; action: ScopeAction };
         /** Propose tools only — the MCP capability the credential must carry. */

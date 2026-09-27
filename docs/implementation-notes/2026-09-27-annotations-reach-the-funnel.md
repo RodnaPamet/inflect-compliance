@@ -118,6 +118,36 @@ Measured against the pins that run left on file.
   restored and md5-verified between the two, because the mechanism tests pass
   under both mutations — they always did, which is how this shipped.
 
+## The same defect one layer up, closed in the same diff
+
+`authorizeToolCall`'s `tool` parameter is a structural type that ENUMERATES the
+fields the pin compares, and its own docstring says why: "Naming only what the
+gate compares would have left the description out, which is the field the attack
+uses." It did not name `annotations`.
+
+That did not break the runtime. Both call sites pass `{ ...tool, … }`, and a
+spread copies every own property, so the value arrives at the gate whether the
+type mentions it or not. **Which is exactly the problem.** With the field absent
+from the contract:
+
+- the compiler cannot verify that any caller supplies it;
+- `assertToolManifestPinned` reads `tool.annotations` and gets a real value only
+  because of how the callers happen to be written;
+- a future caller that builds the object field-by-field drops a pinned axis, and
+  **`tsc` stays clean** — measured: removing the declaration leaves the build at
+  exit 0 while reddening one test.
+
+So it is declared, completing the enumeration the docstring already argued for.
+The test asserts it against the parameter's own braces via `braceBlockAfter`, not
+a whole-file needle — `annotations` appears many times in that file, and a
+file-wide read would be satisfied by the call site another assertion already
+covers.
+
+Worth noting what was checked and found sound: the Flue adapter's `OfferableTool`
+is a `Pick` that also omits `annotations`, but it never reaches the gate — the
+engine calls `runReadTool(inv, name, args)` by NAME and the registry supplies the
+object, so the Pick governs only the offering.
+
 ## Risk assessment and rollback
 
 STANDARD. One optional interface field, one forwarded value, one definition
