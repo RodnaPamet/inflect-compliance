@@ -373,28 +373,82 @@ export class ProcessMapRepository {
         await db.processEdge.deleteMany({
             where: { processMapId: id, tenantId: ctx.tenantId },
         });
+
+        // ═══ NODES KEEP THEIR ROW IDENTITY ACROSS A SAVE (#2967) ═══
+        //
+        // This used to be `deleteMany` + `createMany`, matching the edges above
+        // and the "full-graph replace" the file header describes. For edges
+        // that is harmless: nothing outside this map references an edge row by
+        // id, and `ProcessEdgeControl` travels in the save payload and is
+        // recreated with them.
+        //
+        // NODES ARE NOT LIKE EDGES, because one thing does reference them by
+        // row id: `BusinessImpactAnalysis.processNodeId`, whose FK is
+        // `ON DELETE SET NULL`. Delete-and-recreate therefore nulled that link
+        // on EVERY save — identical graph, no user edit, autosave alone was
+        // enough — and minted a fresh cuid nothing pointed at. No error, no
+        // 409: the save succeeded and the version bumped while the BIA quietly
+        // came unattached from the process it analyses.
+        //
+        // The rest of the graph survived this only because it references
+        // `nodeKey` rather than the cuid — `ProcessEdge.sourceKey`/`targetKey`
+        // and `parentNodeKey` all do. BIA was the single reference using the
+        // row id, and so the single one that did not survive.
+        //
+        // WHY UPSERT RATHER THAN MOVING BIA ONTO `nodeKey`. Both fix it. This
+        // one is contained to this function and needs no migration or backfill,
+        // and it removes a second class of problem for free: node identity is
+        // now stable across saves, which is what anything else that comes to
+        // reference a node will assume.
+        //
+        // The cost is N statements instead of two. That is the shape the edge
+        // loop below already has — and at a lower cap (500 nodes against 1000
+        // edges), inside the same transaction. The header's note that a diff
+        // buys "negligible benefit at the bounded graph sizes" was true about
+        // SPEED and missed this: the benefit was never speed.
+        const incomingKeys = input.nodes.map((n) => n.nodeKey);
+
+        // Nodes the payload dropped. Guarded because `notIn: []` is a condition
+        // that excludes nothing — correct here, but stating the empty case
+        // explicitly keeps "the map was cleared" from depending on that.
         await db.processNode.deleteMany({
-            where: { processMapId: id, tenantId: ctx.tenantId },
+            where: {
+                processMapId: id,
+                tenantId: ctx.tenantId,
+                ...(incomingKeys.length > 0 ? { nodeKey: { notIn: incomingKeys } } : {}),
+            },
         });
 
-        if (input.nodes.length > 0) {
-            await db.processNode.createMany({
-                data: input.nodes.map((n) => ({
+        for (const n of input.nodes) {
+            const fields = {
+                nodeType: n.nodeType,
+                label: n.label,
+                subtitle: n.subtitle ?? null,
+                posX: n.posX,
+                posY: n.posY,
+                parentNodeKey: n.parentNodeKey ?? null,
+                dataJson:
+                    n.dataJson === undefined
+                        ? Prisma.JsonNull
+                        : (n.dataJson as Prisma.InputJsonValue | null) ??
+                          Prisma.JsonNull,
+            };
+            await db.processNode.upsert({
+                // The map-scoped natural key. `nodeKey` is unique per map, not
+                // per tenant, so the compound is the only correct target — and
+                // it is the id the client has considered stable all along.
+                where: { processMapId_nodeKey: { processMapId: id, nodeKey: n.nodeKey } },
+                create: {
                     tenantId: ctx.tenantId,
                     processMapId: id,
                     nodeKey: n.nodeKey,
-                    nodeType: n.nodeType,
-                    label: n.label,
-                    subtitle: n.subtitle ?? null,
-                    posX: n.posX,
-                    posY: n.posY,
-                    parentNodeKey: n.parentNodeKey ?? null,
-                    dataJson:
-                        n.dataJson === undefined
-                            ? Prisma.JsonNull
-                            : (n.dataJson as Prisma.InputJsonValue | null) ??
-                              Prisma.JsonNull,
-                })),
+                    ...fields,
+                },
+                // `tenantId`, `processMapId` and `nodeKey` are deliberately NOT
+                // updatable here: they identify the row. A payload that tried
+                // to move a node between maps would be describing a different
+                // node.
+                update: fields,
             });
         }
 
