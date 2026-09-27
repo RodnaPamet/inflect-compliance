@@ -38,6 +38,10 @@ jest.mock('@/lib/security/encryption', () => ({
     decryptField: (s: string) => s,
 }));
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 import {
     EXTERNAL_TOOL_PERMISSION,
     resolveExternalReadTools,
@@ -73,8 +77,15 @@ beforeEach(() => {
     mockTx.integrationConnection.findMany.mockResolvedValue([
         {
             id: CONN,
+            name: 'Example MCP',
             configJson: { url: 'https://mcp.example.com' },
             secretEncrypted: JSON.stringify({ authorization: 'Bearer abc' }),
+            // The rung an operator has permitted. Required from #2861 onwards:
+            // the rung gates whether an agent may call this connection AT ALL,
+            // and an absent value coerces to DISABLED — so a fixture without it
+            // models a connection nobody has permitted, which is a different
+            // test from the ones below.
+            externalWriteMode: 'DRY_RUN',
         },
     ]);
     mockTx.mcpToolManifestPin.findMany.mockResolvedValue([pinFor(ALERTS)]);
@@ -290,5 +301,124 @@ describe('when a tenant has saved parameters', () => {
         const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
         // No sets for THIS tool, so it falls back to the server's own schema.
         expect(tool.inputSchema).toEqual(ALERTS.inputSchema);
+    });
+});
+
+/**
+ * THE RUNG GATES WHETHER AN AGENT MAY CALL THE CONNECTION AT ALL (#2861).
+ *
+ * Owner decision, 2026-09-27, and it is the strongest of the three options that
+ * were on the table. The two rejected ones both keyed on `readOnlyHint` — either
+ * the server's own declaration or a human's classification of it — and both fail
+ * the same way: the hint comes from the FAR END, so pinning it makes it stable
+ * rather than honest, and a server that declares read-only and writes anyway
+ * passes either gate.
+ *
+ * So the rung means REACHABILITY here. `DISABLED` permits no call; every rung
+ * above it permits a read, and the rung continues to govern writes above that.
+ */
+describe('the connection rung', () => {
+    const atRung = (mode: string | null) => {
+        mockTx.integrationConnection.findMany.mockResolvedValue([
+            {
+                id: CONN,
+                name: 'Example MCP',
+                configJson: { url: 'https://mcp.example.com' },
+                secretEncrypted: JSON.stringify({ authorization: 'Bearer abc' }),
+                externalWriteMode: mode,
+            },
+        ]);
+    };
+
+    it('offers nothing at DISABLED', async () => {
+        atRung('DISABLED');
+        await expect(resolveExternalReadTools(ctx, new Set([QUALIFIED]))).resolves.toEqual([]);
+    });
+
+    it('offers the tool at DRY_RUN — so the empty result above means something', async () => {
+        // The positive control. Without it, every "offers nothing" assertion here
+        // could be satisfied by a resolver that offers nothing ever.
+        atRung('DRY_RUN');
+        await expect(resolveExternalReadTools(ctx, new Set([QUALIFIED]))).resolves.toHaveLength(1);
+    });
+
+    it.each(['PROPOSE_ONLY', 'AUTOMATIC'])('offers the tool at %s too — reads are not write-gated', async (mode) => {
+        // The reading that was rejected: if each rung's WRITE semantics applied to
+        // reads, DRY_RUN would record a read and send nothing and PROPOSE_ONLY
+        // would queue one for approval, so a read would work only at AUTOMATIC.
+        // That would put #2859's proven read capability behind the highest write
+        // authority, which is why the rung means reachability instead.
+        atRung(mode);
+        await expect(resolveExternalReadTools(ctx, new Set([QUALIFIED]))).resolves.toHaveLength(1);
+    });
+
+    it.each([
+        ['null — never set', null],
+        ['a rung from a newer build', 'SOME_FUTURE_RUNG'],
+        ['the right rung in the wrong case', 'dry_run'],
+    ])('fails CLOSED for %s', async (_label, mode) => {
+        // `coerceStoredMode` maps anything unrecognised to DISABLED, and the
+        // direction is the point: an old container meeting a rung introduced after
+        // it shipped must refuse the call, not permit it.
+        atRung(mode);
+        await expect(resolveExternalReadTools(ctx, new Set([QUALIFIED]))).resolves.toEqual([]);
+    });
+
+    it('costs NO credential and NO socket when refused', async () => {
+        // The gate is the first statement in the loop, above `authorizationFor`
+        // and `listTools`. Minting a token for a refused connection would exercise
+        // a credential on behalf of an authority that was denied, and `tools/list`
+        // would tell a third party that an agent had tried.
+        atRung('DISABLED');
+        await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
+        expect(listToolsMock).not.toHaveBeenCalled();
+    });
+
+    it('and DOES open one when permitted, so the assertion above is not vacuous', async () => {
+        atRung('DRY_RUN');
+        await resolveExternalReadTools(ctx, new Set([QUALIFIED]));
+        expect(listToolsMock).toHaveBeenCalledTimes(1);
+    });
+});
+
+/**
+ * THE CATALOGUE IS NOT GATED, AND THAT IS DELIBERATE.
+ *
+ * `listExternalMcpTools` runs the same connection query as the resolver. It is
+ * NOT gated on the rung, because gating it would be circular: an operator could
+ * not see which tools a server offers until they had widened the rung, and
+ * widening it is the decision the tool list exists to inform. One is what an
+ * OPERATOR reads; the other is what an AGENT gets, and the rung is about the
+ * agent.
+ *
+ * Asserted at the source because the two functions are forty lines apart in one
+ * file and the natural tidy-up — "make both selects the same" — silently gates
+ * the catalogue. Bounded to each function's body, never a whole-file needle:
+ * `coerceStoredMode` legitimately appears in the resolver, so a file-wide read
+ * would be satisfied by the wrong one.
+ */
+describe('the catalogue and the runtime are gated differently', () => {
+    const SRC = codeOf(
+        fs.readFileSync(
+            path.resolve(__dirname, '../../src/app-layer/usecases/external-mcp-tools.ts'),
+            'utf8',
+        ),
+    );
+
+    it('the RUNTIME resolver consults the rung', () => {
+        const body = functionBodyOf(SRC, 'resolveGrantedExternalTools');
+        // Positive control: the body was found and is the right one.
+        expect(body.length).toBeGreaterThan(400);
+        expect(body).toMatch(/coerceStoredMode\(connection\.externalWriteMode\)/);
+        expect(body).toMatch(/externalWriteMode: true/);
+    });
+
+    it('the CATALOGUE does not', () => {
+        const body = functionBodyOf(SRC, 'listExternalMcpTools');
+        expect(body.length).toBeGreaterThan(400);
+        expect(body).not.toMatch(/coerceStoredMode/);
+        // …and it does not even select the column, so the gate cannot be added
+        // there by accident.
+        expect(body).not.toMatch(/externalWriteMode/);
     });
 });

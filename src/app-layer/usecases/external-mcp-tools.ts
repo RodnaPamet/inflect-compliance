@@ -39,6 +39,7 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import { listTools } from '@/app-layer/integrations/mcp/client';
 import { authorizationFor } from '@/app-layer/integrations/mcp/token';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
+import { coerceStoredMode } from '@/lib/integrations/external-write-ladder';
 import { logger } from '@/lib/observability/logger';
 import {
     externalToolName,
@@ -396,7 +397,7 @@ export async function resolveGrantedExternalTools(
                 provider: MCP_SERVER_PROVIDER_ID,
                 isEnabled: true,
             },
-            select: { id: true, configJson: true, secretEncrypted: true },
+            select: { id: true, name: true, configJson: true, secretEncrypted: true, externalWriteMode: true },
         })),
         // The approved sets for the granted tools. `parameters` only — the
         // pending columns are deliberately NOT selected, so a proposal cannot
@@ -432,6 +433,59 @@ export async function resolveGrantedExternalTools(
     const out: GrantedExternalTool[] = [];
 
     for (const connection of connections) {
+        // ── MAY AN AGENT CALL THIS CONNECTION AT ALL? (#2861) ────────────────
+        //
+        // The rung gates EVERY call, not only writes — owner decision,
+        // 2026-09-27. The alternatives were "tools the server declares as
+        // writes" and "tools a human marked as writes", both rejected for the
+        // same reason: `readOnlyHint` is a hint the FAR END supplies, so pinning
+        // it makes it stable rather than honest, and a server that declares
+        // read-only and writes anyway passes either gate.
+        //
+        // So the rung means REACHABILITY here, not write semantics. `DISABLED`
+        // permits no call; `DRY_RUN` and above permit a read, and the rung
+        // governs writes above that. It cannot mean each rung's write behaviour
+        // applies to reads — `DRY_RUN` would then record a read and send
+        // nothing, `PROPOSE_ONLY` would queue one for approval, and reads would
+        // work only at `AUTOMATIC`, putting #2859's proven read capability
+        // behind the highest write authority.
+        //
+        // ── THE RUNTIME ONLY. THE CATALOGUE IS NOT GATED ────────────────────
+        //
+        // `listExternalMcpTools` runs the same connection query and is
+        // deliberately left alone. That is an OPERATOR reading what a server
+        // offers in order to approve it, and gating it would be circular: you
+        // could not see which tools exist until you had widened the rung, and
+        // widening it is the decision you need the tool list to make. This
+        // function is what an AGENT gets, which is the thing the rung is about.
+        //
+        // ── WHY HERE, ABOVE THE CREDENTIAL AND THE SOCKET ───────────────────
+        //
+        // First statement in the loop, ahead of `authorizationFor` and
+        // `listTools`. A connection the agent may not call should cost neither a
+        // decrypted secret nor an outbound request: minting a token would
+        // exercise a credential on behalf of an authority that was refused, and
+        // `tools/list` would tell a third party an agent had tried.
+        //
+        // COERCED, never compared raw. `coerceStoredMode` fails closed to
+        // `DISABLED` for a rung this build does not recognise — so an old
+        // container meeting a rung introduced after it shipped refuses rather
+        // than permits.
+        const rung = coerceStoredMode(connection.externalWriteMode);
+        if (rung === 'DISABLED') {
+            // Same shape as the manifest refusal below: this connection
+            // contributes nothing and the run continues. An agent left with no
+            // tools at all is already handled — the engine records
+            // `flue_no_tools_granted` rather than reporting a conclusion drawn
+            // from nothing.
+            logger.warn('mcp.external_connection_refused_on_rung', {
+                connectionId: connection.id,
+                connection: connection.name,
+                rung,
+            });
+            continue;
+        }
+
         const config = (connection.configJson ?? {}) as { url?: unknown };
         const url = typeof config.url === 'string' ? config.url.trim() : '';
         if (!url) continue;
