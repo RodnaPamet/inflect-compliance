@@ -126,11 +126,32 @@ describe('the published ceiling is the pass constant, for both directions', () =
         expect(honoured.joiner.maxMode).toBe(JOINER_MAX_MODE);
     });
 
-    it('and the two constants differ, so one value cannot satisfy both assertions', () => {
-        // Without this, a route that reported ONE ceiling for both directions
-        // would pass the test above the day the two constants happened to meet.
-        // It is the denominator for the claim, not decoration.
-        expect(LEAVER_MAX_MODE).not.toBe(JOINER_MAX_MODE);
+    it('and one value cannot satisfy both assertions — proven structurally now', () => {
+        // THE DAY THIS COMMENT PREDICTED HAS ARRIVED. It read:
+        //
+        //     "Without this, a route that reported ONE ceiling for both
+        //      directions would pass the test above the day the two constants
+        //      happened to meet."
+        //
+        // and the control was `LEAVER_MAX_MODE !== JOINER_MAX_MODE`. The joiner
+        // ceiling was raised to AUTOMATIC, the two met, and a VALUE-based
+        // control cannot survive that — there is no value that distinguishes
+        // "reports each direction its own constant" from "reports one constant
+        // twice".
+        //
+        // So the control moves to the SOURCE, where the distinction still
+        // exists: the honoured block must name BOTH identifiers, which a route
+        // publishing a single value for both directions cannot do. Value-
+        // independent, and it keeps working whatever the constants are.
+        const block = braceBlockAfter(fs.readFileSync(ROUTE_ABS, 'utf8'), 'honoured:');
+        expect(block).toContain('LEAVER_MAX_MODE');
+        expect(block).toContain('JOINER_MAX_MODE');
+
+        // THE TRIPWIRE FOR THE REVERSE. Stated so the equality is a recorded
+        // fact rather than an accident nobody noticed: if this goes red the two
+        // ceilings have diverged again, and the cheaper value-based control
+        // above is available once more.
+        expect(LEAVER_MAX_MODE).toBe(JOINER_MAX_MODE);
     });
 
     it('never publishes a joiner ceiling of DISABLED — the literal this replaced', async () => {
@@ -220,12 +241,30 @@ describe('the published ceiling agrees with what the pass actually refuses', () 
         }
     });
 
-    it('and at least one rung IS above the published ceiling, so the loop proved something', () => {
-        // The positive control for the sweep above. A published ceiling of
-        // AUTOMATIC would make every iteration compare false to false — a green
-        // loop over a property nobody holds.
-        const honouredCeiling = JOINER_MAX_MODE;
-        expect(LADDER.filter((r) => isAboveClamp(r, honouredCeiling))).not.toHaveLength(0);
+    it('the sweep is ONE-DIRECTIONAL now, and says so rather than looking complete', () => {
+        // This was the positive control for the sweep above, and it read:
+        //
+        //     expect(LADDER.filter(r => isAboveClamp(r, JOINER_MAX_MODE)))
+        //         .not.toHaveLength(0);
+        //
+        // with the note: "A published ceiling of AUTOMATIC would make every
+        // iteration compare false to false — a green loop over a property
+        // nobody holds." That is now the state, by decision rather than by
+        // accident, so the control is inverted to STATE it instead of failing
+        // in a way that reads like a defect.
+        expect(LADDER.filter((r) => isAboveClamp(r, JOINER_MAX_MODE))).toHaveLength(0);
+
+        // WHAT THE SWEEP STILL PROVES, and it is the half that would hurt: no
+        // rung is WRONGLY refused. A joiner pass returning MODE_ABOVE_CLAMP at
+        // a rung it should accept means every tenant there silently provisions
+        // nobody — and the sweep catches exactly that.
+        //
+        // WHAT IT NO LONGER PROVES is that a rung above the ceiling IS refused,
+        // because no such rung exists. That direction is pinned on the
+        // predicate, at the lowered clamp an incident rollback would use, so
+        // the comparison itself is still known to discriminate rather than
+        // being trivially false everywhere.
+        expect(LADDER.filter((r) => isAboveClamp(r, 'DRY_RUN'))).toEqual(['AUTOMATIC']);
     });
 });
 

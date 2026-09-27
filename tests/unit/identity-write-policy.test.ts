@@ -641,13 +641,28 @@ describe('the write refuses a mode that is not a rung', () => {
 describe('a widen above the published ceiling is refused', () => {
     const ctx = makeRequestContext('OWNER');
 
-    it('refuses the joiner at AUTOMATIC, because its ceiling is DRY_RUN', async () => {
-        // Reached legitimately: seven days in DRY_RUN with evidence behind it.
-        // The point is that even a tenant who has EARNED the widen is refused,
-        // because the rung they would arrive at does nothing.
+    /**
+     * AGAINST A LOWERED CLAMP, because no real ceiling is below the top rung
+     * any more.
+     *
+     * These two tests passed `JOINER_MAX_MODE` until it was raised to
+     * AUTOMATIC, at which point nothing could exceed either direction's ceiling
+     * and both went green-by-vacuity — the failure mode that looks like
+     * success. The clamp is a PARAMETER of `describeRefusal` precisely so the
+     * rule survives that: the gate is testable at any ceiling by handing it
+     * one.
+     *
+     * DRY_RUN is not an invented shape. It is the incident rollback — the
+     * constant is a source value specifically so it can be narrowed in a
+     * reviewed diff when a pass misbehaves, and this refusal is what a tenant
+     * sitting at AUTOMATIC meets in the minutes after that ships.
+     */
+    const LOWERED = 'DRY_RUN' as const;
+
+    it('refuses a widen above a LOWERED ceiling', async () => {
         settingsRow.identityJoinerMode = 'DRY_RUN';
         await expect(
-            setIdentityWriteMode(ctx, 'joiner', 'AUTOMATIC', JOINER_MAX_MODE, NOW),
+            setIdentityWriteMode(ctx, 'joiner', 'AUTOMATIC', LOWERED, NOW),
         ).rejects.toThrow(/above the highest rung/i);
         expect(upsert).not.toHaveBeenCalled();
     });
@@ -658,10 +673,27 @@ describe('a widen above the published ceiling is refused', () => {
         // change rather than a setting they have failed to find.
         settingsRow.identityJoinerMode = 'DRY_RUN';
         const err = await setIdentityWriteMode(
-            ctx, 'joiner', 'AUTOMATIC', JOINER_MAX_MODE, NOW,
+            ctx, 'joiner', 'AUTOMATIC', LOWERED, NOW,
         ).catch((e: Error) => e);
-        expect((err as Error).message).toContain(JOINER_MAX_MODE);
+        expect((err as Error).message).toContain(LOWERED);
         expect((err as Error).message).toMatch(/reviewed change/i);
+    });
+
+    it('and at the REAL ceiling that widen is now allowed — the state this diff created', async () => {
+        // The counterweight. Every assertion above is about a ceiling nobody is
+        // on; this is the one about the ceiling everybody is on, and it is the
+        // whole behavioural content of raising the clamp.
+        settingsRow.identityJoinerMode = 'DRY_RUN';
+        await expect(
+            describeRefusal(
+                'joiner',
+                { mode: 'DRY_RUN', dryRunSince: daysAgo(DRY_RUN_MIN_DAYS + 1) },
+                'AUTOMATIC',
+                NOW,
+                DRY_RUN_MIN_PASSES + 1,
+                JOINER_MAX_MODE,
+            ),
+        ).toBeNull();
     });
 
     it('does NOT refuse the leaver at AUTOMATIC — the check is not a blanket one', async () => {
