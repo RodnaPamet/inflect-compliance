@@ -41,13 +41,19 @@ const ENTRIES = [
     // the note above gives: "the route exists, nothing links to it" is what
     // this file catches, and an approval screen nobody can reach is the exact
     // shape that shipped three times in this subsystem already.
-    //
-    // NOTE: `agents-view-decisions` is a real menu entry and is NOT in this
-    // list. That looks like the same omission this convention exists to
-    // prevent, but it is left alone deliberately — verifying it needs a
-    // Playwright run this change cannot do locally, and fixing somebody else's
-    // gap inside this diff would put its CI risk on this PR.
     { id: 'agents-view-external-tools', path: '/agents/external-tools' },
+    // Listed late, and it should not have been. `agents-view-decisions` has
+    // been a live menu entry since the EU AI Act record shipped, and this list
+    // never learned it — the exact omission the note above says the file
+    // exists to catch, sitting in the file that catches it.
+    //
+    // No assertion failed in the meantime, which is why it survived: the list
+    // is ITERATED, never counted, so an entry left out is simply never
+    // exercised. A completeness check that can only be satisfied by hand is
+    // one somebody has to remember, and `agentic-route-inbound-links` already
+    // proves the route is LINKED — what this file adds is that the link
+    // actually arrives somewhere.
+    { id: 'agents-view-decisions', path: '/agents/decisions' },
 ] as const;
 
 /**
