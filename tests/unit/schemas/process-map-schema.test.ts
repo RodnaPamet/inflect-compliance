@@ -12,6 +12,8 @@ import {
     ProcessEdgeInputSchema,
     CreateProcessMapSchema,
     SaveProcessMapSchema,
+    MAX_NODES_PER_MAP,
+    MAX_EDGES_PER_MAP,
 } from '@/app-layer/schemas/process-map';
 
 describe('ProcessMapStatusSchema', () => {
@@ -385,5 +387,49 @@ describe('dataJson is size-bounded', () => {
             ],
         };
         expect(ProcessEdgeInputSchema.safeParse(edge).success).toBe(false);
+    });
+});
+
+/**
+ * The exported ceilings are the ones `.max()` enforces.
+ *
+ * They exist so callers can warn a user BEFORE a save is refused, which means
+ * anything reading them is making a promise about where the limit is. If the
+ * constant and the validator came apart, that promise would be wrong in the
+ * direction nobody notices: the warning fires late or not at all, and the user
+ * meets the ceiling as a 400 with the work already done.
+ *
+ * So this asserts the boundary from BOTH sides. Asserting only the rejection
+ * would pass for a constant set far too low — which is exactly the drift that
+ * makes the warning useless while everything still looks correct.
+ */
+describe('the exported graph caps are what the schema enforces', () => {
+    const node = (i: number) => ({
+        nodeKey: `n${i}`,
+        nodeType: 'processStep',
+        label: `Step ${i}`,
+        posX: 0,
+        posY: 0,
+    });
+    const edge = (i: number) => ({ edgeKey: `e${i}`, sourceKey: 'n0', targetKey: 'n0' });
+    const graph = (nodes: number, edges: number) => ({
+        nodes: Array.from({ length: nodes }, (_, i) => node(i)),
+        edges: Array.from({ length: edges }, (_, i) => edge(i)),
+    });
+
+    it('accepts a graph at exactly MAX_NODES_PER_MAP and refuses one above it', () => {
+        expect(SaveProcessMapSchema.safeParse(graph(MAX_NODES_PER_MAP, 0)).success).toBe(true);
+        expect(SaveProcessMapSchema.safeParse(graph(MAX_NODES_PER_MAP + 1, 0)).success).toBe(false);
+    });
+
+    it('accepts a graph at exactly MAX_EDGES_PER_MAP and refuses one above it', () => {
+        expect(SaveProcessMapSchema.safeParse(graph(0, MAX_EDGES_PER_MAP)).success).toBe(true);
+        expect(SaveProcessMapSchema.safeParse(graph(0, MAX_EDGES_PER_MAP + 1)).success).toBe(false);
+    });
+
+    it('and a graph inside both caps parses — the control', () => {
+        // Without this, a fixture missing a required field would make both
+        // rejection halves above pass while proving nothing about the caps.
+        expect(SaveProcessMapSchema.safeParse(graph(1, 1)).success).toBe(true);
     });
 });

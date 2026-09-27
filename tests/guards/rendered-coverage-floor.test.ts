@@ -175,7 +175,10 @@ const ROOT = path.resolve(__dirname, '../..');
 // each add a rendered test must each raise it, and the second to merge takes
 // the measured count after the first — the #2405/#2388 note above is the
 // worked example of that going wrong in the other direction.
-const RENDERED_TEST_FLOOR = 289;
+// 2026-09-27 — 289 -> 290: tests/rendered/external-write-ladder.test.tsx,
+// the operator surface for the external-write ladder (#2861). The floor has
+// zero slack by design, so a new rendered file raises it in the same diff.
+const RENDERED_TEST_FLOOR = 290;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

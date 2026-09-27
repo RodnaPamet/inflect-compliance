@@ -40,7 +40,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
@@ -48,7 +49,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
-import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 
@@ -96,6 +97,7 @@ export function ExternalToolsClient({
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
+    const tenantHref = useTenantHref();
 
     const [connectionId, setConnectionId] = useState<string>(connections[0]?.id ?? '');
     const [tools, setTools] = useState<CatalogueTool[] | null>(null);
@@ -202,6 +204,43 @@ export function ExternalToolsClient({
                         <Button variant="secondary" onClick={() => void loadCatalogue()} disabled={loading}>
                             {t('externalTools.refresh')}
                         </Button>
+                        {/* THE INBOUND LINK to the write ladder for this
+                            connection (#2861), and it is load-bearing rather
+                            than convenience.
+
+                            `agentic-route-inbound-links` states the defect it
+                            exists for: "A route with no inbound link is not a
+                            feature with a discoverability problem. It is a
+                            feature nobody can use, and it looks identical in CI
+                            to one that works." The write-policy route is
+                            OWNER-only and reached from nowhere else, so without
+                            this the rung could only be set by hand — which is
+                            defect #3 of the 2026-09-26 chain repeating, where
+                            the approval API on THIS page shipped with no UI at
+                            all.
+
+                            Rendered for every reader, not gated on the owner
+                            permission. The page behind it carries its own
+                            `RequirePermission` with an owner-specific message; a
+                            link hidden from an ADMIN would leave them unable to
+                            discover that the setting exists or who can change
+                            it, which is a worse answer than a clear refusal. */}
+                        {connectionId && (
+                            // `Link` + `buttonVariants`, not `<Button href>` —
+                            // the Button primitive renders a <button> and takes
+                            // no href. This is the repo's idiom for a navigating
+                            // control (see ReadinessOverviewClient), and it
+                            // matters beyond styling: a real anchor is
+                            // middle-clickable, focusable in document order and
+                            // announced as a link.
+                            <Link
+                                href={tenantHref(`/admin/external-write-policy/${connectionId}`)}
+                                id="external-tools-write-policy-link"
+                                className={buttonVariants({ variant: 'secondary' })}
+                            >
+                                {t('externalTools.writePolicyLink')}
+                            </Link>
+                        )}
                     </div>
 
                     {/* Says where the other half of the ordering lives, because

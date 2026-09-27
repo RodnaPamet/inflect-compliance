@@ -145,12 +145,33 @@ export type CreateProcessMapInput = z.infer<typeof CreateProcessMapSchema>;
  * semantics (no breaking change) — the canvas client always sends
  * it now.
  */
+/**
+ * The graph ceilings, EXPORTED so nothing has to copy them.
+ *
+ * These were literals inside the `.max()` calls below. That is fine for the
+ * schema, which is the thing enforcing them, and wrong for everyone else: a
+ * caller that wants to warn a user BEFORE they hit a ceiling has to know where
+ * the ceiling is, and with nothing to import the only option is a hand-copied
+ * constant.
+ *
+ * A copied limit drifts in the PERMISSIVE direction, which is the bad one. Raise
+ * `MAX_NODES` here and a stale copy elsewhere keeps warning at the old number —
+ * harmless. LOWER it, or copy it wrong once, and the warning never fires before
+ * a limit that still rejects, so the user meets the ceiling as a 400 after the
+ * work is done. Nothing fails loudly in between.
+ *
+ * `process-map-schema.test.ts` asserts the exported value is the one `.max()`
+ * actually enforces, so the two cannot come apart.
+ */
+export const MAX_NODES_PER_MAP = 500;
+export const MAX_EDGES_PER_MAP = 1000;
+
 export const SaveProcessMapSchema = z.object({
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(2000).optional().nullable(),
     status: ProcessMapStatusSchema.optional(),
     expectedVersion: z.number().int().min(1).optional(),
-    nodes: z.array(ProcessNodeInputSchema).max(500),
-    edges: z.array(ProcessEdgeInputSchema).max(1000),
+    nodes: z.array(ProcessNodeInputSchema).max(MAX_NODES_PER_MAP),
+    edges: z.array(ProcessEdgeInputSchema).max(MAX_EDGES_PER_MAP),
 });
 export type SaveProcessMapInput = z.infer<typeof SaveProcessMapSchema>;

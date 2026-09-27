@@ -182,6 +182,13 @@ describe("EntityDetailLayout adoption — PR-4", () => {
       // NIS2 gap-assessment assignee answer page — a scoped question FORM, not
       // an entity-detail surface; carries its own PageHeader + BackAffordance.
       "src/app/t/[tenantSlug]/(app)/audits/nis2-gap/respond/[assignmentId]/page.tsx",
+      // #2861 — a scoped SETTINGS surface for one MCP connection (how far an
+      // agent may go when driving a write to it), not the connection's detail
+      // page. Same shape as the NIS2 respond form above: its own
+      // PageBreadcrumbs + BackAffordance, one Card, no tabs and no entity
+      // header. It has two [param] segments only because the connection id
+      // is in the path, which is what the detail-page heuristic keys on.
+      "src/app/t/[tenantSlug]/(app)/admin/external-write-policy/[connectionId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/issues/[issueId]/page.tsx", // legacy redirect → /tasks/[id]
       // AGENTIC UI 1/4 (#2427) redirect shim → /agents/[agentId], which IS
       // adopted (see the registry above). Same class as the /issues shim: a

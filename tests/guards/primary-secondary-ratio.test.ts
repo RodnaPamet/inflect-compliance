@@ -571,7 +571,29 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // modal confirm are both ternaries, and `primary-secondary-ratio` counts EVERY
 // branch a ternary can render — so two apparent controls were four countable
 // primaries before they were demoted to ghost/secondary/destructive.
-const MAX_PRIMARY_COUNT = 174;
+// 2026-09-27 — #2861 external-write ladder UI: 174 -> 175, ONE genuinely-earned
+// primary.
+//
+// The widen control on the external-write ladder. It is the page's single
+// defining action — the whole surface exists to move one connection up a rung —
+// and the two alternatives both cost more than the slot does.
+//
+// Demoting it to secondary puts it beside the NARROW button, which is already
+// secondary, so the affirmative act and its reverse become visually identical on
+// a page whose entire job is telling them apart. Demoting NARROW to ghost to
+// restore the contrast is worse still: narrowing is the emergency stop, and
+// making the stop the quietest thing on the page inverts exactly the hierarchy
+// the ladder's design argues for.
+//
+// It also matches the directory equivalent. `WriteLadderClient`'s widen is
+// primary, and two ladders that do the same thing to different systems should not
+// look different — a reader who learns one should not have to relearn the other.
+//
+// Nothing else this PR adds is primary: the narrow control is secondary, the
+// inbound link renders through `buttonVariants({ variant: 'secondary' })`, and
+// the confirm dialog's action comes from `ConfirmDialog` rather than a Button
+// this file declares. So this is +1, not +2.
+const MAX_PRIMARY_COUNT = 175;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));
 
