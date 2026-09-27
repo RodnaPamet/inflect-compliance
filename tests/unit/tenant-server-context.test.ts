@@ -16,6 +16,13 @@ const mockPrisma = {
     tenantMembership: {
         findUnique: jest.fn(),
     },
+    // `getTenantServerContext` reads the tenant's optional modules (#2964).
+    // Defaults to an ABSENT row, which is the production default — a tenant
+    // nobody has configured has no optional modules — so every existing
+    // assertion below exercises the same shape it did before.
+    tenantSecuritySettings: {
+        findUnique: jest.fn(async () => null),
+    },
 };
 
 jest.mock('@/lib/prisma', () => ({
