@@ -1929,6 +1929,18 @@ function Inner({
         },
     ];
 
+    // ═══ ATTRIBUTION SHOWN ON PURPOSE ═══
+    //
+    // `proOptions={{ hideAttribution: true }}` was set on the <ReactFlow> below.
+    // React Flow is MIT and the option works without a subscription, but its terms
+    // permit removing the attribution only with one:
+    //   "Only remove this attribution, if you are subscribed to React Flow Pro."
+    //
+    // It was set in FOUR components and nobody could confirm the product holds a
+    // subscription. Showing the badge costs pixels; hiding it unlicensed is an
+    // unlicensed-use finding in a compliance product — so this fails in the safe
+    // direction until procurement says otherwise. Re-adding is one line per site
+    // the day it is confirmed.
     return (
         // R32-PR5 — emphasis provider. The whole canvas subtree
         // reads `useCanvasEmphasis()` so the typed-node + edge
@@ -2389,7 +2401,6 @@ function Inner({
                         // canvas.
                         onlyRenderVisibleElements
                         fitView
-                        proOptions={{ hideAttribution: true }}
                         aria-label={t("ariaProcessCanvas")}
                     >
                         {/* R31 — two-layer background discipline.

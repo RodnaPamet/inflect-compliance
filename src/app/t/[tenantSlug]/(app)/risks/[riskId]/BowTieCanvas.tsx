@@ -33,6 +33,18 @@ export function BowTieCanvas({ graph }: { graph: BowTieGraph }) {
     // Edges read better as smoothstep through the barrier columns.
     const edges = useMemo(() => graph.edges.map((e) => ({ ...e, type: 'smoothstep' as const, animated: false })), [graph.edges]);
 
+    // ═══ ATTRIBUTION SHOWN ON PURPOSE ═══
+    //
+    // `proOptions={{ hideAttribution: true }}` was set on the <ReactFlow> below.
+    // React Flow is MIT and the option works without a subscription, but its terms
+    // permit removing the attribution only with one:
+    //   "Only remove this attribution, if you are subscribed to React Flow Pro."
+    //
+    // It was set in FOUR components and nobody could confirm the product holds a
+    // subscription. Showing the badge costs pixels; hiding it unlicensed is an
+    // unlicensed-use finding in a compliance product — so this fails in the safe
+    // direction until procurement says otherwise. Re-adding is one line per site
+    // the day it is confirmed.
     return (
         <div className="h-[480px] w-full rounded-md border border-border-default bg-bg-default" data-testid="risk-bowtie-canvas">
             <ReactFlowProvider>
@@ -44,7 +56,6 @@ export function BowTieCanvas({ graph }: { graph: BowTieGraph }) {
                     nodesConnectable={false}
                     edgesFocusable={false}
                     elementsSelectable={false}
-                    proOptions={{ hideAttribution: true }}
                 >
                     <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
                     <Controls showInteractive={false} />

@@ -156,6 +156,18 @@ function ProcessCanvasInner({
         [screenToFlowPosition],
     );
 
+    // ═══ ATTRIBUTION SHOWN ON PURPOSE ═══
+    //
+    // `proOptions={{ hideAttribution: true }}` was set on the <ReactFlow> below.
+    // React Flow is MIT and the option works without a subscription, but its terms
+    // permit removing the attribution only with one:
+    //   "Only remove this attribution, if you are subscribed to React Flow Pro."
+    //
+    // It was set in FOUR components and nobody could confirm the product holds a
+    // subscription. Showing the badge costs pixels; hiding it unlicensed is an
+    // unlicensed-use finding in a compliance product — so this fails in the safe
+    // direction until procurement says otherwise. Re-adding is one line per site
+    // the day it is confirmed.
     return (
         <div
             ref={wrapperRef}
@@ -194,7 +206,6 @@ function ProcessCanvasInner({
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
                     fitView
-                    proOptions={{ hideAttribution: true }}
                     aria-label={t("canvasAria")}
                 >
                     {/* IC token-aware background. Dot variant reads as
