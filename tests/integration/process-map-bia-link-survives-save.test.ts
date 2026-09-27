@@ -2,23 +2,36 @@
  * Does a BIA's link to a process node survive saving the map?
  *
  * WHY THIS IS AN INTEGRATION TEST AND NOT A UNIT ONE. The mechanism is a
- * FOREIGN KEY ACTION — `BusinessImpactAnalysis_processNodeId_tenantId_fkey` is
- * declared `ON DELETE SET NULL ("processNodeId")`. No amount of reading the
- * TypeScript shows what Postgres does when `replaceGraph` deletes the node
- * rows; only a real database does.
+ * FOREIGN KEY ACTION. No amount of reading the TypeScript shows what Postgres
+ * does when the node rows go away; only a real database does.
  *
- * The derivation that prompted it:
- *   1. `replaceGraph` deletes EVERY ProcessNode for the map on every save and
- *      recreates them with `createMany`, supplying no `id` — so each save mints
- *      new cuids.
- *   2. `BusinessImpactAnalysis.processNodeId` references `ProcessNode.id`, the
+ * The derivation that prompted it, against the ORIGINAL schema:
+ *   1. `replaceGraph` deleted EVERY ProcessNode for the map on every save and
+ *      recreated them with `createMany`, supplying no `id` — so each save
+ *      minted new cuids.
+ *   2. `BusinessImpactAnalysis.processNodeId` referenced `ProcessNode.id`, the
  *      cuid, not `nodeKey`.
- *   3. The FK is ON DELETE SET NULL.
- *   4. Nothing in `replaceGraph` or `usecases/process-map.ts` mentions BIA, and
- *      `processNodeId` is written only where a BIA is created.
+ *   3. The FK was ON DELETE SET NULL.
+ *   4. Nothing in `replaceGraph` or `usecases/process-map.ts` mentioned BIA.
  *
- * If that chain holds, saving a map silently orphans every BIA attached to one
- * of its nodes. This test decides it either way.
+ * That chain held, and saving a map silently orphaned every BIA attached to
+ * one of its nodes. Two changes answer it, and this suite pins both:
+ *
+ *   - #2967 made `replaceGraph` UPSERT nodes by `nodeKey` instead of
+ *     delete-and-recreate, so an ordinary save no longer churns row ids.
+ *   - #2971 moved the BIA off the row id entirely: it stores the pair
+ *     (`processMapId`, `processNodeKey`), a hard FK to the MAP plus the node
+ *     named by the key it is drawn with.
+ *
+ * The second is what the last test here is for. #2967 alone protects only
+ * nodes the payload still carries; a node genuinely DELETED AND RECREATED —
+ * the same step redrawn, the class rather than the instance — would still have
+ * broken the link, because a row id cannot outlive its row. A natural key can.
+ *
+ * The map FK keeps ON DELETE SET NULL, scoped to `processMapId` alone
+ * (Postgres 42P10 refuses to scope a column outside the FK), so deleting a map
+ * still unlinks — `processNodeKey` is left behind naming a map that is gone,
+ * inert because every read is gated on BOTH columns.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
