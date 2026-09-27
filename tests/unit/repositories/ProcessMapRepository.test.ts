@@ -35,6 +35,9 @@ function freshDb() {
             createMany: jest.fn((..._args: any[]) =>
                 Promise.resolve({ count: 0 } as any),
             ),
+            // #2967 — nodes are UPSERTED by (processMapId, nodeKey) now, not
+            // delete-and-recreated, so their row ids survive a save.
+            upsert: jest.fn((..._args: any[]) => Promise.resolve({} as any)),
             findMany: jest.fn((..._args: any[]) => Promise.resolve([] as any[])),
         },
         processEdge: {
@@ -401,13 +404,37 @@ describe('ProcessMapRepository.replaceGraph — happy path', () => {
         });
 
         expect(db.processEdge.deleteMany).toHaveBeenCalled();
+
+        // #2967 — NODES ARE NO LONGER DELETED WHOLESALE. The delete is scoped
+        // to keys the payload dropped, so a node that persists keeps its row
+        // id, and `BusinessImpactAnalysis.processNodeId` (an FK with
+        // ON DELETE SET NULL) survives the save.
         expect(db.processNode.deleteMany).toHaveBeenCalled();
-        // nodes.length > 0 branch
-        expect(db.processNode.createMany).toHaveBeenCalled();
-        const nodeData = db.processNode.createMany.mock.calls[0][0].data;
-        // dataJson present vs undefined branches
-        expect(nodeData[0].dataJson).toEqual({ a: 1 });
-        expect(nodeData[1].dataJson).toBe(Prisma.JsonNull);
+        const delWhere = db.processNode.deleteMany.mock.calls[0][0].where;
+        expect(delWhere.nodeKey).toEqual({ notIn: ['n1', 'n2'] });
+
+        // ...and each incoming node is upserted on its map-scoped natural key,
+        // never created blind.
+        expect(db.processNode.createMany).not.toHaveBeenCalled();
+        expect(db.processNode.upsert).toHaveBeenCalledTimes(2);
+        const up0 = db.processNode.upsert.mock.calls[0][0];
+        expect(up0.where).toEqual({
+            processMapId_nodeKey: { processMapId: 'm1', nodeKey: 'n1' },
+        });
+        // dataJson present vs undefined branches — asserted on BOTH arms,
+        // because a coercion applied to only one of them would write the right
+        // value on first save and the wrong one on every save after.
+        expect(up0.create.dataJson).toEqual({ a: 1 });
+        expect(up0.update.dataJson).toEqual({ a: 1 });
+        const up1 = db.processNode.upsert.mock.calls[1][0];
+        expect(up1.create.dataJson).toBe(Prisma.JsonNull);
+        expect(up1.update.dataJson).toBe(Prisma.JsonNull);
+
+        // The identifying columns are not updatable: a payload cannot move a
+        // node to another map or rename its key in place.
+        expect(up0.update.nodeKey).toBeUndefined();
+        expect(up0.update.processMapId).toBeUndefined();
+        expect(up0.update.tenantId).toBeUndefined();
 
         // edge created with id used for controls
         const ctrlArg = db.processEdgeControl.createMany.mock.calls[0][0];
@@ -464,8 +491,11 @@ describe('ProcessMapRepository.replaceGraph — happy path', () => {
             ],
         });
 
-        // node dataJson null → Prisma.JsonNull
-        expect(db.processNode.createMany.mock.calls[0][0].data[0].dataJson).toBe(
+        // node dataJson null → Prisma.JsonNull, on both upsert arms
+        expect(db.processNode.upsert.mock.calls[0][0].create.dataJson).toBe(
+            Prisma.JsonNull,
+        );
+        expect(db.processNode.upsert.mock.calls[0][0].update.dataJson).toBe(
             Prisma.JsonNull,
         );
         // edge dataJson null → Prisma.JsonNull
@@ -503,8 +533,11 @@ describe('ProcessMapRepository.replaceGraph — happy path', () => {
             edges: [edge({ sourceKey: 'n1', targetKey: 'n1', controls: [] })], // controls.length === 0 → control createMany skipped
         });
 
-        // single node → createMany IS called (nodes.length > 0 branch)
-        expect(db.processNode.createMany).toHaveBeenCalled();
+        // single node → one upsert, and the scoped delete keeps it
+        expect(db.processNode.upsert).toHaveBeenCalledTimes(1);
+        expect(db.processNode.deleteMany.mock.calls[0][0].where.nodeKey).toEqual({
+            notIn: ['n1'],
+        });
         // edge created but no controls → control createMany skipped
         expect(db.processEdge.create).toHaveBeenCalled();
         expect(db.processEdgeControl.createMany).not.toHaveBeenCalled();
