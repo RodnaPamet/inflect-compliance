@@ -5983,6 +5983,33 @@
       },
       "linkLabel": "Write policy"
     },
+    "externalWriteLadder": {
+      "breadcrumb": "External write policy",
+      "title": "External write policy",
+      "intro": "Whether an agent may change a configuration in this connected system, and how far. The ladder widens one rung at a time; narrowing is always available and takes effect immediately.",
+      "forbidden": "Only an owner can view or change the external write policy.",
+      "loading": "Loading the current policy…",
+      "loadError": "Couldn't load the external write policy.",
+      "saveError": "Couldn't change the external write policy.",
+      "atTop": "This is the widest rung.",
+      "widenTo": "Widen to {mode}",
+      "narrowTo": "Narrow to {mode}",
+      "confirmTitle": "Widen to {mode}?",
+      "since": "On this rung since {date}. A connection must sit here {days} days before it can widen.",
+      "noDispatch": "No external write is dispatched by this build yet, so the ladder is capped at {mode}. The rungs above it would change the policy and nothing else, which is why they are unavailable rather than merely refused.",
+      "mode": {
+        "DISABLED": "Off",
+        "DRY_RUN": "Dry run",
+        "PROPOSE_ONLY": "Proposals only",
+        "AUTOMATIC": "Automatic"
+      },
+      "confirmBody": {
+        "DISABLED": "Turns off external writes for this connection. Nothing will be sent and nothing recorded.",
+        "DRY_RUN": "The agent will record what it WOULD change in this system, and send nothing. This is the rung the observation window is measured on.",
+        "PROPOSE_ONLY": "Every change the agent decides on will be queued for a person to approve. Nothing reaches the connected system until somebody accepts it.",
+        "AUTOMATIC": "The agent will change this connected system without asking, whenever it decides to. Read the dry-run record before granting this."
+      }
+    },
     "modules": {
       "forbidden": "Only a workspace owner can turn product modules on or off. An administrator cannot grant this.",
       "heading": "Modules",
