@@ -32,7 +32,7 @@ beforeEach(() => jest.clearAllMocks());
 describe('createBia', () => {
     function db(over: Record<string, unknown> = {}) {
         return {
-            processNode: { findFirst: jest.fn().mockResolvedValue({ id: 'n1' }), findMany: jest.fn().mockResolvedValue([]) },
+            processNode: { findFirst: jest.fn().mockResolvedValue({ processMapId: 'm1', nodeKey: 'k1' }), findMany: jest.fn().mockResolvedValue([]) },
             asset: { findMany: jest.fn().mockResolvedValue([]) },
             vendor: { findMany: jest.fn().mockResolvedValue([{ id: 'v1' }]) },
             risk: { findMany: jest.fn().mockResolvedValue([]) },
@@ -256,10 +256,10 @@ describe('getControlBiaSurface', () => {
             controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
             processEdgeControl: { findMany: jest.fn().mockResolvedValue([{ edgeId: 'e1' }]) },
             processEdge: { findMany: jest.fn().mockResolvedValue([{ processMapId: 'm1', sourceKey: 's', targetKey: 't' }]) },
-            processNode: { findMany: jest.fn().mockResolvedValue([{ id: 'n1', label: 'Payroll node' }]) },
+            processNode: { findMany: jest.fn().mockResolvedValue([{ processMapId: 'm1', nodeKey: 'k1', label: 'Payroll node' }]) },
             businessImpactAnalysis: {
                 findMany: jest.fn()
-                    .mockResolvedValueOnce([{ id: 'b1', name: 'P', criticality: 'HIGH', mtpdHours: 2, rtoHours: 1, processNodeId: 'n1' }])
+                    .mockResolvedValueOnce([{ id: 'b1', name: 'P', criticality: 'HIGH', mtpdHours: 2, rtoHours: 1, processMapId: 'm1', processNodeKey: 'k1' }])
                     .mockResolvedValueOnce([{ id: 'b1', criticality: 'HIGH', mtpdHours: 2, rtoHours: 1 }]),
             },
         });
@@ -270,8 +270,19 @@ describe('getControlBiaSurface', () => {
 
 describe('getBiasForProcessNode(Key)', () => {
     it('lists BIAs for a node', async () => {
-        withDb({ businessImpactAnalysis: { findMany: jest.fn().mockResolvedValue([{ id: 'b1' }]) } });
+        // The cuid is resolved to the natural key first (#2971) — the wire
+        // still accepts an id, the storage no longer uses one.
+        withDb({
+            processNode: { findFirst: jest.fn().mockResolvedValue({ processMapId: 'm1', nodeKey: 'k1' }) },
+            businessImpactAnalysis: { findMany: jest.fn().mockResolvedValue([{ id: 'b1' }]) },
+        });
         await expect(getBiasForProcessNode(ctx(), 'n1')).resolves.toEqual([{ id: 'b1' }]);
+    });
+    it('a node that no longer exists reads as no BIAs, not an error', async () => {
+        // The write path rejects an unresolvable id; a READ must not, or a
+        // deleted node turns every cross-link into a 400.
+        withDb({ processNode: { findFirst: jest.fn().mockResolvedValue(null) } });
+        await expect(getBiasForProcessNode(ctx(), 'gone')).resolves.toEqual([]);
     });
     it('key resolver returns empty when the node is not found', async () => {
         withDb({ processNode: { findFirst: jest.fn().mockResolvedValue(null) } });

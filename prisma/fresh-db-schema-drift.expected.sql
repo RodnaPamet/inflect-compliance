@@ -139,6 +139,20 @@
 --      SELECT conname, confdeltype, confdelsetcols FROM pg_constraint
 --       WHERE contype = 'f' AND confdelsetcols IS NOT NULL;
 --
+--  #2971 SWAPPED one member rather than adding or removing one, so the 39
+--  is unchanged.  `BusinessImpactAnalysis` used to name a process node by
+--  its row id; it now names the pair (`processMapId`, `processNodeKey`),
+--  so the column-scoped SET NULL moved from
+--  `BusinessImpactAnalysis_processNodeId_tenantId_fkey` to
+--  `BusinessImpactAnalysis_processMapId_tenantId_fkey`, scoped to
+--  `("processMapId")` alone.  Note it CANNOT be scoped to both columns:
+--  Postgres rejects a SET NULL column list naming a column outside the FK
+--  with 42P10, and `processNodeKey` is deliberately not in the FK — the
+--  node is named softly, so that deleting and recreating it does not
+--  unlink the BIA.  `processNodeKey` is therefore left behind by a map
+--  delete, naming a map that is gone; inert, because every read is gated
+--  on both columns being non-null.
+--
 --  ── What is NOT in this file, because it was fixed in prisma/schema ──
 --  PR1 (#2410): 7 @default clauses (5 statements), 2 plain-btree @@index
 --  declarations, 1 ALTER INDEX … RENAME TO (`map:`), and 6 referential-
@@ -185,7 +199,7 @@ ALTER TABLE "AutomationRule" DROP CONSTRAINT "AutomationRule_elseRuleId_tenantId
 ALTER TABLE "AutomationRule" DROP CONSTRAINT "AutomationRule_nextRuleId_tenantId_fkey";
 
 -- DropForeignKey
-ALTER TABLE "BusinessImpactAnalysis" DROP CONSTRAINT "BusinessImpactAnalysis_processNodeId_tenantId_fkey";
+ALTER TABLE "BusinessImpactAnalysis" DROP CONSTRAINT "BusinessImpactAnalysis_processMapId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_compensatingControlId_tenantId_fkey";
@@ -362,7 +376,7 @@ ALTER TABLE "FileRecord" ADD CONSTRAINT "FileRecord_previousFileRecordId_tenantI
 ALTER TABLE "Finding" ADD CONSTRAINT "Finding_auditId_tenantId_fkey" FOREIGN KEY ("auditId", "tenantId") REFERENCES "Audit"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "BusinessImpactAnalysis" ADD CONSTRAINT "BusinessImpactAnalysis_processNodeId_tenantId_fkey" FOREIGN KEY ("processNodeId", "tenantId") REFERENCES "ProcessNode"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "BusinessImpactAnalysis" ADD CONSTRAINT "BusinessImpactAnalysis_processMapId_tenantId_fkey" FOREIGN KEY ("processMapId", "tenantId") REFERENCES "ProcessMap"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Device" ADD CONSTRAINT "Device_employeeId_tenantId_fkey" FOREIGN KEY ("employeeId", "tenantId") REFERENCES "Employee"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;

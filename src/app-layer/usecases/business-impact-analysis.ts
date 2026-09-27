@@ -20,7 +20,7 @@
 import { z } from 'zod';
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -78,17 +78,48 @@ export const UpdateBiaSchema = CreateBiaSchema.partial().extend({
 
 export type CreateBiaInput = z.input<typeof CreateBiaSchema>;
 
-async function assertProcessNode(
+/**
+ * A node's cuid -> the natural key a BIA stores (#2971), or null if it does not
+ * resolve.
+ *
+ * ONE LOOKUP ANSWERING BOTH QUESTIONS. This was `assertProcessNode`, which only
+ * validated; the write path then needed a second query to translate the id into
+ * the pair now stored. Two round trips for one fact, with a window between them
+ * in which the answers could differ.
+ *
+ * It returns rather than throws, because the two callers want opposite things
+ * from the same miss: a WRITE must reject an id naming no node (that is a bad
+ * request, and silently storing null would lose the user's intent), while a
+ * READ should answer "no BIAs" rather than 400 on a node that has since been
+ * deleted.
+ *
+ * TENANT-SCOPED, because the id arrives from a client. Resolving it without
+ * `tenantId` would confirm another tenant's node exists, which is a disclosure
+ * even when the subsequent write is refused.
+ */
+async function resolveProcessNode(
     db: Parameters<Parameters<typeof runInTenantContext>[1]>[0],
     ctx: RequestContext,
     processNodeId: string | null | undefined,
-) {
-    if (!processNodeId) return;
+): Promise<{ processMapId: string; processNodeKey: string } | null> {
+    if (!processNodeId) return null;
     const node = await db.processNode.findFirst({
         where: { id: processNodeId, tenantId: ctx.tenantId },
-        select: { id: true },
+        select: { processMapId: true, nodeKey: true },
     });
-    if (!node) throw badRequest('INVALID_PROCESS_NODE', 'Process node not found in this tenant');
+    return node ? { processMapId: node.processMapId, processNodeKey: node.nodeKey } : null;
+}
+
+/** The write-path reading of a miss: an id naming no node is a bad request. */
+async function requireProcessNode(
+    db: Parameters<Parameters<typeof runInTenantContext>[1]>[0],
+    ctx: RequestContext,
+    processNodeId: string | null | undefined,
+): Promise<{ processMapId: string | null; processNodeKey: string | null }> {
+    if (!processNodeId) return { processMapId: null, processNodeKey: null };
+    const resolved = await resolveProcessNode(db, ctx, processNodeId);
+    if (!resolved) throw badRequest('INVALID_PROCESS_NODE', 'Process node not found in this tenant');
+    return resolved;
 }
 
 type Db = Parameters<Parameters<typeof runInTenantContext>[1]>[0];
@@ -296,7 +327,6 @@ export async function createBia(ctx: RequestContext, rawInput: CreateBiaInput) {
     assertCanWrite(ctx);
     const data = CreateBiaSchema.parse(rawInput);
     return runInTenantContext(ctx, async (db) => {
-        await assertProcessNode(db, ctx, data.processNodeId);
         // Validate every dependency target exists in this tenant (no dangling refs).
         await assertDependencyTargets(db, ctx, data.dependencies ?? []);
         const bia = await db.businessImpactAnalysis.create({
@@ -304,7 +334,14 @@ export async function createBia(ctx: RequestContext, rawInput: CreateBiaInput) {
                 tenantId: ctx.tenantId,
                 name: sanitizePlainText(data.name),
                 criticality: data.criticality,
-                processNodeId: data.processNodeId ?? null,
+                // The WIRE still speaks `processNodeId`, and the STORAGE no
+                // longer does (#2971). Resolved here rather than at the route
+                // so every writer goes through one translation, and rather than
+                // changing the contract so no client or OpenAPI entry moves for
+                // a change that is about what the database references.
+                // Validates AND translates in one lookup — an id naming no
+                // node is rejected here, not stored as a silent null.
+                ...(await requireProcessNode(db, ctx, data.processNodeId)),
                 rtoHours: data.rtoHours ?? null,
                 rpoHours: data.rpoHours ?? null,
                 mtpdHours: data.mtpdHours ?? null,
@@ -334,20 +371,68 @@ export async function createBia(ctx: RequestContext, rawInput: CreateBiaInput) {
     });
 }
 
+/**
+ * Resolve the soft node reference for a set of BIAs, and attach it in the shape
+ * callers already consume.
+ *
+ * `processNode` used to be a Prisma `include`. It cannot be now: a BIA names its
+ * node by key rather than by row id (#2971), and Prisma has no relation to
+ * traverse for a reference that is deliberately not a foreign key.
+ *
+ * ONE QUERY FOR THE WHOLE SET, not one per row — an `include` was a join and
+ * replacing it with a lookup per BIA would turn the register into an N+1 the
+ * moment a tenant has a few dozen.
+ *
+ * A node that no longer exists resolves to `null`, which is the honest answer
+ * and the same one the old FK produced by nulling the column. The difference is
+ * WHEN: this is decided at read time, so a node recreated under the same key
+ * resolves again instead of staying unlinked forever.
+ */
+async function attachProcessNodes<
+    T extends { processMapId: string | null; processNodeKey: string | null },
+>(db: PrismaTx, ctx: RequestContext, rows: T[]) {
+    const pairs = rows.filter((r) => r.processMapId && r.processNodeKey);
+    if (pairs.length === 0) {
+        return rows.map((r) => ({ ...r, processNode: null }));
+    }
+    const nodes = await db.processNode.findMany({
+        // An OR of PAIRS. `mapId in [...] AND nodeKey in [...]` is a
+        // cross-product and would resolve a BIA to a node it does not name.
+        where: {
+            tenantId: ctx.tenantId,
+            OR: pairs.map((r) => ({
+                processMapId: r.processMapId as string,
+                nodeKey: r.processNodeKey as string,
+            })),
+        },
+        select: { id: true, label: true, processMapId: true, nodeKey: true },
+        take: 500,
+    });
+    const key = (m: string, k: string) => `${m}\u0000${k}`;
+    const byKey = new Map(nodes.map((n) => [key(n.processMapId, n.nodeKey), n] as const));
+    return rows.map((r) => ({
+        ...r,
+        processNode:
+            r.processMapId && r.processNodeKey
+                ? byKey.get(key(r.processMapId, r.processNodeKey)) ?? null
+                : null,
+    }));
+}
+
 /** Register list — enriched with the recovery-priority rank across the set. */
 export async function listBias(ctx: RequestContext, opts?: { criticality?: string; take?: number }) {
     assertCanRead(ctx);
     const rows = await runInTenantContext(ctx, async (db) => {
-        return db.businessImpactAnalysis.findMany({
+        const found = await db.businessImpactAnalysis.findMany({
             where: { tenantId: ctx.tenantId, ...(opts?.criticality ? { criticality: opts.criticality } : {}) },
             include: {
-                processNode: { select: { id: true, label: true } },
                 ownerUser: { select: { id: true, name: true, email: true } },
                 _count: { select: { dependencies: true } },
             },
             orderBy: [{ criticality: 'asc' }, { mtpdHours: 'asc' }],
             take: Math.min(opts?.take ?? 200, 500),
         });
+        return attachProcessNodes(db, ctx, found);
     });
     const rankings = deriveRecoveryPriority(
         rows.map((r) => ({ id: r.id, criticality: r.criticality, mtpdHours: r.mtpdHours, rtoHours: r.rtoHours })),
@@ -364,13 +449,13 @@ export async function getBia(ctx: RequestContext, id: string) {
         const bia = await db.businessImpactAnalysis.findFirst({
             where: { id, tenantId: ctx.tenantId },
             include: {
-                processNode: { select: { id: true, label: true, processMapId: true } },
                 ownerUser: { select: { id: true, name: true, email: true } },
                 dependencies: true,
                 evidenceLinks: { select: { id: true, controlId: true } },
             },
         });
         if (!bia) throw notFound('BIA not found');
+        const [withNode] = await attachProcessNodes(db, ctx, [bia]);
 
         // Recovery rank is relative to the full tenant set.
         const all = await db.businessImpactAnalysis.findMany({
@@ -383,7 +468,7 @@ export async function getBia(ctx: RequestContext, id: string) {
             resolveDependencies(db, ctx, bia.dependencies),
             resolveLinkedControls(db, ctx, bia.evidenceLinks.map((e) => e.controlId)),
         ]);
-        return { ...bia, dependencies, linkedControls, recovery };
+        return { ...withNode, dependencies, linkedControls, recovery };
     });
 }
 
@@ -488,13 +573,19 @@ export async function updateBia(ctx: RequestContext, id: string, rawInput: z.inp
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.businessImpactAnalysis.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true } });
         if (!existing) throw notFound('BIA not found');
-        await assertProcessNode(db, ctx, data.processNodeId);
+        // Resolved once, then spread below — `undefined` means "not supplied"
+        // and must leave the existing link alone, which is why this cannot be
+        // folded into the spread unconditionally.
+        const nodeKeyFields =
+            data.processNodeId !== undefined
+                ? await requireProcessNode(db, ctx, data.processNodeId)
+                : null;
         const bia = await db.businessImpactAnalysis.update({
             where: { id },
             data: {
                 ...(data.name !== undefined && { name: sanitizePlainText(data.name) }),
                 ...(data.criticality !== undefined && { criticality: data.criticality }),
-                ...(data.processNodeId !== undefined && { processNodeId: data.processNodeId }),
+                ...(nodeKeyFields ?? {}),
                 ...(data.rtoHours !== undefined && { rtoHours: data.rtoHours }),
                 ...(data.rpoHours !== undefined && { rpoHours: data.rpoHours }),
                 ...(data.mtpdHours !== undefined && { mtpdHours: data.mtpdHours }),
@@ -607,14 +698,33 @@ export async function getControlBiaSurface(ctx: RequestContext, controlId: strin
         if (nodeKeys.length === 0) return { kind: 'none' };
         const nodes = await db.processNode.findMany({
             where: { tenantId: ctx.tenantId, processMapId: { in: mapIds }, nodeKey: { in: nodeKeys } },
-            select: { id: true, label: true },
+            select: { processMapId: true, nodeKey: true, label: true },
             take: 400,
         });
         if (nodes.length === 0) return { kind: 'none' };
-        const nodeById = new Map(nodes.map((n) => [n.id, n.label] as const));
+        // Keyed by the PAIR, because a nodeKey is unique per map and not per
+        // tenant — two maps may each hold an "n1".
+        const nodeKeyOf = (mapId: string, key: string) => `${mapId}\u0000${key}`;
+        const nodeByKey = new Map(
+            nodes.map((n) => [nodeKeyOf(n.processMapId, n.nodeKey), n.label] as const),
+        );
         const bias = await db.businessImpactAnalysis.findMany({
-            where: { tenantId: ctx.tenantId, processNodeId: { in: nodes.map((n) => n.id) } },
-            select: { id: true, name: true, criticality: true, mtpdHours: true, rtoHours: true, processNodeId: true },
+            // AN OR OF PAIRS, never `mapId in [...] AND nodeKey in [...]`. The
+            // latter is a CROSS-PRODUCT: given nodes (A,n1) and (B,n2) it also
+            // matches a BIA on (A,n2), which is a different node that may not
+            // exist. The id-based `in` this replaced was exact, and the
+            // replacement has to be too.
+            where: {
+                tenantId: ctx.tenantId,
+                OR: nodes.map((n) => ({
+                    processMapId: n.processMapId,
+                    processNodeKey: n.nodeKey,
+                })),
+            },
+            select: {
+                id: true, name: true, criticality: true, mtpdHours: true,
+                rtoHours: true, processMapId: true, processNodeKey: true,
+            },
             take: 100,
         });
         if (bias.length === 0) return { kind: 'none' };
@@ -630,7 +740,11 @@ export async function getControlBiaSurface(ctx: RequestContext, controlId: strin
             .sort((x, y) => x.rank - y.rank)[0];
         return {
             kind: 'process',
-            processLabel: (top.b.processNodeId && nodeById.get(top.b.processNodeId)) || top.b.name,
+            processLabel:
+                (top.b.processMapId &&
+                    top.b.processNodeKey &&
+                    nodeByKey.get(nodeKeyOf(top.b.processMapId, top.b.processNodeKey))) ||
+                top.b.name,
             biaId: top.b.id,
             name: top.b.name,
             mtpdHours: top.b.mtpdHours,
@@ -643,8 +757,13 @@ export async function getControlBiaSurface(ctx: RequestContext, controlId: strin
 export async function getBiasForProcessNode(ctx: RequestContext, processNodeId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
+        // Signature unchanged so the documented `?processNodeId=` parameter
+        // keeps working; the lookup underneath now goes via the natural key.
+        const key = await resolveProcessNode(db, ctx, processNodeId);
+        // A node that has since been deleted answers "no BIAs", not 400.
+        if (!key) return [];
         return db.businessImpactAnalysis.findMany({
-            where: { tenantId: ctx.tenantId, processNodeId },
+            where: { tenantId: ctx.tenantId, ...key },
             select: { id: true, name: true, criticality: true, mtpdHours: true, rtoHours: true },
             take: 50,
         });
@@ -652,10 +771,19 @@ export async function getBiasForProcessNode(ctx: RequestContext, processNodeId: 
 }
 
 /**
- * Canvas cross-link resolver: the process canvas works in client-stable
- * `nodeKey`s, but a BIA attaches to the DB ProcessNode.id. Resolve
- * (processMapId, nodeKey) → id, then return the node's BIAs plus the
- * resolved id (so the "Add BIA" affordance can prefill the create form).
+ * Canvas cross-link: the BIAs on one node, addressed the way the canvas
+ * addresses it.
+ *
+ * THE RESOLUTION STEP IS GONE (#2971). This used to look the node up by
+ * (processMapId, nodeKey) purely to obtain its cuid, because that was what a
+ * BIA stored. Now the BIA stores the same pair the caller already has, so the
+ * query is direct — one statement instead of two, and no window in which the
+ * node resolves but the BIA rows are read against a stale id.
+ *
+ * The node lookup SURVIVES anyway, for a different reason: the response carries
+ * `processNodeId` so the "Add BIA" affordance can prefill the create form,
+ * which still speaks cuid on the wire. Returning it without checking the node
+ * exists would hand the form an id for a node that does not.
  */
 export async function getBiasForProcessNodeKey(ctx: RequestContext, processMapId: string, nodeKey: string) {
     assertCanRead(ctx);
@@ -666,7 +794,7 @@ export async function getBiasForProcessNodeKey(ctx: RequestContext, processMapId
         });
         if (!node) return { processNodeId: null, rows: [] };
         const rows = await db.businessImpactAnalysis.findMany({
-            where: { tenantId: ctx.tenantId, processNodeId: node.id },
+            where: { tenantId: ctx.tenantId, processMapId, processNodeKey: nodeKey },
             select: { id: true, name: true, criticality: true, mtpdHours: true, rtoHours: true },
             take: 50,
         });
@@ -706,12 +834,19 @@ export async function getIncidentBiaContext(ctx: RequestContext, incidentId: str
         if (nodeKeys.length === 0) return [];
         const nodes = await db.processNode.findMany({
             where: { tenantId: ctx.tenantId, processMapId: { in: mapIds }, nodeKey: { in: nodeKeys } },
-            select: { id: true },
+            select: { processMapId: true, nodeKey: true },
             take: 500,
         });
         if (nodes.length === 0) return [];
         const bias = await db.businessImpactAnalysis.findMany({
-            where: { tenantId: ctx.tenantId, processNodeId: { in: nodes.map((n) => n.id) } },
+            // Pairs, not a cross-product — see the note on the chip query above.
+            where: {
+                tenantId: ctx.tenantId,
+                OR: nodes.map((n) => ({
+                    processMapId: n.processMapId,
+                    processNodeKey: n.nodeKey,
+                })),
+            },
             select: { id: true, name: true, criticality: true, mtpdHours: true, rtoHours: true },
             orderBy: { mtpdHours: 'asc' },
             take: 20,

@@ -382,8 +382,8 @@ export class ProcessMapRepository {
         // id, and `ProcessEdgeControl` travels in the save payload and is
         // recreated with them.
         //
-        // NODES ARE NOT LIKE EDGES, because one thing does reference them by
-        // row id: `BusinessImpactAnalysis.processNodeId`, whose FK is
+        // NODES WERE NOT LIKE EDGES, because one thing referenced them by row
+        // id: `BusinessImpactAnalysis.processNodeId`, whose FK was
         // `ON DELETE SET NULL`. Delete-and-recreate therefore nulled that link
         // on EVERY save — identical graph, no user edit, autosave alone was
         // enough — and minted a fresh cuid nothing pointed at. No error, no
@@ -395,11 +395,22 @@ export class ProcessMapRepository {
         // and `parentNodeKey` all do. BIA was the single reference using the
         // row id, and so the single one that did not survive.
         //
-        // WHY UPSERT RATHER THAN MOVING BIA ONTO `nodeKey`. Both fix it. This
-        // one is contained to this function and needs no migration or backfill,
-        // and it removes a second class of problem for free: node identity is
-        // now stable across saves, which is what anything else that comes to
-        // reference a node will assume.
+        // PAST TENSE, DELIBERATELY: #2971 moved BIA onto (`processMapId`,
+        // `processNodeKey`) as well, so TODAY NOTHING REFERENCES A ProcessNode
+        // BY ROW ID — grep the schema for a relation into `ProcessNode` and
+        // only the `ProcessMap.nodes` and `Tenant.processNodes` back-relations
+        // come back. The two changes are not redundant. This one keeps an
+        // ordinary save from churning every row; #2971 covers the case this
+        // one cannot, a node genuinely deleted and recreated — the same step
+        // redrawn — where no amount of upserting preserves a row id.
+        //
+        // WHY BOTH, WHEN EITHER FIXES THE AUTOSAVE BUG. This one was
+        // contained to this function and needed no migration, so it shipped
+        // first and stopped the bleeding. It also removes a second class of
+        // problem for free: node identity is stable across saves, which is
+        // what anything else that comes to reference a node will assume — and
+        // that assumption is now the ONLY thing holding, since the FK that
+        // used to enforce it is gone.
         //
         // The cost is N statements instead of two. That is the shape the edge
         // loop below already has — and at a lower cap (500 nodes against 1000
