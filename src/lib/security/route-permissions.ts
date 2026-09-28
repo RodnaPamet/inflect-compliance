@@ -500,6 +500,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'admin.manage and document a weaker gate than the handler enforces.',
     },
 
+    // ── Prior-state read pairing, per MCP connection (#2861) ───────
+    {
+        path: new RegExp(`^${T}\\/admin\\/external-prior-state-read(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Which READ is called to capture what an external WRITE is about to ' +
+            'replace. Same OWNER-only key as the write ladder beside it: this ' +
+            'decides what is called against a customer\'s own system immediately ' +
+            'before it is changed, and a wrong pairing writes a plausible-looking ' +
+            'record of the wrong object into the journal. A SIBLING path rather ' +
+            'than nested under admin/integrations/<id>, because matching is ' +
+            'first-match-wins and that rule resolves to admin.manage, which would ' +
+            'document a weaker gate than the handler enforces.',
+    },
+
     // ── External-write ladder, per MCP connection (#2861) ───────────
     {
         path: new RegExp(`^${T}\\/admin\\/external-write-policy(\\/.*)?$`),

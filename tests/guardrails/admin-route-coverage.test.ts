@@ -163,6 +163,10 @@ const ADMIN_ONLY_ROUTES = [
     // the handler enforces. The two identity routes below are siblings for
     // exactly this reason and say so in their own notes.
     'admin/external-write-policy/[connectionId]/route.ts',
+    // #2861 — the pairing that makes a write accountable. Same OWNER-only key as
+    // the ladder above it, and a sibling path for the same first-match-wins
+    // reason.
+    'admin/external-prior-state-read/[connectionId]/route.ts',
     'admin/identity-leaver-passes/route.ts',
     // #2687 — the joiner's half of the same pair. The report names which of a
     // customer's people the product would create an account for and at what

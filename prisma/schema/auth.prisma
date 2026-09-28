@@ -297,6 +297,7 @@ model Tenant {
   identityAccountLinks              IdentityAccountLink[]
   identityWriteJournal              IdentityWriteJournal[]
   externalWriteJournal              ExternalWriteJournal[]
+  externalToolPriorStateRead        ExternalToolPriorStateRead[]
 
   @@index([organizationId])
   /// Per-region operational scans (e.g. "list every EU tenant").

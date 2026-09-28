@@ -40,6 +40,7 @@ async function asTenant<T>(tenantId: string, fn: (tx: PrismaClient) => Promise<T
  */
 async function clearOwnRows(): Promise<void> {
     const t = { tenantId: { in: [T1, T2] } };
+    await prisma.externalToolPriorStateRead.deleteMany({ where: t });
     await prisma.externalWriteJournal.deleteMany({ where: t });
     await prisma.integrationConnection.deleteMany({ where: t });
     await prisma.tenant.deleteMany({ where: { id: { in: [T1, T2] } } });
@@ -285,5 +286,77 @@ describe('the encrypted columns are ciphertext AT REST', () => {
 
         await prisma.externalWriteJournal.delete({ where: { id: written.id } });
         await enc.$disconnect();
+    });
+});
+
+/**
+ * `ExternalToolPriorStateRead` — the same boundary, for the table that decides
+ * WHAT gets called against a customer's system immediately before it is changed.
+ *
+ * Covered here rather than in its own file because the forward-lock maps a model
+ * to a suite and one suite may serve several (`wave-features-rls` serves three).
+ * The stake is specific: a cross-tenant write to this table would let one
+ * customer choose which call another customer's agent makes before a write.
+ */
+describe('the prior-state pairing is tenant-scoped', () => {
+    beforeAll(async () => {
+        for (const t of [T1, T2]) {
+            await prisma.externalToolPriorStateRead.create({
+                data: {
+                    tenantId: t,
+                    writeToolName: `mcp__${seeded[t].connectionId}__set_thing`,
+                    readToolName: `mcp__${seeded[t].connectionId}__get_thing`,
+                },
+            });
+        }
+    });
+
+    it('BOTH rows exist — otherwise the assertions below are vacuous', async () => {
+        const all = await prisma.externalToolPriorStateRead.findMany({
+            where: { tenantId: { in: [T1, T2] } },
+            select: { tenantId: true },
+        });
+        expect(all.map((r) => r.tenantId).sort()).toEqual([T1, T2]);
+    });
+
+    it('each tenant reads exactly its own', async () => {
+        for (const t of [T1, T2]) {
+            const rows = await asTenant(t, (tx) =>
+                tx.externalToolPriorStateRead.findMany({ select: { tenantId: true } }),
+            );
+            expect(rows).toHaveLength(1);
+            expect(rows[0].tenantId).toBe(t);
+        }
+    });
+
+    it('INSERT naming a foreign tenant is refused', async () => {
+        await expect(
+            asTenant(T1, (tx) =>
+                tx.externalToolPriorStateRead.create({
+                    data: { tenantId: T2, writeToolName: 'mcp__x__w', readToolName: 'mcp__x__r' },
+                }),
+            ),
+        ).rejects.toThrow();
+    });
+
+    it("repointing another tenant's pairing changes nothing", async () => {
+        // The harm this prevents: choosing which call another customer's agent
+        // makes against their own system, immediately before a write. An
+        // RLS-filtered UPDATE succeeds with zero rows, so the ROW is what must be
+        // asserted.
+        const target = await prisma.externalToolPriorStateRead.findFirstOrThrow({
+            where: { tenantId: T2 },
+        });
+        const res = await asTenant(T1, (tx) =>
+            tx.externalToolPriorStateRead.updateMany({
+                where: { id: target.id },
+                data: { readToolName: 'mcp__evil__exfiltrate' },
+            }),
+        );
+        expect(res.count).toBe(0);
+        const after = await prisma.externalToolPriorStateRead.findUniqueOrThrow({
+            where: { id: target.id },
+        });
+        expect(after.readToolName).toBe(target.readToolName);
     });
 });
