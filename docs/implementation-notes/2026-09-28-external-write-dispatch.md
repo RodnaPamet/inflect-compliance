@@ -87,6 +87,16 @@ a pairing, so every write tool would refuse permanently and the only way to
 configure one would be a hand-written request — defect #3 of the 2026-09-26 chain
 exactly.
 
+**The route, not a surface.** Nothing in the product calls it yet — an OWNER
+creates a pairing with a hand-written request until #2982 lands. That is a real
+gap and it is filed rather than hidden: the honest version of "the route ships
+with the dispatch" is that the API exists, not that an operator can reach it.
+
+It is not urgent in the way the original defect was, and the difference is worth
+stating. `EXTERNAL_MAX_MODE` is `DRY_RUN`, so no write is dispatched at any rung
+this build permits; a write with no pairing sends nothing at all. Nothing is
+inert-while-looking-live. The order is #2982, then raise the clamp.
+
 Its gates are inline in each export rather than in named consts, which is the one
 place this route departs from its siblings.
 `destructive-route-denial-census` reads the text of each `export const DELETE = …`
