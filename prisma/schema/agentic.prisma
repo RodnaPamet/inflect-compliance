@@ -1898,3 +1898,51 @@ model ExternalWriteJournal {
   @@index([tenantId, mode, attemptedAt])
   @@index([connectionId])
 }
+
+/// HOW THE PRODUCT LEARNS WHAT AN EXTERNAL WRITE IS ABOUT TO REPLACE (#2861).
+///
+/// Owner decision, 2026-09-28. MCP has no generic "read the thing this write will
+/// change", so decision 2 — read prior state first, refuse the write if it cannot
+/// be read — needs somebody to say WHICH read corresponds to which write. An
+/// OWNER nominates one of the same server's READ tools, and it is called with the
+/// write's own arguments immediately before the write goes out.
+///
+/// Three alternatives were rejected, and the reasons are worth keeping:
+///
+///   · Let the FAR END return prior state in the write's result. No storage and
+///     no UI, and the OrangeHRM adapter already does it — but a lost response
+///     then loses the prior state along with it, which is precisely what reading
+///     first exists to prevent.
+///   · Derive the read from the write by NAME. No configuration at all, and
+///     silently wrong the moment a server's naming differs; a wrong prior state
+///     is worse than none, because it reads as authoritative.
+///   · Refuse every write until something better exists. Honest, and a path that
+///     always refuses is the shape #2241 deleted from the identity ladder.
+///
+/// A write with no pairing is REFUSED, and that refusal is the point: it names a
+/// thing an operator can fix, rather than dispatching blind.
+model ExternalToolPriorStateRead {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The qualified `mcp__<connectionId>__<tool>` of the WRITE this pairs for.
+  writeToolName String
+  /// The qualified name of the READ called first. Validated to be on the SAME
+  /// connection and to be a read — see `external-prior-state-read.ts`, because
+  /// neither is expressible as a constraint.
+  readToolName String
+
+  /// Who nominated it. This decides what gets called before a customer's system
+  /// is changed, so the column is not decoration.
+  approvedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  /// One read per write. A second pairing would make "which read ran" a plan
+  /// detail rather than a decision somebody made.
+  @@unique([tenantId, writeToolName])
+  @@index([tenantId])
+}

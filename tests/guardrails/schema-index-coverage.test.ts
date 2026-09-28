@@ -402,6 +402,19 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // #2861 — which READ captures prior state before a given external WRITE.
+    //
+    // ONE findMany, in `external-prior-state-read.ts::listPriorStateReads`: it
+    // filters by `tenantId` plus a `startsWith` on `writeToolName` (the
+    // connection prefix) and sorts by `writeToolName`. The unique index
+    // `(tenantId, writeToolName)` is tenant-leading and covers the filter, the
+    // prefix scan and the sort in one traversal, so a curated composite would be
+    // the same index under another name.
+    //
+    // The dispatch's own read is a findFirst on the same unique pair, which is a
+    // point lookup rather than a list query and is not what this layer triages.
+    ExternalToolPriorStateRead:
+        'tenantId-leading unique (tenantId, writeToolName) covers the one findMany: filter, prefix scan and sort',
     // #2860 — a tenant's saved arguments for an external tool.
     //
     // ONE findMany, in `external-tool-parameters.ts`: filters by `tenantId`,

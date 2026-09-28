@@ -33,6 +33,15 @@ jest.mock('@/app-layer/integrations/mcp/client', () => ({
     callTool: (...a: unknown[]) => callToolMock(...a),
 }));
 
+const getPriorStateReadMock = jest.fn();
+const recordIntentMock = jest.fn(async (..._a: unknown[]) => ({ journalId: 'jrn_1' }));
+jest.mock('@/app-layer/usecases/external-prior-state-read', () => ({
+    getPriorStateRead: (...a: unknown[]) => getPriorStateReadMock(...a),
+}));
+jest.mock('@/app-layer/usecases/external-write-journal', () => ({
+    recordIntent: (...a: unknown[]) => recordIntentMock(...a),
+}));
+
 jest.mock('@/lib/security/encryption', () => ({
     ...jest.requireActual('@/lib/security/encryption'),
     decryptField: (s: string) => s,
@@ -56,10 +65,22 @@ const ALERTS = {
     name: 'list_alerts',
     description: 'List firing alerts.',
     inputSchema: { type: 'object', properties: { severity: { type: 'string' } } },
+    // DECLARED read-only, and required from #2861 onwards rather than decoration.
+    // `declaresWrite` treats a tool that declares NOTHING as a write, so a
+    // fixture without this models a tool that needs a prior-state pairing before
+    // it can be called at all — which is a different test from the ones below.
+    // A real server that wants its reads callable says so, exactly like this.
+    annotations: { readOnlyHint: true },
 };
 const QUALIFIED = externalToolName(CONN, 'list_alerts');
 
-const pinFor = (def: typeof ALERTS, toolName = QUALIFIED) => {
+type ToolShape = {
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    annotations?: Record<string, unknown>;
+};
+const pinFor = (def: ToolShape, toolName = QUALIFIED) => {
     const h = hashToolManifest(def);
     return {
         toolName,
@@ -420,5 +441,104 @@ describe('the catalogue and the runtime are gated differently', () => {
         // …and it does not even select the column, so the gate cannot be added
         // there by accident.
         expect(body).not.toMatch(/externalWriteMode/);
+    });
+});
+
+/**
+ * A WRITE goes through the rung, and the order is the design (#2861).
+ *
+ * `declaresWrite` decides which branch a call takes — one definition, shared with
+ * the catalogue and the prior-state setter, so the three cannot disagree about
+ * whether a given tool is a write.
+ *
+ * The properties that matter are about what is NOT sent:
+ *
+ *   · an unpaired write reaches the far end not at all — not even the read half,
+ *     because a pairing is what makes the write accountable;
+ *   · at DRY_RUN the paired read runs and the WRITE does not;
+ *   · the read carries the write's arguments verbatim, because the pairing's
+ *     whole claim is "this read describes the object that write is about to
+ *     change".
+ */
+describe('a tool the server declares as a WRITE', () => {
+    const WRITE = {
+        name: 'set_alert_owner',
+        description: 'Reassign an alert.',
+        inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+        annotations: { readOnlyHint: false },
+    };
+    const WRITE_QUALIFIED = externalToolName(CONN, 'set_alert_owner');
+
+    const offerWriteTool = (annotations: Record<string, unknown> | undefined = { readOnlyHint: false }) => {
+        const def = { ...WRITE, annotations };
+        listToolsMock.mockResolvedValue([def]);
+        mockTx.mcpToolManifestPin.findMany.mockResolvedValue([pinFor(def, WRITE_QUALIFIED)]);
+    };
+
+    beforeEach(() => {
+        offerWriteTool();
+        getPriorStateReadMock.mockResolvedValue(null);
+        recordIntentMock.mockClear();
+    });
+
+    it('is REFUSED when no prior-state read is paired, and nothing is sent', async () => {
+        const [tool] = await resolveExternalReadTools(ctx, new Set([WRITE_QUALIFIED]));
+        await expect(tool.run(ctx, {})).rejects.toThrow(/external_write_unpaired/);
+        // Not even the read half. A call that cannot be accounted for should not
+        // reach the far end at all.
+        expect(callToolMock).not.toHaveBeenCalled();
+    });
+
+    it('runs the PAIRED READ and does NOT send the write, at DRY_RUN', async () => {
+        getPriorStateReadMock.mockResolvedValue({
+            writeToolName: WRITE_QUALIFIED,
+            readToolName: externalToolName(CONN, 'get_alert'),
+        });
+        callToolMock.mockResolvedValue({ owner: 'alice' });
+
+        const [tool] = await resolveExternalReadTools(ctx, new Set([WRITE_QUALIFIED]));
+        const out = (await tool.run(ctx, { id: 'a-1' })) as { content: Array<{ text: string }> };
+
+        // Exactly ONE outbound call, and it is the READ.
+        expect(callToolMock).toHaveBeenCalledTimes(1);
+        expect(callToolMock.mock.calls[0][1]).toBe('get_alert');
+        // …carrying the WRITE's arguments verbatim.
+        expect(callToolMock.mock.calls[0][2]).toEqual({ id: 'a-1' });
+        // …and the write itself never went out.
+        expect(callToolMock.mock.calls.map((c) => c[1])).not.toContain('set_alert_owner');
+
+        // The intent is journalled with what the read returned.
+        expect(recordIntentMock).toHaveBeenCalledTimes(1);
+        const attempt = recordIntentMock.mock.calls[0]![1] as Record<string, string>;
+        expect(attempt.mode).toBe('DRY_RUN');
+        expect(JSON.parse(attempt.priorStateJson)).toEqual({ owner: 'alice' });
+        expect(JSON.parse(attempt.argumentsJson)).toEqual({ id: 'a-1' });
+
+        // And the MODEL is told plainly that nothing happened — otherwise the run
+        // reports a change it did not make, and the conclusion is what a reader
+        // takes away, not the rung buried in a connection's settings.
+        expect(out.content[0].text).toMatch(/DRY RUN — nothing was sent/);
+        expect(out.content[0].text).toMatch(/Do not report this as a completed change/);
+    });
+
+    it('a tool that declares NOTHING is treated as a write', async () => {
+        // Fail closed. The alternative lets any server opt out of the write path
+        // by staying silent, which is weaker than declaring readOnlyHint: false
+        // honestly.
+        offerWriteTool(undefined);
+        const [tool] = await resolveExternalReadTools(ctx, new Set([WRITE_QUALIFIED]));
+        await expect(tool.run(ctx, {})).rejects.toThrow(/external_write_unpaired/);
+    });
+
+    it('a tool declared read-only still goes straight out — the branch discriminates', async () => {
+        // The positive control for every assertion above. If both branches did
+        // the same thing, the refusals would prove nothing.
+        offerWriteTool({ readOnlyHint: true });
+        callToolMock.mockResolvedValue({ ok: true });
+        const [tool] = await resolveExternalReadTools(ctx, new Set([WRITE_QUALIFIED]));
+        await tool.run(ctx, { id: 'a-1' });
+        expect(callToolMock).toHaveBeenCalledTimes(1);
+        expect(callToolMock.mock.calls[0][1]).toBe('set_alert_owner');
+        expect(recordIntentMock).not.toHaveBeenCalled();
     });
 });

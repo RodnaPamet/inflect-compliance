@@ -39,7 +39,8 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import { listTools } from '@/app-layer/integrations/mcp/client';
 import { authorizationFor } from '@/app-layer/integrations/mcp/token';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
-import { coerceStoredMode } from '@/lib/integrations/external-write-ladder';
+import { declaresWrite } from '@/lib/mcp/tool-write-classification';
+import { coerceStoredMode, type ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
 import { logger } from '@/lib/observability/logger';
 import {
     externalToolName,
@@ -82,6 +83,19 @@ export interface ExternalToolManifestState extends ToolManifestState {
     connectionId: string;
     /** The name the server used. `toolName` is the qualified name we key on. */
     advertisedName: string;
+    /**
+     * Whether the SERVER declares this tool as one that may write (#2861).
+     *
+     * Derived through `declaresWrite`, the one definition the dispatch and the
+     * prior-state setter also use — three copies of this predicate would be three
+     * chances to disagree about whether a given tool is a write, and the one that
+     * mattered would be the quiet one.
+     *
+     * Surfaced on the catalogue because an operator choosing a prior-state read
+     * has to see which tools are reads, and because a tool that writes is the
+     * thing they most need to notice when approving a manifest.
+     */
+    declaresWrite: boolean;
 }
 
 /**
@@ -216,6 +230,7 @@ export async function listExternalMcpTools(
             ...manifestStateOf(def, pin, qualified),
             connectionId,
             advertisedName: t.name,
+            declaresWrite: declaresWrite(t.annotations),
         };
     });
 
@@ -352,6 +367,13 @@ export interface GrantedExternalTool {
         annotations?: Record<string, unknown>;
     };
     transport: { url: string; authorization?: string };
+    /**
+     * The connection's rung and identity, threaded through for the dispatch
+     * (#2861). The rung decides whether a write is recorded, queued or sent; the
+     * name and url are denormalised into the journal so a row stays readable
+     * after the connection is deleted.
+     */
+    connection: { id: string; name: string; url: string; mode: ExternalWriteMode };
     /**
      * The tenant's APPROVED parameter sets for this tool, if any.
      *
@@ -559,6 +581,7 @@ export async function resolveGrantedExternalTools(
                 qualified,
                 def,
                 transport: { url, authorization },
+                connection: { id: connection.id, name: connection.name, url, mode: rung },
                 parameterSets: setsByTool.get(qualified) ?? [],
             });
         }

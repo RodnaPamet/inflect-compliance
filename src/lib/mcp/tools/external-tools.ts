@@ -42,6 +42,12 @@ import { callTool } from '@/app-layer/integrations/mcp/client';
 import { resolveGrantedExternalTools } from '@/app-layer/usecases/external-mcp-tools';
 import type { RequestContext } from '@/app-layer/types';
 
+import { declaresWrite } from '@/lib/mcp/tool-write-classification';
+import { getPriorStateRead } from '@/app-layer/usecases/external-prior-state-read';
+import { recordIntent } from '@/app-layer/usecases/external-write-journal';
+import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
+import type { ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
+
 import type { McpReadTool } from './types';
 
 /**
@@ -88,7 +94,7 @@ export async function resolveExternalReadTools(
     grantedTools: ReadonlySet<string> | null,
 ): Promise<McpReadTool<Record<string, unknown>>[]> {
     const granted = await resolveGrantedExternalTools(ctx, grantedTools);
-    return granted.map((g) => adapterFor(g.qualified, g.def, g.transport, g.parameterSets));
+    return granted.map((g) => adapterFor(g.qualified, g.def, g.transport, g.parameterSets, g.connection));
 }
 
 /** One approved external tool, in the shape the funnel already knows. */
@@ -102,6 +108,7 @@ function adapterFor(
     },
     transport: { url: string; authorization?: string },
     parameterSets: ReadonlyArray<{ label: string; parameters: Record<string, unknown> }> = [],
+    connection: { id: string; name: string; url: string; mode: ExternalWriteMode },
 ): McpReadTool<Record<string, unknown>> {
     // ── WHO CHOOSES THE ARGUMENTS ───────────────────────────────────────────
     //
@@ -183,7 +190,7 @@ function adapterFor(
             // it carries its own permission key.
             mirrors: 'no human route — the tool is served by an external MCP server',
         },
-        run: async (_ctx, args) => {
+        run: async (ctx, args) => {
             // The arguments that actually go out. With saved sets this is the
             // APPROVED row, looked up by the label the model chose — never the
             // model's own object, which by then carries only the label.
@@ -203,10 +210,131 @@ function adapterFor(
                 );
             }
 
-            // `callTool` is the one outbound seam and it scans these arguments
-            // before a socket is opened. Nothing is added here: a second check
-            // in a per-tool wrapper would be the copy that drifts.
-            return callTool(transport, def.name, outbound ?? {});
+            // ── IS THIS A WRITE? (#2861) ────────────────────────────────
+            //
+            // `declaresWrite` is the one definition; the catalogue an operator
+            // reads and the prior-state setter use the same one, so the three
+            // cannot disagree about whether a given tool is a write.
+            //
+            // Unknown counts as a write — see that module for why the
+            // inconvenient direction is the right one.
+            if (!declaresWrite(def.annotations)) {
+                // `callTool` is the one outbound seam and it scans these
+                // arguments before a socket is opened. Nothing is added here: a
+                // second check in a per-tool wrapper would be the copy that
+                // drifts.
+                return callTool(transport, def.name, outbound ?? {});
+            }
+
+            return dispatchWrite(ctx, {
+                qualified,
+                advertisedName: def.name,
+                transport,
+                connection,
+                outbound: outbound ?? {},
+            });
         },
     };
+}
+
+/**
+ * A write to somebody else's system, governed by the connection's rung (#2861).
+ *
+ * ## The order is the design
+ *
+ *   1. Is there a prior-state read? No → REFUSE. Nothing is sent, nothing is
+ *      journalled, and the message names what an operator can fix.
+ *   2. Run that read, with the WRITE's own arguments.
+ *   3. Apply the rung.
+ *
+ * Refusing before the read matters: a pairing is what makes the write
+ * accountable, so a call that cannot be accounted for should not reach the far
+ * end at all — not even the read half.
+ *
+ * ## Why the read gets the write's arguments verbatim
+ *
+ * Because the pairing's whole claim is "this read describes the object that
+ * write is about to change". Transforming the arguments between them would make
+ * that claim depend on a mapping nobody declared, and a prior state captured from
+ * a DIFFERENT object is worse than none: the journal presents it as authoritative.
+ * A read whose parameters genuinely differ is a read that cannot honestly be
+ * paired, and the setter refusing it is the correct outcome.
+ */
+async function dispatchWrite(
+    ctx: RequestContext,
+    call: {
+        qualified: string;
+        advertisedName: string;
+        transport: { url: string; authorization?: string };
+        connection: { id: string; name: string; url: string; mode: ExternalWriteMode };
+        outbound: Record<string, unknown>;
+    },
+): Promise<unknown> {
+    const pairing = await getPriorStateRead(ctx, call.qualified);
+    if (!pairing) {
+        throw new Error(
+            `external_write_unpaired: "${call.advertisedName}" is declared as a tool that may ` +
+                'write, and no prior-state read has been nominated for it. Nominate one of this ' +
+                "server's read-only tools on the external-tools page, so what the write replaces " +
+                'is recorded before it is changed.',
+        );
+    }
+
+    const readRef = parseExternalToolName(pairing.readToolName);
+    if (!readRef) {
+        // Unreachable through `setPriorStateRead`, which parses both names before
+        // storing. Checked anyway, because the alternative to a refusal here is
+        // calling `callTool` with `undefined` as the tool name.
+        throw new Error(
+            `external_write_unpaired: the prior-state read stored for "${call.advertisedName}" ` +
+                'is not a valid external tool name.',
+        );
+    }
+
+    // The read goes out through the SAME seam every other call uses, so the egress
+    // scan applies to it too. It carries the write's arguments unchanged — see
+    // the header.
+    const priorState = await callTool(call.transport, readRef.toolName, call.outbound);
+
+    if (call.connection.mode === 'DRY_RUN') {
+        const handle = await recordIntent(ctx, {
+            connectionId: call.connection.id,
+            connectionName: call.connection.name,
+            endpointUrl: call.connection.url,
+            toolName: call.qualified,
+            advertisedToolName: call.advertisedName,
+            mode: call.connection.mode,
+            argumentsJson: JSON.stringify(call.outbound),
+            priorStateJson: JSON.stringify(priorState),
+            agentId: ctx.agentId ?? null,
+        });
+
+        // Returned to the MODEL, so it says plainly that nothing happened. A dry
+        // run that answered like a successful write would have the agent report a
+        // change it did not make — and the run's own conclusion is what a reader
+        // takes away, not the rung buried in a connection's settings.
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text:
+                        `DRY RUN — nothing was sent. This connection is at DRY_RUN, so the change ` +
+                        `was recorded and not applied. Journal reference ${handle.journalId}. ` +
+                        `Do not report this as a completed change.`,
+                },
+            ],
+            isError: false,
+        };
+    }
+
+    // PROPOSE_ONLY and AUTOMATIC are unreachable today: `EXTERNAL_MAX_MODE` is
+    // `DRY_RUN`, so no tenant can store a wider rung, and the admin route refuses
+    // one. The refusal is here anyway rather than as a comment — a rung that
+    // arrives later must be refused until somebody decides what it means, which
+    // is the identity ladder's lesson about inheriting permission by falling
+    // through.
+    throw new Error(
+        `external_write_rung_unimplemented: this build dispatches no external write at ` +
+            `${call.connection.mode}. Nothing was sent.`,
+    );
 }
