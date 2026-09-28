@@ -31,7 +31,9 @@
 --    after #2356 batch 2 (#2531)
 --                              46 statements
 --    after #2356 batch 3b (#2535)
---                              84 statements (THIS FILE'S CURRENT STATE)
+--                              84 statements
+--    after #2861's ExternalWriteJournal (this PR)
+--                              86 statements (THIS FILE'S CURRENT STATE)
 --
 --  THE ROWS ABOVE WERE RE-MEASURED, not copied.  Each is the statement
 --  count of THIS FILE at that commit, counted with the same parser the
@@ -70,13 +72,13 @@
 --  proposes dropping them and we always keep them.  Verify with
 --      SELECT indexdef FROM pg_indexes WHERE indexname LIKE 'Control_%_trgm_idx';
 --
---  ── GROUP 3 — 78 statements, 39 × column-scoped SET NULL FKs.
+--  ── GROUP 3 — 80 statements, 40 × column-scoped SET NULL FKs.
 --     PERMANENT. ───────────────────────────────────────────────────────
 --  Tenant-carrying composite FKs whose referential action is
 --  `ON DELETE SET NULL (<the fk column>)` in the database, and which the
 --  schema can only imply as RESTRICT.  TWO numbers, because the diff
---  emits a DROP CONSTRAINT and an ADD CONSTRAINT for each one: 39
---  constraints, 78 statements.  This heading read "49 ×" before
+--  emits a DROP CONSTRAINT and an ADD CONSTRAINT for each one: 40
+--  constraints, 80 statements.  This heading read "49 ×" before
 --  2026-09-17 and named neither quantity — it was seeded as a statement
 --  count (20, for group 3's original 10 constraints) and then bumped by
 --  CONSTRAINT counts (+10 at #2531, +19 at #2535), so the unit changed
@@ -227,6 +229,9 @@ ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_riskId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_taskId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "ExternalWriteJournal" DROP CONSTRAINT "ExternalWriteJournal_connectionId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "FileRecord" DROP CONSTRAINT "FileRecord_previousFileRecordId_tenantId_fkey";
@@ -383,6 +388,9 @@ ALTER TABLE "Device" ADD CONSTRAINT "Device_employeeId_tenantId_fkey" FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE "Employee" ADD CONSTRAINT "Employee_managerEmployeeId_tenantId_fkey" FOREIGN KEY ("managerEmployeeId", "tenantId") REFERENCES "Employee"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ExternalWriteJournal" ADD CONSTRAINT "ExternalWriteJournal_connectionId_tenantId_fkey" FOREIGN KEY ("connectionId", "tenantId") REFERENCES "IntegrationConnection"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "IdentityWriteJournal" ADD CONSTRAINT "IdentityWriteJournal_linkId_tenantId_fkey" FOREIGN KEY ("linkId", "tenantId") REFERENCES "IdentityAccountLink"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;

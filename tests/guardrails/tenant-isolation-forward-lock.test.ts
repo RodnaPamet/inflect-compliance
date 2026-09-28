@@ -35,6 +35,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
         "tests/integration/identity-department-group-rule-rls.test.ts",
     PreHire: "tests/integration/pre-hire-rls.test.ts",
     IdentityWriteJournal: "tests/integration/identity-write-journal-rls.test.ts",
+    ExternalWriteJournal: "tests/integration/external-write-journal-rls.test.ts",
     EvidenceControlLink: "tests/integration/evidence-control-link-rls.test.ts",
     EvidenceRiskLink: "tests/integration/evidence-risk-asset-link-rls.test.ts",
     EvidenceAssetLink: "tests/integration/evidence-risk-asset-link-rls.test.ts",
