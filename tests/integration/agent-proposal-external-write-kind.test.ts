@@ -36,7 +36,11 @@ import { PrismaClient } from '@prisma/client';
 import { prismaTestClient } from '../helpers/db';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { approveAgentProposal, createAgentProposal } from '@/app-layer/usecases/agent-proposals';
+import {
+    approveAgentProposal,
+    createAgentProposal,
+    rejectAgentProposal,
+} from '@/app-layer/usecases/agent-proposals';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(60_000);
@@ -160,4 +164,30 @@ describe('and one that exists by other means cannot be approved', () => {
         // half: this kind names no entity of ours to create.
         expect(after.createdEntityId).toBeNull();
     });
+});
+
+describe('but it can always be REJECTED', () => {
+    it('rejects, because narrowing is never gated', () => rejectsCleanly());
+
+    /**
+     * Extracted so the assertion reads as one claim. Rejecting withdraws an
+     * authority, and every gate in this subsystem is deliberately one-directional
+     * for that reason — `clearPriorStateRead` takes no catalogue call, the ladder
+     * refuses no narrowing, and an operator taking something away is never told
+     * to wait for a capability that does not exist yet.
+     *
+     * The guard that blocked this was a copy of the APPROVE guard, placed in
+     * `rejectAgentProposal` by a replace-all that matched the same anchor in both
+     * functions. Its own comment gave it away — it explains that "the claim flips
+     * the row to ACCEPTED", which is not something rejecting does.
+     */
+    async function rejectsCleanly() {
+        const id = await seedExternalWriteProposal();
+        await rejectAgentProposal(ctx(), id);
+        const after = await prisma.agentProposal.findUniqueOrThrow({
+            where: { id },
+            select: { status: true },
+        });
+        expect(after.status).toBe('REJECTED');
+    }
 });
