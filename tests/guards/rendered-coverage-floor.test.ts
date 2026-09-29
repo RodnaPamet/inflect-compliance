@@ -181,7 +181,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // 2026-09-29 — 290 -> 291: tests/rendered/external-tools-prior-state-pairing.test.tsx,
 // the operator surface for the prior-state read pairing (#2982). The floor has
 // zero slack by design, so a new rendered file raises it in the same diff.
-const RENDERED_TEST_FLOOR = 291;
+const RENDERED_TEST_FLOOR = 300;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
