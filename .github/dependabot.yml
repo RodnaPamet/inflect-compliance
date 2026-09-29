@@ -124,6 +124,47 @@ updates:
       - dependency-name: "@earendil-works/pi-ai"
         versions: [">=0.84.0"]
 
+      # `tldraw` is held below 4.0.0 because its LICENCE changes there, not
+      # because the bump is noisy and not because anything breaks.
+      #
+      # The 3.x line permits "use the Software in your commercial or
+      # non-commercial projects" provided the Watermark is not removed, and
+      # needs no key. From 4.0.0 production use is BANNED without a paid
+      # commercial key, and the SDK ships technical measures that detect
+      # deployment environments. So a 4.x bump is not a version regression to
+      # weigh against a CVE — it ships licensed software we are not licensed to
+      # ship. See #2958 for the per-tag comparison that locates the boundary.
+      #
+      # WITHOUT THIS ENTRY THE PROPOSAL ARRIVES LABELLED AS A SECURITY FIX,
+      # which is the reason a blanket `ignore` is not enough of an answer on its
+      # own. `@tiptap/core@2.27.3` is transitive under tldraw 3.x, `npm audit`
+      # reports it against GHSA-cp6q-959q-f8rh, and the only way to move a
+      # transitive dependency is to move its parent. So Dependabot titles the
+      # PR after the advisory and changes the direct dependency two majors —
+      # #2990 and its re-proposal #2997, both closed. A red security-labelled
+      # PR that reappears every cycle is the shape most likely to be waved
+      # through by somebody in a hurry.
+      #
+      # The advisory it cites does not apply: tiptap backported the fix to 2.x
+      # in 2.27.3, published nine days AFTER 3.30.4, and the advisory's upper
+      # bound was never amended. `tests/guards/tiptap-proto-merge-is-fixed.test.ts`
+      # runs the published attack against every resolved copy on every CI run,
+      # so the claim is measured rather than argued.
+      #
+      # TWO GUARDS ALREADY REFUSE A 4.x TREE — `dependency-risk-review`
+      # (tldraw's reviewed major is 3, asserted as exact equality) and the
+      # tiptap guard above, whose population control fails when tldraw stops
+      # resolving a tiptap of its own. This entry does not replace them; it
+      # stops the churn that made them fire.
+      #
+      # The floor is scoped rather than blanket so every 3.x patch and minor
+      # still comes through. DELETE THIS ENTRY the day a tldraw commercial
+      # licence exists: 4.x/5.x then become permitted AND ship patched tiptap,
+      # so the upgrade is strictly good and the audit exemption in
+      # security/audit-allowlist.json retires with it.
+      - dependency-name: "tldraw"
+        versions: [">=4.0.0"]
+
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
     directory: /
