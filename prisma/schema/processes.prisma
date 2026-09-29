@@ -63,6 +63,26 @@ model ProcessMap {
   // caller has the canAdmin permission.
   deletedAt       DateTime?
   deletedByUserId String?
+  /// #2960 — the canvas renderer's OWN shapes: sticky notes, freehand
+  /// strokes, loose text. Stored verbatim and read by nothing but the
+  /// renderer.
+  ///
+  /// WHY A COLUMN AND NOT ROWS. The structured graph is ProcessNode /
+  /// ProcessEdge, and coverage, traceability and automation query those
+  /// rows. A sticky note is a drawing, not a process step — if it were a
+  /// ProcessNode it would appear in a coverage report, be linkable to a
+  /// control, and count against the 500-node ceiling. Keeping it in an
+  /// opaque column makes that category error unrepresentable rather than
+  /// merely discouraged.
+  ///
+  /// NEVER project this into ProcessNode rows, and never read it to answer
+  /// a compliance question. `tests/integration/freeform-never-becomes-a-node.test.ts`
+  /// holds both halves.
+  ///
+  /// Bounded by FREEFORM_JSON_MAX_BYTES in the save schema — it is copied
+  /// wholesale into a ProcessMapSnapshot on every autosave, so its size is
+  /// write amplification on a 3-second debounce, not one big row.
+  freeformJson    Json?
 
   tenant    Tenant               @relation(fields: [tenantId], references: [id])
   createdBy User                 @relation("ProcessMapCreatedBy", fields: [createdByUserId], references: [id])

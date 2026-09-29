@@ -30,6 +30,7 @@ import {
 import { sqlCodeOf } from '../helpers/source-blocks';
 import { EXTERNAL_MAX_MODE, MODE_MIN_DAYS } from '@/lib/integrations/external-write-ladder';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
+import { recordIntent } from '@/app-layer/usecases/external-write-journal';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(60_000);
@@ -58,8 +59,16 @@ beforeAll(async () => {
     await resetDatabase(prisma);
     const owners: Record<string, string> = {};
     for (const id of [T1, T2]) {
+        // Same leak the journal test carried: `resetDatabase` does not truncate
+        // `User` or `Tenant`, so both fixtures survive the run and the next
+        // `create` dies on a unique constraint in `beforeAll` — which fails every
+        // test in the file on something none of them are about.
+        const fixtureEmail = `owner@${id}.test`;
+        await prisma.user.deleteMany({ where: { emailHash: hashForLookup(fixtureEmail) } });
+        await prisma.tenant.deleteMany({ where: { id } });
+
         await prisma.tenant.create({ data: { id, name: id, slug: id } });
-        const email = `owner@${id}.test`;
+        const email = fixtureEmail;
         const user = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
         await prisma.tenantMembership.create({
             data: { tenantId: id, userId: user.id, role: Role.OWNER, status: MembershipStatus.ACTIVE },
@@ -79,6 +88,12 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+    // Journal rows FIRST. Deleting a connection nulls `connectionId` on the rows
+    // that referenced it (the composite FK is `SET NULL ("connectionId")`), so
+    // they survive their connection rather than cascading — which is right for a
+    // record of what was attempted, and means they would otherwise accumulate
+    // across every test in this file.
+    await prisma.externalWriteJournal.deleteMany({ where: { tenantId: { in: [T1, T2] } } });
     await prisma.integrationConnection.deleteMany({ where: { tenantId: { in: [T1, T2] } } });
     conn1 = await makeConnection(T1, 'mcp one');
     conn2 = await makeConnection(T2, 'mcp two');
@@ -388,5 +403,135 @@ describe('the backfill migration', () => {
     it('stamps a window, because DRY_RUN cannot be widened off without one', () => {
         // DISABLED is exempt from the window as of 2026-09-27; DRY_RUN is not.
         expect(SQL).toMatch(/"externalWriteModeSince" = NOW\(\)/);
+    });
+});
+
+/**
+ * THE EVIDENCE THE DWELL COUNTS — the seam that did not connect.
+ *
+ * Until this was fixed, `countRecordedIntents` counted `IntegrationExecution`
+ * rows whose `automationKey` ended in `:external-write`, and nothing has ever
+ * written one: the dispatch (#2983) records intents as `ExternalWriteJournal`
+ * rows. The count was therefore 0 for every connection forever, and the ladder
+ * refused `DRY_RUN → PROPOSE_ONLY` saying the rung had recorded nothing while
+ * the journal filled up beside it.
+ *
+ * The suite already had a test for the zero case, and it could not have caught
+ * this: with no journal rows AND no execution rows, the broken and the fixed
+ * implementation both return 0. Every assertion below is written so that it
+ * FAILS against the old query — the count is taken after a real `recordIntent`,
+ * through the same seam the dispatch uses.
+ */
+describe('what the dwell counts as evidence', () => {
+    let conn = '';
+
+    /** One dry-run intent, written the way the dispatch writes it. */
+    const intent = (connectionId: string) =>
+        recordIntent(ctx1, {
+            connectionId,
+            connectionName: 'evidence-conn',
+            endpointUrl: 'https://mcp.example.test/endpoint',
+            toolName: `mcp__${connectionId}__set_employee_work_email`,
+            advertisedToolName: 'set_employee_work_email',
+            mode: 'DRY_RUN',
+            argumentsJson: JSON.stringify({ empNumber: 7 }),
+            priorStateJson: JSON.stringify({ workEmail: 'before@example.test' }),
+        });
+
+    /** Open the window and backdate it past the dwell, leaving only evidence. */
+    async function armPastDwell(connectionId: string) {
+        await setExternalWriteMode(ctx1, connectionId, 'DRY_RUN', EXTERNAL_MAX_MODE);
+        await prisma.integrationConnection.update({
+            where: { id: connectionId },
+            data: {
+                externalWriteModeSince: new Date(Date.now() - (MODE_MIN_DAYS + 30) * 86_400_000),
+            },
+        });
+    }
+
+    beforeEach(async () => {
+        // A connection per test. These tests move a connection UP the ladder, so
+        // sharing one would let an earlier climb decide a later assertion.
+        conn = await makeConnection(T1, `evidence-${Date.now()}-${Math.random()}`);
+    });
+
+    it('counts a recorded intent that the journal actually holds', async () => {
+        // THE MUTATION PROOF. Against the old query this is 0, because the row
+        // `recordIntent` writes is an ExternalWriteJournal row and the old
+        // counter read IntegrationExecution.
+        await armPastDwell(conn);
+        await intent(conn);
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(1);
+    });
+
+    it('lets a connection CLIMB once the rung has produced something', async () => {
+        // The behaviour the count exists for, and the half a count assertion
+        // alone would not show: with one real intent and the dwell served, the
+        // widen is granted rather than refused.
+        await armPastDwell(conn);
+        await intent(conn);
+
+        // Clamp raised for this call only, so what is exercised is the dwell and
+        // not the ceiling — the same device the zero-case test above uses.
+        const after = await setExternalWriteMode(ctx1, conn, 'PROPOSE_ONLY', 'AUTOMATIC');
+        expect(after.mode).toBe('PROPOSE_ONLY');
+    });
+
+    it('ignores intents recorded BEFORE the window opened', async () => {
+        // The window is the point of the dwell: evidence from a previous stint at
+        // this rung is not evidence about this one.
+        await setExternalWriteMode(ctx1, conn, 'DRY_RUN', EXTERNAL_MAX_MODE);
+        await intent(conn);
+        await prisma.externalWriteJournal.updateMany({
+            where: { tenantId: T1, connectionId: conn },
+            data: { attemptedAt: new Date(Date.now() - 400 * 86_400_000) },
+        });
+        // Window opens AFTER that row was attempted.
+        await prisma.integrationConnection.update({
+            where: { id: conn },
+            data: { externalWriteModeSince: new Date(Date.now() - 60 * 86_400_000) },
+        });
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(0);
+    });
+
+    it("does not count another connection's intents", async () => {
+        // Scoping, asserted rather than assumed: the count is per connection, and
+        // a query that dropped the connectionId filter would pass every other
+        // assertion in this block.
+        const other = await makeConnection(T1, `evidence-other-${Date.now()}`);
+        await armPastDwell(conn);
+        await intent(other);
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(0);
+    });
+
+    it('reports PROPOSE_ONLY as UNCOUNTABLE rather than zero', async () => {
+        // That rung is asked for APPROVED PROPOSALS, and nothing can produce one
+        // yet — `dispatchWrite` refuses the rung outright. "We could not look" and
+        // "we looked and found none" are different answers; only the second is
+        // evidence, and reporting 0 here would claim the wrong one.
+        //
+        // Stored directly: `setExternalWriteMode` refuses this rung under the
+        // real clamp, which is the behaviour a different test covers.
+        await prisma.integrationConnection.update({
+            where: { id: conn },
+            data: {
+                externalWriteMode: 'PROPOSE_ONLY',
+                externalWriteModeSince: new Date(Date.now() - (MODE_MIN_DAYS + 30) * 86_400_000),
+            },
+        });
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBeUndefined();
+
+        // And the refusal says so, rather than claiming a count of zero.
+        await expect(
+            setExternalWriteMode(ctx1, conn, 'AUTOMATIC', 'AUTOMATIC'),
+        ).rejects.toThrow(/Cannot confirm what PROPOSE_ONLY has recorded/);
     });
 });
