@@ -486,24 +486,6 @@ export async function createAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
 ): Promise<ProposalResult> {
-    if (input.kind === 'EXTERNAL_WRITE') {
-        // Named before the schema lookup below, which would otherwise answer
-        // "Unknown proposal kind" — and it is not unknown, it is known and not
-        // creatable HERE. A refusal that misdescribes the reason sends whoever
-        // reads it looking for a missing enum value instead of a missing seam.
-        //
-        // This usecase validates against the create/update schema of one of OUR
-        // entities. An external write has no such schema: its payload is the MCP
-        // arguments bound for a third-party server. The seam that creates these
-        // rows is the `PROPOSE_ONLY` arm of `dispatchWrite`, which ships in the
-        // next slice; until then nothing writes this kind at all.
-        throw badRequest(
-            'EXTERNAL_WRITE proposals are not created through this usecase. They are queued '
-                + 'by the external-write ladder when a connection sits at PROPOSE_ONLY, and that '
-                + 'seam is not wired yet.',
-        );
-    }
-
     const operation: AgentProposalOperation = input.operation ?? 'CREATE';
     if (input.kind === 'EXTERNAL_WRITE' && operation !== 'CREATE') {
         // MEASURED, not stylistic. `buildProposalDiff` resolves an UPDATE's
