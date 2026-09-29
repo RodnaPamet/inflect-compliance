@@ -66,9 +66,15 @@ beforeAll(async () => {
     await prisma.externalWriteJournal.deleteMany({ where: { tenantId: T } });
     await prisma.integrationConnection.deleteMany({ where: { tenantId: T } });
     await prisma.tenant.deleteMany({ where: { id: T } });
+    // The USER too, and this is what made the file un-rerunnable: `resetDatabase`
+    // does not truncate `User`, so the fixture survived every run and the next
+    // `user.create` died on `User_emailHash_key` — in `beforeAll`, so all twelve
+    // tests failed on a constraint none of them are about.
+    const fixtureEmail = `owner@${T}.test`;
+    await prisma.user.deleteMany({ where: { emailHash: hashForLookup(fixtureEmail) } });
 
     await prisma.tenant.create({ data: { id: T, name: T, slug: T } });
-    const email = `owner@${T}.test`;
+    const email = fixtureEmail;
     const user = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
     const conn = await prisma.integrationConnection.create({
         data: { tenantId: T, provider: 'mcp-server', name: 'hrm', configJson: {} },

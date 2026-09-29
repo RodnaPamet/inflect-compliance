@@ -91,22 +91,27 @@ export const MODE_MIN_DAYS = 7;
  */
 export const EXTERNAL_MAX_MODE: ExternalWriteMode = 'DRY_RUN';
 
-/**
- * The `IntegrationExecution.automationKey` suffix an external-write pass records
- * under, and therefore what the dwell COUNTS as evidence.
+/*
+ * `EXTERNAL_WRITE_AUTOMATION_SUFFIX` USED TO LIVE HERE. DO NOT BRING IT BACK.
  *
- * Declared here, beside the rung it gates, rather than in the dispatch that will
- * write it — so the reader and the writer cannot disagree about the string. The
- * identity ladder keeps `PASS_AUTOMATION_SUFFIX` in exactly the same place for
- * the same reason.
+ * It named an `IntegrationExecution.automationKey` suffix that an external-write
+ * pass was supposed to record under, and that the dwell counted as evidence. No
+ * such row was ever written. The dispatch (#2983) records intents as
+ * `ExternalWriteJournal` rows via `recordIntent`, so the counter read an empty
+ * population forever and the ladder refused `DRY_RUN → PROPOSE_ONLY` on a reason
+ * that was not true.
  *
- * Nothing writes it yet, which is why a `DRY_RUN` connection cannot climb: the
- * count is a real query that returns 0, so the ladder refuses on evidence rather
- * than on elapsed days. The alternative — a literal 0 in the counter — would
- * refuse identically today and then go on refusing after the dispatch shipped,
- * silently, until somebody remembered the line.
+ * The constant's own docstring had predicted exactly that — it warned a hardcoded
+ * 0 "would go on refusing after the dispatch shipped, silently, until somebody
+ * remembered the line" — and then the same thing happened to the real query,
+ * because a suffix nothing writes and a literal 0 are the same number.
+ *
+ * An external write is a TOOL CALL, not a scheduled integration pass;
+ * `IntegrationExecution` models the latter. The journal is the record, and the
+ * evidence query lives at `countEvidenceForRung` in
+ * `app-layer/usecases/external-write-policy.ts`, reading the index
+ * `ExternalWriteJournal` already carries for it.
  */
-export const EXTERNAL_WRITE_AUTOMATION_SUFFIX = ':external-write';
 
 /**
  * Evidence a rung must have PRODUCED before it may be widened off.
