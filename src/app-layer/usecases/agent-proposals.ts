@@ -60,6 +60,7 @@ import { createControl, updateControl } from '@/app-layer/usecases/control/mutat
 import { createPolicy } from '@/app-layer/usecases/policy';
 import { createFinding, updateFinding } from '@/app-layer/usecases/finding';
 import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
+import { ExternalWriteProposalPayloadSchema } from '@/lib/agentic/external-write-proposal';
 import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -485,25 +486,19 @@ export async function createAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
 ): Promise<ProposalResult> {
-    if (input.kind === 'EXTERNAL_WRITE') {
-        // Named before the schema lookup below, which would otherwise answer
-        // "Unknown proposal kind" — and it is not unknown, it is known and not
-        // creatable HERE. A refusal that misdescribes the reason sends whoever
-        // reads it looking for a missing enum value instead of a missing seam.
-        //
-        // This usecase validates against the create/update schema of one of OUR
-        // entities. An external write has no such schema: its payload is the MCP
-        // arguments bound for a third-party server. The seam that creates these
-        // rows is the `PROPOSE_ONLY` arm of `dispatchWrite`, which ships in the
-        // next slice; until then nothing writes this kind at all.
+    const operation: AgentProposalOperation = input.operation ?? 'CREATE';
+    if (input.kind === 'EXTERNAL_WRITE' && operation !== 'CREATE') {
+        // MEASURED, not stylistic. `buildProposalDiff` resolves an UPDATE's
+        // `targetEntityId` against one of OUR tables; an external write names a
+        // record in somebody else's, so an UPDATE-shaped row answers
+        // TARGET_MISSING and can never be approved at all. `CREATE` here means
+        // "there is no internal record to diff against", which is exactly true —
+        // the before and after are both in the payload.
         throw badRequest(
-            'EXTERNAL_WRITE proposals are not created through this usecase. They are queued '
-                + 'by the external-write ladder when a connection sits at PROPOSE_ONLY, and that '
-                + 'seam is not wired yet.',
+            'An EXTERNAL_WRITE proposal is CREATE-shaped: its prior state travels in the '
+                + 'payload, because there is no record of ours to diff it against.',
         );
     }
-
-    const operation: AgentProposalOperation = input.operation ?? 'CREATE';
     // Resolves to a `string` for an UPDATE (refusing POLICY and a missing id
     // first) and to `null` for a CREATE. Runs before anything else so the two
     // errors a proposing agent can actually act on come back first.
@@ -523,10 +518,19 @@ export async function createAgentProposal(
     // two differ in more than optionality: the update schemas accept explicit
     // `null` on nullable columns ("clear this"), which a create schema rejects,
     // and a proposal is exactly the place that distinction has to survive.
+    //
+    // EXTERNAL_WRITE validates against its own payload shape rather than one of
+    // our entity schemas, because its subject is a record in a system we do not
+    // hold. Everything BELOW this line is shared unchanged — the sanitiser, both
+    // guards, the policy-card pin, the approval tiering, the expiry window and
+    // the audit — which is the whole reason this kind reuses this usecase
+    // instead of growing a second one beside it.
     const schema =
-        operation === 'UPDATE'
-            ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
-            : SCHEMA_BY_KIND[input.kind];
+        input.kind === 'EXTERNAL_WRITE'
+            ? ExternalWriteProposalPayloadSchema
+            : operation === 'UPDATE'
+              ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
+              : SCHEMA_BY_KIND[input.kind];
     if (!schema) throw badRequest(`Unknown proposal kind: ${input.kind}`);
 
     const parsed = schema.safeParse(input.payload);

@@ -7,10 +7,11 @@
  * second copy of that composition is the failure this subsystem has paid for
  * once already.
  *
- * This slice adds the enum value and NOTHING that writes it. Both seams that can
- * meet the kind refuse it explicitly and say what is missing, which is the
- * "control arrives before the authority" ordering #2933 used and #2241's lesson
- * about what a rung costs when it arrives after.
+ * The kind is now CREATABLE — the `PROPOSE_ONLY` arm of `dispatchWrite` queues
+ * one — but still NOT APPROVABLE, because approving one dispatches an MCP call
+ * and that job is the next slice. That asymmetry is the "control arrives before
+ * the authority" ordering #2933 used, and it is safe because `EXTERNAL_MAX_MODE`
+ * is `DRY_RUN`: no connection can sit at `PROPOSE_ONLY` to queue one at all.
  *
  * ## Why the approval test seeds a CREATE-shaped row
  *
@@ -77,7 +78,18 @@ afterAll(async () => {
     await prisma.$disconnect();
 });
 
-/** A row of the new kind, inserted directly — nothing in the app creates one. */
+/** Everything a reviewer needs: where, what, what changes, what it replaces. */
+const VALID_PAYLOAD = {
+    connectionId: 'cmconnaaaaaaaaaaaaaaaaaa',
+    connectionName: 'HRM',
+    endpointUrl: 'https://hrm.example.test/mcp',
+    toolName: 'mcp__cmconnaaaaaaaaaaaaaaaaaa__set_employee_work_email',
+    advertisedToolName: 'set_employee_work_email',
+    arguments: { empNumber: 7, workEmail: 'new@example.test' },
+    priorState: { workEmail: 'old@example.test' },
+};
+
+/** A row of the new kind, inserted directly rather than through the dispatch. */
 async function seedExternalWriteProposal(): Promise<string> {
     const row = await prisma.agentProposal.create({
         data: {
@@ -107,17 +119,45 @@ describe('the kind is storable', () => {
     });
 });
 
-describe('but nothing can create one through the app', () => {
-    it('refuses it by NAME, not as an unknown kind', async () => {
-        // The distinction matters to whoever reads the error: it is a known kind
-        // with no creation seam, not a missing enum value. A refusal that
-        // misdescribes the cause sends them looking in the wrong place.
+describe('what the payload must carry', () => {
+    it('refuses a payload that is not an external write at all', async () => {
+        // It validates against `ExternalWriteProposalPayloadSchema`, not against
+        // one of our entity create-schemas. A bare object is refused for the
+        // fields a REVIEWER needs — where it goes, what is called, what changes,
+        // what it replaces — rather than for a missing entity field.
         await expect(
             createAgentProposal(ctx(), {
                 kind: 'EXTERNAL_WRITE',
                 payload: { empNumber: 7 },
+                policyCardVersion: 0,
             } as unknown as Parameters<typeof createAgentProposal>[1]),
-        ).rejects.toThrow(/not created through this usecase/);
+        ).rejects.toThrow(/Proposed EXTERNAL_WRITE is invalid/);
+    });
+
+    it('refuses an UPDATE-shaped one, because its diff could never resolve', async () => {
+        // Measured in the previous slice: `buildProposalDiff` resolves an
+        // UPDATE's target against one of OUR tables, so an external write shaped
+        // as an UPDATE answers TARGET_MISSING and can never be approved. Refusing
+        // it at creation is better than storing a row that is unapprovable.
+        await expect(
+            createAgentProposal(ctx(), {
+                kind: 'EXTERNAL_WRITE',
+                operation: 'UPDATE',
+                targetEntityId: 'emp-7',
+                payload: VALID_PAYLOAD,
+                policyCardVersion: 0,
+            } as unknown as Parameters<typeof createAgentProposal>[1]),
+        ).rejects.toThrow(/CREATE-shaped/);
+    });
+
+    it('accepts a complete one and queues it PENDING', async () => {
+        const res = await createAgentProposal(ctx(), {
+            kind: 'EXTERNAL_WRITE',
+            payload: VALID_PAYLOAD,
+            policyCardVersion: 0,
+        } as unknown as Parameters<typeof createAgentProposal>[1]);
+        expect(res.kind).toBe('EXTERNAL_WRITE');
+        expect(res.status).toBe('PENDING');
     });
 
     it('and the refusal is about THIS kind, not about every kind', async () => {
