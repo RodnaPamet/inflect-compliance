@@ -36,7 +36,6 @@ import { logger } from '@/lib/observability/logger';
 import {
     LADDER,
     EXTERNAL_MAX_MODE,
-    EXTERNAL_WRITE_AUTOMATION_SUFFIX,
     coerceStoredMode,
     isAboveClamp,
     refusalForMove,
@@ -58,38 +57,72 @@ export interface ExternalWritePolicy extends ExternalWriteState {
 }
 
 /**
- * Dry-run intents this connection has recorded since its window opened.
+ * What the CURRENT rung has produced since its window opened.
  *
- * A REAL query rather than a hardcoded 0, and the difference matters. Nothing
- * writes these rows yet — the dispatch that does is #2861's next slice — so this
- * returns 0 today and the ladder refuses to widen off `DRY_RUN` on evidence,
- * which is correct. A literal `0` would also refuse, and would then keep
- * refusing after the dispatch shipped, silently, until somebody remembered this
- * line. Counting the rows the dispatch will write means the gate starts working
- * the moment there is something to count.
+ * ── THE SEAM THAT NEVER CONNECTED ───────────────────────────────────────────
  *
- * Mirrors `countExecutedPasses` in `identity-write-policy.ts`, including
- * `status: { not: 'ERROR' }`: a pass that errored observed nothing, while
- * PASSED / PARTIAL / NOT_APPLICABLE all RAN, and a run that found nothing to do
- * is still the machinery working end to end — the fact a dwell gate cannot
- * otherwise see.
+ * This counted `IntegrationExecution` rows whose `automationKey` ended in
+ * `:external-write`. NOTHING HAS EVER WRITTEN SUCH A ROW. The constant naming
+ * that suffix said as much itself — declared beside the rung "rather than in the
+ * dispatch that will write it" — and warned that a hardcoded 0 "would go on
+ * refusing after the dispatch shipped, silently, until somebody remembered the
+ * line". The dispatch shipped as #2983, recorded intents in the JOURNAL instead,
+ * and nobody remembered the line. The docstring predicted its own failure mode
+ * and was right.
+ *
+ * So the count was 0 for every connection, always, and `DRY_RUN → PROPOSE_ONLY`
+ * was refused on a stated reason that was false — the operator is told the rung
+ * has recorded nothing while the journal fills up beside it.
+ *
+ * It stayed invisible because `getExternalWritePolicy` asks `isAboveClamp`
+ * FIRST: with the clamp at `DRY_RUN`, every wider rung returns the ceiling
+ * message and `refusalForMove` is never reached, so this gate has never once
+ * been exercised. It would have gone live, broken, on the first diff that raised
+ * the clamp — the single change it exists to guard.
+ *
+ * The journal is the right table and the schema says so in three places that all
+ * predate this fix: `ExternalWriteJournal`'s header ("the dwell counts rows by
+ * `mode` and `outcome`"), its `@@index([tenantId, mode, attemptedAt])` commented
+ * "the dwell's evidence query", and `ExternalWriteOutcome.RECORDED_ONLY` ("this
+ * is what the ladder's dwell COUNTS as evidence"). The index was built for
+ * exactly this query and had no caller.
+ *
+ * ── WHY PROPOSE_ONLY RETURNS undefined RATHER THAN 0 ────────────────────────
+ *
+ * `MODE_MIN_EVIDENCE` asks that rung for APPROVED PROPOSALS, and no external
+ * write can be proposed yet — `dispatchWrite` refuses the rung outright with
+ * `external_write_rung_unimplemented`. There is nothing to count, which is a
+ * different fact from having counted and found none. `refusalForMove`
+ * distinguishes the two deliberately, and a 0 here would claim we looked.
+ * `undefined` makes the ladder say the true thing instead.
  */
-async function countRecordedIntents(
+async function countEvidenceForRung(
     ctx: RequestContext,
     connectionId: string,
+    mode: ExternalWriteMode,
     since: Date,
-): Promise<number> {
-    return runInTenantContext(ctx, (db) =>
-        db.integrationExecution.count({
-            where: {
-                tenantId: ctx.tenantId,
-                connectionId,
-                automationKey: { endsWith: EXTERNAL_WRITE_AUTOMATION_SUFFIX },
-                executedAt: { gte: since },
-                status: { not: 'ERROR' },
-            },
-        }),
-    );
+): Promise<number | undefined> {
+    if (mode === 'DRY_RUN') {
+        return runInTenantContext(ctx, (db) =>
+            db.externalWriteJournal.count({
+                where: {
+                    tenantId: ctx.tenantId,
+                    connectionId,
+                    // `mode` AND `outcome`, not `outcome` alone: the pair is what
+                    // the index leads on and what the enum's contract names.
+                    // `recordIntent` refuses every other mode, so this cannot
+                    // narrow the population today — it pins the claim rather than
+                    // trusting one writer to remain the only one.
+                    mode: 'DRY_RUN',
+                    outcome: 'RECORDED_ONLY',
+                    attemptedAt: { gte: since },
+                },
+            }),
+        );
+    }
+    // PROPOSE_ONLY — see the header. Nothing can produce what this rung is asked
+    // for, so the honest answer is "could not count", never zero.
+    return undefined;
 }
 
 /** Load one MCP-server connection's rung, coerced at the read boundary. */
@@ -122,7 +155,7 @@ export async function getExternalWritePolicy(
     // read cheap for the common DISABLED case.
     const evidenceInWindow =
         modeSince && mode !== 'DISABLED'
-            ? await countRecordedIntents(ctx, row.id, modeSince)
+            ? await countEvidenceForRung(ctx, row.id, mode, modeSince)
             : undefined;
 
     const state: ExternalWriteState = { mode, modeSince, evidenceInWindow };
