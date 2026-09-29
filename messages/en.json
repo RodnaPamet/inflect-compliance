@@ -8450,7 +8450,11 @@
       "noConnectionsTitle": "No tool servers connected",
       "noConnectionsDesc": "Add an external tool server under Integrations, authorize it, and test it before granting tools from it.",
       "grantHint": "Approving a definition makes the tool grantable on an agent’s Tools tab.",
-      "writePolicyLink": "External write policy"
+      "writePolicyLink": "External write policy",
+      "priorStateLabel": "Prior-state read",
+      "priorStateNone": "None — this write is refused",
+      "priorStateMissing": "Nominate a read, or this write cannot run.",
+      "pairingFailed": "Couldn't change the prior-state read."
     }
   },
   "securityTesting": {

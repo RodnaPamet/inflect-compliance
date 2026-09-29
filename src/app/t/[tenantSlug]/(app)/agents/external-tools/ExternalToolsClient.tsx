@@ -63,6 +63,16 @@ interface ConnectionRow {
 interface CatalogueTool {
     toolName: string;
     advertisedName: string;
+    /**
+     * Whether the SERVER declares this tool as one that may write (#2861).
+     *
+     * Derived server-side through `declaresWrite`, the one definition the
+     * dispatch and the pairing setter also use -- so what an operator is shown
+     * here and what the funnel actually does cannot disagree about which tools
+     * write. Three copies of that predicate would be three chances to differ,
+     * and the one that mattered would be the quiet one.
+     */
+    declaresWrite: boolean;
     status: string;
     blocked: boolean;
     liveDescription: string;
@@ -104,6 +114,16 @@ export function ExternalToolsClient({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
+    /**
+     * Write tool -> the READ nominated to capture what it replaces (#2861).
+     *
+     * The dispatch REFUSES a write with no pairing, so this map is the
+     * difference between a write tool that works and one that is permanently
+     * inert. Until this control existed the only way to create an entry was a
+     * hand-written request -- the same gap that made #2921's approval API
+     * unusable, on the same page.
+     */
+    const [pairings, setPairings] = useState<Record<string, string>>({});
 
     const loadCatalogue = useCallback(async () => {
         if (!connectionId) return;
@@ -124,12 +144,81 @@ export function ExternalToolsClient({
                 return;
             }
             setTools(data.tools ?? []);
+
+            // The pairings, in the SAME pass. A separate refresh for them would
+            // let the two lists disagree on screen, and the one an operator acts
+            // on is whichever they happened to look at last.
+            //
+            // A failure here deliberately does NOT set `error`: the catalogue
+            // loaded, and blanking the tool list because a secondary read failed
+            // would hide the thing the page is for. The controls then show
+            // "none", which is also what they show when there genuinely are
+            // none -- the one place this page is imprecise, accepted because the
+            // correction is a reload and the alternative is worse.
+            try {
+                const pr = await fetch(
+                    apiUrl(`/admin/external-prior-state-read/${encodeURIComponent(connectionId)}`),
+                );
+                if (pr.ok) {
+                    const body = await pr.json();
+                    const next: Record<string, string> = {};
+                    for (const row of body.pairings ?? []) next[row.writeToolName] = row.readToolName;
+                    setPairings(next);
+                }
+            } catch {
+                setPairings({});
+            }
         } catch {
             setError(t('externalTools.loadFailed'));
         } finally {
             setLoading(false);
         }
     }, [apiUrl, connectionId, t]);
+
+    /**
+     * Nominate, or withdraw, the READ that runs before a write.
+     *
+     * An empty `readToolName` means WITHDRAW. One control rather than a picker
+     * plus a delete button, because the two are the same decision -- and
+     * splitting them invites a state where a half-set pairing is representable.
+     */
+    const setPairing = useCallback(
+        async (writeToolName: string, readToolName: string) => {
+            setBusy(writeToolName);
+            setError(null);
+            try {
+                const path = apiUrl(
+                    `/admin/external-prior-state-read/${encodeURIComponent(connectionId)}`,
+                );
+                const res = await fetch(path, {
+                    method: readToolName ? 'PUT' : 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(readToolName ? { writeToolName, readToolName } : { writeToolName }),
+                });
+                if (!res.ok) {
+                    // The SERVER's sentence. Every refusal the setter raises
+                    // names something specific and fixable -- a read on the
+                    // wrong connection, a write nominated as the read -- and a
+                    // generic failure would send an operator looking for a bug
+                    // instead of correcting the choice.
+                    const body = await res.json().catch(() => null);
+                    setError(body?.error?.message ?? body?.error ?? t('externalTools.pairingFailed'));
+                    return;
+                }
+                setPairings((prev) => {
+                    const next = { ...prev };
+                    if (readToolName) next[writeToolName] = readToolName;
+                    else delete next[writeToolName];
+                    return next;
+                });
+            } catch {
+                setError(t('externalTools.pairingFailed'));
+            } finally {
+                setBusy(null);
+            }
+        },
+        [apiUrl, connectionId, t],
+    );
 
     useEffect(() => {
         void loadCatalogue();
@@ -266,6 +355,15 @@ export function ExternalToolsClient({
                         <ol className={cn(cardVariants({ density: 'none' }), 'divide-y divide-border-subtle')}>
                             {tools.map((tool) => {
                                 const approved = tool.approvedManifestHash === tool.liveManifestHash;
+                                // The reads an operator may nominate: this
+                                // server's own read-only tools. The SAME list
+                                // for every write on the connection, because the
+                                // setter refuses a read from a different server
+                                // -- prior state read from another system is not
+                                // merely useless, it is a plausible-looking
+                                // record of the wrong object, and the journal
+                                // presents it as authoritative.
+                                const readTools = tools.filter((x) => !x.declaresWrite);
                                 return (
                                     <li key={tool.toolName} className="space-y-tight p-4">
                                         <div className="flex flex-wrap items-center gap-tight">
@@ -298,6 +396,60 @@ export function ExternalToolsClient({
                                         <p className="whitespace-pre-wrap text-sm text-content-muted">
                                             {tool.liveDescription}
                                         </p>
+
+                                        {/* ── THE PRIOR-STATE PAIRING (#2861, #2982) ──
+                                            Only for tools the server declares as
+                                            writes. A read has nothing to capture,
+                                            and offering the control there would
+                                            imply a governed write path where there
+                                            is none -- the setter refuses that too.
+
+                                            A native <select> rather than the
+                                            <Combobox> primitive: the options are
+                                            a handful of tool names on one
+                                            connection, and Combobox exists for
+                                            lists long enough to need searching.
+                                            It also keeps this off the
+                                            primary-button budget, which a
+                                            page-defining action should own rather
+                                            than a per-row setting. */}
+                                        {tool.declaresWrite && (
+                                            <div
+                                                className="flex flex-wrap items-center gap-tight rounded border border-border-subtle p-2"
+                                                data-testid={`prior-state-pairing-${tool.advertisedName}`}
+                                            >
+                                                <label
+                                                    className="text-xs text-content-muted"
+                                                    htmlFor={`prior-state-${tool.advertisedName}`}
+                                                >
+                                                    {t('externalTools.priorStateLabel')}
+                                                </label>
+                                                <select
+                                                    id={`prior-state-${tool.advertisedName}`}
+                                                    className="rounded border border-border-subtle bg-bg-default px-2 py-1 text-xs text-content-emphasis"
+                                                    value={pairings[tool.toolName] ?? ''}
+                                                    disabled={busy === tool.toolName}
+                                                    onChange={(e) => void setPairing(tool.toolName, e.target.value)}
+                                                >
+                                                    <option value="">{t('externalTools.priorStateNone')}</option>
+                                                    {readTools.map((r) => (
+                                                        <option key={r.toolName} value={r.toolName}>
+                                                            {r.advertisedName}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                {/* An unpaired write is REFUSED by the
+                                                    dispatch. Saying so here is the
+                                                    difference between a control an
+                                                    operator understands and one they
+                                                    discover through a failed run. */}
+                                                {!pairings[tool.toolName] && (
+                                                    <span className="text-xs text-content-warning">
+                                                        {t('externalTools.priorStateMissing')}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
 
                                         <details>
                                             <summary className="cursor-pointer text-xs text-content-subtle">
