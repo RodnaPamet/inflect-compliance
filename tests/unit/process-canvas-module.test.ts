@@ -196,13 +196,15 @@ describe('switching renderer', () => {
 
         expect(res).toEqual({ usesTldraw: true, changed: true });
         expect(db.tenantSecuritySettings.upsert).toHaveBeenCalledTimes(1);
-        expect(db.tenantSecuritySettings.upsert.mock.calls[0][0]).toMatchObject({
-            create: { processCanvasUsesTldraw: true },
-            update: { processCanvasUsesTldraw: true },
-        });
+        expect(db.tenantSecuritySettings.upsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                create: expect.objectContaining({ processCanvasUsesTldraw: true }),
+                update: expect.objectContaining({ processCanvasUsesTldraw: true }),
+            }),
+        );
 
         expect(logEvent).toHaveBeenCalledTimes(1);
-        const entry = logEvent.mock.calls[0][2] as Record<string, unknown>;
+        const entry = logEvent.mock.calls[0]![2] as Record<string, unknown>;
         expect(entry.action).toBe('PROCESS_CANVAS_RENDERER_CHANGED');
         // `configuration`, not `access`: this grants nobody any authority and
         // changes no permission check. It changes what the product draws.
@@ -231,13 +233,15 @@ describe('switching renderer', () => {
         const res = await setProcessCanvasTldraw(ctx, false);
 
         expect(res).toEqual({ usesTldraw: false, changed: true });
-        expect(db.tenantSecuritySettings.upsert.mock.calls[0][0]).toMatchObject({
-            update: { processCanvasUsesTldraw: false },
-        });
+        expect(db.tenantSecuritySettings.upsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                update: expect.objectContaining({ processCanvasUsesTldraw: false }),
+            }),
+        );
         // Both renderers read the same ProcessNode / ProcessEdge rows, so
         // going back is a rendering decision with no data step.
         expect(
-            (logEvent.mock.calls[0][2] as Record<string, unknown>).metadata,
+            (logEvent.mock.calls[0]![2] as Record<string, unknown>).metadata,
         ).toEqual({ from: true, to: false });
     });
 });
