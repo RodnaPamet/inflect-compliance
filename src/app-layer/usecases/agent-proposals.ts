@@ -63,7 +63,22 @@ import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
 import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
 import type { RequestContext } from '@/app-layer/types';
 
-export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING';
+/**
+ * Mirrors the `AgentProposalKind` Prisma enum.
+ *
+ * `EXTERNAL_WRITE` names no entity of ours. It is a write to somebody else's
+ * system, queued by the external-write ladder's `PROPOSE_ONLY` rung (#2861), and
+ * approving one dispatches an MCP call rather than creating a row. It therefore
+ * has no entry in `SCHEMA_BY_KIND`, no internal record for the diff builder to
+ * resolve, and no `createdEntityId` at approval time.
+ *
+ * Widening this union is deliberate rather than incidental: it makes the
+ * COMPILER perform the audit. Every lookup keyed on this type — `SCHEMA_BY_KIND`
+ * first — stops type-checking until the new member is handled, which is the
+ * mechanism the identity ladder's "a rung inherits nothing by falling through"
+ * rule asks for, enforced rather than remembered.
+ */
+export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING' | 'EXTERNAL_WRITE';
 
 /**
  * WHAT a proposal would do. Mirrors the `AgentProposalOperation` enum.
@@ -470,6 +485,24 @@ export async function createAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
 ): Promise<ProposalResult> {
+    if (input.kind === 'EXTERNAL_WRITE') {
+        // Named before the schema lookup below, which would otherwise answer
+        // "Unknown proposal kind" — and it is not unknown, it is known and not
+        // creatable HERE. A refusal that misdescribes the reason sends whoever
+        // reads it looking for a missing enum value instead of a missing seam.
+        //
+        // This usecase validates against the create/update schema of one of OUR
+        // entities. An external write has no such schema: its payload is the MCP
+        // arguments bound for a third-party server. The seam that creates these
+        // rows is the `PROPOSE_ONLY` arm of `dispatchWrite`, which ships in the
+        // next slice; until then nothing writes this kind at all.
+        throw badRequest(
+            'EXTERNAL_WRITE proposals are not created through this usecase. They are queued '
+                + 'by the external-write ladder when a connection sits at PROPOSE_ONLY, and that '
+                + 'seam is not wired yet.',
+        );
+    }
+
     const operation: AgentProposalOperation = input.operation ?? 'CREATE';
     // Resolves to a `string` for an UPDATE (refusing POLICY and a missing id
     // first) and to `null` for a CREATE. Runs before anything else so the two
@@ -1171,6 +1204,23 @@ export async function approveAgentProposal(
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
+    if (proposal.kind === 'EXTERNAL_WRITE') {
+        // BEFORE the claim, deliberately. The claim flips the row to ACCEPTED,
+        // and this function's own comment explains why it is never handed back —
+        // so refusing after it would leave a proposal permanently ACCEPTED with
+        // nothing dispatched and no way to retry. Approving one of these has to
+        // dispatch an MCP call rather than create a record, and that job does not
+        // exist yet; until it does, the honest answer is that it cannot be
+        // approved, not that it was.
+        //
+        // Unreachable today — nothing creates this kind — and checked anyway,
+        // because "unreachable" is a claim about the current callers and a row
+        // can also arrive by other means.
+        throw badRequest(
+            'An EXTERNAL_WRITE proposal cannot be approved yet: approving one dispatches a '
+                + 'write to an external system, and that dispatch is not wired. Nothing was sent.',
+        );
+    }
 
     // ═══ HOW MANY HUMANS THIS ONE NEEDS ═══
     //
@@ -1651,6 +1701,23 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
     }
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
+    }
+    if (proposal.kind === 'EXTERNAL_WRITE') {
+        // BEFORE the claim, deliberately. The claim flips the row to ACCEPTED,
+        // and this function's own comment explains why it is never handed back —
+        // so refusing after it would leave a proposal permanently ACCEPTED with
+        // nothing dispatched and no way to retry. Approving one of these has to
+        // dispatch an MCP call rather than create a record, and that job does not
+        // exist yet; until it does, the honest answer is that it cannot be
+        // approved, not that it was.
+        //
+        // Unreachable today — nothing creates this kind — and checked anyway,
+        // because "unreachable" is a claim about the current callers and a row
+        // can also arrive by other means.
+        throw badRequest(
+            'An EXTERNAL_WRITE proposal cannot be approved yet: approving one dispatches a '
+                + 'write to an external system, and that dispatch is not wired. Nothing was sent.',
+        );
     }
     await runInTenantContext(ctx, async (db) => {
         await db.agentProposal.updateMany({
