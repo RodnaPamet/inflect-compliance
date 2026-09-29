@@ -115,6 +115,29 @@ const REVIEWED: Record<string, { major: number }> = {
     // Previously (2026-06-18, 8→9): same two call sites, same conclusion; v9's
     // breaking change was dropping Node < 18.
     nodemailer: { major: 10 },
+    // Reviewed 2026-09-29 on adoption (#2960). READ THE DIRECTION: every other
+    // entry here is a FLOOR — "do not fall below the major we reviewed". This
+    // one is a CEILING, and the assertion below happens to enforce both because
+    // it is exact equality.
+    //
+    // The reason is a LICENCE, not a CVE. tldraw's terms flip at 4.0.0: the 3.x
+    // line permits "use the Software in your commercial or non-commercial
+    // projects" provided the Watermark is not removed, and needs no key. From
+    // 4.0.0 production use is banned outright without a paid commercial key,
+    // and the SDK ships technical measures that detect deployment environments.
+    // So a bump to 4.x is not a version change, it is a licence breach — see
+    // #2958 for the per-tag comparison that locates the boundary.
+    //
+    // A caret range already cannot cross a major, so `^3.15.6` is safe on its
+    // own; this entry is what makes the constraint VISIBLE and what fails a
+    // deliberate bump. It also keeps tldraw in `dependencies`, which matters
+    // separately: the Dockerfile's `npm prune --omit=dev` would strip it.
+    //
+    // The cost of staying on 3.x is one audit exemption — see
+    // security/audit-allowlist.json (GHSA-cp6q-959q-f8rh) and
+    // tests/guards/tiptap-proto-merge-is-fixed.test.ts, which holds the
+    // property that exemption rests on.
+    tldraw: { major: 3 },
 };
 
 /** Major of a caret/tilde/plain semver range (`^8.0.7` → 8). */

@@ -19,7 +19,26 @@
     "removed entries carried a doNotOverride warning. That warning is preserved in",
     "git history and in tests/unit/pptx-image-size-unreachable.test.ts, which is",
     "KEPT — it guards the claim that pptxgenjs never loads image-size at all, and",
-    "that property is worth holding whether or not an advisory is open."
+    "that property is worth holding whether or not an advisory is open.",
+    "2026-09-29: the tiptap entry below is a DIFFERENT KIND of exemption from the",
+    "image-size ones, and the difference matters. Those said 'no patched release",
+    "exists'. This one says 'the patched release exists AND WE ARE ON IT' — the",
+    "advisory's affected range simply predates the backport and was never amended.",
+    "It is the image-size situation caught one step earlier: before the advisory",
+    "metadata catches up rather than after. The same STALE mechanism will force it",
+    "out when the range is corrected upstream."
   ],
-  "allow": []
+  "allow": [
+    {
+      "advisory": "GHSA-cp6q-959q-f8rh",
+      "package": "@tiptap/core",
+      "severity": "moderate",
+      "title": "Tiptap: mergeAttributes() turns an own __proto__ key into inherited executable DOM attributes",
+      "reason": "THE ADVISORY RANGE IS OVER-BROAD — it does not record the 2.x backport. Affected range is '>=2.0.0-alpha.0 <3.30.4'. tiptap fixed this in 3.30.4 (published 2026-08-26) and then BACKPORTED the identical fix to the 2.x line in 2.27.3 (published 2026-09-04, nine days LATER). The advisory's upper bound was never amended, so `npm audit` reports 2.27.3 as affected when it carries the fix. This is NOT 'no fixed version exists'. The fixed version exists and the tree is on it. Recorded plainly because the gate's refusal message asks for genuinely-unfixable, and this is a stale-metadata exemption instead.",
+      "verification": "Read: `mergeAttributes` in @tiptap/core@2.27.3 contains the guard — `if (key === '__proto__') Object.defineProperty(merged, key, {...})` — in BOTH the cjs and esm builds, character-for-character the same logic as the patched 3.31.3. Executed: the advisory's own attack shape (an own __proto__ key from JSON.parse) through the real 2.27.3 mergeAttributes leaves Object.prototype untouched and lands __proto__ as an own property. A naive merge of the same payload DOES pollute, which is the positive control proving the test can tell the two apart. Held: tests/guards/tiptap-proto-merge-is-fixed.test.ts runs that attack against EVERY @tiptap/core in the tree on every CI run, and fails if any copy falls below the 2.27.3 backport floor. Mutation-proved by disarming the guard in the @tldraw/editor copy — one named test went red.",
+      "reachability": "Two layers, and the second is the one that will change. 1. The code is not vulnerable — see verification above. That holds regardless of how we use it. 2. Exposure today is nil anyway: tldraw has ZERO import sites in src/ (the dependency is added ahead of the #2960 shape layer). When Phase 2 wires it up, tldraw's rich-text shapes become reachable by tenant users, so layer 2 stops being a mitigation — which is precisely why layer 1 is held by an executing guard rather than a note.",
+      "upgradePlan": "tldraw 3.x declares `@tiptap/* ^2.9.1` and cannot reach the 3.x line, so the route off 2.x is a tldraw major, not a tiptap bump. Forcing tiptap 3 under tldraw 3 via `overrides` was TESTED and rejected: it installs, clears the audit and passes a production build, then silently breaks the SECOND rich-text edit session — ProseMirror never remounts and keystrokes are discarded with no error. Evidence on #2960. The real route is tldraw 4.x/5.x, which ships tiptap 3.31.3 — gated on a commercial licence, because 4.0.0 onwards bans production use without a key (#2958). Revisit when that licence question is answered. Expected end state: this entry goes STALE on its own when the advisory range is amended to record 2.27.3, and the gate then forces it out.",
+      "reviewBy": "2026-12-31"
+    }
+  ]
 }
