@@ -176,7 +176,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 146;
 // removed it from both. This cap exists so an unbounded span cannot be bought
 // down by rewriting `*?` as `{0,200}`; a span that genuinely leaves must lower
 // it too.
-const INTERIOR_SPAN_BASELINE = 329;
+const INTERIOR_SPAN_BASELINE = 328;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

@@ -1,0 +1,18 @@
+-- #2960 — tldraw's own shapes (sticky notes, freehand, loose text) get an
+-- OPAQUE column on ProcessMap rather than rows in ProcessNode.
+--
+-- The structured graph is what coverage, traceability and automation query.
+-- A sticky note is a drawing: as a ProcessNode it would surface in a coverage
+-- report, be linkable to a control, and consume the 500-node ceiling. A column
+-- makes that category error unrepresentable.
+--
+-- Nullable with no default and no backfill, deliberately. Every existing map
+-- has no freeform content, and NULL says exactly that — an empty JSON object
+-- would claim the renderer had written and found nothing. The two are
+-- distinguishable on read and the distinction is worth keeping.
+--
+-- Size is bounded in the save schema (FREEFORM_JSON_MAX_BYTES), not here: the
+-- failure mode is volume per save, and the blob is copied into a
+-- ProcessMapSnapshot on every autosave, so the ceiling belongs where the
+-- request is validated and can be reported as a 400 rather than a row error.
+ALTER TABLE "ProcessMap" ADD COLUMN "freeformJson" JSONB;
