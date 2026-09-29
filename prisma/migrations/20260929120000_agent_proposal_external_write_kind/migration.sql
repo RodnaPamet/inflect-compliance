@@ -1,0 +1,31 @@
+-- The proposal kind an external MCP write is queued as (#2861).
+--
+-- The `PROPOSE_ONLY` rung means "a human approves each external write before it
+-- is sent". The queue that review happens in already exists — `AgentProposal`,
+-- with its four-eyes database trigger, output guard, expiry window and sample
+-- audits — so the rung reuses it rather than growing a second one. A second copy
+-- of the approval composition is the four-verbatim-copies failure this subsystem
+-- has already paid for once.
+--
+-- ─── Rolling-deploy safety ──────────────────────────────────────────
+--
+-- `ALTER TYPE ... ADD VALUE` is the additive, safe half of the enum hazard: a
+-- RENAME makes still-running old containers fail with SQLSTATE 42704, whereas an
+-- added value only affects readers that ENCOUNTER it. Nothing writes
+-- EXTERNAL_WRITE in this release — the creation seam ships in the next slice —
+-- so no old container can meet a row carrying it. That ordering is the point of
+-- shipping the value on its own, and it is the same shape
+-- 20260906090000_agent_proposal_expiry_and_sample_audit used for EXPIRED and
+-- 20260905140000_agent_proposal_output_guard used for QUARANTINED.
+--
+-- The value is deliberately NOT used anywhere in this transaction; PostgreSQL
+-- forbids that, not the ADD itself. `IF NOT EXISTS` makes it idempotent.
+--
+-- ─── What this does NOT grant ───────────────────────────────────────
+--
+-- Nothing. `EXTERNAL_MAX_MODE` is still `DRY_RUN`, so no connection can store
+-- `PROPOSE_ONLY`, and `dispatchWrite` still refuses that rung outright. Every
+-- application seam that can meet this kind refuses it explicitly and says what
+-- is missing. The control arrives before the authority it governs, which is
+-- #2241's lesson about what a rung costs when it arrives after.
+ALTER TYPE "AgentProposalKind" ADD VALUE IF NOT EXISTS 'EXTERNAL_WRITE';

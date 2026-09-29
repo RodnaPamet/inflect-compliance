@@ -867,11 +867,23 @@ enum AgentContentProvenance {
 
 /// The entity kind an AgentProposal (Epic MCP Phase 3) proposes. On approval,
 /// dispatched to the matching real create-usecase (createRisk/createControl/…).
+///
+/// EXTERNAL_WRITE is the exception and does not name an entity of ours at all:
+/// it is a write to SOMEBODY ELSE'S system, queued by the external-write
+/// ladder's `PROPOSE_ONLY` rung (#2861). Approving one dispatches an MCP call
+/// rather than creating a row, so it has no entry in `SCHEMA_BY_KIND`, no
+/// internal target for the diff builder to resolve, and its before/after comes
+/// from `ExternalWriteJournal.priorStateJson` instead of a record we hold.
+///
+/// It reuses this queue for what the queue already carries — the four-eyes
+/// database trigger, the output guard, the expiry window, the sample audits —
+/// rather than growing a second approval mechanism beside it.
 enum AgentProposalKind {
   RISK
   CONTROL
   POLICY
   FINDING
+  EXTERNAL_WRITE
 }
 
 /// WHAT a proposal would do to the record it names — the discriminator the
