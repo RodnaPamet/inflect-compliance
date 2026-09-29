@@ -57,8 +57,24 @@ const HRM_BASE = process.env.ORANGEHRM_BASE || 'http://orangehrm:80';
 const WEB_ROOT = '/web/index.php';
 const API = `${HRM_BASE}${WEB_ROOT}/api/v2`;
 
-const HRM_CLIENT_ID = process.env.ORANGEHRM_CLIENT_ID || '';
-const HRM_CLIENT_SECRET = process.env.ORANGEHRM_CLIENT_SECRET || '';
+/**
+ * A USER, not an OAuth client — because OrangeHRM 5.9 has no client-credentials
+ * grant to use.
+ *
+ * `OAuthServer::getServer()` constructs exactly two grants, `AuthCodeGrant` and
+ * `RefreshTokenGrant`, hardcoded rather than configured, and the string
+ * `client_credentials` appears nowhere in its plugin tree. Measured against a
+ * live 5.9 on 2026-09-29. The first version of this adapter POSTed
+ * `grant_type=client_credentials` to `/oauth2/token`; that endpoint cannot
+ * answer it, and no amount of client registration changes that.
+ *
+ * The remaining grants are both interactive — `authorization_code` needs a
+ * browser redirect and a human, `refresh_token` needs one to have happened
+ * first — so neither suits a service. What IS available is the session the web
+ * UI itself uses, which is what this now does.
+ */
+const HRM_USER = process.env.ORANGEHRM_USER || '';
+const HRM_PASSWORD = process.env.ORANGEHRM_PASSWORD || '';
 
 /**
  * The bearer this adapter requires, matching the `authorization` SECRET field
@@ -76,40 +92,99 @@ const EXPECTED_BEARER = process.env.MCP_BEARER || '';
 const PROTOCOL_VERSION = '2025-06-18';
 const MAX_BODY_BYTES = 256 * 1024;
 
-/** OAuth2 client-credentials, minted per call. Nothing is persisted. */
-async function accessToken() {
-    if (!HRM_CLIENT_ID || !HRM_CLIENT_SECRET) {
-        throw new Error('orangehrm client credentials are not configured');
-    }
-    const res = await fetch(`${HRM_BASE}${WEB_ROOT}/oauth2/token`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Accept: 'application/json',
-            // Basic, not the form body — the same reasoning `token.ts` gives:
-            // it keeps the secret out of any request-body logging in between.
-            Authorization:
-                'Basic ' + Buffer.from(`${HRM_CLIENT_ID}:${HRM_CLIENT_SECRET}`).toString('base64'),
-        },
-        body: new URLSearchParams({ grant_type: 'client_credentials' }),
-    });
-    if (!res.ok) throw new Error(`orangehrm token endpoint answered ${res.status}`);
-    const payload = await res.json();
-    if (!payload?.access_token) throw new Error('orangehrm token endpoint returned no access_token');
-    return payload.access_token;
+/**
+ * The session cookie, held for reuse. Null means "not logged in yet".
+ *
+ * Module-level rather than per-call: logging in costs two round trips and a
+ * bcrypt verify, and doing that per tool call would make the adapter slower than
+ * the thing it proxies. It is re-established on demand — see `hrm` below, which
+ * retries once on a 401 rather than trusting this to still be valid.
+ */
+let sessionCookie = null;
+
+/** Keep only `name=value` from a Set-Cookie line; attributes are not sent back. */
+function cookiePairs(setCookieHeaders) {
+    return setCookieHeaders
+        .map((c) => c.split(';')[0].trim())
+        .filter(Boolean)
+        .join('; ');
 }
 
-async function hrm(path, init = {}) {
-    const token = await accessToken();
-    const res = await fetch(`${API}${path}`, {
-        ...init,
-        headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-            ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-            ...(init.headers || {}),
-        },
+/**
+ * Log in the way the web UI does: CSRF token, then credentials, then keep the
+ * cookie.
+ *
+ * ── THE TOKEN IS DOUBLE-WRAPPED, AND THAT COST AN HOUR ─────────────────────
+ *
+ * The login page carries the CSRF token as a JSON string inside an HTML
+ * attribute, so it arrives as `token="&quot;VALUE&quot;"`. Reading it by cutting
+ * at the attribute quote captures the `&quot;` wrapper as part of the value, and
+ * the server then rejects a CORRECT username and password with the same 302 back
+ * to the login page that a wrong password produces. The status code cannot tell
+ * those two apart; the redirect TARGET can, which is why this checks it.
+ */
+async function login() {
+    if (!HRM_USER || !HRM_PASSWORD) {
+        throw new Error('orangehrm user credentials are not configured');
+    }
+    const loginUrl = `${HRM_BASE}${WEB_ROOT}/auth/login`;
+    const page = await fetch(loginUrl, { redirect: 'manual' });
+    const jar = cookiePairs(page.headers.getSetCookie?.() ?? []);
+    const html = await page.text();
+
+    // Between the &quot; markers, never the attribute quotes.
+    const m = html.match(/token="&quot;([^&]+)&quot;"/);
+    if (!m) throw new Error('orangehrm login page carried no csrf token');
+
+    const body = new URLSearchParams({ _token: m[1], username: HRM_USER, password: HRM_PASSWORD });
+    const res = await fetch(`${HRM_BASE}${WEB_ROOT}/auth/validate`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: jar },
+        body,
     });
+
+    // The DESTINATION is the discriminator. Both outcomes are a 302.
+    const location = res.headers.get('location') ?? '';
+    if (location.includes('/auth/login')) {
+        throw new Error('orangehrm rejected the adapter credentials');
+    }
+    const after = cookiePairs(res.headers.getSetCookie?.() ?? []);
+    sessionCookie = after || jar;
+    return sessionCookie;
+}
+
+/**
+ * One OrangeHRM API call, re-authenticating once if the session has lapsed.
+ *
+ * The retry is bounded to ONE attempt and only on 401. An unbounded retry would
+ * turn a permanently wrong password into a login storm against the fixture, and
+ * retrying a 500 would re-send a write that may already have been applied — the
+ * distinction `INDETERMINATE` exists for on IC's side.
+ */
+async function hrm(path, init = {}) {
+    const send = async () => {
+        if (!sessionCookie) await login();
+        return fetch(`${API}${path}`, {
+            ...init,
+            headers: {
+                Cookie: sessionCookie,
+                Accept: 'application/json',
+                ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+                ...(init.headers || {}),
+            },
+        });
+    };
+
+    let res = await send();
+    if (res.status === 401) {
+        // OrangeHRM answers an expired session with 401 and a JSON body reading
+        // "Session expired" — indistinguishable from bad credentials at the
+        // status line, so this re-logs in once and lets `login` raise the
+        // credential error if that is what it is.
+        sessionCookie = null;
+        res = await send();
+    }
     const text = await res.text();
     if (!res.ok) throw new Error(`orangehrm answered ${res.status} to ${init.method || 'GET'} ${path}`);
     return text ? JSON.parse(text) : null;
@@ -205,8 +280,31 @@ async function callTool(name, args) {
         const previous = before?.data?.workEmail ?? null;
 
         // PUT takes the whole contact-details object; sending only the changed
-        // field would blank the rest. Merge over what was read.
-        const merged = { ...(before?.data ?? {}), workEmail };
+        // field blanks the rest. Measured on a live 5.9 on 2026-09-29: a bare
+        // `{"workEmail":...}` PUT returns 200 and nulls city, mobile and every
+        // other field.
+        //
+        // ── BUT THE MERGE MUST DROP EMPTY KEYS, NOT SEND THEM ──────────────
+        //
+        // The GET returns `countryCode: ""` and the PUT REFUSES it: 422 with
+        // `invalidParamKeys: ["countryCode"]`. So echoing back what was read is
+        // rejected, which is what the first version of this did — every write
+        // failed 422 while looking like a merge problem.
+        //
+        // Dropping null and empty values fixes it and loses nothing: a field
+        // that held no value has none to preserve, and the PUT leaves absent
+        // keys null — which is what they already were.
+        //
+        // Verified on a record where it could FAIL rather than on the empty one
+        // the fixture ships with: with `city: "Sofia"` and a real mobile
+        // seeded, a workEmail write kept both and changed only the address. On
+        // an all-empty record every candidate rule passes, which is worth
+        // noticing before believing one.
+        const merged = Object.fromEntries(
+            Object.entries({ ...(before?.data ?? {}), workEmail }).filter(
+                ([, v]) => v !== null && v !== undefined && v !== '',
+            ),
+        );
         await hrm(`/pim/employee/${emp}/contact-details`, {
             method: 'PUT',
             body: JSON.stringify(merged),

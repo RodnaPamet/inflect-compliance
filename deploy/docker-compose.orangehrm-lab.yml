@@ -68,8 +68,12 @@
 #         ORANGEHRM_MCP_BEARER         generated; this is the credential
 #                                      IC stores as the connection's
 #                                      `authorization` secret
-#         ORANGEHRM_OAUTH_CLIENT_ID    created in OrangeHRM's admin UI
-#         ORANGEHRM_OAUTH_CLIENT_SECRET          after first boot
+#         ORANGEHRM_ADMIN_USER         the account the INSTALLER creates, and
+#         ORANGEHRM_ADMIN_PASSWORD     the one the adapter logs in as
+#
+#       NOT an OAuth client pair. That is what this file asked for until
+#       2026-09-29, when standing the fixture up showed OrangeHRM 5.9 has no
+#       client-credentials grant to register one against.
 #   [ ] `/opt/inflect/orangehrm-mcp/server.mjs` exists on the VM. This
 #       is the trap pipelock's header names, and this overlay shares it:
 #       a bind mount whose SOURCE IS MISSING does not fail loudly —
@@ -86,9 +90,24 @@
 #         # then, on the VM:
 #         sudo mkdir -p /opt/inflect/orangehrm-mcp
 #         sudo mv /tmp/server.mjs /opt/inflect/orangehrm-mcp/server.mjs
-#   [ ] First boot completes OrangeHRM's installer, then an OAuth2
-#       client is registered in its admin UI. The adapter mints a
-#       client-credentials token per call and persists nothing.
+#   [ ] The installer has run. It is a WEB installer with no CLI, but it is
+#       driven by its own REST API under `/installer/index.php/installer/api/…`
+#       and can be scripted end to end. Two things about that sequence cost
+#       real time and are worth inheriting:
+#
+#         · the ORDER is database → database-user → pre-migration → migration
+#           → instance → config-file, and it is declared in
+#           `installer/client/src/core/util/composable/useInstaller.ts` rather
+#           than implied by the endpoint names. Running `instance` before
+#           `migration` fails with "no table with name hs_hr_config".
+#         · `migration` takes ONE VERSION PER CALL. GET it first for the list
+#           (35 of them for a 5.9 install, from 3.3.3 to 5.9) and POST each;
+#           an empty body reaches `runMigrations(null)` and dies on a type
+#           error.
+#
+#       A partly-run install writes `lib/confs/Conf.php` and then refuses to
+#       start over — the installer is closed once that file exists. Recovering
+#       means removing BOTH lab volumes, not just the file.
 #
 # ── WHAT IS DELIBERATELY NOT HERE ─────────────────────────────────────
 #
@@ -161,8 +180,21 @@ services:
       # rather than serving anonymously. The `:?` makes that a start-time
       # error instead of a runtime surprise.
       MCP_BEARER: ${ORANGEHRM_MCP_BEARER:?ORANGEHRM_MCP_BEARER is required}
-      ORANGEHRM_CLIENT_ID: ${ORANGEHRM_OAUTH_CLIENT_ID:?ORANGEHRM_OAUTH_CLIENT_ID is required}
-      ORANGEHRM_CLIENT_SECRET: ${ORANGEHRM_OAUTH_CLIENT_SECRET:?ORANGEHRM_OAUTH_CLIENT_SECRET is required}
+      # A USER, not an OAuth client. OrangeHRM 5.9 has no client-credentials
+      # grant — `OAuthServer::getServer()` constructs exactly `AuthCodeGrant`
+      # and `RefreshTokenGrant`, hardcoded, and the remaining two grants are
+      # both interactive. So the adapter authenticates the way the web UI does,
+      # with a session. Measured against a live 5.9 on 2026-09-29.
+      #
+      # The account is OrangeHRM's admin, and its privileges beyond the two
+      # tools are unreachable THROUGH this adapter: it advertises exactly
+      # `orangehrm_get_employee_contact` and
+      # `orangehrm_set_employee_work_email` and builds every request itself, so
+      # there is no verb an agent can reach that the adapter does not spell.
+      # A dedicated lower-privilege user would still be better hygiene and is
+      # left as a follow-up rather than claimed here.
+      ORANGEHRM_USER: ${ORANGEHRM_ADMIN_USER:?ORANGEHRM_ADMIN_USER is required}
+      ORANGEHRM_PASSWORD: ${ORANGEHRM_ADMIN_PASSWORD:?ORANGEHRM_ADMIN_PASSWORD is required}
     volumes:
       # DIRECTORY, not the file — the same inode lesson the Caddyfile
       # mount carries: a single-file bind mount binds the inode, and any
