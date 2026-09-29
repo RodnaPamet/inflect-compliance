@@ -106,3 +106,48 @@ app.inflect.bg {
 inflect.34-140-180-255.sslip.io {
     import app_site
 }
+
+# ── hrm-mcp — the OrangeHRM lab fixture's MCP adapter (#2861) ───────────────
+#
+# The ONLY service in `docker-compose.orangehrm-lab.yml` that is reachable from
+# outside this host. Neither `orangehrm` nor `orangehrm-db` publishes a port:
+# they are addressable on the Compose network by service name and nowhere else.
+# The agent reaches the adapter over public HTTPS; the adapter reaches OrangeHRM
+# over a private bridge.
+#
+# ── WHY A PUBLIC HOSTNAME AT ALL, FOR A SERVICE ON THIS SAME HOST ──────────
+#
+# Because the product refuses anything else, and that is a control rather than an
+# inconvenience. An `mcp-server` connection's `url` is validated `https:` at write
+# time, and every outbound call goes through `safeFetch`, which RESOLVES the
+# hostname and rejects private, loopback and link-local space. So
+# `http://orangehrm-mcp:8080` — the obvious shortcut, and correct on the Compose
+# network — is refused by IC before a socket opens. The DNS round trip out and
+# back is what the SSRF guard demands, and pretending otherwise would mean
+# widening the guard for a lab fixture.
+#
+# ── DELIBERATELY NOT `import app_site` ─────────────────────────────────────
+#
+# That snippet carries the product's cache-control matchers and a 110MB request
+# body limit, neither of which belongs on a JSON-RPC endpoint. `X-Frame-Options`
+# and `Referrer-Policy` are likewise omitted: they govern a browser rendering a
+# page, and nothing renders this.
+#
+# `sslip.io` rather than a name on a registered domain, chosen 2026-09-29: the
+# hostname is public either way, and a real domain would quietly advertise "there
+# is an OrangeHRM here" against a name somebody cares about. A disposable fixture
+# gets a disposable name.
+hrm-mcp.34-140-180-255.sslip.io {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        -Server
+    }
+
+    # The adapter fails CLOSED when `MCP_BEARER` is unset — 503 rather than
+    # serving anonymously — so an unauthenticated request never reaches
+    # OrangeHRM even if this block is up before the secret is in place.
+    reverse_proxy orangehrm-mcp:8080
+}
