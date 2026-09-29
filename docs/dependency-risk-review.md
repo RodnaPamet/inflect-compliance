@@ -14,9 +14,21 @@ covers install-time policy: strict peers, `npm ci`, overrides).
 ## Why these packages
 
 Each entry below is reviewed because it (a) parses untrusted input,
-(b) handles credentials / network egress, or (c) has a documented
-history of advisories in its ecosystem. The review answers four
-questions per package:
+(b) handles credentials / network egress, (c) has a documented
+history of advisories in its ecosystem, or (d) carries a **licence
+constraint that binds the version range** — added 2026-09-29 for
+`tldraw`, whose terms change at a major boundary.
+
+Ground (d) is a different kind of reason from the first three and the
+difference shows up in the DIRECTION of the verdict. (a)–(c) produce a
+*floor*: stay at or above the major we reviewed. (d) can produce a
+*ceiling*: a bump is not a regression risk, it is a licence breach. The
+`REVIEWED` map in `tests/guards/dependency-risk-review.test.ts` enforces
+exact major equality, so it holds either direction — but a reader who
+assumes "floor" because every other entry is one will misread the
+tldraw entry. It says so at the entry itself.
+
+The review answers four questions per package:
 
 1. **Where is it used?** Every import site in shipping code.
 2. **Is it classified correctly?** `dependencies` (ships in the
@@ -294,6 +306,84 @@ merely present in the environment must not create a route under
 No package is added to the image and no new advisory is introduced — the
 resolved tree is byte-identical, and the lockfile diff is the single line that
 records the root requirement.
+
+## Review — 2026-09-29 — the canvas SDK
+
+### `tldraw` — `^3.15.6`
+
+Reviewed on adoption (#2960), under ground **(d)**: the licence binds the
+version range. Also the first entry here to carry an audit exemption.
+
+**1. Where is it used?** Nowhere yet. This review is deliberately *pre*-adoption
+— `grep -rn "from 'tldraw'\|@tldraw/" src/` returns **zero** import sites (the
+same grep finds 9 files for the incumbent `@xyflow/react`, so it is not a broken
+probe). The dependency lands ahead of the #2960 shape layer so the version
+question is settled before any code depends on the answer.
+
+**2. Is it classified correctly?** `dependencies`. It renders a user-facing
+canvas, so it ships in the image; `npm prune --omit=dev` must not reach it.
+
+**3. Version + exposure risk.** This is the whole entry, and it has two parts.
+
+*The licence sets a ceiling.* tldraw is source-available under a proprietary
+licence, not MIT, and the terms **change at 4.0.0**:
+
+| | 3.x (through 3.15.6) | 4.x / 5.x |
+|---|---|---|
+| grant | "commercial or non-commercial projects" | "Development Environments" |
+| production | permitted | **banned** without a paid key |
+| watermark | must not be removed | no watermark clause |
+| a key buys | watermark removal | permission to deploy at all |
+
+So `tldraw: { major: 3 }` in `REVIEWED` is a **ceiling**, and a bump to 4.x is a
+licence breach rather than a version regression. A caret range already cannot
+cross a major, so `^3.15.6` is safe by itself; the entry is what makes the
+constraint visible and what fails a deliberate bump. Full per-tag evidence on
+#2958.
+
+*The pin costs one audit exemption, and it is a false positive.* tldraw 3.x
+declares `@tiptap/* ^2.9.1`, and `npm audit` flags GHSA-cp6q-959q-f8rh
+(`mergeAttributes()` turning an own `__proto__` key into inherited executable
+DOM attributes) against the whole 2.x line. **The advisory range is
+over-broad.** tiptap fixed this in 3.30.4 on 2026-08-26 and then backported the
+identical fix to 2.x in **2.27.3 on 2026-09-04** — nine days later — and the
+advisory's upper bound was never amended.
+
+Verified rather than assumed: the guard is present in both the cjs and esm
+builds of 2.27.3, character-for-character the same logic as patched 3.31.3; and
+running the advisory's own attack shape through the real 2.27.3
+`mergeAttributes` leaves `Object.prototype` untouched, while a naive merge of
+the same payload pollutes — the positive control that makes the first result
+mean something.
+
+That property is held by `tests/guards/tiptap-proto-merge-is-fixed.test.ts`,
+which executes the attack against **every** `@tiptap/core` in the tree on every
+CI run and fails if any copy falls below the 2.27.3 backport floor. It exists
+because the exemption is only honest while the resolved version carries the fix,
+and `^2.9.1` admits versions that do not.
+
+**4. Decision.** Adopt at `^3.15.6`, ship with the watermark displayed, and
+carry the tiptap exemption with its guard. Revisit if a commercial licence is
+obtained: 4.x/5.x ship tiptap 3.31.3 and would drop the exemption entirely.
+
+Rejected alternative, tested not assumed: forcing tiptap 3 under tldraw 3 via
+`overrides` clears the audit and passes a production build, then **silently
+breaks the second rich-text edit session** — ProseMirror never remounts and
+keystrokes are discarded with no error, deterministic at 900/1800/3000 ms
+against an unoverridden control that passes all three. Evidence on #2960.
+
+### Summary — 2026-09-29
+
+| Package | Classification | Version | Decision |
+|---------|----------------|---------|----------|
+| `tldraw` | `dependencies` ✓ | `^3.15.6` | Adopt; major is a **ceiling** (licence), not a floor |
+
+`npm audit --omit=dev --audit-level=moderate` no longer reports **0** findings
+for this repo — it reports one tracked exemption, and `scripts/audit-gate.mjs`
+passes because that exemption is listed, in date, and still matching. The
+2026-05-22 summary above says "0 vulnerabilities"; that was true of its own
+scope and is no longer true of the tree. The number to trust is the gate's, not
+a figure in prose.
 
 ## Re-running this review
 
