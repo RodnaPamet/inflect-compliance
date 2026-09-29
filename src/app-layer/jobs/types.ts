@@ -231,6 +231,17 @@ export interface AgentProposalExpiryPayload {
  * `AgentProposalSampleAudit`; a human cannot open one by hand, or the sample
  * would stop being a sample.
  */
+/**
+ * Send the external writes a human approved (#2861). Sweeps
+ * `ExternalWriteJournal` rows left PENDING by `approveAgentProposal`, re-reads
+ * the prior state, refuses on drift, and settles each row. A missed run delays
+ * approved writes; it cannot send an unapproved one.
+ */
+export interface ExternalWriteDispatchPayload {
+    /** Optional: scope to a single tenant. Omit for the system-wide sweep. */
+    tenantId?: string;
+}
+
 export interface AgentProposalSampleAuditPayload {
     /** Optional: scope to a single tenant. Omit for the system-wide sweep. */
     tenantId?: string;
@@ -804,6 +815,7 @@ export interface JobPayloadMap {
     'av-rescan': AvRescanPayload;
     'agent-kill-switch-drill': AgentKillSwitchDrillPayload;
     'agent-proposal-expiry': AgentProposalExpiryPayload;
+    'external-write-dispatch': ExternalWriteDispatchPayload;
     'agent-proposal-sample-audit': AgentProposalSampleAuditPayload;
     'agentic-evidence-emission': AgenticEvidenceEmissionPayload;
 }
@@ -1514,6 +1526,18 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 500,
     },
     'compliance-posture-summary-dispatch': {
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'external-write-dispatch': {
+        // ONE attempt. Every refusal this pass reaches is TERMINAL — the rung was
+        // narrowed, the pairing withdrawn, the record drifted — and each settles
+        // the row, so a retry would find nothing to redo. The one case a retry
+        // could help is a send that threw, and that settles INDETERMINATE
+        // precisely because nobody can say whether it arrived: re-sending it
+        // might apply the change twice.
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 50,

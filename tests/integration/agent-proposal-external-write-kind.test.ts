@@ -179,25 +179,70 @@ describe('what the payload must carry', () => {
     });
 });
 
-describe('and one that exists by other means cannot be approved', () => {
-    it('refuses, and LEAVES THE ROW PENDING', async () => {
-        // The claim that matters. `approveAgentProposal` flips the row to
-        // ACCEPTED and never hands that back on failure, so a refusal placed
-        // after the claim would burn the proposal permanently — ACCEPTED, nothing
-        // dispatched, no retry. `rejects.toThrow` alone cannot tell the two
-        // placements apart; the status afterwards can — and does, on this shape
-        // of row. Mutation-checked by MOVING the guard below the claim.
-        const id = await seedExternalWriteProposal();
-
-        await expect(approveAgentProposal(ctx(), id)).rejects.toThrow(/cannot be approved yet/);
-
-        const after = await prisma.agentProposal.findUniqueOrThrow({
-            where: { id },
-            select: { status: true, createdEntityId: true },
+describe('approving one opens the journal row, and sends nothing', () => {
+    /** A live MCP connection at the rung the write was proposed under. */
+    async function seedConnection(mode: string) {
+        return prisma.integrationConnection.upsert({
+            where: { id: VALID_PAYLOAD.connectionId },
+            update: { externalWriteMode: mode, isEnabled: true },
+            create: {
+                id: VALID_PAYLOAD.connectionId,
+                tenantId: T,
+                provider: 'mcp-server',
+                name: VALID_PAYLOAD.connectionName,
+                configJson: { url: VALID_PAYLOAD.endpointUrl },
+                externalWriteMode: mode,
+            },
         });
-        expect(after.status).toBe('PENDING');
-        // And nothing of ours was created on the way past, which is the other
-        // half: this kind names no entity of ours to create.
-        expect(after.createdEntityId).toBeNull();
+    }
+
+    async function queue() {
+        const r = await createAgentProposal(ctx(), {
+            kind: 'EXTERNAL_WRITE',
+            payload: VALID_PAYLOAD,
+            policyCardVersion: 0,
+        } as unknown as Parameters<typeof createAgentProposal>[1]);
+        return r.id;
+    }
+
+    it('resolves to a PENDING journal row, not to a record of ours', async () => {
+        // `createdEntityId` is the journal id. That keeps it non-null, which is
+        // what preserves the approve route's distinction between an applied
+        // approval and an AWAITING_APPROVAL one — and the row is PENDING, because
+        // approving decides that it may be sent, not that it was.
+        await seedConnection('PROPOSE_ONLY');
+        const id = await queue();
+
+        const out = await approveAgentProposal(ctx(), id);
+        const journalId = (out as { createdEntityId: string }).createdEntityId;
+        expect(journalId).toBeTruthy();
+
+        const row = await prisma.externalWriteJournal.findUniqueOrThrow({
+            where: { id: journalId },
+            select: { outcome: true, toolName: true, settledAt: true },
+        });
+        expect(row.outcome).toBe('PENDING');
+        expect(row.toolName).toBe(VALID_PAYLOAD.toolName);
+        // Nothing has reported back, because nothing has been sent.
+        expect(row.settledAt).toBeNull();
+    });
+
+    it('REFUSES when the rung was narrowed after the write was proposed', async () => {
+        // The check that makes an operator's withdrawal take effect in front of
+        // the person approving, rather than hours later inside a job. `beginWrite`
+        // refuses DRY_RUN, so opening the row here IS the re-check.
+        await seedConnection('PROPOSE_ONLY');
+        const id = await queue();
+        await seedConnection('DRY_RUN');
+
+        await expect(approveAgentProposal(ctx(), id)).rejects.toThrow(/now at DRY_RUN/);
+    });
+
+    it('REFUSES a payload that is no longer well-formed', async () => {
+        // Seeded directly with a payload that does not satisfy its own schema.
+        // Dispatching on a guess is the one thing that must not happen.
+        await seedConnection('PROPOSE_ONLY');
+        const id = await seedExternalWriteProposal();
+        await expect(approveAgentProposal(ctx(), id)).rejects.toThrow(/well-formed external write/);
     });
 });

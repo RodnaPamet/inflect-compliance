@@ -61,6 +61,7 @@ import { createPolicy } from '@/app-layer/usecases/policy';
 import { createFinding, updateFinding } from '@/app-layer/usecases/finding';
 import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
 import { ExternalWriteProposalPayloadSchema } from '@/lib/agentic/external-write-proposal';
+import { openApprovedExternalWrite } from '@/app-layer/usecases/external-write-approval';
 import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -1208,23 +1209,6 @@ export async function approveAgentProposal(
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
-    if (proposal.kind === 'EXTERNAL_WRITE') {
-        // BEFORE the claim, deliberately. The claim flips the row to ACCEPTED,
-        // and this function's own comment explains why it is never handed back —
-        // so refusing after it would leave a proposal permanently ACCEPTED with
-        // nothing dispatched and no way to retry. Approving one of these has to
-        // dispatch an MCP call rather than create a record, and that job does not
-        // exist yet; until it does, the honest answer is that it cannot be
-        // approved, not that it was.
-        //
-        // Unreachable today — nothing creates this kind — and checked anyway,
-        // because "unreachable" is a claim about the current callers and a row
-        // can also arrive by other means.
-        throw badRequest(
-            'An EXTERNAL_WRITE proposal cannot be approved yet: approving one dispatches a '
-                + 'write to an external system, and that dispatch is not wired. Nothing was sent.',
-        );
-    }
 
     // ═══ HOW MANY HUMANS THIS ONE NEEDS ═══
     //
@@ -1505,7 +1489,25 @@ export async function approveAgentProposal(
     // would read as ACCEPTED with nothing created and no way to retry.
     let createdEntityId: string;
     try {
-        if (operation === 'UPDATE') {
+        if (kind === 'EXTERNAL_WRITE') {
+            // No record of OURS is created. Approving this opens the journal row
+            // and the `external-write-dispatch` job sends it — which is also
+            // where the rung is re-checked, because `beginWrite` refuses
+            // `DRY_RUN` and `DISABLED`. A connection an operator narrowed after
+            // the write was proposed therefore refuses HERE, in front of the
+            // person approving it, rather than hours later out of their sight.
+            //
+            // `createdEntityId` becomes the journal id: a real record this
+            // proposal resolved to, which keeps `ApproveResult.createdEntityId`
+            // non-null and preserves the route's distinction between an applied
+            // approval and an `AWAITING_APPROVAL` one.
+            createdEntityId = await openApprovedExternalWrite(ctx, {
+                id: proposal.id,
+                payloadJson: proposal.payloadJson,
+                agentId: proposal.agentId,
+                runId: proposal.runId,
+            });
+        } else if (operation === 'UPDATE') {
             // `targetEntityId` is NOT NULL for an UPDATE row by database CHECK
             // (`AgentProposal_update_requires_target`); the guard below is the
             // type-level acknowledgement of that, not a second opinion about it.
@@ -1705,23 +1707,6 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
     }
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
-    }
-    if (proposal.kind === 'EXTERNAL_WRITE') {
-        // BEFORE the claim, deliberately. The claim flips the row to ACCEPTED,
-        // and this function's own comment explains why it is never handed back —
-        // so refusing after it would leave a proposal permanently ACCEPTED with
-        // nothing dispatched and no way to retry. Approving one of these has to
-        // dispatch an MCP call rather than create a record, and that job does not
-        // exist yet; until it does, the honest answer is that it cannot be
-        // approved, not that it was.
-        //
-        // Unreachable today — nothing creates this kind — and checked anyway,
-        // because "unreachable" is a claim about the current callers and a row
-        // can also arrive by other means.
-        throw badRequest(
-            'An EXTERNAL_WRITE proposal cannot be approved yet: approving one dispatches a '
-                + 'write to an external system, and that dispatch is not wired. Nothing was sent.',
-        );
     }
     await runInTenantContext(ctx, async (db) => {
         await db.agentProposal.updateMany({
