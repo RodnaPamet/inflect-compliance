@@ -62,6 +62,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { Menu } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 // ─── Geometry tokens (R14-PR2) ─────────────────────────────────────
 //
@@ -385,19 +386,20 @@ export interface NavBarBrandProps {
     href: string;
     /** Two-letter initials. Defaults to `IC` (Inflect Compliance). */
     initials?: string;
-    /** Accessible name. */
+    /** Accessible name. Defaults to `nav.brandHome`. */
     ariaLabel?: string;
 }
 
 export function NavBarBrand({
     href,
     initials = 'IC',
-    ariaLabel = 'Inflect Compliance — go to dashboard',
+    ariaLabel,
 }: NavBarBrandProps) {
+    const t = useTranslations('nav');
     return (
         <Link
             href={href}
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? t('brandHome')}
             className={NAV_BAR_BRAND_CLASS}
             data-testid="nav-bar-brand"
         >
@@ -420,7 +422,7 @@ export function NavBarBrand({
  */
 export interface NavBarMobileMenuProps {
     onClick: () => void;
-    /** A11y label override — defaults to "Open navigation menu". */
+    /** A11y label override — defaults to `nav.openNavigationMenu`. */
     ariaLabel?: string;
     /** Test id — defaults to "nav-toggle"; org variant overrides. */
     dataTestId?: string;
@@ -428,15 +430,16 @@ export interface NavBarMobileMenuProps {
 
 export function NavBarMobileMenu({
     onClick,
-    ariaLabel = 'Open navigation menu',
+    ariaLabel,
     dataTestId = 'nav-toggle',
 }: NavBarMobileMenuProps) {
+    const t = useTranslations('nav');
     return (
         <button
             type="button"
             onClick={onClick}
             className={`md:hidden inline-flex items-center justify-center h-[22px] w-[22px] rounded-lg text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS}`}
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? t('openNavigationMenu')}
             data-testid={dataTestId}
         >
             <Menu className="h-4 w-4" aria-hidden="true" />

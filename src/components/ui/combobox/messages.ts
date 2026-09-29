@@ -3,25 +3,17 @@
 /**
  * Combobox message resolution.
  *
- * The Combobox exposes four user-visible strings that default to
- * English: `searchPlaceholder`, `placeholder`, `emptyState`, and the
- * create-row label. Each is overridable per call via props.
+ * The Combobox exposes four user-visible strings: `searchPlaceholder`,
+ * `placeholder`, `emptyState`, and the create-row label. Each is
+ * overridable per call via props.
  *
- * For consumers using `next-intl`, pass your translated values
- * directly:
+ * A caller that passes none of them still renders in the viewer's
+ * locale: `<Combobox>` resolves its defaults itself, by handing
+ * `useTranslations('ui.combobox')` to `getComboboxMessages(t)` below.
+ * Pass props only for copy that differs from those defaults.
  *
- *     const t = useTranslations('ui.combobox');
- *     <Combobox
- *       searchPlaceholder={t('searchPlaceholder')}
- *       placeholder={t('placeholder')}
- *       emptyState={t('emptyState')}
- *       createLabel={(q) => t('createLabel', { search: q })}
- *       …
- *     />
- *
- * Or use the shared `getComboboxMessages(t)` helper below which
- * returns a fully-wired defaults object keyed on the `ui.combobox`
- * namespace of your translations file.
+ * `COMBOBOX_DEFAULT_MESSAGES` holds the English values, and is only
+ * reached when a translator throws or returns an empty string.
  */
 
 export const COMBOBOX_DEFAULT_MESSAGES = {

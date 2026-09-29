@@ -180,12 +180,26 @@ describe("PR-8 state primitives discipline", () => {
       expect(src).toMatch(/aria-live="polite"/);
     });
 
+    // The two defaults moved from literal parameter defaults into the
+    // catalogue, because a literal renders English in every locale. Same
+    // intent, re-pointed: the component falls back to the key, and the key's
+    // English is the sentence it used to hard-code. The rendered default is
+    // asserted in tests/rendered/error-state.test.tsx, and in both locales in
+    // tests/rendered/i18n-kept-primitives.test.tsx.
+    const en = JSON.parse(
+      fs.readFileSync(path.join(ROOT, "messages/en.json"), "utf8"),
+    ) as { common: { error: { title: string; tryAgain: string } } };
+
     it("default title is `Something went wrong`", () => {
-      expect(src).toMatch(/title\s*=\s*["']Something went wrong["']/);
+      expect(src).toMatch(/title\s*=\s*callerTitle\s*\?\?\s*t\(["']title["']\)/);
+      expect(en.common.error.title).toBe("Something went wrong");
     });
 
     it("default retry label is `Try again`", () => {
-      expect(src).toMatch(/retryLabel\s*=\s*["']Try again["']/);
+      expect(src).toMatch(
+        /retryLabel\s*=\s*callerRetryLabel\s*\?\?\s*t\(["']tryAgain["']\)/,
+      );
+      expect(en.common.error.tryAgain).toBe("Try again");
     });
   });
 

@@ -30,6 +30,7 @@
  */
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { toast as sonnerToast } from "sonner";
 import { cn } from "@/lib/cn";
@@ -62,6 +63,7 @@ export function UndoToast({
     delayMs,
     onUndo,
 }: UndoToastProps) {
+    const t = useTranslations("common.ui");
     // The bar starts at 100% width and animates to 0% over `delayMs`.
     // Initial render writes 100%; an effect on the next frame writes 0%
     // so the CSS transition kicks in. Without the two-step the browser
@@ -132,11 +134,11 @@ export function UndoToast({
             </div>
             <div
                 role="progressbar"
-                aria-label={`${undoMessage} window`}
+                aria-label={t("undoWindow", { label: undoMessage })}
                 aria-valuenow={remainingSec}
                 aria-valuemin={0}
                 aria-valuemax={Math.ceil(delayMs / 1000)}
-                aria-valuetext={`${remainingSec}s remaining`}
+                aria-valuetext={t("secondsRemaining", { seconds: remainingSec })}
                 className="h-1 w-full overflow-hidden rounded-full bg-bg-subtle">
                 <div
                     ref={barRef}

@@ -127,7 +127,10 @@ describe('Input — contract', () => {
 
     it('keeps the password visibility toggle', () => {
         expect(INPUT_SRC).toMatch(/isPasswordVisible/);
-        expect(INPUT_SRC).toMatch(/aria-label=\{[\s\S]*?Hide password[\s\S]*?Show password[\s\S]*?\}/);
+        // The two labels are catalogue keys now (`common.ui.hidePassword` /
+        // `common.ui.showPassword`), not English literals; their rendered
+        // values are asserted in tests/rendered/i18n-kept-primitives.test.tsx.
+        expect(INPUT_SRC).toMatch(/aria-label=\{[\s\S]*?hidePassword[\s\S]*?showPassword[\s\S]*?\}/);
     });
 
     it('exports inputVariants for composition', () => {

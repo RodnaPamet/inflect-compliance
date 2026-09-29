@@ -54,6 +54,7 @@
  */
 import * as React from "react";
 import { flexRender } from "@tanstack/react-table";
+import { useTranslations } from "next-intl";
 import type { Row, TableInstance, TableRowData } from "./types";
 import { FixedSizeList } from "react-window";
 import { AutoSizer } from "react-virtualized-auto-sizer";
@@ -133,7 +134,7 @@ export interface VirtualTableProps<T extends TableRowData> {
     containerClassName?: string;
     /** Class on the inner scroll container. */
     scrollWrapperClassName?: string;
-    /** Accessible label on the scroll container. */
+    /** Accessible label on the scroll container. Defaults to `common.table.tableContents`. */
     "aria-label"?: string;
     /** Test id forwarded to the outer wrapper. */
     "data-testid"?: string;
@@ -341,9 +342,13 @@ export function VirtualTable<T extends TableRowData>({
     onReachEnd,
     containerClassName,
     scrollWrapperClassName,
-    "aria-label": ariaLabel = "Table contents (scrollable)",
+    "aria-label": ariaLabelProp,
     "data-testid": testId,
 }: VirtualTableProps<T>) {
+    const t = useTranslations("common.table");
+    // Flows into `headerStateRef` below, which is rewritten every render, so
+    // a locale change reaches the memoised OuterElement without re-creating it.
+    const ariaLabel = ariaLabelProp ?? t("tableContents");
     const rows = table.getRowModel().rows;
     const visibleColumns = table.getVisibleLeafColumns();
 
@@ -597,6 +602,7 @@ function VirtualTableHeader<T extends TableRowData>({
     onSortChange,
     columnsAfterSelect,
 }: VirtualTableHeaderProps<T>) {
+    const t = useTranslations("common.table");
     return (
         <div
             role="rowgroup"
@@ -638,7 +644,7 @@ function VirtualTableHeader<T extends TableRowData>({
                                     {isSortable ? (
                                         <button
                                             type="button"
-                                            aria-label="Sort by column"
+                                            aria-label={t("sortByColumn")}
                                             className="flex items-center gap-tight"
                                             onClick={() =>
                                                 onSortChange?.({
