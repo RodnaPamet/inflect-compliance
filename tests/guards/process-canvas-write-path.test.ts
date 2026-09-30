@@ -34,7 +34,7 @@ import * as path from 'path';
 // String literals are KEPT — masking them would silently empty assertions that
 // harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike, re-derived per file rather than assumed from the directory.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
@@ -88,15 +88,61 @@ describe('every full write carries the optimistic-concurrency guard', () => {
 });
 
 describe('every edit path marks dirty and is undoable', () => {
-    it('an inspector edit is classified substantive', () => {
-        // `updateNodeData` reaches onNodesChange as a `replace` change. Falling
-        // through to `default: false` is what made label / subtitle / size /
-        // linked-entity edits neither autosaved nor undoable.
-        const classifier = CANVAS.slice(
-            CANVAS.indexOf('const isSubstantiveNodeChange'),
-            CANVAS.indexOf('const isSubstantiveEdgeChange'),
+    // WHAT MOVED, AND WHY THIS ASSERTION CHANGED SHAPE (#2961).
+    //
+    // This used to slice the canvas between `const isSubstantiveNodeChange` and
+    // `const isSubstantiveEdgeChange` and assert the `replace` arm returned
+    // true. Both predicates now live in `lib/processes/canvas-changes-xyflow.ts`,
+    // so both `indexOf` anchors returned -1 and the slice was the empty string —
+    // which is why the assertion was a `toMatch` and not a `not.toMatch`. It
+    // FAILED rather than passing vacuously, which is the only reason the move
+    // was visible at all. A name-to-name slice is the shape CLAUDE.md warns
+    // about; it is not re-created below.
+    //
+    // The CLASSIFICATION itself is now behavioural, in
+    // `tests/unit/processes/canvas-changes.test.ts` — including the node/edge
+    // asymmetry on `replace`, with a mutation proof for each direction. What a
+    // unit test on the adapter CANNOT see is whether the host still calls it, so
+    // that is what this guard keeps: the wiring, per handler, paired.
+    // Two tests rather than one `it.each`, because the pattern has to be a
+    // regex LITERAL: a `new RegExp(mapper)` built from the table row would be
+    // un-analysable to the #2246 Class C ratchet, which CAPS skips rather than
+    // ignoring them. Bound to each handler's own declaration so the pairing is
+    // asserted — a whole-file match would pass if the node handler classified
+    // with the EDGE mapper.
+    //
+    // `declarationOf`, NOT `braceBlockAfter`. The first draft used the latter
+    // and it returned 29,118 characters — from `onNodesChange` straight through
+    // `onEdgesChange` and `onConnect`. Every assertion below still passed,
+    // because `history.push({ nodes, edges })` and `autosave.markDirty()` occur
+    // in those SIBLINGS too. Deleting the push from the node handler was a
+    // mutation that stayed green. `declarationOf` returns 589 characters and
+    // that same mutation reddens. The window, not the needle, was the defect.
+    it('onNodesChange classifies through the node mapper', () => {
+        const body = declarationOf(CANVAS, 'onNodesChange');
+        expect(body).toMatch(
+            /batchIsSubstantive\(\s*changes\.map\(classifyXyflowNodeChange\)/,
         );
-        expect(classifier).toMatch(/case "replace":[\s\S]*?return true;/);
+        // The classification still gates BOTH consequences, which is what the
+        // original defect broke.
+        expect(body).toMatch(/history\.push\(\{ nodes, edges \}\)/);
+        expect(body).toMatch(/autosave\.markDirty\(\)/);
+    });
+
+    it('onEdgesChange classifies through the edge mapper', () => {
+        const body = declarationOf(CANVAS, 'onEdgesChange');
+        expect(body).toMatch(
+            /batchIsSubstantive\(\s*changes\.map\(classifyXyflowEdgeChange\)/,
+        );
+        expect(body).toMatch(/history\.push\(\{ nodes, edges \}\)/);
+        expect(body).toMatch(/autosave\.markDirty\(\)/);
+    });
+
+    it('the host names no engine change type of its own', () => {
+        // The point of the adapter: exactly one file knows xyflow's change
+        // vocabulary. A `case "replace":` back in the host means somebody
+        // re-inlined a predicate beside the adapter call.
+        expect(CANVAS).not.toMatch(/case ["']replace["']:/);
     });
 
     it.each(['onDrop', 'handleProximityCommit'])(
