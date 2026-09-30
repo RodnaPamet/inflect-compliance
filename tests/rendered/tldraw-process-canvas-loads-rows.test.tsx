@@ -89,7 +89,10 @@ const ROWS: GraphRows = {
     ],
 };
 
-async function mountHost(rows: GraphRows = ROWS) {
+async function mountHost(
+    rows: GraphRows = ROWS,
+    opts: { readOnly?: boolean; onDirty?: () => void } = {},
+) {
     let editor: Editor | undefined;
     let container!: HTMLElement;
     await act(async () => {
@@ -97,6 +100,8 @@ async function mountHost(rows: GraphRows = ROWS) {
             <div style={{ width: 800, height: 600 }}>
                 <TldrawProcessCanvas
                     rows={rows}
+                    readOnly={opts.readOnly}
+                    onDirty={opts.onDirty}
                     onEditorReady={(e) => {
                         editor = e;
                     }}
@@ -164,17 +169,116 @@ describe('the host loads rows into the store', () => {
     });
 });
 
-describe('and then locks the store', () => {
-    it('ends read-only, WITH the shapes already loaded', async () => {
+describe('readOnly is a prop now, not the only mode', () => {
+    it('defaults to EDITABLE — this is the canvas', async () => {
+        // The previous slice hard-coded read-only because it had no write path
+        // to offer. Now that it reports edits, refusing them by default would
+        // be the wrong way round.
+        const { editor } = await mountHost();
+        expect(editor.getInstanceState().isReadonly).toBe(false);
+    });
+
+    it('locks the store when asked, WITH the shapes already loaded', async () => {
         // The conjunction is the assertion. Read-only set before seeding would
         // give an empty, locked canvas and no error at all — so neither half
         // alone would catch the ordering being wrong.
-        const { editor } = await mountHost();
+        const { editor } = await mountHost(ROWS, { readOnly: true });
         expect(editor.getInstanceState().isReadonly).toBe(true);
         expect(
             editor
                 .getCurrentPageShapes()
                 .filter((s) => s.type === PROCESS_NODE_SHAPE_TYPE),
         ).toHaveLength(ROWS.nodes.length);
+    });
+});
+
+describe('dirty reporting', () => {
+    it('loading a map does NOT mark it dirty', async () => {
+        // THE ordering claim. `createShapes` is a local change, so a listener
+        // registered before the seed sees it as `source: 'user'` like any other
+        // — the filter does not exempt it. Register first and every page load
+        // marks the document dirty, autosaves, and bumps `version` for a map
+        // nobody touched.
+        const onDirty = jest.fn();
+        await mountHost(ROWS, { onDirty });
+        expect(onDirty).not.toHaveBeenCalled();
+    });
+
+    it('but a real edit after the load does', async () => {
+        // Teeth for the test above: "never fires" is also true of a listener
+        // that was never registered.
+        const onDirty = jest.fn();
+        const { editor } = await mountHost(ROWS, { onDirty });
+
+        await act(async () => {
+            editor.updateShape({
+                id: editor.getCurrentPageShapes()[0]!.id,
+                type: PROCESS_NODE_SHAPE_TYPE,
+                props: { label: 'Edited' },
+            });
+        });
+
+        expect(onDirty).toHaveBeenCalled();
+    });
+
+    it('a camera change does not mark the document dirty', async () => {
+        // MEASURED, and not by the mechanism the first draft of this comment
+        // named. It said the `scope: 'document'` filter drops camera records
+        // before the mapper sees them — true, but not what makes this pass:
+        // changing the filter to `'all'` reddens nothing, because a camera
+        // record's `typeName` is one the mapper does not recognise and it
+        // classifies as `unknown` → transient anyway.
+        //
+        // So the mapper is the guarantee and the filter is an optimisation.
+        // The property asserted here — panning does not autosave — is real
+        // either way, which is why the test stays.
+        const onDirty = jest.fn();
+        const { editor } = await mountHost(ROWS, { onDirty });
+
+        await act(async () => {
+            editor.setCamera({ x: 120, y: -40, z: 2 });
+        });
+
+        expect(onDirty).not.toHaveBeenCalled();
+    });
+
+    it('a selection change does not either', async () => {
+        const onDirty = jest.fn();
+        const { editor } = await mountHost(ROWS, { onDirty });
+
+        await act(async () => {
+            editor.select(editor.getCurrentPageShapes()[0]!.id);
+        });
+
+        expect(onDirty).not.toHaveBeenCalled();
+    });
+});
+
+describe('history belongs to the editor', () => {
+    it('an edit is undoable through tldraw, with no app history fed', async () => {
+        // `use-canvas-history` is deliberately not wired: feeding both would
+        // double-handle undo, one entry from the editor and one from the app
+        // for a single edit. The document bar's canUndo / canRedo / undo / redo
+        // map onto these four methods when it is wired.
+        const { editor } = await mountHost();
+        const id = editor.getCurrentPageShapes()[0]!.id;
+
+        // Seeding happens inside a mount; what matters is that a USER edit is
+        // undoable, so the baseline is taken after it.
+        await act(async () => {
+            editor.updateShape({
+                id,
+                type: PROCESS_NODE_SHAPE_TYPE,
+                props: { label: 'Edited' },
+            });
+        });
+        expect(editor.getCanUndo()).toBe(true);
+
+        await act(async () => {
+            editor.undo();
+        });
+        const after = editor.getShape(id);
+        expect((after?.props as { label?: string } | undefined)?.label).not.toBe('Edited');
+        expect(editor.getCanRedo()).toBe(true);
     });
 });
