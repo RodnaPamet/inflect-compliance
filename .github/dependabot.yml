@@ -165,6 +165,44 @@ updates:
       - dependency-name: "tldraw"
         versions: [">=4.0.0"]
 
+      # `@tiptap/core` is held below 3.0.0 to close the ROUTE the entry above
+      # cannot reach — not because tiptap 3 is unwelcome.
+      #
+      # The entry above is keyed on `tldraw`, and that is correct for a
+      # version-update. It does not fire on the security-update route, because
+      # there Dependabot's SUBJECT is `@tiptap/core` and `tldraw` is merely
+      # collateral in resolving it: `@tiptap/core` is transitive under
+      # `tldraw@3.x`, and the only way to move a transitive dependency is to
+      # move its parent. So the PR arrives titled after the advisory and
+      # silently carries `tldraw: ^3.15.6 -> ^5.5.0`, two majors into the range
+      # the licence forbids.
+      #
+      # That is #2990, its re-proposal #2997, and #3029 — three PRs, three
+      # closures, and a fourth due next cycle. The tldraw entry's own comment
+      # predicted the SHAPE of this ("the proposal arrives labelled as a
+      # security fix") and not the mechanism, which is why it kept happening.
+      #
+      # SAFE BECAUSE THE NAME IS NOT ONE THIS REPO DECLARES. The direct tiptap
+      # dependencies are `@tiptap/extension-link`, `@tiptap/extension-placeholder`,
+      # `@tiptap/pm`, `@tiptap/react` and `@tiptap/starter-kit`, all already at
+      # `^3.31.3` and all different names — they keep updating. `@tiptap/core`
+      # is transitive under both those and tldraw, so this blocks a proposal
+      # nobody can act on rather than an upgrade somebody wants.
+      #
+      # The advisory driving it does not apply either: tiptap backported the
+      # GHSA-cp6q-959q-f8rh fix to 2.27.3, published nine days AFTER 3.30.4,
+      # and the advisory's upper bound was never amended.
+      # `tests/guards/tiptap-proto-merge-is-fixed.test.ts` runs the published
+      # attack against every resolved copy on every CI run, so the tree's
+      # safety is measured rather than asserted here.
+      #
+      # DELETE THIS ENTRY the day a tldraw commercial licence exists — 4.x/5.x
+      # then ship a patched tiptap and the advisory route stops mattering. It
+      # retires alongside the tldraw floor above and the audit exemption in
+      # `security/audit-allowlist.json`.
+      - dependency-name: "@tiptap/core"
+        versions: [">=3.0.0"]
+
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
     directory: /
