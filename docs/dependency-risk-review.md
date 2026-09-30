@@ -366,6 +366,20 @@ and `^2.9.1` admits versions that do not.
 carry the tiptap exemption with its guard. Revisit if a commercial licence is
 obtained: 4.x/5.x ship tiptap 3.31.3 and would drop the exemption entirely.
 
+**Dependabot is held below 4.0.0** in `.github/dependabot.yml`, scoped so every
+3.x patch and minor still comes through. Not for noise: the proposal arrives
+titled after the tiptap advisory, because `@tiptap/core` is transitive under
+tldraw and the only way to move a transitive dependency is to move its parent —
+so a licence breach reads as a security fix (#2990, re-proposed as #2997, both
+closed). Two guards already refuse a 4.x tree; the hold stops the churn that
+made them fire.
+
+**THREE THINGS RETIRE TOGETHER** the day a commercial licence exists: this
+ceiling, the dependabot hold, and the `GHSA-cp6q-959q-f8rh` entry in
+`security/audit-allowlist.json`. Removing one without the others leaves either a
+constraint nobody can explain or an exemption for an advisory that no longer
+applies to anything in the tree.
+
 Rejected alternative, tested not assumed: forcing tiptap 3 under tldraw 3 via
 `overrides` clears the audit and passes a production build, then **silently
 breaks the second rich-text edit session** — ProseMirror never remounts and
