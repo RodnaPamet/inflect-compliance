@@ -27,6 +27,7 @@
  */
 
 import type { SearchHit, SearchHitType } from '@/lib/search/types';
+import { uiStorageKey } from '@/lib/ui-storage';
 
 // ─── Public types ─────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ interface RecentsBlob {
 export const MAX_RECENTS = 10;
 
 /** Storage key prefix; the per-tenant slug is appended. */
-export const RECENTS_STORAGE_PREFIX = 'inflect:palette:recents';
+export const RECENTS_STORAGE_PREFIX = uiStorageKey('palette', 'recents');
 
 export function recentsStorageKey(tenantSlug: string): string {
     return `${RECENTS_STORAGE_PREFIX}:${tenantSlug}`;

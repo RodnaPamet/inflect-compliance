@@ -9,6 +9,7 @@
  *   - `usePreviousPath.ts` is the only writer to the sessionStorage slot.
  */
 import * as fs from 'fs';
+import { PREV_PATH_KEY_PREFIX } from '@/lib/nav/usePreviousPath';
 import * as path from 'path';
 
 // #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
@@ -56,10 +57,15 @@ describe('rq4-3 navigation tracker', () => {
     });
 
     it('the storage key prefix is namespaced and stable', () => {
-        const source = codeOf(fs.readFileSync(HOOK_PATH, 'utf-8'));
-        expect(source).toMatch(
-            /PREV_PATH_KEY_PREFIX\s*=\s*['"]inflect:nav:prev:['"]/,
-        );
+        // The VALUE, not the spelling. This asserted on source text, which
+        // pinned one way of writing the key rather than the key itself — it
+        // would have failed on a refactor that kept the value identical, and
+        // passed on a second constant that shadowed it with a different one.
+        //
+        // The value is the thing that matters: it addresses data already in real
+        // users' sessionStorage, so changing it is a silent reset rather than a
+        // migration.
+        expect(PREV_PATH_KEY_PREFIX).toBe('inflect:nav:prev:');
     });
 
     it('uses sessionStorage (per-tab) and never window.localStorage (cross-tab)', () => {

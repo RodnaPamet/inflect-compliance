@@ -19,8 +19,10 @@
  *     the back destination on a tenant-B view
  */
 import { useEffect, useState } from 'react';
+import { uiStorageKey } from '@/lib/ui-storage';
 
-export const PREV_PATH_KEY_PREFIX = 'inflect:nav:prev:';
+// Trailing ':' kept: callers append the route segment themselves.
+export const PREV_PATH_KEY_PREFIX = `${uiStorageKey('nav', 'prev')}:`;
 
 export function prevPathStorageKey(tenantSlug: string): string {
     return `${PREV_PATH_KEY_PREFIX}${tenantSlug}`;

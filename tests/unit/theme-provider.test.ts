@@ -22,6 +22,8 @@
  */
 
 import * as fs from 'fs';
+import { functionBodyOf } from '../helpers/source-blocks';
+import { THEME_STORAGE_KEY, THEME_COOKIE } from '@/lib/theme-constants';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../../');
@@ -63,8 +65,14 @@ describe('ThemeProvider — source contract', () => {
         // 'use client' module hands the server a client-reference proxy, not
         // the string — the bug that broke the SSR cookie read + inline script.
         expect(constants).not.toMatch(/^\s*['"]use client['"]/m);
-        expect(constants).toMatch(/THEME_STORAGE_KEY\s*=\s*['"]inflect:theme['"]/);
-        expect(constants).toMatch(/THEME_COOKIE\s*=\s*['"]inflect_theme['"]/);
+        // VALUES, not source spellings. These assertions used to regex the
+        // constants file, which pinned one way of writing the key rather than
+        // the key itself: it would fail on a refactor that preserved the value
+        // exactly, and pass on a second constant that shadowed it with a
+        // different one. The value is what addresses data already in real users'
+        // browsers, so it is the thing worth pinning.
+        expect(THEME_STORAGE_KEY).toBe('inflect:theme');
+        expect(THEME_COOKIE).toBe('inflect_theme');
         // The provider imports + re-exports them for its client consumers.
         expect(src).toMatch(/from\s*['"]@\/lib\/theme-constants['"]/);
     });
@@ -82,7 +90,20 @@ describe('ThemeProvider — source contract', () => {
     });
 
     it('resolves initial theme in the documented order: cookie → storage → media → dark', () => {
-        expect(src).toMatch(/inflect_theme=\(light\|dark\)/); // cookie read first
+        // The provider builds this regex FROM `THEME_COOKIE` now, so asserting
+        // the literal would assert the very drift this change removes. What
+        // still matters is the ORDER — the cookie is consulted before storage,
+        // because it is what SSR already used.
+        //
+        // BOUNDED to `readStoredTheme`, not measured across the file. The first
+        // version of this assertion compared positions in the whole source and
+        // was satisfied by the IMPORT LIST, where the two names appear in the
+        // other order — it failed for a reason that had nothing to do with the
+        // resolution order it claimed to check.
+        const resolve = functionBodyOf(src, 'readStoredTheme');
+        expect(resolve.indexOf('THEME_COOKIE')).toBeGreaterThanOrEqual(0);
+        expect(resolve.indexOf('STORAGE_KEY')).toBeGreaterThanOrEqual(0);
+        expect(resolve.indexOf('THEME_COOKIE')).toBeLessThan(resolve.indexOf('STORAGE_KEY'));
         expect(src).toMatch(/localStorage\.getItem\(STORAGE_KEY\)/);
         expect(src).toMatch(/prefers-color-scheme: light/);
         // Dark is the documented fallback.

@@ -48,7 +48,7 @@ export function SessionExpiredNotice() {
             <span>{t('body')}</span>
             <a
                 href="/login"
-                className="font-medium text-brand-default underline underline-offset-2"
+                className="font-medium text-content-brand underline underline-offset-2"
             >
                 {t('action')}
             </a>

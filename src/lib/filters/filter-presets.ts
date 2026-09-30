@@ -19,6 +19,7 @@
  */
 
 import type { FilterState } from '@/components/ui/filter/filter-state';
+import { uiStorageKey } from '@/lib/ui-storage';
 
 export interface FilterPreset {
     /** Stable id — generated once at creation. */
@@ -34,9 +35,19 @@ export interface FilterPreset {
 const MAX_NAME_LENGTH = 64;
 const MAX_PRESETS_PER_PAGE = 20;
 
-function storageKey(tenantSlug: string, page: string): string {
-    return `inflect:filters:${tenantSlug}:${page}`;
+/**
+ * The key one page's presets live under.
+ *
+ * EXPORTED so the `storage`-event listener in `use-filter-presets` compares
+ * against this rather than rebuilding the literal — a reader that spells the key
+ * itself is free to disagree with the writer, which is the drift
+ * `ThemeProvider`'s cookie regex demonstrated.
+ */
+export function presetsStorageKey(tenantSlug: string, page: string): string {
+    return uiStorageKey('filters', tenantSlug, page);
 }
+
+const storageKey = presetsStorageKey;
 
 function getStorage(): Storage | null {
     if (typeof window === 'undefined') return null;

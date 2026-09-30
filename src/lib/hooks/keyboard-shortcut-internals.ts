@@ -130,6 +130,34 @@ export function parseShortcut(input: string): ParsedShortcut {
     return { key, modifiers, usesMod, raw };
 }
 
+/**
+ * The PHYSICAL code a single letter or digit sits on, or null for anything else.
+ *
+ * `event.key` carries what the layout PRODUCES. On a Bulgarian layout the key
+ * labelled K produces 'к' (Cyrillic ka), so `'к' === 'k'` is false and every
+ * letter shortcut in the app silently stopped working for that user —
+ * `mod+k` opened nothing. `event.code` carries WHICH KEY was pressed, which is
+ * what a shortcut like "Ctrl+K" actually means.
+ *
+ * NAMED keys and PUNCTUATION are deliberately excluded and keep matching on
+ * `event.key`. '/' , '?' and ',' live on different physical keys across layouts,
+ * so a code-based match would fire them from wherever the US layout happens to
+ * put them — the opposite of the fix.
+ *
+ * The trade-off, stated rather than hidden: a Dvorak user pressing the key in
+ * the QWERTY 'K' POSITION now triggers `mod+k`, even though their layout prints
+ * 'v' there. That is the same rule every native application uses, and it is the
+ * cost of making the shortcut mean a key rather than a glyph.
+ *
+ * Numpad digits are NOT matched: `Digit0`-`Digit9` only, so `Numpad1` does not
+ * fire a '1' shortcut while somebody is typing figures.
+ */
+export function physicalCodeFor(key: string): string | null {
+    if (/^[a-z]$/.test(key)) return `Key${key.toUpperCase()}`;
+    if (/^[0-9]$/.test(key)) return `Digit${key}`;
+    return null;
+}
+
 export function matchShortcut(event: KeyboardEvent, parsed: ParsedShortcut): boolean {
     const { modifiers, usesMod, key } = parsed;
 
@@ -144,6 +172,17 @@ export function matchShortcut(event: KeyboardEvent, parsed: ParsedShortcut): boo
     // Loose match on shift — "?" is Shift+/ on a US layout. Only require
     // shift when the author explicitly asked for it.
     if (modifiers.shift && !event.shiftKey) return false;
+
+    // Letters and digits match the PHYSICAL key; everything else matches what
+    // the layout produced. See `physicalCodeFor`.
+    const physical = physicalCodeFor(key);
+    if (physical) {
+        // `event.code` is absent on synthetic events that predate this change
+        // and in some older test fixtures. Falling back to `event.key` keeps
+        // those working rather than silently matching nothing — a shortcut that
+        // stops firing is the failure this whole change is about.
+        if (event.code) return event.code === physical;
+    }
 
     const eventKey = (event.key ?? '').toLowerCase();
     return eventKey === key;

@@ -10581,7 +10581,7 @@
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
-    "description": "Press ? any time to show this list. Shortcuts are ignored while you're typing.",
+    "description": "Press Ctrl+/ (⌘/ on a Mac) any time to show this list. Shortcuts are ignored while you're typing.",
     "availableNow": "Available now",
     "noGlobal": "No global shortcuts are registered yet",
     "inDialogs": "In dialogs & sheets",

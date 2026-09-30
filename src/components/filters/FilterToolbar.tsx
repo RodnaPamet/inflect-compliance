@@ -182,8 +182,16 @@ export function FilterToolbar({
         [state],
     );
 
+    const toolbarRef = useRef<HTMLDivElement>(null);
+
     return (
-        <div className={`flex flex-wrap items-start gap-compact${className ? ` ${className}` : ''}`}>
+        // `toolbarRef` scopes the `f` shortcut to this region — see
+        // `FilterSelect`'s `hostRef`. Without it `f` was bound globally, which
+        // takes the character from every speech-input user on the page.
+        <div
+            ref={toolbarRef}
+            className={`flex flex-wrap items-start gap-compact${className ? ` ${className}` : ''}`}
+        >
             {leading ? (
                 <div
                     className="flex items-center gap-tight"
@@ -194,6 +202,7 @@ export function FilterToolbar({
             ) : null}
             <div className="flex flex-wrap items-center gap-tight">
                 <FilterUI.Select
+                    hostRef={toolbarRef}
                     filters={filters}
                     activeFilters={activeFilters}
                     onSelect={(key, value) => dispatchOnSelect(filters, ctx, String(key), value as string | string[])}
