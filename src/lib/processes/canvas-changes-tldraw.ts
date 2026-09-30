@@ -87,7 +87,14 @@ export interface TldrawRecordLike {
      */
     fromId?: string;
     toId?: string;
-    props?: Record<string, unknown>;
+    /**
+     * Declared `object` rather than `Record<string, unknown>` because that is
+     * what `TLUnknownShape` says, and a narrower declaration here would make
+     * the real store type unassignable. Reads go through `propsOf`, which is
+     * the one place the widening happens and is sound: indexing an object by
+     * string yields `unknown`, which is exactly how the comparison treats it.
+     */
+    props?: object;
 }
 
 /** A `RecordsDiff`, narrowed to what this file reads. */
@@ -194,13 +201,18 @@ function persistedPropsFor(subject: Subject): readonly string[] | null {
     }
 }
 
+/** The one place `object` is read as a string-keyed bag. */
+function propsOf(r: TldrawRecordLike): Record<string, unknown> {
+    return (r.props ?? {}) as Record<string, unknown>;
+}
+
 function changedProps(
     from: TldrawRecordLike,
     to: TldrawRecordLike,
     subject: Subject,
 ): boolean {
-    const a = from.props ?? {};
-    const b = to.props ?? {};
+    const a = propsOf(from);
+    const b = propsOf(to);
     const keys = persistedPropsFor(subject) ?? [
         ...new Set([...Object.keys(a), ...Object.keys(b)]),
     ];
@@ -288,4 +300,28 @@ export function classifyTldrawDiff(diff: TldrawDiffLike): ClassifiedChange[] {
     }
 
     return out;
+}
+
+/**
+ * The tldraw-facing entry point — what the host actually calls.
+ *
+ * `RecordsDiff` keys its maps by BRANDED ids (`TLShapeId`, `TLBindingId`, …),
+ * and a `Record<TLShapeId, R>` is not assignable to `Record<string, R>`: the
+ * branded key set has no index signature for every string. Rebuilding the maps
+ * through `Object.entries` widens the keys honestly, with no cast anywhere.
+ *
+ * The structural `classifyTldrawDiff` stays exported because it is what the
+ * tests drive — the same property that let the xyflow mapper be tested without
+ * mounting xyflow.
+ */
+export function classifyTldrawStoreDiff(diff: {
+    added: Readonly<Record<string, TldrawRecordLike>>;
+    updated: Readonly<Record<string, readonly [TldrawRecordLike, TldrawRecordLike]>>;
+    removed: Readonly<Record<string, TldrawRecordLike>>;
+}): ClassifiedChange[] {
+    return classifyTldrawDiff({
+        added: Object.fromEntries(Object.entries(diff.added)),
+        updated: Object.fromEntries(Object.entries(diff.updated)),
+        removed: Object.fromEntries(Object.entries(diff.removed)),
+    });
 }
