@@ -97,6 +97,11 @@ import { useProximityAutoBind } from "@/lib/processes/use-proximity-auto-bind";
 import { useUnsavedChangesWarning, useUnsavedNavigationGuard } from "@/lib/hooks";
 import { useCanvasHistory } from "@/lib/processes/use-canvas-history";
 import { useCanvasAutosave } from "@/lib/processes/use-canvas-autosave";
+import { batchIsSubstantive } from "@/lib/processes/canvas-changes";
+import {
+    classifyXyflowEdgeChange,
+    classifyXyflowNodeChange,
+} from "@/lib/processes/canvas-changes-xyflow";
 import { useCanvasChangeEmitter } from "@/lib/processes/canvas-change-events";
 import { CanvasEmphasisProvider } from "@/lib/processes/canvas-emphasis-context";
 import { inferEdgeKind } from "@/lib/processes/edge-kind-inference";
@@ -1005,48 +1010,25 @@ function Inner({
 
     // ─── Canvas plumbing (xyflow change handlers + drop) ───────────
     //
-    // R28 — change classification. xyflow's NodeChange / EdgeChange
-    // unions carry both substantive edits (add, remove, position-
-    // commit) AND transient flicker (selection, dimensions,
-    // position-during-drag). We mark dirty + push history only on
-    // the substantive subset so autosave doesn't fire on every
-    // selection click and undo doesn't bury a real undo point
-    // under twenty drag-tick entries.
-    const isSubstantiveNodeChange = (c: NodeChange): boolean => {
-        switch (c.type) {
-            case "add":
-            case "remove":
-                return true;
-            case "position":
-                // `dragging: false` marks the commit (mouse-up).
-                // Intermediate drag ticks have `dragging: true`
-                // and shouldn't push history.
-                return c.dragging === false;
-            case "replace":
-                // Inspector edits. `updateNodeData` (the ONLY instance-level
-                // node mutation in this component) queues a store update, which
-                // xyflow diffs into a `replace` change and forwards here — so
-                // falling through to `default: false` meant label / subtitle /
-                // size / linked-entity edits were neither autosaved NOR
-                // undoable, while ProcessInspector told the user "Click off the
-                // field or press Enter to save the edit."
-                //
-                // Classified here rather than by calling history.push +
-                // markDirty inside handleInspectorUpdate: doing both would push
-                // TWO undo entries per edit, and this way any future
-                // updateNodeData caller is covered by construction.
-                return true;
-            default:
-                return false;
-        }
-    };
-    const isSubstantiveEdgeChange = (c: EdgeChange): boolean => {
-        return c.type === "add" || c.type === "remove";
-    };
-
+    // CHANGE CLASSIFICATION LIVES IN THE ADAPTER (#2961).
+    //
+    // These were two inline predicates switching over xyflow's `NodeChange` and
+    // `EdgeChange` unions — so the knowledge of what counts as an edit was
+    // written in one engine's vocabulary and would have to be re-derived in the
+    // next one's. It now lives in `lib/processes/canvas-changes.ts` (the
+    // vocabulary, engine-free) plus one mapper per engine, with every comment
+    // that made the original correct carried across verbatim.
+    //
+    // The asymmetry on `replace` is the part worth knowing: a NODE replace is
+    // substantive because `updateNodeData` is the only thing that emits one and
+    // nothing else pushes history for it; an EDGE replace is NOT, because
+    // `handleEdgeUpdate` below pushes history itself. The adapter names that
+    // third case `handled-by-caller` rather than lying about it.
     const onNodesChange = useCallback<OnNodesChange>(
         (changes: NodeChange[]) => {
-            const substantive = changes.some(isSubstantiveNodeChange);
+            const substantive = batchIsSubstantive(
+                changes.map(classifyXyflowNodeChange),
+            );
             if (substantive) {
                 // Snapshot the PRE-change state so undo restores
                 // exactly what was there before this edit.
@@ -1059,7 +1041,9 @@ function Inner({
     );
     const onEdgesChange = useCallback<OnEdgesChange>(
         (changes: EdgeChange[]) => {
-            const substantive = changes.some(isSubstantiveEdgeChange);
+            const substantive = batchIsSubstantive(
+                changes.map(classifyXyflowEdgeChange),
+            );
             if (substantive) {
                 history.push({ nodes, edges });
                 autosave.markDirty();
