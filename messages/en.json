@@ -28,7 +28,8 @@
       "title": "Something went wrong",
       "body": "This page encountered an error. You can try again or navigate to another section using the sidebar.",
       "errorId": "Error ID: {id}",
-      "goToDashboard": "Go to Dashboard"
+      "goToDashboard": "Go to Dashboard",
+      "tryAgain": "Try again"
     },
     "filterGroups": {
       "attributes": "Attributes",
@@ -74,7 +75,9 @@
       "confirmTitle": "{verb} {count} {noun}?",
       "confirmDescription": "This removes the selected {noun} from your workspace.",
       "context": "Context",
-      "detailSections": "Detail sections"
+      "detailSections": "Detail sections",
+      "editColumns": "Edit columns",
+      "noItemsFound": "No items found"
     },
     "ui": {
       "select": "Select…",
@@ -105,7 +108,20 @@
       "clearFilters": "Clear filters",
       "noEntitiesAvailable": "No {entity}s available",
       "noEntitiesMatch": "No {entity}s match",
-      "moreActions": "More actions"
+      "moreActions": "More actions",
+      "menu": "Menu",
+      "popoverContentDesc": "Popover content",
+      "learnMore": "Learn more",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "options": "Options",
+      "dismiss": "Dismiss",
+      "breadcrumb": "Breadcrumb",
+      "undo": "Undo",
+      "undoWindow": "{label} window",
+      "secondsRemaining": "{seconds}s remaining",
+      "switchToLightTheme": "Switch to light theme",
+      "switchToDarkTheme": "Switch to dark theme"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -184,7 +200,12 @@
       "tests": "Tests",
       "vendors": "Vendors"
     },
-    "retry": "Retry"
+    "retry": "Retry",
+    "skeleton": {
+      "dashboard": "Loading dashboard",
+      "details": "Loading details",
+      "settings": "Loading settings"
+    }
   },
   "login": {
     "title": "Inflect Compliance",
@@ -262,7 +283,16 @@
     "securityTesting": "Security Testing",
     "compliance": "Compliance",
     "frameworks": "Frameworks",
-    "coverage": "Coverage map"
+    "coverage": "Coverage map",
+    "openNavigationMenu": "Open navigation menu",
+    "brandHome": "Inflect Compliance — go to dashboard",
+    "accountMenu": "Account menu",
+    "noBreadcrumbs": "No breadcrumbs",
+    "openOrgNavigationMenu": "Open organization navigation menu",
+    "accountMenuFor": "Account menu for {name}",
+    "account": "Account",
+    "signOut": "Sign out",
+    "closeNavigationDrawer": "Close navigation drawer"
   },
   "dashboard": {
     "title": "Compliance Dashboard",
@@ -6271,7 +6301,8 @@
       "placeholder": "Select…",
       "emptyState": "No matches",
       "createLabel": "Create \"{search}\"",
-      "createLabelEmpty": "Create new option…"
+      "createLabelEmpty": "Create new option…",
+      "triggerLabel": "Select"
     },
     "form": {
       "required": "Required",

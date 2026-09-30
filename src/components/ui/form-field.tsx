@@ -36,6 +36,7 @@
  */
 
 import { cn } from "@/lib/cn";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 import { Label } from "./label";
 import { FormDescription } from "./form-description";
@@ -96,6 +97,7 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
         },
         ref,
     ) => {
+        const t = useTranslations("common.ui");
         const autoId = React.useId();
 
         // Preserve a caller-provided id on the child; otherwise derive
@@ -162,8 +164,8 @@ const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(
                                 content={hint}
                                 aria-label={
                                     typeof label === "string"
-                                        ? `More info about ${label}`
-                                        : "More information"
+                                        ? t("moreInfoAbout", { title: label })
+                                        : t("moreInformation")
                                 }
                                 iconClassName="h-3.5 w-3.5"
                             />

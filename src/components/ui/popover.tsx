@@ -19,6 +19,7 @@
 import { cn } from "@/lib/cn";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
+import { useTranslations } from "next-intl";
 import {
   ButtonHTMLAttributes,
   HTMLAttributes,
@@ -78,6 +79,7 @@ function PopoverRoot({
   anchor,
   triggerTooltip,
 }: PopoverProps) {
+  const t = useTranslations("common.ui");
   const { isMobile } = useMediaQuery();
   // When a trigger tooltip is requested, wrap the whole Radix Trigger ELEMENT
   // (not the inner button) in <Tooltip>. Order matters: Tooltip OUTER →
@@ -118,8 +120,8 @@ function PopoverRoot({
                 — content-specific titles still win via Drawer.Title
                 inside the `content` slot. */}
             <VisuallyHidden.Root>
-              <Drawer.Title>Menu</Drawer.Title>
-              <Drawer.Description>Popover content</Drawer.Description>
+              <Drawer.Title>{t("menu")}</Drawer.Title>
+              <Drawer.Description>{t("popoverContentDesc")}</Drawer.Description>
             </VisuallyHidden.Root>
             <div className="sticky top-0 z-20 flex w-full items-center justify-center rounded-t-[10px] bg-inherit">
               <div className="bg-border-default my-3 h-1 w-12 rounded-full" />

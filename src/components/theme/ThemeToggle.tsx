@@ -9,6 +9,7 @@
  */
 
 import { Moon, Sun } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useTheme } from './ThemeProvider';
 
@@ -20,8 +21,9 @@ export interface ThemeToggleProps {
 
 export function ThemeToggle({ className, id = 'theme-toggle' }: ThemeToggleProps) {
     const { theme, toggle } = useTheme();
+    const t = useTranslations('common.ui');
     const isDark = theme === 'dark';
-    const label = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+    const label = isDark ? t('switchToLightTheme') : t('switchToDarkTheme');
 
     return (
         <Tooltip content={label}>

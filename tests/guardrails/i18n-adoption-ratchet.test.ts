@@ -48,13 +48,18 @@
  *     (some partial migrations do today); catching every straggler is
  *     the migration PRs' job, not this ratchet's. The high-value
  *     invariant here is: no NEW surface ships without next-intl.
- *   • Regex-based, so text reaching the DOM only via a variable or a
- *     child component is invisible to it. It catches the common case
- *     — literal strings in JSX / props — which is exactly what "new
- *     UI strings go through next-intl" means in practice.
+ *   • JSX text is read from the TypeScript AST; the UI-prop check is a
+ *     regex. Text reaching the DOM through a variable, a child
+ *     component, a parameter default (`ariaLabel = 'Tabs'`), a literal
+ *     inside an attribute EXPRESSION (`aria-label={a ? 'x' : 'y'}`) or a
+ *     text node sitting beside an `{expression}` is invisible to it. It
+ *     catches the common case — literal strings in JSX / props — which is
+ *     exactly what "new UI strings go through next-intl" means in
+ *     practice.
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import * as ts from 'typescript';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const APP_DIR = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)');
@@ -75,27 +80,21 @@ function stripComments(src: string): string {
 
 /**
  * Strip TypeScript generic type annotations + casts — `: Promise<{…}>`
- * and `as Promise<Row[]>` — before scanning. These never hold
- * user-facing UI text, but their closing `>` followed later by a JSX
- * `<` makes the `JSX_TEXT` regex match the *code* in between (a
- * server component's `params: Promise<…>` signature, or an
- * `as unknown as Promise<Row[]>` cast sitting just above the
- * `return (<Client …>`). Removing the annotation removes the false
- * positive; because the stripped span is type-only, no real UI string
- * can be lost. Without this, text-free `page.tsx`/`loading.tsx` server
- * shims false-positive as "un-migrated".
+ * and `as Promise<Row[]>`, and explicit call type arguments like
+ * `useRef<Set<string>>(…)` — before the UI-prop scan.
+ *
+ * It was written for the regex JSX-text check this file used to run,
+ * whose `>…<` window read the code between a generic's closing `>` and
+ * the next JSX `<` as a text node. JSX text now comes from the AST
+ * (`hasJsxTextBetweenTags`), where that cannot happen. When the switch
+ * was made, no UI_PROP verdict over the 977 scanned files depended on
+ * this step; it stays so that change replaced only the JSX-text half of
+ * the detector.
  */
 function stripTypeAnnotations(src: string): string {
     return (
         src
             .replace(/(:|(?:\bas\b))\s*[A-Za-z_][\w.]*\s*<[\s\S]*?>/g, '$1 _')
-            // Explicit type ARGUMENTS on a call — `useRef<Set<string>>(…)`,
-            // `useState<Row[]>(…)`. Without this, two such calls on adjacent
-            // lines leave the first one's closing `>` and the second one's
-            // opening `<` with ordinary code between them, and `JSX_TEXT`
-            // reads that code as a text node. That is not hypothetical: two
-            // neighbouring `useRef<…>` lines in `data-table.tsx` reported the
-            // file as un-migrated UI while it renders no text at all.
             // Anchored on `>(` so it only ever eats a generic call site, never
             // JSX (which opens with `<`) or a `a < b` comparison.
             .replace(/\b([A-Za-z_][\w.]*)\s*<[^<>]*(?:<[^<>]*>[^<>]*)*>\s*\(/g, '$1(')
@@ -104,9 +103,51 @@ function stripTypeAnnotations(src: string): string {
 
 const USES_INTL = /\b(useTranslations|getTranslations)\b/;
 
-// A JSX text node holding a real (>=3-char lowercase) word, with no
-// nested tags/expressions inside the node.
-const JSX_TEXT = />[^<>{}]*[a-z]{3,}[^<>{}]*</;
+/**
+ * A JSX text node holding a real (>=3-char lowercase) word, sitting
+ * directly between two tags: `>Save changes<`, not `>Save {n} rows<`.
+ *
+ * The same rule the regex `>[^<>{}]*[a-z]{3,}[^<>{}]*<` stated, read from
+ * the AST instead of from source text. A regex cannot tell a text node
+ * from TypeScript: two generic bases in an `extends` clause
+ * (`>,\n VariantProps<`), an arrow's `=>` followed later by a JSX `<`, and
+ * the code between one element's closing `>` and the next element's `<`
+ * all read as text. Measured on 2026-09-29 over the 977 files this ratchet
+ * scans: 39 of the 76 UNMIGRATED_BASELINE entries were listed for that
+ * syntax alone (button, card, checkbox, the chart primitives, the app
+ * shell) and render no JSX text at all, while the AST reading flagged no
+ * file the regex did not — 39 fewer, 0 new.
+ *
+ * The `>` / `<` neighbour test is what keeps it the SAME rule. A text node
+ * beside an `{expression}` was invisible to the regex and still is; widening
+ * that is a separate decision, because it surfaces files no baseline lists.
+ */
+const JSX_WORD = /[a-z]{3,}/;
+function hasJsxTextBetweenTags(raw: string): boolean {
+    const sf = ts.createSourceFile(
+        'scan.tsx',
+        raw,
+        ts.ScriptTarget.Latest,
+        false,
+        ts.ScriptKind.TSX,
+    );
+    let found = false;
+    const visit = (node: ts.Node): void => {
+        if (found) return;
+        if (
+            ts.isJsxText(node) &&
+            JSX_WORD.test(node.text) &&
+            raw[node.getFullStart() - 1] === '>' &&
+            raw[node.getEnd()] === '<'
+        ) {
+            found = true;
+            return;
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    return found;
+}
 
 // UI-text-bearing props / object keys whose value is a STRING LITERAL
 // containing a >=2-char lowercase run (skips acronyms like 'ISO',
@@ -117,8 +158,10 @@ const UI_PROP =
 
 /** Heuristic: does this source render hardcoded, user-facing text? */
 export function hasHardcodedUiText(raw: string): boolean {
-    const src = stripTypeAnnotations(stripComments(raw));
-    return JSX_TEXT.test(src) || UI_PROP.test(src);
+    return (
+        hasJsxTextBetweenTags(raw) ||
+        UI_PROP.test(stripTypeAnnotations(stripComments(raw)))
+    );
 }
 
 /**
@@ -159,18 +202,14 @@ function rel(abs: string): string {
 // (`src/app/org`) are FULLY migrated — nothing from them is
 // grandfathered. The entries below are all `src/components/**`
 // primitives that the 2026-07 component-tree wave did not reach
-// (charts, low-level UI, layout shells like ListPageShell that are
-// imported by server components and so cannot take the client
-// `useTranslations` hook). Each is paid down by localising the file
-// and deleting its line here.
+// (charts, low-level UI, layout shells like ListPageShell). Being
+// imported by server components is no reason to stay here:
+// `useTranslations` also runs in a non-async Server Component, which
+// is how `skeleton.tsx` (rendered by server `loading.tsx` files) left.
+// Each is paid down by localising the file and deleting its line here.
 const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/dev/swr-devtools.tsx',
-    'src/components/layout/AppShell.tsx',
-    'src/components/layout/EntityListPage.tsx',
     'src/components/layout/ListPageShell.tsx',
-    'src/components/layout/PageHeader.tsx',
-    'src/components/layout/TopChrome.tsx',
-    'src/components/layout/nav-item.tsx',
     'src/components/layout/org-workspace-switcher.tsx',
     'src/components/layout/tenant-switcher.tsx',
     'src/components/onboarding/Nis2SelfAssessmentStep.tsx',
@@ -181,64 +220,22 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/ui/FrameworkMinimap.tsx',
     'src/components/ui/FreshnessBadge.tsx',
     'src/components/ui/GraphExplorer.tsx',
-    'src/components/ui/HeroMetric.tsx',
-    'src/components/ui/KpiCard.tsx',
     'src/components/ui/NextBestActionCard.tsx',
     'src/components/ui/OnboardingTour.tsx',
-    'src/components/ui/ProgressCard.tsx',
-    'src/components/risks/RiskMatrixCell.tsx',
     'src/components/ui/SankeyChart.tsx',
     'src/components/ui/TreeExpandCollapseToggle.tsx',
     'src/components/ui/TreeView.tsx',
     'src/components/ui/TruncationBanner.tsx',
-    'src/components/ui/accordion.tsx',
     'src/components/ui/ai-assist-rail.tsx',
-    'src/components/ui/animated-size-container.tsx',
-    'src/components/ui/badge.tsx',
-    'src/components/ui/button.tsx',
-    'src/components/ui/card.tsx',
     'src/components/ui/charts/ale-histogram.tsx',
-    'src/components/ui/charts/areas.tsx',
-    'src/components/ui/charts/bars.tsx',
-    'src/components/ui/charts/funnel-chart.tsx',
-    'src/components/ui/charts/gantt-chart.tsx',
-    'src/components/ui/charts/line-chart.tsx',
     'src/components/ui/charts/time-series-chart.tsx',
-    'src/components/ui/checkbox.tsx',
-    'src/components/ui/checklist-card.tsx',
-    'src/components/ui/combobox/index.tsx',
-    'src/components/ui/combobox/virtualized-options.tsx',
     'src/components/ui/date-picker/date-picker.tsx',
     'src/components/ui/date-picker/date-range-picker.tsx',
-    'src/components/ui/date-picker/trigger.tsx',
-    'src/components/ui/empty-state.tsx',
-    'src/components/ui/error-state.tsx',
     'src/components/ui/filter/filter-list.tsx',
     'src/components/ui/filter/filter-select.tsx',
-    'src/components/ui/filter/use-filter-card-visibility.tsx',
-    'src/components/ui/form.tsx',
-    'src/components/ui/hooks/use-copy-to-clipboard.tsx',
-    'src/components/ui/input.tsx',
-    'src/components/ui/kpi-filter-card.tsx',
-    'src/components/ui/meta-strip.tsx',
-    'src/components/ui/number-stepper.tsx',
-    'src/components/ui/popover.tsx',
-    'src/components/ui/progress-bar.tsx',
-    'src/components/ui/radio-group.tsx',
     'src/components/ui/selection-summary-panel.tsx',
-    'src/components/ui/skeleton.tsx',
-    'src/components/ui/status-badge.tsx',
     'src/components/ui/status-breakdown.tsx',
-    'src/components/ui/switch.tsx',
-    'src/components/ui/tab-select.tsx',
     'src/components/ui/table-load-more-footer.tsx',
-    'src/components/ui/table/edit-columns-button.tsx',
-    'src/components/ui/table/table-empty-state.tsx',
-    'src/components/ui/table/use-columns-dropdown.tsx',
-    'src/components/ui/table/virtual-table-body.tsx',
-    'src/components/ui/textarea.tsx',
-    'src/components/ui/tooltip.tsx',
-    'src/components/ui/typography.tsx',
     'src/components/ui/view-toggle.tsx',
 ]);
 
@@ -299,6 +296,43 @@ describe('i18n adoption ratchet — new UI goes through next-intl', () => {
 describe('i18n adoption ratchet — detector self-test', () => {
     it('flags a JSX text node with a real word', () => {
         expect(hasHardcodedUiText('<h1>Dashboard overview</h1>')).toBe(true);
+    });
+
+    it('flags a text node that spans lines between two tags', () => {
+        expect(
+            hasHardcodedUiText('const x = (\n  <p>\n    Nothing to show yet\n  </p>\n);'),
+        ).toBe(true);
+    });
+
+    it('does NOT flag the TypeScript syntax the `>…<` regex read as text', () => {
+        // The three shapes that kept 39 text-free files in the baseline;
+        // each of these returned true before JSX text came from the AST.
+        // Two generic bases in an `extends` clause: `>,\n  VariantProps<`.
+        expect(
+            hasHardcodedUiText(
+                'export interface ButtonProps\n' +
+                    '    extends React.ButtonHTMLAttributes<HTMLButtonElement>,\n' +
+                    '        VariantProps<typeof buttonVariants> {}\n' +
+                    'export const B = () => <button />;',
+            ),
+        ).toBe(false);
+        // An arrow's `=>`, then code, then the next JSX `<`.
+        expect(
+            hasHardcodedUiText(
+                'function S() {\n' +
+                    '  const open = useCallback(() => setDrawerOpen(true), []);\n' +
+                    '  return (<div onClick={open} />);\n}',
+            ),
+        ).toBe(false);
+        // Code between one element's closing `>` and the next element's `<`.
+        expect(
+            hasHardcodedUiText(
+                'function C() {\n' +
+                    '  const label = <span />;\n' +
+                    '  const interactive = Boolean(onClick) && !isEmpty;\n' +
+                    '  return <div>{label}</div>;\n}',
+            ),
+        ).toBe(false);
     });
 
     it('flags a hardcoded UI-text prop literal', () => {
