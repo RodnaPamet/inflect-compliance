@@ -181,7 +181,21 @@ const ROOT = path.resolve(__dirname, '../..');
 // 2026-09-29 — 290 -> 291: tests/rendered/external-tools-prior-state-pairing.test.tsx,
 // the operator surface for the prior-state read pairing (#2982). The floor has
 // zero slack by design, so a new rendered file raises it in the same diff.
-const RENDERED_TEST_FLOOR = 300;
+// 2026-09-30 — 300 -> 309 (#2961, the tldraw canvas migration). Nine suites
+// across the phase, measured here with `ls tests/rendered/*.test.tsx | wc -l`
+// = 309: the autosave error chip, the tldraw mount + shape registration, the
+// host's row loading, the export viewport binding, the editor-to-rows
+// projection, the autosave composition, the no-retry property, and the
+// inspector's server-matched bounds.
+//   Worth recording HOW this fired, because it is the accumulation case the
+// note above warns about rather than a single addition. Eight of the nine
+// merged one at a time, each leaving the floor at 300 with the slack growing
+// under it — every one of those runs was green. The ninth took slack to 9 and
+// the sentinel fired on a branch whose own contribution was one file. So the
+// raise takes the MEASURED 309, not 301: the eight already-accumulated suites
+// are exactly what the sentinel refuses to leave spendable, and locking them
+// in is the point.
+const RENDERED_TEST_FLOOR = 309;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
