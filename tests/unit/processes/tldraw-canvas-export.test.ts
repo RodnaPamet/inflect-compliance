@@ -20,7 +20,9 @@
  */
 import {
     EmptyCanvasExportError,
+    attachTldrawCanvasToEvidence,
     copyTldrawCanvasToClipboard,
+    exportTldrawCanvasAsPdf,
     exportTldrawCanvasAsPng,
     exportTldrawCanvasAsSvg,
     injectBackgroundRect,
@@ -346,5 +348,186 @@ describe('clipboard', () => {
             copyTldrawCanvasToClipboard({ editor: editor as never, mapName: 'm', compositeImpl: impl }),
         ).rejects.toThrow();
         expect(editor.toImage).not.toHaveBeenCalled();
+    });
+});
+
+describe('server-backed exports — PDF', () => {
+    function objectUrlStubs() {
+        const created: Blob[] = [];
+        const revoked: string[] = [];
+        (URL as unknown as { createObjectURL: unknown }).createObjectURL = (b: Blob) => {
+            created.push(b);
+            return 'blob:pdf-1';
+        };
+        (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = (u: string) => {
+            revoked.push(u);
+        };
+        return { created, revoked };
+    }
+
+    it('POSTs the png data URL to the export-pdf route', async () => {
+        objectUrlStubs();
+        const { impl } = recordingComposite();
+        const calls: Array<[string, RequestInit | undefined]> = [];
+        const fetchImpl = jest.fn(async (u: string, init?: RequestInit) => {
+            calls.push([u, init]);
+            return { ok: true, status: 200, blob: async () => new Blob(['%PDF']) };
+        }) as unknown as typeof fetch;
+
+        await exportTldrawCanvasAsPdf({
+            editor: fakeEditor() as never,
+            mapName: 'Invoice approval',
+            tenantSlug: 'acme',
+            mapId: 'map-1',
+            compositeImpl: impl,
+            fetchImpl,
+        });
+
+        expect(calls[0]![0]).toBe('/api/t/acme/processes/map-1/export-pdf');
+        expect(calls[0]![1]?.method).toBe('POST');
+        const body = JSON.parse(String(calls[0]![1]?.body));
+        expect(body.pngDataUrl.startsWith('data:image/png')).toBe(true);
+    });
+
+    it('downloads the returned blob as a .pdf, and revokes the url', async () => {
+        // The route composes the document; this must download what came BACK,
+        // not the png it sent.
+        const { created, revoked } = objectUrlStubs();
+        const clicked: string[] = [];
+        jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+            this: HTMLAnchorElement,
+        ) {
+            clicked.push(`${this.download}|${this.href}`);
+        });
+        const { impl } = recordingComposite();
+        const fetchImpl = jest.fn(async () => ({
+            ok: true,
+            status: 200,
+            blob: async () => new Blob(['%PDF-1.7']),
+        })) as unknown as typeof fetch;
+
+        jest.useFakeTimers();
+        await exportTldrawCanvasAsPdf({
+            editor: fakeEditor() as never,
+            mapName: 'Accounts / Payable',
+            tenantSlug: 'acme',
+            mapId: 'map-1',
+            compositeImpl: impl,
+            fetchImpl,
+        });
+        expect(clicked).toEqual(['accounts-payable.pdf|blob:pdf-1']);
+        expect(created).toHaveLength(1);
+
+        // Revoked on a DELAY: revoking before the click settles cancels the
+        // download in some browsers.
+        expect(revoked).toEqual([]);
+        jest.advanceTimersByTime(1000);
+        expect(revoked).toEqual(['blob:pdf-1']);
+        jest.useRealTimers();
+    });
+
+    it('throws with the status when the route refuses', async () => {
+        objectUrlStubs();
+        const { impl } = recordingComposite();
+        const fetchImpl = jest.fn(async () => ({
+            ok: false,
+            status: 503,
+            blob: async () => new Blob(),
+        })) as unknown as typeof fetch;
+
+        await expect(
+            exportTldrawCanvasAsPdf({
+                editor: fakeEditor() as never,
+                mapName: 'm',
+                tenantSlug: 'acme',
+                mapId: 'map-1',
+                compositeImpl: impl,
+                fetchImpl,
+            }),
+        ).rejects.toThrow(/503/);
+    });
+
+    it('refuses an empty page before posting anything', async () => {
+        const { impl } = recordingComposite();
+        const fetchImpl = jest.fn() as unknown as typeof fetch;
+        await expect(
+            exportTldrawCanvasAsPdf({
+                editor: fakeEditor({ shapes: [] }) as never,
+                mapName: 'm',
+                tenantSlug: 'acme',
+                mapId: 'map-1',
+                compositeImpl: impl,
+                fetchImpl,
+            }),
+        ).rejects.toThrow(EmptyCanvasExportError);
+        expect(fetchImpl).not.toHaveBeenCalled();
+    });
+});
+
+describe('server-backed exports — Evidence', () => {
+    function evidenceFetch(body: unknown, ok = true) {
+        const forms: FormData[] = [];
+        const impl = jest.fn(async (_u: string, init?: RequestInit) => {
+            forms.push(init?.body as FormData);
+            return { ok, status: ok ? 201 : 500, json: async () => body };
+        }) as unknown as typeof fetch;
+        return { impl, forms };
+    }
+
+    it('posts multipart form data with the file, title and category', async () => {
+        const { impl: composite, out } = recordingComposite();
+        const { impl, forms } = evidenceFetch({ id: 'ev_1' });
+
+        const result = await attachTldrawCanvasToEvidence({
+            editor: fakeEditor() as never,
+            mapName: 'Invoice approval',
+            tenantSlug: 'acme',
+            mapId: 'map-1',
+            compositeImpl: composite,
+            fetchImpl: impl,
+        });
+
+        expect(result).toEqual({ evidenceId: 'ev_1' });
+        const form = forms[0]!;
+        expect(form.get('title')).toBe('Invoice approval — Process Map');
+        expect(form.get('category')).toBe('PROCESS_MAP');
+        const file = form.get('file') as File;
+        expect(file.name).toBe('invoice-approval.png');
+        expect(file.type).toBe('image/png');
+        // The composited bytes reached the upload, not the raw transparent png
+        // that went INTO the composite.
+        expect(file.size).toBe(out.size);
+    });
+
+    it('accepts either response shape the route has used', async () => {
+        // `id` above; `evidenceId` here. Both are live shapes and the xyflow
+        // path accepts both, so diverging would be a silent behaviour change.
+        const { impl: composite } = recordingComposite();
+        const { impl } = evidenceFetch({ evidenceId: 'ev_2' });
+        await expect(
+            attachTldrawCanvasToEvidence({
+                editor: fakeEditor() as never,
+                mapName: 'm',
+                tenantSlug: 'acme',
+                mapId: 'map-1',
+                compositeImpl: composite,
+                fetchImpl: impl,
+            }),
+        ).resolves.toEqual({ evidenceId: 'ev_2' });
+    });
+
+    it('throws with the status when the upload fails', async () => {
+        const { impl: composite } = recordingComposite();
+        const { impl } = evidenceFetch({}, false);
+        await expect(
+            attachTldrawCanvasToEvidence({
+                editor: fakeEditor() as never,
+                mapName: 'm',
+                tenantSlug: 'acme',
+                mapId: 'map-1',
+                compositeImpl: composite,
+                fetchImpl: impl,
+            }),
+        ).rejects.toThrow(/500/);
     });
 });

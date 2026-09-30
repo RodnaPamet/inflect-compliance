@@ -194,3 +194,86 @@ async function rasterise(opts: TldrawCanvasExportOptions): Promise<Blob> {
     const composite = opts.compositeImpl ?? compositeOntoBackground;
     return composite(blob, resolveBackground());
 }
+
+// ─── Server-backed exports ─────────────────────────────────────────────
+//
+// Both of these are "produce a PNG, then POST it" — the rasterising half is
+// engine-specific and the routes are not, so only the first half ports. The
+// URLs, payload shapes and return contracts are the xyflow ones unchanged,
+// because the server does not know or care which canvas drew the image.
+//
+// The Evidence path gets SIMPLER here, for the same reason the clipboard did:
+// its xyflow counterpart has to `atob` a base64 data URL back into a Blob
+// because `toPng` only returns a string. `toImage` already hands over the Blob
+// that `File` wants, so the decode step disappears rather than being ported.
+
+export interface TldrawCanvasServerExportOptions extends TldrawCanvasExportOptions {
+    /** Tenant slug + map id for the server-side endpoints. */
+    tenantSlug: string;
+    mapId: string;
+    /** Seam for tests. */
+    fetchImpl?: typeof fetch;
+}
+
+/**
+ * Render the current page server-side as a PDF and download it.
+ *
+ * The route takes the PNG and composes the document, so this sends a data URL
+ * and downloads whatever comes back — it does not build the PDF itself.
+ */
+export async function exportTldrawCanvasAsPdf(
+    opts: TldrawCanvasServerExportOptions,
+): Promise<void> {
+    const doFetch = opts.fetchImpl ?? globalThis.fetch;
+    const pngDataUrl = await blobToDataUrl(await rasterise(opts));
+
+    const res = await doFetch(
+        `/api/t/${opts.tenantSlug}/processes/${opts.mapId}/export-pdf`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pngDataUrl }),
+        },
+    );
+    if (!res.ok) throw new Error(`PDF export failed (${res.status})`);
+
+    const blobUrl = URL.createObjectURL(await res.blob());
+    try {
+        downloadDataUrl(blobUrl, safeFilename(opts.mapName, 'pdf'));
+    } finally {
+        // Revoked on a delay, not immediately: the anchor click is
+        // asynchronous in some browsers and revoking first cancels the
+        // download. Same delay the xyflow path uses.
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    }
+}
+
+/**
+ * Attach the current page to the tenant's Evidence library as a PNG.
+ *
+ * Auditors need a process map as an evidence artefact rather than as a
+ * screenshot, which is what this exists for.
+ */
+export async function attachTldrawCanvasToEvidence(
+    opts: TldrawCanvasServerExportOptions,
+): Promise<{ evidenceId: string }> {
+    const doFetch = opts.fetchImpl ?? globalThis.fetch;
+    const blob = await rasterise(opts);
+    const filename = safeFilename(opts.mapName, 'png');
+
+    const form = new FormData();
+    form.append('file', new File([blob], filename, { type: 'image/png' }));
+    form.append('title', `${opts.mapName} — Process Map`);
+    form.append('category', 'PROCESS_MAP');
+
+    const res = await doFetch(`/api/t/${opts.tenantSlug}/evidence/uploads`, {
+        method: 'POST',
+        body: form,
+    });
+    if (!res.ok) throw new Error(`Evidence upload failed (${res.status})`);
+
+    // The route has answered with both shapes over its life; accepting either
+    // is the xyflow behaviour and not worth diverging from here.
+    const body = (await res.json()) as { id?: string; evidenceId?: string };
+    return { evidenceId: body.id ?? body.evidenceId ?? '' };
+}
