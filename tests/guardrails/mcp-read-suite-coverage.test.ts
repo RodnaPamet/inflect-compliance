@@ -115,41 +115,6 @@ describe('MCP read suite — leak lock + read-only lock (per tool file)', () => 
         }
     });
 
-    /**
-     * The ONE admitted mutating import, and why.
-     *
-     * `external-tools.ts` stopped being read-only when #2861 gave it the
-     * external write path. At `PROPOSE_ONLY` a write becomes an `AgentProposal`
-     * for a human to approve, which needs `createAgentProposal`.
-     *
-     * Worth stating plainly: this lock is a NAME-BASED PROXY and that file was
-     * already past it. `recordIntent` writes an `ExternalWriteJournal` row from
-     * the same function and matches none of the verbs above, so the DRY_RUN
-     * write path has been importing a mutating usecase since #2983 without this
-     * guard noticing. Admitting one import by name is narrower than the hole
-     * that was already open, and it is recorded rather than silent.
-     *
-     * Every OTHER assertion in this block still applies to the file unchanged —
-     * it still goes through a usecase, still imports no Prisma and no
-     * repository — and every other tool file remains absolutely read-only.
-     */
-    const READ_ONLY_LOCK_EXEMPT: Readonly<Record<string, string>> = {
-        'external-tools.ts: createAgentProposal':
-            '#2861 — at PROPOSE_ONLY an external write is queued as a proposal for human '
-            + 'approval. This file is the external WRITE path, not a read tool.',
-    };
-
-    it('exempts nothing that has stopped being imported', () => {
-        // An exemption that outlives its import is a hole nobody reopened
-        // deliberately. Same shape the index and N+1 maps use.
-        for (const key of Object.keys(READ_ONLY_LOCK_EXEMPT)) {
-            const [base, name] = key.split(': ');
-            const file = files.find((f) => path.basename(f) === base);
-            expect(file).toBeDefined();
-            expect(fs.readFileSync(file!, 'utf8')).toContain(name);
-        }
-    });
-
     it('NO tool file imports a create/update/delete usecase (read-only lock)', () => {
         const mutating = /\b(create|update|delete|remove|apply|install|generate|propose|draft|assign|approve|execute)[A-Z]\w*/;
         const offenders: string[] = [];
@@ -157,8 +122,7 @@ describe('MCP read suite — leak lock + read-only lock (per tool file)', () => 
             const src = fs.readFileSync(file, 'utf8');
             for (const m of src.matchAll(/import\s+\{([^}]*)\}\s+from\s+['"]@\/app-layer\/usecases[^'"]*['"]/g)) {
                 for (const n of m[1].split(',').map((s) => s.trim())) {
-                    const key = `${path.basename(file)}: ${n}`;
-                    if (mutating.test(n) && !(key in READ_ONLY_LOCK_EXEMPT)) offenders.push(key);
+                    if (mutating.test(n)) offenders.push(`${path.basename(file)}: ${n}`);
                 }
             }
         }
