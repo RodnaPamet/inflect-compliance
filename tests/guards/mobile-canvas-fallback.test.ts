@@ -14,7 +14,7 @@ import * as path from "node:path";
 // String literals are KEPT — masking them would silently empty assertions that
 // harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike, re-derived per file rather than assumed from the directory.
-import { codeOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, "../..");
 const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -50,10 +50,31 @@ describe("Mobile PR-5 — Processes canvas fallback", () => {
 
     it("the canvas (PersistedProcessCanvas) is only in the non-mobile branch", () => {
         // The mobile fallback must NOT mount the heavy canvas.
-        const mobileBranch = src.slice(
-            src.indexOf("if (belowMd)"),
-            src.indexOf("return (", src.indexOf("if (belowMd)")),
-        );
+        //
+        // BOUND TO THE BLOCK, not sliced between two anchors. This read used to be
+        //
+        //     src.slice(src.indexOf("if (belowMd)"),
+        //               src.indexOf("return (", src.indexOf("if (belowMd)")))
+        //
+        // and that is vacuous the moment the first anchor moves: `indexOf` returns
+        // -1, `slice(-1, P)` has start > end, and the result is the EMPTY STRING —
+        // on which `not.toMatch` passes. Measured against a synthetic source whose
+        // mobile branch DID mount the canvas and whose flag was spelled
+        // `belowMdFlag`: slice length 0, assertion green, defect present.
+        //
+        // That matters here specifically because #2961 lists this file among the
+        // xyflow-coupled guards to rework at the renderer swap, and reworking the
+        // mobile gate is exactly what would move the anchor — so the failure would
+        // arrive in the same diff that stopped checking for it.
+        //
+        // `braceBlockAfter` THROWS on a missing anchor rather than returning '',
+        // which converts that silence into a red. It is the right helper *here*
+        // because both the anchor and the block's brace sit at paren depth zero;
+        // it is the WRONG helper for a callback passed as an argument
+        // (`useCallback(() => { … })`), where the body brace is at depth one and
+        // never counted — use `declarationOf` or `callExpressionOf` for those.
+        const mobileBranch = braceBlockAfter(src, "if \\(belowMd\\)");
+        expect(mobileBranch).toMatch(/return <ProcessListMobile/);
         expect(mobileBranch).not.toMatch(/PersistedProcessCanvas/);
     });
 });
