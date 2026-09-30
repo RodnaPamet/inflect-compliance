@@ -1702,23 +1702,6 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
-    if (proposal.kind === 'EXTERNAL_WRITE') {
-        // BEFORE the claim, deliberately. The claim flips the row to ACCEPTED,
-        // and this function's own comment explains why it is never handed back —
-        // so refusing after it would leave a proposal permanently ACCEPTED with
-        // nothing dispatched and no way to retry. Approving one of these has to
-        // dispatch an MCP call rather than create a record, and that job does not
-        // exist yet; until it does, the honest answer is that it cannot be
-        // approved, not that it was.
-        //
-        // Unreachable today — nothing creates this kind — and checked anyway,
-        // because "unreachable" is a claim about the current callers and a row
-        // can also arrive by other means.
-        throw badRequest(
-            'An EXTERNAL_WRITE proposal cannot be approved yet: approving one dispatches a '
-                + 'write to an external system, and that dispatch is not wired. Nothing was sent.',
-        );
-    }
     await runInTenantContext(ctx, async (db) => {
         await db.agentProposal.updateMany({
             where: { id, tenantId: ctx.tenantId, status: 'PENDING' },
