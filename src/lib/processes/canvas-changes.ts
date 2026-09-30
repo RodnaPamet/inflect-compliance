@@ -47,8 +47,26 @@
 /**
  * What the host should do about a change.
  *
- * Deliberately about CONSEQUENCE, not about the shape of the event: the host's
- * only question is "does this push an undo entry and mark the document dirty?".
+ * Deliberately about CONSEQUENCE, not about the shape of the event.
+ *
+ * ── AMENDED when the second engine arrived ───────────────────────────
+ *
+ * This said the host's only question is *"does this push an undo entry and mark
+ * the document dirty?"*, as a single question, because on xyflow those two
+ * consequences always coincide: that engine has no history of its own, so
+ * `use-canvas-history` is a hand-rolled snapshot stack the change handler
+ * pushes to explicitly.
+ *
+ * On tldraw they never coincide. The editor keeps its own undo stack — measured
+ * against a mounted one: `getCanUndo()` flips true after a `createShapes`, and
+ * `undo()` removes the shape — so its host marks dirty and pushes **nothing**.
+ * Feeding the app's history from there would double-handle undo, one entry from
+ * the editor and one from the app for a single edit, which is the defect
+ * `handled-by-caller` exists to prevent on the other side.
+ *
+ * So read `substantive` as **"an edit worth keeping"**, and let each host apply
+ * the consequences its engine leaves to it. The vocabulary still decides which
+ * changes matter; it no longer claims both consequences follow together.
  */
 export type ChangeSignificance =
     /** Push an undo entry and mark dirty. An edit the user would expect to keep. */
