@@ -174,12 +174,15 @@ const config = [
     },
     {
         // Legitimate clipboard call sites: the shared primitive itself, and
-        // the canvas exporter, which writes an image/png ClipboardItem —
+        // the canvas exporters, which write an image/png ClipboardItem —
         // `useCopyToClipboard` is text-only, and widening its contract for
         // every text caller to serve one image caller is the wrong trade.
+        // Both engines' exporters are listed; the tldraw one has the same
+        // justification and will outlive the xyflow one at the cutover.
         files: [
             'src/components/ui/hooks/use-copy-to-clipboard.tsx',
             'src/lib/processes/canvas-export.ts',
+            'src/lib/processes/tldraw-canvas-export.ts',
         ],
         rules: { 'no-restricted-syntax': 'off' },
     },

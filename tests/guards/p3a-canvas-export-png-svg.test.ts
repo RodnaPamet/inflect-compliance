@@ -10,7 +10,10 @@
  *
  *   1. `src/lib/processes/canvas-export.ts` owns the export
  *      mechanics (`exportCanvasAsPng`, `exportCanvasAsSvg`,
- *      filename sanitisation, fit-to-content transform).
+ *      fit-to-content transform). Filename sanitisation, the
+ *      theme-derived background and the download anchor moved to
+ *      `canvas-export-shared.ts` when the tldraw path arrived —
+ *      engine-agnostic, so shared rather than duplicated.
  *   2. `<CanvasExportMenu>` mounts a `<Popover>` trigger with two
  *      items; each fires the corresponding helper.
  *   3. `<CanvasDocumentBar>` accepts an `exportSlot` ReactNode so
@@ -33,7 +36,7 @@ import * as path from "node:path";
 // that harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike (re-derived per file, not assumed from the directory), so
 // `codeOf` is the right lexer and no language split is needed.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
@@ -41,6 +44,7 @@ const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8
 describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
     describe("Export helpers module", () => {
         const src = read("src/lib/processes/canvas-export.ts");
+        const shared = read("src/lib/processes/canvas-export-shared.ts");
 
         it("exports both PNG + SVG helpers with the canonical signature", () => {
             expect(src).toMatch(
@@ -89,8 +93,35 @@ describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
             // collapse repeats, cap length. A regression that lets
             // through path separators / quotes would surface as a
             // browser download warning.
-            expect(src).toMatch(/replace\(\/\[\^a-z0-9\]\+\/g/);
-            expect(src).toMatch(/\.slice\(0,\s*60\)/);
+            //
+            // Reads `canvas-export-shared.ts`: `safeFilename` moved there when
+            // the tldraw export path arrived, because a second copy would mean
+            // two answers to "what is a legal export filename". The assertion
+            // is unchanged — only the file it reads is.
+            expect(shared).toMatch(/replace\(\/\[\^a-z0-9\]\+\/g/);
+            expect(shared).toMatch(/\.slice\(0,\s*60\)/);
+        });
+
+        it("and the xyflow path still USES the shared helpers", () => {
+            // The teeth for both relocated assertions. Without this edge the
+            // two checks above pass against a module nobody calls — this file
+            // could hardcode a colour and mint its own filenames while the
+            // shared module sat there, correct and unused.
+            //
+            // An unused import would NOT catch that on its own:
+            // `no-unused-vars` is not configured in eslint.config.mjs, and
+            // eslint exits 0 on a file whose import is unreferenced. Measured
+            // rather than assumed — so the usage has to be asserted here.
+            //
+            // Bound to ONE function rather than the whole file. That is the
+            // narrower claim (this export path resolves its colour), and it
+            // keeps each needle unambiguous — `resolveBackground(` occurs five
+            // times file-wide, which would be satisfied by any survivor.
+            expect(src).toMatch(/from "@\/lib\/processes\/canvas-export-shared"/);
+            const svgExport = functionBodyOf(src, "exportCanvasAsSvg");
+            expect(svgExport).toMatch(/resolveBackground\(\)/);
+            expect(svgExport).toMatch(/downloadDataUrl\(/);
+            expect(svgExport).toMatch(/safeFilename\(/);
         });
 
         it("resolves the background colour from the active [data-theme]", () => {
@@ -98,8 +129,11 @@ describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
             // canvas-frame token differs between light + dark.
             // Anchor on the data-theme read so a refactor that
             // hardcodes one colour breaks.
-            expect(src).toMatch(/document\.documentElement/);
-            expect(src).toMatch(
+            // Also in `canvas-export-shared.ts` now — see the note on the
+            // filename test. The export path's use of it is locked by the
+            // "still USES the shared helpers" test above.
+            expect(shared).toMatch(/document\.documentElement/);
+            expect(shared).toMatch(
                 /getAttribute\(["']data-theme["']\)/,
             );
         });
