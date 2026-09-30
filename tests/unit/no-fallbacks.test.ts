@@ -127,6 +127,23 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // would break the inlining (same rationale as
             // ClientProviders + use-calendar-badge above).
             if (file.endsWith('dev/swr-devtools.tsx')) continue;
+            // use-keyboard-shortcut refuses a WCAG 2.1.4 violation -- a single
+            // printable character bound globally -- by throwing, and it must
+            // throw in development and test while doing NOTHING in production.
+            // An accessibility defect should stop a developer, not a user
+            // mid-session, so the check cannot be unconditional.
+            //
+            // It reads `process.env.NODE_ENV` for the same reason
+            // `dev/swr-devtools.tsx` above does: this is a CLIENT module, and
+            // env.ts carries NODE_ENV in its SERVER schema, which t3-env
+            // refuses to hand to client code. `process.env.NODE_ENV` is also
+            // what Next.js inlines at build time, so the throw and its message
+            // are tree-shaken out of the production bundle entirely rather than
+            // shipped behind a runtime branch.
+            //
+            // No configuration is being read here -- it is a build-mode
+            // constant, which is the distinction this guard exists to police.
+            if (file.endsWith('hooks/use-keyboard-shortcut.tsx')) continue;
 
             const content = fs.readFileSync(file, 'utf8');
 
