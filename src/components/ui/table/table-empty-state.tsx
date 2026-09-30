@@ -29,6 +29,7 @@
  *      (was 'default'). Both render the same button styling.
  */
 
+import { useTranslations } from "next-intl";
 import { type ReactNode } from "react";
 import { cn } from "./table-utils";
 import { EmptyState } from "../empty-state";
@@ -45,7 +46,7 @@ export interface TableEmptyStateAction {
 }
 
 export interface TableEmptyStateProps {
-    /** Main heading text. Defaults to "No items found". */
+    /** Main heading text. Defaults to `common.table.noItemsFound`. */
     title?: string;
     /** Secondary description text. */
     description?: string;
@@ -69,6 +70,7 @@ export function TableEmptyState({
     children,
     className,
 }: TableEmptyStateProps) {
+    const t = useTranslations("common.table");
     // Children-override path stays unchanged — some callers rely on
     // the bare flex centring with arbitrary content inside.
     if (children) {
@@ -114,7 +116,7 @@ export function TableEmptyState({
         >
             <EmptyState
                 icon={IconShim}
-                title={title ?? "No items found"}
+                title={title ?? t("noItemsFound")}
                 description={description}
                 primaryAction={primaryAction}
                 secondaryAction={secondaryAction}

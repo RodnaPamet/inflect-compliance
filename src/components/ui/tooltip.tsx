@@ -30,6 +30,7 @@
 
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { HelpCircle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { forwardRef, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
@@ -227,19 +228,22 @@ export const InfoTooltip = forwardRef<
     HTMLButtonElement,
     Omit<TooltipProps, "children"> & {
         iconClassName?: string;
-        /** Accessible label for the help icon button. Defaults to "More information". */
+        /** Accessible label for the help icon button. Defaults to `common.ui.moreInformation`. */
         "aria-label"?: string;
     }
 >(function InfoTooltip(
-    { iconClassName, "aria-label": ariaLabel = "More information", ...tooltipProps },
+    { iconClassName, "aria-label": ariaLabel, ...tooltipProps },
     ref,
 ) {
+    // The default lives in the catalogue, not the parameter list: a hook
+    // cannot run in a default, and a literal there is English in every locale.
+    const t = useTranslations("common.ui");
     return (
         <Tooltip {...tooltipProps}>
             <button
                 ref={ref}
                 type="button"
-                aria-label={ariaLabel}
+                aria-label={ariaLabel ?? t("moreInformation")}
                 className="inline-flex h-4 w-4 items-center justify-center rounded-full text-content-muted outline-none transition-colors hover:text-content-default focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
                 <HelpCircle className={cn("h-4 w-4", iconClassName)} aria-hidden="true" />

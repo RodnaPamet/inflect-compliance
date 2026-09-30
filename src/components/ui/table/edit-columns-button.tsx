@@ -19,6 +19,7 @@ import { cn } from "./table-utils";
 import type { TableInstance, TableRowData } from "./types";
 import { Command } from "cmdk";
 import { RotateCcw, Settings } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { Button } from "../button";
 import { Popover } from "../popover";
@@ -36,7 +37,7 @@ export interface EditColumnsButtonProps<T extends TableRowData> {
   /** Optional className for the trigger button. */
   className?: string;
 
-  /** Optional tooltip text for the trigger. */
+  /** Optional tooltip text for the trigger. Defaults to `common.table.editColumns`. */
   title?: string;
 }
 
@@ -63,8 +64,10 @@ export function EditColumnsButton<T extends TableRowData>({
   table,
   onReset,
   className,
-  title = "Edit columns",
+  title: titleProp,
 }: EditColumnsButtonProps<T>) {
+  const t = useTranslations("common.table");
+  const title = titleProp ?? t("editColumns");
   const [isOpen, setIsOpen] = useState(false);
 
   const hideableColumns = table.getAllColumns().filter((c) => c.getCanHide());
@@ -134,7 +137,7 @@ export function EditColumnsButton<T extends TableRowData>({
                     data-testid="column-reset"
                   >
                     <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-                    <span>Reset to defaults</span>
+                    <span>{t("resetToDefaults")}</span>
                   </Command.Item>
                 </>
               )}

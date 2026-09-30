@@ -3,6 +3,7 @@
 import { cn } from "@/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import { LayoutGroup, motion } from "motion/react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import {
     KeyboardEvent,
@@ -91,7 +92,7 @@ export interface ToggleGroupProps extends VariantProps<typeof toggleGroupVariant
     optionClassName?: string;
     indicatorClassName?: string;
     style?: React.CSSProperties;
-    /** Screen-reader label for the radiogroup. Defaults to "Options". */
+    /** Screen-reader label for the radiogroup. Defaults to `common.ui.options`. */
     ariaLabel?: string;
 }
 
@@ -105,8 +106,9 @@ export function ToggleGroup({
     optionClassName,
     indicatorClassName,
     style,
-    ariaLabel = "Options",
+    ariaLabel,
 }: ToggleGroupProps) {
+    const t = useTranslations("common.ui");
     const layoutGroupId = useId();
     const btnRefs = useRef(new Map<string, HTMLElement>());
 
@@ -165,7 +167,7 @@ export function ToggleGroup({
         <LayoutGroup id={layoutGroupId}>
             <motion.div
                 role="radiogroup"
-                aria-label={ariaLabel}
+                aria-label={ariaLabel ?? t("options")}
                 layout={layout}
                 className={cn(toggleGroupVariants({ size }), className)}
                 style={style}

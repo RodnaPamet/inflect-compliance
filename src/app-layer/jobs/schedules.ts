@@ -466,6 +466,18 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'external-write-dispatch',
+        // Every ten minutes. A human has approved this write and is entitled to
+        // see it land; an hourly pass would make "approved" mean "some time
+        // today". Ten rather than five keeps it off the `control-test-scheduler`
+        // tick, and the pass costs one `groupBy` when nothing is pending, which
+        // is almost always.
+        pattern: '*/10 * * * *',
+        description:
+            '#2861 — send the external writes a human approved. Sweeps ExternalWriteJournal rows left PENDING by approveAgentProposal: re-checks the connection rung, re-runs the paired prior-state read, refuses on drift, then dispatches. Every refusal settles the row FAILED with its reason and sends nothing; a send that throws settles INDETERMINATE rather than FAILED, because nobody can claim the far end was unchanged. A missed run delays approved writes and cannot send an unapproved one.',
+        defaultPayload: {},
+    },
+    {
         name: 'agent-proposal-expiry',
         // 00:40 UTC daily. Off the hour and ahead of the 01:00 NVD sync, so it
         // does not share a tick with anything; the work is two statements plus

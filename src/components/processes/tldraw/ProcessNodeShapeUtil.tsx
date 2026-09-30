@@ -45,7 +45,7 @@
  * case: for an annotation, draw to the step it annotates; for a group, draw to
  * a node inside it.
  */
-import { HTMLContainer, Rectangle2d, ShapeUtil, type TLResizeInfo, resizeBox } from 'tldraw';
+import { HTMLContainer, Rectangle2d, ShapeUtil } from 'tldraw';
 import {
     NODE_ACCENT_BORDER,
     NODE_ACCENT_ICON_TONE,
@@ -118,12 +118,58 @@ export class ProcessNodeShapeUtil extends ShapeUtil<ProcessNodeShape> {
         return true;
     }
 
+    /**
+     * NO RESIZE, because a resize cannot be saved.
+     *
+     * This returned `true` with `onResize` wired to `resizeBox`, which writes
+     * `props.w` / `props.h`. `tldrawToRows` reads neither — size is the
+     * renderer's own (see `rowsToTldraw`) — so a resize marked the document
+     * dirty, autosave fired, the write SUCCEEDED and bumped `version`, and the
+     * size was gone on reload. A save that reports success and discards the
+     * edit, which is worse than losing it quietly: the version bump asserts it
+     * was stored.
+     *
+     * Locking is the owner's decision (#2961), chosen over teaching the
+     * renderer to read `dataJson.size` — a column #2960 deliberately made an
+     * opaque passthrough — and over inventing pixel dimensions for a preset
+     * that, on xyflow, is CSS over intrinsic sizing (`min-w`/`max-w`, padding,
+     * icon and text scale) rather than a width and a height.
+     *
+     * TO RE-ENABLE, persistence comes FIRST: give `ProcessNode` real `w` / `h`
+     * columns, read them in both directions of the serializer, and add them to
+     * `PERSISTED_NODE_PROPS`. Flipping this back on its own reinstates the
+     * defect exactly as it was.
+     *
+     * `onResize` is deleted rather than left unreachable, so there is no
+     * ready-made resize handler for a future flip to find and trust.
+     */
     override canResize(): boolean {
+        return false;
+    }
+
+    /** No handles either — `canResize` refuses the drag, this removes the grab. */
+    override hideResizeHandles(): boolean {
         return true;
     }
 
-    override onResize(shape: ProcessNodeShape, info: TLResizeInfo<ProcessNodeShape>) {
-        return resizeBox(shape, info);
+    /**
+     * Hide the rotate handle — and note this HIDES an affordance rather than
+     * removing a capability.
+     *
+     * `ShapeUtil` has no `canRotate`; the API is this. `RotateCWMenuItem` and
+     * `editor.rotateShapesBy()` stay reachable, so rotation is not locked the
+     * way resize is.
+     *
+     * That is tolerable only because rotation cannot claim a save: `rotation`
+     * is a tldraw base-record field, not a declared prop, so it is outside
+     * `PERSISTED_NODE_PROPS` and `classifyTldrawDiff` reads a rotation-only
+     * change as `node-untouched`. Nothing marks dirty, nothing saves, nothing
+     * lies about having stored it — the user simply loses it on reload, which
+     * is the same shape as before this change and not a regression it
+     * introduces.
+     */
+    override hideRotateHandle(): boolean {
+        return true;
     }
 
     override component(shape: ProcessNodeShape) {

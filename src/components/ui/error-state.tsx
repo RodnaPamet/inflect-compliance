@@ -35,6 +35,7 @@
 
 import { cn } from "@/lib/cn";
 import { AlertTriangle, type LucideIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { type PropsWithChildren, type ReactNode } from "react";
 import { Button } from "./button";
 
@@ -57,7 +58,7 @@ export interface ErrorStateProps extends PropsWithChildren {
      * icon component (or any React.ElementType with a `className` prop).
      */
     icon?: React.ElementType;
-    /** Defaults to "Something went wrong". */
+    /** Defaults to `common.error.title` ("Something went wrong"). */
     title?: string;
     /**
      * User-facing failure reason. Never echo back raw error JSON or
@@ -69,7 +70,10 @@ export interface ErrorStateProps extends PropsWithChildren {
      * customisable via `retryLabel`) wired to this handler.
      */
     onRetry?: () => void;
-    /** Defaults to "Try again". Ignored when `onRetry` is undefined. */
+    /**
+     * Defaults to `common.error.tryAgain` ("Try again"). Ignored when
+     * `onRetry` is undefined.
+     */
     retryLabel?: string;
     /** Disable the retry button (e.g. while a retry is in flight). */
     retryDisabled?: boolean;
@@ -87,16 +91,22 @@ export interface ErrorStateProps extends PropsWithChildren {
 
 export function ErrorState({
     icon: IconOverride,
-    title = "Something went wrong",
+    title: callerTitle,
     description,
     onRetry,
-    retryLabel = "Try again",
+    retryLabel: callerRetryLabel,
     retryDisabled = false,
     secondaryAction,
     children,
     className,
     "data-testid": dataTestId,
 }: ErrorStateProps) {
+    // The defaults moved out of the parameter list: a hook cannot run in a
+    // default, and a literal there renders English in every locale. The en
+    // values are the sentences this file used to hard-code.
+    const t = useTranslations("common.error");
+    const title = callerTitle ?? t("title");
+    const retryLabel = callerRetryLabel ?? t("tryAgain");
     const Icon: React.ElementType = IconOverride ?? (AlertTriangle as LucideIcon);
     return (
         <div

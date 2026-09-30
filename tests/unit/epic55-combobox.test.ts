@@ -219,8 +219,10 @@ describe('Combobox — internal state', () => {
 describe('Combobox — states', () => {
     it('renders a no-matches empty state (customisable via emptyState prop)', () => {
         expect(SRC).toMatch(/emptyState\?:\s*ReactNode/);
-        // Default string lives in the shared messages module now.
-        expect(SRC).toMatch(/COMBOBOX_DEFAULT_MESSAGES\.emptyState/);
+        // The default resolves through the shared messages module
+        // (`getComboboxMessages` over the `ui.combobox` catalogue), so it
+        // renders in the viewer's locale rather than English.
+        expect(SRC).toMatch(/emptyState\s*\?\?\s*defaultMessages\.emptyState/);
     });
 
     it('loading spinner renders inside Command.Loading', () => {

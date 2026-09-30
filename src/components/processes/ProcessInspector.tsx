@@ -33,7 +33,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import type { Edge, Node } from "@xyflow/react";
+// NO ENGINE IMPORT. The inspector edits MEANING — node type, size, linked
+// entity, edge variant, controls — and none of that depends on what draws the
+// canvas. #2961's selection adapter is what keeps it that way, and what makes
+// the renderer swap reviewable without touching these 697 lines.
+import type {
+    SelectedCanvasEdge,
+    SelectedCanvasNode,
+} from "@/lib/processes/canvas-selection";
 import { ToggleGroup } from "@/components/ui/toggle-group";
 import { AsidePanel } from "@/components/ui/aside-panel";
 import { NodeBiaAffordance } from "@/components/bia/NodeBiaAffordance";
@@ -88,6 +95,11 @@ import {
     isAutomationNodeKind,
 } from "./node-taxonomy";
 import { useIsAutomationMode } from "@/lib/processes/canvas-mode-context";
+// The server's bound on graph text, imported rather than restated. The
+// four-bare-200s version of this let a 300-character label reach the API and
+// fail there; `src/app-layer/schemas/` is backend-first but not client-free
+// (CLAUDE.md names 13 `use client` files that import values from it).
+import { MAX_GRAPH_TEXT_LENGTH } from "@/app-layer/schemas/process-map";
 import { AutomationInspectorPanel } from "./AutomationInspectorPanel";
 import {
     DEFAULT_NODE_SIZE,
@@ -118,14 +130,16 @@ export interface EdgeControlRef {
 
 export interface ProcessInspectorProps {
     /** Selected node, or null when nothing is selected. */
-    node: Node | null;
+    node: SelectedCanvasNode | null;
     /**
      * R28 — selected edge, or null when nothing is selected. Mutually
-     * exclusive with `node` in practice (xyflow lets you multi-select
-     * a node + an edge but the canvas only mirrors one slot at a
-     * time — node wins if both are set).
+     * exclusive with `node` in practice: an engine may let you select both,
+     * and the canvas mirrors one slot at a time with the node winning. That
+     * rule is `resolveSelection` in `@/lib/processes/canvas-selection` — stated
+     * once, testable without mounting anything, and no longer a property of
+     * whichever library happens to be underneath.
      */
-    edge?: Edge | null;
+    edge?: SelectedCanvasEdge | null;
     /**
      * Tenant slug — Epic P2-PR-A — used by the edge inspector to
      * fetch the tenant's Controls list for the picker. Optional:
@@ -293,6 +307,7 @@ export function ProcessInspector({
                             e.currentTarget.blur();
                         }
                     }}
+                    maxLength={MAX_GRAPH_TEXT_LENGTH}
                     className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-label-input"
                 />
@@ -312,6 +327,7 @@ export function ProcessInspector({
                         }
                     }}
                     placeholder={t("optional")}
+                    maxLength={MAX_GRAPH_TEXT_LENGTH}
                     className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-subtitle-input"
                 />
@@ -489,7 +505,7 @@ function EdgeInspectorBody({
     tenantSlug,
     onEdgeUpdate,
 }: {
-    edge: Edge;
+    edge: SelectedCanvasEdge;
     tenantSlug?: string;
     onEdgeUpdate?: ProcessInspectorProps["onEdgeUpdate"];
 }) {
@@ -603,6 +619,7 @@ function EdgeInspectorBody({
                         }
                     }}
                     placeholder={t("optional")}
+                    maxLength={MAX_GRAPH_TEXT_LENGTH}
                     className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-edge-label-input"
                 />
@@ -672,7 +689,7 @@ function EdgeInspectorBody({
  * Epic P2-PR-A — read the typed control list off an edge's `data`.
  * Tolerant of pre-P2 edges whose data omits the controls array.
  */
-function readEdgeControls(edge: Edge): EdgeControlRef[] {
+function readEdgeControls(edge: SelectedCanvasEdge): EdgeControlRef[] {
     const raw = (edge.data as { controls?: unknown } | undefined)?.controls;
     if (!Array.isArray(raw)) return [];
     return raw

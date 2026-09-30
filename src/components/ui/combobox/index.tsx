@@ -45,6 +45,7 @@
 import { cn } from "@/lib/cn";
 import { Command, useCommandState } from "cmdk";
 import { ChevronDown } from "lucide-react";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 import {
     cloneElement,
@@ -72,7 +73,7 @@ import {
 import { Popover, PopoverProps } from "../popover";
 import { ScrollContainer } from "../scroll-container";
 import { Tooltip } from "../tooltip";
-import { COMBOBOX_DEFAULT_MESSAGES } from "./messages";
+import { getComboboxMessages } from "./messages";
 import {
     COMBOBOX_VIRTUALIZE_THRESHOLD,
     VirtualizedComboboxOptions,
@@ -194,8 +195,8 @@ export function Combobox<
     loading = false,
     trigger,
     icon: IconProp,
-    placeholder = COMBOBOX_DEFAULT_MESSAGES.placeholder,
-    searchPlaceholder = COMBOBOX_DEFAULT_MESSAGES.searchPlaceholder,
+    placeholder: placeholderProp,
+    searchPlaceholder: searchPlaceholderProp,
     emptyState,
     createLabel,
     createIcon: CreateIcon = Plus,
@@ -230,6 +231,23 @@ export function Combobox<
     "aria-required": ariaRequired,
     children,
 }: ComboboxProps<TMultiple, TMeta>) {
+    // Copy the caller did not pass comes from the `ui.combobox` catalogue
+    // namespace, so an unconfigured Combobox renders in the viewer's locale.
+    // It used to fall back to COMBOBOX_DEFAULT_MESSAGES — English in every
+    // locale. `getComboboxMessages` keeps that constant as its fallback for a
+    // translator that throws or returns nothing. `undefined` checks (not `??`)
+    // on the two ex-parameter defaults keep an explicit `null` placeholder
+    // meaning "render nothing", exactly as a default parameter did.
+    const t = useTranslations("ui.combobox");
+    const defaultMessages = getComboboxMessages(t);
+    const placeholder =
+        placeholderProp === undefined
+            ? defaultMessages.placeholder
+            : placeholderProp;
+    const searchPlaceholder =
+        searchPlaceholderProp === undefined
+            ? defaultMessages.searchPlaceholder
+            : searchPlaceholderProp;
     const isMultiple = isMultipleSelection(multiple, setSelected);
 
     // Coerce selectedProp into an array so our internal bookkeeping
@@ -385,7 +403,7 @@ export function Combobox<
             )}
             <div className="grow break-words">
                 {createLabel?.(search) ??
-                    COMBOBOX_DEFAULT_MESSAGES.createLabel(search)}
+                    defaultMessages.createLabel(search)}
             </div>
         </Command.Item>
     );
@@ -419,7 +437,9 @@ export function Combobox<
             "aria-label"
         ] ??
         (selectedTriggerText ||
-            (typeof placeholder === "string" ? placeholder : "Select"));
+            (typeof placeholder === "string"
+                ? placeholder
+                : t("triggerLabel")));
 
     const triggerA11yProps = {
         id,
@@ -676,7 +696,7 @@ export function Combobox<
                                             {shouldFilter ? (
                                                 <Empty className="text-content-subtle flex min-h-12 items-center justify-center text-sm">
                                                     {emptyState ??
-                                                        COMBOBOX_DEFAULT_MESSAGES.emptyState}
+                                                        defaultMessages.emptyState}
                                                 </Empty>
                                             ) : sortedOptions!.length === 0 ? (
                                                 <div
@@ -684,7 +704,7 @@ export function Combobox<
                                                     data-combobox-empty
                                                 >
                                                     {emptyState ??
-                                                        COMBOBOX_DEFAULT_MESSAGES.emptyState}
+                                                        defaultMessages.emptyState}
                                                 </div>
                                             ) : null}
                                         </>

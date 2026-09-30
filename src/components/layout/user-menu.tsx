@@ -89,13 +89,16 @@ export function UserMenu({
     displayImage,
 }: UserMenuProps) {
     const t = useTranslations('common');
+    const tNav = useTranslations('nav');
+    const tSecurity = useTranslations('account.security');
     const [open, setOpen] = useState(false);
     const close = useCallback(() => setOpen(false), []);
 
     // Trim + fallback. `null` or whitespace-only renders as
-    // "Account" so the chrome never shows an empty trigger.
+    // `nav.account` ("Account") so the chrome never shows an empty trigger.
     const resolvedName = displayName?.trim() ?? '';
-    const effectiveName = resolvedName.length > 0 ? resolvedName : 'Account';
+    const effectiveName =
+        resolvedName.length > 0 ? resolvedName : tNav('account');
 
     const handleSignOut = useCallback(async () => {
         close();
@@ -111,7 +114,7 @@ export function UserMenu({
             sideOffset={8}
             popoverContentClassName="w-[240px] p-1"
             content={
-                <Popover.Menu aria-label="Account menu">
+                <Popover.Menu aria-label={tNav('accountMenu')}>
                     {/* Identity header — name + email at the top.
                         Quiet typography so the eye reads the
                         actionable items below, not the header. */}
@@ -171,7 +174,7 @@ export function UserMenu({
                         className={MENU_ROW_CLASS}
                     >
                         <ShieldCheck className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                        <span>Account security</span>
+                        <span>{tSecurity('securityTitle')}</span>
                     </Link>
 
                     <Popover.Separator />
@@ -187,7 +190,7 @@ export function UserMenu({
                         className={MENU_ROW_CLASS}
                     >
                         <LogOut className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                        <span>Sign out</span>
+                        <span>{tNav('signOut')}</span>
                     </button>
                 </Popover.Menu>
             }
@@ -195,7 +198,7 @@ export function UserMenu({
             <button
                 type="button"
                 className={AVATAR_BUTTON_CLASS}
-                aria-label={`Account menu for ${effectiveName}`}
+                aria-label={tNav('accountMenuFor', { name: effectiveName })}
                 aria-expanded={open}
                 aria-haspopup="menu"
                 data-testid="top-chrome-user-menu"

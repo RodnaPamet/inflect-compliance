@@ -54,6 +54,7 @@ import {
     XCircle,
     type LucideIcon,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { type PropsWithChildren, type ReactNode } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ export interface InlineNoticeProps extends PropsWithChildren {
      * `setError(null)`).
      */
     onDismiss?: () => void;
-    /** Forwarded to the dismiss button (default "Dismiss"). */
+    /** Forwarded to the dismiss button (default `common.ui.dismiss`). */
     dismissLabel?: string;
     className?: string;
     /** Forwarded to the outer wrapper for E2E selectors. */
@@ -136,12 +137,13 @@ export function InlineNotice({
     title,
     icon,
     onDismiss,
-    dismissLabel = "Dismiss",
+    dismissLabel,
     children,
     className,
     "data-testid": dataTestId,
     id,
 }: InlineNoticeProps) {
+    const t = useTranslations("common.ui");
     const tokens = VARIANTS[variant];
     const IconComp: React.ElementType | null =
         icon === null ? null : ((icon ?? tokens.icon) as React.ElementType);
@@ -185,7 +187,7 @@ export function InlineNotice({
                 <button
                     type="button"
                     onClick={onDismiss}
-                    aria-label={dismissLabel}
+                    aria-label={dismissLabel ?? t("dismiss")}
                     className={cn(
                         "ml-auto flex-shrink-0 rounded p-0.5 transition hover:opacity-70",
                         tokens.text,

@@ -22,6 +22,7 @@
  * render in full so the user sees both root and current.
  */
 
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import * as React from "react";
 
@@ -59,6 +60,7 @@ export interface BreadcrumbsProps {
      */
     maxVisible?: number;
     className?: string;
+    /** Defaults to `common.ui.breadcrumb`. */
     "aria-label"?: string;
     "data-testid"?: string;
 }
@@ -70,9 +72,11 @@ export function Breadcrumbs({
     separator = "/",
     maxVisible = 4,
     className,
-    "aria-label": ariaLabel = "Breadcrumb",
+    "aria-label": ariaLabel,
     "data-testid": dataTestId = "breadcrumbs",
 }: BreadcrumbsProps) {
+    // Before the early return: a hook must run on every render.
+    const t = useTranslations("common.ui");
     if (!items.length) return null;
 
     const lastIndex = items.length - 1;
@@ -80,7 +84,7 @@ export function Breadcrumbs({
 
     return (
         <nav
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? t("breadcrumb")}
             className={cn("flex items-center text-xs", className)}
             data-testid={dataTestId}
         >

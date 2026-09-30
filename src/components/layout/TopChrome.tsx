@@ -38,6 +38,7 @@
  * authoritative mobile surface.
  */
 import { useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { useCurrentBreadcrumbs } from './breadcrumbs-store';
 // PR-2 — OrgIdentityPill retired in favour of OrgWorkspaceSwitcher
@@ -103,6 +104,7 @@ interface TopChromeProps {
  * org → `/org/<slug>` (org root).
  */
 export function TopChrome({ variant, user, onMobileMenuClick }: TopChromeProps) {
+    const t = useTranslations('nav');
     const breadcrumbs = useCurrentBreadcrumbs();
     const params = useParams();
     // R14-PR4 — tenant variant mounts <TenantSwitcher> (popover).
@@ -148,8 +150,8 @@ export function TopChrome({ variant, user, onMobileMenuClick }: TopChromeProps) 
                         onClick={onMobileMenuClick}
                         ariaLabel={
                             variant === 'org'
-                                ? 'Open organization navigation menu'
-                                : 'Open navigation menu'
+                                ? t('openOrgNavigationMenu')
+                                : t('openNavigationMenu')
                         }
                         dataTestId={
                             variant === 'org' ? 'org-nav-toggle' : 'nav-toggle'
@@ -173,7 +175,7 @@ export function TopChrome({ variant, user, onMobileMenuClick }: TopChromeProps) 
                             // for layout stability so the chrome's
                             // height doesn't jump when a page resolves
                             // its breadcrumbs after first paint.
-                            <span className="sr-only">No breadcrumbs</span>
+                            <span className="sr-only">{t('noBreadcrumbs')}</span>
                         )}
                     </span>
                 </>
