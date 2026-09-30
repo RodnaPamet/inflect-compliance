@@ -89,6 +89,10 @@ import {
     nodeParent,
     edgeKindOf,
 } from "@/lib/processes/serialize-graph";
+import {
+    toSelectedEdge,
+    toSelectedNode,
+} from '@/lib/processes/canvas-selection';
 import { useProximityAutoBind } from "@/lib/processes/use-proximity-auto-bind";
 import { useUnsavedChangesWarning, useUnsavedNavigationGuard } from "@/lib/hooks";
 import { useCanvasHistory } from "@/lib/processes/use-canvas-history";
@@ -2463,10 +2467,16 @@ function Inner({
                 {/* R26-PR-E inspector — mounts when a node is
                     selected; hides cleanly otherwise. R28 extends
                     it to edges: an edge selection mounts the same
-                    panel with label + variant fields. */}
+                    panel with label + variant fields.
+
+                    #2961 — node/edge go through the selection adapter rather
+                    than as the engine's own records. This is the seam: the
+                    canvas host knows which library is mounted, the inspector
+                    does not, and swapping the renderer changes two lines here
+                    instead of 697 there. */}
                 <ProcessInspector
-                    node={selectedNode}
-                    edge={selectedEdge}
+                    node={toSelectedNode(selectedNode)}
+                    edge={toSelectedEdge(selectedEdge)}
                     tenantSlug={tenantSlug}
                     onUpdate={handleInspectorUpdate}
                     onEdgeUpdate={handleEdgeUpdate}
