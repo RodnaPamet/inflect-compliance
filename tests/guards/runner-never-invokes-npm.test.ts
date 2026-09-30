@@ -121,16 +121,39 @@ describe('and the runtime image does not CONTAIN the npm CLI either', () => {
         expect(stage).toContain('ENTRYPOINT');
     });
 
+    /**
+     * The single `RUN` that removes npm, line continuations joined.
+     *
+     * Bound to the command rather than matched across the stage with a span.
+     * An `[\s\S]{0,200}` between `rm -rf` and the path would have read across
+     * neighbouring instructions — and the Class C ratchet caps exactly that,
+     * with no drift allowance, which is how this got caught.
+     */
+    function npmRemovalCommand(): string {
+        const lines = runnerStage().split('\n');
+        const start = lines.findIndex((l) => /^RUN\s+rm\s+-rf\b/.test(l.trim()));
+        if (start < 0) throw new Error('no `RUN rm -rf` in the runner stage');
+        const out = [lines[start]!];
+        while (out[out.length - 1]!.trimEnd().endsWith('\\')) {
+            const next = lines[start + out.length];
+            if (next === undefined) break;
+            out.push(next);
+        }
+        return out.join('\n');
+    }
+
     it('deletes the global npm tree', () => {
-        expect(runnerStage()).toMatch(/rm -rf[\s\S]{0,200}\/usr\/local\/lib\/node_modules\/npm\b/);
+        // Throws rather than returning '' when the command is gone, so this
+        // cannot pass on an empty read.
+        expect(npmRemovalCommand()).toContain('/usr/local/lib/node_modules/npm');
     });
 
     it('removes the npm and npx shims, not just the library tree', () => {
         // Leaving the bin symlinks would make `command -v npm` succeed and
         // point at nothing — a worse state than either extreme.
-        const stage = runnerStage();
-        expect(stage).toContain('/usr/local/bin/npm');
-        expect(stage).toContain('/usr/local/bin/npx');
+        const cmd = npmRemovalCommand();
+        expect(cmd).toContain('/usr/local/bin/npm');
+        expect(cmd).toContain('/usr/local/bin/npx');
     });
 
     it('fails the BUILD if npm survives the removal', () => {
