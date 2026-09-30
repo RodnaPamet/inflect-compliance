@@ -135,6 +135,61 @@ export const isProcessNodeShape = (r: CanvasRecord): r is ProcessNodeShapeRecord
 export const isProcessEdgeBinding = (r: CanvasRecord): r is ProcessEdgeBindingRecord =>
     r.type === PROCESS_EDGE_BINDING_TYPE;
 
+/**
+ * The shape props `tldrawToRows` actually reads — the persisted set.
+ *
+ * `processNodeShapeProps` declares EIGHT props; this projection reads SIX. The
+ * two it does not are `w` and `h`: size is the renderer's own (see the comment
+ * in `rowsToTldraw`), so a change to either cannot reach a row.
+ *
+ * That difference is exported because a consumer has to know it. A change
+ * handler that treats any prop change as an edit will mark the document dirty
+ * for a resize, autosave will fire, the write will succeed and bump `version`,
+ * and the size will be gone on reload — a save that reports success and
+ * discards. `canvas-changes-tldraw.ts` compares only these keys for exactly
+ * that reason.
+ *
+ * Kept honest by `tldraw-persisted-props-match-the-projection.test.ts`, which
+ * does not read this list: it feeds a shape with a distinct value in every
+ * declared prop through the projection and derives the persisted set from what
+ * comes out. So a prop added to the projection without being added here, or
+ * vice versa, fails.
+ */
+export const PERSISTED_NODE_PROPS = [
+    'dataJson',
+    'label',
+    'nodeKey',
+    'nodeType',
+    'parentNodeKey',
+    'subtitle',
+] as const;
+
+export type PersistedNodeProp = (typeof PERSISTED_NODE_PROPS)[number];
+
+/**
+ * The binding props the edge projection reads.
+ *
+ * All SEVEN that `processEdgeBindingProps` declares — bindings have no
+ * declared-but-unpersisted prop, unlike nodes. Exported anyway, so a consumer
+ * asking "which props of this record are persisted?" gets an answer per record
+ * type instead of having to know that one of them is the special case.
+ *
+ * `sourceKey` / `targetKey` are in here even though the projection prefers the
+ * binding's resolved `fromId` / `toId`: it falls back to these props, so a
+ * change to one can reach a row.
+ */
+export const PERSISTED_EDGE_PROPS = [
+    'controls',
+    'dataJson',
+    'edgeKey',
+    'edgeKind',
+    'labelOverride',
+    'sourceKey',
+    'targetKey',
+] as const;
+
+export type PersistedEdgeProp = (typeof PERSISTED_EDGE_PROPS)[number];
+
 /** `edgeKey` → the binding id it always produces. Deterministic, like shapes. */
 export function bindingIdForEdgeKey(edgeKey: string): string {
     return `binding:${edgeKey}`;

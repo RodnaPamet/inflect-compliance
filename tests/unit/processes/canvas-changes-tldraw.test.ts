@@ -154,6 +154,61 @@ describe('updates — the kind has to be DERIVED', () => {
         expect(batchIsSubstantive(classifyTldrawDiff(d))).toBe(false);
     });
 
+    it('a RESIZE is not an edit, because a resize cannot be saved', () => {
+        // The defect this file's prop comparison exists to prevent. `w` and `h`
+        // are declared on the shape and read by NEITHER direction of the
+        // serializer, so treating a resize as an edit would mark dirty →
+        // autosave → a write that SUCCEEDS and bumps `version` → the size gone
+        // on reload. A save that reports success and discards.
+        //
+        // `canResize(): false` on the shape util is the half a user meets
+        // first; this is the half that holds if something reaches the props
+        // another way (`editor.resizeShape()`, a future re-enable).
+        const d = diff({
+            updated: {
+                a: [
+                    node({ props: { nodeKey: 'n1', label: 'A', w: 220, h: 88 } }),
+                    node({ props: { nodeKey: 'n1', label: 'A', w: 400, h: 200 } }),
+                ],
+            },
+        });
+        expect(kinds(d)).toEqual(['node-untouched']);
+        expect(batchIsSubstantive(classifyTldrawDiff(d))).toBe(false);
+    });
+
+    it('but a resize ALONGSIDE a real edit still counts', () => {
+        // Teeth for the test above: ignoring `w`/`h` must not swallow a diff
+        // that also changed something persisted.
+        const d = diff({
+            updated: {
+                a: [
+                    node({ props: { nodeKey: 'n1', label: 'A', w: 220 } }),
+                    node({ props: { nodeKey: 'n1', label: 'B', w: 400 } }),
+                ],
+            },
+        });
+        expect(kinds(d)).toEqual(['node-data-replaced']);
+    });
+
+    it('re-attaching an edge END is an edit — it changes fromId, not a prop', () => {
+        // The mirror of the resize case, and a bug in this file's first draft.
+        // The projection reads `b.fromId` / `b.toId`; `props.sourceKey` is, in
+        // the serializer's own words, "a denormalised convenience that goes
+        // stale the moment one moves". So a comparison looking only at props
+        // read a re-attachment as `edge-untouched` — a persisted change that
+        // would never have been saved.
+        const d = diff({
+            updated: {
+                a: [
+                    binding({ fromId: 'shape:n1', toId: 'shape:n2' }),
+                    binding({ fromId: 'shape:n3', toId: 'shape:n2' }),
+                ],
+            },
+        });
+        expect(kinds(d)).toEqual(['edge-reattached']);
+        expect(sig(d)).toEqual(['substantive']);
+    });
+
     it("an edge binding's data edit counts — nothing else pushes for it here", () => {
         // The divergence from the xyflow mapper worth knowing. There,
         // `handleEdgeUpdate` pushes history itself, so an edge `replace` is

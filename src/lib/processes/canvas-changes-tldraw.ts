@@ -59,6 +59,10 @@
 import type { ClassifiedChange } from './canvas-changes';
 import { PROCESS_EDGE_BINDING_TYPE } from '@/components/processes/tldraw/process-edge-binding';
 import { PROCESS_NODE_SHAPE_TYPE } from '@/components/processes/tldraw/process-node-shape';
+import {
+    PERSISTED_EDGE_PROPS,
+    PERSISTED_NODE_PROPS,
+} from '@/components/processes/tldraw/serializer';
 
 /**
  * The minimum of a tldraw record this file reads.
@@ -71,8 +75,18 @@ import { PROCESS_NODE_SHAPE_TYPE } from '@/components/processes/tldraw/process-n
 export interface TldrawRecordLike {
     typeName: string;
     type?: string;
+    /** Shape geometry. The projection reads `s.x` / `s.y` as a node's position. */
     x?: number;
     y?: number;
+    /**
+     * Binding endpoints. The projection reads `b.fromId` / `b.toId` — NOT
+     * `props.sourceKey` / `props.targetKey`, which the serializer calls "a
+     * denormalised convenience that goes stale the moment one moves". So
+     * re-attaching an edge end changes these RECORD fields and no prop, and a
+     * comparison that looked only at props would miss it entirely.
+     */
+    fromId?: string;
+    toId?: string;
     props?: Record<string, unknown>;
 }
 
@@ -111,17 +125,93 @@ const transient = (kind: string): ClassifiedChange => ({
     kind,
 });
 
-/** Did anything the product cares about move? */
+/**
+ * Did anything the product cares about move?
+ *
+ * Two axes, because the projection reads a different record field per subject:
+ * a node's position is `s.x` / `s.y`, and an edge's endpoints are `b.fromId` /
+ * `b.toId`. Both are RECORD fields rather than props, so neither is reachable
+ * through the prop comparison below.
+ *
+ * Missing the second was a real bug in the first draft of this file: comparing
+ * only props and `x`/`y` meant **re-attaching an edge end read as
+ * `edge-untouched`** — a persisted change that would never have been saved.
+ * The mirror image of the `w`/`h` case, which is a change that is NOT persisted
+ * being treated as an edit.
+ */
 function movedGeometry(from: TldrawRecordLike, to: TldrawRecordLike): boolean {
-    return from.x !== to.x || from.y !== to.y;
+    return (
+        from.x !== to.x ||
+        from.y !== to.y ||
+        from.fromId !== to.fromId ||
+        from.toId !== to.toId
+    );
 }
 
-/** Did anything the product cares about change, other than geometry? */
-function changedProps(from: TldrawRecordLike, to: TldrawRecordLike): boolean {
-    // JSON comparison rather than a key-by-key walk: shape props are declared
-    // JSON-serialisable (`dataJson` is `T.jsonValue`), and a walk would have to
-    // re-derive the recursion rules the serializer already relies on.
-    return JSON.stringify(from.props ?? null) !== JSON.stringify(to.props ?? null);
+/**
+ * Did anything the product cares about change, other than geometry?
+ *
+ * ONLY THE PERSISTED PROPS ARE COMPARED, and that is the whole point.
+ *
+ * `processNodeShapeProps` declares eight props; `tldrawToRows` reads six. The
+ * two it does not are `w` and `h` — size is the renderer's own. Comparing all
+ * eight would classify a RESIZE as an edit: the document would be marked dirty,
+ * autosave would fire, the write would succeed and bump `version`, and the size
+ * would be gone on reload. **A save that reports success and discards the
+ * edit**, which is worse than losing it quietly, because the version bump
+ * asserts it was stored.
+ *
+ * `canResize(): false` on the shape util is the other half of that fix, and it
+ * is the half a user meets first. This half is what holds when something
+ * reaches the props another way — `editor.resizeShape()`, a future re-enable —
+ * because a property the serializer drops must never be able to claim a save.
+ *
+ * The set is imported rather than restated, and a test derives it from the
+ * projection's actual behaviour rather than from the list.
+ */
+/**
+ * Which props are persisted for this subject, or `null` when all of them are.
+ *
+ * Only NODES have a declared-but-unpersisted prop (`w` / `h`). Every binding
+ * prop reaches a row, and a freeform record is carried WHOLE into
+ * `ProcessMap.freeformJson`, so for those two "any prop changed" is the right
+ * question and narrowing would drop real edits.
+ *
+ * This started as one shared list and the edge tests caught it immediately:
+ * comparing a binding against the NODE prop names finds nothing, so an
+ * `edgeKind` change read as `edge-untouched` and an edge edit would never have
+ * been saved. The per-subject split is the fix.
+ */
+function persistedPropsFor(subject: Subject): readonly string[] | null {
+    switch (subject) {
+        case 'node':
+            return PERSISTED_NODE_PROPS;
+        case 'edge':
+            return PERSISTED_EDGE_PROPS;
+        case 'freeform':
+        case 'unknown':
+            return null;
+    }
+}
+
+function changedProps(
+    from: TldrawRecordLike,
+    to: TldrawRecordLike,
+    subject: Subject,
+): boolean {
+    const a = from.props ?? {};
+    const b = to.props ?? {};
+    const keys = persistedPropsFor(subject) ?? [
+        ...new Set([...Object.keys(a), ...Object.keys(b)]),
+    ];
+    // JSON per key rather than a deep walk: props are declared JSON-serialisable
+    // (`dataJson` is `T.jsonValue`), and a hand-rolled walk would have to
+    // re-derive the recursion rules the serializer already relies on — and is
+    // blind to Date / Map / Set, which `T.jsonValue` does not admit but a walker
+    // would silently treat as an empty object.
+    return keys.some(
+        (k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null),
+    );
 }
 
 function classifyUpdate(
@@ -130,7 +220,7 @@ function classifyUpdate(
 ): ClassifiedChange {
     const subject = subjectOf(to);
     const moved = movedGeometry(from, to);
-    const edited = changedProps(from, to);
+    const edited = changedProps(from, to, subject);
 
     if (!moved && !edited) {
         // A record rewritten with no difference the product can see — a
@@ -142,9 +232,17 @@ function classifyUpdate(
     // Both can be true in one diff (drag a node while its label is being
     // edited). Naming geometry first is arbitrary but stable; the significance
     // is the same either way, which is what the host acts on.
-    if (moved && !edited) return substantive(`${subject}-moved`);
+    // An edge does not "move" — its ENDPOINTS change. Same significance, but a
+    // reader of an autosave log should not be told a binding was dragged.
+    if (moved && !edited) {
+        return substantive(subject === 'edge' ? 'edge-reattached' : `${subject}-moved`);
+    }
     if (edited && !moved) return substantive(`${subject}-data-replaced`);
-    return substantive(`${subject}-moved-and-replaced`);
+    return substantive(
+        subject === 'edge'
+            ? 'edge-reattached-and-replaced'
+            : `${subject}-moved-and-replaced`,
+    );
 }
 
 /**
