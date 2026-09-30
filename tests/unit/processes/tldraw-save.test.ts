@@ -208,3 +208,45 @@ describe('a success', () => {
         expect(onSaved).toHaveBeenCalledWith(SAVED);
     });
 });
+
+describe('the optional name — a rename is a save that also sets one', () => {
+    it('sends `name` when given, alongside the graph and the version', async () => {
+        // The whole reason rename routes through here: one PUT carries the
+        // name, the graph and the concurrency token, so a rename cannot
+        // silently skip the version check the way a separate fetch would.
+        const fetchImpl = responder(200, SAVED);
+        await saveTldrawCanvas(input({ fetchImpl, name: 'Quarterly close' }));
+
+        const [, init] = fetchImpl.mock.calls[0]!;
+        const body = JSON.parse(String((init as RequestInit).body));
+        expect(body).toMatchObject({ name: 'Quarterly close', expectedVersion: 4 });
+        expect(body.nodes).toBeDefined();
+        expect(body.edges).toBeDefined();
+    });
+
+    it('omits the KEY entirely on an ordinary save', async () => {
+        // Not "sends undefined" — the key must be ABSENT. The route treats a
+        // present `name` as an instruction, so a `null` or `''` would rename
+        // the map to nothing. Asserted on the key, because `JSON.stringify`
+        // drops an undefined value and a value-based check would be vacuous.
+        const fetchImpl = responder(200, SAVED);
+        await saveTldrawCanvas(input({ fetchImpl }));
+
+        const [, init] = fetchImpl.mock.calls[0]!;
+        const body = JSON.parse(String((init as RequestInit).body));
+        expect(Object.keys(body)).not.toContain('name');
+    });
+
+    it('sends an empty string if a caller really passes one', async () => {
+        // Documenting the boundary rather than pretending it is guarded here:
+        // `''` is a value, so it is sent and the ROUTE decides. The hook that
+        // drives rename refuses an empty name before calling this, which is
+        // where the check belongs — next to the text field.
+        const fetchImpl = responder(200, SAVED);
+        await saveTldrawCanvas(input({ fetchImpl, name: '' }));
+
+        const [, init] = fetchImpl.mock.calls[0]!;
+        const body = JSON.parse(String((init as RequestInit).body));
+        expect(body.name).toBe('');
+    });
+});

@@ -70,6 +70,17 @@ export interface SaveTldrawCanvasInput {
     expectedVersion?: number;
     /** `serializeEditorCanvas(editor)` — injected, so this is testable. */
     canvas: EditorCanvas;
+    /**
+     * Rename the map as part of this save.
+     *
+     * The route takes the name on the same PUT as the graph, and the xyflow
+     * rename handler uses that — it sends `name` alongside a full
+     * `serializeGraphForSave(...)`. So a rename IS a save that also sets a
+     * name, not a separate endpoint, and routing it through here rather than a
+     * second fetch means it inherits the version token, the 409 handling and
+     * the `onSaved` contract instead of reimplementing all three.
+     */
+    name?: string;
     toast: ToastApi;
     /** Bump a reload counter; the 409 toast's action calls this. */
     onConflict: () => void;
@@ -84,6 +95,7 @@ export async function saveTldrawCanvas({
     mapId,
     expectedVersion,
     canvas,
+    name,
     toast,
     onConflict,
     onSaved,
@@ -104,6 +116,12 @@ export async function saveTldrawCanvas({
         // delivers the property. The WIRE is what matters and the wire is
         // tested.
         ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+        // Conditional for a REAL reason here, unlike `expectedVersion` above.
+        // The route treats a present `name` as an instruction: `undefined` is
+        // dropped by JSON.stringify and harmless, but `null` or `''` would
+        // rename the map to nothing. Absent is the only way to say "leave it",
+        // so an ordinary save must not carry the key at all.
+        ...(name !== undefined ? { name } : {}),
     };
 
     const res = await fetchImpl(`/api/t/${tenantSlug}/processes/${mapId}`, {
