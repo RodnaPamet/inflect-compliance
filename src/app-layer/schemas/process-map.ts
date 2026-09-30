@@ -61,6 +61,23 @@ export type ProcessMapStatusValue = z.infer<typeof ProcessMapStatusSchema>;
  */
 const DATA_JSON_MAX_BYTES = 64 * 1024;
 
+/**
+ * Longest text a graph field may carry — node `label` / `subtitle`, an edge's
+ * `labelOverride`, and an edge control's `label`.
+ *
+ * Named and exported because the CLIENT has to know it. The bound was four bare
+ * `200`s here and nothing on the canvas, so a user could type a 300-character
+ * label into the inspector, keep working, and only learn at save time when the
+ * API refused the write with a zod string — measured on the live canvas, not
+ * hypothetical.
+ *
+ * Deliberately NOT shared with `ProcessMap.name` / `description`, which also
+ * happen to be 200 and 2000. Those bound a map's metadata, not the text inside
+ * its graph; collapsing them would make a product decision about one silently
+ * change the other.
+ */
+export const MAX_GRAPH_TEXT_LENGTH = 200;
+
 const boundedDataJson = z
     .unknown()
     .optional()
@@ -86,8 +103,8 @@ const boundedDataJson = z
 export const ProcessNodeInputSchema = z.object({
     nodeKey: z.string().min(1).max(128),
     nodeType: z.string().min(1).max(64),
-    label: z.string().max(200),
-    subtitle: z.string().max(200).optional().nullable(),
+    label: z.string().max(MAX_GRAPH_TEXT_LENGTH),
+    subtitle: z.string().max(MAX_GRAPH_TEXT_LENGTH).optional().nullable(),
     posX: z.number().finite(),
     posY: z.number().finite(),
     // R30 — optional parent group reference. References another node's
@@ -104,13 +121,13 @@ export const ProcessEdgeInputSchema = z.object({
     sourceKey: z.string().min(1).max(128),
     targetKey: z.string().min(1).max(128),
     edgeKind: z.string().min(1).max(64).default('flow'),
-    labelOverride: z.string().max(200).optional().nullable(),
+    labelOverride: z.string().max(MAX_GRAPH_TEXT_LENGTH).optional().nullable(),
     dataJson: boundedDataJson,
     controls: z
         .array(
             z.object({
                 controlKey: z.string().min(1).max(128),
-                label: z.string().max(200),
+                label: z.string().max(MAX_GRAPH_TEXT_LENGTH),
                 // PR-D — every edge control links to a real Control row
                 // (ProcessEdgeControl.controlId is NOT NULL + FK).
                 controlId: z.string().min(1),

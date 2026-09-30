@@ -95,6 +95,11 @@ import {
     isAutomationNodeKind,
 } from "./node-taxonomy";
 import { useIsAutomationMode } from "@/lib/processes/canvas-mode-context";
+// The server's bound on graph text, imported rather than restated. The
+// four-bare-200s version of this let a 300-character label reach the API and
+// fail there; `src/app-layer/schemas/` is backend-first but not client-free
+// (CLAUDE.md names 13 `use client` files that import values from it).
+import { MAX_GRAPH_TEXT_LENGTH } from "@/app-layer/schemas/process-map";
 import { AutomationInspectorPanel } from "./AutomationInspectorPanel";
 import {
     DEFAULT_NODE_SIZE,
@@ -302,6 +307,7 @@ export function ProcessInspector({
                             e.currentTarget.blur();
                         }
                     }}
+                    maxLength={MAX_GRAPH_TEXT_LENGTH}
                     className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-label-input"
                 />
@@ -321,6 +327,7 @@ export function ProcessInspector({
                         }
                     }}
                     placeholder={t("optional")}
+                    maxLength={MAX_GRAPH_TEXT_LENGTH}
                     className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-subtitle-input"
                 />
@@ -612,6 +619,7 @@ function EdgeInspectorBody({
                         }
                     }}
                     placeholder={t("optional")}
+                    maxLength={MAX_GRAPH_TEXT_LENGTH}
                     className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-edge-label-input"
                 />
