@@ -49,11 +49,24 @@
   --content-muted:    #B5CADD;   /* mid blue-gray — secondary text, placeholders, captions (AA, 6.45:1 on bg-default) */
   --content-subtle:   #93AFCC;   /* lighter blue-gray — disabled text, hints, tertiary info (AA, 4.81:1 on bg-default) */
   --content-inverted: #001830;   /* deep navy — text on inverted (yellow) surfaces */
+  /* Brand-coloured TEXT. The brand FILL tokens are not safe to render as text —
+     that is the defect this closes — so this carries its own measured value and
+     is deliberately a literal rather than `var(--brand-default)`: a var would
+     let a future brand change silently drop the contrast below AA, where a
+     literal forces whoever moves the brand to re-measure this too.
+     Happens to equal --brand-default today; that is a coincidence to re-check,
+     not a link to rely on. */
+  --content-brand:    #FFCD11;   /* 11.93:1 on --bg-page, 7.26:1 on --bg-default */
 
   /* ── Borders / Dividers ────────────────────────────────────────── */
   --border-default:  #00538C;               /* navy border — standard borders */
   --border-subtle:   rgba(0, 83, 140, 0.50); /* navy @ 50% — soft dividers, card edges */
   --border-emphasis: #007BCC;               /* brighter navy — focused inputs, emphasized outlines */
+  /* Form-control EDGES. WCAG 2.1 1.4.11 asks 3:1 of a control's boundary, and
+     neither existing border token reaches it: `--border-default` #00538C is
+     1.74:1 and `--border-emphasis` #007BCC is 2.44:1 on --bg-default. Measured,
+     not assumed — that gap is why this is a NEW token rather than a reuse. */
+  --border-strong:   #3399DD;               /* 3.50:1 on --bg-default #003C7A */
 
   /* ── Process canvas (Roadmap-27) ───────────────────────────────────
    * A dedicated surface ramp for the node-based Processes editor. The
@@ -452,11 +465,19 @@
   --content-muted:    #525252;   /* darker warm gray — secondary text, captions (7.2:1 on bg-default) */
   --content-subtle:   #6B6B6B;   /* warm medium gray — hints, disabled, tertiary (4.9:1 on bg-default) */
   --content-inverted: #FAF9F7;   /* warm off-white — text on inverted/dark surfaces */
+  /* See the dark block. This side is where the defect bites: --brand-default
+     #D04A02 as text is 4.03:1 on --bg-page and 4.18:1 on --bg-default, BELOW the
+     4.5:1 minimum. So brand text on light was already failing AA wherever a fill
+     token was used for it. Equals --brand-emphasis today; same caveat. */
+  --content-brand:    #B83D00;   /* 5.07:1 on --bg-page, 5.25:1 on --bg-default */
 
   /* ── Borders / Dividers ────────────────────────────────────────── */
   --border-default:  #E5E2DE;               /* warm gray — standard borders */
   --border-subtle:   rgba(229, 226, 222, 0.60); /* warm gray @ 60% — soft dividers */
   --border-emphasis: #C9C5BE;               /* medium warm gray — focused inputs */
+  /* See the dark block. Light `--border-emphasis` #C9C5BE is 1.59:1 here, so
+     the same gap exists on this side and the same new token closes it. */
+  --border-strong:   #8A8278;               /* 3.51:1 on --bg-default #F8F6F3 */
 
   /* ── Process canvas (Roadmap-27) — light mirror ──────────────────
    *   depth ramp (light → dark): node < frame < page < surface;

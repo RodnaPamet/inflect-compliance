@@ -16,6 +16,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  type RefObject,
   useState,
 } from "react";
 import { AnimatedSizeContainer } from "../animated-size-container";
@@ -69,6 +70,20 @@ type FilterSelectProps = {
   children?: ReactNode;
   emptyState?: ReactNode | Record<string, ReactNode>;
   className?: string;
+  /**
+   * The surrounding region the `f` shortcut is scoped to.
+   *
+   * `f` is a single printable character, so binding it globally breaks WCAG
+   * 2.1.4 — it is taken from every speech-input user on the page. Passing the
+   * toolbar's own element confines it to "while focus is in the filter
+   * toolbar", which is the only place it means anything anyway.
+   *
+   * OPTIONAL, and its absence DISABLES the shortcut rather than falling back to
+   * a global binding. A caller that forgets it loses a convenience; the
+   * alternative default would re-introduce the accessibility defect silently,
+   * which is the wrong direction to fail in.
+   */
+  hostRef?: RefObject<HTMLElement | null>;
 };
 
 export function FilterSelect({
@@ -88,6 +103,7 @@ export function FilterSelect({
   children,
   emptyState,
   className,
+  hostRef,
 }: FilterSelectProps) {
   const { isMobile } = useMediaQuery();
 
@@ -114,9 +130,15 @@ export function FilterSelect({
   // from stealing keyboard focus while the filter panel is already
   // mounted. `scope: 'global'` is explicit (default) so the palette
   // can surface this as an app-wide binding.
+  // Scoped to the toolbar region, not global. A bare 'f' bound globally is a
+  // character taken from every speech-input user on the page (WCAG 2.1.4) —
+  // saying "filter" near this page used to open it. `hostRef` comes from
+  // `FilterToolbar`, which owns the surrounding element; without one the
+  // shortcut is not registered at all rather than registered globally.
   useKeyboardShortcut("f", () => setIsOpen(true), {
-    enabled: !isOpen,
+    enabled: !isOpen && !!hostRef,
     scope: "global",
+    within: hostRef,
     description: "Open filters",
   });
 

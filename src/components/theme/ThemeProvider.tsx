@@ -71,7 +71,13 @@ function persistTheme(theme: Theme) {
 function readStoredTheme(): Theme | null {
     // Cookie first (matches what SSR used), then the legacy localStorage value.
     try {
-        const m = document.cookie.match(/(?:^|;\s*)inflect_theme=(light|dark)\b/);
+        // Built FROM `THEME_COOKIE`, never from the literal. Spelling the name
+        // here a second time is how the constant and the reader drift apart, and
+        // they once did — the writer moved and this regex kept matching the old
+        // name, so the cookie was set and never read back.
+        const m = document.cookie.match(
+            new RegExp(`(?:^|;\\s*)${THEME_COOKIE}=(light|dark)\\b`),
+        );
         if (m) return m[1] as Theme;
     } catch {
         // document.cookie may be unavailable — ignore.

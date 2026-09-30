@@ -165,7 +165,7 @@ describe('Shortcut conflicts — overlay standdown', () => {
     ])('any global-scope binding stands down while %s is mounted', (_name, marker) => {
         const spy = jest.fn();
         function Binding() {
-            useKeyboardShortcut('x', spy, { description: 'X' });
+            useKeyboardShortcut('mod+x', spy, { description: 'X' });
             return null;
         }
         render(
@@ -243,7 +243,7 @@ describe('Shortcut safety — input hijack', () => {
     ])('typing the shortcut key inside a <%s> does not fire it', async (_name, tag) => {
         const spy = jest.fn();
         function Binding() {
-            useKeyboardShortcut('/', spy, { description: 'Focus search' });
+            useKeyboardShortcut('mod+/', spy, { description: 'Focus search' });
             return null;
         }
         render(
@@ -265,7 +265,7 @@ describe('Shortcut safety — input hijack', () => {
     it('typing the shortcut inside a role="combobox" trigger does not fire it', () => {
         const spy = jest.fn();
         function Binding() {
-            useKeyboardShortcut('f', spy, { description: 'Open filters' });
+            useKeyboardShortcut('mod+f', spy, { description: 'Open filters' });
             return null;
         }
         render(

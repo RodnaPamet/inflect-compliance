@@ -60,8 +60,11 @@ function Registrar() {
     useKeyboardShortcut('mod+shift+t', () => {}, {
         description: 'Toggle theme',
     });
-    // Extra keep-in-shortcut-group entry (no matching palette row).
-    useKeyboardShortcut('f', () => {}, {
+    // Extra keep-in-shortcut-group entry (no matching palette row). The KEY is
+    // incidental — only the description is asserted — and a bare printable
+    // cannot be registered globally any more (WCAG 2.1.4), so it carries a
+    // modifier rather than being scoped to a region this harness does not have.
+    useKeyboardShortcut('mod+shift+f', () => {}, {
         description: 'Open filters',
     });
     return null;

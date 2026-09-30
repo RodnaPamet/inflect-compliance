@@ -1941,7 +1941,7 @@ function Inner({
             data-process-canvas="true"
             data-mobile-layout={isMobile ? "true" : undefined}
         >
-            <CanvasCommandPalette groups={commandGroups} />
+            <CanvasCommandPalette groups={commandGroups} hostRef={canvasWrapperRef} />
             <ProcessTemplateModal
                 open={templateModalOpen}
                 setOpen={setTemplateModalOpen}

@@ -6,7 +6,7 @@
  * expires, forever, with nothing surfaced. The notifications bell was the
  * visible member (it threw, so the console filled with 401s); the three
  * process-canvas entity hooks are the quiet ones — they discard the failure
- * with a bare `return` and keep rendering compliance status chips from
+ * with a bare `return` and keep rendering stale status chips from
  * whenever the session was last alive.
  *
  * ─── Why module scope and not React state ──────────────────────────────
@@ -105,7 +105,7 @@ function isSessionBearingApiPath(url: string): boolean {
 /**
  * The single predicate every 401 writer goes through. Returns whether this
  * response marked the session expired, so a caller can branch its own copy
- * (`EvidenceBulkImportModal` does) without re-deriving the rule.
+ * (a bulk-import modal does) without re-deriving the rule.
  *
  * @param status HTTP status of the response that just failed.
  * @param url    The request URL. When absent or unrecognised, nothing is
