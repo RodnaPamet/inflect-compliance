@@ -25,7 +25,7 @@
  *     down — Radix/Vaul's native Escape owns that context
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { render, fireEvent } from '@testing-library/react';
 
 import {
@@ -35,17 +35,34 @@ import {
 
 // ─── Harness mirroring the real FilterSelect F registration ──────────
 
-function FilterTrigger({ onOpen }: { onOpen: () => void }) {
+function FilterTrigger({
+    onOpen,
+    children,
+}: {
+    onOpen: () => void;
+    children?: React.ReactNode;
+}) {
     const [isOpen, setIsOpen] = useState(false);
+    const host = useRef<HTMLDivElement>(null);
+    // Mirrors the real registration, which is `within`-scoped rather than
+    // global: `f` is a single printable character, and binding one globally
+    // breaks WCAG 2.1.4. Anything the tests want focus on lives INSIDE this
+    // host, so a negative assertion cannot pass merely because focus was
+    // outside the region.
     useKeyboardShortcut(
         'f',
         () => {
             setIsOpen(true);
             onOpen();
         },
-        { enabled: !isOpen, scope: 'global', description: 'Open filters' },
+        { enabled: !isOpen, within: host, description: 'Open filters' },
     );
-    return <div data-testid="filter-trigger" data-open={isOpen} />;
+    return (
+        <div ref={host} data-testid="filter-host" tabIndex={-1}>
+            <div data-testid="filter-trigger" data-open={isOpen} />
+            {children}
+        </div>
+    );
 }
 
 // ─── Harness mirroring the real Escape registrations ─────────────────
@@ -80,12 +97,14 @@ function ClearSelectionBinding({
 describe('Core shortcut: F — open filters', () => {
     it('opens the active filter trigger', () => {
         const open = jest.fn();
-        render(
+        const { getByTestId } = render(
             <KeyboardShortcutProvider>
                 <FilterTrigger onOpen={open} />
             </KeyboardShortcutProvider>,
         );
-        fireEvent.keyDown(window, { key: 'f' });
+        const host = getByTestId('filter-host');
+        host.focus();
+        fireEvent.keyDown(host, { key: 'f', code: 'KeyF' });
         expect(open).toHaveBeenCalledTimes(1);
     });
 
@@ -93,13 +112,18 @@ describe('Core shortcut: F — open filters', () => {
         const open = jest.fn();
         const { container } = render(
             <KeyboardShortcutProvider>
-                <FilterTrigger onOpen={open} />
-                <input aria-label="search" />
+                <FilterTrigger onOpen={open}>
+                    <input aria-label="search" />
+                </FilterTrigger>
             </KeyboardShortcutProvider>,
         );
+        // INSIDE the host, deliberately: focus is within the scoped region, so
+        // the only thing that can suppress the shortcut is the editable-target
+        // guard. Rendered as a sibling it would not fire either, and the test
+        // would pass without exercising that guard at all.
         const input = container.querySelector('input')!;
         input.focus();
-        fireEvent.keyDown(input, { key: 'f' });
+        fireEvent.keyDown(input, { key: 'f', code: 'KeyF' });
         expect(open).not.toHaveBeenCalled();
     });
 
@@ -107,31 +131,37 @@ describe('Core shortcut: F — open filters', () => {
         const open = jest.fn();
         const { container } = render(
             <KeyboardShortcutProvider>
-                <FilterTrigger onOpen={open} />
-                <textarea aria-label="notes" />
-                <div
-                    data-testid="rte"
-                    contentEditable
-                    suppressContentEditableWarning
-                />
+                <FilterTrigger onOpen={open}>
+                    <textarea aria-label="notes" />
+                    <div
+                        data-testid="rte"
+                        contentEditable
+                        suppressContentEditableWarning
+                    />
+                </FilterTrigger>
             </KeyboardShortcutProvider>,
         );
+        // Both INSIDE the host — see the input case above.
         const ta = container.querySelector('textarea')!;
-        fireEvent.keyDown(ta, { key: 'f' });
-        const rte = container.querySelector('[data-testid="rte"]')!;
-        fireEvent.keyDown(rte, { key: 'f' });
+        (ta as HTMLTextAreaElement).focus();
+        fireEvent.keyDown(ta, { key: 'f', code: 'KeyF' });
+        const rte = container.querySelector('[data-testid="rte"]')! as HTMLElement;
+        rte.focus();
+        fireEvent.keyDown(rte, { key: 'f', code: 'KeyF' });
         expect(open).not.toHaveBeenCalled();
     });
 
     it('does not fire while the filter is already open (enabled: !isOpen)', () => {
         const open = jest.fn();
-        render(
+        const { getByTestId } = render(
             <KeyboardShortcutProvider>
                 <FilterTrigger onOpen={open} />
             </KeyboardShortcutProvider>,
         );
-        fireEvent.keyDown(window, { key: 'f' });
-        fireEvent.keyDown(window, { key: 'f' });
+        const host = getByTestId('filter-host');
+        host.focus();
+        fireEvent.keyDown(host, { key: 'f', code: 'KeyF' });
+        fireEvent.keyDown(host, { key: 'f', code: 'KeyF' });
         expect(open).toHaveBeenCalledTimes(1);
     });
 

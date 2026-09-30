@@ -80,11 +80,11 @@ describe('ShortcutHelpOverlay', () => {
         expect(screen.queryByTestId('shortcut-help-body')).not.toBeInTheDocument();
     });
 
-    it('`?` opens the overlay and surfaces registered shortcuts with descriptions', () => {
+    it('`Ctrl+/` opens the overlay and surfaces registered shortcuts with descriptions', () => {
         render(<Harness />);
 
         act(() => {
-            dispatchKey('?');
+            dispatchKey('/', { ctrl: true });
         });
 
         const body = screen.getByTestId('shortcut-help-body');
@@ -107,7 +107,7 @@ describe('ShortcutHelpOverlay', () => {
         render(<Harness />);
 
         act(() => {
-            dispatchKey('?');
+            dispatchKey('/', { ctrl: true });
         });
 
         const body = screen.getByTestId('shortcut-help-body');
@@ -121,7 +121,7 @@ describe('ShortcutHelpOverlay', () => {
     it('groups global and overlay shortcuts separately', () => {
         render(<Harness />);
         act(() => {
-            dispatchKey('?');
+            dispatchKey('/', { ctrl: true });
         });
         const body = screen.getByTestId('shortcut-help-body');
         expect(within(body).getByText('Available now')).toBeInTheDocument();
@@ -138,7 +138,7 @@ describe('ShortcutHelpOverlay', () => {
 
         input.focus();
         act(() => {
-            dispatchKey('?', {}, input);
+            dispatchKey('/', { ctrl: true }, input);
         });
 
         expect(screen.queryByTestId('shortcut-help-body')).not.toBeInTheDocument();
@@ -157,11 +157,11 @@ describe('ShortcutHelpOverlay', () => {
         const rich = within(container).getByTestId('rich');
 
         ta.focus();
-        act(() => dispatchKey('?', {}, ta));
+        act(() => dispatchKey('/', { ctrl: true }, ta));
         expect(screen.queryByTestId('shortcut-help-body')).not.toBeInTheDocument();
 
         rich.focus();
-        act(() => dispatchKey('?', {}, rich));
+        act(() => dispatchKey('/', { ctrl: true }, rich));
         expect(screen.queryByTestId('shortcut-help-body')).not.toBeInTheDocument();
     });
 
@@ -175,7 +175,7 @@ describe('ShortcutHelpOverlay', () => {
         render(<Harness />);
 
         await act(async () => {
-            dispatchKey('?');
+            dispatchKey('/', { ctrl: true });
         });
 
         expect(screen.getByRole('dialog')).toHaveAccessibleName(
@@ -198,7 +198,7 @@ describe('ShortcutHelpOverlay', () => {
             </KeyboardShortcutProvider>,
         );
 
-        act(() => dispatchKey('?'));
+        act(() => dispatchKey('/', { ctrl: true }));
         const body = screen.getByTestId('shortcut-help-body');
         expect(within(body).queryByText('In dialogs & sheets')).not.toBeInTheDocument();
     });
