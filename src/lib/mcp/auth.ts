@@ -85,6 +85,7 @@ import {
     systemClock,
 } from './token-exchange';
 import { isKnownMcpTool, MCP_TOOL_NAMES } from './tool-catalogue';
+import { pinFromCard } from '@/lib/agentic/policy-card-pin';
 import { resolveExternalReadTools } from './tools/external-tools';
 import {
     resolveAgentAuthority,
@@ -404,7 +405,9 @@ export async function buildMcpInvocation(
     // One `tools/list` per connection the agent has grants on, and nothing at
     // all when it has none — which is every invocation that predates this
     // feature and most that follow it.
-    const externalTools = await resolveExternalReadTools(ctx, grantedTools);
+    // The pin travels WITH the tools, resolved from the card already in scope
+    // above rather than re-read later — see `resolveExternalReadTools`.
+    const externalTools = await resolveExternalReadTools(ctx, grantedTools, pinFromCard(inForce));
 
     return {
         ctx,

@@ -26,12 +26,26 @@
  *
  * ═══ WHY THE DEFAULT IS OFF ═══
  *
- * Opposite of every other surface, and deliberately. The editor behind this
- * canvas is licensed software: the hobby licence permits a "Development
- * Environment ... not accessible to end users, customers, or the public" and
- * forbids Production use without a paid key. A default of TRUE would make every
- * newly created tenant a licence violation at the moment of creation — a state
- * no default should be able to reach.
+ * Opposite of every other surface, and deliberately — though NOT for the reason
+ * this paragraph used to give.
+ *
+ * It said the editor's licence "forbids Production use without a paid key".
+ * That is the tldraw 4.x/5.x licence, and it was written here while those terms
+ * were believed to be tldraw's only ones. #2988 pinned **3.15.6**, whose licence
+ * permits "use the Software in your commercial or non-commercial projects"
+ * provided the watermark is not removed, and needs no key (#2958). So a tenant
+ * with this module ON is not a licence violation, and describing it as one
+ * would have someone treating a product decision as a compliance emergency.
+ *
+ * The default stays OFF for the reasons that survive:
+ *
+ *   - a module nobody asked for should not appear in a tenant's product;
+ *   - the surface is mid-migration (#2963), so "on" means different things to
+ *     different tenants until Phase 4 lands;
+ *   - and the bundle argument, which is the load-bearing one —
+ *     `tests/guards/canvas-editor-stays-inside-its-module.test.ts` keeps the
+ *     editor inside this route segment so a tenant with the module off never
+ *     downloads it. A default of TRUE would make that control moot on day one.
  *
  * @module usecases/process-canvas-module
  */
@@ -117,4 +131,84 @@ export async function setProcessCanvasEnabled(
     });
 
     return { enabled: next, changed: true };
+}
+
+/**
+ * Which renderer draws this tenant's canvas (#2960).
+ *
+ * ABSENT SETTINGS ROW READS AS xyflow, for the same reason the module reads as
+ * off: a tenant nobody has configured has not been migrated, and the safe
+ * reading of "never configured" is the renderer that is finished.
+ *
+ * INDEPENDENT OF `isProcessCanvasEnabled`. This answers WHICH renderer, not
+ * WHETHER there is a canvas — a tenant may hold `true` here with the module
+ * off, which renders nothing and is harmless. Coupling them would force an
+ * ordering on two settings that do not depend on each other, and would make
+ * "migrate this tenant" a two-step dance with a wrong intermediate state.
+ */
+export async function isProcessCanvasTldrawEnabled(ctx: RequestContext): Promise<boolean> {
+    return runInTenantContext(ctx, async (db) => {
+        const row = await db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { processCanvasUsesTldraw: true },
+        });
+        return row?.processCanvasUsesTldraw === true;
+    });
+}
+
+/**
+ * Move this tenant between renderers.
+ *
+ * OWNER-only at the route via `requirePermission('admin.tenant_lifecycle')`,
+ * matching the module toggle beside it. The check is NOT repeated here — a
+ * second, weaker gate is how a route ends up looking protected while granting.
+ *
+ * NOTHING IS MIGRATED BY THIS CALL, and that is the point. Both renderers read
+ * the same `ProcessNode` / `ProcessEdge` rows, so switching is a rendering
+ * decision with no data step and no irreversible half-state. Moving a tenant
+ * back is the same call with `false`.
+ */
+export async function setProcessCanvasTldraw(
+    ctx: RequestContext,
+    next: boolean,
+): Promise<{ usesTldraw: boolean; changed: boolean }> {
+    const current = await isProcessCanvasTldrawEnabled(ctx);
+
+    // A no-op write is not an event — same reasoning as the module toggle.
+    if (current === next) return { usesTldraw: current, changed: false };
+
+    await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.upsert({
+            where: { tenantId: ctx.tenantId },
+            create: { tenantId: ctx.tenantId, processCanvasUsesTldraw: next },
+            update: { processCanvasUsesTldraw: next },
+        }),
+    );
+
+    await runInTenantContext(ctx, (db) =>
+        logEvent(db, ctx, {
+            action: 'PROCESS_CANVAS_RENDERER_CHANGED',
+            entityType: 'Tenant',
+            entityId: ctx.tenantId,
+            details: `Process canvas renderer: ${current ? 'tldraw' : 'xyflow'} → ${next ? 'tldraw' : 'xyflow'}`,
+            // `configuration`, matching the module toggle: this grants nobody
+            // any authority and changes no permission check. It changes what
+            // the product draws.
+            detailsJson: {
+                category: 'configuration',
+                operation: next ? 'enable' : 'disable',
+                summary: `Process canvas renderer set to ${next ? 'tldraw' : 'xyflow'}`,
+            },
+            metadata: { from: current, to: next },
+        }),
+    );
+
+    logger.info('process canvas renderer changed', {
+        component: 'process-canvas-module',
+        tenantId: ctx.tenantId,
+        from: current ? 'tldraw' : 'xyflow',
+        to: next ? 'tldraw' : 'xyflow',
+    });
+
+    return { usesTldraw: next, changed: true };
 }

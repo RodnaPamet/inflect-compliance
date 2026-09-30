@@ -1408,6 +1408,25 @@ model TenantSecuritySettings {
   /// reading them whether this is true or false. Turning the module off is not
   /// a delete, and turning it back on must show the same map.
   processCanvasEnabled         Boolean           @default(false)
+  /// Which renderer draws the process canvas for this tenant (#2960).
+  ///
+  /// A MIGRATION FLAG WITH A SCHEDULED END, not a permanent product setting.
+  /// It exists so tldraw can replace xyflow one tenant at a time instead of
+  /// everywhere at once, and Phase 4 (#2962) removes xyflow and then this
+  /// column. A boolean rather than an enum for exactly that reason: an enum
+  /// would model a lasting choice between renderers, and Postgres cannot drop
+  /// an enum value without recreating the type — a cost worth paying for a
+  /// permanent domain, not for a switch with a retirement date.
+  ///
+  /// ORTHOGONAL TO `processCanvasEnabled`, deliberately. This says WHICH
+  /// renderer; that says WHETHER there is a canvas at all. A tenant may hold
+  /// `usesTldraw = true` with the module off — harmless, because nothing is
+  /// rendered — and requiring the module first would force an ordering on two
+  /// settings that do not depend on each other.
+  ///
+  /// Default FALSE: every existing tenant keeps the renderer it has, and a new
+  /// tenant gets the one that is finished.
+  processCanvasUsesTldraw      Boolean           @default(false)
   identityLeaverMode           IdentityWriteMode @default(DISABLED)
   identityJoinerMode           IdentityWriteMode @default(DISABLED)
 
