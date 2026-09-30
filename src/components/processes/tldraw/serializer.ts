@@ -47,7 +47,7 @@ import {
     PROCESS_EDGE_BINDING_TYPE,
     type ProcessEdgeBindingProps,
 } from './process-edge-binding';
-import { validateEdge, type EdgeEndpointRefusal } from './edge-validation';
+import { describeRefusal, validateEdge, type EdgeRefusal } from './edge-validation';
 
 /** The normalised graph, exactly as the save payload carries it. */
 export interface GraphRows {
@@ -108,11 +108,14 @@ export interface TldrawGraph {
 export class EdgeEndpointError extends Error {
     constructor(
         readonly edgeKey: string,
-        readonly refusals: EdgeEndpointRefusal[],
+        readonly refusals: EdgeRefusal[],
     ) {
         super(
-            `edge ${edgeKey || '(unkeyed)'} has invalid endpoints: ` +
-                refusals.map((r) => `${r.code}(${r.nodeKey})`).join(', '),
+            `edge ${edgeKey || '(unkeyed)'} was refused: ` +
+                // `describeRefusal` rather than reaching into fields: the
+                // refusal codes no longer share a shape (DUPLICATE_EDGE names a
+                // PAIR, not a node), and the renderer already knows each one.
+                refusals.map((r) => `${r.code} — ${describeRefusal(r)}`).join('; '),
         );
         this.name = 'EdgeEndpointError';
     }
@@ -246,7 +249,17 @@ export function tldrawToRows(graph: TldrawGraph): GraphRows {
         const targetKey = keyByShapeId.get(String(b.toId)) ?? '';
         // Reuses the editor's own validator, so a save cannot accept an edge
         // the canvas refused to draw — one rule, not two that drift.
-        const refusals = validateEdge(sourceKey, targetKey, known);
+        // The graph's OWN edges, so the duplicate check sees the set this
+        // binding belongs to. Built from the bindings rather than the rows,
+        // because rows are what we are producing.
+        const knownEdges = graph.bindings.map((other) => ({
+            sourceKey: keyByShapeId.get(String(other.fromId)) ?? other.props.sourceKey,
+            targetKey: keyByShapeId.get(String(other.toId)) ?? other.props.targetKey,
+        }));
+        // EXCLUDE THIS BINDING from its own duplicate check, or every edge is a
+        // duplicate of itself and no graph would ever serialise.
+        const others = knownEdges.filter((_, i) => graph.bindings[i] !== b);
+        const refusals = validateEdge(sourceKey, targetKey, known, others);
         if (refusals.length > 0) throw new EdgeEndpointError(b.props.edgeKey, refusals);
     }
 
