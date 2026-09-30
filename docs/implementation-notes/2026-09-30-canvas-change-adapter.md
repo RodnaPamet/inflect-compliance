@@ -1,6 +1,6 @@
 # 2026-09-30 — graph-state adapter: change classification
 
-**Commit:** `1c54b1e09 feat(processes): extract canvas change classification behind an engine-free adapter`
+**Commit:** `4b8a3853a feat(processes): classify canvas changes behind an engine-free adapter`
 
 Phase 3 of the tldraw migration (#2961). The second of the two adapters that
 are reviewable with neither engine mounted — the first was selection (#3011).
