@@ -19,7 +19,9 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import {
     isProcessCanvasEnabled,
+    isProcessCanvasTldrawEnabled,
     setProcessCanvasEnabled,
+    setProcessCanvasTldraw,
 } from '@/app-layer/usecases/process-canvas-module';
 
 /**
@@ -30,25 +32,57 @@ import {
  * a missing value to fail in: the surface would vanish for a tenant because a
  * client forgot a key.
  */
-const Body = z.object({ enabled: z.boolean() });
+const Body = z.object({
+    enabled: z.boolean(),
+    /**
+     * OPTIONAL, and the asymmetry with `enabled` is deliberate (#2960).
+     *
+     * `enabled` is required because a PUT that omitted it would read as
+     * `undefined` and disable the module — the wrong direction for a missing
+     * value to fail in. `usesTldraw` has the opposite requirement: every client
+     * written before this field existed sends a body without it, and if
+     * omission meant "xyflow" those clients would silently migrate a tenant
+     * BACK every time somebody toggled the module.
+     *
+     * So omitted means LEAVE ALONE. Present means set.
+     */
+    usesTldraw: z.boolean().optional(),
+});
 
 const getHandler = requirePermission(
     'admin.tenant_lifecycle',
     async (_req: NextRequest, _ctx, requestCtx) => {
-        return jsonResponse({ enabled: await isProcessCanvasEnabled(requestCtx) });
+        return jsonResponse({
+            enabled: await isProcessCanvasEnabled(requestCtx),
+            usesTldraw: await isProcessCanvasTldrawEnabled(requestCtx),
+        });
     },
 );
 
 const putHandler = requirePermission(
     'admin.tenant_lifecycle',
     async (req: NextRequest, _ctx, requestCtx) => {
-        const { enabled } = Body.parse(await req.json());
+        const { enabled, usesTldraw } = Body.parse(await req.json());
         const state = await setProcessCanvasEnabled(requestCtx, enabled);
+        // Applied only when the caller said something about it. The two flags
+        // are independent, so a body that sets one must not move the other.
+        const renderer =
+            usesTldraw === undefined
+                ? { usesTldraw: await isProcessCanvasTldrawEnabled(requestCtx), changed: false }
+                : await setProcessCanvasTldraw(requestCtx, usesTldraw);
         // `changed` travels to the client so the UI can tell "you turned it on"
         // from "it was already on" without re-reading. The usecase declines to
         // audit a no-op, and a caller that could not see the difference would
         // have to guess whether a row exists.
-        return jsonResponse(state);
+        // Both flags come back, each with its own `changed`, so a caller can
+        // tell "I turned it on" from "it was already on" per flag without
+        // re-reading — and without inferring one from the other.
+        return jsonResponse({
+            enabled: state.enabled,
+            changed: state.changed,
+            usesTldraw: renderer.usesTldraw,
+            rendererChanged: renderer.changed,
+        });
     },
 );
 
