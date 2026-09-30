@@ -1614,6 +1614,24 @@ executorRegistry.register('hris-sync-dispatch', async () => {
     return makeResult('hris-sync-dispatch', startedAt, startMs, r.connections, r.dispatched, 0, { connections: r.connections });
 });
 
+// ── external-write-dispatch ─────────────────────────────────────────
+//
+// #2861. Sends the external writes a human approved, and refuses the ones whose
+// record changed underneath them. Every refusal settles the journal row with the
+// reason on it and sends nothing. A dead worker here delays approved writes; it
+// cannot send an unapproved one, because the approval and the rung check both
+// happened before the row existed.
+executorRegistry.register('external-write-dispatch', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runExternalWriteDispatchJob } = await import('./external-write-dispatch');
+    const r = await runExternalWriteDispatchJob({ tenantId: payload.tenantId });
+    return makeResult('external-write-dispatch', startedAt, startMs, r.scanned, r.applied, r.refused, {
+        tenants: r.tenants,
+        indeterminate: r.indeterminate,
+    });
+});
+
 // ── agent-proposal-expiry ───────────────────────────────────────────
 //
 // OWASP ASI09. Bounds the propose-not-commit review queue: a proposal past its

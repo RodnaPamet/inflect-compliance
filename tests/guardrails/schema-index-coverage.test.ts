@@ -402,6 +402,24 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // #2861 — the external writes a human approved and the dispatch has not sent.
+    //
+    // ONE findMany, in `external-write-dispatch.ts`: it filters by `tenantId`
+    // plus `outcome: 'PENDING'` and sorts by `attemptedAt`, bounded by
+    // `DISPATCH_BATCH_LIMIT`. The existing `@@index([tenantId, outcome])` is
+    // tenant-leading and covers BOTH equality columns, which is the whole filter.
+    //
+    // The sort is deliberately NOT given an index of its own. `PENDING` is a
+    // transient state by construction — the pass runs every ten minutes and
+    // settles every row it reads — so the rows left to sort are a handful, and a
+    // third column on this composite would be a wider B-tree written on every
+    // external write to order a set small enough that the planner sorts it in
+    // memory. Same reasoning `AgentProposal` records for the `guardVerdict`
+    // index it does not carry.
+    ExternalWriteJournal:
+        'filters (tenantId, outcome) — exactly the existing tenant-leading '
+        + '@@index([tenantId, outcome]) — and sorts a transient, bounded PENDING set.',
+
     // #2861 — which READ captures prior state before a given external WRITE.
     //
     // ONE findMany, in `external-prior-state-read.ts::listPriorStateReads`: it
