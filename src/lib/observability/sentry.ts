@@ -85,8 +85,18 @@ export function initSentry(): void {
          * IP addresses.
          *
          * `false` is also what the code already assumes. `beforeSend` scrubs
-         * `event.request` headers, body, URL and query string — it was written
-         * as if PII were off, and it has no arm for `event.user` at all.
+         * `event.request` headers, body, URL and query string, and deletes
+         * `event.user.ip_address` — so the identity axis has one arm, not none.
+         * This comment previously said it had "no arm for `event.user` at all",
+         * which was true when written and false by the time the `ip_address`
+         * delete landed below. It mattered: assessing the v11 bump (#2980) I
+         * read the comment rather than the code and understated the coverage.
+         *
+         * What `beforeSend` still does NOT cover is `event.user.id` / `email` /
+         * `username`, and it has no arm at all for the axes v11 introduces —
+         * `databaseQueryData`, `genAI` inputs/outputs, `graphQL`
+         * document/variables. Those are why the posture has to stay PINNED in
+         * `init`, not delegated to the scrubber.
          */
         sendDefaultPii: false,
 
