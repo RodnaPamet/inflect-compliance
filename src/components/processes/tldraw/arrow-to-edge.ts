@@ -253,12 +253,34 @@ export function installArrowToEdgeConversion(
 
         const edgeKey = mintEdgeKey();
 
-        // ONE undo entry for the whole swap. Without the stopping point, undo
-        // would step back through "line created", "binding created", "arrow
-        // deleted" — and the intermediate states are not ones the user drew.
-        editor.markHistoryStoppingPoint();
-
-        editor.createBindings([
+        /**
+         * `editor.run` is what makes this undoable. The option pins a default.
+         *
+         * The three writes run from inside a side-effect handler, and loose
+         * writes there are the store REACTING to an operation rather than
+         * performing one — so they never reach the undo stack. This first said
+         * `markHistoryStoppingPoint()`, with a comment claiming it collapsed
+         * the swap into one entry. Measured, the truth was worse than "the mark
+         * is redundant": a converted edge survived FOUR undos and
+         * `getCanUndo()` was already false after two. **A user could draw an
+         * edge and had no way to take it back.**
+         *
+         * Wrapping in `run` fixes that, and the mutation proof is specific
+         * about which half does the work:
+         *
+         *   markHistoryStoppingPoint() only   undo does nothing
+         *   run(fn)                           undo removes the edge and line
+         *   run(fn, { history: 'record' })    same — the option is the default
+         *   run(fn, { history: 'ignore' })    undo does nothing again
+         *
+         * So the option is NOT what fixed it, and saying otherwise would repeat
+         * the mistake above. It is kept to pin a default this now depends on:
+         * if recording ever stopped being the default, undo would break
+         * silently, and the `'ignore'` row is the evidence that dependency is
+         * real rather than decorative.
+         */
+        editor.run(() => {
+            editor.createBindings([
             {
                 type: PROCESS_EDGE_BINDING_TYPE,
                 fromId,
@@ -273,30 +295,32 @@ export function installArrowToEdgeConversion(
                     controls: [],
                 },
             },
-        ] as never);
-
-        // The line is NOT seeded by the binding util: `repositionLine` returns
-        // early when the shape is absent, documented there as "the normal case
-        // during seeding". On load the serializer creates it; on a live draw,
-        // here.
-        const from = editor.getShapePageBounds(fromId);
-        const to = editor.getShapePageBounds(toId);
-        if (from && to) {
-            const g = edgeLineGeometry(from, to);
-            editor.createShapes([
-                {
-                    id: shapeIdForEdgeKey(edgeKey),
-                    type: PROCESS_EDGE_SHAPE_TYPE,
-                    x: g.x,
-                    y: g.y,
-                    props: { edgeKey, dx: g.dx, dy: g.dy },
-                },
             ] as never);
-        }
 
-        // The arrow goes last. Deleting it first would fire the arrow binding's
-        // own delete hooks in the middle of creating ours.
-        editor.deleteShapes([arrowId as TLShapeId]);
+            // The line is NOT seeded by the binding util: `repositionLine`
+            // returns early when the shape is absent, documented there as "the
+            // normal case during seeding". On load the serializer creates it;
+            // on a live draw, here.
+            const from = editor.getShapePageBounds(fromId);
+            const to = editor.getShapePageBounds(toId);
+            if (from && to) {
+                const g = edgeLineGeometry(from, to);
+                editor.createShapes([
+                    {
+                        id: shapeIdForEdgeKey(edgeKey),
+                        type: PROCESS_EDGE_SHAPE_TYPE,
+                        x: g.x,
+                        y: g.y,
+                        props: { edgeKey, dx: g.dx, dy: g.dy },
+                    },
+                ] as never);
+            }
+
+            // The arrow goes last. Deleting it first would fire the arrow
+            // binding's own delete hooks in the middle of creating ours.
+            editor.deleteShapes([arrowId as TLShapeId]);
+        }, { history: 'record' });
+
         opts.onConverted?.(edgeKey);
     };
 

@@ -224,3 +224,60 @@ describe('read-only', () => {
         expect(processEdges(editor)).toHaveLength(0);
     });
 });
+
+describe('undo', () => {
+    it('one step takes back the whole swap', async () => {
+        /**
+         * The conversion is THREE store writes — create the binding, create
+         * the derived line, delete the arrow — and the intermediate states are
+         * not ones the user drew. One undo should return them to the arrow they
+         * had just drawn, not to a half-converted canvas.
+         *
+         * Written because the `markHistoryStoppingPoint()` in the converter
+         * carried a comment claiming exactly this and no test. The same line
+         * has twice been written in this subsystem on that reasoning and twice
+         * turned out to be dead, so the claim needed deciding rather than
+         * repeating.
+         */
+        const editor = await mount();
+        await drawArrow(editor, 'a', 'b');
+        expect(processEdges(editor)).toHaveLength(1);
+
+        await act(async () => {
+            editor.undo();
+        });
+
+        expect(processEdges(editor)).toHaveLength(0);
+        expect(lines(editor)).toHaveLength(0);
+    });
+
+    it('and the edge is gone for good, not half-removed', async () => {
+        // Before the fix the binding survived while the line did not, which is
+        // the state that would have shipped: a `ProcessEdge` with nothing drawn
+        // for it, saved on the next autosave, invisible on the canvas.
+        const editor = await mount();
+        await drawArrow(editor, 'a', 'b');
+        await act(async () => {
+            editor.undo();
+        });
+        expect(processEdges(editor)).toHaveLength(0);
+        expect(lines(editor)).toHaveLength(0);
+    });
+});
+
+/**
+ * WHAT THIS SUITE DELIBERATELY DOES NOT ASSERT: whether the arrow comes back.
+ *
+ * It depends on how the gesture is segmented into history entries, and this
+ * harness cannot reproduce that faithfully. `drawArrow` creates the arrow and
+ * both bindings in one `act()`, so the creation and the conversion land in a
+ * SINGLE entry — measured: after one undo `getCanUndo()` is already false, and
+ * the arrow is gone along with the edge. A real drag creates the arrow across
+ * many frames and converts on pointer-up, which plausibly segments differently.
+ *
+ * My first version of the test above asserted the arrow returns, on the
+ * assumption there were two entries. That assumption was wrong, and asserting
+ * it would have pinned an artefact of the harness rather than a property of the
+ * feature. What matters either way — and what is asserted — is that the EDGE is
+ * undoable at all, which before `history: 'record'` it was not.
+ */
