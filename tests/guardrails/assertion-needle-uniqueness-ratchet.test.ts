@@ -368,13 +368,32 @@ const HIGH_MULTIPLICITY = 5;
 //   branches lowering the same line to different values merge without a
 //   conflict.
 //
-// 1189 -> 1187 (2026-10-01, T03 x T06 merge): -2, owed by the MERGE. T06 bound
-//   two needles for a net -1 from 1190 and this branch bound three more for -2;
-//   the sets are DISJOINT, so each side's constant understates the merged tree.
-//   Measured here, which is what the branch note directly above asks for -- and
-//   it was right that two branches lowering this line to DIFFERENT values is the
-//   dangerous case: 1188 and 1189 would have merged clean at whichever won.
-const AMBIGUOUS_NEEDLE_BASELINE = 1187;
+//
+// 1189 (2026-10-01, #3049): -1. `dashboard-compute-render-gap` asserted
+//   `expect(LOADING).toMatch(/DashboardSkeleton/)` over the whole of the
+//   dashboard's `loading.tsx`, where the bare name matched twice (the import
+//   and the JSX). The name alone had also stopped being the claim once the
+//   shell moved to a route-local module — both arrangements satisfy it — so
+//   the needle is now the import PATH, which matches once and says which one
+//   shipped. One site, one position, one off the baseline.
+//
+// 1190 -> 1186, the FOUR-WAY total (2026-10-01, T05 landing last of #3003's
+//   primitive tasks). The two notes above are the reductions themselves; this
+//   is the arithmetic the merges owe, and it is worth one block rather than a
+//   trail of superseded ones. T06 bound two needles (-1 net), #3049 bound the
+//   dashboard loading needle (-1), #3050 bound three more (-2). Every set is
+//   DISJOINT, so each branch's own constant understated the tree by exactly the
+//   others' reductions: T06 shipped 1189, this branch measured 1188 against it,
+//   #3050 measured 1187, and the final tree is 1186.
+//
+//   Four branches lowered one line and NO pair of them agreed, which is why
+//   `DRIFT_ALLOWANCE` being 0 earns its keep: every intermediate value was
+//   correct when measured and wrong once a sibling landed, and the sentinel
+//   caught all three hand-offs instead of letting the surplus sit as headroom.
+//   I dropped the two intermediate merge notes rather than keep them: a note
+//   reading `1189 -> 1188` above a constant of 1186 misinforms a reader, and
+//   the per-branch notes already say which needles moved and why.
+const AMBIGUOUS_NEEDLE_BASELINE = 1186;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

@@ -21,6 +21,13 @@
  *      built-in `loading` prop also satisfies this, so the rule is
  *      lighter here.
  *
+ *   3. The route-specific `DashboardSkeleton` stays OUT of the
+ *      shared primitives module. It is a tracing of one page's
+ *      sections in that page's order, so it belongs beside that
+ *      page; `skeleton.tsx` holds shapes with no opinion about
+ *      what they stand in for. See the split's rationale in
+ *      `src/app/t/[tenantSlug]/(app)/dashboard/DashboardSkeleton.tsx`.
+ *
  * What this ratchet does NOT police
  *   Detail pages — they delegate loading to `EntityDetailLayout
  *   loading`, which already paints `DetailLoadingSkeleton` from
@@ -36,7 +43,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — every assertion below reads through `codeOf`, which masks
+// comments at the READ SEAM. Without it "delete the component, keep the
+// comment that names it" is a green diff, and on a `.not.toMatch` the mirror
+// image holds: prose mentioning the forbidden symbol fails a guard whose code
+// is fine. String literals are KEPT, so the import-path assertions still see
+// what they are about.
+//
+// The raw reader survives for the SCANNER below, which feeds a regex test
+// rather than an `expect` — it is looking for an `if (loading)` branch, and
+// masking is irrelevant to whether the file is an offender.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
+
+const code = (rel: string): string =>
+    codeOf(fs.readFileSync(path.resolve(ROOT, rel), 'utf8'));
 
 const EXEMPT_FILE_PATTERNS: RegExp[] = [
     /\.test\.tsx?$/,
@@ -124,5 +146,44 @@ describe('State coverage ratchet (Polish PR-10)', () => {
         // tests dashboards (5 minimum) so a future code reorg doesn't
         // silently turn the ratchet into a no-op.
         expect(found.length).toBeGreaterThanOrEqual(5);
+    });
+
+    // ── The route-specific skeleton lives beside its route ───────────
+    //
+    // Both halves are asserted, because either one alone is satisfiable
+    // by the wrong state: the new file could exist while the old export
+    // lingered (two copies to keep in step), or the export could be
+    // gone with nothing in its place (a dashboard with no loading
+    // shell). Note the scanner above does NOT reach the new file —
+    // its pattern is `dashboard/(page|*Client).tsx` — so the move
+    // cannot have bought this guard's silence.
+    describe('DashboardSkeleton is route-local, not a shared primitive', () => {
+        const LOCAL =
+            'src/app/t/[tenantSlug]/(app)/dashboard/DashboardSkeleton.tsx';
+
+        it('the compliance dashboard shell lives beside the route', () => {
+            expect(fs.existsSync(path.resolve(ROOT, LOCAL))).toBe(true);
+            const src = code(LOCAL);
+            expect(src).toMatch(/export function DashboardSkeleton\(/);
+            // It composes the primitives rather than re-deriving them.
+            expect(src).toMatch(/from '@\/components\/ui\/skeleton'/);
+        });
+
+        it('the route-level loading.tsx imports it LOCALLY, not from the barrel', () => {
+            expect(
+                code('src/app/t/[tenantSlug]/(app)/dashboard/loading.tsx'),
+            ).toMatch(
+                /import \{ DashboardSkeleton \} from '\.\/DashboardSkeleton'/,
+            );
+        });
+
+        it('the shared primitives module no longer exports it', () => {
+            const primitives = code('src/components/ui/skeleton.tsx');
+            expect(primitives).not.toMatch(/export function DashboardSkeleton\b/);
+            // `SkeletonDashboard` is a DIFFERENT component — the generic
+            // list-dashboard shell — and must survive the split. Without
+            // this, deleting both would pass the line above.
+            expect(primitives).toMatch(/export function SkeletonDashboard\(/);
+        });
     });
 });

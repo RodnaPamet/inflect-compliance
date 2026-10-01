@@ -21,7 +21,7 @@
  *                  inner card reads as part of the outer plane.
  *     "inset"    — bg-bg-subtle (Polish PR-3). Faint tinted surface
  *                  for sub-panels INSIDE a raised/floating parent —
- *                  diff blocks, rich-text editor chrome, evidence
+ *                  diff blocks, rich-text editor chrome, attachment
  *                  preview tiles. Reads as "inset into the card" not
  *                  "next card on the same plane".
  *     "raised" (default) — the glass-card recipe (bg-bg-default +

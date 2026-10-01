@@ -68,6 +68,26 @@ describe('<InitialsAvatar>', () => {
         // `lg` — the account-profile preview size (avatar roadmap P3).
         expect((lg.container.firstChild as HTMLElement).className).toContain('h-16');
     });
+
+    // The initials are TEXT sitting on the brand tint, so they take a
+    // CONTENT token. `--brand-emphasis` — a fill token — measured
+    // 4.25:1 against that tint composited over `--bg-default` on the
+    // dark theme (under WCAG 1.4.3's 4.5:1) and 4.51:1 on light, i.e.
+    // clearing it by a hundredth. `--content-emphasis` is 7.00:1 and
+    // 14.36:1 on the same two grounds.
+    it('paints the initials with a content token, not a brand FILL token', () => {
+        const { container } = render(<InitialsAvatar value="Ada Lovelace" />);
+        const classes = Array.from(
+            (container.firstChild as HTMLElement).classList,
+        );
+        expect(classes).toContain('text-content-emphasis');
+        expect(
+            classes.filter((c) => /^text-\[var\(--brand-/.test(c)),
+        ).toEqual([]);
+        // The brand TINT is the background and stays — the fix is
+        // about the glyphs on it, not about dropping the brand.
+        expect(classes).toContain('bg-[var(--brand-subtle)]');
+    });
 });
 
 describe('<InitialsAvatar> — image-backed (avatar roadmap P2)', () => {

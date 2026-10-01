@@ -3,9 +3,9 @@
  *
  * One source of truth for headings and link styling across the app.
  * Pages should never hand-roll `<h1 className="text-2xl font-bold">`
- * or inline link `hover:text-[var(--brand-default)]` styling — reach
- * for these primitives instead so the type scale stays finite and
- * the design system can evolve in one place.
+ * or inline brand-coloured link styling — reach for these primitives
+ * instead so the type scale stays finite and the design system can
+ * evolve in one place.
  *
  * Type scale (deliberately small — three levels for headings, one for
  * the eyebrow label, one for caption text):
@@ -106,7 +106,7 @@ interface EyebrowProps extends HTMLAttributes<HTMLSpanElement> {
 // color and the same `mb-1` spacing below it. The primitive owns
 // all five — consumers never override them via inline className.
 //
-// Audit found 17 sites passing `mb-1`, 3 passing
+// A sweep found 17 sites passing `mb-1`, 3 passing
 // `block mb-1 text-content-subtle`, 2 passing `block mb-2`, 1
 // passing `px-3 pt-4 pb-1`. All of those overrides become
 // no-ops here (they're already what the primitive does) or
@@ -154,19 +154,44 @@ const Caption = forwardRef<HTMLParagraphElement, CaptionProps>(function Caption(
 
 // ─── TextLink ────────────────────────────────────────────────────────
 
+/**
+ * BRAND-COLOURED LINK TEXT GOES THROUGH `--content-brand`.
+ *
+ * Every brand tone below used to paint `text-[var(--brand-default)]`,
+ * which is a FILL token. Rendered as text on the light theme that is
+ * #D04A02 — ~4:1 on `--bg-page`, i.e. under the 4.5:1 AA minimum of
+ * WCAG 1.4.3 for body text. So the link tones — the ones most likely to
+ * sit mid-paragraph, where 1.4.3 applies squarely — were failing.
+ *
+ * `--content-brand` exists for exactly this and is guarded on the ratio
+ * rather than the hex (`tests/guardrails/token-contrast-content-brand.test.ts`
+ * computes it from the declarations): >= 4.5:1 on both grounds in both
+ * themes, measured 7.26:1 / 11.93:1 dark and 5.25:1 / 5.07:1 light.
+ *
+ * The HOVER shade is `--content-emphasis`, which clears the same floor
+ * with room to spare — 9.59:1 at its worst (dark, on `--bg-default`),
+ * 15.56:1 at its worst on light. The previous hover was
+ * `--brand-emphasis`: on the light theme that is the SAME value as
+ * `--content-brand`, so hover changed nothing a user could see, and on
+ * dark it moved the wrong way (7.26:1 → 5.82:1). Going to the emphasis
+ * tone makes hover both a real change and a contrast INCREASE.
+ *
+ * Fill tokens still belong on fills (`bg-[var(--brand-subtle)]`) and on
+ * boundaries, where 1.4.11's 3:1 is the applicable floor.
+ */
 const textLinkVariants = cva(
   "inline-flex items-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:rounded-sm",
   {
     variants: {
       tone: {
         default:
-          "text-content-emphasis font-medium hover:text-[var(--brand-default)]",
+          "text-content-emphasis font-medium hover:text-content-brand",
         muted:
           "text-content-muted hover:text-content-emphasis",
         brand:
-          "text-[var(--brand-default)] hover:text-[var(--brand-emphasis)]",
+          "text-content-brand hover:text-content-emphasis",
         // Roadmap-4 PR-10 — `link` is the conventional inline-link
-        // affordance: brand-coloured at rest, brand-emphasis +
+        // affordance: brand-coloured at rest, emphasis-toned +
         // underlined on hover. Use when the surrounding paragraph
         // reads "click here to ..." — i.e. the link is mid-text and
         // the click target needs visual affirmation. The other
@@ -174,7 +199,7 @@ const textLinkVariants = cva(
         // nav, headings, table cell links) where the click target
         // is already communicated by the layout context.
         link:
-          "text-[var(--brand-default)] hover:text-[var(--brand-emphasis)] hover:underline",
+          "text-content-brand hover:text-content-emphasis hover:underline",
         underline:
           "text-content-default underline underline-offset-2 hover:text-content-emphasis",
       },

@@ -17,10 +17,14 @@ import { HIT_AREA_CLASS } from "./hit-area";
  * variant borrows the other's colour, and neither one moves to do it.
  *
  * The complementary hue was already in the system —
- * `--brand-secondary-default` is documented in tokens.css as
- * complementary to the brand in both themes (electric blue ↔ METRO
- * yellow in dark, deep navy ↔ PwC orange in light). Nothing was
- * invented for this material; it is the existing palette, held still.
+ * `--brand-secondary-default` is documented in tokens.css as the
+ * brand's complement. THAT IS A REQUIREMENT ON THE TOKEN, not a
+ * description of one palette: this material's hover language is a trade
+ * of edges, so `--brand-secondary-default` MUST be the complementary
+ * hue of `--brand-default` in EVERY theme the product ships. Give it
+ * some unrelated accent and hover stops reading as a trade and starts
+ * reading as a mistake. Nothing was invented here; it is the existing
+ * palette, held still.
  *
  * Four static layers carry the depth, none of them a keyframe:
  *   1. edge light   — a highlight along the top ~46% (`--btn-still-top`)
@@ -98,7 +102,7 @@ export const buttonVariants = cva(
     "[animation:none]",
     "[transform:none]",
     "[&_svg]:shrink-0",
-    // B3 — pill canonicalisation, retained. Form controls stay
+    // B3 — pill canonicalisation, retained. Form inputs stay
     // rectangular (`control-variants.ts`); text-entry surfaces do not
     // follow the pill.
     "border rounded-full",
@@ -132,7 +136,7 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         // ── Primary. Brand tile; hover trades its own deep edge for
-        //    the COMPLEMENTARY hue — blue on yellow, navy on orange.
+        //    the COMPLEMENTARY hue, whatever the theme's brand is.
         primary: [
           ...stillTile(
             "var(--brand-default)",
@@ -153,7 +157,15 @@ export const buttonVariants = cva(
           "bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_52%),linear-gradient(to_bottom,var(--bg-default),var(--bg-muted))]",
           "text-content-emphasis border-[var(--border-emphasis)]",
           "shadow-[var(--btn-still-lift)]",
-          "hover:border-[var(--brand-default)] hover:text-[var(--brand-default)]",
+          // The hover LABEL goes through `--content-brand`, not
+          // `--brand-default`. The two are the same hue and the same
+          // value in the dark theme; in the light theme the fill token
+          // is #D04A02, which measures ~4:1 against the surface this
+          // tile paints — under the 4.5:1 AA floor for body text. The
+          // EDGE keeps the fill token: 1.4.11 asks 3:1 of a boundary,
+          // which it clears, and the reciprocal trade with primary is
+          // stated in the border.
+          "hover:border-[var(--brand-default)] hover:text-content-brand",
           "active:bg-[image:linear-gradient(to_bottom,var(--bg-muted),var(--bg-muted))]",
           "active:border-[var(--brand-default)] active:shadow-[var(--btn-still-press)]",
         ],

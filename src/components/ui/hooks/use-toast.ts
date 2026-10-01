@@ -9,9 +9,9 @@
  * they call the right method on this hook and the design
  * decisions stay centralized.
  *
- *   useToast().success('Risk created')
+ *   useToast().success('Item created')
  *   useToast().error('Save failed', { description: '…' })
- *   useToast().info('Linked control updated')
+ *   useToast().info('Settings updated')
  *   useToast().warning('This action cannot be undone')
  *
  * Why a hook (not a free function):
@@ -69,22 +69,31 @@ export interface ToastApi {
 function build(
     variant: 'success' | 'error' | 'info' | 'warning',
 ): ToastApi['success'] {
-    return (message, opts) => {
-        // Pass through opts ONLY when the caller supplied them.
-        // The Toaster's `toastOptions` (configured in
-        // `providers.tsx`) sets the default duration globally per
-        // variant, so we don't forward `LOCKED_DURATION` on every
-        // call — that would also break test mocks that assert
-        // `toast.success(message)` with a single argument. The
-        // hook's role is the SINGLE-ENTRY discipline (no raw
-        // sonner imports in app code) — durations are owned by the
-        // Toaster mount + the per-call `opts.duration` override.
-        if (opts) {
-            const duration = opts.duration ?? LOCKED_DURATION[variant];
-            return sonnerToast[variant](message, { ...opts, duration });
-        }
-        return sonnerToast[variant](message);
-    };
+    return (message, opts) =>
+        // THE LOCKED DURATION IS FORWARDED ON EVERY CALL, opts or no
+        // opts. It used to be forwarded only when the caller passed
+        // `opts`, on the stated grounds that the `<Toaster>` mount's
+        // `toastOptions` set the default per variant. It does not:
+        // `providers.tsx` mounts `<Toaster … duration={3000} />` and has
+        // no `toastOptions` at all. So three of the four documented
+        // durations above were fiction for the common call — the
+        // single-argument one — and the consequential one was `error`,
+        // documented as sticky-until-dismiss (`Infinity`) and actually
+        // auto-dismissing after three seconds. A failure the user has
+        // not acknowledged disappearing on its own is the exact thing
+        // `Infinity` was chosen to prevent.
+        //
+        // Forwarding unconditionally also makes the locked table the
+        // single source of truth, rather than something a flat number at
+        // the mount silently overrides.
+        //
+        // An explicit `opts.duration` still wins — that is the
+        // documented override, and `??` keeps a caller-supplied
+        // `Infinity` or `0` intact where `||` would not.
+        sonnerToast[variant](message, {
+            ...opts,
+            duration: opts?.duration ?? LOCKED_DURATION[variant],
+        });
 }
 
 const api: ToastApi = {

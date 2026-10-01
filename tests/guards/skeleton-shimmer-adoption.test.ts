@@ -85,29 +85,77 @@ describe('Skeleton shimmer adoption (R11-PR2)', () => {
         expect(src).toMatch(/'shimmer-sweep':\s*'shimmer-sweep\s+/);
     });
 
-    test("every loading.tsx imports from @/components/ui/skeleton", () => {
+    const IMPORTS_PRIMITIVES = /from\s+['"]@\/components\/ui\/skeleton['"]/;
+    /** A relative import — the only hop this check will follow. */
+    const RELATIVE_IMPORT = /from\s+['"](\.[^'"]*)['"]/g;
+
+    /**
+     * Does this file reach the shared primitive, directly or through ONE
+     * relative hop?
+     *
+     * The hop exists because the rule's subject is "does the loading
+     * surface render shimmer bars", not "does this exact file contain
+     * that import line". A route whose shell is a route-local module —
+     * the compliance dashboard's `./DashboardSkeleton`, which traces one
+     * page's sections and so belongs beside that page rather than in the
+     * primitives module — reaches the primitive through its sibling.
+     *
+     * One hop, and deliberately only one: the alternative was an
+     * EXEMPTIONS entry, which would have stopped checking that route
+     * ENTIRELY. Following the import keeps the teeth — a sibling that
+     * hand-rolled its own `animate-pulse` bars still fails.
+     */
+    function reachesPrimitive(file: string): boolean {
+        const src = codeOf(fs.readFileSync(file, 'utf-8'));
+        if (IMPORTS_PRIMITIVES.test(src)) return true;
+        const dir = path.dirname(file);
+        for (const [, spec] of src.matchAll(RELATIVE_IMPORT)) {
+            for (const ext of ['.tsx', '.ts', '/index.tsx', '/index.ts']) {
+                const candidate = path.resolve(dir, spec + ext);
+                if (!fs.existsSync(candidate)) continue;
+                const hop = codeOf(fs.readFileSync(candidate, 'utf-8'));
+                if (IMPORTS_PRIMITIVES.test(hop)) return true;
+            }
+        }
+        return false;
+    }
+
+    test("every loading.tsx reaches @/components/ui/skeleton", () => {
         const offenders: string[] = [];
-        for (const file of walk(APP_ROOT)) {
+        const files = walk(APP_ROOT);
+        // Not vacuous: an empty walk would make every assertion below
+        // pass while checking nothing.
+        expect(files.length).toBeGreaterThanOrEqual(5);
+        for (const file of files) {
             const rel = path
                 .relative(APP_ROOT, file)
                 .split(path.sep)
                 .join('/');
             if (EXEMPTIONS[rel]) continue;
-            const src = codeOf(fs.readFileSync(file, 'utf-8'));
-            if (
-                !/from\s+['"]@\/components\/ui\/skeleton['"]/.test(src)
-            ) {
-                offenders.push(rel);
-            }
+            if (!reachesPrimitive(file)) offenders.push(rel);
         }
         if (offenders.length > 0) {
             throw new Error(
-                `${offenders.length} loading.tsx file(s) don't import the shared Skeleton primitive:\n  ` +
+                `${offenders.length} loading.tsx file(s) don't reach the shared Skeleton primitive:\n  ` +
                     offenders.join('\n  ') +
-                    '\n\nFix: replace the hand-rolled `animate-pulse` divs with `<Skeleton>` (or any of the `Skeleton*` primitives in `src/components/ui/skeleton.tsx`).\n' +
+                    '\n\nFix: replace the hand-rolled `animate-pulse` divs with `<Skeleton>` (or any of the `Skeleton*` primitives in `src/components/ui/skeleton.tsx`) — either in the loading.tsx itself or in a route-local shell it imports.\n' +
                     'OR add the file path to EXEMPTIONS with a reason if the loading surface intentionally isn\'t a skeleton.',
             );
         }
+    });
+
+    test('the one-hop allowance does not admit a file that reaches nothing', () => {
+        // The hop's own control. Without this, widening the check from
+        // "imports the primitive" to "imports the primitive, or imports
+        // something that does" is an assertion nobody has shown still
+        // refuses anything — and a relative import of an unrelated
+        // sibling would be the way in.
+        const unrelated = path.resolve(
+            ROOT,
+            'src/app/t/[tenantSlug]/(app)/dashboard/PostureLadder.tsx',
+        );
+        expect(fs.existsSync(unrelated)).toBe(true);
+        expect(reachesPrimitive(unrelated)).toBe(false);
     });
 
     test('no loading.tsx file hand-rolls a raw `animate-pulse` block', () => {

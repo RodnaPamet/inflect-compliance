@@ -15,7 +15,7 @@
  *   - `no-results` — the user's search/filter matched nothing. Default
  *     icon: SearchX. Pair with a "Clear filters" secondary action.
  *   - `missing-prereqs` — view requires setup the user hasn't done
- *     (e.g., "Connect a framework before installing controls").
+ *     (e.g., "Pick a plan before you can add members").
  *     Default icon: AlertCircle. Pair with a primary action that
  *     navigates to the prerequisite flow.
  *

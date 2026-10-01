@@ -40,7 +40,7 @@ export interface UndoToastProps {
     toastId: string | number;
     /** Hook-internal id used to look up the pending commit. */
     pendingId: string;
-    /** Primary message (e.g. "Risk deleted"). */
+    /** Primary message (e.g. "Item deleted"). */
     message: string;
     /** Undo button label (e.g. "Undo"). */
     undoMessage: string;

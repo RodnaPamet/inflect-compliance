@@ -9,10 +9,10 @@
  * `aria-current="page"`.
  *
  * Use across:
- *   - List pages — usually one ancestor: `[Dashboard] / Controls`
- *   - Detail pages — `[Dashboard] / Controls / <Control name>`
+ *   - List pages — usually one ancestor: `[Dashboard] / Items`
+ *   - Detail pages — `[Dashboard] / Items / <Item name>`
  *   - Admin — `[Dashboard] / Admin / API keys`
- *   - Wizards — `[Dashboard] / Risks / Import / Step 2`
+ *   - Wizards — `[Dashboard] / Items / Import / Step 2`
  *
  * Pair with `<EntityListPage header.breadcrumbs>` or
  * `<EntityDetailLayout breadcrumbs>` to render above the page title.
