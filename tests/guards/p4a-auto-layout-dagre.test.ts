@@ -44,8 +44,15 @@ describe("Epic P4-PR-A — canvas auto-layout (dagre)", () => {
             // The first three positional params stay required +
             // ordered; the 4th is opt-in via `?:` so legacy callers
             // keep compiling. Locked by p-polish-a too.
+        // The parameter types are STRUCTURAL (`LayoutNode` / `LayoutEdge`),
+        // deliberately naming no engine. This module is pure graph layout and
+        // read only six fields; taking `Node[]` from `@xyflow/react` meant
+        // phase 4 would have deleted auto-layout along with the renderer, and
+        // tldraw has no equivalent. xyflow's own `Node` / `Edge` remain
+        // assignable, which is why every behavioural suite here passed
+        // unchanged across the port.
             expect(src).toMatch(
-                /export function computeAutoLayout\(\s*nodes:\s*Node\[\],\s*edges:\s*Edge\[\],\s*direction:\s*AutoLayoutDirection,\s*nodeIdsFilter\?:\s*ReadonlySet<string>,?\s*\):\s*AutoLayoutResult/,
+                /export function computeAutoLayout\(\s*nodes:\s*readonly LayoutNode\[\],\s*edges:\s*readonly LayoutEdge\[\],\s*direction:\s*AutoLayoutDirection,\s*nodeIdsFilter\?:\s*ReadonlySet<string>,?\s*\):\s*AutoLayoutResult/,
             );
         });
 
