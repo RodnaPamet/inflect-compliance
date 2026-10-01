@@ -322,6 +322,11 @@ function Inner({
                     node={selection.node}
                     edge={selection.edge}
                     tenantSlug={tenantSlug}
+                    // This renderer does not read `dataJson.size`; the node
+                    // shape draws at its default geometry. `useTldrawSelection`
+                    // already drops the patch, so the control was persisting
+                    // nothing AND displaying nothing.
+                    rendererHonoursSize={false}
                     onUpdate={selection.onUpdate}
                     onEdgeUpdate={selection.onEdgeUpdate}
                     {...(activeId ? { mapId: activeId } : {})}
