@@ -215,7 +215,15 @@ const ROOT = path.resolve(__dirname, '../..');
 //   three more rendered suites: if it lands first the count reaches 329 and a
 //   floor of 319 is slack 10, which fails IN THE MERGE QUEUE rather than here.
 //   At 326 this branch passes in either landing order.
-const RENDERED_TEST_FLOOR = 326;
+// Raised 326 → 334 (2026-10-01): the tldraw migration's host-adapter suites —
+// the arrow→edge conversion, auto-layout, and the drill-down scope.
+//
+// 334 and not 335, deliberately. The guard has teeth in BOTH directions, and
+// `count >= floor` is the one that bites here: this branch's own live count is
+// 334, so a floor of 335 would fail on this very PR. A sibling PR adds the
+// next file, and at that point 335 vs 334 is slack 1. Either merge order
+// passes at 334; only one of them passes at 335.
+const RENDERED_TEST_FLOOR = 334;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
