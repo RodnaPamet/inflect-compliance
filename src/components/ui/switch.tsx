@@ -4,10 +4,11 @@
  * Epic 55 — shared <Switch> primitive.
  *
  * CVA-sized binary toggle built on `@radix-ui/react-switch`. Replaces
- * the over-parameterized Dub port (trackDimensions / thumbDimensions /
- * thumbTranslate props) with a single `size` variant and semantic
- * tokens. Preserves the Tooltip-wrapped disabledTooltip affordance
- * from the legacy API since that's useful for RBAC-gated toggles.
+ * the over-parameterized original port (trackDimensions /
+ * thumbDimensions / thumbTranslate props) with a single `size` variant
+ * and semantic tokens. Preserves the Tooltip-wrapped disabledTooltip
+ * affordance from the legacy API since that's useful for
+ * permission-gated toggles.
  *
  * Size contract:
  *   - sm: h-4 w-7,  thumb 3, translate-x-3

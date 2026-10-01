@@ -189,7 +189,13 @@ export function InlineNotice({
                     onClick={onDismiss}
                     aria-label={dismissLabel ?? t("dismiss")}
                     className={cn(
-                        "ml-auto flex-shrink-0 rounded p-0.5 transition hover:opacity-70",
+                        // The TARGET, not the glyph. `p-0.5` around a 14px
+                        // icon gave an 18px tap area — under WCAG 2.2 2.5.8's
+                        // 24px minimum, and far under the 44px a finger needs.
+                        // `size-6` is 24px and `pointer-coarse:size-11` is
+                        // 44px on touch; the icon stays 14px and is centred
+                        // inside it, so nothing moves visually on a desktop.
+                        "ml-auto flex size-6 flex-shrink-0 items-center justify-center rounded transition hover:opacity-70 pointer-coarse:size-11",
                         tokens.text,
                     )}
                 >

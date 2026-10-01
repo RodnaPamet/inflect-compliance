@@ -4,11 +4,11 @@
  * Epic 55 — shared <RadioGroup> + <RadioGroupItem> primitives.
  *
  * Wraps `@radix-ui/react-radio-group` with semantic-token styling.
- * Drops the legacy Dub `border-primary` classes; tokens are brand-*
- * for the selected dot and border-default/-emphasis for the ring.
+ * Drops the legacy `border-primary` classes; tokens are brand-* for
+ * the selected dot and border-strong for the ring.
  *
  * Size variant aligns with Checkbox so mixed groups of radio + check
- * controls line up vertically in the same form.
+ * boxes line up vertically in the same form.
  */
 
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
@@ -19,8 +19,15 @@ import * as React from "react";
 export const radioItemVariants = cva(
     [
         "aspect-square shrink-0 rounded-full border transition-colors",
-        "bg-bg-default border-border-default",
-        "hover:border-border-emphasis",
+        // Same edge-is-the-control reasoning as Checkbox: an unselected radio
+        // is a ring and nothing else, and `border-border-default` measured
+        // 1.36:1 dark / 1.20:1 light against WCAG 2.1 1.4.11's 3:1.
+        // `border-border-strong` is 3.50 / 3.51 (see tokens.css).
+        "bg-bg-default border-border-strong",
+        // Hover on the brand edge, not `border-border-emphasis` — that token
+        // is 2.44 dark / 1.59 light, i.e. BELOW the rest edge above, so it
+        // would have made hover the least visible state of the three.
+        "hover:border-brand-emphasis",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg-default",
         "data-[state=checked]:border-brand-emphasis data-[state=checked]:text-brand-emphasis",
         "disabled:cursor-not-allowed disabled:opacity-50",
