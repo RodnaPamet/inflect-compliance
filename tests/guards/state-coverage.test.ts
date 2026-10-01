@@ -43,7 +43,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — every assertion below reads through `codeOf`, which masks
+// comments at the READ SEAM. Without it "delete the component, keep the
+// comment that names it" is a green diff, and on a `.not.toMatch` the mirror
+// image holds: prose mentioning the forbidden symbol fails a guard whose code
+// is fine. String literals are KEPT, so the import-path assertions still see
+// what they are about.
+//
+// The raw reader survives for the SCANNER below, which feeds a regex test
+// rather than an `expect` — it is looking for an `if (loading)` branch, and
+// masking is irrelevant to whether the file is an offender.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
+
+const code = (rel: string): string =>
+    codeOf(fs.readFileSync(path.resolve(ROOT, rel), 'utf8'));
 
 const EXEMPT_FILE_PATTERNS: RegExp[] = [
     /\.test\.tsx?$/,
@@ -148,30 +163,22 @@ describe('State coverage ratchet (Polish PR-10)', () => {
 
         it('the compliance dashboard shell lives beside the route', () => {
             expect(fs.existsSync(path.resolve(ROOT, LOCAL))).toBe(true);
-            const src = fs.readFileSync(path.resolve(ROOT, LOCAL), 'utf8');
+            const src = code(LOCAL);
             expect(src).toMatch(/export function DashboardSkeleton\(/);
             // It composes the primitives rather than re-deriving them.
             expect(src).toMatch(/from '@\/components\/ui\/skeleton'/);
         });
 
         it('the route-level loading.tsx imports it LOCALLY, not from the barrel', () => {
-            const loading = fs.readFileSync(
-                path.resolve(
-                    ROOT,
-                    'src/app/t/[tenantSlug]/(app)/dashboard/loading.tsx',
-                ),
-                'utf8',
-            );
-            expect(loading).toMatch(
+            expect(
+                code('src/app/t/[tenantSlug]/(app)/dashboard/loading.tsx'),
+            ).toMatch(
                 /import \{ DashboardSkeleton \} from '\.\/DashboardSkeleton'/,
             );
         });
 
         it('the shared primitives module no longer exports it', () => {
-            const primitives = fs.readFileSync(
-                path.resolve(ROOT, 'src/components/ui/skeleton.tsx'),
-                'utf8',
-            );
+            const primitives = code('src/components/ui/skeleton.tsx');
             expect(primitives).not.toMatch(/export function DashboardSkeleton\b/);
             // `SkeletonDashboard` is a DIFFERENT component — the generic
             // list-dashboard shell — and must survive the split. Without
