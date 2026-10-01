@@ -153,8 +153,8 @@ export function useTable<T extends TableRowData>(
   // R12-PR1 — select column is default-on. Pages opt out via
   // `selectionEnabled={false}`. The previous gating (require either
   // `onRowSelectionChange` or `selectionControls`) made the select
-  // column appear on exactly one page (Controls) and absent
-  // everywhere else — the structural inconsistency the round closes.
+  // column appear on exactly one list page and absent everywhere
+  // else — the structural inconsistency the round closes.
   const selectionEnabled = props.selectionEnabled ?? true;
 
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>(
@@ -749,8 +749,8 @@ type TableBodyRowProps<T extends TableRowData> = {
  *
  * Equality is React's DEFAULT shallow props comparison — deliberately
  * NOT a hand-written comparator. A bespoke comparator has to be
- * re-audited every time a prop is added, and renders STALE ROWS when
- * that audit is missed; a stale row is far worse than a slow one. The
+ * re-checked every time a prop is added, and renders STALE ROWS when
+ * that check is missed; a stale row is far worse than a slow one. The
  * invariant this component must hold instead is simpler and local:
  * **everything the body reads must arrive as a prop**. Reading live
  * table state (`row.getIsSelected()`, `row.getIsExpanded()`,

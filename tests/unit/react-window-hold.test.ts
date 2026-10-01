@@ -1,19 +1,22 @@
 /**
- * `react-window` is held on v1 deliberately. This file is the enforcement.
+ * `react-window` is on v2, and the two seams that depend on it are ported.
+ * This file is the enforcement, and the successor to
+ * `react-window-v1-hold.test.ts`.
  *
- * WHY IT EXISTS (#2646). `docs/dependency-governance.md` records the decision
- * (#2552, dependabot #2543 closed on purpose) and — at the time this was
- * written — already ASSERTED that this very file enforced it:
+ * WHY IT STILL EXISTS AFTER THE BUMP. The v1 file existed because
+ * `docs/dependency-governance.md` ASSERTED an enforcement that was absent
+ * (#2646), and a doc answering "is this guarded?" wrongly is worse than one
+ * answering nothing. That hazard did not go away when the hold was released —
+ * it inverted. The section now records a MIGRATION, and the claims worth
+ * pinning are the ones a careless change would falsify:
  *
- *     "`tests/unit/react-window-v1-hold.test.ts` pins both halves … A third
- *      importer, or a bump to v2, turns it red."
- *
- * The file did not exist. That doc is classified `authoritative`, where every
- * claim must be true today, and `docs-accuracy.test.ts` cannot catch this
- * class: it looks for future-tense markers, not for a false statement in the
- * present tense. A doc claiming an enforcement that is absent is worse than a
- * doc claiming nothing, because it answers "is this guarded?" wrongly and
- * stops the reader looking. Writing the file is what makes the sentence true.
+ *   - a v1 identifier coming back (the published v1 is still installable, and
+ *     a copy-paste from an old branch or from a tutorial reaches for
+ *     `FixedSizeList` by reflex);
+ *   - `react-virtualized-auto-sizer` or `@types/react-window` being
+ *     re-introduced, which is how a two-dependency win silently reverts;
+ *   - a THIRD seam appearing, because the whole argument for the wrapper is
+ *     that consumers do not import react-window directly.
  *
  * WHY IT READS NOTHING AS TEXT, which is the part worth copying.
  * The draft guard in #2552 was dropped because it cost shared, zero-allowance
@@ -32,18 +35,19 @@
  *
  * That is NOT a trick played on the ratchet — it is the fix the ratchet asks
  * for, and here it is also the only CORRECT implementation. Measured over the
- * whole repository: NINE files contain the string `react-window` and only TWO
- * depend on it. The other seven name it in prose — two sibling components,
- * three rendered tests, and this file. A grep-shaped guard would report nine
- * seams and be wrong by seven; a `not.toMatch` form would be satisfied by any
- * one of those comments. An `ImportDeclaration` cannot be written in a
- * comment, so the AST answers the question that was actually asked.
+ * whole repository: THIRTEEN files contain the string `react-window` and only
+ * TWO depend on it. The other eleven name it in prose — four docs, three
+ * rendered tests, a sibling component, a guard, and this file. A grep-shaped
+ * guard would report thirteen seams and be wrong by eleven; a `not.toMatch`
+ * form would be satisfied by any one of those comments. An
+ * `ImportDeclaration` cannot be written in a comment, so the AST answers the
+ * question that was actually asked.
  *
- * WHAT THIS DOES NOT CLAIM. It does not check that the decision is still a
- * good one, and it must not: CLAUDE.md's "never gate CI on prose" is the rule
- * that deleted `rq3-11-capstone`. Nothing below reads a markdown file. When
- * this goes red the answer is to re-argue the section in the same PR, not to
- * edit a number until it passes.
+ * WHAT THIS DOES NOT CLAIM. It does not check that the migration was a good
+ * idea, and it must not: CLAUDE.md's "never gate CI on prose" is the rule that
+ * deleted `rq3-11-capstone`. Nothing below reads a markdown file. When this
+ * goes red the answer is to re-argue the section in the same PR, not to edit a
+ * number until it passes.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -53,6 +57,23 @@ import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
 
 const MODULE = 'react-window';
 
+/**
+ * The packages the v2 port REMOVED. Both are listed because each reverts a
+ * different half of the win and each would revert silently:
+ *
+ *   - `react-virtualized-auto-sizer` existed only because v1's lists demanded
+ *     literal pixel dimensions. v2's `List` observes its own box, so an
+ *     auto-sizer import is now a sign someone rebuilt the v1 sizing matrix.
+ *   - `@types/react-window@2` is a PUBLISHED STUB — its own npm metadata says
+ *     "react-window provides its own type definitions, so you do not need
+ *     this installed". Installing it adds a package that defines nothing and
+ *     invites a reader to believe the types live there.
+ */
+const REMOVED_PACKAGES = [
+    '@types/react-window',
+    'react-virtualized-auto-sizer',
+] as const;
+
 /** The two seams `docs/dependency-governance.md` names, and nothing else. */
 const DOCUMENTED_SEAMS = [
     'src/components/ui/table/virtual-table-body.tsx',
@@ -60,43 +81,56 @@ const DOCUMENTED_SEAMS = [
 ] as const;
 
 /**
- * The v1 identifiers each seam depends on. These ARE the hold: every one of
- * them is absent from `react-window@2`'s type definitions, which exports a
- * single `List` plus `Grid` instead. A port that kept the import count at two
- * would still have to change this set, so the set is the tighter pin.
+ * The v2 identifiers each seam depends on.
+ *
+ * This is the same shape of pin the v1 file carried, pointing the other way:
+ * every name here is absent from `react-window@1`'s type definitions, so a
+ * revert that kept the import count at two would still have to change this
+ * set. The set, not the version range, is the tighter statement — a lockfile
+ * can be hand-edited back to 1.x while these names stay, and then the app
+ * imports symbols the installed package does not export.
  */
 const EXPECTED_BINDINGS: Readonly<Record<string, readonly string[]>> = {
-    'src/components/ui/table/virtual-table-body.tsx': ['FixedSizeList'],
+    'src/components/ui/table/virtual-table-body.tsx': ['List', 'RowComponentProps'],
     'src/components/ui/virtualized-list.tsx': [
-        'FixedSizeList',
-        'ListChildComponentProps',
-        'VariableSizeList',
+        'List',
+        'ListImperativeAPI',
+        'RowComponentProps',
     ],
 };
+
+/**
+ * Every export the v1 implementation imported. v2 removed all three, so any
+ * one of them reappearing anywhere in the tree means either a partial revert
+ * or a new file written against the old API.
+ */
+const V1_ONLY_BINDINGS = [
+    'FixedSizeList',
+    'ListChildComponentProps',
+    'VariableSizeList',
+] as const;
 
 /**
  * The scan is REPO-WIDE, not `src/`-scoped, and covers every extension a
  * module can be imported from. Scoping it to `src/**\/*.{ts,tsx}` would have
  * left three ways to add a seam invisibly: a `.js`/`.mjs` file, a file outside
  * `src/`, and a script or test that imports the module directly. The text
- * prefilter keeps the whole-repo walk at ~230ms for 5,238 files.
+ * prefilter keeps the whole-repo walk at ~230ms for 5,562 files.
  */
 const SCANNED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'] as const;
 
 /**
  * POSITIVE CONTROL floor, for PARTIAL collapse specifically.
  *
- * This comment used to claim the floor stopped an empty scan passing "by
- * vacuity". That was false, and the falsehood is worth leaving recorded: an
- * EMPTY scan makes `liveSeams()` return nothing, and comparing nothing against
- * a two-element `DOCUMENTED_SEAMS` FAILS. The set assertions already fail
- * closed, so the floor buys nothing there.
+ * An EMPTY scan makes `liveSeams()` return nothing, and comparing nothing
+ * against a two-element `DOCUMENTED_SEAMS` FAILS — the set assertions already
+ * fail closed, so the floor buys nothing there.
  *
  * What it does buy is the partial case, which does not fail closed: a scan
  * that still reaches `src/components/ui`, where both seams live, but has lost
  * most of the tree — a broken `under:` filter, a git population that came back
  * truncated. Every assertion below still passes while the guard has gone blind
- * everywhere else. Measured at 5,238 files; the floor sits under it with room
+ * everywhere else. Measured at 5,562 files; the floor sits under it with room
  * for ordinary deletion.
  */
 const MIN_FILES_SCANNED = 4000;
@@ -203,12 +237,10 @@ export function importedBindings(
  * object-literal property.
  *
  * THE SECOND HALF IS NOT DECORATION. The first draft matched only
- * `ts.isJsxAttribute`, and the sibling seam `virtualized-list.tsx:193-224`
- * already hoists its props into `const commonProps = {...} as const` and
- * spreads them into both list components. So unifying the two seams' call
- * shapes — ordinary tidying that keeps react-window on v1 and keeps the prop —
- * would have turned this guard red. A guard that reddens on innocent work gets
- * routed around, so matching the PROP rather than the SYNTAX is the fix.
+ * `ts.isJsxAttribute`, and a props-hoist into `const commonProps = {...} as
+ * const` spread into the list component — ordinary tidying — would have turned
+ * the guard red. A guard that reddens on innocent work gets routed around, so
+ * matching the PROP rather than the SYNTAX is the fix.
  *
  * An object-literal property cannot be written in a comment either, so the
  * Class A immunity this file depends on is preserved.
@@ -242,13 +274,13 @@ export function passesProp(
 // ───────────────────────────── the live scan ───────────────────────────────
 
 /**
- * Leading major of a semver or a range (`^1.8.11` -> 1).
+ * Leading major of a semver or a range (`^2.3.3` -> 2).
  *
  * ANCHORED on purpose. An unanchored `(\d+)\.` reads a major out of whatever
- * digit it meets first, so `npm:react-window@2.3.1` or a git URL could yield a
- * number from the wrong part of the string — a silent wrong answer in the one
- * function every version assertion depends on. Anchoring makes those throw
- * instead, and `expectPinnedToV1` below refuses the range shapes that this
+ * digit it meets first, so `npm:react-window@1.8.11` or a git URL could yield
+ * a number from the wrong part of the string — a silent wrong answer in the
+ * one function every version assertion depends on. Anchoring makes those throw
+ * instead, and the pin assertion below refuses the range shapes that this
  * function alone cannot judge.
  */
 export function majorOf(version: string): number {
@@ -259,8 +291,8 @@ export function majorOf(version: string): number {
 
 /**
  * True only for a range that CANNOT install a different major: an exact
- * version, or a caret/tilde on one. `>=1.0.0` reads as major 1 and admits
- * 2.x, which is precisely the hole a major-only check leaves open.
+ * version, or a caret/tilde on one. `>=2.0.0` reads as major 2 and admits
+ * 3.x, which is precisely the hole a major-only check leaves open.
  */
 export function isSingleMajorPin(range: string): boolean {
     return /^[\^~]?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(range.trim());
@@ -269,19 +301,19 @@ export function isSingleMajorPin(range: string): boolean {
 const ALL_FILES = repoFiles({ extensions: [...SCANNED_EXTENSIONS] });
 
 /**
- * Repo-relative paths that really import `MODULE`, with their bindings.
+ * Repo-relative paths that really import `spec`, with their bindings.
  *
  * Pre-filtered on the raw text purely for speed — an `ImportDeclaration`'s
  * specifier is a string literal, so a file that lacks the substring cannot
  * import it. The AST, never the substring, decides.
  */
-const liveSeams = (): Map<string, string[]> => {
+const liveSeams = (spec: string): Map<string, string[]> => {
     const out = new Map<string, string[]>();
     for (const abs of ALL_FILES) {
         const text = fs.readFileSync(abs, 'utf8');
-        if (!text.includes(MODULE)) continue;
+        if (!text.includes(spec)) continue;
         const rel = repoRelative(abs);
-        const bindings = importedBindings(text, rel, MODULE);
+        const bindings = importedBindings(text, rel, spec);
         if (bindings !== null) out.set(rel, bindings);
     }
     return out;
@@ -299,18 +331,16 @@ const lock = JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'),
 ) as { packages: Record<string, { version?: string }> };
 
-describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', () => {
+describe('react-window is on v2 (docs/dependency-governance.md)', () => {
     describe('the version pin', () => {
-        it('declares a v1 range for react-window and its v1-era types', () => {
-            expect(majorOf(pkg.dependencies[MODULE])).toBe(1);
-            expect(majorOf(pkg.devDependencies[`@types/${MODULE}`])).toBe(1);
+        it('declares a v2 range for react-window', () => {
+            expect(majorOf(pkg.dependencies[MODULE])).toBe(2);
         });
 
         it('declares a range that CANNOT reach another major', () => {
-            // A major-only check passes `>=1.0.0`, which installs 2.x the day
-            // it publishes. A caret or tilde on a 1.x version provably cannot.
+            // A major-only check passes `>=2.0.0`, which installs 3.x the day
+            // it publishes. A caret or tilde on a 2.x version provably cannot.
             expect(isSingleMajorPin(pkg.dependencies[MODULE])).toBe(true);
-            expect(isSingleMajorPin(pkg.devDependencies[`@types/${MODULE}`])).toBe(true);
         });
 
         it('has no override or resolution redirecting the package elsewhere', () => {
@@ -318,39 +348,53 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             // range — the shape #2545 exists to catch. An entry here is not
             // forbidden, but it must be argued rather than arrive silently.
             expect(pkg.overrides?.[MODULE]).toBeUndefined();
-            expect(pkg.overrides?.[`@types/${MODULE}`]).toBeUndefined();
         });
 
-        it('RESOLVES to v1 in the lockfile, which the range alone does not promise', () => {
+        it('RESOLVES to v2 in the lockfile, which the range alone does not promise', () => {
             // The hono lesson (#2545): a range admitting a version is not the
             // same as that version being installed, and the reverse holds too
-            // — `^1.8.11` cannot reach 2.x, but a lockfile edited by hand or
+            // — `^2.3.3` cannot reach 1.x, but a lockfile edited by hand or
             // an override can. The resolved version is the one that ships.
-            expect(majorOf(lock.packages[`node_modules/${MODULE}`].version!)).toBe(1);
-            expect(
-                majorOf(lock.packages[`node_modules/@types/${MODULE}`].version!),
-            ).toBe(1);
+            expect(majorOf(lock.packages[`node_modules/${MODULE}`].version!)).toBe(2);
         });
 
-        it('has the INSTALLED tree on v1 too, which the lockfile alone does not promise', () => {
+        it('has the INSTALLED tree on v2 too, which the lockfile alone does not promise', () => {
             // This repo shares one node_modules across worktrees and it drifts
             // behind the lockfile. Majors are compared, not exact versions, so
-            // ordinary drift inside v1 is not a false red.
+            // ordinary drift inside v2 is not a false red.
             //
             // ASK NODE'S RESOLVER, never a spelled path. A `.claude/worktrees/<id>/`
             // checkout has no `node_modules` of its own and resolves UPWARD to the
             // primary clone, so `path.join(REPO_ROOT, 'node_modules', …)` fails for
             // worktree users while passing in CI — or skips itself green behind an
-            // `existsSync`. `dependency-paths-are-resolved` caught that here, on the
-            // first draft of this very file. Neither package declares an `exports`
-            // map, so the `<pkg>/package.json` subpath is reachable; that is a
-            // precondition of this shape, not a given.
+            // `existsSync`. `dependency-paths-are-resolved` caught that on the
+            // first draft of this file's predecessor. react-window declares no
+            // `exports` map, so the `<pkg>/package.json` subpath is reachable;
+            // that is a precondition of this shape, not a given.
             const installed = require(`${MODULE}/package.json`) as { version: string };
-            const installedTypes = require(`@types/${MODULE}/package.json`) as {
-                version: string;
-            };
-            expect(majorOf(installed.version)).toBe(1);
-            expect(majorOf(installedTypes.version)).toBe(1);
+            expect(majorOf(installed.version)).toBe(2);
+        });
+    });
+
+    describe('the two packages the port removed stay removed', () => {
+        it.each(REMOVED_PACKAGES)('%s is in neither dependency block', (name) => {
+            expect(pkg.dependencies[name]).toBeUndefined();
+            expect(pkg.devDependencies[name]).toBeUndefined();
+        });
+
+        it.each(REMOVED_PACKAGES)('%s is absent from the lockfile too', (name) => {
+            // A transitive re-entry is not a revert of the decision, but it IS
+            // the package back in the tree — and for these two there is no
+            // legitimate transitive route, so either way it wants explaining.
+            expect(lock.packages[`node_modules/${name}`]).toBeUndefined();
+        });
+
+        it('react-virtualized-auto-sizer has no importer anywhere in the repo', () => {
+            // The package assertions above only say it is not INSTALLED. This
+            // says nothing reaches for it — which is the assertion that would
+            // catch the sizing matrix being rebuilt in a PR that also re-adds
+            // the dependency, where the two halves cover for each other.
+            expect([...liveSeams('react-virtualized-auto-sizer').keys()]).toEqual([]);
         });
     });
 
@@ -361,35 +405,49 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
         });
 
         it('is depended on by exactly the two documented seams, repo-wide', () => {
-            expect([...liveSeams().keys()].sort()).toEqual([...DOCUMENTED_SEAMS]);
+            expect([...liveSeams(MODULE).keys()].sort()).toEqual([...DOCUMENTED_SEAMS]);
         });
 
         it('has a binding expectation for every documented seam', () => {
-            // WITHOUT THIS, the binding check below is vacuous. It used to
-            // iterate `Object.entries(EXPECTED_BINDINGS)`, so emptying or
+            // WITHOUT THIS, the binding check below is vacuous. Its ancestor
+            // iterated `Object.entries(EXPECTED_BINDINGS)`, so emptying or
             // thinning that table deleted the assertion silently and left a
             // green suite — the precise defect this file claims to close,
             // sitting inside it. Pin the table's key set so thinning is red.
             expect(Object.keys(EXPECTED_BINDINGS).sort()).toEqual([...DOCUMENTED_SEAMS]);
         });
 
-        it('imports only v1 identifiers, every one of which v2 removed', () => {
+        it('imports only v2 identifiers, every one of which v1 lacks', () => {
             // One whole-map comparison rather than a loop: a map equality
             // cannot go vacuous the way a loop over a table can, and it
             // reports the seam set and the bindings in a single diff.
-            const live = Object.fromEntries([...liveSeams()].sort());
+            const live = Object.fromEntries([...liveSeams(MODULE)].sort());
             expect(live).toEqual(EXPECTED_BINDINGS);
         });
 
-        it('still hosts the sticky header through outerElementType, which v2 cannot express', () => {
-            // The decision record calls this "the load-bearing one": v2 offers
-            // `tagName` (a tag NAME, not a component), so a memoised component
-            // passed as `outerElementType` has no v2 equivalent and the port is
-            // design work. If this disappears, either the seam was ported or the
-            // sticky-header contract changed — both need the section re-argued.
-            const rel = 'src/components/ui/table/virtual-table-body.tsx';
-            const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
-            expect(passesProp(text, rel, 'outerElementType')).toBe(true);
+        it('imports NO v1-only identifier anywhere, under any alias', () => {
+            // The map equality above already fails on a v1 import inside a
+            // documented seam. This covers the other direction — a v1
+            // identifier imported by some THIRD file — and it says what went
+            // wrong in the language of the migration rather than as a seam-set
+            // diff. `importedBindings` pins the module's own name, so an
+            // `import { FixedSizeList as Rows }` is still caught.
+            const seen = new Set([...liveSeams(MODULE).values()].flat());
+            expect(V1_ONLY_BINDINGS.filter((name) => seen.has(name))).toEqual([]);
+        });
+
+        it('passes NO outerElementType, the prop v2 cannot express', () => {
+            // v1 hosted the table's sticky header by passing a memoised
+            // component as `outerElementType`. v2 offers `tagName` (a tag
+            // NAME, not a component) and nothing else, so the header moved out
+            // to being a flex sibling of the list. If this prop comes back it
+            // is inert — react-window 2 spreads it onto a DOM div as an
+            // unknown attribute and React warns — so a reader would be
+            // looking at a header mechanism that does not run.
+            for (const rel of DOCUMENTED_SEAMS) {
+                const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+                expect(passesProp(text, rel, 'outerElementType')).toBe(false);
+            }
         });
     });
 
@@ -403,12 +461,12 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
 
         it('sees a third importer', () => {
             expect(
-                importedBindings(`import { FixedSizeList } from "react-window";`, TSX, MODULE),
-            ).toEqual(['FixedSizeList']);
+                importedBindings(`import { List } from "react-window";`, TSX, MODULE),
+            ).toEqual(['List']);
         });
 
         it('is NOT satisfied by a comment naming the module — the Class A defect', () => {
-            // This is not hypothetical: two files in this tree mention
+            // This is not hypothetical: eleven files in this tree mention
             // `react-window` in prose and import nothing.
             const prose = [
                 '// react-window is deliberately not used here; see',
@@ -418,21 +476,38 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             expect(importedBindings(prose, TSX, MODULE)).toBeNull();
         });
 
-        it('reports a v2-shaped import as a DIFFERENT binding set', () => {
+        it('reports a v1-shaped import as a DIFFERENT binding set', () => {
             expect(
-                importedBindings(`import { List, type RowComponentProps } from "react-window";`, TSX, MODULE),
-            ).toEqual(['List', 'RowComponentProps']);
+                importedBindings(
+                    `import { FixedSizeList, type ListChildComponentProps } from "react-window";`,
+                    TSX,
+                    MODULE,
+                ),
+            ).toEqual(['FixedSizeList', 'ListChildComponentProps']);
         });
 
         it('sees a re-export, which would otherwise be an invisible seam', () => {
             expect(
-                importedBindings(`export { FixedSizeList } from "react-window";`, TSX, MODULE),
-            ).toEqual(['FixedSizeList']);
+                importedBindings(`export { List } from "react-window";`, TSX, MODULE),
+            ).toEqual(['List']);
         });
 
         it('pins the MODULE name, not the local alias', () => {
             expect(
-                importedBindings(`import { FixedSizeList as L } from "react-window";`, TSX, MODULE),
+                importedBindings(`import { List as L } from "react-window";`, TSX, MODULE),
+            ).toEqual(['List']);
+        });
+
+        it('pins a v1 name through an alias, which is how a revert would hide', () => {
+            // The v1-only assertion reads `liveSeams`' binding VALUES, so it is
+            // only as good as this: an aliased import must still report
+            // `FixedSizeList`, not `Rows`.
+            expect(
+                importedBindings(
+                    `import { FixedSizeList as Rows } from "react-window";`,
+                    TSX,
+                    MODULE,
+                ),
             ).toEqual(['FixedSizeList']);
         });
 
@@ -444,7 +519,7 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
 
         it('sees a require(), which is not an ImportDeclaration either', () => {
             expect(
-                importedBindings(`const { FixedSizeList } = require("react-window");`, TSX, MODULE),
+                importedBindings(`const { List } = require("react-window");`, TSX, MODULE),
             ).toEqual(['(require)']);
         });
 
@@ -466,8 +541,8 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
 
         it('pins the MODULE name on a re-export alias too, not the exported one', () => {
             expect(
-                importedBindings(`export { FixedSizeList as Rows } from "react-window";`, TSX, MODULE),
-            ).toEqual(['FixedSizeList']);
+                importedBindings(`export { List as Rows } from "react-window";`, TSX, MODULE),
+            ).toEqual(['List']);
         });
 
         it('is not fooled by a require of a DIFFERENT module', () => {
@@ -476,22 +551,37 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             ).toBeNull();
         });
 
-        it('returns null for a file that imports something else entirely', () => {
+        it('sees the auto-sizer import the port deleted', () => {
+            // The auto-sizer assertion is an empty-array comparison, which is
+            // the shape that passes when a detector is blind. This is its
+            // positive control.
             expect(
-                importedBindings(`import { AutoSizer } from "react-virtualized-auto-sizer";`, TSX, MODULE),
+                importedBindings(
+                    `import { AutoSizer } from "react-virtualized-auto-sizer";`,
+                    TSX,
+                    'react-virtualized-auto-sizer',
+                ),
+            ).toEqual(['AutoSizer']);
+            expect(
+                importedBindings(
+                    `import { AutoSizer } from "react-virtualized-auto-sizer";`,
+                    TSX,
+                    MODULE,
+                ),
             ).toBeNull();
         });
 
         it('the outerElementType detector distinguishes a prop from a mention', () => {
+            // The live assertion expects FALSE, so a detector that can never
+            // say TRUE would satisfy it on any input. These are what make the
+            // false meaningful.
             expect(passesProp(`<L outerElementType={O} />`, TSX, 'outerElementType')).toBe(true);
             expect(passesProp(`// outerElementType={O}`, TSX, 'outerElementType')).toBe(false);
             expect(passesProp(`/* outerElementType: O */`, TSX, 'outerElementType')).toBe(false);
             expect(passesProp(`<L tagName="div" />`, TSX, 'outerElementType')).toBe(false);
         });
 
-        it('the prop detector survives the props-hoist the sibling seam already uses', () => {
-            // virtualized-list.tsx builds `const commonProps = {...} as const`
-            // and spreads it. Unifying the seams must not redden this guard.
+        it('the prop detector survives a props-hoist', () => {
             expect(
                 passesProp(`const p = { outerElementType: O }; <L {...p} />`, TSX, 'outerElementType'),
             ).toBe(true);
@@ -503,31 +593,31 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             ).toBe(true);
         });
 
-        it('majorOf reads a range, a plain version and a v2 bump', () => {
+        it('majorOf reads a range, a plain version and a v1 revert', () => {
+            expect(majorOf('^2.3.3')).toBe(2);
+            expect(majorOf('~2.3.3')).toBe(2);
+            expect(majorOf('2.3.3')).toBe(2);
             expect(majorOf('^1.8.11')).toBe(1);
-            expect(majorOf('~1.8.11')).toBe(1);
-            expect(majorOf('1.8.11')).toBe(1);
-            expect(majorOf('^2.3.1')).toBe(2);
         });
 
         it('majorOf REFUSES a string it cannot anchor, rather than guessing', () => {
             // Each of these would yield a plausible wrong number under an
             // unanchored `(\d+)\.` — which is why the pattern is anchored.
             expect(() => majorOf('latest')).toThrow();
-            expect(() => majorOf('npm:react-window@2.3.1')).toThrow();
+            expect(() => majorOf('npm:react-window@1.8.11')).toThrow();
             expect(() => majorOf('github:bvaughn/react-window#1.8.11')).toThrow();
             expect(() => majorOf('')).toThrow();
         });
 
         it('isSingleMajorPin admits only ranges that cannot cross a major', () => {
-            expect(isSingleMajorPin('^1.8.11')).toBe(true);
-            expect(isSingleMajorPin('~1.8.8')).toBe(true);
-            expect(isSingleMajorPin('1.8.11')).toBe(true);
-            // Reads as major 1 and installs 2.x the day it publishes.
-            expect(isSingleMajorPin('>=1.0.0')).toBe(false);
+            expect(isSingleMajorPin('^2.3.3')).toBe(true);
+            expect(isSingleMajorPin('~2.3.0')).toBe(true);
+            expect(isSingleMajorPin('2.3.3')).toBe(true);
+            // Reads as major 2 and installs 3.x the day it publishes.
+            expect(isSingleMajorPin('>=2.0.0')).toBe(false);
             expect(isSingleMajorPin('*')).toBe(false);
-            expect(isSingleMajorPin('1.x')).toBe(false);
-            expect(isSingleMajorPin('>=1.0.0 <3.0.0')).toBe(false);
+            expect(isSingleMajorPin('2.x')).toBe(false);
+            expect(isSingleMajorPin('>=2.0.0 <4.0.0')).toBe(false);
         });
     });
 });

@@ -161,6 +161,38 @@ describe('dependency-governance integrity — guard the guards', () => {
         expect(nextAuth).toMatch(/recheck|dist-tag/i);
     });
 
+    it('the governance doc states the react-window v2 position and its rollback', () => {
+        // The react-window section is the one decision record in this doc that
+        // has been REVERSED: it held v1 deliberately (#2552, dependabot #2543
+        // closed on purpose) until the upstream table sync ported both seams
+        // to v2. A reversed record is the easiest kind to leave half-edited,
+        // and a doc that still argued the hold while the tree ran v2 would
+        // answer "which major are we on?" wrongly — the exact failure #2646
+        // was opened for, pointing the other way.
+        //
+        // Narrowed to the section, as every doc needle here is — though this
+        // one is the case where narrowing buys nothing, and saying so is the
+        // point. Measured raw → section: 20→20, 21→21, 6→6, 3→3. Every
+        // occurrence of all four needles is already INSIDE this section, so
+        // the raw form would fail closed too. The narrowing is kept for the
+        // next edit rather than for this one: the moment another section
+        // mentions v2 or a rollback, the unnarrowed form would start passing
+        // on a deleted react-window section, and nothing would announce it.
+        //
+        // The HEADING is not asserted — `mdSection` throwing on a missing one
+        // is what makes that unnecessary, and pinning its wording would gate
+        // CI on prose. What is asserted is that the section names the major it
+        // records, the enforcement test, and a way out.
+        const reactWindow = mdSection(
+            readMarkdown('docs/dependency-governance.md'),
+            'react-window — on v2 since the upstream table sync',
+        );
+        expect(reactWindow).toMatch(/react-window/i);
+        expect(reactWindow).toMatch(/\bv2\b/);
+        expect(reactWindow).toMatch(/rollback|revert/i);
+        expect(reactWindow).toMatch(/react-window-hold\.test\.ts/);
+    });
+
     it('the governance doc states the contributor dependency lifecycle', () => {
         // Adding / upgrading / removing — the safe-path workflow. Each needle
         // is the text of one `###` under this section; 1→1 for all three.

@@ -28,10 +28,30 @@ describe("Mobile PR-2 — responsive DataTable", () => {
 
     it("DataTable gates the card view on useIsBelowMd and real rows", () => {
         expect(dt).toMatch(/const belowMd = useIsBelowMd\(\)/);
-        expect(dt).toMatch(
-            /belowMd && data\.length > 0 && !error && !loading/,
-        );
+        // Each CONJUNCT separately, not the whole condition as one literal.
+        // The one-literal form pinned the spelling rather than the gate, and
+        // broke the moment `collapsesToCards` (the `mobileFallback` escape
+        // hatch) was inserted between `belowMd` and the row count — a change
+        // that ADDS a condition to the gate this guard exists to protect.
+        // Four separate needles cannot be satisfied by a reordering and do
+        // not forbid a fifth.
+        expect(dt).toMatch(/if \(belowMd &&/);
+        expect(dt).toMatch(/data\.length > 0/);
+        expect(dt).toMatch(/!error/);
+        expect(dt).toMatch(/!loading/);
         expect(dt).toMatch(/<DataTableCards/);
+    });
+
+    it("the mobile fallback DEFAULTS to cards, so omitting it is the safe case", () => {
+        // `mobileFallback="scroll"` is an escape hatch for a genuinely
+        // desktop-only table. If the default ever flipped, every DataTable on
+        // the app would start horizontal-scrolling on a phone and nothing
+        // else here would notice — the card branch would simply stop being
+        // taken. The rendered proof is in
+        // `tests/rendered/data-table-mobile-fallback.test.tsx`, which asserts
+        // the collapse with the prop OMITTED; this is the structural half.
+        expect(dt).toMatch(/mobileFallback\?: "card" \| "scroll"/);
+        expect(dt).toMatch(/\(mobileFallback \?\? "card"\) === "card"/);
     });
 
     it("the breakpoint hook is SSR/jsdom-safe (starts false, max-width:767.98px)", () => {

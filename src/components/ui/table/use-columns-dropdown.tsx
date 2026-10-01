@@ -5,12 +5,12 @@
  *
  * Owns BOTH column visibility AND left-to-right order via the shared
  * click-to-order model (`checklist-order.ts`), persisted to localStorage
- * under the same `inflect:col-vis:<entity>` key (now storing the visible-
+ * under the same `<prefix>:col-vis:<entity>` key (now storing the visible-
  * id order array). Renders the `<ColumnsDropdown>` gear (Columns3) and
  * returns:
  *
  *   const { columnVisibility, orderColumns, dropdown: columnsGear } =
- *     useColumnsDropdown({ storageKey: 'inflect:col-vis:risks', columns: [...] });
+ *     useColumnsDropdown({ storageKey: uiStorageKey('col-vis', 'members'), columns: [...] });
  *
  *   <DataTable
  *     columns={orderColumns(baseColumns)}   // ← reorder per the gear
@@ -52,7 +52,7 @@ export interface ColumnDropdownColumn {
 }
 
 export interface UseColumnsDropdownOptions {
-    /** Convention: `'inflect:col-vis:<entity>'`. */
+    /** Convention: `uiStorageKey('col-vis', entity)`. */
     storageKey: string;
     /** The full column list (toggleable + always-visible). */
     columns: ColumnDropdownColumn[];
