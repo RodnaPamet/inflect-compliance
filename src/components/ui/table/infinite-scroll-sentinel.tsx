@@ -7,7 +7,7 @@ export interface InfiniteScrollSentinelProps {
     /**
      * Fired once each time the sentinel scrolls into view (with the
      * pre-load `rootMargin` applied). The consumer wires this to its
-     * windowing hook's `loadMore`. The PARENT controls whether more
+     * windowing hook's `loadMore`. The PARENT decides whether more
      * data exists: render the sentinel only while `hasMore` is true
      * (pass `onReachEnd={hasMore ? loadMore : undefined}` so the
      * sentinel unmounts — and the observer disconnects — at the end

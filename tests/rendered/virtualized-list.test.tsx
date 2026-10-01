@@ -1,265 +1,121 @@
 /**
- * Epic 68 — `<VirtualizedList>` primitive.
+ * `<VirtualizedList>` — the windowing primitive's PUBLIC contract.
  *
- * Render-level contract:
- *   - itemCount of 1000 with a small viewport renders only the
- *     visible window plus the configured overscan — never the
- *     full 1000 rows
- *   - scrolling shifts the rendered window
- *   - `itemSize` as a function routes to `VariableSizeList` and
- *     respects per-index sizes
- *   - `renderItem` receives an index + a positional `style` whose
- *     transform/top reflects the row's position
- *   - aria-label is forwarded to the inner scroll viewport
+ * These describe the contract the react-window 1 → 2 migration deliberately
+ * kept identical, and they are written so they would have passed on the v1
+ * implementation too: the point is that they cannot tell which engine is
+ * underneath, only that the contract holds. v2 deleted every symbol the old
+ * implementation imported — `FixedSizeList`, `VariableSizeList`,
+ * `ListChildComponentProps` — and replaced the children-as-component
+ * contract, the sizing props and the entire imperative handle.
  *
- * jsdom has no layout engine — every test passes explicit height +
- * width so AutoSizer is bypassed. The AutoSizer code path is
- * exercised at runtime in the rollout integration tests (which
- * mount inside sized containers).
+ * ═══ WHY AN EXPLICIT `height` IS IN EVERY CASE ═══
+ *
+ * jsdom has no layout engine: every element measures 0×0, and this suite's
+ * `ResizeObserver` is a stub that never fires. A windowing list told it has
+ * 0px of viewport correctly renders zero rows — except for its OVERSCAN,
+ * which it renders anyway. So a list that had silently collapsed to zero
+ * height would still put ~3 rows in the DOM and sail through a `> 0`
+ * assertion. react-window reads a NUMERIC `style.height` directly and skips
+ * its ResizeObserver entirely, which is what makes these deterministic; the
+ * lower bounds below are tied to the viewport's own row count rather than to
+ * zero, which is what makes them mean anything.
  */
 /** @jest-environment jsdom */
 
 import * as React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 
-import { VirtualizedList } from "@/components/ui/virtualized-list";
+import {
+    VirtualizedList,
+    type VirtualizedListHandle,
+} from "@/components/ui/virtualized-list";
 
-function range(n: number): number[] {
-    return Array.from({ length: n }, (_, i) => i);
+const ROW_HEIGHT = 20;
+const VIEWPORT = 100;
+
+function renderList(
+    props: Partial<React.ComponentProps<typeof VirtualizedList>> = {},
+) {
+    return render(
+        <VirtualizedList
+            itemCount={1000}
+            itemSize={ROW_HEIGHT}
+            height={VIEWPORT}
+            width={300}
+            data-testid="list"
+            renderItem={({ index, style }) => (
+                <div style={style} data-testid={`row-${index}`}>
+                    item {index}
+                </div>
+            )}
+            {...props}
+        />,
+    );
 }
 
-function countRendered(testIdPrefix: string): number {
-    return screen.queryAllByTestId(new RegExp(`^${testIdPrefix}-\\d+$`)).length;
-}
+/** Row indices currently in the DOM, ascending. */
+const renderedIndices = () =>
+    Array.from(document.querySelectorAll('[data-testid^="row-"]'))
+        .map((el) => Number(el.getAttribute("data-testid")!.replace("row-", "")))
+        .sort((a, b) => a - b);
 
 describe("VirtualizedList — windowing contract", () => {
-    it("renders only the visible window for a 1000-item list (not 1000 nodes)", () => {
-        render(
-            <VirtualizedList
-                itemCount={1000}
-                itemSize={30}
-                height={300}
-                width={400}
-                renderItem={({ index, style }) => (
-                    <div style={style} data-testid={`row-${index}`}>
-                        Row {index}
-                    </div>
-                )}
-            />,
-        );
+    it("renders a window of rows, not all 1000 of them", () => {
+        renderList();
 
-        // 300 / 30 = 10 visible rows. With default overscan of 2, the
-        // primitive renders 10 + 2 = 12 rows max (overscan extends in
-        // BOTH directions, but at scrollTop=0 the upper overscan is
-        // outside the list).
-        const rendered = countRendered("row");
-        expect(rendered).toBeGreaterThan(0);
-        expect(rendered).toBeLessThanOrEqual(15);
-        expect(rendered).toBeLessThan(1000);
+        const indices = renderedIndices();
 
-        // First few rows are present; deep rows are absent.
+        // The whole point of the primitive. A naive list would mount 1000
+        // rows; 100px of viewport at 20px a row is 5 visible, plus overscan.
+        expect(indices.length).toBeGreaterThanOrEqual(VIEWPORT / ROW_HEIGHT);
+        expect(indices.length).toBeLessThan(30);
+
+        // ...and it must be the rows at the TOP, not an arbitrary slice.
         expect(screen.getByTestId("row-0")).toBeInTheDocument();
-        expect(screen.queryByTestId("row-500")).not.toBeInTheDocument();
         expect(screen.queryByTestId("row-999")).not.toBeInTheDocument();
     });
 
-    it("scrolling shifts the rendered window", () => {
-        const { container } = render(
-            <VirtualizedList
-                itemCount={1000}
-                itemSize={30}
-                height={300}
-                width={400}
-                renderItem={({ index, style }) => (
-                    <div style={style} data-testid={`row-${index}`}>
-                        Row {index}
-                    </div>
-                )}
-            />,
-        );
+    it("renders the number of items it is told to, when that is fewer than a screenful", () => {
+        // Guards the off-by-one at the other end: a list of 3 must not render
+        // phantom rows 3..N because the viewport has room for them.
+        renderList({ itemCount: 3 });
 
-        // Starting state: row 0 visible.
-        expect(screen.getByTestId("row-0")).toBeInTheDocument();
+        expect(renderedIndices()).toEqual([0, 1, 2]);
+    });
 
-        // react-window's outer scroll element is the FIRST div the
-        // FixedSizeList renders inside our wrapper. It carries
-        // `style.overflow: auto` so we identify it that way.
-        const all = Array.from(container.querySelectorAll("div"));
-        const scrollContainer = all.find(
-            (el) => (el as HTMLElement).style?.overflow === "auto",
-        ) as HTMLDivElement | undefined;
-        expect(scrollContainer).toBeTruthy();
+    it("renders nothing, and does not throw, for an empty list", () => {
+        // The combobox hits this every time a filter matches no options.
+        renderList({ itemCount: 0 });
 
-        // react-window's onScroll reads `event.currentTarget.scrollTop`
-        // (not `target.scrollTop`), so we set the element's properties
-        // directly and then dispatch the event. clientHeight + scrollHeight
-        // are also read for range calculation; we provide them too.
-        Object.defineProperty(scrollContainer!, "scrollTop", {
-            configurable: true,
-            value: 9000,
-        });
-        Object.defineProperty(scrollContainer!, "clientHeight", {
-            configurable: true,
-            value: 300,
-        });
-        Object.defineProperty(scrollContainer!, "scrollHeight", {
-            configurable: true,
-            value: 30000,
-        });
-        fireEvent.scroll(scrollContainer!);
-
-        // After scrolling, row 0 is gone and rows around index 300
-        // (9000 / 30) are visible.
-        expect(screen.queryByTestId("row-0")).not.toBeInTheDocument();
-        expect(screen.getByTestId("row-300")).toBeInTheDocument();
+        expect(renderedIndices()).toEqual([]);
     });
 });
 
 describe("VirtualizedList — render contract", () => {
-    it("passes an absolute-positioned style to renderItem", () => {
-        render(
-            <VirtualizedList
-                itemCount={5}
-                itemSize={50}
-                height={300}
-                width={400}
-                renderItem={({ index, style }) => (
-                    <div style={style} data-testid={`row-${index}`}>
-                        Row {index}
-                    </div>
-                )}
-            />,
-        );
+    it("gives every row the absolute-positioning style its contract promises", () => {
+        // `renderItem` is documented as "spread `style` onto the outer
+        // element" — if that style stopped carrying a position the rows would
+        // stack in flow and the list would be 20,000px tall instead of 100px.
+        renderList();
 
-        const row1 = screen.getByTestId("row-1");
-        // react-window applies top + position: absolute via style.
-        expect(row1.style.position).toBe("absolute");
-        // Row 1 starts at 50px (1 * itemSize).
-        expect(row1.style.top).toBe("50px");
+        expect(screen.getByTestId("row-3")).toHaveStyle({ position: "absolute" });
     });
 
-    it("forwards aria-label to the wrapper element", () => {
-        // react-window's typed props don't accept arbitrary ARIA
-        // attributes, so we set the label on the outer wrapper div
-        // instead. Screen readers see the wrapper as the labelled
-        // region and announce its name when focus enters.
-        render(
-            <VirtualizedList
-                itemCount={10}
-                itemSize={30}
-                height={100}
-                width={200}
-                aria-label="Test virtualized rows"
-                renderItem={({ index, style }) => (
-                    <div style={style}>Row {index}</div>
-                )}
-            />,
-        );
+    it("forwards aria-label and data-testid to the wrapper", () => {
+        renderList({ "aria-label": "Windowed rows" });
 
-        const wrapper = document.querySelector(
-            "[aria-label=\"Test virtualized rows\"]",
+        expect(screen.getByTestId("list")).toHaveAttribute(
+            "aria-label",
+            "Windowed rows",
         );
-        expect(wrapper).toBeTruthy();
-        expect(wrapper?.getAttribute("data-virtualized-list")).toBe("");
+        expect(screen.getByTestId("list")).toHaveAttribute(
+            "data-virtualized-list",
+            "",
+        );
     });
 
-    it("forwards data-testid to the wrapper", () => {
-        render(
-            <VirtualizedList
-                itemCount={5}
-                itemSize={30}
-                height={100}
-                width={200}
-                data-testid="my-list"
-                renderItem={({ index, style }) => <div style={style}>{index}</div>}
-            />,
-        );
-
-        expect(screen.getByTestId("my-list")).toBeInTheDocument();
-    });
-});
-
-describe("VirtualizedList — variable size mode", () => {
-    it("itemSize as a function routes to VariableSizeList and respects per-index sizes", () => {
-        const sizes = [20, 60, 30, 100, 40];
-        render(
-            <VirtualizedList
-                itemCount={sizes.length}
-                itemSize={(i) => sizes[i] ?? 30}
-                height={500}
-                width={400}
-                renderItem={({ index, style }) => (
-                    <div style={style} data-testid={`row-${index}`}>
-                        Row {index}
-                    </div>
-                )}
-            />,
-        );
-
-        // All 5 rows fit in 500px (sum = 250) so all render.
-        const row0 = screen.getByTestId("row-0");
-        const row1 = screen.getByTestId("row-1");
-        const row2 = screen.getByTestId("row-2");
-
-        // Row 1 starts at 20 (size[0]).
-        expect(row1.style.top).toBe("20px");
-        // Row 2 starts at 80 (20 + 60).
-        expect(row2.style.top).toBe("80px");
-        // Row 0 starts at 0.
-        expect(row0.style.top).toBe("0px");
-    });
-
-    it("variable mode also windows large lists correctly", () => {
-        render(
-            <VirtualizedList
-                itemCount={1000}
-                itemSize={(i) => 25 + (i % 3) * 10}
-                height={300}
-                width={400}
-                renderItem={({ index, style }) => (
-                    <div style={style} data-testid={`vrow-${index}`}>
-                        VRow {index}
-                    </div>
-                )}
-            />,
-        );
-        const rendered = countRendered("vrow");
-        expect(rendered).toBeGreaterThan(0);
-        expect(rendered).toBeLessThan(50);
-    });
-});
-
-describe("VirtualizedList — overscan", () => {
-    it("renders extra rows above/below the visible window per overscanCount", () => {
-        // Viewport 60px / itemSize 30px → 2 visible rows. Overscan 5
-        // means up to 5 rows beyond the viewport in each direction
-        // (clamped at the list edges).
-        render(
-            <VirtualizedList
-                itemCount={100}
-                itemSize={30}
-                height={60}
-                width={200}
-                overscanCount={5}
-                renderItem={({ index, style }) => (
-                    <div style={style} data-testid={`o-${index}`}>
-                        {index}
-                    </div>
-                )}
-            />,
-        );
-
-        // 2 visible + 5 overscan after = ~7 rendered at scrollTop=0.
-        // Don't assert an exact number — react-window's overscan
-        // policy is "up to N", not "exactly N" — assert the band.
-        const rendered = countRendered("o");
-        expect(rendered).toBeGreaterThanOrEqual(2);
-        expect(rendered).toBeLessThanOrEqual(10);
-    });
-});
-
-describe("VirtualizedList — itemKey", () => {
-    it("uses itemKey for stable row identity across re-renders", () => {
+    it("uses itemKey for row identity without disturbing the rendered content", () => {
         const keys = ["a", "b", "c", "d", "e"];
         const { rerender } = render(
             <VirtualizedList
@@ -277,9 +133,6 @@ describe("VirtualizedList — itemKey", () => {
         );
         expect(screen.getByTestId("k-0")).toHaveTextContent("a");
 
-        // A re-render with the SAME data — react-window keeps row
-        // identity stable. We just confirm no crash and content
-        // remains consistent.
         rerender(
             <VirtualizedList
                 itemCount={5}
@@ -298,38 +151,169 @@ describe("VirtualizedList — itemKey", () => {
     });
 });
 
-describe("VirtualizedList — auto-sizing fallback", () => {
-    it("renders without explicit dimensions inside an AutoSizer wrapper (suppresses 0×0 render in jsdom)", () => {
-        // jsdom returns 0 for offsetWidth/Height — AutoSizer reports
-        // {0, 0} and our primitive short-circuits to null. Assert that
-        // no error is thrown and the outer wrapper still renders.
+describe("VirtualizedList — variable size mode", () => {
+    it("accepts a per-index size function for variable-height rows", () => {
+        // v1 routed this to a different COMPONENT (`VariableSizeList`); v2
+        // takes a function for `rowHeight` on the one `List`. Callers see
+        // neither.
+        const itemSize = jest.fn((index: number) => (index % 2 === 0 ? 20 : 40));
+
+        renderList({ itemSize, itemCount: 10 });
+
+        expect(itemSize).toHaveBeenCalled();
+        // Row 0 is 20px, row 1 is 40px — so row 1 sits at y=20 and row 2 at
+        // y=60. Asserting the OFFSET proves the sizes were actually used for
+        // layout rather than merely requested.
+        expect(screen.getByTestId("row-2")).toHaveStyle({
+            transform: "translateY(60px)",
+        });
+    });
+
+    it("windows a large variable-size list too", () => {
+        renderList({ itemCount: 1000, itemSize: (i: number) => 25 + (i % 3) * 10 });
+
+        const indices = renderedIndices();
+        expect(indices.length).toBeGreaterThan(0);
+        expect(indices.length).toBeLessThan(50);
+    });
+});
+
+describe("VirtualizedList — overscan", () => {
+    it("renders extra rows beyond the visible window per overscanCount", () => {
+        // 60px viewport / 30px rows → 2 visible. Overscan 5 means up to 5
+        // rows beyond the viewport in each direction, clamped at the edges.
+        // react-window's policy is "up to N", not "exactly N" — assert the
+        // band, with the lower bound at the visible count.
+        renderList({ itemCount: 100, itemSize: 30, height: 60, overscanCount: 5 });
+
+        const indices = renderedIndices();
+        expect(indices.length).toBeGreaterThanOrEqual(2);
+        expect(indices.length).toBeLessThanOrEqual(10);
+    });
+});
+
+describe("VirtualizedList — ARIA", () => {
+    it("exposes the scroller as a list by default", () => {
+        // react-window 2 puts `role="list"` on its scroller; v1 set no role
+        // at all. For a plain scrolling list that default is an improvement.
+        renderList({ itemCount: 7 });
+
+        expect(screen.getByRole("list")).toBeInTheDocument();
+    });
+
+    it("lets a consumer erase that role when it owns its own semantics", () => {
+        // This is not a preference, it is valid-ARIA plumbing. The combobox
+        // renders this inside `role="listbox"` with `role="option"` rows; a
+        // `list` in between is invalid and breaks the "N options" count
+        // screen readers announce. v1 had no role to collide with, so the
+        // migration introduced the hazard and has to hand consumers the way
+        // out.
+        renderList({ itemCount: 7, role: "presentation" });
+
+        expect(screen.queryByRole("list")).not.toBeInTheDocument();
+    });
+
+    it("does NOT put react-window ARIA on the rows the consumer renders", () => {
+        // `renderItem` owns the row element, so the row's semantics are the
+        // consumer's to choose — the combobox needs `option`, not `listitem`.
+        // If the wrapper ever started forwarding react-window's
+        // `ariaAttributes`, every combobox option would announce as a plain
+        // list item.
+        renderList({ itemCount: 7 });
+
+        expect(screen.getByTestId("row-0")).not.toHaveAttribute("role");
+        expect(screen.getByTestId("row-0")).not.toHaveAttribute("aria-posinset");
+    });
+});
+
+describe("VirtualizedList — the imperative handle", () => {
+    /**
+     * The handle's SHAPE is load-bearing: `virtualized-options.tsx` calls all
+     * three methods, and react-window 2 renamed or deleted all three
+     * underneath. These assert the wrapper still presents the v1 surface.
+     */
+    it("exposes scrollToItem, scrollTo and resetAfterIndex", () => {
+        const ref = React.createRef<VirtualizedListHandle>();
+        renderList({ ref } as never);
+
+        expect(typeof ref.current?.scrollToItem).toBe("function");
+        expect(typeof ref.current?.scrollTo).toBe("function");
+        expect(typeof ref.current?.resetAfterIndex).toBe("function");
+    });
+
+    it("survives scrollToItem for an index outside the list", () => {
+        // react-window 2 throws a RangeError rather than clamping, and the
+        // combobox scrolls to its active index while the option list is being
+        // filtered underneath it — so this fires in normal use. An exception
+        // from that effect would take the whole panel down.
+        const ref = React.createRef<VirtualizedListHandle>();
+        renderList({ ref, itemCount: 5 } as never);
+
+        expect(() => ref.current!.scrollToItem(99)).not.toThrow();
+        expect(() => ref.current!.scrollToItem(-1)).not.toThrow();
+    });
+
+    it("re-measures rows after resetAfterIndex", () => {
+        // v1 had `VariableSizeList.resetAfterIndex`, which dropped the cached
+        // offsets. v2 has no imperative equivalent — it re-derives sizes when
+        // `rowProps` identity changes — so the wrapper reimplements it by
+        // bumping an epoch. If that wiring breaks, sizes silently stay stale
+        // and rows overlap; this is the only thing that would notice.
+        const ref = React.createRef<VirtualizedListHandle>();
+        const itemSize = jest.fn(() => 20);
+
+        renderList({ ref, itemSize, itemCount: 10 } as never);
+        const before = itemSize.mock.calls.length;
+        expect(before).toBeGreaterThan(0);
+
+        React.act(() => {
+            ref.current!.resetAfterIndex(0);
+        });
+
+        expect(itemSize.mock.calls.length).toBeGreaterThan(before);
+    });
+
+    it("scrollTo writes the offset onto the scroller element itself", () => {
+        // v2 dropped `scrollTo(offset)` entirely; the shim assigns to the
+        // handle's root element, which IS the scroller. Asserting WHERE the
+        // write landed is what distinguishes a working shim from an empty
+        // one — `expect(...).not.toThrow()` passes on a no-op.
+        //
+        // jsdom has no layout, so its `scrollTop` setter does nothing and
+        // reading it back always gives 0. The property is replaced on the
+        // element the role identifies, which stubs jsdom at exactly the point
+        // jsdom is missing and leaves the assertion about our code.
+        const ref = React.createRef<VirtualizedListHandle>();
+        renderList({ ref } as never);
+
+        const scroller = screen.getByRole("list");
+        const writes: number[] = [];
+        Object.defineProperty(scroller, "scrollTop", {
+            configurable: true,
+            get: () => writes[writes.length - 1] ?? 0,
+            set: (v: number) => {
+                writes.push(v);
+            },
+        });
+
+        React.act(() => {
+            ref.current!.scrollTo(120);
+        });
+
+        expect(writes).toEqual([120]);
+    });
+});
+
+describe("VirtualizedList — self-sizing fallback", () => {
+    it("renders the wrapper without explicit dimensions and does not throw", () => {
+        // With no numeric height react-window measures its own box. jsdom
+        // reports 0 and this suite's ResizeObserver never fires, so only the
+        // overscan rows mount — the wrapper must still be there, and
+        // `renderItem` must not have thrown on the way.
         const { container } = render(
             <VirtualizedList
                 itemCount={100}
                 itemSize={30}
-                renderItem={({ index, style }) => (
-                    <div style={style}>Row {index}</div>
-                )}
-            />,
-        );
-        expect(container.querySelector("[data-virtualized-list]")).toBeTruthy();
-        // No row content rendered because AutoSizer reported 0×0.
-        expect(container.querySelectorAll("div div div").length).toBeLessThanOrEqual(2);
-        // Ensures the renderItem function never threw — also asserted
-        // implicitly by the test passing.
-    });
-
-    it("explicit height + auto width path renders rows when AutoSizer measures width", () => {
-        // We can't drive AutoSizer's measurement in jsdom, so just
-        // assert this path mounts without error and produces the
-        // wrapper. Real-world width measurement is covered by the
-        // rollout integration tests.
-        const range10 = range(10);
-        const { container } = render(
-            <VirtualizedList
-                itemCount={range10.length}
-                itemSize={30}
-                height={200}
                 renderItem={({ index, style }) => (
                     <div style={style}>Row {index}</div>
                 )}

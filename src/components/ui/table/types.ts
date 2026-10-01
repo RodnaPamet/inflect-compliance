@@ -191,8 +191,8 @@ type BaseTableProps<T extends TableRowData> = {
    * aligns their cells with the parent COLUMNS. `columnIds` is the ordered
    * list of currently-visible column ids — render one `<td>` per id so the
    * sub-row cells land under the matching columns (empty `<td>` for columns
-   * a sub-row has no value for). Used by Controls to nest task rows that
-   * align on category / status / owner / evidence.
+   * a sub-row has no value for). Used by list pages that nest child rows
+   * aligning on category / status / owner / attachment.
    *
    * There used to be a SECOND expansion slot, `renderExpandedRow`, which
    * rendered one full-width `colSpan` cell. It had no consumer in the product

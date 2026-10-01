@@ -1,8 +1,8 @@
 /**
  * Table-local utility functions.
  *
- * Previously imported from `Dub utils`. Inlined here so the table
- * module is self-contained and doesn't depend on the Dub shim layer.
+ * Previously imported from a vendored utils package. Inlined here so the
+ * table module is self-contained and doesn't depend on that shim layer.
  */
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";

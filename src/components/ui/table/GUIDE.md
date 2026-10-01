@@ -1,6 +1,6 @@
 # DataTable Platform — Developer Guide
 
-> **This is the canonical table system for all list pages in Inflect Compliance.**
+> **This is the canonical table system for all list pages in this application.**
 > Do NOT create new `<table>` elements in list-page components.
 > Use `<DataTable>` from `@/components/ui/table` instead.
 
@@ -14,7 +14,7 @@ import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { DataTable, createColumns } from '@/components/ui/table';
 
-interface Policy {
+interface Project {
   id: string;
   title: string;
   status: string;
@@ -25,11 +25,11 @@ const STATUS_BADGE: Record<string, string> = {
   PUBLISHED: 'badge-success',
 };
 
-export function PoliciesTable({ policies }: { policies: Policy[] }) {
+export function ProjectsTable({ projects }: { projects: Project[] }) {
   const router = useRouter();
 
   // ① Define columns with useMemo (MUST be outside JSX)
-  const columns = useMemo(() => createColumns<Policy>([
+  const columns = useMemo(() => createColumns<Project>([
     {
       accessorKey: 'title',
       header: 'Title',
@@ -51,13 +51,13 @@ export function PoliciesTable({ policies }: { policies: Policy[] }) {
   // ② Render DataTable
   return (
     <DataTable
-      data={policies}
+      data={projects}
       columns={columns}
       getRowId={(p) => p.id}
-      onRowClick={(row) => router.push(`/policies/${row.original.id}`)}
-      emptyState="No policies found"
-      resourceName={(plural) => plural ? 'policies' : 'policy'}
-      data-testid="policies-table"
+      onRowClick={(row) => router.push(`/projects/${row.original.id}`)}
+      emptyState="No projects found"
+      resourceName={(plural) => plural ? 'projects' : 'project'}
+      data-testid="projects-table"
     />
   );
 }
@@ -117,7 +117,7 @@ export function PoliciesTable({ policies }: { policies: Policy[] }) {
   header: 'Due Date',
   cell: ({ row }) => {
     const d = row.original.dueAt;
-    if (!d) return <span className="text-slate-400">—</span>;
+    if (!d) return <span className="text-content-subtle">—</span>;
     return (
       <span className="text-xs">
         {formatDate(d)}
@@ -198,14 +198,14 @@ const VIS_CONFIG: ColumnVisibilityConfig = {
 
 // In your component:
 const [visibility, setVisibility] = useState(() =>
-  mergeVisibility(readPersistedVisibility('controls'), VIS_CONFIG)
+  mergeVisibility(readPersistedVisibility('projects'), VIS_CONFIG)
 );
 
 <DataTable
   columnVisibility={visibility}
   onColumnVisibilityChange={(v) => {
     setVisibility(v);
-    writePersistedVisibility('controls', v);
+    writePersistedVisibility('projects', v);
   }}
 />
 ```
@@ -306,7 +306,7 @@ If CI fails with "uses DataTable (not ad-hoc `<table>`)", migrate the offending 
 ## Remaining `.data-table` CSS Usage
 
 The `.data-table` CSS class in `globals.css` is still used by:
-- **Detail page sub-tables** (control detail tasks/evidence/mappings)
+- **Detail page sub-tables** (child tables on a record detail page)
 - **Admin sub-pages** (members, API keys, roles, integrations, etc.)
 - **SoAClient** (intentional exclusion — expandable rows)
 - **Risk import preview** page

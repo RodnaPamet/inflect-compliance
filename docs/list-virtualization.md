@@ -81,7 +81,10 @@ When virtualized, `<DataTable>` renders via `<VirtualTable>` (file:
 - `display: grid` for headers + every body row.
 - A single `gridTemplateColumns` value derived from
   `column.getSize()` — header + body share it, alignment cannot drift.
-- Sticky header inside react-window's outer scroll container.
+- The header is a flex SIBLING of the windowed list, not inside it:
+  react-window 2's `List` is itself the scroll container and has no
+  `outerElementType`, so the header sits above it in normal flow and
+  stays put while rows scroll under it.
 - Identical contract for: `data-selected`, `group/row`, click handlers
   with `isClickOnInteractiveChild` guard, sort buttons.
 
@@ -166,9 +169,9 @@ When NOT to virtualize:
 
 - Lists with **inherently variable, hard-to-measure row heights** that
   change AFTER mount (e.g. content with images that finish loading
-  later). `VariableSizeList` mode requires deterministic per-index
-  heights; for true dynamic measurement use the lower-level
-  `react-window` API directly.
+  later). The function form of `itemSize` requires deterministic
+  per-index heights; for true dynamic measurement use react-window's
+  own `useDynamicRowHeight` directly.
 - Lists where **every row is independently focusable** in a way that
   needs roving tabindex across all items. The combobox bespoke
   keyboard layer covers most cases — but if you need full menu-style
@@ -181,19 +184,20 @@ When NOT to virtualize:
 
 | File | Role |
 |---|---|
-| `src/components/ui/virtualized-list.tsx` | Shared primitive — wraps `react-window` `Fixed/VariableSizeList` + `AutoSizer`; exposes `VirtualizedListHandle` (scrollToItem/scrollTo/resetAfterIndex) |
-| `src/components/ui/table/virtual-table-body.tsx` | `<VirtualTable>` — DataTable's virtualized body + sticky header |
+| `src/components/ui/virtualized-list.tsx` | Shared primitive — wraps react-window 2's `List` (no auto-sizer); exposes `VirtualizedListHandle` (scrollToItem/scrollTo/resetAfterIndex) |
+| `src/components/ui/table/virtual-table-body.tsx` | `<VirtualTable>` — DataTable's virtualized body + its sibling header |
 | `src/components/ui/table/data-table.tsx` | `decideVirtualization()` + threshold prop wiring |
 | `src/components/ui/combobox/virtualized-options.tsx` | Combobox's virtualized option list with bespoke keyboard layer |
 | `tests/rendered/virtualized-list.test.tsx` | 11-case primitive contract |
 | `tests/rendered/data-table-virtualize.test.tsx` | 22-case DataTable rollout |
 | `tests/rendered/combobox-virtualize.test.tsx` | 14-case Combobox rollout (threshold + DOM-count + keyboard + visual parity). The DOM count is the perf assertion; the `<2s` wall-clock budget that sat beside it was removed 2026-09-06 — see "Performance budget" above |
 
-**Dependency posture.** This stack stays on `react-window` v1
-deliberately; v2 is an API rewrite that removes every export the two
-files that import it here depend on (`virtualized-list.tsx` and
-`virtual-table-body.tsx`). The reasoning, the blast radius and the
-conditions that would flip the answer live in
-`docs/dependency-governance.md`, section "react-window — stay on v1
-until something forces v2", and are pinned by
-`tests/unit/react-window-v1-hold.test.ts`.
+**Dependency posture.** This stack is on `react-window` v2, and
+`react-virtualized-auto-sizer` and `@types/react-window` are gone with
+the migration. v2 was an API rewrite rather than a bump — it removed
+every export the v1 implementation imported — so the port is recorded
+rather than assumed: the reasoning, the blast radius and the
+conditions that would flip the answer again live in
+`docs/dependency-governance.md`, section "react-window — on v2 since
+the upstream table sync", and are pinned by
+`tests/unit/react-window-hold.test.ts`.

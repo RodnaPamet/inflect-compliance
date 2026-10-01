@@ -5,6 +5,8 @@
  * hook and direct DataTable integration. They are fully testable without React.
  */
 
+import { uiStorageKey } from "@/lib/ui-storage";
+
 import type { ColumnVisibilityState } from "./types";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -36,13 +38,21 @@ export interface ColumnVisibilityConfig {
 
 // ── Storage Key ─────────────────────────────────────────────────────
 
-/** Standard prefix for column visibility localStorage keys. */
-export const COLUMN_VISIBILITY_PREFIX = "inflect:col-vis:";
+/**
+ * Standard prefix for column visibility localStorage keys.
+ *
+ * Built from `uiStorageKey` rather than spelled inline: the namespace is the
+ * one value a downstream product changes, and these keys address preferences
+ * already sitting in real browsers, so the VALUE is unchanged — the trailing
+ * `:` that the per-table suffix is concatenated onto is what the helper cannot
+ * supply.
+ */
+export const COLUMN_VISIBILITY_PREFIX = `${uiStorageKey("col-vis")}:`;
 
 /**
  * Build a localStorage key for a table's column visibility.
  *
- * @param tableId - Unique identifier for the table (e.g., "controls", "risks").
+ * @param tableId - Unique identifier for the table (e.g., "members", "items").
  */
 export function getVisibilityStorageKey(tableId: string): string {
   return `${COLUMN_VISIBILITY_PREFIX}${tableId}`;

@@ -1956,7 +1956,8 @@ under `tests/guards/`).
 ### Epic 68 — List virtualization
 
 Single shared windowing primitive (`<VirtualizedList>`) wraps
-`react-window` + `react-virtualized-auto-sizer`. New surfaces go
+`react-window` v2, which sizes itself — `react-virtualized-auto-sizer`
+is no longer a dependency of this repo. New surfaces go
 through the primitive rather than importing `react-window` directly.
 It is not the only seam today: `src/components/ui/table/virtual-table-body.tsx`
 (the `<VirtualTable>` behind `<DataTable>`) imports `react-window`
