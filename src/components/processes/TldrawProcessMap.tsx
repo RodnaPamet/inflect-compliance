@@ -66,6 +66,18 @@ export interface TldrawProcessMapProps {
      */
     onEditorReady?: (editor: Editor) => void;
     /**
+     * The group the canvas is scoped to, or `null` for the whole map.
+     *
+     * Threaded rather than held here. The drill STACK belongs with the
+     * breadcrumb that renders it, and that breadcrumb is workspace chrome —
+     * this component is the load/edit/save unit and has no trail to show.
+     * Owning the stack here would give one piece of navigation state two
+     * owners.
+     */
+    drillGroupId?: string | null;
+    /** A group was entered on the canvas; the owner pushes it on the stack. */
+    onEnterGroup?: (nodeKey: string) => void;
+    /**
      * Reports the state the document BAR needs: the concurrency token for its
      * version pill, and the autosave status for its saved-state indicator.
      *
@@ -126,6 +138,8 @@ export function TldrawProcessMap({
     fetchImpl,
     onEditorReady,
     onStateChange,
+    drillGroupId = null,
+    onEnterGroup,
 }: TldrawProcessMapProps) {
     const toast = useToast();
     /**
@@ -254,6 +268,8 @@ export function TldrawProcessMap({
             <TldrawProcessCanvas
                 rows={current.rows}
                 readOnly={readOnly}
+                drillGroupId={drillGroupId}
+                onEnterGroup={onEnterGroup}
                 onEditorReady={(e) => {
                     setEditor(e);
                     onEditorReady?.(e);
