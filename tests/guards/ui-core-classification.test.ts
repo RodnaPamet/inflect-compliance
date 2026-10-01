@@ -45,61 +45,32 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { codeOf } from '../helpers/source-blocks';
+import {
+    mechanicalCouplings,
+    sharedUiPopulation,
+} from '../helpers/shared-ui-couplings';
 
 const ROOT = path.resolve(__dirname, '../..');
 const MAP_PATH = 'docs/_status/ui-core-classification.json';
 
-/** The candidate roots #3046 would draw its boundary from. */
-const ROOTS = [
-    'src/components/ui',
-    'src/components/layout',
-    'src/components/app-shell',
-    'src/lib/hooks',
-] as const;
-
-type Entry = { classification: 'GENERIC' | 'COUPLED' | 'MIXED'; reason: string; derivation: string };
+type Entry = {
+    classification: 'GENERIC' | 'COUPLED' | 'MIXED';
+    reason: string;
+    derivation: string;
+};
 
 const MAP: Record<string, Entry> = JSON.parse(
     fs.readFileSync(path.join(ROOT, MAP_PATH), 'utf8'),
 );
 
-function walk(rel: string): string[] {
-    const abs = path.join(ROOT, rel);
-    if (!fs.existsSync(abs)) return [];
-    return fs.readdirSync(abs, { withFileTypes: true }).flatMap((e) => {
-        const child = `${rel}/${e.name}`;
-        if (e.isDirectory()) return walk(child);
-        return /\.(ts|tsx)$/.test(e.name) ? [child] : [];
-    });
-}
-const POPULATION = ROOTS.flatMap(walk).sort();
-
-/** `@/lib/<name>` imports a shared file may make without being coupled. */
-const NEUTRAL_LIB = new Set([
-    'cn', 'ui-storage', 'hooks', 'utils', 'format', 'dates', 'a11y', 'design',
-    'theme-constants',
-]);
-
-const RAW_STORAGE_HOOK = /use(?:Local|Session)Storage(?:<[^>]*>)?\(\s*[`'"]/;
-const SEAM = /uiStorageKey|uiCookieName/;
-/** A brand FILL token used as TEXT. Border/background/fill are fine — those owe 1.4.11's 3:1, which `--brand-default`'s 4.03:1 clears. Text owes 1.4.3's 4.5:1, which it does not. */
-const BRAND_AS_TEXT = /text-brand-[\w-]+|text-\[var\(--brand-[\w-]+\)\]/;
-const IMPORT = /from\s+['"]@\/(app-layer|lib)\/([\w.-]+)/g;
-
-function mechanicalCouplings(rel: string): string[] {
-    const code = codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
-    const found: string[] = [];
-    if (RAW_STORAGE_HOOK.test(code) && !SEAM.test(code)) found.push('storage-key');
-    if (BRAND_AS_TEXT.test(code)) found.push('brand-as-text');
-    for (const m of code.matchAll(IMPORT)) {
-        if (m[1] === 'app-layer' || !NEUTRAL_LIB.has(m[2])) {
-            found.push('domain-import');
-            break;
-        }
-    }
-    return found;
-}
+/**
+ * The roots, the population and the three mechanical detectors all come from
+ * `tests/helpers/shared-ui-couplings.ts`. They were defined inline here first;
+ * #3048 needs the same derivation to ratchet the totals, and a detector copied
+ * into two guards is two detectors that drift.
+ */
+const POPULATION = sharedUiPopulation(ROOT);
+const mechanical = (rel: string) => mechanicalCouplings(ROOT, rel);
 
 describe('shared-UI coupling classification (#3047)', () => {
     it('covers the population exactly — a new file must be triaged', () => {
@@ -126,7 +97,7 @@ describe('shared-UI coupling classification (#3047)', () => {
         // exactly the claims a grep can check.
         const wrong = Object.entries(MAP)
             .filter(([, e]) => e.classification === 'GENERIC')
-            .map(([p]) => [p, mechanicalCouplings(p)] as const)
+            .map(([p]) => [p, mechanical(p)] as const)
             .filter(([, c]) => c.length > 0)
             .map(([p, c]) => `${p} -> ${c.join(', ')}`);
         expect(wrong).toEqual([]);
@@ -143,7 +114,7 @@ describe('shared-UI coupling classification (#3047)', () => {
         ];
         for (const [file, kind] of cases) {
             if (!fs.existsSync(path.join(ROOT, file))) continue; // moved; covered by the coverage case
-            expect(mechanicalCouplings(file)).toContain(kind);
+            expect(mechanical(file)).toContain(kind);
         }
     });
 
@@ -153,13 +124,13 @@ describe('shared-UI coupling classification (#3047)', () => {
         // the guard reporting the seam as a breach of itself.
         const hook = 'src/components/ui/hooks/use-local-storage.ts';
         if (fs.existsSync(path.join(ROOT, hook))) {
-            expect(mechanicalCouplings(hook)).not.toContain('storage-key');
+            expect(mechanical(hook)).not.toContain('storage-key');
         }
         // And a pure icon stays clean, so the detectors are not matching
         // everything indiscriminately.
         const icon = 'src/components/ui/icons/nucleo/shield-check.tsx';
         if (fs.existsSync(path.join(ROOT, icon))) {
-            expect(mechanicalCouplings(icon)).toEqual([]);
+            expect(mechanical(icon)).toEqual([]);
         }
     });
 
