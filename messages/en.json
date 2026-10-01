@@ -10309,7 +10309,8 @@
       "confirmRestore": "Restore to v{version}? The current state will be preserved as part of the history.",
       "restoredToast": "Restored to v{version}.",
       "restoreFailed": "Restore failed",
-      "restoreFailedStatus": "Restore failed ({status})"
+      "restoreFailedStatus": "Restore failed ({status})",
+      "diffFailed": "Could not compare this version"
     },
     "executions": {
       "recent": "Recent executions",

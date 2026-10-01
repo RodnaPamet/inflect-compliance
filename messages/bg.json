@@ -10309,7 +10309,8 @@
       "confirmRestore": "Да се възстанови ли до v{version}? Текущото състояние ще бъде запазено като част от историята.",
       "restoredToast": "Възстановено до v{version}.",
       "restoreFailed": "Неуспешно възстановяване",
-      "restoreFailedStatus": "Неуспешно възстановяване ({status})"
+      "restoreFailedStatus": "Неуспешно възстановяване ({status})",
+      "diffFailed": "Сравнението с тази версия е неуспешно"
     },
     "executions": {
       "recent": "Скорошни изпълнения",
