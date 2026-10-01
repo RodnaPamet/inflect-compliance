@@ -59,7 +59,16 @@ const toggleOptionVariants = cva(
     // `HIT_AREA_CLASS`: the rounded corners of an option were dead to
     // `:hover` (5% of a 63x20 option, measured), so sliding along the
     // toggle dropped the hover between options. See `hit-area.ts`.
-    `text-content-emphasis relative z-10 flex items-center gap-tight font-medium capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg ${HIT_AREA_CLASS}`,
+    //
+    // NO `capitalize`. CSS `text-transform: capitalize` upper-cases the
+    // first letter of EVERY word, which is an English-newspaper
+    // convention and not a general one: a two-word Bulgarian label comes
+    // out title-cased, where the orthography capitalises only the first
+    // word. There is nothing a primitive can do to make that per-locale
+    // decision, and the option labels are already authored in the case
+    // they should render in — which is what made the transform
+    // unnecessary even in English.
+    `text-content-emphasis relative z-10 flex items-center gap-tight font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg ${HIT_AREA_CLASS}`,
     {
         variants: {
             size: {

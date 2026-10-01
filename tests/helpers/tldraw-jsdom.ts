@@ -16,6 +16,7 @@
  *   2. `window.fetch is not a function`      → LicenseManager
  *   3. `document.fonts is not iterable`      → font readiness
  *   4. `FontFace is not defined`             → font registration
+ *   5. `structuredClone is not defined`      → dagre, via auto-layout
  *
  * ── What this is NOT ─────────────────────────────────────────────────
  *
@@ -37,6 +38,7 @@
  * from `tldraw` — the license manager reaches for `fetch` during module
  * evaluation, so a call inside `beforeEach` is already too late.
  */
+import * as v8 from 'node:v8';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -67,6 +69,27 @@ export function installTldrawJsdomShims(): void {
     }
 
     // 3. A constructible FontFace, needed before `document.fonts` is touched.
+    /**
+     * `structuredClone`, for dagre.
+     *
+     * Node has had this since 17 and the `node` test environment gets it for
+     * free, which is why the auto-layout engine's own unit tests never needed
+     * it. jsdom's global does not expose it, so the moment a JSDOM test runs a
+     * layout — which is the only way to exercise the tldraw host adapter
+     * against a real store — dagre throws from inside `order()`.
+     *
+     * Implemented with `v8.serialize` rather than a JSON round trip. JSON is
+     * lossy in ways that matter to a graph library: `undefined` members
+     * vanish, `Date` becomes a string, `Map` and `Set` become `{}`, and a cycle
+     * throws. v8's pair gives real structured-clone semantics, so a shim that
+     * happens to be enough for dagre today does not quietly become the reason
+     * some other library misbehaves tomorrow.
+     */
+    if (typeof (globalThis as any).structuredClone !== 'function') {
+        (globalThis as any).structuredClone = <T>(value: T): T =>
+            v8.deserialize(v8.serialize(value)) as T;
+    }
+
     if (typeof (globalThis as any).FontFace !== 'function') {
         (globalThis as any).FontFace = class FontFaceShim {
             family: string;

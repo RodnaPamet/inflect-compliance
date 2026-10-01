@@ -1,11 +1,33 @@
 import { cn } from "@/lib/cn";
 
+/**
+ * The ring-and-arc spinner.
+ *
+ * ── THE TWO CLASSES ARE DOING TWO DIFFERENT JOBS ──────────────────
+ *
+ * The first `<path>` is the full ring and paints with `fill="currentColor"`,
+ * i.e. the `text-*` class. The second is the leading arc and paints with
+ * `fill="currentFill"` — not a real CSS keyword, so the presentation
+ * attribute is discarded and the arc inherits `fill` from the `<svg>`,
+ * i.e. the `fill-*` class. So: `text-*` is the TRACK, `fill-*` is the
+ * INDICATOR. (The spelling is inherited from the upstream this was
+ * ported from; it works, but only by that route.)
+ *
+ * Those were `fill-neutral-600 text-neutral-200` — a raw palette, which
+ * means a fixed lightness in a themed product. On the dark theme the
+ * track came out near-white and the indicator came out darker than the
+ * ring it travels on, so the arc read as a notch cut out of a bright
+ * circle rather than as progress; on light the track all but vanished.
+ * The semantic tokens make the relationship hold in both themes: a
+ * subtle boundary tone for the track it is drawn ON, a legible content
+ * tone for the mark the eye is meant to follow.
+ */
 export function LoadingCircle({ className }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
       className={cn(
-        "h-4 w-4 animate-spin fill-neutral-600 text-neutral-200",
+        "h-4 w-4 animate-spin fill-content-muted text-border-default",
         className,
       )}
       viewBox="0 0 100 101"

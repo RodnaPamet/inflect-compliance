@@ -99,7 +99,11 @@ describe('Task detail header — task.key copy affordance', () => {
         );
 
         expect(writeText).toHaveBeenCalledWith('TASK-42');
-        expect(toastMock.success).toHaveBeenCalledWith('Task key copied');
+        // The `{ duration }` second argument is `useToast()`'s locked
+        // per-variant value, forwarded on every call since #3049.
+        expect(toastMock.success).toHaveBeenCalledWith('Task key copied', {
+            duration: 3000,
+        });
     });
 });
 
@@ -142,7 +146,9 @@ describe('Control detail header — control.code copy affordance', () => {
 
         await user.click(trigger);
         expect(writeText).toHaveBeenCalledWith('ISO.A.5.1');
-        expect(toastMock.success).toHaveBeenCalledWith('Control code copied');
+        expect(toastMock.success).toHaveBeenCalledWith('Control code copied', {
+            duration: 3000,
+        });
     });
 
     it('keeps status + applicability chips visible alongside the code', () => {

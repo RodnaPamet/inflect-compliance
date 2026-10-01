@@ -85,4 +85,75 @@ describe('ErrorState', () => {
     const alert = screen.getByRole('alert');
     expect(alert).toHaveAttribute('aria-live', 'polite');
   });
+
+  // ── secondaryAction.href ────────────────────────────────────────
+  //
+  // `href` was DECLARED on `ErrorStateAction` ("When set, renders as
+  // `<a href>` instead of a button") and then dropped: the branch always
+  // rendered a `<Button>`, which has nowhere to put an href. So the
+  // documented "Go back to dashboard" shape produced a control that
+  // looked live and navigated nowhere. The only reason it was not
+  // louder is that every call site so far happened to pass `onClick`.
+  describe('a secondary action with an href navigates', () => {
+    it('renders a real anchor carrying the destination', () => {
+      render(
+        <ErrorState
+          onRetry={() => undefined}
+          secondaryAction={{
+            label: 'Go back',
+            href: '/t/acme/dashboard',
+            'data-testid': 'go-back',
+          }}
+        />,
+      );
+      const link = screen.getByTestId('go-back');
+      // A real <a href>, not a button: middle-click, open-in-new-tab
+      // and the browser's own status bar all come from the element.
+      expect(link.tagName).toBe('A');
+      expect(link).toHaveAttribute('href', '/t/acme/dashboard');
+      // And it is reachable by its accessible role, which a <button>
+      // with a dropped href would not be.
+      expect(
+        screen.getByRole('link', { name: 'Go back' }),
+      ).toBe(link);
+    });
+
+    it('still renders a button when only onClick is given', () => {
+      // The regression guard on the other side: the href branch must
+      // not swallow the handler-only shape every current call site uses.
+      const onClick = jest.fn();
+      render(
+        <ErrorState
+          secondaryAction={{
+            label: 'Contact support',
+            onClick,
+            'data-testid': 'secondary',
+          }}
+        />,
+      );
+      const el = screen.getByTestId('secondary');
+      expect(el.tagName).toBe('BUTTON');
+      expect(el).not.toHaveAttribute('href');
+    });
+
+    it('a disabled link is inert rather than merely dimmed', () => {
+      // An anchor has no `disabled` attribute, so "disabled" has to be
+      // expressed twice: `pointer-events-none` for the pointer and
+      // `aria-disabled` for AT. Asserting only the opacity would have
+      // left a greyed-out link that still navigated.
+      render(
+        <ErrorState
+          secondaryAction={{
+            label: 'Go back',
+            href: '/t/acme/dashboard',
+            disabled: true,
+            'data-testid': 'go-back',
+          }}
+        />,
+      );
+      const link = screen.getByTestId('go-back');
+      expect(link).toHaveAttribute('aria-disabled', 'true');
+      expect(link).toHaveClass('pointer-events-none');
+    });
+  });
 });

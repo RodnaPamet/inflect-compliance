@@ -1,8 +1,17 @@
 /**
  * Nothing in the RUNNER invokes the npm CLI.
  *
- * This exists to hold up a `.trivyignore` entry, which is why it is a guard
- * over a shell script rather than a test of behaviour.
+ * It was written to hold up a `.trivyignore` entry, which is why it is a guard
+ * over a shell script rather than a test of behaviour. **That entry is gone:**
+ * all nine exemptions were retired on 2026-10-01 once the npm CLI was verified
+ * absent from the live image, so nothing here is propping up a justification any
+ * more.
+ *
+ * The guard stays, and is stronger than when it was conditional. It no longer
+ * exists to make an exemption believable; it exists so the deletion below
+ * cannot be quietly undone — a runtime path that shelled out to npm would both
+ * break the image (the CLI is not there) and reopen the CVE class that the
+ * exemptions were paying for.
  *
  * CVE-2026-73566 (HIGH) affects tar 7.5.19, which reaches the image only as
  * the global npm CLI's bundled copy. The exemption's justification is that

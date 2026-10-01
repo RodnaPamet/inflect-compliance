@@ -106,7 +106,18 @@ export function InitialsAvatar({
         <span
             aria-hidden="true"
             className={cn(
-                'relative flex items-center justify-center overflow-hidden rounded-full bg-[var(--brand-subtle)] font-semibold text-[var(--brand-emphasis)]',
+                // The initials are TEXT on the brand tint, so they take
+                // `--content-emphasis`, not a brand FILL token.
+                // `--brand-emphasis` was 4.25:1 against the tint
+                // composited over `--bg-default` on dark and 4.51:1 on
+                // light — the first is under WCAG 1.4.3's 4.5:1 and the
+                // second clears it by 0.01. `--content-emphasis` is
+                // 7.00:1 and 14.36:1 on the same two grounds. (The
+                // circle is `aria-hidden`, so AT never reads the
+                // initials — these glyphs are only ever consumed by
+                // eye, which is precisely why the ratio is the whole
+                // contract here.)
+                'relative flex items-center justify-center overflow-hidden rounded-full bg-[var(--brand-subtle)] font-semibold text-content-emphasis',
                 SIZE_CLASS[size],
                 className,
             )}

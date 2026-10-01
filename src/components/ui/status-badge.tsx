@@ -36,7 +36,7 @@ const statusBadgeVariants = cva(
         // `compoundVariants` table below.
         solid: "",
         // subtle = neutral surface with tone-tinted text only. For
-        // tertiary status displays (draft, low-risk, passive states)
+        // tertiary status displays (draft, inactive, passive states)
         // where the standard tone would feel too loud.
         subtle: "bg-bg-subtle",
       },
@@ -59,8 +59,8 @@ const statusBadgeVariants = cva(
       { variant: "warning", tone: "subtle", class: "text-content-warning" },
       { variant: "error", tone: "subtle", class: "text-content-error" },
     ],
-    // R9-PR11 — default tone flips solid → subtle per Dell design
-    // system "light" treatment. Pages that genuinely need the loud
+    // R9-PR11 — default tone flips solid → subtle, the "light"
+    // treatment. Pages that genuinely need the loud
     // tinted-bg-on-tinted-text emphasis (critical errors that warrant
     // shouting) opt in with `tone="solid"` explicitly. Default chrome
     // is quieter; the eye anchors on tinted text alone instead of

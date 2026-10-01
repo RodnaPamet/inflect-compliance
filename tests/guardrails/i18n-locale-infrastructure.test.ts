@@ -52,9 +52,15 @@ describe('locale constants + resolver', () => {
     });
 
     it('short codes are authored uppercase', () => {
-        // The ToggleGroup option carries `capitalize`, which uppercases only
-        // the FIRST letter of a word — a lowercase 'en' would render as 'En'.
-        // Authoring uppercase is the only thing preventing that, so pin it.
+        // The LocaleSwitcher renders these verbatim: `<ToggleGroup>` applies
+        // no case transform, so a lowercase 'en' would render as 'en'.
+        //
+        // (It used to carry `capitalize`, which would have rendered 'En'. That
+        // class was removed because `text-transform: capitalize` upper-cases
+        // the first letter of EVERY word, title-casing multi-word Bulgarian
+        // labels elsewhere in the same primitive. Removing it does not weaken
+        // this assertion — it makes the authored case the ONLY thing that
+        // decides what ships, which is exactly what this pins.)
         for (const l of SUPPORTED_LOCALES) {
             const code = LOCALE_SHORT_LABELS[l];
             expect(code).toBe(code.toUpperCase());

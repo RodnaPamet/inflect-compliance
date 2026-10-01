@@ -17,9 +17,9 @@
  *   async function handleDelete(id: string) {
  *     setLocalRows((rs) => rs.filter((r) => r.id !== id));   // optimistic
  *     triggerUndoToast({
- *       message: 'Risk deleted',
+ *       message: 'Item deleted',
  *       undoMessage: 'Undo',
- *       action: () => fetch(`/api/.../risks/${id}`, { method: 'DELETE' }),
+ *       action: () => fetch(`/api/.../items/${id}`, { method: 'DELETE' }),
  *       undoAction: () => refetchRows(),                      // restore optimistic UI
  *       onError: () => refetchRows(),
  *     });
@@ -64,7 +64,7 @@ export interface TriggerUndoToastInput<T = unknown> {
      * the caller already removed locally before triggering the toast).
      */
     undoAction?: () => Promise<void> | void;
-    /** Primary message shown in the toast (e.g. "Risk deleted"). */
+    /** Primary message shown in the toast (e.g. "Item deleted"). */
     message: string;
     /** Label for the Undo button (e.g. "Undo"). */
     undoMessage: string;

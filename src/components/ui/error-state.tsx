@@ -38,6 +38,7 @@ import { AlertTriangle, type LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { type PropsWithChildren, type ReactNode } from "react";
 import { Button } from "./button";
+import { buttonVariants } from "./button-variants";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -146,20 +147,57 @@ export function ErrorState({
                             {retryLabel}
                         </Button>
                     )}
-                    {secondaryAction && (
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={secondaryAction.onClick}
-                            disabled={secondaryAction.disabled}
-                            data-testid={secondaryAction["data-testid"]}
-                        >
-                            {secondaryAction.label}
-                        </Button>
-                    )}
+                    {secondaryAction && renderSecondary(secondaryAction)}
                     {children}
                 </div>
             )}
         </div>
+    );
+}
+
+// ─── Secondary-action renderer ────────────────────────────────────────
+
+/**
+ * `href` was DECLARED on `ErrorStateAction` and then ignored — this
+ * branch always rendered a `<Button>`, which drops `href` on the floor.
+ * So the documented "Go back to dashboard" shape produced a button that
+ * looked live and navigated nowhere; the only reason it was not louder
+ * is that every call site so far passed `onClick`.
+ *
+ * The shape is `<EmptyState>`'s `renderAction`, deliberately — the two
+ * primitives are mirrors of each other and their action contracts
+ * should not diverge. A link gets a real `<a href>` (middle-click, open
+ * in new tab, the status bar showing a destination) wearing the button
+ * material via `buttonVariants`, and a disabled link is inert via
+ * `pointer-events-none` + `aria-disabled` rather than a `disabled`
+ * attribute an anchor does not have.
+ */
+function renderSecondary(action: ErrorStateAction) {
+    if (action.href) {
+        return (
+            <a
+                href={action.href}
+                className={cn(
+                    buttonVariants({ variant: "secondary", size: "sm" }),
+                    action.disabled && "pointer-events-none opacity-50",
+                )}
+                data-testid={action["data-testid"]}
+                aria-disabled={action.disabled || undefined}
+            >
+                {action.label}
+            </a>
+        );
+    }
+    return (
+        <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={action.onClick}
+            disabled={action.disabled}
+            data-testid={action["data-testid"]}
+        >
+            {action.label}
+        </Button>
     );
 }

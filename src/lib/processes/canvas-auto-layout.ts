@@ -30,7 +30,54 @@
  */
 
 import dagre from "@dagrejs/dagre";
-import type { Edge, Node } from "@xyflow/react";
+/**
+ * ── The input types are STRUCTURAL, not either engine's ──────────────
+ *
+ * This module used to take `Node[]` / `Edge[]` from `@xyflow/react`, which made
+ * a graph-layout algorithm depend on a renderer. It never needed one: the six
+ * fields it reads are `id`, `position`, `data`, `style`, `source` and `target`,
+ * and `data` / `style` were ALREADY reached through structural casts because
+ * xyflow types them as `Record<string, unknown>` and `CSSProperties`.
+ *
+ * The practical consequence is that phase 4 would have deleted auto-layout
+ * along with the xyflow canvas — dagre LR/TB, selection-only, and the
+ * force-directed variant, six commands in all, with no tldraw equivalent to
+ * replace them, because tldraw has no graph auto-layout of any kind.
+ *
+ * xyflow's `Node` and `Edge` remain assignable to these, so the existing caller
+ * is untouched; a tldraw host supplies the same shape from its own records.
+ * Asserted both ways in `tests/unit/processes/auto-layout-is-engine-free.test.ts`
+ * rather than left to the next person to discover.
+ */
+
+/** The minimum of a positioned node this module reads. */
+export interface LayoutNode {
+    id: string;
+    position: { x: number; y: number };
+    /**
+     * Read ONLY for `kind === 'annotation'`, which is skipped: annotations are
+     * floating tags that do not participate in the flow direction.
+     */
+    data?: { kind?: unknown } | null;
+    /** Measured size, where the host has one. Falls back to the constants below. */
+    style?: { width?: unknown; height?: unknown } | null;
+}
+
+/**
+ * The minimum of an edge this module reads.
+ *
+ * `id` is needed by the elk (force-directed) path, which requires edge
+ * identity where dagre does not. Worth recording how it got left out: the
+ * field surface was enumerated as a flat set — `id`, `position`, `data`,
+ * `style`, `source`, `target` — and `id` was then assigned to the NODE type
+ * only. The enumeration was right and the split was wrong, which a flat list
+ * cannot show you. `tsc` named the line.
+ */
+export interface LayoutEdge {
+    id: string;
+    source: string;
+    target: string;
+}
 
 export type AutoLayoutDirection = "LR" | "TB";
 
@@ -65,8 +112,8 @@ export interface AutoLayoutResult {
  * map omits them.
  */
 export function computeAutoLayout(
-    nodes: Node[],
-    edges: Edge[],
+    nodes: readonly LayoutNode[],
+    edges: readonly LayoutEdge[],
     direction: AutoLayoutDirection,
     nodeIdsFilter?: ReadonlySet<string>,
 ): AutoLayoutResult {
@@ -87,7 +134,7 @@ export function computeAutoLayout(
         const kind = (node.data as { kind?: unknown } | undefined)?.kind;
         if (kind === "annotation") continue;
         if (nodeIdsFilter && !nodeIdsFilter.has(node.id)) continue;
-        // Use the node's measured dimensions if xyflow has them,
+        // Use the node's measured dimensions if the host supplies them,
         // else the design defaults. Group nodes get the larger box.
         const measuredW =
             (node as { width?: number | null }).width ??
@@ -156,7 +203,7 @@ export function computeAutoLayout(
  */
 function finaliseSubsetPositions(
     positions: Record<string, { x: number; y: number }>,
-    nodes: Node[],
+    nodes: readonly LayoutNode[],
     participatingIds: ReadonlySet<string>,
     nodeIdsFilter: ReadonlySet<string> | undefined,
 ): AutoLayoutResult {
@@ -209,8 +256,8 @@ function finaliseSubsetPositions(
  * variant: subset-only with centroid preservation.
  */
 export async function computeForceLayout(
-    nodes: Node[],
-    edges: Edge[],
+    nodes: readonly LayoutNode[],
+    edges: readonly LayoutEdge[],
     nodeIdsFilter?: ReadonlySet<string>,
 ): Promise<AutoLayoutResult> {
     const { default: ELK } = await import("elkjs/lib/elk.bundled.js");
