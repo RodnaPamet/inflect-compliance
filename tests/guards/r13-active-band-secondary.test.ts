@@ -240,7 +240,16 @@ describe('Roadmap-13 PR-4 — active band swaps to secondary brand', () => {
             // intact across the R12 → R13 evolution.
             const recipe = activeRecipe();
             const r12Text = /\btext-content-emphasis\b/.test(recipe);
-            const r13Text = /\btext-\[var\(--brand-default\)\]/.test(
+            // T07 (#3076) — the needle moved from `--brand-default` to
+            // `--content-brand`. The INTENT is unchanged and still enforced: the
+            // active label is brand-coloured. What changed is which brand token
+            // carries it, because `--brand-default` is 4.03:1 and WCAG 1.4.3 wants
+            // 4.5:1 for text — this guard was pinning the failure as a requirement.
+            // `--content-brand` is 11.93:1 dark / 5.07:1 light, guarded on the ratio
+            // in `token-contrast-content-brand.test.ts`. Non-text brand decoration
+            // (band, wash, glow) is untouched: it owes 1.4.11's 3:1, which 4.03:1
+            // already clears.
+            const r13Text = /\btext-content-brand\b/.test(
                 recipe,
             );
             expect(r12Text || r13Text).toBe(true);

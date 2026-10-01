@@ -512,8 +512,26 @@ export const NAV_ITEM_DEFAULT =
  * `tests/guards/r13-active-band-secondary.test.ts` locks the
  * five secondary-brand override classes + the navy-glow plumbing.
  */
+/**
+ * T07 (#3076) — the active label moved from `--brand-default` to
+ * `--content-brand`.
+ *
+ * This is a WCAG 1.4.3 fix, not a palette preference. `--brand-default`
+ * measures 4.03:1 on the nav's ground, and 1.4.3 wants 4.5:1 for text —
+ * so the one row in the sidebar that tells a user WHERE THEY ARE was the
+ * one row whose label fell below the floor. T01 added `--content-brand`
+ * (11.93:1 dark / 5.07:1 light) for exactly this and guards it on the
+ * RATIO rather than the hex, in
+ * `tests/guardrails/token-contrast-content-brand.test.ts`.
+ *
+ * Only the TEXT moves. Every brand-coloured non-text decoration in the
+ * recipe below — the gradient wash, the 4px band, the glow — stays on
+ * `--brand-*`: those answer 1.4.11's 3:1 for non-text, which 4.03:1
+ * already clears, and recolouring them would change the look for no
+ * accessibility gain.
+ */
 export const NAV_ITEM_ACTIVE =
-    'text-[var(--brand-default)] bg-[radial-gradient(circle_at_left,_var(--brand-secondary-subtle),_transparent_75%)] before:opacity-100 before:animate-nav-band-active-alive before:top-1! before:bottom-1! before:w-[4px]! before:bg-[radial-gradient(circle_1.5px_at_50%_80%,_rgba(255,255,255,0.9),_transparent_70%),radial-gradient(circle_1.5px_at_50%_55%,_rgba(255,255,255,0.5),_transparent_70%),radial-gradient(circle_1.5px_at_50%_30%,_rgba(255,255,255,0.2),_transparent_70%),linear-gradient(to_bottom,_var(--bg-page),_var(--bg-page),_var(--bg-page))]! before:shadow-[var(--nav-band-glow-active)]! after:opacity-100 shadow-[0_0_12px_2px_var(--nav-row-aura-color),var(--nav-bevel-shadow)] font-medium';
+    'text-content-brand bg-[radial-gradient(circle_at_left,_var(--brand-secondary-subtle),_transparent_75%)] before:opacity-100 before:animate-nav-band-active-alive before:top-1! before:bottom-1! before:w-[4px]! before:bg-[radial-gradient(circle_1.5px_at_50%_80%,_rgba(255,255,255,0.9),_transparent_70%),radial-gradient(circle_1.5px_at_50%_55%,_rgba(255,255,255,0.5),_transparent_70%),radial-gradient(circle_1.5px_at_50%_30%,_rgba(255,255,255,0.2),_transparent_70%),linear-gradient(to_bottom,_var(--bg-page),_var(--bg-page),_var(--bg-page))]! before:shadow-[var(--nav-band-glow-active)]! after:opacity-100 shadow-[0_0_12px_2px_var(--nav-row-aura-color),var(--nav-bevel-shadow)] font-medium';
 
 /**
  * Badge recipe — aligned + breathing. (R12-PR8 lock.)

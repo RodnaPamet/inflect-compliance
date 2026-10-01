@@ -5,8 +5,8 @@
  * Locks the wiring so a refactor can't silently drop it:
  *   - a collapse context broadcasts the flag to the nav primitives,
  *   - NavItem hides its label + tooltips it when collapsed,
- *   - AppShell persists the state, drives the aside width, and provides the
- *     context (false for the mobile drawer),
+ *   - AppShellFrame persists the state and drives the aside width, and
+ *     AppShell provides the context (false for the mobile drawer),
  *   - both sidebars render the toggle.
  */
 import * as fs from 'node:fs';
@@ -19,6 +19,7 @@ import * as path from 'node:path';
 // harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike, re-derived per file rather than assumed from the directory.
 import { codeOf } from '../helpers/source-blocks';
+import { uiStorageKey } from '@/lib/ui-storage';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
@@ -40,13 +41,34 @@ describe('sidebar collapse / icon rail', () => {
         expect(src).toMatch(/<Tooltip content=\{label\} side="right">/);
     });
 
-    it('AppShell persists the state, drives the aside width, + provides the context', () => {
-        const src = read('src/components/layout/AppShell.tsx');
-        expect(src).toMatch(/useLocalStorage\(\s*['"]inflect:sidebar-collapsed['"]/);
-        expect(src).toMatch(/SidebarCollapseProvider/);
+    // T07 (#3076) split this in two, because the wiring did. `AppShellFrame`
+    // now owns the persisted state and the rail width; `AppShell` owns the
+    // context it broadcasts. Both halves are still asserted — a refactor that
+    // dropped either would redden one of these, which is what the file's
+    // header promises.
+    it('AppShellFrame persists the state and drives the aside width', () => {
+        const src = read('src/components/layout/AppShellFrame.tsx');
+        // Through the T01 seam rather than a spelled-out literal, so a
+        // vendoring product changes one constant.
+        expect(src).toMatch(/useLocalStorage\(/);
+        expect(src).toMatch(/uiStorageKey\(\s*['"]sidebar-collapsed['"]\s*\)/);
         // collapsed → narrow rail (w-14), expanded → thinner sidebar (180px).
         expect(src).toMatch(/md:w-14/);
         expect(src).toMatch(/md:w-\[180px\]/);
+    });
+
+    it('keeps the persisted key BYTE-IDENTICAL across the seam move', () => {
+        // The guard used to pin the literal `inflect:sidebar-collapsed`. Moving
+        // to `uiStorageKey('sidebar-collapsed')` is only safe if it produces
+        // the same string: a changed key is not a migration, it is a silent
+        // reset of every user's collapse preference. Asserted on the VALUE, so
+        // a future change to the prefix or the join character fails here.
+        expect(uiStorageKey('sidebar-collapsed')).toBe('inflect:sidebar-collapsed');
+    });
+
+    it('AppShell provides the context, and never collapses the mobile drawer', () => {
+        const src = read('src/components/layout/AppShell.tsx');
+        expect(src).toMatch(/SidebarCollapseProvider/);
         // mobile drawer is never collapsed.
         expect(src).toMatch(/SidebarCollapseProvider collapsed=\{false\}/);
     });
