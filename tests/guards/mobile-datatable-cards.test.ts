@@ -26,20 +26,39 @@ describe("Mobile PR-2 — responsive DataTable", () => {
     // it; table/use-is-below-md re-exports for back-compat).
     const hook = read("src/components/ui/hooks/use-is-below-md.ts");
 
-    it("DataTable gates the card view on useIsBelowMd and real rows", () => {
+    it("DataTable gates the card view on useIsBelowMd, and mounts the cards", () => {
+        // ONLY the two things this file can say better than a render: that the
+        // breakpoint hook is what decides, and that the card component is
+        // mounted at all.
+        //
+        // The rest of the gate — real rows, not loading, not errored — used to
+        // be pinned here as one source-text literal,
+        // `/belowMd && data\.length > 0 && !error && !loading/`. That pinned a
+        // SPELLING rather than the gate: inserting `collapsesToCards` (the
+        // `mobileFallback` escape hatch) reddened it, by ADDING a condition to
+        // the very gate it protects. Splitting it per conjunct fixed that and
+        // bought three Class D ambiguous needles instead — `/!error/` and
+        // `/!loading/` each match twice in this file, so either conjunct could
+        // be deleted from the gate and a survivor elsewhere would satisfy the
+        // assertion.
+        //
+        // So the conditions are asserted as BEHAVIOUR instead, in
+        // `tests/rendered/data-table-mobile-fallback.test.tsx`: the collapse
+        // happens with the prop omitted, `'scroll'` keeps the table, and
+        // loading / errored / empty each keep the table's own chrome. A render
+        // cannot be satisfied by a survivor somewhere else in the file.
         expect(dt).toMatch(/const belowMd = useIsBelowMd\(\)/);
-        // Each CONJUNCT separately, not the whole condition as one literal.
-        // The one-literal form pinned the spelling rather than the gate, and
-        // broke the moment `collapsesToCards` (the `mobileFallback` escape
-        // hatch) was inserted between `belowMd` and the row count — a change
-        // that ADDS a condition to the gate this guard exists to protect.
-        // Four separate needles cannot be satisfied by a reordering and do
-        // not forbid a fifth.
-        expect(dt).toMatch(/if \(belowMd &&/);
-        expect(dt).toMatch(/data\.length > 0/);
-        expect(dt).toMatch(/!error/);
-        expect(dt).toMatch(/!loading/);
         expect(dt).toMatch(/<DataTableCards/);
+    });
+
+    it("the mobile fallback DEFAULTS to cards, so omitting it is the safe case", () => {
+        // `mobileFallback="scroll"` is an escape hatch for a genuinely
+        // desktop-only table. If the default ever flipped, every DataTable in
+        // the app would start horizontal-scrolling on a phone — the card
+        // branch would simply stop being taken, with nothing else here to
+        // notice. Both needles are unique in the file.
+        expect(dt).toMatch(/mobileFallback\?: "card" \| "scroll"/);
+        expect(dt).toMatch(/\(mobileFallback \?\? "card"\) === "card"/);
     });
 
     it("the mobile fallback DEFAULTS to cards, so omitting it is the safe case", () => {

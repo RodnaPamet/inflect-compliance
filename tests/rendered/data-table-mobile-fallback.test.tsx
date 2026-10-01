@@ -102,6 +102,33 @@ describe("DataTable — mobileFallback", () => {
         expect(screen.getByRole("table")).toBeInTheDocument();
     });
 
+    // The three cases that keep the TABLE on a phone even under the 'card'
+    // default. They are the other conjuncts of the card gate, asserted as
+    // behaviour: `tests/guards/mobile-datatable-cards.test.ts` used to pin
+    // them as source text, where `/!error/` and `/!loading/` each matched
+    // twice in the file and either conjunct could have been deleted with a
+    // survivor satisfying the needle.
+    it("keeps the table's own chrome on a phone while loading", () => {
+        mockBelowMd = true;
+        renderTable({ loading: true });
+
+        expect(screen.queryByTestId("data-table-cards")).toBeNull();
+    });
+
+    it("keeps the table's own chrome on a phone when errored", () => {
+        mockBelowMd = true;
+        renderTable({ error: "Could not load" });
+
+        expect(screen.queryByTestId("data-table-cards")).toBeNull();
+    });
+
+    it("keeps the table's own empty chrome on a phone with no rows", () => {
+        mockBelowMd = true;
+        renderTable({ data: [] });
+
+        expect(screen.queryByTestId("data-table-cards")).toBeNull();
+    });
+
     it("lets the wrapper be narrower than its content, so the PAGE cannot drift", () => {
         // `min-w-0 max-w-full` is what makes the table's own `overflow-x-auto`
         // actually work. Without them the wrapper grows to fit the table, the
@@ -224,16 +251,22 @@ describe("DataTableCards — a clickable card is operable by keyboard", () => {
         expect(button).toHaveClass("focus-visible:ring-2");
     });
 
-    it("renders a decorative trailing chevron so the row reads as actionable", () => {
+    it("renders ONE decorative trailing chevron, so the row reads as actionable", () => {
         // Without it a card looks like a read-only summary and the user never
         // discovers the row opens. It is decoration: hidden from AT, and
         // `pointer-events-none` so it cannot swallow the tap it advertises.
+        //
+        // The count is `1`, not `>= 1`, and that is the load-bearing part —
+        // see the exclusion test below.
         const { cards } = clickableCards();
         const button = within(cards).getAllByRole("button")[0];
 
-        const chevron = button.querySelector("svg[aria-hidden='true']");
-        expect(chevron).toBeTruthy();
-        expect(chevron).toHaveClass("pointer-events-none");
+        // `svg[aria-hidden]` rather than every `svg`: the selection
+        // checkbox's own glyphs are not aria-hidden, and whether Radix mounts
+        // them for an unchecked row is its business, not this test's.
+        const chevrons = button.querySelectorAll("svg[aria-hidden='true']");
+        expect(chevrons).toHaveLength(1);
+        expect(chevrons[0]).toHaveClass("pointer-events-none");
     });
 
     it("renders no chevron on a read-only card", () => {
@@ -244,5 +277,34 @@ describe("DataTableCards — a clickable card is operable by keyboard", () => {
         const cards = screen.getByTestId("data-table-cards");
 
         expect(cards.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(0);
+    });
+
+    it("drops the desktop __row-chevron COLUMN rather than rendering it twice", () => {
+        // `useTable` appends a `__row-chevron` column whenever `onRowClick` is
+        // set, and its cell is `opacity-0` until `group-hover/row`. A card has
+        // no such group, so rendering that cell gives an invisible full-width
+        // line — dead vertical space on the viewport with least of it, and no
+        // affordance — next to the card's own chevron.
+        //
+        // Pinned by the cell's own class rather than by a count, so this says
+        // which one went: the column's chevron carries `opacity-0`, the card's
+        // does not.
+        const { cards } = clickableCards();
+
+        expect(cards.querySelectorAll(".opacity-0")).toHaveLength(0);
+        // ...while the column itself is still there on the desktop table, so
+        // this is a card-rendering decision and not a column being deleted.
+        mockBelowMd = false;
+        const desktop = render(
+            <DataTable<Row>
+                data={data}
+                columns={columns}
+                getRowId={(r) => r.id}
+                onRowClick={jest.fn()}
+            />,
+        );
+        expect(
+            desktop.container.querySelectorAll(".opacity-0").length,
+        ).toBeGreaterThan(0);
     });
 });

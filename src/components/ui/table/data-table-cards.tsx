@@ -55,18 +55,37 @@ function cardActivation<T extends TableRowData>(
     onRowClick: (row: Row<T>, e: React.MouseEvent) => void,
 ) {
     /** The helper, bound to the event that triggered this activation. */
-    const bound = (e: React.MouseEvent | React.KeyboardEvent) =>
-        buttonLikeKeys(() => onRowClick(row, e as React.MouseEvent));
+    const bound = (
+        e: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
+    ) => buttonLikeKeys(() => onRowClick(row, e as React.MouseEvent));
     // `role` and `tabIndex` do not depend on the event, so they are read off a
     // binding whose `onActivate` is never called.
     const { role, tabIndex } = buttonLikeKeys(() => {});
     return {
         role,
         tabIndex,
-        onClick: (e: React.MouseEvent) => bound(e).onClick?.(),
-        onKeyDown: (e: React.KeyboardEvent) => bound(e).onKeyDown(e),
+        onClick: (e: React.MouseEvent<HTMLElement>) => bound(e).onClick?.(),
+        // `KeyboardEvent<HTMLElement>`, not the bare `KeyboardEvent` whose
+        // element parameter defaults to `Element` — `buttonLikeKeys` takes the
+        // HTML-element form, and the bare alias does not satisfy it.
+        onKeyDown: (e: React.KeyboardEvent<HTMLElement>) =>
+            bound(e).onKeyDown(e),
     };
 }
+
+/**
+ * The desktop table's trailing chevron column, which a card must not render.
+ *
+ * `useTable` appends this column whenever `onRowClick` is set, and its cell is
+ * `opacity-0` until `group-hover/row` — an affordance for a pointer hovering a
+ * table row. In a card there is no such group, so the cell renders as an
+ * invisible full-width line: dead vertical space on the viewport that has
+ * least of it, and no affordance. The card's own chevron below replaces it.
+ *
+ * The id is spelled rather than imported because `table.tsx` declares it
+ * inline and `datatable-row-chevron-affordance` pins that literal there.
+ */
+const DESKTOP_CHEVRON_COLUMN_ID = "__row-chevron";
 
 export function DataTableCards<T extends TableRowData>({
     table,
@@ -115,7 +134,14 @@ export function DataTableCards<T extends TableRowData>({
                                 className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-content-subtle"
                             />
                         )}
-                        {row.getVisibleCells().map((cell) => {
+                        {row
+                            .getVisibleCells()
+                            .filter(
+                                (cell) =>
+                                    cell.column.id !==
+                                    DESKTOP_CHEVRON_COLUMN_ID,
+                            )
+                            .map((cell) => {
                             const header = cell.column.columnDef.header;
                             const label =
                                 typeof header === "string" && header.trim()
