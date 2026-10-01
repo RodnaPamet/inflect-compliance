@@ -41,8 +41,15 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
         const src = () => read("src/lib/processes/canvas-auto-layout.ts");
 
         it("exports computeForceLayout as an async function", () => {
+        // The parameter types are STRUCTURAL (`LayoutNode` / `LayoutEdge`),
+        // deliberately naming no engine. This module is pure graph layout and
+        // read only six fields; taking `Node[]` from `@xyflow/react` meant
+        // phase 4 would have deleted auto-layout along with the renderer, and
+        // tldraw has no equivalent. xyflow's own `Node` / `Edge` remain
+        // assignable, which is why every behavioural suite here passed
+        // unchanged across the port.
             expect(src()).toMatch(
-                /export async function computeForceLayout\(\s*nodes:\s*Node\[\],\s*edges:\s*Edge\[\],\s*nodeIdsFilter\?:\s*ReadonlySet<string>,?\s*\):\s*Promise<AutoLayoutResult>/,
+                /export async function computeForceLayout\(\s*nodes:\s*readonly LayoutNode\[\],\s*edges:\s*readonly LayoutEdge\[\],\s*nodeIdsFilter\?:\s*ReadonlySet<string>,?\s*\):\s*Promise<AutoLayoutResult>/,
             );
         });
 
