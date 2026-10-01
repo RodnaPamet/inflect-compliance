@@ -215,7 +215,19 @@ const ROOT = path.resolve(__dirname, '../..');
 //   three more rendered suites: if it lands first the count reaches 329 and a
 //   floor of 319 is slack 10, which fails IN THE MERGE QUEUE rather than here.
 //   At 326 this branch passes in either landing order.
-const RENDERED_TEST_FLOOR = 326;
+//
+// 326 -> 335 (2026-10-01): the MEASURED count with this branch's one spec on
+//   main. Raised HERE, in the branch that crosses the budget, because main had
+//   already drifted to 334 against a floor of 326 — slack 8 of
+//   `SLACK.rendered`'s 8, i.e. exactly on the limit. At that point ANY branch
+//   adding a single rendered spec fails this guard for a reason that is not its
+//   own, and this one did: the merge queue built #3072 + #3073 + #3075 together,
+//   reached 335, and ejected the batch with `slack 9 > 8` while all three were
+//   green individually.
+//
+//   That is the shared-budget failure a per-branch run cannot see. Each PR
+//   measured itself against a main that was already full.
+const RENDERED_TEST_FLOOR = 335;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
