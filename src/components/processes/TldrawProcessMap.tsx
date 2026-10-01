@@ -34,11 +34,13 @@
  * second sends the now-stale original, and every subsequent edit conflicts
  * against the user's own previous write. `onSaved` is where that happens.
  */
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Editor } from 'tldraw';
 
 import { useToast } from '@/components/ui/hooks';
 import { TldrawProcessCanvas } from '@/components/processes/TldrawProcessCanvas';
+import type { EdgeRefusal } from '@/components/processes/tldraw/edge-validation';
 import type { GraphRows } from '@/components/processes/tldraw/serializer';
 import type { SavedProcessMap } from '@/lib/processes/tldraw-save';
 import type { CanvasAutosaveApi } from '@/lib/processes/use-canvas-autosave';
@@ -117,6 +119,45 @@ function toRows(data: LoadedMap): GraphRows {
     };
 }
 
+/**
+ * Why a refused edge is TOASTED, and why the text is not `describeRefusal`.
+ *
+ * `installArrowToEdgeConversion` refuses an arrow by calling `onRefuse` and
+ * returning — the arrow stays on the canvas as a plain tldraw arrow. So with
+ * nothing wired here the user drew a connector, it silently stopped being an
+ * edge, and the only feedback was its failure to look like one.
+ *
+ * The xyflow canvas already settled the shape of this feedback and it is
+ * copied rather than reinvented: `toast.warning` (a refusal is the product
+ * working, not an error), and ONE shared toast id so a run of misclicks
+ * collapses into a single toast instead of a stack.
+ *
+ * `describeRefusal` in `edge-validation.ts` returns English, and its docblock
+ * says it is "separate so callers can substitute one" — this is that
+ * substitution. Using it directly would have shipped a canvas whose refusals
+ * are the only un-localised strings on the surface, which is a regression the
+ * cutover would have carried: the xyflow path localises these.
+ *
+ * Typed `Record<EdgeRefusal['code'], string>` on purpose. The tldraw validator
+ * refuses FIVE things where xyflow refused three, so two keys are new; typing
+ * it as a total map over the union means a sixth refusal code is a type error
+ * here rather than a toast that says "undefined".
+ */
+function buildRefusalMessages(
+    t: ReturnType<typeof useTranslations>,
+): Record<EdgeRefusal['code'], string> {
+    return {
+        SELF_LOOP: t('rejectSelf'),
+        DUPLICATE_EDGE: t('rejectDuplicate'),
+        NODE_IS_ANNOTATION: t('rejectAnnotation'),
+        NODE_IS_GROUP: t('rejectGroup'),
+        UNKNOWN_NODE_KEY: t('rejectUnknownNode'),
+    };
+}
+
+/** One shared id, so rapid-fire refusals collapse into one toast. */
+const REFUSAL_TOAST_ID = 'canvas-connection-rejected';
+
 export function TldrawProcessMap({
     tenantSlug,
     mapId,
@@ -128,6 +169,7 @@ export function TldrawProcessMap({
     onStateChange,
 }: TldrawProcessMapProps) {
     const toast = useToast();
+    const t = useTranslations('automation.canvas');
     /**
      * The loaded map, TAGGED with the id it came from.
      *
@@ -206,6 +248,30 @@ export function TldrawProcessMap({
         setLoaded((prev) => (prev ? { ...prev, version: undefined } : prev));
     }, []);
 
+    /**
+     * Tell the user why the arrow they drew is not an edge.
+     *
+     * `refusals` can hold more than one reason — `validateEdge` pushes a
+     * refusal per failing rule, so drawing a duplicate onto an annotation
+     * reports both. They are joined rather than truncated to the first:
+     * fixing one and being told about the next is the loop a single-reason
+     * toast creates, and the full list is two short sentences.
+     *
+     * `t` is a dependency because the factory closes over it. In practice
+     * next-intl returns a stable translator for a stable locale, so this is
+     * about honesty rather than churn — and the canvas keeps the callback in
+     * a ref it refreshes, so a new identity costs nothing there either.
+     */
+    const handleEdgeRefused = useCallback(
+        (refusals: EdgeRefusal[]) => {
+            if (refusals.length === 0) return;
+            const messages = buildRefusalMessages(t);
+            const text = [...new Set(refusals.map((r) => messages[r.code]))].join(' ');
+            toast.warning(text, { id: REFUSAL_TOAST_ID });
+        },
+        [t, toast],
+    );
+
     const autosave = useTldrawCanvasAutosave({
         editor,
         tenantSlug,
@@ -259,6 +325,7 @@ export function TldrawProcessMap({
                     onEditorReady?.(e);
                 }}
                 onDirty={autosave.markDirty}
+                onEdgeRefused={handleEdgeRefused}
             />
         </div>
     );
