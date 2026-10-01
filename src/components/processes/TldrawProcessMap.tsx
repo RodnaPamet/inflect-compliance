@@ -53,6 +53,17 @@ export interface TldrawProcessMapProps {
     onSaved?: (saved: SavedProcessMap) => void;
     /** Overrides the autosave debounce; omitted keeps the hook's own default. */
     delayMs?: number;
+    /**
+     * Hands the editor up as well as keeping it.
+     *
+     * The container needs the editor for the autosave; the WORKSPACE around it
+     * needs the same editor for the document bar's undo/redo, the selection
+     * adapter and the export menu. Passing it up rather than moving ownership
+     * out keeps this component usable on its own — it is the load→edit→save
+     * unit, and a caller that wants only that should not have to hold an editor
+     * to get it.
+     */
+    onEditorReady?: (editor: Editor) => void;
     /** Seam for tests. Defaults to the global `fetch`. */
     fetchImpl?: typeof fetch;
 }
@@ -97,6 +108,7 @@ export function TldrawProcessMap({
     onSaved,
     delayMs,
     fetchImpl,
+    onEditorReady,
 }: TldrawProcessMapProps) {
     const toast = useToast();
     /**
@@ -211,7 +223,10 @@ export function TldrawProcessMap({
             <TldrawProcessCanvas
                 rows={current.rows}
                 readOnly={readOnly}
-                onEditorReady={setEditor}
+                onEditorReady={(e) => {
+                    setEditor(e);
+                    onEditorReady?.(e);
+                }}
                 onDirty={autosave.markDirty}
             />
         </div>

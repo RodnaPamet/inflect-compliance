@@ -65,7 +65,7 @@
 
 import 'tldraw/tldraw.css';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, type DragEvent } from 'react';
 import {
     Tldraw,
     type Editor,
@@ -76,6 +76,7 @@ import {
 import { batchIsSubstantive } from '@/lib/processes/canvas-changes';
 import { classifyTldrawStoreDiff } from '@/lib/processes/canvas-changes-tldraw';
 
+import { PALETTE_DRAG_MIME, type PaletteDropPayload } from './ProcessPalette';
 import { ProcessEdgeBindingUtil } from './tldraw/ProcessEdgeBindingUtil';
 import { ProcessEdgeShapeUtil } from './tldraw/ProcessEdgeShapeUtil';
 import {
@@ -83,6 +84,16 @@ import {
     edgeLineGeometry,
     shapeIdForEdgeKey,
 } from './tldraw/process-edge-shape';
+import {
+    PROCESS_NODE_DEFAULT_H,
+    PROCESS_NODE_DEFAULT_W,
+    PROCESS_NODE_FALLBACK_KIND,
+    PROCESS_NODE_SHAPE_TYPE,
+    shapeIdForNodeKey,
+} from './tldraw/process-node-shape';
+// Engine-free (zero xyflow references), unlike `ProcessTypedNode` where the
+// step constant lives.
+import { isProcessNodeKind } from './node-taxonomy';
 import { ProcessNodeShapeUtil } from './tldraw/ProcessNodeShapeUtil';
 import {
     rowsToTldraw,
@@ -132,6 +143,20 @@ export interface TldrawProcessCanvasProps {
     onEditorReady?: (editor: Editor) => void;
 }
 
+/**
+ * A fresh `nodeKey` for a node created by dropping one.
+ *
+ * The xyflow handler uses `node-${Date.now()}`, and two drops inside one
+ * millisecond would then share a key. That is unlikely by hand and certain
+ * under a test that drops twice — and a duplicate `nodeKey` is not cosmetic:
+ * the row is keyed on it, so the save would collapse two nodes into one.
+ *
+ * The random suffix is not for unguessability, only for distinctness.
+ */
+export function mintNodeKey(): string {
+    return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 /** `shape:…` — the prefix `createShapeId` stamps, which the serializer already used. */
 function asShapeId(id: string): TLShapeId {
     if (!id.startsWith('shape:')) {
@@ -163,8 +188,12 @@ export function TldrawProcessCanvas({
     useEffect(() => {
         onDirtyRef.current = onDirty;
     }, [onDirty]);
+    const editorRef = useRef<Editor | null>(null);
     const handleMount = useCallback(
         (editor: Editor) => {
+            // Kept so the drop handler can reach the editor; `onMount` is the
+            // only place tldraw hands it over.
+            editorRef.current = editor;
             const graph = rowsToTldraw(rows, freeform);
 
             editor.createShapes(
@@ -269,8 +298,99 @@ export function TldrawProcessCanvas({
         [rows, freeform, readOnly, onEditorReady],
     );
 
+    /**
+     * Allow the drop. Without `preventDefault` here the browser refuses the
+     * drag entirely and `onDrop` never fires — the palette would look draggable
+     * and do nothing, which is indistinguishable from a broken handler.
+     */
+    const onDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+    }, []);
+
+    /**
+     * Create a node where the user dropped it.
+     *
+     * Drag-from-palette is the ONLY creation path, so without this the canvas
+     * can open, move, rename, delete, export and inspect a map and never add to
+     * one.
+     *
+     * The parse is deliberately forgiving, mirroring the xyflow handler: the
+     * payload crosses a `dataTransfer` boundary, so anything could arrive, and
+     * a drop that produced a default-labelled step beats one that throws.
+     */
+    const onDrop = useCallback(
+        (event: DragEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            const editor = editorRef.current;
+            // BELT-AND-BRACES, and measured as such: removing this guard still
+            // creates nothing, because `updateInstanceState({ isReadonly })`
+            // makes tldraw itself refuse `createShapes`. That is the control.
+            // This stays because it says the intent at the call site and does
+            // not depend on a tldraw behaviour nothing here asserts — but it is
+            // not what delivers the property, and the test asserts the OUTCOME
+            // rather than this line.
+            if (!editor || readOnly) return;
+
+            const raw = event.dataTransfer.getData(PALETTE_DRAG_MIME);
+            if (!raw) return;
+
+            let kind: string = PROCESS_NODE_FALLBACK_KIND;
+            let label = raw;
+            try {
+                const parsed = JSON.parse(raw) as PaletteDropPayload;
+                if (
+                    parsed &&
+                    typeof parsed === 'object' &&
+                    isProcessNodeKind(parsed.kind) &&
+                    typeof parsed.label === 'string'
+                ) {
+                    kind = parsed.kind;
+                    label = parsed.label;
+                }
+            } catch {
+                // Non-JSON payload — keep the raw-label fallback.
+            }
+
+            const point = editor.screenToPage({ x: event.clientX, y: event.clientY });
+            const nodeKey = mintNodeKey();
+
+            // NO explicit history mark. The xyflow handler had to be fixed to
+            // call `history.push`, because dropping a node and pressing undo
+            // did nothing — so the obvious move here was to mirror it. Measured
+            // instead: removing `markHistoryStoppingPoint()` leaves the drop
+            // undoable, because tldraw records store operations itself. Keeping
+            // it would have been a line whose comment claimed it was load-
+            // bearing when a mutation proved it was not.
+            editor.createShapes([
+                {
+                    id: asShapeId(shapeIdForNodeKey(nodeKey)),
+                    type: PROCESS_NODE_SHAPE_TYPE,
+                    x: point.x,
+                    y: point.y,
+                    props: {
+                        w: PROCESS_NODE_DEFAULT_W,
+                        h: PROCESS_NODE_DEFAULT_H,
+                        nodeKey,
+                        nodeType: kind,
+                        label,
+                        subtitle: null,
+                        parentNodeKey: null,
+                        dataJson: null,
+                    },
+                },
+            ]);
+        },
+        [readOnly],
+    );
+
     return (
-        <div className="h-full w-full" data-tldraw-process-canvas="true">
+        <div
+            className="h-full w-full"
+            data-tldraw-process-canvas="true"
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+        >
             <Tldraw
                 shapeUtils={SHAPE_UTILS}
                 bindingUtils={BINDING_UTILS}
