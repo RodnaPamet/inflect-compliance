@@ -663,18 +663,24 @@ const ResizableTableRow = memo(
       </tr>
     );
   },
-  (prevProps, nextProps) => {
-    // Only re-render if row data or selection state changes. Compare
-    // the `isSelected` SNAPSHOT prop (captured at parent render time),
-    // NOT `row.getIsSelected()` on each row — those read the live
-    // table state and are always equal right after a toggle, which
-    // would skip the re-render and leave `data-selected` + the
-    // checkbox stale (the row-highlight-on-select bug).
-    return (
-      prevProps.row.original === nextProps.row.original &&
-      prevProps.isSelected === nextProps.isSelected
-    );
-  },
+    // #3071 — equality is React's DEFAULT shallow comparison, for the
+    // reason `TableBodyRow` below records: "a bespoke comparator has to
+    // be re-checked every time a prop is added, and renders STALE ROWS
+    // when that check is missed; a stale row is far worse than a slow
+    // one." The comparator that stood here compared `row.original` and
+    // `isSelected` ONLY, so `onRowClick`, `onRowAuxClick`,
+    // `selectionEnabled`, `rowProps`, `cellRight` and `tdClassName`
+    // could all change without ever reaching the `<tr>`. A consumer
+    // that swapped its row-click handler after first paint kept firing
+    // the FIRST closure for the life of the row — while the row went
+    // on painting `cursor-pointer`, so it still advertised that it
+    // opens.
+    //
+    // Shallow comparison is affordable only because the call site now
+    // hands this row the SAME stable proxies `TableBodyRow` gets
+    // (`rowClickProxy` / `rowAuxClickProxy`, backed by
+    // `rowCallbacksRef`) rather than the consumer's raw arrow, which
+    // every list page rebuilds on some renders.
 ) as <T extends TableRowData>(props: ResizableTableRowProps<T>) => JSX.Element;
 
 type TableBodyRowProps<T extends TableRowData> = {
@@ -1515,8 +1521,8 @@ export function Table<T extends TableRowData>({
                           .map((col) => col.id)
                           .join(",")}`}
                         row={row}
-                        onRowClick={onRowClick}
-                        onRowAuxClick={onRowAuxClick}
+                        onRowClick={rowClickProxy}
+                        onRowAuxClick={rowAuxClickProxy}
                         rowProps={props}
                         cellRight={cellRight}
                         tdClassName={tdClassName}
