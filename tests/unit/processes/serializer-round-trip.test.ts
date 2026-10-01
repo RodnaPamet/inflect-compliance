@@ -30,6 +30,7 @@ import {
     type GraphRows,
 } from '@/components/processes/tldraw/serializer';
 import { shapeIdForNodeKey } from '@/components/processes/tldraw/process-node-shape';
+import { PROCESS_EDGE_SHAPE_TYPE } from '@/components/processes/tldraw/process-edge-shape';
 
 /** As the repository would hand them back: every optional resolved to null. */
 const ROWS: GraphRows = {
@@ -265,12 +266,34 @@ describe('freeform never becomes a row', () => {
         expect(JSON.stringify(out.nodes)).not.toContain('STICKY-NOT-A-ROW');
     });
 
-    it('partitionCanvas sorts a mixed canvas three ways', () => {
+    it('partitionCanvas sorts a mixed canvas FOUR ways', () => {
         const g = rowsToTldraw(ROWS);
         const mixed: CanvasRecord[] = [...g.shapes, ...g.bindings, STICKY];
         const p = partitionCanvas(mixed);
         expect(p.shapes).toHaveLength(ROWS.nodes.length);
         expect(p.bindings).toHaveLength(ROWS.edges.length);
+        expect(p.freeform).toEqual([STICKY]);
+        expect(p.derived).toEqual([]);
+    });
+
+    it('and sorts a derived edge LINE into `derived`, not `freeform`', () => {
+        // The bucket exists for one reason: `freeform` is persisted to
+        // `ProcessMap.freeformJson`. A derived line falling through the default
+        // arm would be saved, then on the next load both re-derived AND
+        // restored — two lines per edge, then four, compounding every save.
+        const LINE: CanvasRecord = {
+            id: 'shape:edge-e1',
+            type: PROCESS_EDGE_SHAPE_TYPE,
+            x: 0,
+            y: 0,
+            props: { edgeKey: 'e1', dx: 10, dy: 20 },
+        } as unknown as CanvasRecord;
+
+        const p = partitionCanvas([LINE, STICKY]);
+        expect(p.derived).toEqual([LINE]);
+        // And the sticky still reaches freeform — a partition that dropped
+        // everything unrecognised would satisfy the line assertion while
+        // erasing the annotation layer.
         expect(p.freeform).toEqual([STICKY]);
     });
 });

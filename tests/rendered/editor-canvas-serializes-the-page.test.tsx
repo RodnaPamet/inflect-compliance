@@ -205,9 +205,21 @@ describe('only the CURRENT page becomes rows', () => {
             editor.setCurrentPage(pages[0]!.id);
         });
 
-        // The store now holds three process shapes; the page holds two.
+        // The store now holds three process NODE shapes; the page holds two.
+        //
+        // Counted by node TYPE rather than by `typeName === 'shape'`. The raw
+        // shape count also includes the derived edge lines, which exist because
+        // a binding cannot render — so a total-shape count measures "how many
+        // kinds of shape does the canvas have" and drifts whenever that answer
+        // changes. The claim here is about process nodes and pages.
         expect(
-            editor.store.allRecords().filter((r) => r.typeName === 'shape'),
+            editor.store
+                .allRecords()
+                .filter(
+                    (r) =>
+                        r.typeName === 'shape' &&
+                        (r as { type?: string }).type === PROCESS_NODE_SHAPE_TYPE,
+                ),
         ).toHaveLength(3);
 
         const { rows } = serializeEditorCanvas(editor);
