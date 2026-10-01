@@ -15,16 +15,15 @@
  * Minting a parallel namespace would mean two copies of "Export as PNG" to keep
  * in step across every locale, and the strings are not what changed.
  *
- * ── One import that outlives its module ──────────────────────────────
+ * ── No import from the xyflow module ─────────────────────────────────
  *
- * `canCopyImageToClipboard` comes from `canvas-export.ts` — the xyflow module.
- * It is a five-line feature check with no engine coupling, so it belongs in
- * `canvas-export-shared.ts` with the other three, and it is NOT moved here
- * because `tests/guards/p-polish-b.test.ts` pins its location by source
- * pattern. Phase 4 deletes `canvas-export.ts`, which is the diff that has to
- * touch both the function and that guard anyway; relocating it now would churn
- * the guard twice. Tracked as a cutover item on #2961 rather than left to be
- * rediscovered by a red build.
+ * This file used to pull `canCopyImageToClipboard` from `canvas-export.ts` and
+ * carried a note here calling it "one import that outlives its module". It has
+ * since moved to `canvas-export-shared.ts`, where it belonged — it is a
+ * five-line browser feature check with no engine in it.
+ *
+ * So this menu now imports nothing from the module phase 4 deletes, which is
+ * what makes that deletion a deletion rather than a refactor.
  */
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -33,7 +32,7 @@ import type { Editor } from 'tldraw';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
 import { useToast } from '@/components/ui/hooks';
-import { canCopyImageToClipboard } from '@/lib/processes/canvas-export';
+import { canCopyImageToClipboard } from '@/lib/processes/canvas-export-shared';
 import {
     attachTldrawCanvasToEvidence,
     copyTldrawCanvasToClipboard,

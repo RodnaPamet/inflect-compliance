@@ -22,12 +22,22 @@ import { CanvasExportMenu } from '@/components/processes/CanvasExportMenu';
 jest.mock('@/lib/processes/canvas-export', () => ({
     exportCanvasAsPng: jest.fn(async () => 'data:image/png;base64,STUB'),
     exportCanvasAsSvg: jest.fn(async () => 'data:image/svg+xml;base64,STUB'),
-    // PR-B polish — clipboard surface. The mock defaults to
-    // "unsupported" so the menu's visibility gate doesn't have to
-    // know about ClipboardItem in this test runtime; the helper's
-    // own unit tests cover the real feature-detection logic.
-    canCopyImageToClipboard: jest.fn(() => false),
     copyCanvasAsImageToClipboard: jest.fn(async () => undefined),
+}));
+
+/**
+ * PR-B polish — the clipboard visibility gate, now in the shared module.
+ *
+ * Still stubbed "unsupported" so this suite does not have to know about
+ * ClipboardItem in the test runtime; the helper's own unit tests cover the real
+ * feature detection. Stubbed EXPLICITLY rather than left to the real function,
+ * which also returns false under jsdom: that would make this suite's behaviour
+ * an accident of the runtime instead of a decision, and it would start passing
+ * for a different reason the day jsdom grows a clipboard.
+ */
+jest.mock('@/lib/processes/canvas-export-shared', () => ({
+    ...jest.requireActual('@/lib/processes/canvas-export-shared'),
+    canCopyImageToClipboard: jest.fn(() => false),
 }));
 
 describe('CanvasExportMenu — P3-PR-A', () => {

@@ -11,7 +11,7 @@
  * New callers should import `ProcessTypedNode` directly.
  */
 
-export {
-    ProcessTypedNode as ProcessStepNode,
-    PROCESS_STEP_NODE_TYPE,
-} from "./ProcessTypedNode";
+export { ProcessTypedNode as ProcessStepNode } from "./ProcessTypedNode";
+// Re-exported from here for the existing `ProcessCanvas` import path; the
+// constant itself belongs to the taxonomy, not to either renderer.
+export { PROCESS_STEP_NODE_TYPE } from "./node-taxonomy";

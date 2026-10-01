@@ -27,6 +27,14 @@ const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
 describe("PR-B polish — clipboard copy + collapsible groups", () => {
     describe("1. Clipboard copy", () => {
         const helper = () => read("src/lib/processes/canvas-export.ts");
+        /**
+         * The engine-free half. `canCopyImageToClipboard` lives here because it
+         * is a browser feature check, and because both export menus need it —
+         * reading it out of the xyflow module was the last thing that made
+         * `canvas-export.ts` load-bearing for the tldraw canvas.
+         */
+        const sharedHelper = () =>
+            read("src/lib/processes/canvas-export-shared.ts");
         const menu = () =>
             read("src/components/processes/CanvasExportMenu.tsx");
 
@@ -52,7 +60,12 @@ describe("PR-B polish — clipboard copy + collapsible groups", () => {
         });
 
         it("exports canCopyImageToClipboard for the menu's visibility gate", () => {
-            expect(helper()).toMatch(
+            // Reads the SHARED module, not the xyflow one. The function moved
+            // there because it is a browser feature check with no engine in it,
+            // and because the tldraw export menu imported it across that seam —
+            // the last thing making `canvas-export.ts` load-bearing for the new
+            // canvas. The assertion is the same; only its subject moved.
+            expect(sharedHelper()).toMatch(
                 /export function canCopyImageToClipboard\(\)/,
             );
         });

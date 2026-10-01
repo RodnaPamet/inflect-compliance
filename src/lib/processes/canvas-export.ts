@@ -221,19 +221,6 @@ export async function copyCanvasAsImageToClipboard(
     ]);
 }
 
-/**
- * Cheap runtime check the menu uses to decide whether to show the
- * "Copy as image" item at all. Same feature-detection shape as the
- * top of `copyCanvasAsImageToClipboard` so the menu's visibility
- * matches the function's actual behaviour.
- */
-export function canCopyImageToClipboard(): boolean {
-    if (typeof navigator === "undefined") return false;
-    if (!navigator.clipboard?.write) return false;
-    if (typeof ClipboardItem === "undefined") return false;
-    return true;
-}
-
 // ─── Epic P3-PR-B — PDF + Evidence attachment ──────────────────────
 
 export interface CanvasExportServerRouteOptions extends CanvasExportOptions {

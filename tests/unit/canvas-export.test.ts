@@ -24,12 +24,13 @@ import {
     exportCanvasAsPng,
     exportCanvasAsSvg,
     copyCanvasAsImageToClipboard,
-    canCopyImageToClipboard,
     exportCanvasAsPdf,
     attachCanvasPngToEvidence,
     __INTERNAL,
     type CanvasExportOptions,
 } from '@/lib/processes/canvas-export';
+// Moved to the shared module — it asks about the BROWSER, not the canvas.
+import { canCopyImageToClipboard } from '@/lib/processes/canvas-export-shared';
 import { toPng, toSvg } from 'html-to-image';
 import type { Node } from '@xyflow/react';
 
