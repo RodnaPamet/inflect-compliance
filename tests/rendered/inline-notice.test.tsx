@@ -88,6 +88,28 @@ describe('InlineNotice', () => {
         ).toBeInTheDocument();
     });
 
+    it('gives the dismiss button a target, not just a glyph', () => {
+        // The icon is 14px and the padding was `p-0.5`, so the whole tap
+        // area was 18px — under WCAG 2.2 2.5.8's 24px minimum, and the
+        // thing a finger actually has to hit. `size-6` is the 24px floor;
+        // `pointer-coarse:size-11` is 44px on a touch screen, where the
+        // 24px floor is not enough. Neither moves the glyph, so nothing
+        // changes visually with a mouse.
+        render(
+            <InlineNotice variant="error" onDismiss={() => {}}>
+                x
+            </InlineNotice>,
+        );
+        const cls = screen.getByRole('button', { name: /dismiss/i }).className;
+        expect(cls).toContain('size-6');
+        expect(cls).toContain('pointer-coarse:size-11');
+        // The padding that produced the 18px target is gone, and the glyph
+        // is centred in the box instead.
+        expect(cls).not.toContain('p-0.5');
+        expect(cls).toContain('items-center');
+        expect(cls).toContain('justify-center');
+    });
+
     it('renders an icon override when supplied', () => {
         render(
             <InlineNotice variant="info" icon={Info} data-testid="my-notice">

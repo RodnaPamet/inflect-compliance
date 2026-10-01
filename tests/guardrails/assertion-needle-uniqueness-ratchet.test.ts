@@ -332,7 +332,19 @@ const HIGH_MULTIPLICITY = 5;
 //   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
 //   converting the other eleven `tests/guards` files, so whoever merges
 //   second re-measures on the merged tree rather than keeping this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1190;
+// 1190 -> 1189 (2026-10-01, T06 of #3003): -1 net, and the arithmetic is worth
+//   recording because this ratchet fired on a branch whose only test additions
+//   assert on rendered DOM. Adding `TYPE_TO_AUTOCOMPLETE` to `ui/input.tsx` put
+//   a SECOND `email: "email"` in the file, which turned
+//   `mobile-touch-targets:71` into a needle either map satisfies — exactly the
+//   "fires on a diff that changes no test" case this file's header describes.
+//   Adding `aria-pressed={isPasswordVisible}` took `/isPasswordVisible/` in
+//   `epic55-form-primitives:129` from four places to five. Both were fixed at
+//   the assertion: the first read is now bound to `TYPE_TO_INPUTMODE`
+//   (-1 here, and it leaves the population), the second needle is now the
+//   destructuring pattern (-1 here and -1 from the 5+ count, which lands it
+//   back on its own ceiling). Net -1.
+const AMBIGUOUS_NEEDLE_BASELINE = 1189;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
