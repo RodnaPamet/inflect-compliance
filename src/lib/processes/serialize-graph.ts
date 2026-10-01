@@ -23,13 +23,11 @@
 import type { Node, Edge } from "@xyflow/react";
 import {
     NODE_TAXONOMY,
+    PROCESS_STEP_NODE_TYPE,
     isProcessNodeKind,
     type ProcessNodeKind,
 } from "@/components/processes/node-taxonomy";
-import {
-    PROCESS_STEP_NODE_TYPE,
-    isProcessNodeSize,
-} from "@/components/processes/ProcessTypedNode";
+import { isProcessNodeSize } from "@/components/processes/ProcessTypedNode";
 import { isProcessEdgeVariant } from "@/components/processes/ProcessEdge";
 import { edgeControlsForSave } from "@/lib/processes/edge-controls";
 

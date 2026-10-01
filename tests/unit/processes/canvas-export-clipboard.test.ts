@@ -15,7 +15,7 @@
  * worth the surface area.
  */
 
-import { canCopyImageToClipboard } from "@/lib/processes/canvas-export";
+import { canCopyImageToClipboard } from "@/lib/processes/canvas-export-shared";
 
 const originalClipboard = (globalThis as { navigator?: Navigator }).navigator
     ?.clipboard;

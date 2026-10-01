@@ -42,12 +42,12 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/hooks";
 import {
     attachCanvasPngToEvidence,
-    canCopyImageToClipboard,
     copyCanvasAsImageToClipboard,
     exportCanvasAsPdf,
     exportCanvasAsPng,
     exportCanvasAsSvg,
 } from "@/lib/processes/canvas-export";
+import { canCopyImageToClipboard } from "@/lib/processes/canvas-export-shared";
 
 export function CanvasExportMenu({
     canvasEl,
