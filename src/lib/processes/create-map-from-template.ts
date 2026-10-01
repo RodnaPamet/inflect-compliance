@@ -12,7 +12,7 @@
  * its list + select.
  */
 import { buildTemplateGraph, type ProcessMapTemplate } from '@/components/processes/process-map-templates';
-import type { ProcessMapSummary } from '@/app/t/[tenantSlug]/(app)/processes/ProcessesClient';
+import type { ProcessMapSummary } from '@/lib/processes/process-map-summary';
 
 export async function createMapFromTemplate(
     tenantSlug: string,

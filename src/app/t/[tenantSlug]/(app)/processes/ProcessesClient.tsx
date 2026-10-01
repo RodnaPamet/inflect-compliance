@@ -39,6 +39,12 @@ import { RulesTab } from "./RulesTab";
 import { AnalyticsTab } from "./AnalyticsTab";
 import { MonitorTab } from "./MonitorTab";
 import { CanvasModeProvider } from "@/lib/processes/canvas-mode-context";
+// Re-exported, not declared: a route directory is not a module other surfaces
+// import from (`tests/guards/route-import-boundaries.test.ts`). The type now
+// lives in `@/lib/processes/process-map-summary`; this keeps the old path
+// working for the route's own consumers.
+import type { ProcessMapSummary } from "@/lib/processes/process-map-summary";
+export type { ProcessMapSummary };
 // R31 Bundle 3 — page-level Heading + PageBreadcrumbs retired. The
 // document bar inside the canvas now carries the breadcrumbs +
 // document title inline (Figma-style).
@@ -70,19 +76,6 @@ const TldrawProcessWorkspace = dynamic(
     { ssr: false },
 );
 
-export interface ProcessMapSummary {
-    id: string;
-    name: string;
-    description: string | null;
-    status: "DRAFT" | "ACTIVE" | "ARCHIVED";
-    version: number;
-    createdAt: string | Date;
-    updatedAt: string | Date;
-    nodeCount: number;
-    edgeCount: number;
-    /** VR-2 — DOCUMENT (process map) vs AUTOMATION (visual rule editor). */
-    canvasMode?: "DOCUMENT" | "AUTOMATION";
-}
 
 interface ProcessesClientProps {
     tenantSlug: string;

@@ -45,7 +45,7 @@
 import { useCallback, useState } from 'react';
 import type { Editor } from 'tldraw';
 
-import type { ProcessMapSummary } from '@/app/t/[tenantSlug]/(app)/processes/ProcessesClient';
+import type { ProcessMapSummary } from '@/lib/processes/process-map-summary';
 import { useToast } from '@/components/ui/hooks';
 import { CanvasDocumentBar } from '@/components/processes/CanvasDocumentBar';
 import { ProcessInspector } from '@/components/processes/ProcessInspector';
