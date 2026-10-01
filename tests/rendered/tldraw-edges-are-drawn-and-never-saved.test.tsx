@@ -77,7 +77,7 @@ function lines(editor: Editor) {
             (r) =>
                 r.typeName === 'shape' &&
                 (r as { type?: string }).type === PROCESS_EDGE_SHAPE_TYPE,
-        ) as Array<{ id: string; x: number; y: number; props: { dx: number; dy: number; edgeKey: string } }>;
+        ) as Array<{ id: string; x: number; y: number; props: { dx: number; dy: number; edgeKey: string; edgeKind: string } }>;
 }
 
 describe('an edge is drawn', () => {
@@ -105,6 +105,25 @@ describe('an edge is drawn', () => {
     it('and a graph with no edges draws no lines', async () => {
         const editor = await mount({ nodes: ROWS.nodes, edges: [] });
         expect(lines(editor)).toHaveLength(0);
+    });
+
+    it("carrying the row's edgeKind, so the variant is drawable (#3090)", async () => {
+        // The line renders the variant from its OWN props, so a load that
+        // seeded only `edgeKey`/`dx`/`dy` left every edge drawn as `flow`
+        // regardless of what the row said.
+        const editor = await mount({
+            nodes: ROWS.nodes,
+            edges: [{ ...ROWS.edges[0]!, edgeKind: 'conditional' }],
+        });
+        expect(lines(editor)[0]!.props.edgeKind).toBe('conditional');
+    });
+
+    it('and a reference edge keeps ITS kind, not the first one seen', async () => {
+        const editor = await mount({
+            nodes: ROWS.nodes,
+            edges: [{ ...ROWS.edges[0]!, edgeKind: 'reference' }],
+        });
+        expect(lines(editor)[0]!.props.edgeKind).toBe('reference');
     });
 });
 

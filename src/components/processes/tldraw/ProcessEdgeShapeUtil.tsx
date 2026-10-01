@@ -25,8 +25,10 @@ import {
     type TLResizeInfo,
 } from 'tldraw';
 
+import { DEFAULT_EDGE_KIND } from './process-edge-binding';
 import {
     PROCESS_EDGE_SHAPE_TYPE,
+    edgeStrokeFor,
     processEdgeShapeProps,
     type ProcessEdgeShape,
 } from './process-edge-shape';
@@ -39,7 +41,7 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
     static override props = processEdgeShapeProps;
 
     override getDefaultProps(): ProcessEdgeShape['props'] {
-        return { edgeKey: '', dx: 0, dy: 0 };
+        return { edgeKey: '', edgeKind: DEFAULT_EDGE_KIND, dx: 0, dy: 0 };
     }
 
     /**
@@ -88,7 +90,10 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
     }
 
     override component(shape: ProcessEdgeShape) {
-        const { dx, dy } = shape.props;
+        const { dx, dy, edgeKind } = shape.props;
+        // Flow is solid; conditional dashes; reference dots. Spread rather than
+        // branched inline so the three cases live in one pure, tested function.
+        const variantStroke = edgeStrokeFor(edgeKind);
         // `overflow: visible` and a zero-size container: the line runs to an
         // offset that is frequently negative, and a sized SVG would clip every
         // edge pointing up or left.
@@ -108,6 +113,15 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
                         // the node borders do rather than pinning a hex here.
                         className="stroke-border-emphasis"
                         strokeLinecap="round"
+                        // Last so a variant CAN override a default. Today
+                        // nothing does: the only overlapping attribute is the
+                        // linecap and both values are `round`, so moving this
+                        // spread changes no output — a mutation that moved it
+                        // before the defaults left all nine tests green, which
+                        // is why there is no assertion claiming otherwise. The
+                        // position is defensive, for a future variant wanting
+                        // a `butt` cap, and nothing more.
+                        {...variantStroke}
                     />
                 </svg>
             </HTMLContainer>

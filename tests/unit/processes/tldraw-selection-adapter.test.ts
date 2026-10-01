@@ -245,3 +245,57 @@ describe('the edge write path', () => {
         expect(f.bindingUpdates).toHaveLength(0);
     });
 });
+
+/**
+ * The DRAWN line keeps its own copy of `edgeKind` (#3090), because the binding
+ * is not cheaply findable from the line: the binding joins the two NODE shapes
+ * and the line is a third record neither end references, so a lookup means
+ * scanning the store per line per render.
+ *
+ * Every other way the line gets its kind is a reload, which re-derives it. The
+ * inspector's variant cycle is the one write that is not, so it is the one
+ * place that has to keep the two in step — and without it the variant saves,
+ * survives a reload, and changes nothing on screen until then.
+ */
+describe('a variant change also redraws the line', () => {
+    it('updates the LINE as well as the binding', () => {
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('e1', { variant: 'reference' }));
+        expect(f.bindingUpdates[0]).toMatchObject({ props: { edgeKind: 'reference' } });
+        expect(f.shapeUpdates[0]).toMatchObject({
+            id: 'shape:edge-e1',
+            props: { edgeKind: 'reference' },
+        });
+    });
+
+    it('addresses the line by its DERIVED id, not the binding id', () => {
+        // `shapeIdForEdgeKey` is the only way to reach the line: it is keyed by
+        // the edge key, and the binding's own id names a different record.
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('e1', { variant: 'conditional' }));
+        expect(f.shapeUpdates[0]!.id).toBe('shape:edge-e1');
+        expect(f.shapeUpdates[0]!.id).not.toBe('binding:b1');
+    });
+
+    it('a label-only change leaves the line ALONE', () => {
+        // Teeth for the `patch.variant !== undefined` guard. Without it every
+        // edge edit would rewrite the line's kind to undefined, which a
+        // validated record rejects — a label edit throwing on an unrelated
+        // field.
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('e1', { label: 'approves' }));
+        expect(f.bindingUpdates).toHaveLength(1);
+        expect(f.shapeUpdates).toHaveLength(0);
+    });
+
+    it('and an unknown edge key touches neither record', () => {
+        const f = fakeEditor([LINE_SHAPE], []);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('nope', { variant: 'reference' }));
+        expect(f.bindingUpdates).toHaveLength(0);
+        expect(f.shapeUpdates).toHaveLength(0);
+    });
+});

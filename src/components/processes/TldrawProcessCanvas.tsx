@@ -410,7 +410,12 @@ export function TldrawProcessCanvas({
                             type: PROCESS_EDGE_SHAPE_TYPE,
                             x: g.x,
                             y: g.y,
-                            props: { edgeKey: b.props.edgeKey, dx: g.dx, dy: g.dy },
+                            props: {
+                                edgeKey: b.props.edgeKey,
+                                edgeKind: b.props.edgeKind,
+                                dx: g.dx,
+                                dy: g.dy,
+                            },
                         },
                     ];
                 });

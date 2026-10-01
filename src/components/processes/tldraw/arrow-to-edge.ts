@@ -311,7 +311,10 @@ export function installArrowToEdgeConversion(
                         type: PROCESS_EDGE_SHAPE_TYPE,
                         x: g.x,
                         y: g.y,
-                        props: { edgeKey, dx: g.dx, dy: g.dy },
+                        // Same constant the binding was just given, not a
+                        // second literal: two defaults that can disagree is how
+                        // a freshly drawn edge ends up drawn as the wrong kind.
+                        props: { edgeKey, edgeKind: DEFAULT_EDGE_KIND, dx: g.dx, dy: g.dy },
                     },
                 ] as never);
             }
