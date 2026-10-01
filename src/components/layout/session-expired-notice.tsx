@@ -4,17 +4,21 @@
  * #2222 — the single app-wide notice for a lapsed session.
  *
  * Mounted ONCE in `src/app/providers.tsx`, which is what dedupes it. The
- * alternative — each poller surfacing its own message — puts ~38 identical
- * notices on a process canvas with 20 edges and 15 linked nodes, because
- * every `ControlLinkBadge` / `RiskLinkBadge` / `AssetLinkBadge` and every
- * `ProcessEdge` runs its own poll.
+ * alternative — each poller surfacing its own message — puts one notice per
+ * poller on screen: a dense page whose rows and connectors each carry their
+ * own badge reached ~38 at the time this was written, because every one of
+ * them runs its own poll.
+ *
+ * The figure is kept and the component names are not. They were this
+ * product's, and this file is copied verbatim by a downstream one — where
+ * the names would be wrong and the count still true.
  *
  * It OFFERS a link to `/login`; it does not redirect. The writers into this
  * store are background pollers — `use-calendar-badge` refreshes every five
  * minutes from `SidebarNav` on every page — so an automatic redirect would
- * yank a user out of a half-finished evidence upload with no way back to what
- * they had typed. Losing work to a nav counter is a worse bug than the one
- * being fixed.
+ * yank a user out of a half-finished upload with no way back to what they had
+ * typed. Losing work to a nav counter is a worse bug than the one being
+ * fixed.
  *
  * The read is `useSyncExternalStore`, not `useEffect` + `useState`: the store
  * is module-scoped precisely so an already-scheduled interval callback can

@@ -75,8 +75,13 @@ test.describe('Mobile viewport (375×812)', () => {
         // suite load; allow a generous window for the nav transition.
         await page.waitForURL(/\/controls/, { timeout: 60_000 });
 
-        // Drawer should be closed — check data-open attribute
-        await expect(drawer).toHaveAttribute('data-open', 'false', { timeout: 10_000 });
+        // Drawer should be closed. T07 (#3076) moved it onto the shared left
+        // Sheet, which PORTALS the panel and unmounts it — so there is no
+        // closed element left to carry `data-open="false"`, which is what this
+        // asserted before. Detachment is the stronger claim anyway: the old
+        // drawer stayed in the DOM and `data-open` was the only thing saying
+        // it was shut.
+        await expect(drawer).toHaveCount(0, { timeout: 10_000 });
     });
 
     test('controls list has no horizontal overflow', async ({ page }) => {

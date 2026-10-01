@@ -16,7 +16,9 @@ import { codeOf, cssCodeOf } from '../helpers/source-blocks';
  *
  *   3. The mobile drawer close button has a focus ring
  *      (`focus-visible:ring-2`). Keyboard accessibility on a
- *      load-bearing UI affordance.
+ *      load-bearing UI affordance. Since T07 (#3076) that is a chain:
+ *      `MobileNavDrawer` mounts `Sheet.Header`, and Sheet's close
+ *      button carries the ring. Both links are asserted.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -64,21 +66,34 @@ describe('Sidebar state-language ratchet (Elevation PR-3)', () => {
     });
 
     it('the mobile drawer close button has a focus-visible ring', () => {
-        const abs = path.resolve(ROOT, SIDEBAR);
-        const content = codeOf(fs.readFileSync(abs, 'utf8'));
-        // Find the close button block by its data-testid.
-        const closeBlockMatch = content.match(
-            /data-testid="nav-drawer-close"[\s\S]{0,400}/,
+        // T07 (#3076) — the drawer moved from the hand-rolled `MobileDrawer`
+        // in SidebarNav.tsx onto `Sheet direction="left"`, so the close button
+        // is the primitive's now and the needle that read SidebarNav for a
+        // `data-testid="nav-drawer-close"` block can no longer find it.
+        //
+        // The INVARIANT is unchanged — keyboard accessibility on a
+        // load-bearing affordance — and it is now a chain of two links, so
+        // both are asserted. Either one alone is satisfiable while the user
+        // loses the ring: a drawer with no header renders no close button at
+        // all, and a close button with no ring is invisible to a keyboard
+        // user. Body-only rendering was in fact the first shape this
+        // conversion took, and this assertion is what caught it.
+        const drawer = codeOf(
+            fs.readFileSync(
+                path.resolve(ROOT, 'src/components/layout/MobileNavDrawer.tsx'),
+                'utf8',
+            ),
         );
-        expect(closeBlockMatch).not.toBeNull();
-        // The block (or surrounding className) must reference a
-        // focus-visible ring token.
-        const closeContext = closeBlockMatch?.[0] ?? '';
-        const surroundingMatch = content.match(
-            /<button[^>]*className=[`"][^`"]*[\s\S]{0,400}data-testid="nav-drawer-close"/,
+        // link 1 — the drawer mounts the header that carries the close button.
+        expect(drawer).toMatch(/<Sheet\.Header\b/);
+
+        // link 2 — the primitive's close button carries the ring.
+        const sheet = codeOf(
+            fs.readFileSync(path.resolve(ROOT, 'src/components/ui/sheet.tsx'), 'utf8'),
         );
-        const region = `${surroundingMatch?.[0] ?? ''}\n${closeContext}`;
-        expect(region).toMatch(/focus-visible:ring-2/);
+        const closeBlock = sheet.match(/data-sheet-close[\s\S]{0,400}/);
+        expect(closeBlock).not.toBeNull();
+        expect(closeBlock?.[0] ?? '').toMatch(/focus-visible:ring-2/);
     });
 
     it('the NavItem primitive uses the canonical hover/active state shape', () => {

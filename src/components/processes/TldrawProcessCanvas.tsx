@@ -77,6 +77,8 @@ import { batchIsSubstantive } from '@/lib/processes/canvas-changes';
 import { classifyTldrawStoreDiff } from '@/lib/processes/canvas-changes-tldraw';
 
 import { PALETTE_DRAG_MIME, type PaletteDropPayload } from './ProcessPalette';
+import { installArrowToEdgeConversion } from './tldraw/arrow-to-edge';
+import type { EdgeRefusal } from './tldraw/edge-validation';
 import { ProcessEdgeBindingUtil } from './tldraw/ProcessEdgeBindingUtil';
 import { ProcessEdgeShapeUtil } from './tldraw/ProcessEdgeShapeUtil';
 import {
@@ -136,6 +138,18 @@ export interface TldrawProcessCanvasProps {
      */
     onDirty?: () => void;
     /**
+     * An arrow was drawn between two process nodes but the edge is not allowed.
+     *
+     * A CALLBACK rather than a toast raised here: this component's docblock is
+     * explicit that it carries no chrome, and the codebase passes `toast` in
+     * (`useTldrawDocumentBar` takes it as a parameter) rather than letting a
+     * low-level canvas reach for it. The host decides how a refusal is shown.
+     *
+     * Unset means refusals are SILENT, which is a real gap rather than a
+     * neutral default — the user drew something and it vanished.
+     */
+    onEdgeRefused?: (refusals: EdgeRefusal[]) => void;
+    /**
      * Test and future-slice seam. The next slice needs the editor instance to
      * wire the write path; exposing it now keeps that diff from having to
      * restructure this one.
@@ -178,6 +192,7 @@ export function TldrawProcessCanvas({
     freeform = [],
     readOnly = false,
     onDirty,
+    onEdgeRefused,
     onEditorReady,
 }: TldrawProcessCanvasProps) {
     // Held in a ref so `handleMount` keeps a stable identity. `onMount` runs
@@ -185,9 +200,21 @@ export function TldrawProcessCanvas({
     // render would either be ignored or force a remount — neither of which is
     // a thing to leave to chance in a component that seeds a store.
     const onDirtyRef = useRef(onDirty);
+    const onEdgeRefusedRef = useRef(onEdgeRefused);
+    const disposeArrowConversion = useRef<(() => void) | null>(null);
     useEffect(() => {
         onDirtyRef.current = onDirty;
     }, [onDirty]);
+    useEffect(() => {
+        onEdgeRefusedRef.current = onEdgeRefused;
+    }, [onEdgeRefused]);
+    // Unregister the side-effect handlers with the component. Without this a
+    // remount — which a 409 conflict performs deliberately — would leave the
+    // previous editor's handlers registered against a store nobody reads.
+    useEffect(() => () => {
+        disposeArrowConversion.current?.();
+        disposeArrowConversion.current = null;
+    }, []);
     const editorRef = useRef<Editor | null>(null);
     const handleMount = useCallback(
         (editor: Editor) => {
@@ -248,6 +275,33 @@ export function TldrawProcessCanvas({
                     ];
                 });
                 if (lines.length > 0) editor.createShapes(lines);
+            }
+
+            /**
+             * An arrow drawn between two process nodes IS an edge.
+             *
+             * Installed after seeding so the load's own binding creation does
+             * not enter the candidate set, and skipped entirely when read-only
+             * — a reader cannot draw, and registering a handler that can write
+             * on a surface that refuses writes is the kind of inconsistency
+             * that gets discovered by a stack trace.
+             *
+             * This is also the canvas's ONLY way to create an edge. Before it,
+             * `createBindings` was reachable only from the seed above, so a user
+             * could not draw a connection at all — while the default toolbar's
+             * arrow tool let them draw something that looked exactly like one
+             * and persisted as annotation.
+             */
+            if (!readOnly) {
+                disposeArrowConversion.current?.();
+                disposeArrowConversion.current = installArrowToEdgeConversion(editor, {
+                    onRefuse: (refusals) => onEdgeRefusedRef.current?.(refusals),
+                    // Through the REF, like every other callback here. `onMount`
+                    // runs once and its closure would pin the first `onDirty`,
+                    // so a later prop change would mark the wrong host dirty —
+                    // which is why `onDirtyRef` exists at all.
+                    onConverted: () => onDirtyRef.current?.(),
+                });
             }
 
             // Read-only LAST, after seeding: the flag refuses writes, and

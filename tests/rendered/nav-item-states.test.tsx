@@ -87,7 +87,7 @@ describe('<NavItem>', () => {
             expect(link.className).not.toContain('bg-[var(--brand-subtle)]');
             expect(link.className).not.toContain('font-medium');
             expect(link.className).not.toContain(
-                'text-[var(--brand-default)]',
+                'text-content-brand',
             );
         });
 
@@ -140,9 +140,12 @@ describe('<NavItem>', () => {
             );
             const link = screen.getByRole('link', { name: 'Controls' });
             // Active conviction tokens — R13-evolved vocabulary.
-            // Text colour (R13-PR5): brand-default (yellow/orange).
+            // Text colour: `--content-brand` since T07 (#3076). Was
+            // `--brand-default`, which is 4.03:1 against WCAG 1.4.3's
+            // 4.5:1 for text — the active row's label was the one in
+            // the sidebar below the floor.
             expect(link.className).toContain(
-                'text-[var(--brand-default)]',
+                'text-content-brand',
             );
             // Wash (R13-PR11): radial gradient from secondary-subtle.
             expect(link.className).toMatch(/bg-\[radial-gradient\(/);

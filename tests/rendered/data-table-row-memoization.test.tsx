@@ -254,6 +254,63 @@ describe("DataTable — body rows are memoized (#101)", () => {
             expect(cellRenders).toBe(before + 1);
         });
 
+        it("runs the CURRENT row-click handler when column resizing is on", () => {
+            // #3071. `ResizableTableRow` — the row that mounts ONLY under
+            // `enableColumnResizing && sizingFrozen` — took the consumer's RAW
+            // `onRowClick` while its hand-written comparator compared just
+            // `row.original` and `isSelected`. A handler swapped after first
+            // paint therefore never reached the `<tr>`, and the row went on
+            // calling the first closure it was ever given. The row still
+            // painted `cursor-pointer`, so it kept ADVERTISING that it opens.
+            //
+            // This is the hazard `TableBodyRow`'s own docstring names: "a
+            // bespoke comparator has to be re-checked every time a prop is
+            // added, and renders STALE ROWS when that check is missed".
+            const first = jest.fn();
+            const second = jest.fn();
+
+            function Resizable({
+                onRowClick,
+            }: {
+                onRowClick: (row: { original: Thing }) => void;
+            }) {
+                return (
+                    <DataTable<Thing>
+                        data={ROWS.slice(0, 3)}
+                        columns={columns}
+                        getRowId={(r) => r.id}
+                        selectionEnabled={false}
+                        enableColumnResizing
+                        onRowClick={onRowClick}
+                    />
+                );
+            }
+
+            const { rerender } = render(<Resizable onRowClick={first} />);
+
+            // POSITIVE CONTROL. Without this the test is satisfied by the
+            // SAFE path: `TableBodyRow` compares shallowly and was never
+            // broken, so a run that silently failed to reach fixed layout
+            // would pass while proving nothing. `tableLayout: fixed` is set
+            // from `applyFixedLayout`, the same boolean that chooses
+            // `ResizableTableRow`.
+            const tableEl = document.querySelector("table");
+            expect(tableEl).not.toBeNull();
+            expect((tableEl as HTMLTableElement).style.tableLayout).toBe(
+                "fixed",
+            );
+
+            rerender(<Resizable onRowClick={second} />);
+
+            const row = document.querySelectorAll("tbody tr")[0];
+            act(() => {
+                fireEvent.click(row);
+            });
+
+            expect(second).toHaveBeenCalledTimes(1);
+            expect(first).not.toHaveBeenCalled();
+        });
+
         it("repaints when the row expands", () => {
             resetCounters();
             render(

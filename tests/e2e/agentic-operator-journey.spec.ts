@@ -96,11 +96,18 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
             // layout hydrates almost immediately — long before a nested
             // virtualised table attaches its row handlers. So the wait returned
             // true, the click landed on inert markup, and `onRowClick` never
-            // ran. The server log proves it rather than suggests it: for the
-            // failing attempt's tenant there is no request to
-            // `/admin/agents/{agentId}` at ALL, and the agent id appears exactly
-            // once in the whole run — the POST that created it. A click that
-            // navigated would have left a request behind.
+            // ran.
+            //
+            // CORRECTION (2026-10-01). The paragraph that stood here read a
+            // server log showing "no request to `/admin/agents/{agentId}` at
+            // ALL" as proof the click never fired. The premise was false: this
+            // route is `/t/{tenantSlug}/agents/{agentId}`, so a search for
+            // `/admin/agents/...` could only ever come back empty. The browser's
+            // own network trace from run 36814866149 carries BOTH
+            // `/t/{slug}/agents/{id}?_rsc=...` and the `[agentId]/page` chunk,
+            // each HTTP 200 — in a run that failed. The absence was the selector
+            // missing, not the request missing, and it is what aimed the previous
+            // three rounds at hydration.
             //
             // `[cursor=pointer]` on the row in the DOM snapshot is not evidence
             // against this: that className is computed during render, so it is
@@ -160,6 +167,30 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
                     const hit = rect
                         ? document.elementFromPoint(rect.left + 12, rect.top + 12)
                         : null;
+                    // Fiber KEYS prove hydration reached the node. They do NOT prove
+                    // the row carries a handler, and the two were conflated here: run
+                    // 36814866149 failed with the keys PRESENT. Read the props object.
+                    const propsKey = tr
+                        ? Object.keys(tr).find((k) => k.startsWith('__reactProps$'))
+                        : undefined;
+                    const rowProps = propsKey
+                        ? ((tr as unknown as Record<string, unknown>)[propsKey] as
+                              | Record<string, unknown>
+                              | undefined)
+                        : undefined;
+                    // `onRowPrefetch` warms this exact URL on the row's first
+                    // pointer-enter, and Playwright moves the pointer inside the click's
+                    // own action window — so the REQUEST cannot tell prefetch from push,
+                    // and nor can its position between the action's start and end.
+                    // Record the entries so a reader sees how many fired, and when.
+                    const detailEntries = performance
+                        .getEntriesByType('resource')
+                        .filter((e) => e.name.includes(`/agents/${id}`))
+                        .map((e) => ({
+                            initiator: (e as PerformanceResourceTiming).initiatorType,
+                            start: Math.round(e.startTime),
+                            dur: Math.round(e.duration),
+                        }));
                     return JSON.stringify({
                         cellFound: Boolean(cell),
                         rowFound: Boolean(tr),
@@ -168,6 +199,17 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
                         rowReactKeys: tr
                             ? Object.keys(tr).filter((k) => k.startsWith('__react'))
                             : [],
+                        // THE discriminator this diagnostic was missing: which of the two
+                        // mutually exclusive branches in `table.tsx` the row took. Absent
+                        // means neither `onRowClick` nor `selectionEnabled` reached it.
+                        rowOnClick: typeof rowProps?.onClick,
+                        rowOnDoubleClick: typeof rowProps?.onDoubleClick,
+                        // A click landing in a DIFFERENT row's cell is indistinguishable
+                        // in `topmostAtClickPoint` — both report TD.
+                        hitInsideTargetRow: Boolean(hit && tr && tr.contains(hit)),
+                        detailEntries,
+                        // A committed push increments this; one that never commits does not.
+                        historyLength: window.history.length,
                         rowRect: rect
                             ? { x: rect.left, y: rect.top, w: rect.width, h: rect.height }
                             : null,

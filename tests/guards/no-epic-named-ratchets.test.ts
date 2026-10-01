@@ -196,7 +196,25 @@ describe('epic-named ratchets are not added back', () => {
         // the two ratchets predicted to move. A shared budget is exactly the
         // thing a predicted subset cannot find. Re-run the WHOLE sweep after
         // a merge, not the part you expect to break.
-        expect(guardFiles().length).toBeLessThan(750);
+        // RAISED 750 -> 775 on 2026-10-01, for one file and on the same
+        // grounds as the two raises above: the rule retires EPIC-NAMED
+        // guards, and `vendored-file-wording.test.ts` is named for the
+        // invariant it protects — files a downstream product copies verbatim
+        // carry no compliance vocabulary. That is the growth the comment at
+        // the top says this ceiling means to permit.
+        //
+        // Why a new file rather than folding it into an existing one, which
+        // would have cost nothing here: nothing in `tests/guards` owns
+        // portability. The nearest matches by name (`vendor-surface-*`) are
+        // about third-party vendor RECORDS, a different sense of the word.
+        // Hanging a portability rule off an unrelated guard would make both
+        // harder to find than spending one slot.
+        //
+        // `.test.tsx` is not counted by `guardFiles()` above. That is not a
+        // way round this: the two rendered specs in the same stack are `.tsx`
+        // because they render components, and renaming a source-scanning
+        // guard to dodge the denominator would be gaming the measure.
+        expect(guardFiles().length).toBeLessThan(775);
     });
 
     /**

@@ -46,12 +46,13 @@
  * Inert behind a flag is the honest intermediate state; silently reversing that
  * decision by teaching the renderer to read the column is not mine to do.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { Editor } from 'tldraw';
 
 import type { ProcessMapSummary } from '@/lib/processes/process-map-summary';
 import { useToast } from '@/components/ui/hooks';
+import { CanvasCommandPalette } from '@/components/processes/CanvasCommandPalette';
 import { CanvasDiffOverlay } from '@/components/processes/CanvasDiffOverlay';
 import { CanvasDocumentBar } from '@/components/processes/CanvasDocumentBar';
 import { CanvasHistorySidebar } from '@/components/processes/CanvasHistorySidebar';
@@ -66,6 +67,12 @@ import {
 import { serializeEditorCanvas } from '@/components/processes/tldraw/editor-canvas';
 import type { GraphRows } from '@/components/processes/tldraw/serializer';
 import type { DiffGraphSnapshot } from '@/lib/processes/canvas-diff';
+import {
+    runAutoLayout,
+    runForceLayout,
+} from '@/components/processes/tldraw/auto-layout-host';
+import { buildCanvasCommandGroups } from '@/lib/processes/canvas-command-groups';
+import { useTldrawCanvasCounts } from '@/lib/processes/use-tldraw-canvas-counts';
 import { RunModeProvider } from '@/lib/processes/run-mode-context';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
 import { useTldrawDocumentBar } from '@/lib/processes/use-tldraw-document-bar';
@@ -281,6 +288,71 @@ function Inner({
     });
 
     const selection = useTldrawSelection(editor);
+    const counts = useTldrawCanvasCounts(editor);
+
+    /**
+     * The `/` shortcut is scoped to this element.
+     *
+     * `CanvasCommandPalette`'s own docblock is firm about why: `/` is a single
+     * printable character, so a global binding breaks WCAG 2.1.4 — it is taken
+     * from every speech-input user on the page. Its absence DISABLES the
+     * shortcut rather than falling back to a global binding, so passing a ref
+     * that never attaches would silently lose the feature.
+     */
+    const canvasHostRef = useRef<HTMLDivElement | null>(null);
+
+    /**
+     * What the palette can do. Three sources, and the split is the point:
+     *
+     *   • DOCUMENT verbs come from the bar's handlers, so the palette and the
+     *     bar cannot drift into two implementations of "save";
+     *   • LAYOUT comes from the auto-layout host, which is the only consumer it
+     *     has — before this the module was reachable from nothing;
+     *   • SELECTION verbs are tldraw's own, called on the current selection.
+     *
+     * Selection ops take `getSelectedShapeIds()` rather than a captured list:
+     * the palette is open while the selection is live, and a captured list
+     * would act on whatever was selected when the groups were last built.
+     */
+    const commandGroups = useMemo(() => {
+        const ids = () => editor?.getSelectedShapeIds() ?? [];
+        return buildCanvasCommandGroups(
+            t,
+            {
+                hasMap: activeId !== null,
+                busy: bar.busy.saving || bar.busy.creating || bar.busy.duplicating,
+                canUndo: bar.editorState.canUndo,
+                canRedo: bar.editorState.canRedo,
+                nodeCount: counts.nodeCount,
+                selectionCount: counts.selectionCount,
+                snapEnabled: bar.editorState.snapEnabled,
+            },
+            {
+                save: () => void bar.handlers.handleSave(),
+                undo: bar.handlers.handleUndo,
+                redo: bar.handlers.handleRedo,
+                duplicate: bar.handlers.handleDuplicate,
+                // No `newAutomation` or `newFromTemplate`: this bar's
+                // `handleNew` takes no argument and hardcodes
+                // `canvasMode: 'DOCUMENT'`, and `ProcessTemplateModal` is not
+                // mounted here. The builder omits a command whose action is
+                // absent rather than offering one that opens nothing.
+                newDocument: () => void bar.handlers.handleNew(),
+                arrange: (direction, scope) => {
+                    if (editor) runAutoLayout(editor, direction, scope);
+                },
+                arrangeForce: (scope) => {
+                    if (editor) void runForceLayout(editor, scope);
+                },
+                group: () => editor?.groupShapes(ids()),
+                ungroup: () => editor?.ungroupShapes(ids()),
+                align: (edge) => editor?.alignShapes(ids(), edge),
+                distribute: (axis) => editor?.distributeShapes(ids(), axis),
+                deleteSelection: () => editor?.deleteShapes(ids()),
+                toggleSnap: () => bar.handlers.setSnapEnabled(!bar.editorState.snapEnabled),
+            },
+        );
+    }, [t, editor, activeId, bar, counts]);
 
     return (
         <div className="flex h-full w-full flex-col">
@@ -303,10 +375,12 @@ function Inner({
                 }
             />
 
+            <CanvasCommandPalette groups={commandGroups} hostRef={canvasHostRef} />
+
             <div className="flex min-h-0 flex-1">
                 <ProcessPalette />
 
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1" ref={canvasHostRef}>
                     <TldrawProcessMap
                         // Remounts on a conflict; see `handleConflict`.
                         key={`${activeId ?? 'none'}:${reloadKey}`}

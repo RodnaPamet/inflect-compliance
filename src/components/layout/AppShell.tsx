@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { SidebarContent, MobileDrawer } from '@/components/layout/SidebarNav';
+import { SidebarContent } from '@/components/layout/SidebarNav';
+import { MobileNavDrawer } from '@/components/layout/MobileNavDrawer';
+import { AppShellFrame } from '@/components/layout/AppShellFrame';
 import { OrgSidebarContent } from '@/components/layout/OrgSidebarNav';
 import { SidebarCollapseProvider } from '@/components/layout/sidebar-collapse-context';
-import { useLocalStorage } from '@/components/ui/hooks';
-import { cn } from '@/lib/cn';
 import { BreadcrumbsProvider } from './breadcrumbs-store';
 import { TopChrome } from './TopChrome';
 
@@ -113,170 +113,68 @@ export function AppShell({
     variant = 'tenant',
     children,
 }: AppShellProps) {
-    const [drawerOpen, setDrawerOpen] = useState(false);
-    // Desktop sidebar collapse (icon rail). Persisted so the choice survives
-    // navigation + reloads. The mobile drawer is never collapsed.
-    const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage(
-        'inflect:sidebar-collapsed',
-        false,
-    );
-    const toggleSidebarCollapsed = useCallback(
-        () => setSidebarCollapsed((c) => !c),
-        [setSidebarCollapsed],
-    );
-
     const handleLogout = useCallback(async () => {
         await signOut({ callbackUrl: '/login' });
     }, []);
 
-    const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-
-    // Auto-close drawer on route change
+    // Item 33 — the process-map canvas (exact `/t/<slug>/processes` route) is
+    // a full-bleed editor surface that must span the content area, so it opts
+    // out of the centered max-w reading column. Sub-routes
+    // (`/processes/governance`, …) keep the normal column.
+    //
+    // T07 — the test stays HERE rather than in `AppShellFrame`. The frame
+    // takes a `fullBleed` boolean precisely so a route literal does not have
+    // to live in a file written to be vendored byte-identical; this is the
+    // routing knowledge, and it belongs with the product that has the route.
     const pathname = usePathname();
-    const prevPathname = useRef(pathname);
-    useEffect(() => {
-        if (prevPathname.current !== pathname) {
-            setDrawerOpen(false);
-            prevPathname.current = pathname;
-        }
-    }, [pathname]);
-
-    // Item 33 — the process-map canvas (exact `/t/<slug>/processes`
-    // route) is a full-bleed editor surface that must span the content
-    // area, so it opts out of the centered max-w reading column below.
-    // Sub-routes (`/processes/governance`, …) keep the normal column.
     const isCanvasFullBleed = /\/processes\/?$/.test(pathname ?? '');
 
-    // Variant-driven slot resolution.
-    // R14-PR12 unified the chrome — the mobile-only top bar that
-    // AppShell used to render with its own hamburger + theme
-    // toggle is GONE. The single NavBar (mounted by TopChrome)
-    // now renders on all viewports; AppShell still owns the
-    // drawer state and passes the open-handler through.
+    // Variant only picks WHICH sidebar nav mounts — the chrome is identical
+    // so the two contexts feel the same to the user.
     const Sidebar = variant === 'org' ? OrgSidebarContent : SidebarContent;
 
-    const openDrawer = useCallback(() => setDrawerOpen(true), []);
-
-    // Layout chain (Phase 1 of list-page-shell):
-    //   • Mobile (<md): natural document scroll. `min-h-screen` on
-    //     the wrapper, `overflow-auto` on <main>, no flex-column.
-    //     The mobile sticky top bar continues to behave as before.
-    //   • Desktop (md+): viewport-clamped flex chain. Wrapper is
-    //     `h-screen overflow-hidden`, <main> is a flex column with
-    //     `overflow-hidden`. The inner content div is the default
-    //     scroll container for pages that DON'T use ListPageShell —
-    //     pages that DO use the shell take over the flex chain and
-    //     the inner div's overflow-y-auto becomes a no-op (because
-    //     the shell is `flex-1 min-h-0` and never overflows the
-    //     inner div).
-    //
-    // Every flex parent in this chain carries `min-h-0` so children
-    // can shrink below their content size — without this, `flex-1`
-    // grows to content and the chain breaks.
     return (
-        // h-full at md+ relies on the html/body lock in globals.css
-        // (height: 100%; overflow: hidden at md+). The wrapper fills
-        // exactly the viewport because its parent (body) is locked.
-        // min-h-screen is the mobile fallback — below md the body
-        // scrolls naturally and min-h-screen ensures the shell fills
-        // the visible viewport at minimum.
-        <div className="min-h-screen md:h-full md:overflow-hidden flex">
-            {/* Desktop sidebar — hidden on mobile, visible on md+. Collapses to
-                a 56px icon rail (w-14); expanded is a thinner 208px (w-52). */}
-            {/* `no-print`: the print rule in globals.css hides only elements
-                carrying that class, and no shell chrome carried it — so the
-                SoA print view, which lives under (app) and therefore mounts
-                this shell, put the nav rail on every page of an auditor
-                artefact. Marking the chrome is the narrower fix than moving the
-                route out of (app): the print view genuinely wants the layout's
-                providers (tenant context, theme), just not its furniture. */}
-            <aside
-                className={cn(
-                    'no-print',
-                    'hidden md:flex bg-bg-default border-r border-border-subtle flex-col flex-shrink-0 transition-[width] duration-200 ease-out',
-                    sidebarCollapsed ? 'md:w-14' : 'md:w-[180px]',
-                )}
-                data-collapsed={sidebarCollapsed ? 'true' : 'false'}
-            >
-                <SidebarCollapseProvider collapsed={sidebarCollapsed}>
+        <AppShellFrame
+            fullBleed={isCanvasFullBleed}
+            sidebar={({ collapsed, onToggleCollapse }) => (
+                <SidebarCollapseProvider collapsed={collapsed}>
                     <Sidebar
                         user={user}
                         onLogout={handleLogout}
-                        onToggleCollapse={toggleSidebarCollapsed}
+                        onToggleCollapse={onToggleCollapse}
                     />
                 </SidebarCollapseProvider>
-            </aside>
-
-            {/* Mobile drawer — only renders overlay on <md. Always expanded. */}
-            <MobileDrawer open={drawerOpen} onClose={closeDrawer}>
-                <SidebarCollapseProvider collapsed={false}>
-                    <Sidebar user={user} onLogout={handleLogout} onNavClick={closeDrawer} />
-                </SidebarCollapseProvider>
-            </MobileDrawer>
-
-            {/* Main content */}
-            <main className="flex-1 overflow-auto md:overflow-hidden md:flex md:flex-col min-w-0 md:min-h-0">
-                {/* Unified top chrome (R14-PR12) — single NavBar
-                    across mobile + desktop. The pre-R14 mobile-only
-                    top bar that lived inline here was deleted; the
-                    NavBar's hamburger slot (via NavBarMobileMenu)
-                    replaces it. Theme toggle moved to the user
-                    menu (R14-PR5). BreadcrumbsProvider wraps the
-                    chrome AND the page tree so pages can push
-                    breadcrumbs from any depth. */}
-                <BreadcrumbsProvider>
-                    {/* Wrapped rather than prop-drilled: TopChrome composes
-                        several bars and giving each a no-print prop would be a
-                        wider change than the print rule needs. */}
-                    <div className="no-print">
-                        <TopChrome
-                            variant={variant}
-                            user={user}
-                            onMobileMenuClick={openDrawer}
-                            onLogout={handleLogout}
-                        />
-                    </div>
-
-                {/* Inner content container.
-                    Mobile: just padding + max-width + centering.
-                    Desktop: ALSO a flex column itself so any
-                    <ListPageShell> child can claim flex-1 to fill
-                    height. Without `md:flex md:flex-col` here, the
-                    shell falls back to natural height and the inner
-                    div's overflow-y-auto ends up scrolling instead
-                    of the table card scrolling internally — which is
-                    the exact regression we're fixing. */}
-                {/* B7 — large-monitor responsiveness. Pre-B7 the
-                    content container was capped at `max-w-7xl`
-                    (1280px); on 1440p and 4K screens the page sat
-                    in a narrow column with vast empty margins. The
-                    cap now climbs at 2xl to 1536px and unblocks
-                    entirely beyond. `mx-auto` keeps the column
-                    centred at every step. Readable content (detail
-                    pages, modals) is clamped separately by their
-                    own shell so prose still tops out at a sane
-                    measure.
-
-                    Item 33 — full-bleed escape for the process-map canvas.
-                    That route is an edge-to-edge editor surface (a
-                    WorkspaceShell + pannable canvas), not a reading column;
-                    the `max-w-*` cap + `mx-auto` centering left it floating
-                    in the middle of the page instead of spanning it. On the
-                    exact `/processes` route we drop the width cap + centering
-                    (padding stays for breathing room). Sub-routes like
-                    `/processes/governance` keep the normal reading column. */}
-                <div
-                    className={cn(
-                        'p-4 md:p-6 md:flex md:flex-col md:flex-1 md:min-h-0 md:overflow-y-auto md:w-full',
-                        isCanvasFullBleed
-                            ? null
-                            : 'max-w-7xl 2xl:max-w-screen-2xl 3xl:max-w-none mx-auto',
-                    )}
-                >
-                    {children}
-                </div>
-                </BreadcrumbsProvider>
-            </main>
-        </div>
+            )}
+            // The drawer is never collapsed — it has the width to show
+            // labels, and an icon rail inside a panel the user deliberately
+            // opened would be hiding what they opened it for.
+            mobileNav={({ open, onClose }) => (
+                <MobileNavDrawer open={open} onClose={onClose}>
+                    <SidebarCollapseProvider collapsed={false}>
+                        <Sidebar user={user} onLogout={handleLogout} onNavClick={onClose} />
+                    </SidebarCollapseProvider>
+                </MobileNavDrawer>
+            )}
+            topChrome={({ onMobileMenuClick }) => (
+                <TopChrome
+                    variant={variant}
+                    user={user}
+                    onMobileMenuClick={onMobileMenuClick}
+                    // T08 (#3003) — sign-out is handed down, not imported.
+                    // `UserMenu` no longer pulls `signOut` from
+                    // `next-auth/react`, so a vendoring product does not
+                    // inherit an auth dependency from a menu component. The
+                    // chrome supplies the row; this shell, which already owns
+                    // the auth call for the sidebar, supplies the action.
+                    onLogout={handleLogout}
+                />
+            )}
+            // Breadcrumbs must span the chrome AND the page tree, which sit in
+            // different places inside the frame — so it arrives as a wrapper
+            // rather than the frame knowing the provider's name.
+            mainProvider={(node) => <BreadcrumbsProvider>{node}</BreadcrumbsProvider>}
+        >
+            {children}
+        </AppShellFrame>
     );
 }
