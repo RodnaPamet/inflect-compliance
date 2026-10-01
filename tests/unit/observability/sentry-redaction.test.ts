@@ -37,6 +37,23 @@ const initCalls: Array<{
     environment: string;
     tracesSampleRate: number;
     sendDefaultPii?: boolean;
+    /**
+     * v11's per-category replacement for `sendDefaultPii`. Declared loosely on
+     * purpose: this is the shape the SDK was HANDED, and the point of the
+     * assertions below is to check those values, not to restate the SDK's type
+     * (which would make the test pass by construction).
+     */
+    dataCollection?: {
+        userInfo?: boolean;
+        cookies?: unknown;
+        httpHeaders?: unknown;
+        httpBodies?: unknown;
+        urlQueryParams?: unknown;
+        graphQL?: unknown;
+        genAI?: unknown;
+        databaseQueryData?: boolean;
+        stackFrameVariables?: unknown;
+    };
 }> = [];
 const closeCalls: number[] = [];
 /** Behaviour of the next `Sentry.close` call. */
@@ -48,6 +65,7 @@ jest.mock('@sentry/nextjs', () => ({
         environment: string;
         tracesSampleRate: number;
         sendDefaultPii?: boolean;
+        dataCollection?: Record<string, unknown>;
     }) => {
         initCalls.push(cfg);
     },
