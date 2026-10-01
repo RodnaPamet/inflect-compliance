@@ -69,8 +69,15 @@ describe('Sheet — responsive direction', () => {
         expect(SHEET_SRC).toMatch(/isMobile\s*\?\s*["']bottom["']\s*:\s*["']right["']/);
     });
 
-    it('accepts an explicit right/bottom override', () => {
-        expect(SHEET_SRC).toMatch(/direction\?\:\s*["']responsive["']\s*\|\s*["']right["']\s*\|\s*["']bottom["']/);
+    it('accepts an explicit right/bottom/left override', () => {
+        // Spelled as a set rather than one literal sequence: the previous
+        // version pinned the exact three-member union `"responsive" | "right" |
+        // "bottom"`, so adding `"left"` for navigation drawers failed a test
+        // that was only ever meant to say "these directions are accepted".
+        const union = SHEET_SRC.match(/direction\?\:\s*([^;]+);/)?.[1] ?? '';
+        for (const value of ['responsive', 'right', 'bottom', 'left']) {
+            expect(union).toContain(`"${value}"`);
+        }
     });
 
     it('exposes the resolved direction via a data attribute for E2E / theming', () => {
@@ -243,7 +250,7 @@ describe('Popover.Menu / Popover.Item / Popover.Separator', () => {
         expect(POPOVER_SRC).toMatch(/bg-border-subtle/);
     });
 
-    it('no raw Dub palette colors anywhere in the Popover source', () => {
+    it('no raw upstream palette colors anywhere in the Popover source', () => {
         for (const pattern of [
             /\bbg-white\b/,
             /\btext-black\b/,

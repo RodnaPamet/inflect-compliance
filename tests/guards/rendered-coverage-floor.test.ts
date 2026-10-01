@@ -202,7 +202,20 @@ const ROOT = path.resolve(__dirname, '../..');
 // floor since the last raise — the same case the note above records, and the
 // reason the raise takes the MEASURED `ls tests/rendered/*.test.tsx | wc -l`
 // = 319 rather than 313.
-const RENDERED_TEST_FLOOR = 319;
+// Raised 309 → 322 (2026-10-01, #3050): the T03 overlay work adds seven
+// rendered suites — overlay-depth, keyboard-inset, popover-nested,
+// popover-menu-keys, modal-focus-return, sheet-left, confirm-dialog-pending.
+// The raise takes the MEASURED 322 rather than 316, for the reason the note
+// above gives: six suites had already accumulated under the floor before this
+// branch, and the sentinel exists precisely to stop that slack being spendable.
+//
+// 319 -> 326 (2026-10-01, T03 x T06 merge): +7, this branch's seven overlay
+//   suites measured on the merged tree. Raised rather than left at main's 319
+//   (slack 7 of 8, which passes today) because ui-sync/t05 is still open with
+//   three more rendered suites: if it lands first the count reaches 329 and a
+//   floor of 319 is slack 10, which fails IN THE MERGE QUEUE rather than here.
+//   At 326 this branch passes in either landing order.
+const RENDERED_TEST_FLOOR = 326;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
