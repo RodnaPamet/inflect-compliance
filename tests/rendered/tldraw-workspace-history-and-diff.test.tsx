@@ -157,8 +157,13 @@ jest.mock('@/components/processes/TldrawProcessMap', () => {
 jest.mock('@/components/processes/CanvasDocumentBar', () => ({
     CanvasDocumentBar: () => <div data-testid="bar-stub" />,
 }));
+/** The inspector's props, so the workspace's wiring to it is assertable. */
+const inspectorProps: Array<{ rendererHonoursSize?: boolean }> = [];
 jest.mock('@/components/processes/ProcessInspector', () => ({
-    ProcessInspector: () => <div data-testid="inspector-stub" />,
+    ProcessInspector: (props: { rendererHonoursSize?: boolean }) => {
+        inspectorProps.push({ rendererHonoursSize: props.rendererHonoursSize });
+        return <div data-testid="inspector-stub" />;
+    },
 }));
 jest.mock('@/components/processes/ProcessPalette', () => ({
     ProcessPalette: () => <div data-testid="palette-stub" />,
@@ -212,6 +217,7 @@ const PROCESSES = [
 
 function mount(activeId: string | null = 'map-1') {
     serializeCalls.length = 0;
+    inspectorProps.length = 0;
     overlayProps.length = 0;
     toastErrors.length = 0;
     mapKeys.length = 0;
@@ -351,5 +357,22 @@ describe('a restore remounts the map', () => {
         expect(screen.getByTestId('diff-stub')).toBeTruthy();
         act(() => fireRestored!());
         expect(screen.queryByTestId('diff-stub')).toBeNull();
+    });
+});
+
+describe('the inert size control is not offered on this host', () => {
+    it('tells the inspector this renderer does not honour size', () => {
+        // The capability itself is asserted in `process-inspector.test.tsx`.
+        // THIS asserts the wiring, which is the half that can silently regress:
+        // the prop defaults to true, so forgetting to pass it here brings the
+        // control back with nothing behind it and no test complaining.
+        mount();
+        expect(inspectorProps.at(-1)?.rendererHonoursSize).toBe(false);
+    });
+
+    it('explicitly false, not merely absent', () => {
+        // `undefined` would read as "host did not say" and fall back to TRUE.
+        mount();
+        expect(inspectorProps.at(-1)?.rendererHonoursSize).not.toBeUndefined();
     });
 });

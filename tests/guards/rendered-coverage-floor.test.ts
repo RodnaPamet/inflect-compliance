@@ -215,14 +215,14 @@ const ROOT = path.resolve(__dirname, '../..');
 //   three more rendered suites: if it lands first the count reaches 329 and a
 //   floor of 319 is slack 10, which fails IN THE MERGE QUEUE rather than here.
 //   At 326 this branch passes in either landing order.
+// Raised 326 → 334 (2026-10-01): the tldraw migration's host-adapter suites —
+// the arrow→edge conversion, auto-layout, and the drill-down scope.
 //
-// 326 -> 334 (2026-10-01, T07 of #3003): +8, the MEASURED count. T07 adds the
-//   nav-item contrast guard and the retargeted drawer a11y suite, and removes
-//   `nav-drawer-closed-inert` whose premise the Sheet conversion made false.
-//   Raised rather than left at 326 — which still PASSES, at slack 8 of
-//   `SLACK.rendered`'s 8 — because sitting exactly on the limit means the next
-//   branch to add a single rendered spec fails this guard for a reason that is
-//   not its own.
+// 334 and not 335, deliberately. The guard has teeth in BOTH directions, and
+// `count >= floor` is the one that bites here: this branch's own live count is
+// 334, so a floor of 335 would fail on this very PR. A sibling PR adds the
+// next file, and at that point 335 vs 334 is slack 1. Either merge order
+// passes at 334; only one of them passes at 335.
 const RENDERED_TEST_FLOOR = 334;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
