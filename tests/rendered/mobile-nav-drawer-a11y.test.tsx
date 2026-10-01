@@ -187,3 +187,33 @@ describe('MobileNavDrawer — a visible way out', () => {
         expect(close?.className).toContain('focus-visible:ring-2');
     });
 });
+
+describe('MobileNavDrawer — the testid contract the E2E suite scopes through', () => {
+    it('exposes `nav-drawer` when open, and nothing when closed', () => {
+        // THIS IS THE TEST THAT WAS MISSING. The drawer this replaced carried
+        // `data-testid="nav-drawer"` on its panel, and
+        // `tests/e2e/responsive.spec.ts` scopes its nav-item queries through
+        // it. T07 dropped the attribute — vaul's `ContentProps` does not admit
+        // a `data-*` on `Drawer.Content` — and the only thing that noticed was
+        // E2E, on all three attempts, after the whole jest population had gone
+        // green. A Playwright spec cannot be run by jest, so "population
+        // green" never covered it.
+        const { rerender } = render(
+            <MobileNavDrawer open={false} onClose={jest.fn()}>
+                <a href="/dashboard">Board</a>
+            </MobileNavDrawer>,
+        );
+        expect(document.querySelectorAll('[data-testid="nav-drawer"]')).toHaveLength(0);
+
+        rerender(
+            <MobileNavDrawer open onClose={jest.fn()}>
+                <a href="/dashboard">Board</a>
+            </MobileNavDrawer>,
+        );
+        const handle = document.querySelector('[data-testid="nav-drawer"]');
+        expect(handle).not.toBeNull();
+        // The E2E scopes THROUGH it — `drawer.locator('[data-testid=...]')` —
+        // so the children have to be inside it, not siblings of it.
+        expect(handle?.querySelector('a[href="/dashboard"]')).not.toBeNull();
+    });
+});

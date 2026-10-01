@@ -123,7 +123,16 @@ export function MobileNavDrawer({ open, onClose, children }: MobileNavDrawerProp
                 string the root passes for the accessible name, so the two
                 cannot drift. */}
             <Sheet.Header title={tn('openNavigationMenu')} />
-            <Sheet.Body>{children}</Sheet.Body>
+            <Sheet.Body>
+                {/* `nav-drawer` is a CONTRACT, not decoration. The drawer this
+                    replaced carried it on its panel and `tests/e2e/
+                    responsive.spec.ts` scopes its nav-item queries through it;
+                    dropping it took that spec from passing to "element(s) not
+                    found" on all three attempts. It sits on a wrapper inside
+                    the body because vaul's `ContentProps` does not admit a
+                    `data-*` attribute on `Drawer.Content` itself. */}
+                <div data-testid="nav-drawer">{children}</div>
+            </Sheet.Body>
         </Sheet>
     );
 }
