@@ -19,6 +19,64 @@ function makeNode(overrides: any = {}) {
     };
 }
 
+/**
+ * The size control appears only where the renderer reads the value.
+ *
+ * It persisted to `dataJson.size`, which the tldraw node shape deliberately
+ * does not read — the owner's option-B decision on #2961, because #2960 made
+ * `dataJson` an opaque passthrough. So on that host the control was visible and
+ * inert: it saved a value nothing displayed, which reads as a bug to whoever
+ * touches it.
+ *
+ * Asserted in BOTH directions. A test that only checked the hidden case would
+ * pass just as well if the control had been deleted outright, which would
+ * silently remove a working feature from the xyflow canvas.
+ */
+describe('the size control follows the renderer', () => {
+    it('is present by default — the xyflow canvas is unchanged', () => {
+        render(<ProcessInspector node={makeNode() as any} onUpdate={jest.fn()} />);
+        expect(screen.getByTestId('inspector-size')).toBeTruthy();
+    });
+
+    it('is absent when the renderer does not honour size', () => {
+        render(
+            <ProcessInspector
+                node={makeNode() as any}
+                onUpdate={jest.fn()}
+                rendererHonoursSize={false}
+            />,
+        );
+        expect(screen.queryByTestId('inspector-size')).toBeNull();
+    });
+
+    it('and the rest of the panel still renders — teeth', () => {
+        // Without this, hiding the whole panel would satisfy the assertion
+        // above. The label input is the thing a user came to the inspector for.
+        render(
+            <ProcessInspector
+                node={makeNode() as any}
+                onUpdate={jest.fn()}
+                rendererHonoursSize={false}
+            />,
+        );
+        expect(screen.getByTestId('inspector-label-input')).toBeTruthy();
+        expect(screen.getByTestId('inspector-subtitle-input')).toBeTruthy();
+    });
+
+    it('HIDES rather than disables it', () => {
+        // A greyed-out control still advertises a capability the host does not
+        // have, and still invites the question "why can I not change this?".
+        const { container } = render(
+            <ProcessInspector
+                node={makeNode() as any}
+                onUpdate={jest.fn()}
+                rendererHonoursSize={false}
+            />,
+        );
+        expect(container.querySelectorAll('[disabled]')).toHaveLength(0);
+    });
+});
+
 describe('ProcessInspector', () => {
     it('renders nothing when no node is selected', () => {
         const { container } = render(

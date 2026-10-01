@@ -149,6 +149,26 @@ export interface ProcessInspectorProps {
      */
     tenantSlug?: string;
     /**
+     * Whether the host's renderer actually honours `data.size`.
+     *
+     * Defaults to TRUE, so the xyflow canvas is unchanged. The tldraw canvas
+     * passes false: its node shape renders at `PROCESS_NODE_DEFAULT_W` / `_H`
+     * and never reads the column, which is the owner's option-B decision on
+     * #2961 — #2960 made `dataJson` an opaque passthrough, so teaching the
+     * renderer to read it was declined.
+     *
+     * The control was therefore VISIBLE and INERT on that host: it persisted a
+     * value nothing displayed. A setting that silently does nothing reads as a
+     * bug to whoever touches it, and "it is behind a flag" stops being a
+     * defence when the flag is about to become the only renderer.
+     *
+     * Named for the RENDERER's capability rather than `showSize`, because that
+     * is the fact a host knows about itself. A presentational name would invite
+     * hiding the control for layout reasons and leaving the persistence
+     * mismatch in place.
+     */
+    rendererHonoursSize?: boolean;
+    /**
      * Called when the user commits a label / subtitle / size /
      * entity-link change. The canvas writes the change back into
      * its nodes state.
@@ -189,6 +209,7 @@ export function ProcessInspector({
     node,
     edge = null,
     tenantSlug,
+    rendererHonoursSize = true,
     onUpdate,
     onEdgeUpdate,
     mapId,
@@ -332,24 +353,29 @@ export function ProcessInspector({
                     data-testid="inspector-subtitle-input"
                 />
             </label>
-            <div className="flex flex-col gap-tight">
-                <span className="text-[10px] uppercase tracking-wide text-content-muted">
-                    {t("size")}
-                </span>
-                <ToggleGroup
-                    size="sm"
-                    ariaLabel={t("nodeSizeAria")}
-                    selected={size}
-                    options={[
-                        { value: "sm", label: "S" },
-                        { value: "md", label: "M" },
-                        { value: "lg", label: "L" },
-                    ]}
-                    selectAction={(v) =>
-                        onUpdate(node.id, { size: v as ProcessNodeSize })
-                    }
-                />
-            </div>
+            {/* Hidden where the renderer does not read `data.size` — see
+                `rendererHonoursSize`. Not disabled: a greyed-out control still
+                advertises a capability the host does not have. */}
+            {rendererHonoursSize && (
+                <div className="flex flex-col gap-tight" data-testid="inspector-size">
+                    <span className="text-[10px] uppercase tracking-wide text-content-muted">
+                        {t("size")}
+                    </span>
+                    <ToggleGroup
+                        size="sm"
+                        ariaLabel={t("nodeSizeAria")}
+                        selected={size}
+                        options={[
+                            { value: "sm", label: "S" },
+                            { value: "md", label: "M" },
+                            { value: "lg", label: "L" },
+                        ]}
+                        selectAction={(v) =>
+                            onUpdate(node.id, { size: v as ProcessNodeSize })
+                        }
+                    />
+                </div>
+            )}
             {/* Epic P2-PR-B — Linked-entity picker. Mounts only on
                 nodes whose kind matches a compliance entity (control
                 / risk / asset). The selection writes the FK into
