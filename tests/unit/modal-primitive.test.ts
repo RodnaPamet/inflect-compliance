@@ -234,7 +234,14 @@ describe('Modal — focus + dismissal', () => {
     });
 
     it('preventDefaultClose suppresses backdrop + Escape (unsaved-state pattern)', () => {
-        expect(MODAL_SRC).toMatch(/preventDefaultClose/);
+        // The SUPPRESSION ITSELF, not the bare word. `preventDefaultClose`
+        // alone occurs five times in this file (the prop type, the
+        // destructuring default, this guard, the close-button gate, and
+        // Modal.Confirm passing it while its action is in flight), so the bare
+        // needle was satisfied by any one of them — the close-button gate on
+        // the line below would have kept this test green with the Escape guard
+        // deleted, which is the half the test is named for.
+        expect(MODAL_SRC).toMatch(/if \(preventDefaultClose && !dragged\) return;/);
         // Close button is hidden too when preventDefaultClose is set.
         expect(MODAL_SRC).toMatch(/showCloseButton\s*&&\s*!preventDefaultClose/);
     });

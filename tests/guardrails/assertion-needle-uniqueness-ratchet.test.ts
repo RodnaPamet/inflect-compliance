@@ -332,7 +332,30 @@ const HIGH_MULTIPLICITY = 5;
 //   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
 //   converting the other eleven `tests/guards` files, so whoever merges
 //   second re-measures on the merged tree rather than keeping this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1190;
+// 1190 -> 1188 (2026-10-01, #3050, the T03 overlay work): -2 net, and the
+//   arithmetic is +1 then -3 rather than a tidy drain, which is the part worth
+//   recording. The +1 was NOT a test edit: `popover.tsx` grew a
+//   `const MENU_ITEM = '[role="menuitem"],…'` selector for the new roving-focus
+//   handler, and that string was a second textual home for the `role="menuitem"`
+//   attribute on `Popover.Item` — so `sheet-popover.test.ts`'s needle for that
+//   attribute went 1 -> 2 and the attribute itself became deletable with the
+//   guard still green. This is the `VendorEvidenceBundleItem` mechanism named at
+//   the top of this file, reached from the SOURCE side. Fixed in the source: the
+//   selector now uses unquoted CSS attribute values, which are valid and are not
+//   the attribute's own text.
+//
+//   The -3: `preventDefaultClose` reached FIVE occurrences in `modal.tsx` once
+//   Modal.Confirm began passing it while its action is in flight, and two tests
+//   (`modal-primitive`, `responsive-modal-sheet`) asserted the bare word while
+//   being NAMED for the Escape/backdrop guard specifically. Both now pin
+//   `if (preventDefaultClose && !dragged) return;`, which is unique and is the
+//   thing each test claims. That is -2 here and -2 in the 5+ bucket, which is
+//   why HIGHLY_AMBIGUOUS_NEEDLE_BASELINE below is unchanged rather than raised.
+//
+//   RE-MEASURE BEFORE MERGE. Concurrent branches move this number and two
+//   branches lowering the same line to different values merge without a
+//   conflict.
+const AMBIGUOUS_NEEDLE_BASELINE = 1188;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

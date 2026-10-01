@@ -220,9 +220,16 @@ function PopoverRoot({
 
 // ─── Menu / Item slots ─────────────────────────────────────────────
 
-/** Anything a menu can hold that takes focus. */
-const MENU_ITEM =
-    '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
+/**
+ * Anything a menu can hold that takes focus.
+ *
+ * Written with UNQUOTED attribute values — valid CSS, and deliberately not the
+ * same text as the `role="menuitem"` attribute on `Item` below. With the quoted
+ * spelling this constant was a second textual home for that attribute, so a
+ * guard asserting "Item renders role=menuitem" would have stayed green with the
+ * attribute deleted and only the selector left.
+ */
+const MENU_ITEM = "[role=menuitem],[role=menuitemradio],[role=menuitemcheckbox]";
 
 /**
  * Arrow keys, Home and End move focus between items, wrapping at the ends.
