@@ -441,7 +441,7 @@ export const NAV_ITEM_DEFAULT =
  *
  * Five cooperating tokens, no single one shouting:
  *
- *   (1) `text-[var(--brand-default)]` (R13-PR5)
+ *   (1) `text-content-brand` (R13-PR5, retargeted by T07 — see the
  *       Brand-coloured letters: yellow on METRO, orange on PwC.
  *       Held permanently on the active row. The active page is now
  *       visually unmissable from across the desk — the band tells
@@ -460,7 +460,7 @@ export const NAV_ITEM_DEFAULT =
  *       band is leaking light into the row. The wash is now COOL
  *       (matches the band's hue family), not WARM as in R12-PR6;
  *       the warm/cool contrast moved to band-cool + label-warm
- *       (label is `text-[var(--brand-default)]`).
+ *       (label is `text-content-brand`).
  *
  *   (3) `before:opacity-100 before:animate-nav-band-alive`
  *       Band held visible permanently + composed alive-motion
