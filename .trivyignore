@@ -5,134 +5,54 @@
 # Adding entries here is a structural escape hatch for the Trivy gate. Use
 # sparingly: prefer fixing the dep over ignoring it.
 #
-# ── Current exemptions ──
+# ── Current exemptions: NONE ──
 #
-# CVE-2026-12151 — undici DoS (unbounded memory), HIGH. Fixed in undici
-#   6.27.0 / 7.28.0 / 8.5.0.
-#   Affected path: the node:24-alpine base image's BUNDLED npm CLI
-#     (/usr/local/lib/node_modules/npm → node-gyp → undici@6.25.0). NOT an
-#     app runtime dependency — the server runs `next start` (node), never the
-#     npm CLI / node-gyp, so this undici is unreachable from request-handling
-#     code (blast radius = build-time only). Same class as the picomatch
-#     exemptions retired in the node:22→24 bump below.
-#   Retire when: the node:24-alpine base image refreshes its bundled npm CLI
-#     to one whose node-gyp carries undici ≥ 6.27.0 (next Node base-image
-#     bump / image rebuild). Re-check with `npm ls undici` in the image.
-CVE-2026-12151
+# The gate runs unexempted. Keep it that way if you can: an entry here is a
+# CVE the image ships and nobody is fixing.
 #
-# Historical note (cleanup-5-node-24-bump, 2026-06-14): the four
-# npm-CLI-bundled CVEs that lived here (picomatch DoS / method injection
-# CVE-2026-33671 + CVE-2026-33672, brace-expansion DoS CVE-2026-33750,
-# ip-address XSS CVE-2026-42338) were all retired by the Node base image
-# bump from node:22-alpine → node:24-alpine. The Node 24 image ships an
-# npm CLI whose transitive lockfile carries the patched versions of all
-# four affected packages. The exemptions are no longer needed.
+# ── Historical note (2026-10-01): nine entries retired at once ──
 #
-# If a future advisory needs an exemption, include:
+# Every exemption this file carried was justified by ONE thing — the npm CLI
+# inside the runtime image — and #3035 deleted it:
+#
+#   CVE-2026-12151, CVE-2026-9679, CVE-2026-6733, CVE-2026-11525  (undici)
+#   CVE-2026-53655, CVE-2026-73566                                (tar)
+#   CVE-2026-14257, CVE-2026-69152                                (brace-expansion)
+#   CVE-2026-69192                                                (ip-address)
+#
+# Each said the affected copy lived in `/usr/local/lib/node_modules/npm`'s
+# vendored tree and was unreachable because the server runs `next start` and
+# never invokes npm. #3035 stopped relying on the "unreachable" half: the
+# Dockerfile now `rm -rf`s the npm CLI and asserts `! command -v npm` at build
+# time, so the vulnerable copies are not in the image to be reached. Three of
+# the entries (the brace-expansion pair and ip-address) justified themselves by
+# citing a `npm install -g npm@12.0.1` line that #3035 also deleted, so their
+# stated reasoning pointed at a Dockerfile that no longer existed.
+#
+# Verified before removal, on the live production container rather than from the
+# alert list — `.trivyignore` filters BEFORE the SARIF upload, so an exempted
+# CVE and an absent one look identical from the Security tab:
+#
+#   /usr/local/lib/node_modules/npm          ABSENT
+#   undici / brace-expansion / ip-address / tar
+#     directories outside /app/node_modules  0
+#   /usr/local/lib/node_modules (control)    PRESENT
+#
+# So all four packages now exist only in the application's own runtime tree,
+# where the lockfile and the package.json `overrides` pin patched versions.
+#
+# Retiring these makes the gate STRICTER, which is the safe direction to be
+# wrong in: if any copy survives somewhere this probe did not look, Trivy
+# blocks the publish and says which package, instead of waving it through.
+#
+# ── If a future advisory needs an exemption, include ──
+#
 #   - the CVE id
 #   - the affected package path
 #   - WHY the exemption is safe (reachability / blast radius)
 #   - the trigger that retires it (specific dep bump, base-image refresh,
 #     deprecation of the vulnerable feature)
 #
-# CVE-2026-9679 (undici DoS, MEDIUM) / CVE-2026-6733 / CVE-2026-11525 (undici,
-#   LOW) — same root + blast radius as CVE-2026-12151 above: the affected
-#   undici@6.26.0 lives in the node:24-alpine base image's BUNDLED npm CLI
-#   (/usr/local/lib/node_modules/npm → node-gyp → undici), NOT an app runtime
-#   dependency. The server runs `next start` (node), never the npm CLI /
-#   node-gyp, so this undici is unreachable from request-handling code
-#   (blast radius = build-time only). Fixed in undici 6.27.0; npm has not yet
-#   bundled a node-gyp carrying it (npm@11.17.0 still ships undici@6.26.0).
-#   Retire when: the node:24-alpine base image refreshes its bundled npm CLI
-#   to one whose node-gyp carries undici ≥ 6.27.0. Re-check with
-#   `npm ls undici` in the image.
-CVE-2026-9679
-CVE-2026-6733
-CVE-2026-11525
-#
-# CVE-2026-53655 (tar, MEDIUM) — the affected tar@7.5.15 lives in the
-#   node:24-alpine base image's BUNDLED npm CLI (/usr/local/lib/node_modules/
-#   npm → tar), NOT an app runtime dependency (our own lockfile is pinned to
-#   tar ≥ 7.5.16 via the package.json `overrides`). The server never invokes
-#   the npm CLI at runtime, so this tar is unreachable (build-time only).
-#   Retire when: the node:24-alpine base image refreshes its bundled npm CLI
-#   to one carrying tar ≥ 7.5.16. Re-check with `npm ls tar` in the image.
-CVE-2026-53655
-#
-# CVE-2026-14257 (brace-expansion, HIGH) — DoS via a follow-up to the
-#   CVE-2026-13149 ReDoS. The affected brace-expansion@5.0.7 lives in the
-#   image's GLOBAL npm CLI (/usr/local/lib/node_modules/npm →
-#   brace-expansion; the Dockerfile runs `npm install -g npm@12.0.1`), NOT an
-#   app runtime dependency — our own lockfile resolves the top-level
-#   brace-expansion to 5.0.8. The server runs `next start` (node), never the
-#   npm CLI, so this copy is unreachable from request-handling code (blast
-#   radius = build-time only). Same class as the undici / tar npm-CLI-bundled
-#   exemptions above, and the earlier brace-expansion CVE-2026-33750 retired
-#   in the node:22→24 bump. Fixed in brace-expansion 5.0.8; the newest npm
-#   (12.0.1) still bundles 5.0.7.
-#   Retire when: the global `npm install -g npm@…` in the Dockerfile moves to
-#   an npm whose bundle carries brace-expansion ≥ 5.0.8. Re-check with
-#   `npm ls brace-expansion` in the image.
-CVE-2026-14257
-#
-# CVE-2026-69152 (brace-expansion, HIGH) — the next DoS in the same line as
-#   CVE-2026-14257 above, fixed in 5.0.9. Identical placement and identical
-#   blast radius: the affected 5.0.7 lives in the image's GLOBAL npm CLI
-#   (/usr/local/lib/node_modules/npm → minimatch → brace-expansion; the
-#   Dockerfile runs `npm install -g npm@12.0.1`), NOT an app runtime
-#   dependency. Our own RUNTIME tree is on the patched 5.0.9 — verified with
-#   `npm ls brace-expansion --omit=dev`, which is what survives the builder
-#   stage's `npm prune --omit=dev`. The server runs `next start` (node) and
-#   never invokes the npm CLI, so this copy is unreachable from
-#   request-handling code.
-#   Checked 2026-08-04: npm@12.0.2 (newest) STILL vendors brace-expansion
-#   5.0.7, so bumping the Dockerfile pin does not clear it — there is no
-#   fixed npm to move to yet.
-#   Retire when: an npm release bundles brace-expansion ≥ 5.0.9. Re-check
-#   with `npm ls brace-expansion` in the image.
-CVE-2026-69152
-#
-# CVE-2026-69192 (ip-address) — parsing flaw, fixed in 10.3.1. The affected
-#   10.2.0 reaches the image only through the GLOBAL npm CLI's vendored
-#   socks-proxy-agent → socks → ip-address. It is not in the application's
-#   runtime tree at all: `npm ls ip-address --omit=dev` returns nothing, so
-#   nothing survives `npm prune --omit=dev` into the runner stage's
-#   node_modules. Reachable only if the npm CLI parses a hostile proxy
-#   address, which happens at image-build time, never at request time.
-#   Checked 2026-08-04: npm@12.0.2 (newest) still vendors ip-address 10.2.0.
-#   Retire when: an npm release bundles ip-address ≥ 10.3.1. Re-check with
-#   `npm ls ip-address` in the image.
-CVE-2026-69192
-
-# CVE-2026-73566 (tar) — node-tar DoS via a crafted long-path archive, HIGH.
-#   Affected 7.5.19 reaches the image ONLY through the global npm CLI's
-#   bundled copy at /usr/local/lib/node_modules/npm/node_modules/tar. It is
-#   not in the application's runtime tree: `npm prune --omit=dev` keeps only
-#   production deps, and the one other tar in the image is Next's own
-#   compiled copy at a different version.
-#
-#   WHY THIS IS SAFE IS A CHANGE, NOT A STANDING FACT — read before trusting.
-#   Until 2026-08-22 the runner DID exercise this tar on every container
-#   start: `scripts/entrypoint.sh` ran `npx --yes prisma@7.8.0`, and an
-#   explicit version differing from the installed one sends npx to the
-#   registry, where the download is tar-extracted. The evidence was on the
-#   running production container (~/.npm/_npx/<hash>/node_modules/prisma).
-#   That line now invokes the already-installed ./node_modules/.bin/prisma,
-#   so nothing in the runner invokes the npm CLI at all: the entrypoint runs
-#   the local prisma binary and then `exec node_modules/.bin/next start`.
-#
-#   The exemption is therefore CONDITIONAL on that. If the entrypoint goes
-#   back to npx, or any runtime path shells out to npm, this reasoning is
-#   false and the exemption must be withdrawn rather than re-justified.
-#   `tests/guards/runner-never-invokes-npm.test.ts` fails if that happens,
-#   so the premise is enforced rather than asserted.
-#
-#   No npm release fixes it: npm 12.0.2 (newest, checked 2026-08-22) still
-#   vendors tar 7.5.19 despite 7.5.21 shipping 2026-07-21 — bundled deps
-#   freeze at publish time, so the `^7.5.19` range in npm's manifest does
-#   not help. The repo's own `tar` override is already `^7.5.21` and is
-#   inert for exactly this reason.
-#   Retire when: an npm release bundles tar ≥ 7.5.21. Re-check with
-#   `cat /usr/local/lib/node_modules/npm/node_modules/tar/package.json` in
-#   the image.
-CVE-2026-73566
+# And prefer a premise a test can hold up over one a reader has to trust:
+# `tests/guards/runner-never-invokes-npm.test.ts` was written to enforce the
+# reachability claim behind CVE-2026-73566 rather than assert it in prose.
