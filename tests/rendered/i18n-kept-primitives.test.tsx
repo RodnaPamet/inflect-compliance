@@ -36,6 +36,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { UserMenu } from '@/components/layout/user-menu';
@@ -159,6 +160,38 @@ jest.mock('next/navigation', () => ({
     useSearchParams: () => new URLSearchParams(),
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
+
+/**
+ * The rows `TopChrome` supplies through `UserMenu`'s `items` slot since T08
+ * (#3003), with the SAME translation keys. A component rather than inline JSX
+ * because it has to call `useTranslations`, and the slot is a render prop
+ * invoked during the menu's own render — a hook there would break the rules of
+ * hooks.
+ */
+function HostSuppliedRows({ close }: { close: () => void }) {
+    const tSecurity = useTranslations('account.security');
+    const tNav = useTranslations('nav');
+    return (
+        <>
+            <button
+                type="button"
+                role="menuitem"
+                data-testid="user-menu-account-security"
+                onClick={close}
+            >
+                {tSecurity('securityTitle')}
+            </button>
+            <button
+                type="button"
+                role="menuitem"
+                data-testid="user-menu-sign-out"
+                onClick={close}
+            >
+                {tNav('signOut')}
+            </button>
+        </>
+    );
+}
 
 const CYRILLIC = /[Ѐ-ӿ]/;
 
@@ -418,7 +451,7 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
     it('NavBar: the brand link and the menu button names', () => {
         render(
             <>
-                <NavBarBrand href="/" />
+                <NavBarBrand href="/" initials="IC" />
                 <NavBarMobileMenu onClick={() => {}} />
             </>,
         );
@@ -430,9 +463,23 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
     });
 
     it('UserMenu: the trigger, the menu, the name fallback and both rows', async () => {
+        // T08 (#3003) moved the security and sign-out rows OUT of `UserMenu`
+        // and into the host's `items` slot — one named a route only this
+        // product has, the other imported `signOut` from next-auth.
+        //
+        // The rows are supplied here the way `TopChrome` supplies them, with
+        // the SAME translation keys, because what this file protects is that
+        // the keys resolve in both locales — not which component owns the
+        // JSX. Asserting them against hardcoded English would have kept the
+        // test green while measuring nothing.
         render(
             <TooltipProvider>
-                <UserMenu displayName={null} displayEmail={null} displayImage={null} />
+                <UserMenu
+                    displayName={null}
+                    displayEmail={null}
+                    displayImage={null}
+                    items={({ close }) => <HostSuppliedRows close={close} />}
+                />
             </TooltipProvider>,
         );
         const trigger = screen.getByTestId('top-chrome-user-menu');

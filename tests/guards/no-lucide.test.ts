@@ -152,7 +152,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // equivalent today; both switchers share the same lucide
     // dependency until that icon lands and both migrate together.
     'src/components/layout/org-workspace-switcher.tsx',
-    'src/components/layout/user-menu.tsx',
     // R12-PR1 — `nav-item.tsx` carries the `LucideIcon` type
     // import for the `icon` prop. The sidebar's icon contract
     // is `LucideIcon` (callers pass `LayoutDashboard` /
