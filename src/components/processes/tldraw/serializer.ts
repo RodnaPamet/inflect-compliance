@@ -43,6 +43,7 @@ import {
     shapeIdForNodeKey,
     type ProcessNodeShapeProps,
 } from './process-node-shape';
+import { PROCESS_EDGE_SHAPE_TYPE } from './process-edge-shape';
 import {
     PROCESS_EDGE_BINDING_TYPE,
     type ProcessEdgeBindingProps,
@@ -134,6 +135,16 @@ export const isProcessNodeShape = (r: CanvasRecord): r is ProcessNodeShapeRecord
 
 export const isProcessEdgeBinding = (r: CanvasRecord): r is ProcessEdgeBindingRecord =>
     r.type === PROCESS_EDGE_BINDING_TYPE;
+
+/**
+ * The DRAWN half of an edge — derived on load, never persisted.
+ *
+ * Needs its own predicate because without one it is structurally a
+ * `FreeformRecord` and would land in the bucket that IS written to
+ * `ProcessMap.freeformJson`. See the `derived` bucket below.
+ */
+export const isProcessEdgeShape = (r: CanvasRecord): boolean =>
+    r.type === PROCESS_EDGE_SHAPE_TYPE;
 
 /**
  * The shape props `tldrawToRows` actually reads — the persisted set.
@@ -266,16 +277,32 @@ export function partitionCanvas(records: readonly CanvasRecord[]): {
     shapes: ProcessNodeShapeRecord[];
     bindings: ProcessEdgeBindingRecord[];
     freeform: FreeformRecord[];
+    /**
+     * Records rebuilt on load, which nothing may persist.
+     *
+     * Returned rather than dropped silently. The edge LINE is derived from the
+     * bindings every load, so it must not be written — and the default arm here
+     * is `freeform`, which IS persisted to `ProcessMap.freeformJson`. Left to
+     * fall through, a derived line would be saved, then on the next load both
+     * re-derived AND restored: two lines per edge, four, eight, compounding on
+     * every save with nothing in the diff to explain it.
+     *
+     * Naming the bucket instead of `continue`-ing makes that assertable, and
+     * `serializer-round-trip` asserts it.
+     */
+    derived: FreeformRecord[];
 } {
     const shapes: ProcessNodeShapeRecord[] = [];
     const bindings: ProcessEdgeBindingRecord[] = [];
     const freeform: FreeformRecord[] = [];
+    const derived: FreeformRecord[] = [];
     for (const r of records) {
         if (isProcessNodeShape(r)) shapes.push(r);
         else if (isProcessEdgeBinding(r)) bindings.push(r);
+        else if (isProcessEdgeShape(r)) derived.push(r as FreeformRecord);
         else freeform.push(r);
     }
-    return { shapes, bindings, freeform };
+    return { shapes, bindings, freeform, derived };
 }
 
 export function tldrawToRows(graph: TldrawGraph): GraphRows {

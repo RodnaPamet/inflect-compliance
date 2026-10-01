@@ -77,6 +77,12 @@ import { batchIsSubstantive } from '@/lib/processes/canvas-changes';
 import { classifyTldrawStoreDiff } from '@/lib/processes/canvas-changes-tldraw';
 
 import { ProcessEdgeBindingUtil } from './tldraw/ProcessEdgeBindingUtil';
+import { ProcessEdgeShapeUtil } from './tldraw/ProcessEdgeShapeUtil';
+import {
+    PROCESS_EDGE_SHAPE_TYPE,
+    edgeLineGeometry,
+    shapeIdForEdgeKey,
+} from './tldraw/process-edge-shape';
 import { ProcessNodeShapeUtil } from './tldraw/ProcessNodeShapeUtil';
 import {
     rowsToTldraw,
@@ -85,7 +91,10 @@ import {
 } from './tldraw/serializer';
 
 /** Registered once at module scope — a new array each render remounts the editor. */
-const SHAPE_UTILS = [ProcessNodeShapeUtil];
+// Both shape utils. The edge LINE is a shape because a `BindingUtil` cannot
+// render — registering only the node is what left the canvas drawing steps with
+// no connectors between them.
+const SHAPE_UTILS = [ProcessNodeShapeUtil, ProcessEdgeShapeUtil];
 const BINDING_UTILS = [ProcessEdgeBindingUtil];
 
 export interface TldrawProcessCanvasProps {
@@ -178,6 +187,38 @@ export function TldrawProcessCanvas({
                         props: b.props,
                     })),
                 );
+
+                /**
+                 * The drawn lines, derived from the bindings just created.
+                 *
+                 * AFTER the bindings and after the node shapes, because the
+                 * geometry comes from `getShapePageBounds` on both endpoints —
+                 * neither of which exists until its shape does.
+                 *
+                 * Derived rather than loaded: `ProcessEdge` stays the single
+                 * source of truth, and `partitionCanvas` sorts this type into
+                 * its `derived` bucket so a line can never be written to
+                 * `freeformJson` and then restored on top of a fresh one.
+                 */
+                const lines = graph.bindings.flatMap((b) => {
+                    const from = editor.getShapePageBounds(asShapeId(b.fromId));
+                    const to = editor.getShapePageBounds(asShapeId(b.toId));
+                    // An endpoint with no bounds means a binding whose shape is
+                    // not on this page. Skipped rather than drawn at the origin,
+                    // which would put a stray line through the map.
+                    if (!from || !to) return [];
+                    const g = edgeLineGeometry(from, to);
+                    return [
+                        {
+                            id: shapeIdForEdgeKey(b.props.edgeKey),
+                            type: PROCESS_EDGE_SHAPE_TYPE,
+                            x: g.x,
+                            y: g.y,
+                            props: { edgeKey: b.props.edgeKey, dx: g.dx, dy: g.dy },
+                        },
+                    ];
+                });
+                if (lines.length > 0) editor.createShapes(lines);
             }
 
             // Read-only LAST, after seeding: the flag refuses writes, and
