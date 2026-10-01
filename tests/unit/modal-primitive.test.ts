@@ -16,7 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf, interfaceBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../');
 /**
@@ -178,12 +178,59 @@ describe('Modal.Confirm — tone-driven confirmation dialog', () => {
 // ─── 5. Focus + close behaviour ──────────────────────────────────
 
 describe('Modal — focus + dismissal', () => {
-    it('preventDefault on onOpenAutoFocus so cmdk / filter popovers keep focus control', () => {
-        expect(MODAL_SRC).toMatch(/onOpenAutoFocus=\{\(e\)\s*=>\s*e\.preventDefault\(\)\}/);
+    // Both of these used to assert the OPPOSITE — that the primitive prevents
+    // Radix's open AND close auto-focus unconditionally. That is the defect,
+    // not the contract: focus never entered the dialog (so a keyboard user
+    // tabbed on through the page behind the overlay and a screen reader
+    // announced nothing) and never returned to the trigger on close.
+    //
+    // The behaviour itself is proved by rendering, in
+    // `tests/rendered/modal-focus-return.test.tsx`. What is left here is the
+    // opt-out's wiring, which a render test cannot distinguish from "the prop
+    // happens to be unused".
+    // Every read below is BOUND to the construct it is about — the props
+    // interface, or ModalRoot's body — rather than to the whole file. Two
+    // reasons, and the second is the load-bearing one:
+    //
+    //   1. `preventAutoFocus` and `onCloseAutoFocus` both appear in prose as
+    //      well as in code, and `codeOf` masks comments but a whole-file read
+    //      still spans the drawer branch, the dialog branch and the Confirm
+    //      sugar — three places a needle could be satisfied by the wrong one.
+    //   2. A `not.toMatch` over a whole file claims something about the file;
+    //      over ModalRoot's body it claims something about the component that
+    //      renders the dialog, which is the actual subject.
+    it('exposes preventAutoFocus as the opt-out, defaulting to off', () => {
+        expect(interfaceBodyOf(MODAL_SRC, 'ModalProps')).toMatch(
+            /preventAutoFocus\?:\s*boolean/,
+        );
+        expect(functionBodyOf(MODAL_SRC, 'ModalRoot')).toMatch(
+            /preventAutoFocus\s*=\s*false/,
+        );
     });
 
-    it('preventDefault on onCloseAutoFocus so focus doesn\'t flash on the trigger', () => {
-        expect(MODAL_SRC).toMatch(/onCloseAutoFocus=\{\(e\)\s*=>\s*e\.preventDefault\(\)\}/);
+    it('does not prevent auto-focus unconditionally', () => {
+        // The shape of the old defect, as a needle: a bare
+        // `onOpenAutoFocus={(e) => e.preventDefault()}` with no prop gating it.
+        const body = functionBodyOf(MODAL_SRC, 'ModalRoot');
+        for (const handler of ['onOpenAutoFocus', 'onCloseAutoFocus']) {
+            expect(body).not.toMatch(
+                new RegExp(`${handler}=\\{\\(e\\)\\s*=>\\s*e\\.preventDefault\\(\\)\\}`),
+            );
+        }
+    });
+
+    it('restores focus itself rather than relying on Radix', () => {
+        // Radix's own onCloseAutoFocus preventDefaults unconditionally and
+        // focuses `Dialog.Trigger`, which a CONTROLLED modal never renders — so
+        // removing our handler fixes the open half and leaves the close half
+        // exactly as broken. The behaviour is proved by rendering, in
+        // `tests/rendered/modal-focus-return.test.tsx`; what is asserted here
+        // is that the restore target is CAPTURED and USED, because a render
+        // test cannot tell a deleted ref from an unreachable one.
+        const body = functionBodyOf(MODAL_SRC, 'ModalRoot');
+        expect(body).toMatch(/restoreFocusRef\s*=\s*useRef<HTMLElement \| null>/);
+        expect(body).toMatch(/restoreFocusRef\.current\s*=/);
+        expect(body).toMatch(/target\?\.isConnected\) target\.focus\(\)/);
     });
 
     it('preventDefaultClose suppresses backdrop + Escape (unsaved-state pattern)', () => {
@@ -210,7 +257,7 @@ describe('Modal — focus + dismissal', () => {
 // ─── 6. Token drift sentinel ─────────────────────────────────────
 
 describe('Modal — token drift sentinel', () => {
-    it('uses semantic tokens only (no Dub-native palette)', () => {
+    it('uses semantic tokens only (no upstream-native palette)', () => {
         for (const pattern of [
             /\bbg-white\b/,
             /\btext-black\b/,

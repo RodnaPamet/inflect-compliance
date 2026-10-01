@@ -23,6 +23,9 @@ import { useTranslations } from "next-intl";
 import {
   ButtonHTMLAttributes,
   HTMLAttributes,
+  // Aliased: the bare name is the DOM event, which `onEscapeKeyDown` below
+  // already means and Radix hands it.
+  KeyboardEvent as ReactKeyboardEvent,
   PropsWithChildren,
   ReactNode,
   WheelEventHandler,
@@ -31,7 +34,12 @@ import {
 import { createPortal } from "react-dom";
 import { Drawer } from "vaul";
 import { useMediaQuery } from "./hooks";
+import { OverlayDepthProvider, useIsNestedInOverlay } from "./overlay-depth";
 import { Tooltip } from "./tooltip";
+import {
+  keyboardAvoidanceStyle,
+  useKeyboardInset,
+} from "@/lib/hooks/use-keyboard-inset";
 
 export type PopoverProps = PropsWithChildren<{
   content: ReactNode | string;
@@ -80,6 +88,25 @@ function PopoverRoot({
   triggerTooltip,
 }: PopoverProps) {
   const t = useTranslations("common.ui");
+
+  // The soft keyboard covers the bottom of the screen. This overlay caps its
+  // height in `vh` — the LAYOUT viewport — which does not shrink when the
+  // keyboard opens, so any input near the bottom ends up BEHIND it. The user is
+  // typing into something they cannot see.
+  const keyboard = useKeyboardInset();
+
+  // Am I already inside a bottom sheet? If so, presenting as a SECOND sheet
+  // stacks two drawers — overlapping scroll locks, a drag gesture that
+  // dismisses the wrong one, and an escape key that closes both or neither.
+  //
+  // This is what `forceDropdown` was for. It is an opt-out every call site had
+  // to remember, in a situation the call site frequently cannot see: whether a
+  // Combobox is inside a Modal depends on where it was USED, not how it was
+  // written. A shared form component has no idea.
+  //
+  // So ask the tree. `forceDropdown` stays as an explicit override.
+  const nested = useIsNestedInOverlay();
+
   const { isMobile } = useMediaQuery();
   // When a trigger tooltip is requested, wrap the whole Radix Trigger ELEMENT
   // (not the inner button) in <Tooltip>. Order matters: Tooltip OUTER →
@@ -90,7 +117,7 @@ function PopoverRoot({
   const withTooltip = (el: ReactNode) =>
     triggerTooltip ? <Tooltip content={triggerTooltip}>{el}</Tooltip> : el;
 
-  if (!forceDropdown && (mobileOnly || isMobile)) {
+  if (!forceDropdown && !nested && (mobileOnly || isMobile)) {
     return (
       <Drawer.Root open={openPopover} onOpenChange={setOpenPopover}>
         {withTooltip(
@@ -99,8 +126,16 @@ function PopoverRoot({
           </Drawer.Trigger>,
         )}
         <Drawer.Portal>
-          <Drawer.Overlay className="bg-bg-subtle fixed inset-0 z-50 bg-opacity-10 backdrop-blur" />
+          {/* ONE overlay. A second `<Drawer.Overlay />` used to be rendered
+              after `Drawer.Content` below, which stacked two backdrops: the
+              blur applied twice and the second element sat ABOVE the content in
+              paint order. */}
+          <Drawer.Overlay className="bg-bg-subtle/10 fixed inset-0 z-50 backdrop-blur" />
           <Drawer.Content
+            data-popover-drawer
+            // KEYBOARD AVOIDANCE. This sheet is bottom-anchored, so the soft
+            // keyboard opens directly over it. See use-keyboard-inset.ts.
+            style={keyboardAvoidanceStyle(keyboard)}
             className="surface-popup-texture fixed bottom-0 left-0 right-0 z-50 mt-24 rounded-t-[10px]"
             onEscapeKeyDown={onEscapeKeyDown}
             onPointerDownOutside={(e) => {
@@ -127,10 +162,12 @@ function PopoverRoot({
               <div className="bg-border-default my-3 h-1 w-12 rounded-full" />
             </div>
             <div className="bg-bg-default flex w-full items-center justify-center overflow-hidden pb-4 align-middle shadow-xl">
-              {content}
+              {/* This popover IS a bottom sheet. Anything inside it is nested,
+                  so a Combobox in here must present as a dropdown, not a second
+                  sheet. */}
+              <OverlayDepthProvider>{content}</OverlayDepthProvider>
             </div>
           </Drawer.Content>
-          <Drawer.Overlay />
         </Drawer.Portal>
       </Drawer.Root>
     );
@@ -151,6 +188,10 @@ function PopoverRoot({
       )}
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
+          // A forceDropdown popover (a searchable Combobox inside a modal) is
+          // ALSO affected: the list hangs below the input and the keyboard
+          // covers it. Cap it to the visible viewport too.
+          style={keyboardAvoidanceStyle(keyboard)}
           sideOffset={sideOffset}
           align={align}
           side={side}
@@ -179,6 +220,55 @@ function PopoverRoot({
 
 // ─── Menu / Item slots ─────────────────────────────────────────────
 
+/** Anything a menu can hold that takes focus. */
+const MENU_ITEM =
+    '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
+
+/**
+ * Arrow keys, Home and End move focus between items, wrapping at the ends.
+ *
+ * `role="menu"` is a promise to assistive technology: a screen reader
+ * announces a menu and its user reaches for the arrow keys, because that is
+ * the ARIA menu pattern. Tab alone — all this container used to offer — moves
+ * through the items and then straight out of the popover, which closes it.
+ *
+ * Disabled items are skipped: focus that lands on one goes nowhere.
+ */
+function moveMenuFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+
+    const items = Array.from(
+        event.currentTarget.querySelectorAll<HTMLElement>(MENU_ITEM),
+    ).filter(
+        (el) =>
+            !el.hasAttribute("disabled") &&
+            el.getAttribute("aria-disabled") !== "true",
+    );
+    if (items.length === 0) return;
+
+    // Only now: a menu with nothing focusable should not swallow the page's keys.
+    event.preventDefault();
+
+    const at = items.indexOf(
+        event.currentTarget.ownerDocument.activeElement as HTMLElement,
+    );
+    const last = items.length - 1;
+    const next =
+        event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : event.key === "ArrowDown"
+                ? at === -1 || at === last
+                    ? 0
+                    : at + 1
+                : at <= 0
+                  ? last
+                  : at - 1;
+
+    items[next]!.focus();
+}
+
 /**
  * Standard menu container. Drop inside a Popover's `content` prop to
  * keep every action menu aligned on padding, width, and keyboard feel.
@@ -186,6 +276,7 @@ function PopoverRoot({
 function Menu({
     className,
     children,
+    onKeyDown,
     ...rest
 }: HTMLAttributes<HTMLDivElement>) {
     return (
@@ -196,6 +287,11 @@ function Menu({
                 "flex min-w-[180px] flex-col gap-0.5 p-1 text-sm",
                 className,
             )}
+            onKeyDown={(event) => {
+                // A caller's handler runs first and may claim the key.
+                onKeyDown?.(event);
+                if (!event.defaultPrevented) moveMenuFocus(event);
+            }}
             {...rest}
         >
             {children}

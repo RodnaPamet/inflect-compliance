@@ -8,8 +8,8 @@
  * overriding the locked widths via `className="max-w-…"` /
  * `style={{ width: … }}` shenanigans.
  *
- * The user opens "Create Risk" and the modal is one width;
- * "Edit Control" is another; "Upload Evidence" a third. Even
+ * The user opens one create form and the modal is one width;
+ * an edit form is another; an upload form a third. Even
  * though the primitive supports a token system, anyone can
  * still pass an override className that bypasses it. This
  * ratchet shuts that door.

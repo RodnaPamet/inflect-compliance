@@ -195,7 +195,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // raise takes the MEASURED 309, not 301: the eight already-accumulated suites
 // are exactly what the sentinel refuses to leave spendable, and locking them
 // in is the point.
-const RENDERED_TEST_FLOOR = 309;
+// Raised 309 → 322 (2026-10-01, #3050): the T03 overlay work adds seven
+// rendered suites — overlay-depth, keyboard-inset, popover-nested,
+// popover-menu-keys, modal-focus-return, sheet-left, confirm-dialog-pending.
+// The raise takes the MEASURED 322 rather than 316, for the reason the note
+// above gives: six suites had already accumulated under the floor before this
+// branch, and the sentinel exists precisely to stop that slack being spendable.
+const RENDERED_TEST_FLOOR = 322;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

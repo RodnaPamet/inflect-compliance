@@ -14,17 +14,17 @@
  *   </Tooltip>
  *
  *   <Tooltip
- *     title="ISO 27001 — Clause 9.3"
- *     content="Management review ensures the ISMS remains suitable."
+ *     title="Scheduled review"
+ *     content="A periodic review keeps this record current."
  *     shortcut="?"
  *   >
  *     <Button variant="ghost" icon={<HelpIcon />} />
  *   </Tooltip>
  *
- *   <InfoTooltip content="Evidence must be dated." />
+ *   <InfoTooltip content="A date is required." />
  *
  * Use a Popover, not a Tooltip, when the content is interactive (links,
- * buttons, form controls) or must stay open while the user reads it —
+ * buttons, form fields) or must stay open while the user reads it —
  * tooltips disappear on blur/Escape and are announced as `role="tooltip"`.
  */
 
