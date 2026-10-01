@@ -158,7 +158,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 // deleted alongside its rendered test; the R26-PR-F + R27-PR-F
 // capstones are updated to document the supersession.
 import type { ProcessEdgeVariant } from "./ProcessEdge";
-import type { ProcessMapSummary } from "@/app/t/[tenantSlug]/(app)/processes/ProcessesClient";
+import type { ProcessMapSummary } from "@/lib/processes/process-map-summary";
 import { useToast } from "@/components/ui/hooks";
 import { useMediaQuery } from "@/components/ui/hooks/use-media-query";
 import { surfaceVersionConflict } from "@/lib/processes/version-conflict-toast";

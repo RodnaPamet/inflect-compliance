@@ -16,6 +16,7 @@
  */
 import { ProcessesClient } from "./ProcessesClient";
 import { getTenantCtx } from "@/app-layer/context";
+import { isProcessCanvasTldrawEnabled } from "@/app-layer/usecases/process-canvas-module";
 import { listProcessMaps } from "@/app-layer/usecases/process-map";
 
 export const dynamic = "force-dynamic";
@@ -32,10 +33,17 @@ export default async function ProcessesPage({
     // bumped `version` + `updatedAt` without a full page reload.
     const ctx = await getTenantCtx({ tenantSlug });
     const processes = await listProcessMaps(ctx);
+    // #2961 — which canvas this tenant gets. Read on the SERVER, beside the
+    // list it already fetches: the flag is a usecase needing a RequestContext,
+    // and resolving it here means the client receives a boolean rather than
+    // the ability to ask. One fewer round trip, and no window in which the
+    // page has rendered but does not yet know which canvas to mount.
+    const usesTldraw = await isProcessCanvasTldrawEnabled(ctx);
     return (
         <ProcessesClient
             tenantSlug={tenantSlug}
             initialProcesses={processes}
+            usesTldraw={usesTldraw}
         />
     );
 }

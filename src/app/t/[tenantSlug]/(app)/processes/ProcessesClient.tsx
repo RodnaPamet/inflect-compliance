@@ -39,6 +39,12 @@ import { RulesTab } from "./RulesTab";
 import { AnalyticsTab } from "./AnalyticsTab";
 import { MonitorTab } from "./MonitorTab";
 import { CanvasModeProvider } from "@/lib/processes/canvas-mode-context";
+// Re-exported, not declared: a route directory is not a module other surfaces
+// import from (`tests/guards/route-import-boundaries.test.ts`). The type now
+// lives in `@/lib/processes/process-map-summary`; this keeps the old path
+// working for the route's own consumers.
+import type { ProcessMapSummary } from "@/lib/processes/process-map-summary";
+export type { ProcessMapSummary };
 // R31 Bundle 3 — page-level Heading + PageBreadcrumbs retired. The
 // document bar inside the canvas now carries the breadcrumbs +
 // document title inline (Figma-style).
@@ -58,28 +64,37 @@ const PersistedProcessCanvas = dynamic(
     { ssr: false },
 );
 
-export interface ProcessMapSummary {
-    id: string;
-    name: string;
-    description: string | null;
-    status: "DRAFT" | "ACTIVE" | "ARCHIVED";
-    version: number;
-    createdAt: string | Date;
-    updatedAt: string | Date;
-    nodeCount: number;
-    edgeCount: number;
-    /** VR-2 — DOCUMENT (process map) vs AUTOMATION (visual rule editor). */
-    canvasMode?: "DOCUMENT" | "AUTOMATION";
-}
+// #2961 — the tldraw workspace, same props, same `ssr: false` reasoning. A
+// SEPARATE dynamic import on purpose: one import picked at call time would pull
+// both engines into the chunk graph, so every tenant would download xyflow AND
+// tldraw regardless of which one they get.
+const TldrawProcessWorkspace = dynamic(
+    () =>
+        import("@/components/processes/TldrawProcessWorkspace").then(
+            (m) => m.TldrawProcessWorkspace,
+        ),
+    { ssr: false },
+);
+
 
 interface ProcessesClientProps {
     tenantSlug: string;
     initialProcesses: ProcessMapSummary[];
+    /**
+     * #2961 — mount the tldraw workspace instead of the xyflow canvas.
+     *
+     * Resolved on the server by `isProcessCanvasTldrawEnabled`, so this is a
+     * boolean rather than something to ask for. Defaults FALSE: a tenant whose
+     * flag could not be read gets the engine that has been shipping, which is
+     * the only safe direction for a default to fail in.
+     */
+    usesTldraw?: boolean;
 }
 
 export function ProcessesClient({
     tenantSlug,
     initialProcesses,
+    usesTldraw = false,
 }: ProcessesClientProps) {
     // The full list is owned here so a save can refresh the
     // selected map's metadata (version, updatedAt) without a full
@@ -180,6 +195,7 @@ export function ProcessesClient({
                         activeId={activeId}
                         setActiveId={setActiveId}
                         setProcesses={setProcesses}
+                        usesTldraw={usesTldraw}
                     />
                 )}
             </div>
@@ -193,12 +209,15 @@ function CanvasWorkspace({
     activeId,
     setActiveId,
     setProcesses,
+    usesTldraw,
 }: {
     tenantSlug: string;
     processes: ProcessMapSummary[];
     activeId: string | null;
     setActiveId: (id: string | null) => void;
     setProcesses: (p: ProcessMapSummary[]) => void;
+    /** #2961 — threaded from the page's server-side flag read. */
+    usesTldraw: boolean;
 }) {
     // Mobile PR-5 — the xyflow canvas (pan/zoom/drag of a node graph) is
     // unusable on a phone. Below `md` we render a read-only LIST of the
@@ -236,13 +255,23 @@ function CanvasWorkspace({
                         processes.find((p) => p.id === activeId)?.canvasMode ?? "DOCUMENT"
                     }
                 >
-                    <PersistedProcessCanvas
-                        tenantSlug={tenantSlug}
-                        processes={processes}
-                        activeId={activeId}
-                        onActiveIdChange={setActiveId}
-                        onProcessesChange={setProcesses}
-                    />
+                    {usesTldraw ? (
+                        <TldrawProcessWorkspace
+                            tenantSlug={tenantSlug}
+                            processes={processes}
+                            activeId={activeId}
+                            onActiveIdChange={setActiveId}
+                            onProcessesChange={setProcesses}
+                        />
+                    ) : (
+                        <PersistedProcessCanvas
+                            tenantSlug={tenantSlug}
+                            processes={processes}
+                            activeId={activeId}
+                            onActiveIdChange={setActiveId}
+                            onProcessesChange={setProcesses}
+                        />
+                    )}
                 </CanvasModeProvider>
             </WorkspaceShell.Body>
         </WorkspaceShell>
