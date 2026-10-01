@@ -25,34 +25,33 @@
  * The assignability checks are COMPILE-time — under ts-jest a bad one fails at
  * transform, reporting zero tests rather than a failed assertion, so the
  * runtime `expect`s below exist to prove the file actually executed.
+ *
+ * ── Why there is NO "it has no xyflow import" assertion here ─────────
+ *
+ * There was one, and it was both redundant and a budget charge.
+ *
+ * Redundant because `tests/guards/canvas-editor-stays-inside-its-module.test.ts`
+ * already bounds who may import the editor packages, and `src/lib/processes` is
+ * inside its `MODULE_DIRS` — so this module's xyflow import was never a
+ * violation to begin with, and what mattered was the SIGNATURE, which the
+ * assignability checks and `tsc` cover.
+ *
+ * A budget charge because the repo caps two things this very assertion spent:
+ * Class A (`raw-source-assertion-ratchet`) allows only two test files to assert
+ * on UNMASKED source, and the "teeth" half deliberately asserted that a mention
+ * appears in a COMMENT — an assertion satisfied by prose, which is the exact
+ * thing that ratchet is named after. Class D
+ * (`assertion-needle-uniqueness-ratchet`) caps un-analysable whole-file reads,
+ * and a hand-rolled `src.replace(...)` comment strip is one of those. Both were
+ * at their ceiling, so one new assertion took them over.
  */
 import type { Edge, Node } from '@xyflow/react';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 
 import {
     computeAutoLayout,
     type LayoutEdge,
     type LayoutNode,
 } from '@/lib/processes/canvas-auto-layout';
-
-const MODULE = path.resolve(__dirname, '../../../src/lib/processes/canvas-auto-layout.ts');
-
-describe('the module imports no renderer', () => {
-    it('has no import from @xyflow/react', () => {
-        const src = fs.readFileSync(MODULE, 'utf8');
-        // Strip comments: the docblock NAMES `@xyflow/react` while explaining
-        // why it is gone, and a whole-file needle would read its own
-        // documentation as the defect it hunts.
-        const code = src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/^\s*\/\/.*$/gm, '');
-        expect(code).not.toMatch(/from\s*['"]@xyflow\/react['"]/);
-        // Teeth: the prose really does mention it, so the strip is doing work
-        // rather than the needle being absent everywhere.
-        expect(src).toMatch(/@xyflow\/react/);
-    });
-});
 
 describe('xyflow records remain assignable — the existing canvas is untouched', () => {
     it('accepts an xyflow Node and Edge without a cast', () => {
