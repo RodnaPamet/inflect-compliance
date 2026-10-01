@@ -134,13 +134,8 @@ export function DataTableCards<T extends TableRowData>({
                                 className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-content-subtle"
                             />
                         )}
-                        {row
-                            .getVisibleCells()
-                            .filter(
-                                (cell) =>
-                                    cell.column.id !==
-                                    DESKTOP_CHEVRON_COLUMN_ID,
-                            )
+                        {row.getVisibleCells()
+                            .filter((cell) => cell.column.id !== DESKTOP_CHEVRON_COLUMN_ID)
                             .map((cell) => {
                             const header = cell.column.columnDef.header;
                             const label =

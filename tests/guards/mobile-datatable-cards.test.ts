@@ -87,6 +87,13 @@ describe("Mobile PR-2 — responsive DataTable", () => {
 
     it("the card list renders from the shared tanstack table instance", () => {
         expect(cards).toMatch(/table\.getRowModel\(\)\.rows/);
-        expect(cards).toMatch(/row\.getVisibleCells\(\)/);
+        // `getVisibleCells()` WITHOUT the `row.` receiver. The receiver was in
+        // the needle and the needle lost the thread at a reformat: chaining a
+        // `.filter()` onto the call put `row` and `.getVisibleCells()` on
+        // separate lines, and this went red with nothing about the behaviour
+        // changed. Nothing but a tanstack row has this method, so the claim
+        // survives dropping the token — and the line above is what actually
+        // pins "the SHARED instance".
+        expect(cards).toMatch(/getVisibleCells\(\)/);
     });
 });

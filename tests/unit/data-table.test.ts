@@ -1460,6 +1460,20 @@ describe('getVisibilityStorageKey', () => {
     expect(key).toBe(`${COLUMN_VISIBILITY_PREFIX}controls`);
   });
 
+  it('spells the namespace EXACTLY as the keys already in users\' browsers do', () => {
+    // The assertion above compares the key against the prefix, so it holds
+    // whatever the prefix is — it cannot notice the prefix CHANGING. That
+    // matters now that the prefix is derived from `uiStorageKey('col-vis')`
+    // rather than spelled inline: `UI_STORAGE_PREFIX` is the one value a
+    // downstream product edits, and this key addresses column preferences
+    // sitting in real users' localStorage today. A changed key is not a
+    // migration, it is a silent reset of everyone's hidden columns — and ten
+    // list pages still pass `storageKey: 'inflect:col-vis:<entity>'` as a
+    // literal, so a divergence also splits each of those tables in two.
+    expect(COLUMN_VISIBILITY_PREFIX).toBe('inflect:col-vis:');
+    expect(getVisibilityStorageKey('controls')).toBe('inflect:col-vis:controls');
+  });
+
   it('handles entity-specific IDs', () => {
     expect(getVisibilityStorageKey('risks')).toContain('risks');
     expect(getVisibilityStorageKey('policies')).toContain('policies');

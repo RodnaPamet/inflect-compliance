@@ -509,6 +509,36 @@ describe("DataTable — onReachEnd on the virtualized path (#103)", () => {
         expect(onReachEnd).toHaveBeenCalledTimes(1);
     });
 
+    it("still fires past the DEFAULT threshold, with no virtualize prop at all", () => {
+        // The acceptance criterion for the react-window 2 port, stated as a
+        // behaviour rather than as the port's parts: a table big enough to
+        // auto-virtualize must still load on scroll.
+        //
+        // Every other case in this block forces `virtualize`, so all of them
+        // would keep passing if `decideVirtualization`'s threshold arm broke
+        // — the path a real list page takes is the one none of them walks.
+        // The viewport here is tall enough to hold all 1,001 rows, so the
+        // window genuinely reaches the last row instead of a scroll being
+        // simulated.
+        const onReachEnd = jest.fn();
+        const { container } = render(
+            <DataTable<ThingRow>
+                data={makeRows(VIRTUALIZE_DEFAULT_THRESHOLD + 1)}
+                columns={thingColumns}
+                getRowId={(r) => r.id}
+                virtualHeight={(VIRTUALIZE_DEFAULT_THRESHOLD + 1) * 44}
+                selectionEnabled={false}
+                onReachEnd={onReachEnd}
+            />,
+        );
+
+        // It really did auto-virtualize — otherwise this would be the
+        // non-virtual <Table> and the sentinel, a different mechanism.
+        expect(container.querySelector("[data-virtual-table]")).toBeInTheDocument();
+        expect(container.querySelector("table")).toBeNull();
+        expect(onReachEnd).toHaveBeenCalledTimes(1);
+    });
+
     it("does NOT fire while the end is still far below the viewport", () => {
         const onReachEnd = jest.fn();
         // 150 rows, ~14 visible from the top: nowhere near the last row.
