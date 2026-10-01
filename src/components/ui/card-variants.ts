@@ -29,7 +29,7 @@ export const cardVariants = cva("", {
       // Matches page background — for nested sub-cards.
       flat: "bg-bg-page border border-border-subtle rounded-lg",
       // Faint tint for sub-panels inside a raised/floating parent
-      // (diff blocks, rich-text chrome, evidence preview tiles).
+      // (diff blocks, rich-text chrome, attachment preview tiles).
       // Reads as "inset" not "next card on the same plane".
       inset: "rounded-lg border border-border-default bg-bg-subtle",
       // Default section-level card. Maps to the existing glass-card

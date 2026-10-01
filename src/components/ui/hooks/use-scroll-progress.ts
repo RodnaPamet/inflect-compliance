@@ -115,7 +115,7 @@ export function useScrollProgress(
 
         if (next === committedRef.current) return;
         // The ends of travel always commit, however small the step —
-        // otherwise the fade can settle at a residual 0.001 opacity
+        // otherwise the fade can settle at a leftover 0.001 opacity
         // instead of disappearing at the bottom of the container.
         const atBoundary = next === 0 || next === 1;
         if (

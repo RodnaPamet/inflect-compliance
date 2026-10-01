@@ -19,7 +19,7 @@ const ROOT = path.resolve(__dirname, "../..");
 // #2246 Class A — comments are masked at the READ SEAM, so an assertion cannot
 // be satisfied by a comment instead of the code it names. Every read below is
 // TypeScript/TSX, re-derived in this file rather than assumed from the paths.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
 const read = (p: string) => codeOf(readRaw(p));
@@ -28,6 +28,41 @@ describe("Mobile PR-1 — coarse-pointer touch targets", () => {
     it("Button cva base carries a 44px coarse-pointer min-height", () => {
         const src = read("src/components/ui/button-variants.ts");
         expect(src).toMatch(/pointer-coarse:min-h-11/);
+    });
+
+    // `button.tsx` has TWO branches that render a button-shaped element
+    // with `cn` alone instead of calling `buttonVariants` — the
+    // `disabled || loading` fallback and the `disabledTooltip` wrapper.
+    // Anything the cva base carries is therefore absent from both unless
+    // restated, and the coarse-pointer floor was: a 44px button
+    // collapsed to its 28px desktop height the moment `loading` went
+    // true. The ladder mirror (asserted in
+    // `still-surface-button-material.test.ts`) only ever checked the
+    // HEIGHT RUNG, which is the part that is SUPPOSED to be 28px, so it
+    // could not see this.
+    //
+    // The shared constant is the fix, and it is what this pins — a
+    // regression that re-inlines the class lists would have to drop it
+    // to be a regression at all.
+    describe("the cva-bypassing branches of button.tsx keep the floor", () => {
+        const BUTTON = "src/components/ui/button.tsx";
+
+        it("declares the shared inert shell with the 44px floor and the hit area", () => {
+            const shell = declarationOf(read(BUTTON), "INERT_BUTTON_SHELL");
+            expect(shell).toMatch(/pointer-coarse:min-h-11/);
+            expect(shell).toMatch(/HIT_AREA_CLASS/);
+            // The hit area detaches without a positioning context.
+            expect(shell).toMatch(/"relative"/);
+        });
+
+        it("BOTH cn-only branches wear it — neither may opt out", () => {
+            // Two render sites, so two references plus the declaration.
+            // An exact count, not `>= 1`: dropping one branch is the
+            // regression, and one surviving reference would hide it.
+            const src = read(BUTTON);
+            const uses = src.match(/INERT_BUTTON_SHELL/g) ?? [];
+            expect(uses).toHaveLength(3);
+        });
     });
 
     it("Button icon size carries a 44px coarse-pointer min-width (square touch)", () => {

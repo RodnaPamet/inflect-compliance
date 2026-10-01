@@ -127,8 +127,11 @@ describe('API key show-once display', () => {
         await user.click(document.getElementById('key-copy-btn')!);
 
         expect(writeText).toHaveBeenCalledWith(FULL_KEY);
+        // The `{ duration }` second argument is `useToast()`'s locked
+        // per-variant value, forwarded on every call since #3049.
         expect(toastMock.success).toHaveBeenCalledWith(
             'API key copied — paste it into your tool now.',
+            { duration: 3000 },
         );
         expect(toastMock.error).not.toHaveBeenCalled();
     });
@@ -143,8 +146,11 @@ describe('API key show-once display', () => {
         render(<Harness><KeyDisplay plaintext={FULL_KEY} /></Harness>);
         await user.click(document.getElementById('key-copy-btn')!);
 
+        // `Infinity` — a failed copy of a one-time-visible API key must
+        // not scroll away on a timer.
         expect(toastMock.error).toHaveBeenCalledWith(
             'Copy failed — select the key and copy manually.',
+            { duration: Infinity },
         );
         expect(toastMock.success).not.toHaveBeenCalled();
     });

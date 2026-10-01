@@ -332,7 +332,15 @@ const HIGH_MULTIPLICITY = 5;
 //   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
 //   converting the other eleven `tests/guards` files, so whoever merges
 //   second re-measures on the merged tree rather than keeping this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1190;
+//
+// 1189 (2026-10-01, #3049): -1. `dashboard-compute-render-gap` asserted
+//   `expect(LOADING).toMatch(/DashboardSkeleton/)` over the whole of the
+//   dashboard's `loading.tsx`, where the bare name matched twice (the import
+//   and the JSX). The name alone had also stopped being the claim once the
+//   shell moved to a route-local module — both arrangements satisfy it — so
+//   the needle is now the import PATH, which matches once and says which one
+//   shipped. One site, one position, one off the baseline.
+const AMBIGUOUS_NEEDLE_BASELINE = 1189;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

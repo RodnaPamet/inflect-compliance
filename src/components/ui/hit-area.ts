@@ -1,9 +1,10 @@
 /**
  * HIT_AREA_CLASS — the square hit area for a rounded control.
  *
- * The problem, measured on the risks toolbar before this shipped:
+ * The problem, measured on a dense list-page toolbar before this
+ * shipped:
  *
- *   #risks-dashboard-btn   28x28  rounded-full   dead-zone=16%
+ *   dashboard icon button  28x28  rounded-full   dead-zone=16%
  *   notifications bell     22x22  rounded-full   dead-zone=14%
  *   view toggle option     63x20  rounded-12px   dead-zone= 5%
  *

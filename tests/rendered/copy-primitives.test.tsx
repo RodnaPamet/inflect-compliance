@@ -88,7 +88,16 @@ describe('CopyButton', () => {
 
         expect(writeText).toHaveBeenCalledWith('org_abc123');
         expect(onCopy).toHaveBeenCalledWith('org_abc123');
-        expect(toastMock.success).toHaveBeenCalledWith('Copy tenant id copied');
+        // `useToast()` forwards its locked per-variant duration on every
+        // call since #3049 — success is 3000ms. It used to forward
+        // nothing unless the caller passed options, which left the
+        // documented table unapplied on exactly this (single-argument)
+        // shape. Asserting the duration here keeps that fix covered at a
+        // real call site.
+        expect(toastMock.success).toHaveBeenCalledWith(
+            'Copy tenant id copied',
+            { duration: 3000 },
+        );
         expect(button).toHaveAttribute('data-copied', 'true');
     });
 
@@ -111,7 +120,13 @@ describe('CopyButton', () => {
 
         expect(onCopy).not.toHaveBeenCalled();
         expect(toastMock.success).not.toHaveBeenCalled();
-        expect(toastMock.error).toHaveBeenCalledWith('Copy failed');
+        // `error` is the locked `Infinity` — sticky until the user
+        // dismisses it. Before #3049 this call forwarded no duration and
+        // the Toaster's flat `duration={3000}` applied, so a copy failure
+        // the user had not acknowledged vanished after three seconds.
+        expect(toastMock.error).toHaveBeenCalledWith('Copy failed', {
+            duration: Infinity,
+        });
     });
 
     it('does not copy or toast when disabled', async () => {
@@ -167,6 +182,7 @@ describe('CopyText', () => {
         expect(writeText).toHaveBeenCalledWith('full-secret-xyz');
         expect(toastMock.success).toHaveBeenCalledWith(
             'Copy enrollment secret copied',
+            { duration: 3000 },
         );
     });
 

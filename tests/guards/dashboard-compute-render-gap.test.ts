@@ -189,6 +189,14 @@ describe('6. permission + skeleton corrected', () => {
     });
 
     it('loading.tsx uses the dashboard-specific DashboardSkeleton', () => {
-        expect(LOADING).toMatch(/DashboardSkeleton/);
+        // "Dashboard-specific" is now literal: the shell is a sibling
+        // module rather than an export of the shared primitives file,
+        // so the import PATH is the thing that makes the claim true.
+        // The bare name matched both arrangements and so said nothing
+        // about which one shipped.
+        expect(LOADING).toMatch(
+            /import \{ DashboardSkeleton \} from '\.\/DashboardSkeleton'/,
+        );
+        expect(LOADING).not.toMatch(/@\/components\/ui\/skeleton/);
     });
 });

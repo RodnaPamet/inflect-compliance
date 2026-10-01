@@ -21,13 +21,30 @@
  * What lands
  *
  *   1. New `link` tone on `textLinkVariants`:
- *        text-[var(--brand-default)]
- *        hover:text-[var(--brand-emphasis)]
+ *        text-content-brand
+ *        hover:text-content-emphasis
  *        hover:underline
  *
- *      Brand-coloured at rest; on hover, deepens to brand-
- *      emphasis AND underlines — the conventional "this is a
- *      clickable link" affordance.
+ *      Brand-coloured at rest; on hover, deepens AND underlines —
+ *      the conventional "this is a clickable link" affordance.
+ *
+ *      The two colour tokens were `text-[var(--brand-default)]`
+ *      and `hover:text-[var(--brand-emphasis)]` until #3049. Those
+ *      are FILL tokens, and as TEXT on the light theme the first
+ *      is #D04A02 — ~4:1 on `--bg-page`, under WCAG 1.4.3's
+ *      4.5:1 for body text. This is the one tone most likely to
+ *      sit mid-paragraph, i.e. the one where 1.4.3 applies most
+ *      squarely, so it was also the worst place for it. T01
+ *      (#3014) added `--content-brand` for exactly this, guarded
+ *      on the measured ratio in
+ *      `tests/guardrails/token-contrast-content-brand.test.ts`.
+ *
+ *      The hover shade moved too, and not only for consistency:
+ *      on light, `--brand-emphasis` is the SAME hex as
+ *      `--content-brand`, so hover changed nothing a user could
+ *      see; on dark it moved the wrong way (7.26:1 → 5.82:1).
+ *      `--content-emphasis` is a real change and a contrast
+ *      increase in both themes.
  *
  *   2. Five drift sites migrated to apply `textLinkVariants({
  *      tone: 'link' })` as their className. They keep using
@@ -86,10 +103,15 @@ describe('Link styling discipline (Roadmap-4 PR-10)', () => {
             'utf-8',
         ));
         // Match the tone definition with the three pieces of the
-        // canonical class string.
-        expect(src).toMatch(/link:\s*\n?\s*"[^"]*text-\[var\(--brand-default\)\]/);
-        expect(src).toMatch(/link:\s*\n?\s*"[^"]*hover:text-\[var\(--brand-emphasis\)\]/);
+        // canonical class string. The colour tokens are the AA-safe
+        // CONTENT pair, not the brand FILL pair — see the header.
+        expect(src).toMatch(/link:\s*\n?\s*"[^"]*text-content-brand/);
+        expect(src).toMatch(/link:\s*\n?\s*"[^"]*hover:text-content-emphasis/);
         expect(src).toMatch(/link:\s*\n?\s*"[^"]*hover:underline/);
+        // And the fill token may not come back as text on this tone.
+        expect(src).not.toMatch(
+            /link:\s*\n?\s*"[^"]*text-\[var\(--brand-/,
+        );
     });
 
     it('no .tsx under src/ pairs text-[var(--brand-default)] with hover:underline', () => {

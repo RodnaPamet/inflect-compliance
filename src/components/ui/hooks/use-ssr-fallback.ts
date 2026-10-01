@@ -26,10 +26,10 @@ import { useMemo } from 'react';
  * a cleared filter reaches here as `''` from the URL but is simply absent
  * from the server's object.
  *
- * This ran as six copies — assets, controls, policies, risks, tasks,
- * vendors — identical apart from formatting and a couple of non-null
- * assertions. Getting it subtly wrong in one file would produce stale rows
- * on one page only, which is close to the hardest kind of bug to notice.
+ * This ran as six copies, one per list page, identical apart from
+ * formatting and a couple of non-null assertions. Getting it subtly wrong
+ * in one file would produce stale rows on one page only, which is close to
+ * the hardest kind of bug to notice.
  */
 export function useSsrFallback(input: {
     /** Filters encoded in the current SWR cache key. */
