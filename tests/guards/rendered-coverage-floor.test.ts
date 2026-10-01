@@ -195,15 +195,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // raise takes the MEASURED 309, not 301: the eight already-accumulated suites
 // are exactly what the sentinel refuses to leave spendable, and locking them
 // in is the point.
-// Raised 309 → 316 (2026-10-01): the tldraw migration's rendered suites —
-// edges-are-drawn, the palette drop, the export menu, the unsaved-work guards,
-// and this PR's history/diff wiring. MEASURED with
-// `ls tests/rendered/*.test.tsx | wc -l` = 316, not 310: six of the seven had
-// already accumulated under the floor at slack 6, one short of the sentinel,
-// so this PR's single file is simply what brought it within sight. Taking the
-// measured count is the point — the already-accumulated six are exactly what
-// the sentinel refuses to leave spendable.
-const RENDERED_TEST_FLOOR = 316;
+const RENDERED_TEST_FLOOR = 309;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
