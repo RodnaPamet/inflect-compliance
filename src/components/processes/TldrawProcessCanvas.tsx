@@ -65,19 +65,19 @@
 
 import 'tldraw/tldraw.css';
 
-import { useCallback, useEffect, useRef, type DragEvent } from 'react';
-import {
-    Tldraw,
-    type Editor,
-    type TLBindingId,
-    type TLShapeId,
-} from 'tldraw';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { atom, type Atom, type Editor, type TLBindingId, Tldraw, type TLShape, type TLShapeId } from 'tldraw';
 
 import { batchIsSubstantive } from '@/lib/processes/canvas-changes';
 import { classifyTldrawStoreDiff } from '@/lib/processes/canvas-changes-tldraw';
 
 import { PALETTE_DRAG_MIME, type PaletteDropPayload } from './ProcessPalette';
 import { installArrowToEdgeConversion } from './tldraw/arrow-to-edge';
+import {
+    edgeEndpointIndex,
+    shapeVisibilityForScope,
+    visibleNodeKeys,
+} from './tldraw/drill-scope-host';
 import type { EdgeRefusal } from './tldraw/edge-validation';
 import { ProcessEdgeBindingUtil } from './tldraw/ProcessEdgeBindingUtil';
 import { ProcessEdgeShapeUtil } from './tldraw/ProcessEdgeShapeUtil';
@@ -150,6 +150,23 @@ export interface TldrawProcessCanvasProps {
      */
     onEdgeRefused?: (refusals: EdgeRefusal[]) => void;
     /**
+     * The group the user has drilled into, or null at root.
+     *
+     * A GROUP ID rather than a pre-computed set of visible keys. The scope is
+     * derived from the store — which nodes name this group as their parent — so
+     * a set computed by the caller goes stale the moment a node is added to the
+     * group, moved into it, or deleted. Passing the question instead of the
+     * answer means it is re-answered against the live store.
+     */
+    drillGroupId?: string | null;
+    /**
+     * The user double-clicked a GROUP node and wants to go inside it.
+     *
+     * Fired only for `nodeType === 'group'`: double-clicking a step is how
+     * tldraw starts label editing, and stealing that would break renaming.
+     */
+    onEnterGroup?: (nodeKey: string) => void;
+    /**
      * Test and future-slice seam. The next slice needs the editor instance to
      * wire the write path; exposing it now keeps that diff from having to
      * restructure this one.
@@ -193,6 +210,8 @@ export function TldrawProcessCanvas({
     readOnly = false,
     onDirty,
     onEdgeRefused,
+    drillGroupId = null,
+    onEnterGroup,
     onEditorReady,
 }: TldrawProcessCanvasProps) {
     // Held in a ref so `handleMount` keeps a stable identity. `onMount` runs
@@ -201,6 +220,49 @@ export function TldrawProcessCanvas({
     // a thing to leave to chance in a component that seeds a store.
     const onDirtyRef = useRef(onDirty);
     const onEdgeRefusedRef = useRef(onEdgeRefused);
+    const onEnterGroupRef = useRef(onEnterGroup);
+    /**
+     * Mount signal, because `editorRef` alone cannot drive an effect.
+     *
+     * The editor arrives in `onMount`, not at render, so an effect reading
+     * `editorRef.current` on its first pass finds null and — with no dependency
+     * that ever changes — never runs again. The listeners below would simply
+     * never be installed, with nothing failing to say so.
+     *
+     * A boolean rather than holding the editor in state: the editor is a large
+     * mutable object and putting it in state invites a re-render on identity
+     * change. The ref stays the accessor; this only says "it is there now".
+     */
+    const [editorReady, setEditorReady] = useState(false);
+
+    /**
+     * The drill scope lives in an ATOM, and that is not a style choice.
+     *
+     * `getShapeVisibility` is consulted through `Editor.getIsShapeHiddenCache`,
+     * which is decorated `@computed` from tldraw's own signals library. A
+     * `computed` invalidates only when a SIGNAL it read during evaluation
+     * changes. A plain React ref is not a signal, so a predicate reading one
+     * would return the new answer and the cache would never re-ask: the scope
+     * correct in code and stale on screen.
+     *
+     * That failure is invisible to a test which calls the predicate directly —
+     * which is exactly what I had planned to write. The first draft of this
+     * also called `editor.markShapesDirty?.()` to force a repaint; that method
+     * does not exist, and the optional call made its absence silent.
+     *
+     * `atom` comes from `tldraw` itself. Neither `@tldraw/state` nor a new
+     * dependency is needed — the barrel re-exports `atom`, `computed`,
+     * `useValue`, `react`, `transact` and `track`, which four separate greps of
+     * the `.d.ts` denied before a one-line require settled it.
+     */
+    const scopeAtom = useMemo<Atom<Set<string> | null>>(
+        () => atom('processDrillScope', null),
+        [],
+    );
+    const endpointsAtom = useMemo<Atom<Map<string, { source: string; target: string }>>>(
+        () => atom('processEdgeEndpoints', new Map()),
+        [],
+    );
     const disposeArrowConversion = useRef<(() => void) | null>(null);
     useEffect(() => {
         onDirtyRef.current = onDirty;
@@ -208,6 +270,9 @@ export function TldrawProcessCanvas({
     useEffect(() => {
         onEdgeRefusedRef.current = onEdgeRefused;
     }, [onEdgeRefused]);
+    useEffect(() => {
+        onEnterGroupRef.current = onEnterGroup;
+    }, [onEnterGroup]);
     // Unregister the side-effect handlers with the component. Without this a
     // remount — which a 409 conflict performs deliberately — would leave the
     // previous editor's handlers registered against a store nobody reads.
@@ -216,6 +281,81 @@ export function TldrawProcessCanvas({
         disposeArrowConversion.current = null;
     }, []);
     const editorRef = useRef<Editor | null>(null);
+    /**
+     * `getShapeVisibility`, handed to `<Tldraw>` once.
+     *
+     * STABLE by construction — it closes over the two atoms and nothing else,
+     * so its identity never changes. A new function each render would be a new
+     * editor option on every pass.
+     *
+     * Reading `.get()` here is what subscribes the hidden-cache `computed` to
+     * the atoms, so setting either one below invalidates it and the canvas
+     * repaints. That subscription is the entire mechanism; see the atom
+     * docblock above for what happens without it.
+     */
+    const getShapeVisibility = useCallback(
+        (shape: TLShape) =>
+            shapeVisibilityForScope(scopeAtom.get(), endpointsAtom.get())(
+                // `TLShape` is a union whose `props` differ per type; the
+                // predicate reads only `id`, `type` and `props.nodeKey`, so it
+                // takes the structural minimum rather than discriminating a
+                // union it does not care about.
+                shape as unknown as { id: string; type?: string; props?: { nodeKey?: unknown } },
+            ),
+        [scopeAtom, endpointsAtom],
+    );
+
+    /**
+     * Recompute the scope when the drill LEVEL changes or the GRAPH does.
+     *
+     * Both triggers matter and neither subsumes the other: entering a group
+     * changes the question, and adding a node to the group you are already
+     * inside changes the answer.
+     */
+    useEffect(() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        const recompute = () => {
+            scopeAtom.set(visibleNodeKeys(editor, drillGroupId));
+            endpointsAtom.set(edgeEndpointIndex(editor));
+        };
+        recompute();
+        return editor.store.listen(recompute);
+    }, [drillGroupId, scopeAtom, endpointsAtom, editorReady]);
+
+    /**
+     * Double-click a GROUP node to go inside it.
+     *
+     * The event carries a POINT and no shape — `TLClickEventInfo` has
+     * `{ button, name, phase, point, pointerId, type }` — so the shape has to
+     * be hit-tested. Taking `inputs.currentPagePoint` rather than converting
+     * `info.point` myself: the editor already maintains the page-space
+     * position, and a second conversion is a second chance to get the camera
+     * transform wrong.
+     *
+     * Gated to `phase === 'up'` so one gesture fires once, and to groups so
+     * double-clicking a step still starts tldraw's label editing.
+     */
+    useEffect(() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        const onEvent = (info: { type?: string; name?: string; phase?: string }) => {
+            if (info.type !== 'click' || info.name !== 'double_click') return;
+            if (info.phase !== 'up') return;
+            const hit = editor.getShapeAtPoint(editor.inputs.currentPagePoint, {
+                hitInside: true,
+            }) as { type?: string; props?: { nodeKey?: unknown; nodeType?: unknown } } | undefined;
+            if (!hit || hit.type !== PROCESS_NODE_SHAPE_TYPE) return;
+            if (hit.props?.nodeType !== 'group') return;
+            const key = hit.props?.nodeKey;
+            if (typeof key === 'string' && key.length > 0) onEnterGroupRef.current?.(key);
+        };
+        editor.on('event', onEvent);
+        return () => {
+            editor.off('event', onEvent);
+        };
+    }, [editorReady]);
+
     const handleMount = useCallback(
         (editor: Editor) => {
             // Kept so the drop handler can reach the editor; `onMount` is the
@@ -312,6 +452,7 @@ export function TldrawProcessCanvas({
                 editor.updateInstanceState({ isReadonly: true });
             }
 
+            setEditorReady(true);
             onEditorReady?.(editor);
 
             // AFTER the seed — see the header. A listener registered earlier
@@ -448,6 +589,7 @@ export function TldrawProcessCanvas({
             <Tldraw
                 shapeUtils={SHAPE_UTILS}
                 bindingUtils={BINDING_UTILS}
+                getShapeVisibility={getShapeVisibility}
                 onMount={handleMount}
             />
         </div>
