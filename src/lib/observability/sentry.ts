@@ -93,12 +93,61 @@ export function initSentry(): void {
          * read the comment rather than the code and understated the coverage.
          *
          * What `beforeSend` still does NOT cover is `event.user.id` / `email` /
-         * `username`, and it has no arm at all for the axes v11 introduces —
-         * `databaseQueryData`, `genAI` inputs/outputs, `graphQL`
-         * document/variables. Those are why the posture has to stay PINNED in
-         * `init`, not delegated to the scrubber.
+         * `username`, and it has no arm at all for most of what `dataCollection`
+         * governs. Those are why the posture has to stay PINNED in `init`, not
+         * delegated to the scrubber.
+         *
+         * ── Why this is `dataCollection` and not `sendDefaultPii` ────────
+         *
+         * `sendDefaultPii` is REMOVED in v11 — the v10 type that declares it
+         * says so itself: "will be removed in the next major version (v11)".
+         * It still typechecks, which is the trap: #2980 bumped the major and
+         * `Typecheck`, `Lint`, `Build` and all four test shards went green with
+         * no privacy code in the diff.
+         *
+         * Every field below is set because its DEFAULT collects. Read from
+         * `@sentry/core`'s own `DataCollection` type rather than from the
+         * migration notes, and the defaults are not what I assumed when writing
+         * the guard for this:
+         *
+         *   userInfo             false  <- already safe; set anyway, see below
+         *   cookies              true
+         *   httpHeaders          { request: true, response: true }
+         *   httpBodies           all four targets
+         *   urlQueryParams       true
+         *   graphQL              { document: true, variables: true }
+         *   genAI                { inputs: true, outputs: true }
+         *   databaseQueryData    true
+         *   stackFrameVariables  true
+         *
+         * `stackFrameVariables` is the one worth pausing on. It captures local
+         * variable VALUES in stack frames, and this codebase decrypts tenant
+         * data in-process: a throw inside the encryption middleware or a Prisma
+         * extension would put plaintext field values, and potentially a wrapped
+         * DEK, into a frame local. `beforeSend` has no arm for it.
+         *
+         * `urlQueryParams` likewise. `redactUrl` already exists, but it works
+         * off `SENSITIVE_PARAMS` — ten names, so every parameter nobody thought
+         * of passes through. Turning the category off closes the class instead
+         * of enumerating it.
+         *
+         * `userInfo` already defaults to false, so that line changes nothing
+         * today. It is written anyway because the default is the SDK's to
+         * change, and an explicit false is what makes the posture a decision
+         * rather than an inheritance — which is the whole point of pinning.
          */
-        sendDefaultPii: false,
+        dataCollection: {
+            userInfo: false,
+            cookies: false,
+            httpHeaders: { request: false, response: false },
+            // `[]` disables body collection; an omitted value collects all four.
+            httpBodies: [],
+            urlQueryParams: false,
+            graphQL: { document: false, variables: false },
+            genAI: { inputs: false, outputs: false },
+            databaseQueryData: false,
+            stackFrameVariables: false,
+        },
 
         // Don't send expected / handled errors
         beforeSend(event, hint) {
@@ -136,11 +185,18 @@ export function initSentry(): void {
             }
 
             // The identity axis, which the rest of this function never touches.
-            // Belt-and-braces behind `sendDefaultPii: false` above: that flag is
-            // the control, and this is what still holds if some future caller
-            // turns it on without reading the rest of the file. An `ip_address`
-            // is personal data under GDPR Art 4(1) and this is a compliance
-            // product — it must not reach a third-party error sink by default.
+            // Belt-and-braces behind `dataCollection.userInfo: false` above:
+            // that option is the control, and this is what still holds if some
+            // future caller turns it on without reading the rest of the file.
+            // An `ip_address` is personal data under GDPR Art 4(1) and this is a
+            // compliance product — it must not reach a third-party error sink by
+            // default.
+            //
+            // This comment named `sendDefaultPii: false` until the v11 bump
+            // removed it. The rename is not cosmetic: a comment citing a control
+            // that no longer exists is how this file misled a reader once
+            // already -- see the `beforeSend` docblock above, which described
+            // coverage it did not have and cost me a wrong risk assessment.
             if (event.user) {
                 delete event.user.ip_address;
             }

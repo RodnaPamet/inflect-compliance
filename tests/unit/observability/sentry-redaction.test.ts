@@ -353,20 +353,64 @@ describe('shutdownSentry — draining an initialised client', () => {
  * collection the default". A major bump is exactly when an inherited default
  * changes underneath you, silently and with green CI.
  *
- * Both assertions below are cheap and neither is decorative: the flag is the
- * control, and the `event.user` scrub is what still holds if a future caller
- * turns the flag on without reading the rest of the file.
+ * ── Why this asserts `dataCollection` and not `sendDefaultPii` ───────
+ *
+ * It asserted `sendDefaultPii: false` until the v11 bump, which REMOVES that
+ * option: v10's own type says "will be removed in the next major version
+ * (v11)". It still typechecks, so #2980 went green on Typecheck, Lint, Build
+ * and all four shards with no privacy code in the diff.
+ *
+ * Every category below is asserted because its DEFAULT collects — read from
+ * `@sentry/core`'s `DataCollection` type, where `cookies`, `httpHeaders`,
+ * `httpBodies`, `urlQueryParams`, `graphQL`, `genAI`, `databaseQueryData` and
+ * `stackFrameVariables` all default to on. `userInfo` is the exception: it
+ * already defaults to false, and is asserted anyway because the default is the
+ * SDK's to change and an inherited default is the thing this file exists to
+ * refuse.
+ *
+ * Asserted against the real options object handed to `Sentry.init`, not against
+ * source text. A sibling guard
+ * (`tests/guards/sentry-privacy-posture-pinned.test.ts`) greps the source for
+ * the same posture, which catches a DELETED block; this catches one that is
+ * present but never reaches the SDK.
  */
 describe('personal data is not sent by default', () => {
-    it('pins sendDefaultPii to false rather than inheriting the SDK default', () => {
+    it('pins every collecting category off rather than inheriting SDK defaults', () => {
         initSentry();
-        expect(initCalls.at(-1)!.sendDefaultPii).toBe(false);
+        const dc = initCalls.at(-1)!.dataCollection;
+        expect(dc).toBeDefined();
+        expect(dc!.userInfo).toBe(false);
+        expect(dc!.cookies).toBe(false);
+        expect(dc!.urlQueryParams).toBe(false);
+        expect(dc!.databaseQueryData).toBe(false);
+        // Local variable VALUES in stack frames. This codebase decrypts tenant
+        // data in-process, so a throw inside the encryption middleware could
+        // otherwise put plaintext — or a wrapped DEK — into a frame local.
+        expect(dc!.stackFrameVariables).toBe(false);
+        expect(dc!.httpHeaders).toStrictEqual({ request: false, response: false });
+        // `[]` disables bodies; an omitted value collects all four targets.
+        expect(dc!.httpBodies).toStrictEqual([]);
+        expect(dc!.graphQL).toStrictEqual({ document: false, variables: false });
+        expect(dc!.genAI).toStrictEqual({ inputs: false, outputs: false });
+    });
+
+    it('does not pass the removed sendDefaultPii option', () => {
+        // Not cosmetic. Under v11 the option is inert, so leaving it set reads
+        // as a privacy control to every future reader while doing nothing —
+        // and if `dataCollection` is also set the SDK ignores it outright,
+        // which its own type states.
+        initSentry();
+        expect(initCalls.at(-1)!.sendDefaultPii).toBeUndefined();
     });
 
     it('scrubs a user ip_address even when one reaches beforeSend', () => {
         // An IP is personal data under GDPR Art 4(1), and this is a compliance
-        // product. The rest of `beforeSend` scrubs `event.request` and
-        // breadcrumbs and has no arm for `event.user` at all.
+        // product. `beforeSend` scrubs `event.request` and breadcrumbs, and its
+        // ONLY arm on `event.user` is the `ip_address` delete asserted here —
+        // `id`, `email` and `username` pass through untouched. Stating that
+        // precisely because the looser phrasing this comment used to carry
+        // ("no arm for `event.user` at all") was read as broader coverage than
+        // it has.
         const out = beforeSend()({ user: { id: 'u_1', ip_address: '203.0.113.9' } });
         expect(out!.user!.ip_address).toBeUndefined();
         // The identifier itself is kept: it is what makes an error triageable,
