@@ -45,7 +45,6 @@
  */
 
 import { useCallback, useState } from "react";
-import type { Edge, Node } from "@xyflow/react";
 import {
     NODE_TAXONOMY,
     isProcessNodeKind,
@@ -61,6 +60,58 @@ import {
  * Tunable via the hook's `threshold` option for the rare case
  * (e.g. dense graphs) where a different default reads better.
  */
+/**
+ * ── The node/edge types are STRUCTURAL, not either engine's ──────────
+ *
+ * This module took `Node[]` / `Edge[]` from `@xyflow/react` and read six
+ * fields: `id`, `position`, `width`, `height`, `data` (for the kind) and an
+ * edge's `source` / `target`. There was no runtime xyflow import at all — the
+ * only one was `import type`.
+ *
+ * That mattered for the cutover: phase 4 deletes every module importing
+ * xyflow, so proximity auto-bind would have gone with it, and tldraw has no
+ * equivalent. The geometry here is about distances between boxes and knows
+ * nothing about a renderer.
+ *
+ * ── What is still xyflow-SHAPED, and honestly so ─────────────────────
+ *
+ * `onNodeDrag` / `onNodeDragStop` mirror xyflow's drag-event callbacks: two
+ * arguments, the event first and ignored. The types no longer name xyflow, so a
+ * tldraw host CAN call them, but it has to drive them from its own store
+ * listener rather than find them handed to it by the canvas. The pure core
+ * (`findProximityCandidate`) is what ports cleanly; the hook is a wrapper whose
+ * shape still remembers where it came from.
+ */
+
+/** The minimum of a positioned node this module reads. */
+export interface ProximityNode {
+    id: string;
+    position: { x: number; y: number };
+    /**
+     * Measured size, when the host has reported one.
+     *
+     * TWO shapes because xyflow reports both: `width`/`height` on the node, and
+     * a `measured` sub-object which is the one that actually gets populated
+     * after layout. `measured` wins when present — see `nodeCentre`.
+     *
+     * Declared rather than cast. A cast was how `measured` got read before, and
+     * it is why a field enumeration over `n.<field>` accesses missed it: the
+     * access was `(n as Node & {...}).measured`, so the field name never
+     * appeared attached to the variable. `tsc` named the line.
+     */
+    width?: number | null;
+    height?: number | null;
+    measured?: { width?: number; height?: number } | null;
+    /** Read only to decide whether this kind can take a connection. */
+    data?: { kind?: unknown } | null;
+}
+
+/** The minimum of an edge this module reads — endpoints, by node id. */
+export interface ProximityEdge {
+    source: string;
+    target: string;
+}
+
 export const DEFAULT_PROXIMITY_THRESHOLD_PX = 80;
 
 export interface ProximityCandidate {
@@ -85,9 +136,9 @@ export interface UseProximityAutoBindOptions {
 
 export interface UseProximityAutoBindResult {
     /** xyflow `onNodeDrag` handler — recompute the candidate. */
-    onNodeDrag: (_event: unknown, draggedNode: Node) => void;
+    onNodeDrag: (_event: unknown, draggedNode: ProximityNode) => void;
     /** xyflow `onNodeDragStop` handler — commit + clear. */
-    onNodeDragStop: (_event: unknown, draggedNode: Node) => void;
+    onNodeDragStop: (_event: unknown, draggedNode: ProximityNode) => void;
     /**
      * Current candidate (or null). Consumer-provided UI reads
      * this to render the preview edge.
@@ -100,9 +151,9 @@ export interface UseProximityAutoBindResult {
      * unit tests can exercise the geometry without mounting React.
      */
     findCandidate: (
-        draggedNode: Node,
-        allNodes: Node[],
-        edges: Edge[],
+        draggedNode: ProximityNode,
+        allNodes: readonly ProximityNode[],
+        edges: readonly ProximityEdge[],
         threshold?: number,
     ) => ProximityCandidate | null;
 }
@@ -117,10 +168,8 @@ export interface UseProximityAutoBindResult {
  * with no size is treated as a point at its origin; not perfect
  * but good enough for the proximity check.
  */
-function nodeCentre(n: Node): { x: number; y: number } {
-    const measured = (n as Node & {
-        measured?: { width?: number; height?: number };
-    }).measured;
+function nodeCentre(n: ProximityNode): { x: number; y: number } {
+    const measured = n.measured;
     const w =
         measured?.width ??
         (n.width !== undefined && n.width !== null ? n.width : 160);
@@ -145,7 +194,7 @@ function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
  * unknown kind is treated as "has handles" so a future kind
  * doesn't silently lose the auto-bind affordance.
  */
-function nodeHasHandles(n: Node): boolean {
+function nodeHasHandles(n: ProximityNode): boolean {
     const data = n.data as { kind?: unknown } | undefined;
     const kind = data?.kind;
     if (!isProcessNodeKind(kind)) return true;
@@ -153,7 +202,7 @@ function nodeHasHandles(n: Node): boolean {
 }
 
 function edgeExists(
-    edges: Edge[],
+    edges: readonly ProximityEdge[],
     a: string,
     b: string,
 ): boolean {
@@ -169,15 +218,15 @@ function edgeExists(
  * tests can exercise the geometry without React.
  */
 export function findProximityCandidate(
-    draggedNode: Node,
-    allNodes: Node[],
-    edges: Edge[],
+    draggedNode: ProximityNode,
+    allNodes: readonly ProximityNode[],
+    edges: readonly ProximityEdge[],
     threshold: number = DEFAULT_PROXIMITY_THRESHOLD_PX,
 ): ProximityCandidate | null {
     if (!nodeHasHandles(draggedNode)) return null;
 
     const draggedCentre = nodeCentre(draggedNode);
-    let best: { node: Node; dist: number } | null = null;
+    let best: { node: ProximityNode; dist: number } | null = null;
 
     for (const other of allNodes) {
         if (other.id === draggedNode.id) continue;
@@ -206,8 +255,8 @@ export function findProximityCandidate(
 // ─── Hook ──────────────────────────────────────────────────────────
 
 export function useProximityAutoBind(
-    nodes: Node[],
-    edges: Edge[],
+    nodes: readonly ProximityNode[],
+    edges: readonly ProximityEdge[],
     options: UseProximityAutoBindOptions = {},
 ): UseProximityAutoBindResult {
     const threshold = options.threshold ?? DEFAULT_PROXIMITY_THRESHOLD_PX;
@@ -217,7 +266,7 @@ export function useProximityAutoBind(
     );
 
     const onNodeDrag = useCallback(
-        (_event: unknown, draggedNode: Node) => {
+        (_event: unknown, draggedNode: ProximityNode) => {
             const next = findProximityCandidate(
                 draggedNode,
                 nodes,
@@ -246,7 +295,7 @@ export function useProximityAutoBind(
     );
 
     const onNodeDragStop = useCallback(
-        (_event: unknown, _draggedNode: Node) => {
+        (_event: unknown, _draggedNode: ProximityNode) => {
             // Snapshot the current candidate BEFORE clearing — the
             // setState callback in onNodeDrag may not have flushed
             // yet at the instant the drag ends, so we re-run the

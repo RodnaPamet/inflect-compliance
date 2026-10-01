@@ -69,8 +69,14 @@ describe("Epic P6-PR-A — sub-flow drill-down", () => {
         const src = read("src/lib/processes/canvas-drill-filter.ts");
 
         it("exports the canonical signature", () => {
+            // GENERIC over the node/edge types, naming no renderer. The
+            // function filters and hands the SAME objects back, so a fixed
+            // structural return type would strip whatever the caller passed —
+            // which is why this is a type parameter and not a `DrillNode[]`.
+            // The constraint says what is read; the parameter preserves what
+            // came in.
             expect(src).toMatch(
-                /export function filterByDrillScope\(\s*nodes:\s*Node\[\],\s*edges:\s*Edge\[\],\s*groupId:\s*string \| null,?\s*\):\s*DrillFilterResult/,
+                /export function filterByDrillScope<\s*N extends DrillNode,\s*E extends DrillEdge\s*>\(\s*nodes:\s*N\[\],\s*edges:\s*E\[\],\s*groupId:\s*string \| null,?\s*\):\s*DrillFilterResult<N, E>/,
             );
         });
 
