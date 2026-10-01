@@ -35,11 +35,11 @@
  *
  * That is NOT a trick played on the ratchet — it is the fix the ratchet asks
  * for, and here it is also the only CORRECT implementation. Measured over the
- * whole repository: THIRTEEN files contain the string `react-window` and only
- * TWO depend on it. The other eleven name it in prose — four docs, three
- * rendered tests, a sibling component, a guard, and this file. A grep-shaped
- * guard would report thirteen seams and be wrong by eleven; a `not.toMatch`
- * form would be satisfied by any one of those comments. An
+ * whole repository: FOURTEEN files contain the string `react-window` and only
+ * TWO depend on it. The other twelve name it in prose — four docs, four
+ * rendered tests, two sibling components, a guard, and this file. A
+ * grep-shaped guard would report fourteen seams and be wrong by twelve; a
+ * `not.toMatch` form would be satisfied by any one of those comments. An
  * `ImportDeclaration` cannot be written in a comment, so the AST answers the
  * question that was actually asked.
  *
@@ -466,7 +466,7 @@ describe('react-window is on v2 (docs/dependency-governance.md)', () => {
         });
 
         it('is NOT satisfied by a comment naming the module — the Class A defect', () => {
-            // This is not hypothetical: eleven files in this tree mention
+            // This is not hypothetical: twelve files in this tree mention
             // `react-window` in prose and import nothing.
             const prose = [
                 '// react-window is deliberately not used here; see',

@@ -229,9 +229,9 @@ section needs re-arguing in the same PR.
 
 Two details of that test are worth knowing before editing either half.
 The seam scan is **repo-wide and AST-based**, not a grep over `src/`:
-thirteen files in this repository contain the string `react-window` and
-only two depend on it, so a text search answers this question wrongly
-by eleven. It counts a dynamic `import()` and a `require()` as
+fourteen files in this repository contain the string `react-window`
+and only two depend on it, so a text search answers this question
+wrongly by twelve. It counts a dynamic `import()` and a `require()` as
 dependencies too, since neither is an `ImportDeclaration`. And it
 asserts on values computed from that AST rather than on file text, so
 it joins neither the Class A nor the Class D assertion-reach
