@@ -215,15 +215,30 @@ describe('Roadmap-14 PR-12 — Mobile parity (unify dual chrome)', () => {
         });
 
         it('creates an `openDrawer` callback and passes it to TopChrome', () => {
-            // The drawer-open handler is what wires the
-            // NavBarMobileMenu's click to the existing
-            // MobileDrawer's open state. AppShell owns the state
-            // (it's already in this file), threads through.
-            expect(APP_SHELL_SRC).toMatch(
+            // The drawer-open handler is what wires NavBarMobileMenu's click
+            // to the drawer's open state. T07 (#3076) moved the STATE into
+            // `AppShellFrame`, so the chain is now two links and BOTH are
+            // asserted — the hamburger stops opening the drawer if either
+            // breaks, which is the property this guard exists for.
+            const frameSrc = codeOf(
+                fs.readFileSync(
+                    path.join(ROOT, 'src/components/layout/AppShellFrame.tsx'),
+                    'utf8',
+                ),
+            );
+            // link 1 — the frame makes the opener and hands it to the slot.
+            expect(frameSrc).toMatch(
                 /const\s+openDrawer\s*=\s*useCallback\(\s*\(\)\s*=>\s*setDrawerOpen\(true\)/,
             );
+            expect(frameSrc).toMatch(/topChrome\(\{\s*onMobileMenuClick:\s*openDrawer\s*\}\)/);
+            // link 2 — the shell threads the slot's argument into TopChrome.
+            expect(APP_SHELL_SRC).toMatch(/onMobileMenuClick=\{onMobileMenuClick\}/);
             expect(APP_SHELL_SRC).toMatch(
-                /<TopChrome[\s\S]+?onMobileMenuClick=\{openDrawer\}/,
+                // The opener reaches TopChrome as the slot's argument now, so
+                // the local name is `onMobileMenuClick` rather than
+                // `openDrawer`. Still the same property being asserted: the
+                // element that renders the hamburger receives the opener.
+                /<TopChrome[\s\S]+?onMobileMenuClick=\{onMobileMenuClick\}/,
             );
         });
     });

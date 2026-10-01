@@ -226,16 +226,18 @@ test.describe('Agent detail page', () => {
 
             // Scoped by the reason field, NOT a bare `getByRole('dialog')`.
             //
-            // The app's navigation drawer sits permanently in the DOM as
-            // `<div role="dialog" aria-modal="true" data-testid="nav-drawer">`,
-            // closed only by a `-translate-x-full` transform — which Playwright
-            // still reports as VISIBLE. It does not collide while the modal is
-            // open, because Radix marks background content `aria-hidden` and
-            // that removes the drawer from the accessibility tree; the moment
-            // the modal closes the drawer reappears to the query, so a bare
-            // `toBeHidden()` on `getByRole('dialog')` can never pass. Filtering
-            // on a control only this modal owns keeps the locator pointed at
-            // the thing under test in both states.
+            // Filtering on a control only this modal owns keeps the locator
+            // pointed at the thing under test however many dialogs exist.
+            //
+            // The reason recorded here until T07 (#3076) was that the
+            // navigation drawer sat PERMANENTLY in the DOM — closed by a
+            // `-translate-x-full` transform that Playwright still reports as
+            // visible — so a bare `getByRole('dialog')` could match it. That
+            // is no longer true: the drawer is a portalled Sheet now and
+            // unmounts when closed. The filter stays, because scoping to a
+            // control the modal owns is right regardless of what else happens
+            // to be mounted, but it is no longer load-bearing for that
+            // reason.
             const dialog = page
                 .getByRole('dialog')
                 .filter({ has: page.locator('#agent-kill-reason') });

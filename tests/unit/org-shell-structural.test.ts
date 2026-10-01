@@ -145,14 +145,18 @@ describe('Epic O-4 — org shell structural contract', () => {
         expect(src).not.toMatch(/orgHref\('\/settings'\)/);
     });
 
-    it('the unified AppShell reuses MobileDrawer from SidebarNav', () => {
+    it('the unified AppShell mounts ONE drawer for both variants', () => {
         const shellSrc = read(SHELL_PATH);
-        // Post Roadmap-2 PR-1, the org shell no longer exists as a
-        // separate file — the unified AppShell imports MobileDrawer
-        // once and mounts it for both tenant and org variants.
+        // Post Roadmap-2 PR-1 the org shell no longer exists as a separate
+        // file — one AppShell imports the drawer once and mounts it for both
+        // tenant and org variants. That is the contract; T07 (#3076) only
+        // changed WHICH drawer, from the hand-rolled `MobileDrawer` in
+        // SidebarNav to `MobileNavDrawer` on the shared left Sheet.
         expect(shellSrc).toMatch(
-            /MobileDrawer.*from\s+['"]@\/components\/layout\/SidebarNav['"]/,
+            /MobileNavDrawer.*from\s+['"]@\/components\/layout\/MobileNavDrawer['"]/,
         );
+        // Still exactly one mount, not one per variant.
+        expect(shellSrc.match(/<MobileNavDrawer/g) ?? []).toHaveLength(1);
     });
 
     // ── Provider + server context ────────────────────────────────────

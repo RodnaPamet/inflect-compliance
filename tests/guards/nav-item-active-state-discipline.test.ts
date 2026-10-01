@@ -69,7 +69,16 @@ describe('Roadmap-12 PR-6 — NavItem active-state discipline', () => {
         // (1) Text: brand-coloured letters (R13-PR5 evolution from
         //     the R12-PR6 lock on text-content-emphasis). Yellow on
         //     METRO, orange on PwC, both via `var(--brand-default)`.
-        expect(recipe).toMatch(/\btext-\[var\(--brand-default\)\]/);
+        // T07 (#3076) — the needle moved from `--brand-default` to
+        // `--content-brand`. The INTENT is unchanged and still enforced: the
+        // active label is brand-coloured. What changed is which brand token
+        // carries it, because `--brand-default` is 4.03:1 and WCAG 1.4.3 wants
+        // 4.5:1 for text — this guard was pinning the failure as a requirement.
+        // `--content-brand` is 11.93:1 dark / 5.07:1 light, guarded on the ratio
+        // in `token-contrast-content-brand.test.ts`. Non-text brand decoration
+        // (band, wash, glow) is untouched: it owes 1.4.11's 3:1, which 4.03:1
+        // already clears.
+        expect(recipe).toMatch(/\btext-content-brand\b/);
 
         // (2) Background: brand wash. R12-PR6 originally locked the
         //     uniform `bg-[var(--brand-subtle)]` (warm tint).
