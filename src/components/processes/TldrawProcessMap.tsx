@@ -41,6 +41,7 @@ import { useToast } from '@/components/ui/hooks';
 import { TldrawProcessCanvas } from '@/components/processes/TldrawProcessCanvas';
 import type { GraphRows } from '@/components/processes/tldraw/serializer';
 import type { SavedProcessMap } from '@/lib/processes/tldraw-save';
+import type { CanvasAutosaveApi } from '@/lib/processes/use-canvas-autosave';
 import { useTldrawCanvasAutosave } from '@/lib/processes/use-tldraw-canvas-autosave';
 
 export interface TldrawProcessMapProps {
@@ -64,6 +65,21 @@ export interface TldrawProcessMapProps {
      * to get it.
      */
     onEditorReady?: (editor: Editor) => void;
+    /**
+     * Reports the state the document BAR needs: the concurrency token for its
+     * version pill, and the autosave status for its saved-state indicator.
+     *
+     * One callback rather than three props lifted out, because this component
+     * stays usable on its own — it is the load→edit→save unit, and a caller
+     * that wants only that should not have to own the version to get it. The
+     * workspace around it does want them, so they are reported rather than
+     * moved.
+     */
+    onStateChange?: (state: {
+        version: number | undefined;
+        autosaveStatus: CanvasAutosaveApi['status'];
+        autosaveError: string | null;
+    }) => void;
     /** Seam for tests. Defaults to the global `fetch`. */
     fetchImpl?: typeof fetch;
 }
@@ -109,6 +125,7 @@ export function TldrawProcessMap({
     delayMs,
     fetchImpl,
     onEditorReady,
+    onStateChange,
 }: TldrawProcessMapProps) {
     const toast = useToast();
     /**
@@ -203,6 +220,20 @@ export function TldrawProcessMap({
         enabled: !readOnly && Boolean(mapId),
         ...(delayMs !== undefined ? { delayMs } : {}),
     });
+
+    // Reported in an effect, not during render: calling a parent's callback
+    // while rendering would set state in the parent mid-render.
+    const reportRef = useRef(onStateChange);
+    useEffect(() => {
+        reportRef.current = onStateChange;
+    }, [onStateChange]);
+    useEffect(() => {
+        reportRef.current?.({
+            version: current?.version,
+            autosaveStatus: autosave.status,
+            autosaveError: null,
+        });
+    }, [current?.version, autosave.status]);
 
     if (!mapId) {
         return <div data-testid="tldraw-map-empty" />;

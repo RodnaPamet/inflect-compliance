@@ -65,19 +65,30 @@ export interface DocumentBarProcess {
     canvasMode?: CanvasMode;
 }
 
-export interface UseTldrawDocumentBarOptions {
+/**
+ * Generic over the process type.
+ *
+ * The caller's summary is richer than `DocumentBarProcess` — the page's
+ * `ProcessMapSummary` carries `createdAt`, `nodeCount` and more — and its
+ * `onProcessesChange` is typed for that richer shape. Pinning the parameter to
+ * the subset made the callback contravariantly incompatible at the call site,
+ * so the only way to pass it was a cast. The hook never reads the extra fields;
+ * it spreads them through. So it is parameterised instead, and the caller's type
+ * survives the round trip.
+ */
+export interface UseTldrawDocumentBarOptions<P extends DocumentBarProcess> {
     tenantSlug: string;
     editor: Editor | null;
     mapId: string | null;
-    processes: DocumentBarProcess[];
-    activeProcess: DocumentBarProcess | null;
+    processes: P[];
+    activeProcess: P | null;
     /** Current concurrency token, from the container. */
     version: number | undefined;
     autosaveStatus: AutosaveStatus;
     autosaveError: string | null;
     toast: ToastApi;
     onActiveIdChange: (id: string | null) => void;
-    onProcessesChange: (next: DocumentBarProcess[]) => void;
+    onProcessesChange: (next: P[]) => void;
     onSaved: (saved: SavedProcessMap) => void;
     onConflict: () => void;
     /** Seam for tests. */
@@ -94,7 +105,7 @@ function readSnapPreference(): boolean {
     }
 }
 
-export function useTldrawDocumentBar({
+export function useTldrawDocumentBar<P extends DocumentBarProcess>({
     tenantSlug,
     editor,
     mapId,
@@ -109,7 +120,7 @@ export function useTldrawDocumentBar({
     onSaved,
     onConflict,
     fetchImpl,
-}: UseTldrawDocumentBarOptions) {
+}: UseTldrawDocumentBarOptions<P>) {
     const [editedName, setEditedName] = useState(activeProcess?.name ?? '');
     const [snapEnabled, setSnapEnabledState] = useState(readSnapPreference);
     const [saving, setSaving] = useState(false);
@@ -228,7 +239,7 @@ export function useTldrawDocumentBar({
                 body: JSON.stringify({ name, canvasMode: 'DOCUMENT' }),
             });
             if (!res.ok) throw new Error(`Create failed (${res.status})`);
-            const data = (await res.json()) as DocumentBarProcess;
+            const data = (await res.json()) as P;
             onProcessesChange([...processes, data]);
             onActiveIdChange(data.id);
         } catch (e) {
@@ -252,7 +263,7 @@ export function useTldrawDocumentBar({
                 }),
             });
             if (!res.ok) throw new Error(`Duplicate failed (${res.status})`);
-            const created = (await res.json()) as DocumentBarProcess;
+            const created = (await res.json()) as P;
 
             // Seed the copy with the CURRENT canvas, and note there is no
             // `expectedVersion`: the map was just created, so there is no
