@@ -195,7 +195,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // raise takes the MEASURED 309, not 301: the eight already-accumulated suites
 // are exactly what the sentinel refuses to leave spendable, and locking them
 // in is the point.
-const RENDERED_TEST_FLOOR = 309;
+// 2026-10-01 — 309 -> 319 (T06, upstream #3003). Four of the ten are this
+// branch's: the input autofill/enterKeyHint/search-hygiene derivations and the
+// password toggle's Tab reach, the Checkbox and RadioGroup control edges, and
+// the Combobox create row in en + bg. The other six had accumulated under the
+// floor since the last raise — the same case the note above records, and the
+// reason the raise takes the MEASURED `ls tests/rendered/*.test.tsx | wc -l`
+// = 319 rather than 313.
+const RENDERED_TEST_FLOOR = 319;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

@@ -332,6 +332,18 @@ const HIGH_MULTIPLICITY = 5;
 //   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
 //   converting the other eleven `tests/guards` files, so whoever merges
 //   second re-measures on the merged tree rather than keeping this figure.
+// 1190 -> 1189 (2026-10-01, T06 of #3003): -1 net, and the arithmetic is worth
+//   recording because this ratchet fired on a branch whose only test additions
+//   assert on rendered DOM. Adding `TYPE_TO_AUTOCOMPLETE` to `ui/input.tsx` put
+//   a SECOND `email: "email"` in the file, which turned
+//   `mobile-touch-targets:71` into a needle either map satisfies — exactly the
+//   "fires on a diff that changes no test" case this file's header describes.
+//   Adding `aria-pressed={isPasswordVisible}` took `/isPasswordVisible/` in
+//   `epic55-form-primitives:129` from four places to five. Both were fixed at
+//   the assertion: the first read is now bound to `TYPE_TO_INPUTMODE`
+//   (-1 here, and it leaves the population), the second needle is now the
+//   destructuring pattern (-1 here and -1 from the 5+ count, which lands it
+//   back on its own ceiling). Net -1.
 //
 // 1189 (2026-10-01, #3049): -1. `dashboard-compute-render-gap` asserted
 //   `expect(LOADING).toMatch(/DashboardSkeleton/)` over the whole of the
@@ -340,7 +352,16 @@ const HIGH_MULTIPLICITY = 5;
 //   shell moved to a route-local module — both arrangements satisfy it — so
 //   the needle is now the import PATH, which matches once and says which one
 //   shipped. One site, one position, one off the baseline.
-const AMBIGUOUS_NEEDLE_BASELINE = 1189;
+//
+// 1189 -> 1188 (2026-10-01, T05 x T06 merge): -1, and it is the MERGE that owes
+//   it, not either branch. Both arrived at 1189 from 1190 and both were right
+//   alone: T06 bound two needles for a net -1, #3049 bound the dashboard
+//   loading needle for another. The reductions are DISJOINT, so the merged tree
+//   is -2 from 1190 while each side's constant says -1. Measured on the merged
+//   tree, which is what the note above this block asks whoever merges second to
+//   do: live count 1188, and `DRIFT_ALLOWANCE` is 0, so 1189 is a point of
+//   headroom a future regression could have spent green.
+const AMBIGUOUS_NEEDLE_BASELINE = 1188;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

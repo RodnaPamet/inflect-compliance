@@ -26,8 +26,17 @@ import { Check2, Minus } from "./icons";
 export const checkboxVariants = cva(
     [
         "peer shrink-0 rounded-md border transition-colors",
-        "bg-bg-default border-border-default text-content-inverted",
-        "hover:border-border-emphasis",
+        // The EDGE is the whole control: an unchecked checkbox is a box and
+        // nothing else, so its border is what WCAG 2.1 1.4.11 measures. It
+        // rode `border-border-default` — 1.36:1 dark, 1.20:1 light, both well
+        // under the 3:1 minimum. `border-border-strong` is the token that
+        // reaches it (3.50 dark / 3.51 light, measured in tokens.css).
+        "bg-bg-default border-border-strong text-content-inverted",
+        // Hover rides the brand edge the checked state already uses, rather
+        // than `border-border-emphasis` (2.44 dark / 1.59 light) — against a
+        // 3.5:1 rest edge that token is a step DOWN, so hovering would have
+        // dropped the boundary back below the floor the line above just met.
+        "hover:border-brand-emphasis",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg-default",
         "data-[state=checked]:bg-brand-emphasis data-[state=checked]:border-brand-emphasis",
         "data-[state=indeterminate]:bg-brand-emphasis data-[state=indeterminate]:border-brand-emphasis",

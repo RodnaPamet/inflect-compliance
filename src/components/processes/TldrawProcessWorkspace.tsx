@@ -43,6 +43,7 @@
  * decision by teaching the renderer to read the column is not mine to do.
  */
 import { useCallback, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import type { Editor } from 'tldraw';
 
 import type { ProcessMapSummary } from '@/lib/processes/process-map-summary';
@@ -52,6 +53,10 @@ import { ProcessInspector } from '@/components/processes/ProcessInspector';
 import { ProcessPalette } from '@/components/processes/ProcessPalette';
 import { TldrawCanvasExportMenu } from '@/components/processes/TldrawCanvasExportMenu';
 import { TldrawProcessMap } from '@/components/processes/TldrawProcessMap';
+import {
+    useUnsavedChangesWarning,
+    useUnsavedNavigationGuard,
+} from '@/lib/hooks';
 import { RunModeProvider } from '@/lib/processes/run-mode-context';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
 import { useTldrawDocumentBar } from '@/lib/processes/use-tldraw-document-bar';
@@ -89,9 +94,36 @@ function Inner({
     const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>('idle');
     const [reloadKey, setReloadKey] = useState(0);
 
+    const t = useTranslations('automation.canvas');
+
     const activeProcess = activeId
         ? (processes.find((p) => p.id === activeId) ?? null)
         : null;
+
+    /**
+     * Unsaved work must not leave silently.
+     *
+     * Regression-list item on #2962, and the only gap found so far that
+     * DESTROYS something rather than merely missing it: without these two the
+     * tldraw canvas would let a tab close or a sidebar click discard edits
+     * with no word, which is strictly worse than any feature not yet ported.
+     *
+     * The window is the same one the xyflow canvas guards, and the status
+     * values are why: `pending` is the debounce — markDirty has fired and the
+     * save has not — which is where most unsaved work lives during normal
+     * editing. `saving` is in flight, `error` is work that failed to land.
+     *
+     * BOTH hooks, because they cover different exits and neither subsumes the
+     * other: `beforeunload` never fires for an App Router client-side
+     * transition, so the tab-close guard alone would still lose work to a
+     * sidebar link.
+     */
+    const hasUnsavedWork =
+        autosaveStatus === 'pending' ||
+        autosaveStatus === 'saving' ||
+        autosaveStatus === 'error';
+    useUnsavedChangesWarning(hasUnsavedWork);
+    useUnsavedNavigationGuard(hasUnsavedWork, t('unsavedLeaveConfirm'));
 
     const handleState = useCallback(
         (s: { version: number | undefined; autosaveStatus: AutosaveStatus }) => {

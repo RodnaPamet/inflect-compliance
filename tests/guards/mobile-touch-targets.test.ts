@@ -102,8 +102,13 @@ describe("Mobile PR-1 — coarse-pointer touch targets", () => {
         const src = read("src/components/ui/input.tsx");
         expect(src).toMatch(/TYPE_TO_INPUTMODE/);
         expect(src).toMatch(/inputMode=\{inputMode\}/);
-        // email/tel/number/search/url are mapped.
-        expect(src).toMatch(/email:\s*"email"/);
-        expect(src).toMatch(/number:\s*"numeric"/);
+        // email/tel/number/search/url are mapped — and the read is BOUND to
+        // the map this test names. `email: "email"` is an entry in
+        // `TYPE_TO_AUTOCOMPLETE` too, so a whole-file match was satisfied by
+        // either map: the inputMode entry could have been deleted and this
+        // assertion would have stayed green on the autocomplete one.
+        const inputModeMap = declarationOf(src, "TYPE_TO_INPUTMODE");
+        expect(inputModeMap).toMatch(/email:\s*"email"/);
+        expect(inputModeMap).toMatch(/number:\s*"numeric"/);
     });
 });
