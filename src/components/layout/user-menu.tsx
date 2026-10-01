@@ -32,10 +32,8 @@
  * viewport and never overflows.
  */
 
-import { useCallback, useState } from 'react';
-import Link from 'next/link';
-import { signOut } from 'next-auth/react';
-import { LogOut, ShieldCheck } from 'lucide-react';
+import { useCallback, useState, type ReactNode } from 'react';
+
 
 import { useTranslations } from 'next-intl';
 
@@ -66,6 +64,36 @@ export interface UserMenuProps {
      * immediately.
      */
     displayImage: string | null;
+    /**
+     * Extra rows, rendered after the built-in ones. T08 (#3003).
+     *
+     * WHERE THE LINE IS, because "content-free" needs a definition rather
+     * than a gesture. What stays built in is everything assembled from this
+     * repo's own shared primitives and the props above: the identity header
+     * (it paints `displayName`/`displayEmail`/`displayImage`), the theme row
+     * (`<ThemeToggle>`) and the language row (`<LocaleSwitcher>`). None of
+     * those name a product, a route or an auth library, and every consumer of
+     * this chrome wants all three — pushing them into the slot would make each
+     * consumer re-wire the same three rows.
+     *
+     * What LEFT are the two that did name those things: a `<Link>` to
+     * `/account/security`, which is a route only this product has, and a
+     * sign-out button importing `signOut` from `next-auth/react`, which is a
+     * dependency a vendoring product should not inherit from a menu component.
+     *
+     * A render prop rather than a node because a row almost always needs to
+     * close the menu when it fires — `close` is the menu's own state and the
+     * consumer cannot reach it otherwise.
+     */
+    items?: (props: { close: () => void }) => ReactNode;
+    /**
+     * Controlled open state. Omit both and the menu owns its own — which is
+     * what every call site does today, so this is additive. Supplied, it lets
+     * a consumer open the menu from elsewhere (a shortcut, a tour step)
+     * without reaching inside.
+     */
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
 }
 
 // ─── Recipe ────────────────────────────────────────────────────────
@@ -77,33 +105,53 @@ export interface UserMenuProps {
 // carry.
 const AVATAR_BUTTON_CLASS =
     // `HIT_AREA_CLASS`: 14% of this 22px avatar circle's box rendered as
-    // avatar but did not answer to `:hover`. See `hit-area.ts`.
-    `relative inline-flex h-[22px] w-[22px] items-center justify-center rounded-full transition-[filter] duration-150 ease-out hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-bg-page ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
+    // avatar but did not answer to `:hover`. See `hit-area.ts`. That fixes
+    // the DEAD ZONE inside the box; it does not change the box, so the
+    // control was still 22x22 against WCAG 2.5.5's 44. T08 (#3003) adds the
+    // `pointer-coarse:` floor — the same shortfall as the hamburger, in the
+    // same bar, and the two are fixed together rather than one looking odd
+    // beside its unchanged neighbour.
+    `relative inline-flex h-[22px] w-[22px] pointer-coarse:min-h-11 pointer-coarse:min-w-11 items-center justify-center rounded-full transition-[filter] duration-150 ease-out hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-bg-page ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
 
-const MENU_ROW_CLASS =
+/**
+ * Exported since T08 (#3003) so rows supplied through `items` are visually
+ * identical to the built-in ones. Without it a consumer re-types the recipe
+ * and the two drift — the menu would show its own rows and the host's in
+ * subtly different paddings, which is worse than not having the slot.
+ */
+export const USER_MENU_ROW_CLASS =
     'flex w-full cursor-pointer select-none items-center gap-compact rounded-md px-2.5 py-1.5 text-left text-sm text-content-default transition-colors duration-100 ease-out hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
 
 export function UserMenu({
     displayName,
     displayEmail,
     displayImage,
+    items,
+    open: controlledOpen,
+    onOpenChange,
 }: UserMenuProps) {
     const t = useTranslations('common');
     const tNav = useTranslations('nav');
-    const tSecurity = useTranslations('account.security');
-    const [open, setOpen] = useState(false);
-    const close = useCallback(() => setOpen(false), []);
+    // Uncontrolled unless BOTH are supplied. A consumer that passes `open`
+    // without `onOpenChange` would otherwise get a menu that cannot be shut —
+    // the component would read their value and have nowhere to report a close.
+    const isControlled = controlledOpen !== undefined && onOpenChange !== undefined;
+    const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+    const open = isControlled ? controlledOpen : uncontrolledOpen;
+    const setOpen = useCallback(
+        (next: boolean) => {
+            if (isControlled) onOpenChange(next);
+            else setUncontrolledOpen(next);
+        },
+        [isControlled, onOpenChange],
+    );
+    const close = useCallback(() => setOpen(false), [setOpen]);
 
     // Trim + fallback. `null` or whitespace-only renders as
     // `nav.account` ("Account") so the chrome never shows an empty trigger.
     const resolvedName = displayName?.trim() ?? '';
     const effectiveName =
         resolvedName.length > 0 ? resolvedName : tNav('account');
-
-    const handleSignOut = useCallback(async () => {
-        close();
-        await signOut({ callbackUrl: '/login' });
-    }, [close]);
 
     return (
         <Popover
@@ -164,34 +212,12 @@ export function UserMenu({
 
                     <Popover.Separator />
 
-                    {/* Account security — navigation to the
-                        password-change surface. */}
-                    <Link
-                        href="/account/security"
-                        role="menuitem"
-                        data-testid="user-menu-account-security"
-                        onClick={close}
-                        className={MENU_ROW_CLASS}
-                    >
-                        <ShieldCheck className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                        <span>{tSecurity('securityTitle')}</span>
-                    </Link>
-
-                    <Popover.Separator />
-
-                    {/* Sign out — the destructive action at the
-                        end of the menu, separated from the
-                        non-destructive items above. */}
-                    <button
-                        type="button"
-                        onClick={handleSignOut}
-                        role="menuitem"
-                        data-testid="user-menu-sign-out"
-                        className={MENU_ROW_CLASS}
-                    >
-                        <LogOut className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                        <span>{tNav('signOut')}</span>
-                    </button>
+                    {items ? (
+                        <>
+                            <Popover.Separator />
+                            {items({ close })}
+                        </>
+                    ) : null}
                 </Popover.Menu>
             }
         >

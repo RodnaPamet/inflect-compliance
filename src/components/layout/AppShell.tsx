@@ -233,6 +233,7 @@ export function AppShell({
                             variant={variant}
                             user={user}
                             onMobileMenuClick={openDrawer}
+                            onLogout={handleLogout}
                         />
                     </div>
 

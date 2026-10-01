@@ -39,6 +39,9 @@
  */
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { Popover } from '@/components/ui/popover';
+import { ShieldCheck, UserArrowRight } from '@/components/ui/icons/nucleo';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { useCurrentBreadcrumbs } from './breadcrumbs-store';
 // PR-2 — OrgIdentityPill retired in favour of OrgWorkspaceSwitcher
@@ -47,13 +50,20 @@ import { useCurrentBreadcrumbs } from './breadcrumbs-store';
 // but TopChrome no longer mounts it. Comment kept for grep-ability.
 import { TenantSwitcher } from './tenant-switcher';
 import { OrgWorkspaceSwitcher } from './org-workspace-switcher';
-import { UserMenu } from './user-menu';
+import { UserMenu, USER_MENU_ROW_CLASS } from './user-menu';
 import { NotificationsBell } from './notifications-bell';
 import { EnvironmentBadge } from './environment-badge';
 import type { AppShellVariant } from './AppShell';
 import { NavBar, NavBarBrand, NavBarMobileMenu } from './nav-bar';
 
 interface TopChromeProps {
+    /**
+     * Sign-out, handed down rather than imported. T08 (#3003) took `signOut`
+     * out of `<UserMenu>` so a vendoring product does not inherit a
+     * next-auth dependency from a menu component; the chrome supplies the row,
+     * and the shell — which already owns the auth call — supplies the action.
+     */
+    onLogout: () => void | Promise<void>;
     variant: AppShellVariant;
     /**
      * R14-PR12 — handler for the mobile-only menu button. Opens
@@ -103,8 +113,9 @@ interface TopChromeProps {
  * variant + URL params: tenant → `/t/<slug>/dashboard`,
  * org → `/org/<slug>` (org root).
  */
-export function TopChrome({ variant, user, onMobileMenuClick }: TopChromeProps) {
+export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChromeProps) {
     const t = useTranslations('nav');
+    const tSecurity = useTranslations('account.security');
     const breadcrumbs = useCurrentBreadcrumbs();
     const params = useParams();
     // R14-PR4 — tenant variant mounts <TenantSwitcher> (popover).
@@ -157,7 +168,7 @@ export function TopChrome({ variant, user, onMobileMenuClick }: TopChromeProps) 
                             variant === 'org' ? 'org-nav-toggle' : 'nav-toggle'
                         }
                     />
-                    <NavBarBrand href={brandHref} />
+                    <NavBarBrand href={brandHref} initials="IC" />
                     <EnvironmentBadge />
                     {/* Breadcrumbs hidden below md — the brand mark
                         + env badge + hamburger already crowd the
@@ -188,6 +199,46 @@ export function TopChrome({ variant, user, onMobileMenuClick }: TopChromeProps) 
                         displayName={user.name ?? null}
                         displayEmail={user.email ?? null}
                         displayImage={user.image ?? null}
+                        // T08 (#3003) — the two rows that named this product.
+                        // `UserMenu` keeps the identity header and the theme
+                        // and language rows, which are built from shared
+                        // primitives and name nothing; these two did, so they
+                        // live with the product that owns the route and the
+                        // auth library.
+                        items={({ close }) => (
+                            <>
+                                <Link
+                                    href="/account/security"
+                                    role="menuitem"
+                                    data-testid="user-menu-account-security"
+                                    onClick={close}
+                                    className={USER_MENU_ROW_CLASS}
+                                >
+                                    <ShieldCheck
+                                        className="h-4 w-4 flex-shrink-0"
+                                        aria-hidden="true"
+                                    />
+                                    <span>{tSecurity('securityTitle')}</span>
+                                </Link>
+                                <Popover.Separator />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        close();
+                                        void onLogout();
+                                    }}
+                                    role="menuitem"
+                                    data-testid="user-menu-sign-out"
+                                    className={USER_MENU_ROW_CLASS}
+                                >
+                                    <UserArrowRight
+                                        className="h-4 w-4 flex-shrink-0"
+                                        aria-hidden="true"
+                                    />
+                                    <span>{t('signOut')}</span>
+                                </button>
+                            </>
+                        )}
                     />
                 </>
             }
