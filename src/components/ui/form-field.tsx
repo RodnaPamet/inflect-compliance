@@ -12,7 +12,7 @@
  *
  *     <FormField
  *         label="Name"
- *         description="Shown on audit reports."
+ *         description="Shown on printed reports."
  *         error={errors.name}
  *         required
  *     >
@@ -51,16 +51,16 @@ export interface FormFieldProps {
     description?: React.ReactNode;
     /**
      * Contextual help surfaced via an inline info icon next to the
-     * label. Use this for non-obvious semantics (security policies,
+     * label. Use this for non-obvious semantics (security settings,
      * retention rules, scoring scales) that would clutter the form if
      * rendered as always-visible `description` text. A short sentence
      * is ideal; ReactNode is supported for richer content.
      *
      * Pick `hint` over `description` when the information is
      * *optional*: most users won't need it, but those who do need it
-     * really do — e.g. "fail-closed", "SCIM NameID format", MFA policy
-     * impact. Pick `description` when every user should read the copy
-     * every time.
+     * really do — the exact format a field expects, or what a setting
+     * does when it is left off. Pick `description` when every user
+     * should read the copy every time.
      */
     hint?: React.ReactNode;
     /** Error message. Renders `role="alert"` hint + invalid styling. */

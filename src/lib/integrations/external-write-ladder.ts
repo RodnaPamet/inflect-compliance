@@ -80,16 +80,46 @@ export const MODE_MIN_DAYS = 7;
  * is precisely the shape #2241 deleted from the identity ladder — a rung that
  * looks like a control and enforces nothing.
  *
- * It also composes correctly with the dwell rather than around it. A connection
- * armed to `DRY_RUN` cannot climb off it, because `MODE_MIN_EVIDENCE.DRY_RUN` is
- * 1 and nothing records a dry-run intent until the dispatch ships — so the
- * ladder refuses the widen on evidence, before the clamp is even consulted. That
- * is the ladder working, not a gap, and it means raising this constant without
- * the dispatch would still grant nothing.
+ * It also composes correctly with the dwell rather than around it, and raising
+ * the ceiling does NOT move anything: every connection stays at whatever rung an
+ * operator set it to, which defaults to `DISABLED`. What changes is only that
+ * `PROPOSE_ONLY` stops being refused for naming an authority this build cannot
+ * exercise.
  *
- * Raise it in the same diff that lands the dispatch which reads it.
+ * ── RAISED TO `PROPOSE_ONLY` (2026-10-01), BECAUSE THE RUNG NOW EXISTS ──────
+ *
+ * The three rungs at or below this ceiling are all implemented end to end:
+ *
+ *   DISABLED      the connection gate refuses the call outright (#2976)
+ *   DRY_RUN       `recordIntent` journals what WOULD change, sends nothing (#2983)
+ *   PROPOSE_ONLY  the write becomes an `AgentProposal` a human approves (#2999),
+ *                 and `external-write-dispatch` then re-reads prior state,
+ *                 refuses on drift, and sends it (#3002)
+ *
+ * `AUTOMATIC` stays ABOVE the ceiling, and that is the point of leaving the
+ * constant here rather than deleting it. `dispatchWrite` refuses that rung with
+ * `external_write_rung_unimplemented`, and what it waits on is a DESIGN decision
+ * rather than code: a pre-approved write must be able to BOUND an argument, not
+ * only fix it, and `ExternalToolParameterSet` holds exact values only. See
+ * #3051.
+ *
+ * ── WHAT THIS MAKES LIVE FOR THE FIRST TIME ────────────────────────────────
+ *
+ * The evidence gate. `getExternalWritePolicy` consults `isAboveClamp` BEFORE
+ * `refusalForMove`, so with the ceiling at `DRY_RUN` every wider rung returned
+ * the ceiling message and `refusalForMove` was never reached for it — the dwell
+ * and the evidence requirement had never once been exercised. From here,
+ * `DRY_RUN → PROPOSE_ONLY` is decided by the ladder: seven days AND at least one
+ * recorded intent.
+ *
+ * That gate only works because #2993 fixed what it counts. It had been counting
+ * `IntegrationExecution` rows under an `automationKey` suffix nothing ever
+ * wrote, so it returned 0 for every connection forever; it now counts the
+ * `ExternalWriteJournal` rows `recordIntent` actually writes. Raising this
+ * constant before that fix would have refused every widen on a reason that was
+ * not true.
  */
-export const EXTERNAL_MAX_MODE: ExternalWriteMode = 'DRY_RUN';
+export const EXTERNAL_MAX_MODE: ExternalWriteMode = 'PROPOSE_ONLY';
 
 /*
  * `EXTERNAL_WRITE_AUTOMATION_SUFFIX` USED TO LIVE HERE. DO NOT BRING IT BACK.

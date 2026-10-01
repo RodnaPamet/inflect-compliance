@@ -6,7 +6,7 @@
  * The visual cue that a form field is required: a red asterisk
  * inline next to the label. Centralised so every required field —
  * inside `<FormField>` or hand-composed labels (modal forms, dynamic
- * field arrays, vendor-assessment questions) — paints the same shape:
+ * field arrays, questionnaire rows) — paints the same shape:
  *
  *   • `aria-hidden="true"` so screen readers don't announce a
  *     literal "asterisk" — the `aria-required="true"` on the form

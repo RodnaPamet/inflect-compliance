@@ -126,7 +126,12 @@ describe('Input — contract', () => {
     });
 
     it('keeps the password visibility toggle', () => {
-        expect(INPUT_SRC).toMatch(/isPasswordVisible/);
+        // The STATE, not any mention of it. The bare identifier reaches five
+        // places in this file (the derived type, the label, `aria-pressed`,
+        // the icon branch and the declaration), so four of them could be
+        // deleted and the assertion would still pass on the survivor; the
+        // destructuring pattern is the one occurrence that is the toggle.
+        expect(INPUT_SRC).toMatch(/\[isPasswordVisible,\s*setIsPasswordVisible\]/);
         // The two labels are catalogue keys now (`common.ui.hidePassword` /
         // `common.ui.showPassword`), not English literals; their rendered
         // values are asserted in tests/rendered/i18n-kept-primitives.test.tsx.

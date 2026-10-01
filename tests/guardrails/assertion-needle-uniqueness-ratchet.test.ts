@@ -332,6 +332,18 @@ const HIGH_MULTIPLICITY = 5;
 //   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
 //   converting the other eleven `tests/guards` files, so whoever merges
 //   second re-measures on the merged tree rather than keeping this figure.
+// 1190 -> 1189 (2026-10-01, T06 of #3003): -1 net, and the arithmetic is worth
+//   recording because this ratchet fired on a branch whose only test additions
+//   assert on rendered DOM. Adding `TYPE_TO_AUTOCOMPLETE` to `ui/input.tsx` put
+//   a SECOND `email: "email"` in the file, which turned
+//   `mobile-touch-targets:71` into a needle either map satisfies — exactly the
+//   "fires on a diff that changes no test" case this file's header describes.
+//   Adding `aria-pressed={isPasswordVisible}` took `/isPasswordVisible/` in
+//   `epic55-form-primitives:129` from four places to five. Both were fixed at
+//   the assertion: the first read is now bound to `TYPE_TO_INPUTMODE`
+//   (-1 here, and it leaves the population), the second needle is now the
+//   destructuring pattern (-1 here and -1 from the 5+ count, which lands it
+//   back on its own ceiling). Net -1.
 // 1190 -> 1188 (2026-10-01, #3050, the T03 overlay work): -2 net, and the
 //   arithmetic is +1 then -3 rather than a tidy drain, which is the part worth
 //   recording. The +1 was NOT a test edit: `popover.tsx` grew a
@@ -355,7 +367,14 @@ const HIGH_MULTIPLICITY = 5;
 //   RE-MEASURE BEFORE MERGE. Concurrent branches move this number and two
 //   branches lowering the same line to different values merge without a
 //   conflict.
-const AMBIGUOUS_NEEDLE_BASELINE = 1188;
+//
+// 1189 -> 1187 (2026-10-01, T03 x T06 merge): -2, owed by the MERGE. T06 bound
+//   two needles for a net -1 from 1190 and this branch bound three more for -2;
+//   the sets are DISJOINT, so each side's constant understates the merged tree.
+//   Measured here, which is what the branch note directly above asks for -- and
+//   it was right that two branches lowering this line to DIFFERENT values is the
+//   dangerous case: 1188 and 1189 would have merged clean at whichever won.
+const AMBIGUOUS_NEEDLE_BASELINE = 1187;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

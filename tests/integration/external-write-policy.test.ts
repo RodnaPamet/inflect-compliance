@@ -10,8 +10,9 @@
  *
  * ## What is deliberately NOT asserted here
  *
- * That any of this changes what an agent does. It does not: no dispatch reads
- * the rung yet, which is why `EXTERNAL_MAX_MODE` is `DRY_RUN`. These tests are
+ * That any of this changes what an agent does on its own. Raising the ceiling to
+ * `PROPOSE_ONLY` moves no connection — every one stays at the rung an operator
+ * set, defaulting to `DISABLED`. These tests are
  * about the control, and the control exists before the authority on purpose —
  * #2241's lesson is what a rung costs when it arrives after.
  */
@@ -192,20 +193,37 @@ describe('moving up the ladder', () => {
     });
 
     it('refuses a two-rung jump, naming the path', async () => {
+        // Now a LADDER refusal rather than a ceiling one: with the clamp at
+        // PROPOSE_ONLY this rung is permitted in principle, so what refuses is
+        // the one-rung rule. The old regex also admitted 'above the ceiling',
+        // and that alternative is what it actually matched — so the assertion
+        // was passing on the clamp while claiming to be about the path.
         await expect(
             setExternalWriteMode(ctx1, conn1, 'PROPOSE_ONLY', EXTERNAL_MAX_MODE),
-        ).rejects.toThrow(/one at a time|above the ceiling/);
+        ).rejects.toThrow(/Widen one level at a time/);
     });
 
-    it('refuses ANY rung above the clamp, even one rung up from DRY_RUN', async () => {
-        // The clamp, not the ladder, is what refuses here — and it must be
-        // checked FIRST. `DRY_RUN → PROPOSE_ONLY` is a legal single step, so
-        // without the clamp this would be refused only on the dwell, telling an
-        // operator to wait seven days for a rung that would still be refused
-        // afterwards.
-        await setExternalWriteMode(ctx1, conn1, 'DRY_RUN', EXTERNAL_MAX_MODE);
+    it('refuses AUTOMATIC on the CEILING, which proves the clamp is read first', async () => {
+        // The ordering assertion, and it is sharper than it was.
+        //
+        // `DISABLED → AUTOMATIC` is a THREE-rung jump, so the ladder would
+        // refuse it too — with a different message. Getting the ceiling message
+        // back is therefore proof that `isAboveClamp` is consulted BEFORE
+        // `refusalForMove`, which is the ordering that stops an operator being
+        // told to wait seven days for a rung that would be refused afterwards
+        // anyway.
         await expect(
-            setExternalWriteMode(ctx1, conn1, 'PROPOSE_ONLY', EXTERNAL_MAX_MODE),
+            setExternalWriteMode(ctx1, conn1, 'AUTOMATIC', EXTERNAL_MAX_MODE),
+        ).rejects.toThrow(/above the ceiling this build honours/);
+    });
+
+    it('still refuses a rung above a LOWER clamp, whatever the ladder says', async () => {
+        // The clamp in isolation: passing a narrower ceiling than the build's
+        // own must refuse a rung the ladder would otherwise allow. `clamp` is a
+        // required parameter precisely so a caller cannot forget it, and this
+        // is the assertion that it is honoured rather than ignored.
+        await expect(
+            setExternalWriteMode(ctx1, conn1, 'DRY_RUN', 'DISABLED'),
         ).rejects.toThrow(/above the ceiling this build honours/);
     });
 

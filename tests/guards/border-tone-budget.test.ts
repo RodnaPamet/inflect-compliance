@@ -107,7 +107,16 @@ const ROOT = path.resolve(__dirname, '../..');
 // been migrated by PRs that did not drop the budget — exactly what the
 // sentinel below exists to surface, and it stayed quiet because its
 // 10-instance tolerance was wider than the drift.
-const BORDER_DEFAULT_BUDGET = 111;
+//
+// 111 → 109 (2026-10-01): −2, the Checkbox and RadioGroup rest edges.
+// `border-border-default` is 1.36:1 dark / 1.20:1 light on `--bg-default`,
+// and on those two primitives the border IS the whole control, so WCAG 2.1
+// 1.4.11's 3:1 applies to it; both moved to `border-border-strong`
+// (3.50 / 3.51). Re-seated in the same diff rather than left as slack:
+// two is this sentinel's entire allowance, so leaving it unspent would
+// have made the NEXT single migration in a sibling branch read as drift
+// on the merged tree.
+const BORDER_DEFAULT_BUDGET = 109;
 
 // Tolerance before the drift sentinel reports the budget as unseated.
 //

@@ -19,7 +19,7 @@ const ROOT = path.resolve(__dirname, "../..");
 // #2246 Class A — comments are masked at the READ SEAM, so an assertion cannot
 // be satisfied by a comment instead of the code it names. Every read below is
 // TypeScript/TSX, re-derived in this file rather than assumed from the paths.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
 const read = (p: string) => codeOf(readRaw(p));
@@ -67,8 +67,13 @@ describe("Mobile PR-1 — coarse-pointer touch targets", () => {
         const src = read("src/components/ui/input.tsx");
         expect(src).toMatch(/TYPE_TO_INPUTMODE/);
         expect(src).toMatch(/inputMode=\{inputMode\}/);
-        // email/tel/number/search/url are mapped.
-        expect(src).toMatch(/email:\s*"email"/);
-        expect(src).toMatch(/number:\s*"numeric"/);
+        // email/tel/number/search/url are mapped — and the read is BOUND to
+        // the map this test names. `email: "email"` is an entry in
+        // `TYPE_TO_AUTOCOMPLETE` too, so a whole-file match was satisfied by
+        // either map: the inputMode entry could have been deleted and this
+        // assertion would have stayed green on the autocomplete one.
+        const inputModeMap = declarationOf(src, "TYPE_TO_INPUTMODE");
+        expect(inputModeMap).toMatch(/email:\s*"email"/);
+        expect(inputModeMap).toMatch(/number:\s*"numeric"/);
     });
 });
