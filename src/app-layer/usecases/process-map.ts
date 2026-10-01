@@ -92,6 +92,12 @@ export async function saveProcessMap(
             status: input.status,
             nodes: input.nodes,
             edges: input.edges,
+            // #2960 — forwarded UNDEFINED-PRESERVING. The schema makes this
+            // optional, and a client that omits it must leave the stored
+            // freeform layer alone rather than erase it; `?? undefined` would
+            // be the same value here but says the wrong thing, so the field is
+            // passed through exactly as it arrived.
+            freeformJson: input.freeformJson,
             // Epic P1 — optimistic concurrency. Forward the
             // client's claimed version so the repo can refuse the
             // write on conflict (HTTP 409 / `STALE_DATA`).
@@ -332,10 +338,19 @@ export async function restoreProcessMapSnapshot(
         const json = snapshot.graphJson as {
             nodes?: SaveProcessMapInput['nodes'];
             edges?: SaveProcessMapInput['edges'];
+            freeformJson?: unknown;
         };
         const map = await ProcessMapRepository.replaceGraph(db, ctx, mapId, {
             nodes: json.nodes ?? [],
             edges: json.edges ?? [],
+            // #2960 — EXPLICIT, never omitted. Omitting it means "leave the
+            // stored value alone", which on a restore is exactly wrong: the
+            // user would get v3's graph carrying today's sticky notes.
+            //
+            // `?? null` also handles a snapshot taken BEFORE this column
+            // existed. Such a map had no freeform layer, so restoring it to
+            // null is not data loss — it is the state that version was in.
+            freeformJson: json.freeformJson ?? null,
             expectedVersion,
         });
         if (!map) throw notFound('Process map not found');

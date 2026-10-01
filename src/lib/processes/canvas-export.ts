@@ -37,11 +37,15 @@
 import { toPng, toSvg } from "html-to-image";
 import { getNodesBounds, getViewportForBounds, type Node } from "@xyflow/react";
 
-const EXPORT_PADDING = 24;
+import {
+    EXPORT_PADDING,
+    downloadDataUrl,
+    resolveBackground,
+    safeFilename,
+} from "@/lib/processes/canvas-export-shared";
+
 const EXPORT_MIN_ZOOM = 0.25;
 const EXPORT_MAX_ZOOM = 2.0;
-const EXPORT_BG_LIGHT = "#FBFAF8";
-const EXPORT_BG_DARK = "#0A2138";
 
 export interface CanvasExportOptions {
     /**
@@ -100,35 +104,6 @@ function exportTransform(nodes: Node[]): {
         height,
         transform: [viewport.x, viewport.y, viewport.zoom],
     };
-}
-
-function downloadDataUrl(dataUrl: string, filename: string): void {
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-}
-
-function safeFilename(mapName: string, ext: string): string {
-    const stem = mapName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 60) || "process-map";
-    return `${stem}.${ext}`;
-}
-
-function resolveBackground(): string {
-    // Read the current theme's canvas-frame token so the export
-    // matches what the user sees. Falls back to the light token in
-    // SSR / test contexts where `document` isn't available.
-    if (typeof document === "undefined") return EXPORT_BG_LIGHT;
-    const root = document.documentElement;
-    const theme = root.getAttribute("data-theme");
-    if (theme === "light") return EXPORT_BG_LIGHT;
-    return EXPORT_BG_DARK;
 }
 
 /**

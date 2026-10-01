@@ -52,6 +52,12 @@ export interface ProcessMapWithGraph {
     description: string | null;
     status: ProcessMapStatusValue;
     version: number;
+    /**
+     * #2960 — the renderer's own shapes (sticky notes, freehand, loose text),
+     * verbatim. `unknown` rather than a shape, because nothing server-side
+     * reads it: typing it would invite someone to.
+     */
+    freeformJson: unknown;
     createdAt: Date;
     updatedAt: Date;
     nodes: Array<{
@@ -166,6 +172,7 @@ export class ProcessMapRepository {
             version: map.version,
             createdAt: map.createdAt,
             updatedAt: map.updatedAt,
+            freeformJson: map.freeformJson ?? null,
             nodes: map.nodes,
             edges: map.edges,
         };
@@ -232,6 +239,10 @@ export class ProcessMapRepository {
             version: created.version,
             createdAt: created.createdAt,
             updatedAt: created.updatedAt,
+            // A new map has no freeform layer. NULL rather than `{}` — the
+            // column distinguishes "the renderer never wrote" from "the
+            // renderer wrote and found nothing", and create is the former.
+            freeformJson: null,
             nodes: [],
             edges: [],
         };
@@ -264,6 +275,13 @@ export class ProcessMapRepository {
             status?: ProcessMapStatusValue;
             nodes: ProcessNodeInput[];
             edges: ProcessEdgeInput[];
+            /**
+             * #2960 — three states, and they are NOT interchangeable.
+             * `undefined` leaves the stored value alone (a client that knows
+             * nothing about freeform must not erase it), `null` clears it, a
+             * value replaces it.
+             */
+            freeformJson?: unknown;
             /**
              * Epic P1 — optimistic-concurrency guard. When set, the
              * repo refuses the write if the server's current
@@ -313,7 +331,11 @@ export class ProcessMapRepository {
 
         const existing = await db.processMap.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, version: true },
+            // `freeformJson` rides along on a read this method already makes.
+            // The snapshot below needs the STORED freeform layer whenever the
+            // request omitted one, and a second findFirst for it would be an
+            // extra round trip on every autosave — a 3-second debounce.
+            select: { id: true, version: true, freeformJson: true },
         });
         if (!existing) return null;
 
@@ -568,6 +590,21 @@ export class ProcessMapRepository {
                 ...(input.status !== undefined
                     ? { status: input.status }
                     : {}),
+                // #2960 — the renderer's own shapes, stored verbatim. The
+                // THREE-STATE contract is deliberate and matches the other
+                // optional fields here: `undefined` leaves the stored value
+                // alone (so a client that knows nothing about freeform cannot
+                // erase it by saving), an explicit `null` clears it, and a
+                // value replaces it. Collapsing undefined and null would make
+                // every legacy save wipe the freeform layer.
+                ...(input.freeformJson !== undefined
+                    ? {
+                          freeformJson:
+                              input.freeformJson === null
+                                  ? Prisma.DbNull
+                                  : (input.freeformJson as Prisma.InputJsonValue),
+                      }
+                    : {}),
                 version: { increment: 1 },
             },
         });
@@ -591,6 +628,15 @@ export class ProcessMapRepository {
         // snapshot. Writes inside the same outer tx as the version
         // bump so either both land or neither does.
         const newVersion = (existing.version ?? 0) + 1;
+        // What the freeform layer IS as of this commit — which is not the same
+        // as what this request sent. An omitted `freeformJson` leaves the
+        // stored value alone, so the snapshot has to record the stored one or
+        // every legacy save would archive a map with no freeform content and a
+        // later restore would erase it.
+        const freeformForSnapshot =
+            input.freeformJson !== undefined
+                ? (input.freeformJson ?? null)
+                : (existing.freeformJson ?? null);
         const graphJsonPayload = {
             version: newVersion,
             nodes: input.nodes.map((n) => ({
@@ -617,6 +663,10 @@ export class ProcessMapRepository {
                     dataJson: c.dataJson ?? null,
                 })),
             })),
+            // A snapshot that omitted this would restore a map with every
+            // sticky note gone — data loss that looks like a successful
+            // restore. It rides in the same payload as the graph.
+            freeformJson: freeformForSnapshot,
         };
         await db.processMapSnapshot.create({
             data: {

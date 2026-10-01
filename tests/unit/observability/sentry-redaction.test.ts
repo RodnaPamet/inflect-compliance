@@ -25,19 +25,30 @@ type SentryEvent = {
         query_string?: string;
     };
     breadcrumbs?: Array<{ data?: Record<string, unknown> }>;
+    user?: { id?: string; ip_address?: string };
 };
 type BeforeSend = (
     event: SentryEvent,
     hint?: { originalException?: unknown },
 ) => SentryEvent | null;
 
-const initCalls: Array<{ beforeSend: BeforeSend; environment: string; tracesSampleRate: number }> = [];
+const initCalls: Array<{
+    beforeSend: BeforeSend;
+    environment: string;
+    tracesSampleRate: number;
+    sendDefaultPii?: boolean;
+}> = [];
 const closeCalls: number[] = [];
 /** Behaviour of the next `Sentry.close` call. */
 const closeBehaviour: { mode: 'resolve' | 'hang' } = { mode: 'resolve' };
 
 jest.mock('@sentry/nextjs', () => ({
-    init: (cfg: { beforeSend: BeforeSend; environment: string; tracesSampleRate: number }) => {
+    init: (cfg: {
+        beforeSend: BeforeSend;
+        environment: string;
+        tracesSampleRate: number;
+        sendDefaultPii?: boolean;
+    }) => {
         initCalls.push(cfg);
     },
     close: (timeoutMs: number): Promise<boolean> => {
@@ -331,5 +342,35 @@ describe('shutdownSentry — draining an initialised client', () => {
         await shutdownSentry(20);
 
         expect(closeCalls).toStrictEqual([20]);
+    });
+});
+
+/**
+ * THE PRIVACY POSTURE IS PINNED, NOT INHERITED.
+ *
+ * With `sendDefaultPii` unset the SDK decides, and the SDK's decision moves —
+ * the v11 release states its goals include making "more permissive data
+ * collection the default". A major bump is exactly when an inherited default
+ * changes underneath you, silently and with green CI.
+ *
+ * Both assertions below are cheap and neither is decorative: the flag is the
+ * control, and the `event.user` scrub is what still holds if a future caller
+ * turns the flag on without reading the rest of the file.
+ */
+describe('personal data is not sent by default', () => {
+    it('pins sendDefaultPii to false rather than inheriting the SDK default', () => {
+        initSentry();
+        expect(initCalls.at(-1)!.sendDefaultPii).toBe(false);
+    });
+
+    it('scrubs a user ip_address even when one reaches beforeSend', () => {
+        // An IP is personal data under GDPR Art 4(1), and this is a compliance
+        // product. The rest of `beforeSend` scrubs `event.request` and
+        // breadcrumbs and has no arm for `event.user` at all.
+        const out = beforeSend()({ user: { id: 'u_1', ip_address: '203.0.113.9' } });
+        expect(out!.user!.ip_address).toBeUndefined();
+        // The identifier itself is kept: it is what makes an error triageable,
+        // and it is already the opaque id the audit trail uses.
+        expect(out!.user!.id).toBe('u_1');
     });
 });

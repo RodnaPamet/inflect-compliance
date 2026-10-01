@@ -87,6 +87,12 @@ const DISPATCHERS: ReadonlyArray<{ schedule: string; file: string }> = [
  * `DISPATCHERS`, so a missing row was not a failing row, it was no row.
  */
 const NOT_FAN_OUT_DISPATCHERS: Readonly<Record<string, string>> = {
+    'external-write-dispatch':
+        'a dispatcher by name only — it calls neither `fanOut` nor `dispatchJobId`. The work ' +
+        'per tenant is a bounded sweep of at most DISPATCH_BATCH_LIMIT journal rows, and the ' +
+        'tenant list comes from a `groupBy` that is empty on almost every deployment, so one ' +
+        'job loops them in-process rather than enqueueing a job per tenant to do nothing. There ' +
+        'is no bucket constant and therefore no bucket-vs-cron relationship to check.',
     'notification-dispatch':
         'a dispatcher by name only — `notification-dispatch.ts` calls neither `fanOut` nor ' +
         '`dispatchJobId` and uses no bucket constant, so there is no bucket-vs-cron ' +

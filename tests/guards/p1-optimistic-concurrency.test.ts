@@ -42,7 +42,7 @@ import * as path from "node:path";
 // String literals are KEPT — masking them would silently empty assertions that
 // harvest codes or ids from source. Every path this file reads is a
 // TypeScript-alike, re-derived per file rather than assumed from the directory.
-import { codeOf, commentsOf } from '../helpers/source-blocks';
+import { callExpressionOf, codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, "../..");
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -133,9 +133,16 @@ describe("Epic P1 — process map optimistic concurrency", () => {
         const src = read("src/app-layer/usecases/process-map.ts");
 
         it("threads expectedVersion from input to the repo call", () => {
-            expect(src).toMatch(
-                /replaceGraph\([\s\S]{0,800}expectedVersion:\s*input\.expectedVersion/,
-            );
+            // BOUND TO THE CALL, not to a character budget. This was
+            // `/replaceGraph\([\s\S]{0,800}…/`, and an 800-char window is a
+            // constant that the SOURCE has no reason to respect: #2960 added a
+            // `freeformJson` argument with its comment and pushed the match
+            // past the ceiling, reddening a guard whose subject had not
+            // changed at all. Raising 800 to 1200 would buy the same failure a
+            // later date. `callExpressionOf` ends where the call's parens end,
+            // so the span cannot reach a sibling and cannot expire.
+            const call = callExpressionOf(src, 'ProcessMapRepository.replaceGraph');
+            expect(call).toMatch(/expectedVersion:\s*input\.expectedVersion/);
         });
     });
 

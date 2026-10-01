@@ -130,7 +130,7 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 //   sitting on the `REDIS_PASSWORD` row below it, guard 8/8 green. Exactly the
 //   sibling-block reach this ratchet names, in markdown rather than code. The
 //   read is now bound to the one row and the span is gone with it.
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 146;
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 145;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -176,7 +176,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 146;
 // removed it from both. This cap exists so an unbounded span cannot be bought
 // down by rewriting `*?` as `{0,200}`; a span that genuinely leaves must lower
 // it too.
-const INTERIOR_SPAN_BASELINE = 329;
+const INTERIOR_SPAN_BASELINE = 327;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

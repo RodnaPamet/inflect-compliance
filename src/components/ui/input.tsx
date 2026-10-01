@@ -27,6 +27,7 @@
 import { cn } from "@/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import { AlertCircle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import * as React from "react";
 import { Eye, EyeSlash } from "./icons";
 
@@ -125,6 +126,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         },
         ref,
     ) => {
+        const t = useTranslations("common.ui");
         const [isPasswordVisible, setIsPasswordVisible] = React.useState(false);
         const isPassword = type === "password";
         const effectiveType = isPassword && isPasswordVisible ? "text" : type;
@@ -194,7 +196,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
                                     "opacity-0 transition-opacity group-hover:opacity-100",
                             )}
                             aria-label={
-                                isPasswordVisible ? "Hide password" : "Show password"
+                                isPasswordVisible
+                                    ? t("hidePassword")
+                                    : t("showPassword")
                             }
                             tabIndex={-1}
                         >

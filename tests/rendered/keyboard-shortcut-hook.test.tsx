@@ -14,7 +14,7 @@
  *   - `useRegisteredShortcuts()` reflects current state for the palette
  */
 
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { render, act, fireEvent } from '@testing-library/react';
 
 import {
@@ -31,14 +31,33 @@ function Binding({
     onHit,
     options,
     testId,
+    children,
 }: {
     keys: string | string[];
     onHit: () => void;
     options?: UseKeyboardShortcutOptions;
     testId?: string;
+    children?: React.ReactNode;
 }) {
-    useKeyboardShortcut(keys, onHit, options);
-    return <div data-testid={testId ?? 'binding'} />;
+    const host = useRef<HTMLDivElement>(null);
+    // Focus the host on mount so the scoped registrations below are live
+    // without every test having to arrange focus itself.
+    useEffect(() => {
+        host.current?.focus();
+    }, []);
+    // A bare printable character can no longer be registered globally (WCAG
+    // 2.1.4), and most keys in this file are ARBITRARY — the suite tests the
+    // registry's mechanics, not any particular binding. Scoping the harness to
+    // its own host keeps every one of those tests meaningful and unchanged.
+    //
+    // A test that passes its own `within` or `scope` wins: `options` is spread
+    // last, so the cases that are ABOUT scoping still control it.
+    useKeyboardShortcut(keys, onHit, { within: host, ...options });
+    return (
+        <div ref={host} tabIndex={-1} data-testid={testId ?? 'binding'}>
+            {children}
+        </div>
+    );
 }
 
 function dispatchKey(key: string, mods: Partial<Record<'meta' | 'ctrl' | 'alt' | 'shift', boolean>> = {}, target?: Element) {
@@ -113,7 +132,13 @@ describe('useKeyboardShortcut — registration', () => {
     it('accepts arrays of shortcuts and reports which one matched', () => {
         const matches: string[] = [];
         function MultiBinding() {
-            useKeyboardShortcut(['Escape', '?'], (_e, { matched }) => {
+            // `mod+/` rather than a bare '?': the point of this test is that an
+            // ARRAY registration reports which member matched, and the members
+            // are incidental. A bare printable cannot be registered globally
+            // any more (WCAG 2.1.4), and `Escape` is a named key so it is
+            // unaffected — keeping one of each is what makes the assertion
+            // below still interesting.
+            useKeyboardShortcut(['Escape', 'mod+/'], (_e, { matched }) => {
                 matches.push(matched);
             });
             return null;
@@ -124,8 +149,8 @@ describe('useKeyboardShortcut — registration', () => {
             </KeyboardShortcutProvider>,
         );
         dispatchKey('Escape');
-        dispatchKey('?', { shift: true });
-        expect(matches).toEqual(['Escape', '?']);
+        dispatchKey('/', { ctrl: true });
+        expect(matches).toEqual(['Escape', 'mod+/']);
     });
 });
 
@@ -187,8 +212,9 @@ describe('useKeyboardShortcut — text-input safety', () => {
         const spy = jest.fn();
         const { getByTestId } = render(
             <KeyboardShortcutProvider>
-                <input data-testid="text" />
-                <Binding keys="k" onHit={spy} />
+                <Binding keys="k" onHit={spy}>
+                    <input data-testid="text" />
+                </Binding>
             </KeyboardShortcutProvider>,
         );
         const input = getByTestId('text') as HTMLInputElement;
@@ -201,8 +227,9 @@ describe('useKeyboardShortcut — text-input safety', () => {
         const spy = jest.fn();
         const { getByTestId } = render(
             <KeyboardShortcutProvider>
-                <textarea data-testid="text" />
-                <Binding keys="k" onHit={spy} />
+                <Binding keys="k" onHit={spy}>
+                    <textarea data-testid="text" />
+                </Binding>
             </KeyboardShortcutProvider>,
         );
         const ta = getByTestId('text') as HTMLTextAreaElement;
@@ -215,8 +242,9 @@ describe('useKeyboardShortcut — text-input safety', () => {
         const spy = jest.fn();
         const { getByTestId } = render(
             <KeyboardShortcutProvider>
-                <div data-testid="edit" contentEditable suppressContentEditableWarning />
-                <Binding keys="k" onHit={spy} />
+                <Binding keys="k" onHit={spy}>
+                    <div data-testid="edit" contentEditable suppressContentEditableWarning />
+                </Binding>
             </KeyboardShortcutProvider>,
         );
         const editable = getByTestId('edit');
@@ -240,8 +268,9 @@ describe('useKeyboardShortcut — text-input safety', () => {
         const spy = jest.fn();
         const { getByTestId } = render(
             <KeyboardShortcutProvider>
-                <input data-testid="text" />
-                <Binding keys="Escape" onHit={spy} options={{ allowInInputs: true }} />
+                <Binding keys="Escape" onHit={spy} options={{ allowInInputs: true }}>
+                    <input data-testid="text" />
+                </Binding>
             </KeyboardShortcutProvider>,
         );
         const input = getByTestId('text') as HTMLInputElement;

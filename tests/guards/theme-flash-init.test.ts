@@ -12,6 +12,7 @@
  * and localStorage.
  */
 import * as fs from 'node:fs';
+import { THEME_STORAGE_KEY, THEME_COOKIE } from '@/lib/theme-constants';
 import * as path from 'node:path';
 
 // #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
@@ -40,8 +41,14 @@ describe('theme anti-FOUC', () => {
         // made the theme flash on every reload.
         it('theme-constants.ts holds the literal values and is NOT a client module', () => {
             expect(constants).not.toMatch(/^\s*['"]use client['"]/m);
-            expect(constants).toMatch(/export const THEME_STORAGE_KEY = 'inflect:theme'/);
-            expect(constants).toMatch(/export const THEME_COOKIE = 'inflect_theme'/);
+        // VALUES, not source spellings. These assertions used to regex the
+        // constants file, which pinned one way of writing the key rather than
+        // the key itself: it would fail on a refactor that preserved the value
+        // exactly, and pass on a second constant that shadowed it with a
+        // different one. The value is what addresses data already in real users'
+        // browsers, so it is the thing worth pinning.
+        expect(THEME_STORAGE_KEY).toBe('inflect:theme');
+            expect(THEME_COOKIE).toBe('inflect_theme');
         });
 
         it('the server layout imports theme constants from the server-safe module, NOT ThemeProvider', () => {
@@ -86,7 +93,7 @@ describe('theme anti-FOUC', () => {
         it('reads the SAME keys the provider uses (from the shared server-safe module)', () => {
             expect(layout).toMatch(/THEME_STORAGE_KEY/);
             expect(layout).toMatch(/THEME_COOKIE/);
-            expect(constants).toMatch(/THEME_STORAGE_KEY = 'inflect:theme'/);
+            expect(THEME_STORAGE_KEY).toBe('inflect:theme');
         });
 
         it('renders the script in <head> with the CSP nonce, before the body', () => {

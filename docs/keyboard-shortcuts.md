@@ -30,19 +30,26 @@ import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 
 function FilterTrigger() {
   const [open, setOpen] = useState(false);
+  const region = useRef<HTMLDivElement>(null);
 
+  // A single printable character MUST be focus-scoped — see "Character key
+  // shortcuts" below. `within` confines it to the region that owns it.
   useKeyboardShortcut('f', () => setOpen(true), {
     enabled: !open,
-    scope: 'global',
+    within: region,
     description: 'Open filters',
   });
   …
+  return <div ref={region}>…</div>;
 }
 ```
 
 ### Keys
 
-Plain keys: `'f'`, `'Enter'`, `'Escape'`, `'ArrowUp'`, `'?'`.
+Plain keys: `'f'`, `'Enter'`, `'Escape'`, `'ArrowUp'`.
+A plain PRINTABLE character (`'f'`, `'/'`) must be focus-scoped — see
+"Character key shortcuts". Named keys (`'Escape'`, `'ArrowUp'`) are
+unrestricted.
 Modifiers (any order, `+`-separated): `'mod+k'`, `'shift+?'`,
 `'ctrl+Enter'`, `'meta+alt+p'`. The token **`mod`** resolves to `meta`
 on macOS and `ctrl` everywhere else — prefer it for invocation
@@ -160,10 +167,64 @@ selection-clear naturally stand down while one of those is open.
   all), `mod+f` (browser find), `mod+c` / `mod+v` (copy/paste),
   `mod+s` (save), `mod+z` / `mod+shift+z` (undo/redo).
 - **One-off keys that compete with the global set.** Every raw
-  letter you claim at `scope: 'global'` means a user typing that
-  letter in a list-page search box expects normal behaviour — the
-  hook's input-target guard handles that, but the shortcut still
-  competes with any user habit from another app.
+  letter you claim means a user typing that letter in a list-page
+  search box expects normal behaviour — the hook's input-target guard
+  handles that, but the shortcut still competes with any user habit
+  from another app.
+
+---
+
+## Character key shortcuts (WCAG 2.1.4)
+
+**A single printable character with no modifier cannot be registered
+globally.** `useKeyboardShortcut` throws in development and test if you
+try, and is a no-op in production — an accessibility defect should stop a
+developer, not a user mid-session.
+
+The reason is not stylistic. A bare `f` bound to the whole page is a
+character taken away from every speech-input user on it: saying "filter"
+near such a page activated it. WCAG 2.1.4 accepts one of three remedies —
+a way to turn the shortcut off, a way to remap it, or **active-focus
+scoping**. The third needs no settings screen, so it is the one this
+codebase uses.
+
+Two ways to satisfy it:
+
+| | |
+|---|---|
+| `within: someRef` | Fires only while `document.activeElement` is inside that element. For a shortcut belonging to a REGION of an ordinary page — a filter toolbar, a canvas. |
+| `scope: 'overlay'` | Fires only while an overlay holds focus. For a shortcut belonging to a modal or sheet. |
+
+A modifier removes the restriction entirely: `mod+k` and `mod+/` are
+unaffected, because 2.1.4 is about characters a person can say or type by
+accident, not combinations.
+
+### Layout independence
+
+Letters and digits match on **`event.code`** (the physical key), not
+`event.key` (what the layout produces). On a Bulgarian layout the key
+labelled K produces `'к'`, so a `key`-based match meant every letter
+shortcut silently did nothing for that user — nothing errored, the
+palette simply never opened.
+
+Punctuation and named keys still match `event.key`, deliberately: `/` and
+`?` sit on different physical keys across layouts, so matching those by
+position would fire them from wherever the US layout happens to put them.
+
+The trade-off, stated rather than hidden: a Dvorak user pressing the key
+in the QWERTY `K` POSITION triggers `mod+k`, even though their layout
+prints `v` there. That is what native applications do, and it is the cost
+of a shortcut meaning a key rather than a glyph.
+
+Resolve a multi-key registration from the **matched combo** the handler
+receives, never from `event.key`:
+
+```tsx
+useKeyboardShortcut(presetKeys, (_e, ctx) => {
+  const preset = presets.find((p) => p.shortcut === ctx?.matched);
+  …
+}, { scope: 'overlay' });
+```
 
 ---
 

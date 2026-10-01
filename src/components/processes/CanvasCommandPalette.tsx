@@ -30,6 +30,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
+import type { RefObject } from "react";
 import { cn } from "@/lib/cn";
 import { Command } from "cmdk";
 import { useCallback, useState, type ReactNode } from "react";
@@ -62,9 +63,23 @@ export interface CanvasCommandGroup {
 
 export interface CanvasCommandPaletteProps {
     groups: CanvasCommandGroup[];
+    /**
+     * The canvas element the `/` shortcut is scoped to.
+     *
+     * `/` is a single printable character, so a global binding breaks WCAG
+     * 2.1.4 — it is taken from every speech-input user on the page, and "slash"
+     * is a thing people say. Scoping it to the canvas keeps the editor
+     * convention (Notion, Linear, Slack all use `/`) while confining it to the
+     * surface it belongs to.
+     *
+     * Its absence DISABLES the shortcut rather than falling back to a global
+     * binding: losing a convenience is the better failure than silently
+     * restoring the defect.
+     */
+    hostRef?: RefObject<HTMLElement | null>;
 }
 
-export function CanvasCommandPalette({ groups }: CanvasCommandPaletteProps) {
+export function CanvasCommandPalette({ groups, hostRef }: CanvasCommandPaletteProps) {
     const t = useTranslations("automation.canvasPalette");
     const [isOpen, setIsOpen] = useState(false);
     const [query, setQuery] = useState("");
@@ -75,15 +90,17 @@ export function CanvasCommandPalette({ groups }: CanvasCommandPaletteProps) {
     }, []);
     const close = useCallback(() => setIsOpen(false), []);
 
-    // `/` is the conventional power-user trigger inside an editor
-    // surface (Notion, Linear, Slack). The shortcut hook defaults
-    // to `allowInInputs: false`, so typing `/` in the inspector
-    // label field won't accidentally fire.
+    // `/` is the conventional power-user trigger inside an editor surface
+    // (Notion, Linear, Slack). The hook defaults to `allowInInputs: false`, so
+    // typing `/` in the inspector label field won't fire it.
+    //
+    // SCOPED to the canvas via `hostRef`. It was global, which meant `/`
+    // anywhere on a page containing a canvas opened this palette — and took the
+    // character from every speech-input user on that page (WCAG 2.1.4).
     useKeyboardShortcut("/", open, {
+        enabled: !!hostRef,
+        within: hostRef,
         description: t("shortcutOpen"),
-        // The canvas can be mounted under a modal (e.g. a future
-        // preview overlay); keep this scoped to global mode so
-        // it doesn't fight modal context.
     });
 
     return (

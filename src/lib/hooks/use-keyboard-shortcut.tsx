@@ -42,6 +42,7 @@ import {
     useCallback,
     useContext,
     useEffect,
+    type RefObject,
     useMemo,
     useRef,
     useSyncExternalStore,
@@ -85,6 +86,21 @@ export interface UseKeyboardShortcutOptions {
      * Defaults to `'global'`.
      */
     scope?: ShortcutScope;
+    /**
+     * Fire only while focus is inside this element.
+     *
+     * The focus-scoping half of WCAG 2.1.4 (Character Key Shortcuts). A bare
+     * printable character bound GLOBALLY steals that character from every
+     * assistive technology and speech-input user on the page — say "find" near a
+     * page with a global 'f' and you have activated it. 2.1.4 asks for one of:
+     * a way to turn it off, a way to remap it, or ACTIVE-FOCUS scoping. This is
+     * the third, and it is the only one that needs no settings screen.
+     *
+     * `scope: 'overlay'` already provides this for shortcuts that belong to a
+     * modal. `within` is for the ones that belong to a REGION of an ordinary
+     * page — a filter toolbar, a canvas — where there is no overlay to hang off.
+     */
+    within?: RefObject<HTMLElement | null>;
     /** Free-form label surfaced by the forthcoming command palette. */
     description?: string;
 
@@ -118,6 +134,7 @@ interface ResolvedOptions {
     allowInInputs: boolean;
     allowWhenOverlayOpen: boolean;
     scope: ShortcutScope;
+    within?: RefObject<HTMLElement | null>;
     description?: string;
 }
 
@@ -272,6 +289,12 @@ export function KeyboardShortcutProvider({
                     continue;
                 }
                 if (!overlayOpen && opts.scope === 'overlay') continue;
+                // Focus scoping: the shortcut belongs to a region, so it fires
+                // only while something inside that region holds focus.
+                if (opts.within) {
+                    const host = opts.within.current;
+                    if (!host || !host.contains(document.activeElement)) continue;
+                }
 
                 let matchedKey: string | null = null;
                 for (const parsed of entry.parsed) {
@@ -336,6 +359,7 @@ function resolveOptions(options: UseKeyboardShortcutOptions): ResolvedOptions {
         allowInInputs: options.allowInInputs === true,
         allowWhenOverlayOpen: options.allowWhenOverlayOpen === true,
         scope: options.scope ?? (legacyWantsOverlay ? 'overlay' : 'global'),
+        within: options.within,
         description: options.description,
     };
 }
@@ -397,6 +421,36 @@ export function useKeyboardShortcut(
     );
 
     useEffect(() => {
+        // ─── WCAG 2.1.4, enforced at REGISTRATION ────────────────────────
+        //
+        // A single printable character with no modifier, bound globally, is a
+        // character taken away from every speech-input and switch user on the
+        // page. The rule is checked here rather than left to review because
+        // review is what let three of them through.
+        //
+        // THROWS in development and test, NO-OPS in production: a thrown error
+        // in a user's browser turns an accessibility defect into an outage,
+        // which is a worse trade than the defect. The build that catches it is
+        // the one a developer is looking at.
+        const bare = parsed.filter(
+            (pk) =>
+                pk.key.length === 1 &&
+                /[\x21-\x7e]/.test(pk.key) &&
+                !pk.usesMod &&
+                !pk.modifiers.meta &&
+                !pk.modifiers.ctrl &&
+                !pk.modifiers.alt,
+        );
+        if (bare.length > 0 && resolved.scope === 'global' && !resolved.within) {
+            const names = bare.map((pk) => pk.raw).join(', ');
+            const message =
+                `useKeyboardShortcut: "${names}" is a single printable character bound globally, ` +
+                'which breaks WCAG 2.1.4 (Character Key Shortcuts) — it is taken from every ' +
+                'speech-input user on the page. Give it `within: someRef` so it fires only while ' +
+                "focus is inside that region, or `scope: 'overlay'` if it belongs to a modal.";
+            if (process.env.NODE_ENV !== 'production') throw new Error(message);
+        }
+
         const entry: ShortcutEntry = {
             id,
             parsed,

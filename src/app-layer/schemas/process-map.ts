@@ -61,6 +61,23 @@ export type ProcessMapStatusValue = z.infer<typeof ProcessMapStatusSchema>;
  */
 const DATA_JSON_MAX_BYTES = 64 * 1024;
 
+/**
+ * Longest text a graph field may carry — node `label` / `subtitle`, an edge's
+ * `labelOverride`, and an edge control's `label`.
+ *
+ * Named and exported because the CLIENT has to know it. The bound was four bare
+ * `200`s here and nothing on the canvas, so a user could type a 300-character
+ * label into the inspector, keep working, and only learn at save time when the
+ * API refused the write with a zod string — measured on the live canvas, not
+ * hypothetical.
+ *
+ * Deliberately NOT shared with `ProcessMap.name` / `description`, which also
+ * happen to be 200 and 2000. Those bound a map's metadata, not the text inside
+ * its graph; collapsing them would make a product decision about one silently
+ * change the other.
+ */
+export const MAX_GRAPH_TEXT_LENGTH = 200;
+
 const boundedDataJson = z
     .unknown()
     .optional()
@@ -86,8 +103,8 @@ const boundedDataJson = z
 export const ProcessNodeInputSchema = z.object({
     nodeKey: z.string().min(1).max(128),
     nodeType: z.string().min(1).max(64),
-    label: z.string().max(200),
-    subtitle: z.string().max(200).optional().nullable(),
+    label: z.string().max(MAX_GRAPH_TEXT_LENGTH),
+    subtitle: z.string().max(MAX_GRAPH_TEXT_LENGTH).optional().nullable(),
     posX: z.number().finite(),
     posY: z.number().finite(),
     // R30 — optional parent group reference. References another node's
@@ -104,13 +121,13 @@ export const ProcessEdgeInputSchema = z.object({
     sourceKey: z.string().min(1).max(128),
     targetKey: z.string().min(1).max(128),
     edgeKind: z.string().min(1).max(64).default('flow'),
-    labelOverride: z.string().max(200).optional().nullable(),
+    labelOverride: z.string().max(MAX_GRAPH_TEXT_LENGTH).optional().nullable(),
     dataJson: boundedDataJson,
     controls: z
         .array(
             z.object({
                 controlKey: z.string().min(1).max(128),
-                label: z.string().max(200),
+                label: z.string().max(MAX_GRAPH_TEXT_LENGTH),
                 // PR-D — every edge control links to a real Control row
                 // (ProcessEdgeControl.controlId is NOT NULL + FK).
                 controlId: z.string().min(1),
@@ -166,6 +183,61 @@ export type CreateProcessMapInput = z.infer<typeof CreateProcessMapSchema>;
 export const MAX_NODES_PER_MAP = 500;
 export const MAX_EDGES_PER_MAP = 1000;
 
+/**
+ * Ceiling for the WHOLE-CANVAS freeform blob (#2960).
+ *
+ * Exported for the same reason the graph ceilings are: the editor has to warn
+ * before the limit, and a hand-copied constant drifts permissive — a stale
+ * copy keeps warning at the old number while the server still rejects, so the
+ * user meets the ceiling as a 400 after the work is done.
+ *
+ * WHY 512 KB, and why it is not the 64 KB `dataJson` uses. That cap is PER
+ * BLOB across up to 500 nodes; this one is the entire freeform layer at once.
+ * Freehand strokes store point arrays, so a densely-drawn canvas is genuinely
+ * larger than any single node's payload — a cap tight enough to feel safe here
+ * would reject ordinary drawing.
+ *
+ * The cost it bounds is write amplification, not row size: this blob is copied
+ * wholesale into a ProcessMapSnapshot on EVERY autosave, which is a 3-second
+ * debounce. 512 KB per save is the pathological case, not the expected one.
+ *
+ * A byte cap rather than a shape schema, for the reasons given above
+ * `DATA_JSON_MAX_BYTES`: the failure mode is volume rather than shape, and a
+ * strict shape would reject renderer keys the server does not know about on
+ * the way back, breaking the round trip.
+ */
+export const FREEFORM_JSON_MAX_BYTES = 512 * 1024;
+
+/**
+ * The renderer's own shapes — sticky notes, freehand, loose text.
+ *
+ * OPAQUE ON PURPOSE. This is not the process graph: nothing here becomes a
+ * ProcessNode, and nothing here answers a compliance question. Validating its
+ * shape would both couple the API to one renderer's snapshot format and defeat
+ * the round trip, so the only thing asserted is that it is serialisable and
+ * bounded.
+ */
+const boundedFreeformJson = z
+    .unknown()
+    .optional()
+    .nullable()
+    .refine(
+        (v) => {
+            if (v === undefined || v === null) return true;
+            try {
+                return (
+                    new TextEncoder().encode(JSON.stringify(v)).length <=
+                    FREEFORM_JSON_MAX_BYTES
+                );
+            } catch {
+                // Unserialisable (cycles, BigInt) — reject here rather than
+                // let it reach Prisma, where it is a 500 instead of a 400.
+                return false;
+            }
+        },
+        { message: `freeformJson exceeds ${FREEFORM_JSON_MAX_BYTES} bytes` },
+    );
+
 export const SaveProcessMapSchema = z.object({
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(2000).optional().nullable(),
@@ -173,5 +245,9 @@ export const SaveProcessMapSchema = z.object({
     expectedVersion: z.number().int().min(1).optional(),
     nodes: z.array(ProcessNodeInputSchema).max(MAX_NODES_PER_MAP),
     edges: z.array(ProcessEdgeInputSchema).max(MAX_EDGES_PER_MAP),
+    // Optional so every existing client keeps working unchanged: a save that
+    // omits it leaves the stored value ALONE rather than clearing it. An
+    // explicit null is how a caller erases the freeform layer.
+    freeformJson: boundedFreeformJson,
 });
 export type SaveProcessMapInput = z.infer<typeof SaveProcessMapSchema>;

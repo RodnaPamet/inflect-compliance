@@ -60,10 +60,27 @@ import { createControl, updateControl } from '@/app-layer/usecases/control/mutat
 import { createPolicy } from '@/app-layer/usecases/policy';
 import { createFinding, updateFinding } from '@/app-layer/usecases/finding';
 import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
+import { ExternalWriteProposalPayloadSchema } from '@/lib/agentic/external-write-proposal';
+import { openApprovedExternalWrite } from '@/app-layer/usecases/external-write-approval';
 import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
 import type { RequestContext } from '@/app-layer/types';
 
-export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING';
+/**
+ * Mirrors the `AgentProposalKind` Prisma enum.
+ *
+ * `EXTERNAL_WRITE` names no entity of ours. It is a write to somebody else's
+ * system, queued by the external-write ladder's `PROPOSE_ONLY` rung (#2861), and
+ * approving one dispatches an MCP call rather than creating a row. It therefore
+ * has no entry in `SCHEMA_BY_KIND`, no internal record for the diff builder to
+ * resolve, and no `createdEntityId` at approval time.
+ *
+ * Widening this union is deliberate rather than incidental: it makes the
+ * COMPILER perform the audit. Every lookup keyed on this type — `SCHEMA_BY_KIND`
+ * first — stops type-checking until the new member is handled, which is the
+ * mechanism the identity ladder's "a rung inherits nothing by falling through"
+ * rule asks for, enforced rather than remembered.
+ */
+export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING' | 'EXTERNAL_WRITE';
 
 /**
  * WHAT a proposal would do. Mirrors the `AgentProposalOperation` enum.
@@ -471,6 +488,18 @@ export async function createAgentProposal(
     input: ProposeInput,
 ): Promise<ProposalResult> {
     const operation: AgentProposalOperation = input.operation ?? 'CREATE';
+    if (input.kind === 'EXTERNAL_WRITE' && operation !== 'CREATE') {
+        // MEASURED, not stylistic. `buildProposalDiff` resolves an UPDATE's
+        // `targetEntityId` against one of OUR tables; an external write names a
+        // record in somebody else's, so an UPDATE-shaped row answers
+        // TARGET_MISSING and can never be approved at all. `CREATE` here means
+        // "there is no internal record to diff against", which is exactly true —
+        // the before and after are both in the payload.
+        throw badRequest(
+            'An EXTERNAL_WRITE proposal is CREATE-shaped: its prior state travels in the '
+                + 'payload, because there is no record of ours to diff it against.',
+        );
+    }
     // Resolves to a `string` for an UPDATE (refusing POLICY and a missing id
     // first) and to `null` for a CREATE. Runs before anything else so the two
     // errors a proposing agent can actually act on come back first.
@@ -490,10 +519,19 @@ export async function createAgentProposal(
     // two differ in more than optionality: the update schemas accept explicit
     // `null` on nullable columns ("clear this"), which a create schema rejects,
     // and a proposal is exactly the place that distinction has to survive.
+    //
+    // EXTERNAL_WRITE validates against its own payload shape rather than one of
+    // our entity schemas, because its subject is a record in a system we do not
+    // hold. Everything BELOW this line is shared unchanged — the sanitiser, both
+    // guards, the policy-card pin, the approval tiering, the expiry window and
+    // the audit — which is the whole reason this kind reuses this usecase
+    // instead of growing a second one beside it.
     const schema =
-        operation === 'UPDATE'
-            ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
-            : SCHEMA_BY_KIND[input.kind];
+        input.kind === 'EXTERNAL_WRITE'
+            ? ExternalWriteProposalPayloadSchema
+            : operation === 'UPDATE'
+              ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
+              : SCHEMA_BY_KIND[input.kind];
     if (!schema) throw badRequest(`Unknown proposal kind: ${input.kind}`);
 
     const parsed = schema.safeParse(input.payload);
@@ -1451,7 +1489,25 @@ export async function approveAgentProposal(
     // would read as ACCEPTED with nothing created and no way to retry.
     let createdEntityId: string;
     try {
-        if (operation === 'UPDATE') {
+        if (kind === 'EXTERNAL_WRITE') {
+            // No record of OURS is created. Approving this opens the journal row
+            // and the `external-write-dispatch` job sends it — which is also
+            // where the rung is re-checked, because `beginWrite` refuses
+            // `DRY_RUN` and `DISABLED`. A connection an operator narrowed after
+            // the write was proposed therefore refuses HERE, in front of the
+            // person approving it, rather than hours later out of their sight.
+            //
+            // `createdEntityId` becomes the journal id: a real record this
+            // proposal resolved to, which keeps `ApproveResult.createdEntityId`
+            // non-null and preserves the route's distinction between an applied
+            // approval and an `AWAITING_APPROVAL` one.
+            createdEntityId = await openApprovedExternalWrite(ctx, {
+                id: proposal.id,
+                payloadJson: proposal.payloadJson,
+                agentId: proposal.agentId,
+                runId: proposal.runId,
+            });
+        } else if (operation === 'UPDATE') {
             // `targetEntityId` is NOT NULL for an UPDATE row by database CHECK
             // (`AgentProposal_update_requires_target`); the guard below is the
             // type-level acknowledgement of that, not a second opinion about it.

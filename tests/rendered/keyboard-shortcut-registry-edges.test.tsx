@@ -28,7 +28,7 @@
  */
 jest.setTimeout(90_000);
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { render, fireEvent } from '@testing-library/react';
 
 import {
@@ -50,8 +50,21 @@ function Binding({
     onHit: () => void;
     options?: UseKeyboardShortcutOptions;
 }) {
-    useKeyboardShortcut(keys, onHit, options);
-    return null;
+    const host = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        // Focus only if nothing is focused yet, so SIBLING bindings share one
+        // focused region instead of the last-mounted one stealing it. Several
+        // tests here mount two bindings and assert which of them wins a
+        // keystroke; auto-focusing each in turn made the second one the only
+        // live registration and broke exactly those cases.
+        if (document.activeElement === document.body) host.current?.focus();
+    }, []);
+    // Scoped rather than global: a bare printable cannot be registered globally
+    // (WCAG 2.1.4), and the keys here are arbitrary fixtures for registry
+    // mechanics. `options` spreads last, so a test that is ABOUT scoping still
+    // controls it.
+    useKeyboardShortcut(keys, onHit, { within: host, ...options });
+    return <div ref={host} tabIndex={-1} />;
 }
 
 type Mods = Partial<Record<'meta' | 'ctrl' | 'alt' | 'shift', boolean>>;

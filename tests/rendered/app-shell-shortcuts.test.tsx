@@ -53,7 +53,7 @@ import { Providers } from '@/app/providers';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 
 function DeeplyNested({ onHit }: { onHit: () => void }) {
-    useKeyboardShortcut('d', onHit, { description: 'Go to Dashboard' });
+    useKeyboardShortcut('mod+d', onHit, { description: 'Go to Dashboard' });
     return <div data-testid="deep-child">deep</div>;
 }
 
@@ -92,7 +92,7 @@ describe('App-shell shortcut integration', () => {
 
         // Emit the registered key on the window — the provider's
         // single listener must route it to our deep child's handler.
-        fireEvent.keyDown(window, { key: 'd' });
+        fireEvent.keyDown(window, { key: 'd', code: 'KeyD', ctrlKey: true });
         expect(onHit).toHaveBeenCalledTimes(1);
     });
 
@@ -106,7 +106,7 @@ describe('App-shell shortcut integration', () => {
         );
         const input = container.querySelector('input[aria-label="search"]')!;
         (input as HTMLInputElement).focus();
-        fireEvent.keyDown(input, { key: 'd' });
+        fireEvent.keyDown(input, { key: 'd', code: 'KeyD', ctrlKey: true });
         expect(onHit).not.toHaveBeenCalled();
     });
 
@@ -117,11 +117,11 @@ describe('App-shell shortcut integration', () => {
         const aSpy = jest.fn();
         const bSpy = jest.fn();
         function A() {
-            useKeyboardShortcut('a', aSpy);
+            useKeyboardShortcut('mod+a', aSpy);
             return null;
         }
         function B() {
-            useKeyboardShortcut('b', bSpy);
+            useKeyboardShortcut('mod+b', bSpy);
             return null;
         }
         render(
@@ -130,8 +130,8 @@ describe('App-shell shortcut integration', () => {
                 <B />
             </Providers>,
         );
-        fireEvent.keyDown(window, { key: 'a' });
-        fireEvent.keyDown(window, { key: 'b' });
+        fireEvent.keyDown(window, { key: 'a', code: 'KeyA', ctrlKey: true });
+        fireEvent.keyDown(window, { key: 'b', code: 'KeyB', ctrlKey: true });
         expect(aSpy).toHaveBeenCalledTimes(1);
         expect(bSpy).toHaveBeenCalledTimes(1);
     });

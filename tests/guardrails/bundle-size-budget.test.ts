@@ -122,7 +122,11 @@ const BUDGETS_KB: Record<string, number> = {
     // measured max 605.8 KB — /t/[tenantSlug]/(app)/risks/[riskId]/page (16 routes)
     'risks': 640,
     // measured max 613.1 KB — /t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page (7 routes)
-    'controls': 645,
+    // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
+    // grown to 643.8 KB on main (ff71f42ed), and localising the shared
+    // primitives (useTranslations + key lookups in ~20 components, all on this
+    // route) took it just past 645. The copy has to come from somewhere.
+    'controls': 650,
     // Catch-all for any other tenant page.
     // measured max 637.5 KB — /t/[tenantSlug]/(app)/policies/[policyId]/page (96 routes)
     'tenant-default': 670,

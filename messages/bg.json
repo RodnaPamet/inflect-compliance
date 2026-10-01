@@ -28,7 +28,8 @@
       "title": "Нещо се обърка",
       "body": "Тази страница срещна грешка. Можете да опитате отново или да навигирате към друг раздел чрез страничната лента.",
       "errorId": "ИД на грешка: {id}",
-      "goToDashboard": "Към таблото"
+      "goToDashboard": "Към таблото",
+      "tryAgain": "Опитай отново"
     },
     "filterGroups": {
       "attributes": "Атрибути",
@@ -74,7 +75,9 @@
       "confirmTitle": "{verb} {count} {noun}?",
       "confirmDescription": "Това премахва избраните {noun} от вашето работно пространство.",
       "context": "Контекст",
-      "detailSections": "Секции с детайли"
+      "detailSections": "Секции с детайли",
+      "editColumns": "Редактирай колоните",
+      "noItemsFound": "Няма намерени елементи"
     },
     "ui": {
       "select": "Изберете…",
@@ -105,7 +108,20 @@
       "clearFilters": "Изчисти филтрите",
       "noEntitiesAvailable": "Няма налични {entity}s",
       "noEntitiesMatch": "Няма съвпадащи {entity}s",
-      "moreActions": "Още действия"
+      "moreActions": "Още действия",
+      "menu": "Меню",
+      "popoverContentDesc": "Съдържание на изскачащ прозорец",
+      "learnMore": "Научете повече",
+      "showPassword": "Покажи паролата",
+      "hidePassword": "Скрий паролата",
+      "options": "Опции",
+      "dismiss": "Затвори",
+      "breadcrumb": "Навигационна пътека",
+      "undo": "Отмяна",
+      "undoWindow": "{label}: оставащо време",
+      "secondsRemaining": "Оставащо време: {seconds} сек.",
+      "switchToLightTheme": "Превключи към светла тема",
+      "switchToDarkTheme": "Превключи към тъмна тема"
     },
     "calendar": {
       "prevYear": "Към предходната година",
@@ -184,7 +200,12 @@
       "tests": "Тестове",
       "vendors": "Доставчици"
     },
-    "retry": "Опитай отново"
+    "retry": "Опитай отново",
+    "skeleton": {
+      "dashboard": "Зареждане на таблото",
+      "details": "Зареждане на детайлите",
+      "settings": "Зареждане на настройките"
+    }
   },
   "login": {
     "title": "Inflect Compliance",
@@ -262,7 +283,16 @@
     "securityTesting": "Тестове за сигурност",
     "compliance": "Съответствие",
     "frameworks": "Рамки",
-    "coverage": "Карта на покритието"
+    "coverage": "Карта на покритието",
+    "openNavigationMenu": "Отвори навигационното меню",
+    "brandHome": "Inflect Compliance — към таблото",
+    "accountMenu": "Меню на акаунта",
+    "noBreadcrumbs": "Няма навигационна пътека",
+    "openOrgNavigationMenu": "Отвори навигационното меню на организацията",
+    "accountMenuFor": "Меню на акаунта – {name}",
+    "account": "Акаунт",
+    "signOut": "Изход",
+    "closeNavigationDrawer": "Затвори навигационния панел"
   },
   "dashboard": {
     "title": "Табло за съответствие",
@@ -6271,7 +6301,8 @@
       "placeholder": "Изберете…",
       "emptyState": "Няма съвпадения",
       "createLabel": "Създай \"{search}\"",
-      "createLabelEmpty": "Създай нова опция…"
+      "createLabelEmpty": "Създай нова опция…",
+      "triggerLabel": "Изберете"
     },
     "form": {
       "required": "Задължително",
@@ -10550,7 +10581,7 @@
   },
   "shortcuts": {
     "title": "Клавишни комбинации",
-    "description": "Натиснете ? по всяко време, за да покажете този списък. Комбинациите се игнорират, докато въвеждате текст.",
+    "description": "Натиснете Ctrl+/ (⌘/ на Mac) по всяко време, за да покажете този списък. Комбинациите се игнорират, докато въвеждате текст.",
     "availableNow": "Налични сега",
     "noGlobal": "Все още няма регистрирани глобални комбинации",
     "inDialogs": "В диалогови прозорци и панели",

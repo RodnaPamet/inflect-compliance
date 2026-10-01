@@ -255,8 +255,14 @@ export function DateRangePicker({
     useKeyboardShortcut(
         (presets?.filter((p) => p.shortcut).map((p) => p.shortcut) as string[]) ??
             [],
-        (e: KeyboardEvent) => {
-            const p = presets?.find((preset) => preset.shortcut === e.key);
+        (_e: KeyboardEvent, ctx?: { matched: string }) => {
+            // Resolved from the combo the MATCHER matched, not from `e.key`.
+            // `e.key` is what the layout PRODUCED: on a Bulgarian layout the
+            // key labelled D produces 'д', so `preset.shortcut === e.key` was
+            // false and no preset ever fired. The registry already matched the
+            // physical key and hands back which shortcut won, so the lookup
+            // should ask it rather than re-deriving from the raw event.
+            const p = presets?.find((preset) => preset.shortcut === ctx?.matched);
             if (p) commit(p.resolve(new Date()), p);
         },
         {

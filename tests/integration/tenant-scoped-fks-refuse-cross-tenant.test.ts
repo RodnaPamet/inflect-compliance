@@ -18,9 +18,20 @@
  * positive proves the tenant's OWN id is still accepted. Without the positive, a
  * constraint that rejected every value would pass the negative alone and read as
  * working isolation.
+ *
+ * ── On the first test's name ─────────────────────────────────────────
+ *
+ * "every one of the 35 converted relations" samples TEN named constraints, for
+ * the reason its own comment gives. That is a deliberate trade and not a defect,
+ * but the name reads as a population claim: searching this file for a model and
+ * finding nothing does NOT mean the model is uncovered by the schema, nor that
+ * it is covered by this test. The process-map pair below was added after exactly
+ * that confusion — a name-based search said "absent", the schema said the
+ * composite FK was present, and only the sample list settled which.
  */
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
+import { hashForLookup } from '@/lib/security/encryption';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(60_000);
@@ -162,5 +173,161 @@ describe('a cross-tenant reference is refused by the database, application bypas
 
         const after = await prisma.assetRiskLink.findUniqueOrThrow({ where: { id: link.id } });
         expect(after.riskId).toBe(ownRisk.id);
+    });
+});
+
+describe("a process map's children cannot belong to another tenant", () => {
+    /**
+     * Added for #2962's regression list, which asks whether "composite-FK
+     * tenant isolation [is] intact — cross-tenant child writes still fail on
+     * referential integrity, not only RLS" before the tldraw cutover deletes
+     * the old canvas.
+     *
+     * The schema says yes. Both children carry
+     * `@relation(fields: [processMapId, tenantId], references: [id, tenantId])`,
+     * and `ProcessMap` carries the `@@unique([id, tenantId])` that makes
+     * Postgres accept it. Nothing exercised it: the sample in the first test of
+     * this file names ten constraints and neither child is among them.
+     *
+     * "The schema declares it" and "the database enforces it" are different
+     * claims, and the second is the one the cutover rests on — after it, these
+     * rows have exactly one writer.
+     */
+    /**
+     * UNIQUE per call, not per tenant.
+     *
+     * Keyed on the tenant alone, the second test's `seed(T1)` collided on
+     * `User_emailHash_key` — and the first test passed because it ran first,
+     * which is how a non-idempotent fixture hides until something calls it
+     * twice. The failure then arrives as a unique-constraint error from
+     * `user.create`, which a looser `.rejects.toThrow()` in the test below
+     * would have swallowed as a pass: it IS a constraint violation, just not
+     * the one under test. The specific regex this file insists on is what kept
+     * that honest.
+     */
+    let seedN = 0;
+    const createdUserIds: string[] = [];
+    const seed = async (tenantId: string) => {
+        const email = `fk-proc-${tenantId}-${(seedN += 1)}@example.test`;
+        const user = await prisma.user.create({
+            data: { email, emailHash: hashForLookup(email) },
+        });
+        createdUserIds.push(user.id);
+        const map = await prisma.processMap.create({
+            data: { tenantId, name: `map for ${tenantId}`, createdByUserId: user.id },
+        });
+        return { userId: user.id, mapId: map.id };
+    };
+
+    /**
+     * This block cleans up after ITSELF, before the file's `afterAll` runs.
+     *
+     * `resetDatabase` does not clear `ProcessMap` — the same reason
+     * `process-map-concurrency.test.ts` deletes it by hand. Left behind, the
+     * file's `tenant.deleteMany` fails on `ProcessMap_tenantId_fkey`, which is
+     * the database being right and the fixture being wrong. The symptom is
+     * worth naming because of how it presents: every test PASSES and the SUITE
+     * fails, so a reader scanning for a red assertion finds none.
+     *
+     * Nodes and edges need no deletion — they cascade from the map, which is
+     * the `onDelete: Cascade` on the very composite FK these tests are about.
+     */
+    afterAll(async () => {
+        await prisma.processMap.deleteMany({ where: { tenantId: { in: [T1, T2] } } });
+        await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
+    });
+
+    it("a ProcessNode cannot point at another tenant's map", async () => {
+        const own = await seed(T1);
+        const foreign = await seed(T2);
+
+        // NEGATIVE. Written with the RAW client, which carries no tenant
+        // context and runs as the owner — so RLS is not what refuses this.
+        // The regex is specific for the reason this file records: a bare
+        // `.rejects.toThrow()` also passes on a missing column.
+        await expect(
+            prisma.processNode.create({
+                data: {
+                    tenantId: T1,
+                    processMapId: foreign.mapId,
+                    nodeKey: 'n1',
+                    nodeType: 'processStep',
+                    label: 'smuggled',
+                    posX: 0,
+                    posY: 0,
+                },
+            }),
+        ).rejects.toThrow(/foreign key|constraint/i);
+
+        // POSITIVE COMPANION — its own map still works, so the constraint
+        // refuses the TENANT and not the column.
+        const ok = await prisma.processNode.create({
+            data: {
+                tenantId: T1,
+                processMapId: own.mapId,
+                nodeKey: 'n1',
+                nodeType: 'processStep',
+                label: 'legitimate',
+                posX: 0,
+                posY: 0,
+            },
+        });
+        expect(ok.processMapId).toBe(own.mapId);
+    });
+
+    it("a ProcessEdge cannot point at another tenant's map", async () => {
+        const own = await seed(T1);
+        const foreign = await seed(T2);
+
+        await expect(
+            prisma.processEdge.create({
+                data: {
+                    tenantId: T1,
+                    processMapId: foreign.mapId,
+                    edgeKey: 'e1',
+                    sourceKey: 'n1',
+                    targetKey: 'n2',
+                },
+            }),
+        ).rejects.toThrow(/foreign key|constraint/i);
+
+        const ok = await prisma.processEdge.create({
+            data: {
+                tenantId: T1,
+                processMapId: own.mapId,
+                edgeKey: 'e1',
+                sourceKey: 'n1',
+                targetKey: 'n2',
+            },
+        });
+        expect(ok.processMapId).toBe(own.mapId);
+    });
+
+    it('an UPDATE cannot re-point a node at another tenant\'s map', async () => {
+        // Creation is not the only write — the same reasoning the AssetRiskLink
+        // update case above records. A node written legitimately must not be
+        // moved across the boundary afterwards, which is the shape a buggy
+        // "move map" feature would take.
+        const own = await seed(T1);
+        const foreign = await seed(T2);
+
+        const node = await prisma.processNode.create({
+            data: {
+                tenantId: T1,
+                processMapId: own.mapId,
+                nodeKey: 'n-move',
+                nodeType: 'processStep',
+                label: 'movable',
+                posX: 0,
+                posY: 0,
+            },
+        });
+
+        await expect(
+            prisma.processNode.update({
+                where: { id: node.id },
+                data: { processMapId: foreign.mapId },
+            }),
+        ).rejects.toThrow(/foreign key|constraint/i);
     });
 });

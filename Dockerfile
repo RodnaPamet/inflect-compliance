@@ -106,24 +106,49 @@ ENV NEXT_TELEMETRY_DISABLED=1
 #     loud at build time instead of quietly resolving to something older.
 RUN apk add --no-cache "openssl>=3.5.8-r0"
 
-# Upgrade the npm CLI bundled in the base image.
+# REMOVE the npm CLI from the runtime image.
 #
-# The image's vendored npm (under /usr/local/lib/node_modules/npm) ships
-# its own copies of `tar` and `brace-expansion`, and Trivy scans them as
-# part of the image. Those copies carried CVE-2026-59873 (tar, CRITICAL)
-# and CVE-2026-13149 (brace-expansion, HIGH) — neither reachable from
-# package-lock.json, so no application dependency bump clears them, and
-# `node:24-alpine` is already a floating tag.
+# This used to `npm install -g npm@<pin>` to get newer copies of the
+# packages npm vendors, because Trivy scans them as part of the image and
+# no application dependency bump can reach them. That was a treadmill, and
+# on 2026-09-30 it stopped moving: `.trivyignore` exempts BY CVE ID, so
+# CVE-2026-102276 and CVE-2026-102278 — new ids against the same
+# brace-expansion 5.0.7 that was already an accepted risk — re-broke the
+# publish gate with no push required. The image had not changed; the
+# advisory list had. Three HIGHs, every one of them under
+# /usr/local/lib/node_modules/npm/.
 #
-# npm is NOT removable here: `scripts/entrypoint.sh` runs
-# `npx --yes prisma@… migrate deploy` on every container start, so the
-# CLI is load-bearing at runtime.
+# The comment that stood here said npm was NOT removable, because
+# `scripts/entrypoint.sh` ran `npx --yes prisma@<pin> migrate deploy` on
+# every container start. That stopped being true on 2026-08-22, when the
+# entrypoint moved to the local binary — and
+# `tests/guards/runner-never-invokes-npm.test.ts` was written to lock that
+# change in. So the constraint was already gone; only the comment kept it
+# alive, and with it the reason nobody revisited this.
 #
-# Pinned rather than `@latest`, matching the entrypoint's rationale for
-# pinning Prisma — an unpinned CLI could ship a breaking change silently.
-# Bump this when a future advisory lands against the bundled tree.
-# npm 12.0.1 vendors tar 7.5.19 + brace-expansion 5.0.7 (both patched).
-RUN npm install -g npm@12.0.1 && npm cache clean --force
+# Nothing in the runtime needs the CLI. The app is
+# `exec node_modules/.bin/next start`, migrations are
+# `./node_modules/.bin/prisma migrate deploy`, the seeds are
+# `node dist/*.mjs`, and the worker is `node dist/{scheduler,worker}.mjs`.
+# `npm` is in neither `dependencies` nor `devDependencies`, and
+# `npm prune --omit=dev` above strips the transitive copy, so removing the
+# global tree leaves no npm in the image at all.
+#
+# This is the structural version of the exemptions' own argument. They each
+# say the vendored copy is "unreachable because the server never invokes
+# the npm CLI" — which is a reason not to SHIP it, not a reason to keep
+# exempting it. A package that is absent needs no CVE triage.
+#
+# `corepack` goes too: it is a package-manager shim with no runtime caller
+# here, and leaving it would keep a second vendored tree in the scan.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack \
+           /root/.npm \
+    && ! command -v npm \
+    && ! command -v npx
 
 # Non-root user
 RUN addgroup --system --gid 1001 nodejs && \

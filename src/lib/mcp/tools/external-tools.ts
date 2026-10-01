@@ -45,6 +45,7 @@ import type { RequestContext } from '@/app-layer/types';
 import { declaresWrite } from '@/lib/mcp/tool-write-classification';
 import { getPriorStateRead } from '@/app-layer/usecases/external-prior-state-read';
 import { recordIntent } from '@/app-layer/usecases/external-write-journal';
+import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import type { ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
 
@@ -92,9 +93,22 @@ const EXTERNAL_ARGS_SCHEMA = z.record(z.string(), z.unknown());
 export async function resolveExternalReadTools(
     ctx: RequestContext,
     grantedTools: ReadonlySet<string> | null,
+    /**
+     * The policy-card version that AUTHORIZED this invocation, pinned onto any
+     * proposal the `PROPOSE_ONLY` rung queues (#2861).
+     *
+     * Taken here, at invocation-build time, and never re-read at dispatch. The
+     * propose tools state the reason and it holds identically: re-reading answers
+     * "what is in force NOW", which is a different claim from "what allowed this
+     * call", and between the two an operator can have edited the card. Only the
+     * first is evidence.
+     */
+    policyCardVersion: number,
 ): Promise<McpReadTool<Record<string, unknown>>[]> {
     const granted = await resolveGrantedExternalTools(ctx, grantedTools);
-    return granted.map((g) => adapterFor(g.qualified, g.def, g.transport, g.parameterSets, g.connection));
+    return granted.map((g) =>
+        adapterFor(g.qualified, g.def, g.transport, g.parameterSets, g.connection, policyCardVersion),
+    );
 }
 
 /** One approved external tool, in the shape the funnel already knows. */
@@ -109,6 +123,7 @@ function adapterFor(
     transport: { url: string; authorization?: string },
     parameterSets: ReadonlyArray<{ label: string; parameters: Record<string, unknown> }> = [],
     connection: { id: string; name: string; url: string; mode: ExternalWriteMode },
+    policyCardVersion: number,
 ): McpReadTool<Record<string, unknown>> {
     // ── WHO CHOOSES THE ARGUMENTS ───────────────────────────────────────────
     //
@@ -232,6 +247,7 @@ function adapterFor(
                 transport,
                 connection,
                 outbound: outbound ?? {},
+                policyCardVersion,
             });
         },
     };
@@ -267,6 +283,7 @@ async function dispatchWrite(
         advertisedName: string;
         transport: { url: string; authorization?: string };
         connection: { id: string; name: string; url: string; mode: ExternalWriteMode };
+        policyCardVersion: number;
         outbound: Record<string, unknown>;
     },
 ): Promise<unknown> {
@@ -327,7 +344,47 @@ async function dispatchWrite(
         };
     }
 
-    // PROPOSE_ONLY and AUTOMATIC are unreachable today: `EXTERNAL_MAX_MODE` is
+    if (call.connection.mode === 'PROPOSE_ONLY') {
+        // The write becomes a row in the queue a human already reviews, carrying
+        // everything that review needs: where it goes, what is called, what would
+        // change, and what it replaces. `createAgentProposal` applies the shared
+        // composition from here on — sanitiser, both guards, the card pin, the
+        // approval tiering, the expiry window, the audit.
+        //
+        // NOTHING IS SENT, and nothing will be until the dispatch that runs on
+        // approval exists. Approving one of these is still refused; that job is
+        // the next slice.
+        const proposal = await createAgentProposal(ctx, {
+            kind: 'EXTERNAL_WRITE',
+            payload: {
+                connectionId: call.connection.id,
+                connectionName: call.connection.name,
+                endpointUrl: call.connection.url,
+                toolName: call.qualified,
+                advertisedToolName: call.advertisedName,
+                arguments: call.outbound,
+                priorState,
+            },
+            policyCardVersion: call.policyCardVersion,
+        });
+
+        // Told to the MODEL, and it has to distinguish the two outcomes: a
+        // quarantined proposal never enters the review queue, so reporting it as
+        // "awaiting approval" would describe a wait that nobody is going to end.
+        const queued = proposal.status === 'QUARANTINED'
+            ? `QUARANTINED — nothing was sent, and this will NOT be reviewed. The agentic `
+              + `output guard refused the content (${proposal.guardVerdict}). Proposal `
+              + `reference ${proposal.id}.`
+            : `QUEUED FOR APPROVAL — nothing was sent. This connection is at PROPOSE_ONLY, so `
+              + `the change was recorded and a human must approve it before it can be applied. `
+              + `Proposal reference ${proposal.id}.`;
+        return {
+            content: [{ type: 'text', text: `${queued} Do not report this as a completed change.` }],
+            isError: false,
+        };
+    }
+
+    // AUTOMATIC is unreachable today: `EXTERNAL_MAX_MODE` is
     // `DRY_RUN`, so no tenant can store a wider rung, and the admin route refuses
     // one. The refusal is here anyway rather than as a comment — a rung that
     // arrives later must be refused until somebody decides what it means, which

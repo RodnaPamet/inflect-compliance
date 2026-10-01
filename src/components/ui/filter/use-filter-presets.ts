@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import {
+import { presetsStorageKey,
     clearPresets as clearPresetsLib,
     deletePreset as deletePresetLib,
     listPresets,
@@ -62,7 +62,7 @@ export function useFilterPresets(
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const onStorage = (e: StorageEvent) => {
-            if (e.key && e.key === `inflect:filters:${tenantSlug}:${page}`) {
+            if (e.key && e.key === presetsStorageKey(tenantSlug, page)) {
                 refresh();
             }
         };

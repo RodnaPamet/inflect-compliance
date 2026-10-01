@@ -1,3 +1,4 @@
+import { uiStorageKey, uiCookieName } from '@/lib/ui-storage';
 /**
  * Theme constants — SERVER-SAFE.
  *
@@ -21,10 +22,10 @@
 export type Theme = 'dark' | 'light';
 
 /** localStorage key (legacy/back-compat mirror, client-only). */
-export const THEME_STORAGE_KEY = 'inflect:theme';
+export const THEME_STORAGE_KEY = uiStorageKey('theme');
 
 /**
  * Cookie name — the flash-proof, server-readable channel. RFC6265 token (no
  * `:`), so it differs from THEME_STORAGE_KEY.
  */
-export const THEME_COOKIE = 'inflect_theme';
+export const THEME_COOKIE = uiCookieName('theme');

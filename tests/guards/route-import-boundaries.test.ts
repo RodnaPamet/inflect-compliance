@@ -91,13 +91,16 @@ function routeSurface(p: string): string | null {
  * disabling the guard, because that is what it is.
  */
 const BASELINE = new Set<string>([
-    // The Processes canvas: six shared components import back into the
-    // route that owns the canvas state. Untangling needs the canvas's
-    // state to move first, which is its own change.
+    // The Processes canvas: shared components importing back into the route
+    // that owns the canvas state. Untangling the rest needs that state to move
+    // first, which is its own change.
+    //
+    // The two `ProcessMapSummary` entries are GONE as of #2961's mount: the
+    // type was promoted to `@/lib/processes/process-map-summary` rather than
+    // adding a third component to this list. That is the fix this guard's
+    // header prescribes, and shrinking is the only direction this list moves.
     'src/components/LinkedTasksPanel.tsx -> @/app/t/[tenantSlug]/(app)/tasks/NewTaskModal',
-    'src/components/processes/CanvasDocumentBar.tsx -> @/app/t/[tenantSlug]/(app)/processes/ProcessesClient',
     'src/components/processes/ManualTriggerPanel.tsx -> @/app/t/[tenantSlug]/(app)/processes/RulesTab',
-    'src/components/processes/PersistedProcessCanvas.tsx -> @/app/t/[tenantSlug]/(app)/processes/ProcessesClient',
     'src/components/processes/RuleBuilderModal.tsx -> @/app/t/[tenantSlug]/(app)/processes/RulesTab',
     'src/components/processes/RuleDetailSheet.tsx -> @/app/t/[tenantSlug]/(app)/processes/RulesTab',
     'src/components/processes/RuleDetailSheet.tsx -> @/app/t/[tenantSlug]/(app)/processes/automation-filter-defs',

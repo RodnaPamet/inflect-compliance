@@ -18,7 +18,7 @@
  *   this overlay hides it too — the policy is uniform: "label it or
  *   it's internal".
  *
- * - **Typing-safe.** `useKeyboardShortcut('?')` inherits the registry's
+ * - **Typing-safe.** `useKeyboardShortcut('mod+/')` inherits the registry's
  *   default `allowInInputs: false`, so the help modal never hijacks
  *   the `?` keystroke while a user is composing in an input, textarea,
  *   or contenteditable (Lexical / Tiptap / cmdk). The palette's own
@@ -42,7 +42,18 @@ import { useKeyboardShortcut, useRegisteredShortcuts } from "@/lib/hooks/use-key
 import { Modal } from "@/components/ui/modal";
 import { Heading } from '@/components/ui/typography';
 
-const OPEN_HELP_KEY = "?";
+/**
+ * Ctrl+/ (⌘/), not '?'.
+ *
+ * '?' is a single printable character bound globally, which WCAG 2.1.4 forbids:
+ * it is taken from every speech-input user on the page, and "question mark" is
+ * a thing people say. It is also Shift+/ on a US layout and somewhere else
+ * entirely on most others, so it was never reliable to begin with.
+ *
+ * Ctrl+/ carries a modifier, so 2.1.4 does not apply, and it is the same help
+ * binding VS Code and GitHub use.
+ */
+const OPEN_HELP_KEY = "mod+/";
 
 interface DisplayShortcut {
     id: string;

@@ -73,6 +73,33 @@ export function initSentry(): void {
         environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
         tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0'),
 
+        /**
+         * PINNED, not inherited — a privacy posture must not be a default we
+         * happen to receive.
+         *
+         * With this unset the SDK decides, and the SDK's decision moves: the
+         * v11 release states its goals include making "more permissive data
+         * collection the default". A major bump is exactly when an inherited
+         * default changes underneath you, silently and with green CI, and for
+         * this product the thing that would start flowing is a customer's users'
+         * IP addresses.
+         *
+         * `false` is also what the code already assumes. `beforeSend` scrubs
+         * `event.request` headers, body, URL and query string, and deletes
+         * `event.user.ip_address` — so the identity axis has one arm, not none.
+         * This comment previously said it had "no arm for `event.user` at all",
+         * which was true when written and false by the time the `ip_address`
+         * delete landed below. It mattered: assessing the v11 bump (#2980) I
+         * read the comment rather than the code and understated the coverage.
+         *
+         * What `beforeSend` still does NOT cover is `event.user.id` / `email` /
+         * `username`, and it has no arm at all for the axes v11 introduces —
+         * `databaseQueryData`, `genAI` inputs/outputs, `graphQL`
+         * document/variables. Those are why the posture has to stay PINNED in
+         * `init`, not delegated to the scrubber.
+         */
+        sendDefaultPii: false,
+
         // Don't send expected / handled errors
         beforeSend(event, hint) {
             const error = hint?.originalException;
@@ -106,6 +133,16 @@ export function initSentry(): void {
                 if (event.request.query_string) {
                     event.request.query_string = '[Filtered]';
                 }
+            }
+
+            // The identity axis, which the rest of this function never touches.
+            // Belt-and-braces behind `sendDefaultPii: false` above: that flag is
+            // the control, and this is what still holds if some future caller
+            // turns it on without reading the rest of the file. An `ip_address`
+            // is personal data under GDPR Art 4(1) and this is a compliance
+            // product — it must not reach a third-party error sink by default.
+            if (event.user) {
+                delete event.user.ip_address;
             }
 
             // Redact breadcrumb URLs

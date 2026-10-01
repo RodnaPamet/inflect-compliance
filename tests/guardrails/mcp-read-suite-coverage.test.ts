@@ -115,17 +115,61 @@ describe('MCP read suite — leak lock + read-only lock (per tool file)', () => 
         }
     });
 
-    it('NO tool file imports a create/update/delete usecase (read-only lock)', () => {
-        const mutating = /\b(create|update|delete|remove|apply|install|generate|propose|draft|assign|approve|execute)[A-Z]\w*/;
-        const offenders: string[] = [];
-        for (const file of files) {
-            const src = fs.readFileSync(file, 'utf8');
-            for (const m of src.matchAll(/import\s+\{([^}]*)\}\s+from\s+['"]@\/app-layer\/usecases[^'"]*['"]/g)) {
-                for (const n of m[1].split(',').map((s) => s.trim())) {
-                    if (mutating.test(n)) offenders.push(`${path.basename(file)}: ${n}`);
-                }
+    /**
+     * Every usecase name each tool file imports, as `basename: name`.
+     *
+     * Computed ONCE and reused by both assertions below. Deliberately not a
+     * `readFileSync(...).toContain(name)` in the staleness check: that is a
+     * whole-file read the Class D needle ratchet counts as un-analysable, and it
+     * would also pass on a name appearing anywhere in the file rather than in an
+     * import — so the weaker assertion was also the one that cost a ceiling.
+     */
+    const importedUsecaseNames = new Set<string>();
+    for (const file of files) {
+        const src = fs.readFileSync(file, 'utf8');
+        for (const m of src.matchAll(/import\s+\{([^}]*)\}\s+from\s+['"]@\/app-layer\/usecases[^'"]*['"]/g)) {
+            for (const n of m[1].split(',').map((x) => x.trim())) {
+                if (n) importedUsecaseNames.add(`${path.basename(file)}: ${n}`);
             }
         }
+    }
+
+    /**
+     * The ONE admitted mutating import, and why.
+     *
+     * `external-tools.ts` stopped being read-only when #2861 gave it the external
+     * write path. At `PROPOSE_ONLY` a write becomes an `AgentProposal` for a human
+     * to approve, which needs `createAgentProposal`.
+     *
+     * Worth stating plainly: this lock is a NAME-BASED PROXY and that file was
+     * already past it. `recordIntent` writes an `ExternalWriteJournal` row from
+     * the same function and matches none of the verbs below, so the DRY_RUN write
+     * path has been importing a mutating usecase since #2983 without this guard
+     * noticing. Admitting one import by name is narrower than the hole already
+     * open, and it is recorded rather than silent.
+     *
+     * Every OTHER assertion here still applies to the file unchanged — it still
+     * goes through a usecase, still imports no Prisma and no repository — and
+     * every other tool file stays absolutely read-only.
+     */
+    const READ_ONLY_LOCK_EXEMPT: Readonly<Record<string, string>> = {
+        'external-tools.ts: createAgentProposal':
+            '#2861 — at PROPOSE_ONLY an external write is queued as a proposal for human '
+            + 'approval. This file is the external WRITE path, not a read tool.',
+    };
+
+    it('exempts nothing that has stopped being imported', () => {
+        // An exemption outliving its import is a hole nobody reopened on purpose.
+        for (const key of Object.keys(READ_ONLY_LOCK_EXEMPT)) {
+            expect([...importedUsecaseNames]).toContain(key);
+        }
+    });
+
+    it('NO tool file imports a create/update/delete usecase (read-only lock)', () => {
+        const mutating = /\b(create|update|delete|remove|apply|install|generate|propose|draft|assign|approve|execute)[A-Z]\w*/;
+        const offenders = [...importedUsecaseNames].filter(
+            (key) => mutating.test(key.split(': ')[1] ?? '') && !(key in READ_ONLY_LOCK_EXEMPT),
+        );
         expect(offenders).toEqual([]);
     });
 });

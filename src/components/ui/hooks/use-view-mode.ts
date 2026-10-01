@@ -24,10 +24,12 @@
 import { useCallback } from 'react';
 
 import { useLocalStorage } from './use-local-storage';
+import { uiStorageKey } from '@/lib/ui-storage';
 
 export type ViewMode = 'table' | 'cards';
 
-const STORAGE_PREFIX = 'inflect:view-mode:';
+// Trailing ':' kept: callers append the page segment themselves.
+const STORAGE_PREFIX = `${uiStorageKey('view-mode')}:`;
 
 export function useViewMode(
     page: string,
