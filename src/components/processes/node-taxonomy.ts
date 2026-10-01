@@ -184,6 +184,28 @@ export interface NodeTypeMeta {
     defaultLabel: string;
 }
 
+/**
+ * The kind a node falls back to when none is known.
+ *
+ * Lives here, with the rest of the kind vocabulary, because it is a fact about
+ * the TAXONOMY and not about either renderer. It was declared in
+ * `ProcessTypedNode.tsx` — the xyflow node renderer — which gave it two
+ * problems that this module does not have:
+ *
+ *   • `src/lib/processes/serialize-graph.ts` had to import a constant from a
+ *     COMPONENT to do its job. `route-import-boundaries` cannot see that
+ *     inversion, since it only inspects `src/components/**`.
+ *   • the tldraw node shape could not import it at all without depending on the
+ *     component it replaces, so it duplicated the literal instead and said so
+ *     in a comment. A duplicated constant drifts silently.
+ *
+ * `satisfies` rather than a bare literal: it keeps the narrow `'processStep'`
+ * type that the `Record` keys and the equality checks rely on, while making the
+ * compiler prove the value is a real `ProcessNodeKind`. The previous
+ * declaration asserted nothing of the sort.
+ */
+export const PROCESS_STEP_NODE_TYPE = 'processStep' satisfies ProcessNodeKind;
+
 export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
     processStep: {
         id: 'processStep',

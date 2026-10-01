@@ -86,6 +86,32 @@ export function resolveBackground(): string {
  * takes a data URL, because the xyflow path produced one. Converting at this
  * boundary keeps those four contracts unchanged.
  */
+/**
+ * Whether this browser can be handed an image on the clipboard.
+ *
+ * Lives here, not in either engine's export module, because it asks about the
+ * BROWSER and not about the canvas: there is no engine in these five lines.
+ *
+ * It was declared in `canvas-export.ts` — the xyflow module — and imported from
+ * there by the tldraw export menu, whose docblock called it "one import that
+ * outlives its module" and deferred the move because
+ * `tests/guards/p-polish-b.test.ts` pinned its location by source pattern. That
+ * deferral was reasoning about churn: phase 4 deletes `canvas-export.ts`, so the
+ * guard had to be touched then anyway, and moving it earlier meant editing the
+ * guard twice. Doing it here instead of inside the deletion means the guard moves
+ * once and the deletion stops needing to understand this function at all.
+ *
+ * The detection must stay in step with the top of `copyCanvasAsImageToClipboard`,
+ * which performs the same two checks before using the API — a menu item that is
+ * visible but throws on click is worse than one that is hidden.
+ */
+export function canCopyImageToClipboard(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    if (!navigator.clipboard?.write) return false;
+    if (typeof ClipboardItem === 'undefined') return false;
+    return true;
+}
+
 export function blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();

@@ -3,7 +3,7 @@
 /**
  * Epic 54 — canonical responsive Modal.
  *
- * The single source of truth for modal dialogs across Inflect. Page
+ * The single source of truth for modal dialogs across the app. Page
  * authors compose this primitive for every create/edit/confirm flow;
  * do not build bespoke overlays with `fixed inset-0 bg-black/60`.
  *
@@ -27,6 +27,9 @@
  *   - `description` is wired to `aria-describedby`.
  *   - Floating close button carries `aria-label="Close"` and focus-visible
  *     ring via the shared `focus-visible:ring-ring` token.
+ *   - Radix's own open/close auto-focus is left in place: focus moves INTO
+ *     the dialog on open and back to the trigger on close. `preventAutoFocus`
+ *     opts a caller out of both.
  *   - Escape, backdrop click, and drag-to-dismiss all route through the
  *     same `closeModal` path so `preventDefaultClose` works for unsaved-
  *     state guards regardless of surface.
@@ -45,14 +48,21 @@ import {
     FormEventHandler,
     ReactNode,
     SetStateAction,
+    useRef,
+    useState,
     type HTMLAttributes,
 } from "react";
 import { Drawer } from "vaul";
 import { Button } from "./button";
 import { useMediaQuery } from "./hooks";
+import { OverlayDepthProvider } from "./overlay-depth";
 import { ProgressiveBlur } from "./progressive-blur";
 import { Tooltip } from "./tooltip";
 import { Heading } from '@/components/ui/typography';
+import {
+    keyboardAvoidanceStyle,
+    useKeyboardInset,
+} from "@/lib/hooks/use-keyboard-inset";
 
 // ─── Size variants ──────────────────────────────────────────────────
 
@@ -138,6 +148,19 @@ export interface ModalProps extends VariantProps<typeof modalContentVariants> {
     description?: string;
     /** Render a floating close button on desktop. Default: true. */
     showCloseButton?: boolean;
+    /**
+     * Opt out of Radix's open/close auto-focus on the desktop Dialog surface.
+     *
+     * The default — Radix's own behaviour — is what a dialog owes a keyboard
+     * user: focus moves into the dialog on open and returns to the trigger on
+     * close. This primitive used to prevent BOTH unconditionally, so focus
+     * stayed on the page behind the overlay and a screen-reader user was never
+     * told the dialog had opened.
+     *
+     * Set this only when the content manages focus itself and Radix's first
+     * pass would fight it.
+     */
+    preventAutoFocus?: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -155,10 +178,20 @@ function ModalRoot({
     title,
     description,
     showCloseButton = true,
+    preventAutoFocus = false,
 }: ModalProps) {
     const t = useTranslations("common");
     const router = useRouter();
     const { isMobile } = useMediaQuery();
+
+    // The mobile drawer caps its height at `max-h-[92vh]` — the LAYOUT
+    // viewport, which does not shrink when the soft keyboard opens. Any field
+    // near the bottom of a long form then sits behind the keyboard.
+    const keyboard = useKeyboardInset();
+
+    // The control the dialog was opened from, so focus can go back to it. See
+    // the onCloseAutoFocus handler for why Radix cannot do this for us.
+    const restoreFocusRef = useRef<HTMLElement | null>(null);
 
     const closeModal = ({ dragged }: { dragged?: boolean } = {}) => {
         if (preventDefaultClose && !dragged) return;
@@ -205,6 +238,12 @@ function ModalRoot({
                                 e.preventDefault();
                             }
                         }}
+                        // KEYBOARD AVOIDANCE. `max-h-[92vh]` below is the
+                        // LAYOUT viewport, which does not shrink when the soft
+                        // keyboard opens — so the bottom of this sheet, and any
+                        // input in it, ends up BEHIND the keyboard. This caps to
+                        // what is actually visible. See use-keyboard-inset.ts.
+                        style={keyboardAvoidanceStyle(keyboard)}
                         className={cn(
                             "fixed bottom-0 left-0 right-0 z-50 flex flex-col",
                             // Mobile drawer shares the desktop modal's
@@ -221,7 +260,11 @@ function ModalRoot({
                             data-modal-body-wrapper
                             className="flex flex-1 flex-col overflow-hidden rounded-t-[10px] bg-inherit"
                         >
-                            {children}
+                            {/* Mobile modal IS a drawer. A Combobox rendered in
+                                here must not open a second one. */}
+                            <OverlayDepthProvider>
+                                {children}
+                            </OverlayDepthProvider>
                         </div>
                     </Drawer.Content>
                 </Drawer.Portal>
@@ -243,8 +286,60 @@ function ModalRoot({
                     className="data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out fixed inset-0 z-40 bg-bg-overlay backdrop-blur-md"
                 />
                 <Dialog.Content
-                    onOpenAutoFocus={(e) => e.preventDefault()}
-                    onCloseAutoFocus={(e) => e.preventDefault()}
+                    // ─── Focus, both halves ─────────────────────────────
+                    //
+                    // This primitive used to pass `(e) => e.preventDefault()`
+                    // to BOTH of these unconditionally, which broke the two
+                    // halves of a dialog's focus contract at once: focus never
+                    // entered the dialog (so a keyboard user's next Tab
+                    // continued through the page behind the overlay, and a
+                    // screen reader announced nothing), and it never came back
+                    // on close (so dismissing a dialog dropped the user at the
+                    // top of the document).
+                    //
+                    // The historical reason given was "so cmdk / filter
+                    // popovers keep focus control". Neither needs it: the
+                    // command palette mounts its own Radix Dialog and handles
+                    // onOpenAutoFocus itself, and <Popover> takes
+                    // onOpenAutoFocus / onCloseAutoFocus as props. The tooltip
+                    // flicker it also guarded against is handled at the source
+                    // — <Tooltip> gates its focus-open on `:focus-visible`, so
+                    // programmatic focus does not pop a tooltip.
+                    onOpenAutoFocus={(event) => {
+                        // Radix's FocusScope reads the outgoing
+                        // `document.activeElement` and THEN dispatches this
+                        // event, so focus has not moved yet: this is still the
+                        // control the user opened the dialog from. Recorded
+                        // here because the close handler below has to put it
+                        // back by hand.
+                        restoreFocusRef.current =
+                            document.activeElement instanceof HTMLElement
+                                ? document.activeElement
+                                : null;
+                        if (preventAutoFocus) event.preventDefault();
+                    }}
+                    onCloseAutoFocus={(event) => {
+                        // Not simply "let Radix do it". Radix's own
+                        // onCloseAutoFocus preventDefaults unconditionally and
+                        // focuses `context.triggerRef` — i.e. <Dialog.Trigger>,
+                        // which a CONTROLLED modal never renders. That ref is
+                        // null for all 76 of this primitive's call sites, so
+                        // focus lands on <body>, and FocusScope's own correct
+                        // restore is suppressed by the same preventDefault.
+                        // Merely removing our handler therefore fixes the open
+                        // half and leaves the close half exactly as broken.
+                        //
+                        // So claim the event (our handler runs first, and
+                        // composeEventHandlers skips Radix's once the default
+                        // is prevented) and do the restore ourselves.
+                        event.preventDefault();
+                        if (preventAutoFocus) return;
+                        const target = restoreFocusRef.current;
+                        // An intercepting-route modal's trigger can be gone by
+                        // now; focusing a detached node is a silent no-op, so
+                        // check rather than pretend it worked.
+                        if (target?.isConnected) target.focus();
+                    }}
                     onPointerDownOutside={(e) => {
                         if (
                             e.target instanceof Element &&
@@ -422,7 +517,7 @@ function Actions({
 
 /**
  * Convenience wrapper that renders a `<form>` inside the modal body so
- * the body controls scroll while form submission flows through a single
+ * the body owns the scroll while form submission flows through a single
  * `onSubmit` handler. Pair with `<Modal.Actions>` for Cancel/Save.
  */
 function Form({
@@ -490,8 +585,8 @@ const tonePrimaryVariant: Record<ConfirmTone, "destructive" | "primary"> = {
 };
 
 /**
- * Prebuilt confirmation dialog. Use for destructive ops (delete, offboard,
- * revoke), irreversible transitions (close audit cycle), or any action
+ * Prebuilt confirmation dialog. Use for destructive ops (delete, remove,
+ * revoke), irreversible transitions (close a cycle), or any action
  * that needs a "are you sure?" gate.
  */
 function Confirm({
@@ -508,19 +603,37 @@ function Confirm({
     const t = useTranslations("common");
     const resolvedConfirmLabel = confirmLabel ?? t("ui.confirm");
     const resolvedCancelLabel = cancelLabel ?? t("cancel");
+
+    // The props doc has always promised a pending state; the implementation
+    // never had one. A confirm wired to a slow DELETE therefore looked inert
+    // for as long as the request took, and a second click fired `onConfirm` a
+    // second time — two deletes, or two of whatever the caller did.
+    const [pending, setPending] = useState(false);
+
     const handleConfirm = async () => {
+        if (pending) return;
         const result = onConfirm();
         if (result instanceof Promise) {
+            setPending(true);
             try {
                 await result;
             } catch {
-                return; // keep open so the caller can surface an error
+                // Keep open so the caller can surface an error — and clear the
+                // pending state, or the dialog is left with a dead button and
+                // the user cannot retry.
+                setPending(false);
+                return;
             }
+            setPending(false);
         }
         setShowModal(false);
     };
 
     const handleCancel = () => {
+        // Cancelling mid-flight would close over an in-flight promise whose
+        // `setShowModal(false)` then runs against a dialog the user already
+        // dismissed. The confirm button is disabled while pending; so is this.
+        if (pending) return;
         onCancel?.();
         setShowModal(false);
     };
@@ -534,6 +647,9 @@ function Confirm({
             description={typeof description === "string" ? description : undefined}
             onClose={onCancel}
             showCloseButton={false}
+            // Escape and the backdrop must not dismiss a confirm whose action
+            // is already running.
+            preventDefaultClose={pending}
         >
             <Header>
                 <div className="flex items-start gap-compact">
@@ -560,6 +676,7 @@ function Confirm({
                     variant="secondary"
                     size="sm"
                     data-modal-cancel
+                    disabled={pending}
                     onClick={handleCancel}
                 >
                     {resolvedCancelLabel}
@@ -569,6 +686,10 @@ function Confirm({
                     variant={tonePrimaryVariant[tone]}
                     size="sm"
                     data-modal-confirm
+                    // `loading` paints the spinner AND sets `disabled`, so the
+                    // double-submit is closed in the DOM and not only by the
+                    // guard at the top of handleConfirm.
+                    loading={pending}
                     onClick={handleConfirm}
                 >
                     {resolvedConfirmLabel}

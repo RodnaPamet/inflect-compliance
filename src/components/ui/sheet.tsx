@@ -7,11 +7,13 @@
  * `<Modal>`, the Sheet keeps the list visible on desktop so users never
  * lose context when drilling into a row.
  *
- * Responsive posture:
+ * Responsive stance:
  *   - Desktop: right-directional Vaul Drawer (side panel).
  *   - Mobile:  bottom-directional Vaul Drawer (matches Modal's mobile UX).
  *   Consumers opt out with `direction="right"` (always-right) for rare
- *   cases where the side panel must win on small screens too.
+ *   cases where the side panel must win on small screens too, or
+ *   `direction="left"` for a navigation drawer, which by convention slides
+ *   in from the edge the nav itself lives on.
  *
  * Token alignment, accessible title fallback, and structured slots
  * (`Sheet.Header` / `Sheet.Body` / `Sheet.Footer` / `Sheet.Actions`) keep
@@ -29,8 +31,13 @@ import { ComponentProps, type HTMLAttributes, type ReactNode } from "react";
 import { ContentProps, type DialogProps, Drawer } from "vaul";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { useMediaQuery } from "./hooks";
+import { OverlayDepthProvider } from "./overlay-depth";
 import { ProgressiveBlur } from "./progressive-blur";
 import { Tooltip } from "./tooltip";
+import {
+    keyboardAvoidanceStyle,
+    useKeyboardInset,
+} from "@/lib/hooks/use-keyboard-inset";
 
 // ─── Size variants (desktop width) ──────────────────────────────────
 
@@ -54,11 +61,14 @@ type SheetRootBaseProps = Omit<DialogProps, "direction" | "children"> & {
     nested?: boolean;
     /**
      * `"responsive"` (default) — right on desktop, bottom on mobile, matching
-     * Modal's mobile posture.
+     * Modal's mobile stance.
      * `"right"` — always right (rare; lose mobile ergonomics).
      * `"bottom"` — always bottom (special cases).
+     * `"left"` — always left. For a navigation drawer: it slides in from the
+     * same edge the nav rail occupies, so the panel appears to grow out of it
+     * rather than arriving from the opposite side of the screen.
      */
-    direction?: "responsive" | "right" | "bottom";
+    direction?: "responsive" | "right" | "bottom" | "left";
     /** Accessible name. Required for screen readers; visually-hidden fallback. */
     title?: string;
     /** Supplemental description wired to `aria-describedby`. */
@@ -93,14 +103,21 @@ function SheetRoot({
     const { isMobile } = useMediaQuery();
     const RootComponent = nested ? Drawer.NestedRoot : Drawer.Root;
 
-    const effectiveDirection: "right" | "bottom" =
+    // A bottom sheet sized in `vh` keeps its full height when the soft keyboard
+    // opens — `vh` is the LAYOUT viewport. An inline-edit field near the bottom
+    // of the panel then sits behind the keyboard.
+    const keyboard = useKeyboardInset();
+
+    const effectiveDirection: "right" | "bottom" | "left" =
         direction === "responsive"
             ? isMobile
                 ? "bottom"
                 : "right"
             : direction;
 
-    const isSide = effectiveDirection === "right";
+    // Left and right are both edge-anchored side panels — same vertical
+    // pinning, same width cap, mirrored horizontal edge and slide-in vector.
+    const isSide = effectiveDirection !== "bottom";
 
     const fallbackTitle = (
         <VisuallyHidden.Root>
@@ -139,23 +156,40 @@ function SheetRoot({
                     className={cn(
                         "@container/sheet fixed z-40 flex outline-none",
                         sheetWidthVariants({ size }),
-                        isSide
+                        effectiveDirection === "right"
                             ? [
                                   "bottom-2 right-2 top-2",
                                   "w-[min(var(--sheet-width),calc(100%-2*var(--sheet-margin)))] [--sheet-margin:8px]",
                               ]
-                            : [
-                                  "inset-x-2 bottom-2",
-                                  "h-[min(var(--sheet-height),calc(100vh-var(--sheet-margin)*2))] [--sheet-margin:8px] [--sheet-height:85vh]",
-                              ],
+                            : effectiveDirection === "left"
+                              ? [
+                                    "bottom-2 left-2 top-2",
+                                    "w-[min(var(--sheet-width),calc(100%-2*var(--sheet-margin)))] [--sheet-margin:8px]",
+                                ]
+                              : [
+                                    "inset-x-2 bottom-2",
+                                    "h-[min(var(--sheet-height),calc(100vh-var(--sheet-margin)*2))] [--sheet-margin:8px] [--sheet-height:85vh]",
+                                ],
                         contentProps?.className,
                     )}
                     style={
                         {
-                            "--initial-transform": isSide
-                                ? "calc(100% + 8px)"
-                                : "calc(100% + 8px)",
+                            // Vaul slides the panel in from its anchored edge
+                            // along this offset. A left sheet starts OFF-SCREEN
+                            // TO THE LEFT, so the sign flips — the same positive
+                            // value would animate it in from the right while it
+                            // is pinned left, i.e. across the whole viewport.
+                            "--initial-transform":
+                                effectiveDirection === "left"
+                                    ? "calc(-100% - 8px)"
+                                    : "calc(100% + 8px)",
                             userSelect: "auto",
+                            // KEYBOARD AVOIDANCE, merged into the existing style
+                            // rather than added as a second `style` prop (JSX
+                            // takes the last one and silently drops the first —
+                            // the bug would have been that the sheet's own
+                            // transform vanished).
+                            ...keyboardAvoidanceStyle(keyboard),
                             ...contentProps?.style,
                         } as React.CSSProperties
                     }
@@ -171,7 +205,8 @@ function SheetRoot({
                     >
                         {fallbackTitle}
                         {!isSide ? <DrawerHandle /> : null}
-                        {children}
+                        {/* A Sheet IS a drawer. Anything inside it is nested. */}
+                        <OverlayDepthProvider>{children}</OverlayDepthProvider>
                     </div>
                 </Drawer.Content>
             </Drawer.Portal>

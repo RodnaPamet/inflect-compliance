@@ -158,7 +158,12 @@ describe('Modal — source contract', () => {
     });
 
     it('exposes preventDefaultClose to suppress backdrop + Escape dismissal', () => {
-        expect(src).toMatch(/preventDefaultClose/);
+        // The guard, not the bare word. `preventDefaultClose` occurs five times
+        // in modal.tsx — the prop type, the destructuring default, this guard,
+        // the close-button gate, and Modal.Confirm passing it while its action
+        // is in flight — so the bare needle was satisfied by the mere existence
+        // of the prop, and would have survived the dismissal guard being cut.
+        expect(src).toMatch(/if \(preventDefaultClose && !dragged\) return;/);
     });
 });
 

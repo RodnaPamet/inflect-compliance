@@ -725,5 +725,3 @@ export const ProcessTypedNode = memo(ProcessTypedNodeImpl);
  */
 export const ProcessStepNode = ProcessTypedNode;
 
-/** Canonical xyflow node-type key for the default kind. */
-export const PROCESS_STEP_NODE_TYPE = "processStep";

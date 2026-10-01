@@ -28,6 +28,8 @@
  */
 import { T, type RecordProps, type TLBaseShape, createShapeId } from 'tldraw';
 
+import { PROCESS_STEP_NODE_TYPE } from '@/components/processes/node-taxonomy';
+
 /** The discriminator. A shape is a process node only if it says so. */
 export const PROCESS_NODE_SHAPE_TYPE = 'process-node' as const;
 
@@ -76,17 +78,18 @@ export const processNodeShapeProps: RecordProps<ProcessNodeShape> = {
 /**
  * The kind a node falls back to.
  *
- * Mirrors `PROCESS_STEP_NODE_TYPE`, and deliberately does NOT import it: that
- * constant is declared in `ProcessTypedNode.tsx`, the xyflow node renderer,
- * which phase 4 deletes. Importing it would make the tldraw canvas depend on
- * the component it replaces.
+ * Now the REAL constant rather than a copy of its value. This used to read
+ * `= 'processStep'` with a comment explaining that importing
+ * `PROCESS_STEP_NODE_TYPE` was impossible: it was declared in
+ * `ProcessTypedNode.tsx`, the xyflow renderer phase 4 deletes, so importing it
+ * would have made the tldraw canvas depend on the component it replaces.
  *
- * It belongs in `node-taxonomy.ts` with the rest of the kind vocabulary, which
- * is already engine-free. Moving it there is a cutover item rather than done
- * here, because it has several existing importers and the cutover diff has to
- * touch them anyway. Recorded on #2961.
+ * That constant has since moved to `node-taxonomy.ts`, which is engine-free and
+ * survives the cutover, so the duplication has no reason left. The local name
+ * stays because it says something the canonical one does not — this is the
+ * FALLBACK, the kind chosen when a drag payload names none.
  */
-export const PROCESS_NODE_FALLBACK_KIND = 'processStep';
+export const PROCESS_NODE_FALLBACK_KIND = PROCESS_STEP_NODE_TYPE;
 
 export const PROCESS_NODE_DEFAULT_W = 220;
 export const PROCESS_NODE_DEFAULT_H = 88;

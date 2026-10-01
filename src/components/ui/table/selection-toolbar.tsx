@@ -64,7 +64,7 @@ export interface BatchAction<T extends TableRowData> {
 
 /**
  * Styled button for use inside the SelectionToolbar.
- * Matches Inflect's dark-theme design tokens and provides default + danger variants.
+ * Matches the platform's dark-theme design tokens and provides default + danger variants.
  *
  * Can be used standalone or generated from BatchAction[] via renderBatchActions.
  */

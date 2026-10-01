@@ -8,9 +8,13 @@
  *   - column alignment across header + virtualized rows
  *   - large-row DOM-count reduction (the whole point of virtualization)
  *
- * jsdom has no layout — every test passes an explicit virtualized
- * container height (or sets dimensions on the AutoSizer container)
- * so react-window can compute the visible window.
+ * jsdom has no layout and this suite's `ResizeObserver` is a stub that
+ * never fires, so every test passes an explicit `virtualHeight`:
+ * `<VirtualTable>` forwards it to react-window's `defaultHeight`, the
+ * pre-measurement value, and that is what lets the window be computed
+ * at all. Without it the list believes its viewport is 0px tall and
+ * renders only its OVERSCAN — which still puts rows in the DOM, so the
+ * count assertions below would pass on a collapsed list.
  */
 /** @jest-environment jsdom */
 
@@ -64,16 +68,15 @@ const thingColumns = createColumns<ThingRow>([
     { accessorKey: "status", header: "Status" },
 ]);
 
-// Tests pass `virtualHeight` to bypass AutoSizer entirely (it doesn't
-// measure cleanly under jsdom's no-op ResizeObserver). No prototype
-// shimming required, no global state to restore.
+// Tests pass `virtualHeight` so the windowed body has a size without
+// measuring one. No prototype shimming required, no global state to restore.
 
 /**
- * Default test harness — passes `virtualHeight` so the virtualized
- * body bypasses AutoSizer (which doesn't measure cleanly under
- * jsdom's no-op ResizeObserver). Real production code paths mount
- * inside `<ListPageShell.Body>` whose flex chain provides a sized
- * parent for AutoSizer to measure.
+ * Default test harness — passes `virtualHeight`, which reaches
+ * react-window as `defaultHeight` and so survives jsdom's no-op
+ * ResizeObserver. Real production code paths mount inside
+ * `<ListPageShell.Body>`, whose flex chain gives react-window a sized
+ * parent to observe, and the observed value then replaces this one.
  */
 function renderTable(
     props: Partial<React.ComponentProps<typeof DataTable<ThingRow>>> = {},
@@ -100,8 +103,9 @@ function renderTable(
     );
 }
 
-// Future-proof helper kept for tests that DO need AutoSizer to fire
-// (none in this file today). Currently a no-op shim.
+// Flushes one macrotask so any effect react-window schedules on mount has
+// run before the assertions read the DOM. Named for the auto-sizer it used
+// to wait on; the wait itself is still the right thing to do.
 async function flushAutoSizer(): Promise<void> {
     await act(async () => {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -398,21 +402,59 @@ describe("DataTable — column alignment in virtualized mode", () => {
     });
 });
 
-// ─── Sticky header ───────────────────────────────────────────────────
+// ─── The header stays put ────────────────────────────────────────────
+//
+// This block used to assert `sticky top-0` on the header element, and under
+// react-window 1 that was the mechanism: the header lived INSIDE
+// react-window's own vertical scroller (injected through `outerElementType`)
+// and had to stick to stay visible.
+//
+// v2 deleted `outerElementType`, its `List` IS the scroller, and its
+// `children` render as an overlay on top of row 0 rather than above it in
+// flow. So the header moved OUT and became a flex sibling of the list — at
+// which point it never scrolls vertically in the first place and the sticky
+// was doing nothing but suggesting otherwise.
+//
+// Same visual contract, different mechanism, so the assertions describe the
+// structure that now delivers it. `tests/rendered/virtual-table-body.test.tsx`
+// covers the same ground at the component level.
 
-describe("DataTable — virtualized sticky header", () => {
-    it("the header element carries position:sticky semantics", async () => {
+describe("DataTable — the virtualized header stays put", () => {
+    it("the header is a flex sibling ABOVE the windowed list, not inside it", async () => {
         const { container } = renderTable({ data: makeRows(150) });
         await flushAutoSizer();
         const header = container.querySelector(
             "[data-virtual-table-header]",
         ) as HTMLElement;
+        const list = container.querySelector('[role="list"]') as HTMLElement;
+
         expect(header).toBeInTheDocument();
-        // Tailwind sticky → CSS class includes 'sticky' which maps to
-        // `position: sticky`. The class assertion is the structural
-        // contract; computed style reflects the same.
-        expect(header.className).toContain("sticky");
-        expect(header.className).toContain("top-0");
+        expect(list).toBeInTheDocument();
+        // Same parent, header first. If a future change put the header back
+        // inside the List it would paint ON TOP of row 0 — so this pair, not
+        // a class name, is the thing worth pinning.
+        expect(header.parentElement).toBe(list.parentElement);
+        expect(
+            header.compareDocumentPosition(list) &
+                Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+    });
+
+    it("the header cannot be compressed to make room for the list", async () => {
+        // `shrink-0` is what `sticky top-0` was replaced BY. Without it the
+        // flex parent squeezes the header to fit the list and the column
+        // labels vanish — the same user-visible failure the sticky prevented,
+        // reached a different way.
+        const { container } = renderTable({ data: makeRows(150) });
+        await flushAutoSizer();
+        const header = container.querySelector(
+            "[data-virtual-table-header]",
+        ) as HTMLElement;
+
+        expect(header.className).toContain("shrink-0");
+        // ...and the mechanism it replaced is gone, so a reader cannot think
+        // both are in play.
+        expect(header.className).not.toContain("sticky");
     });
 });
 
@@ -464,6 +506,36 @@ describe("DataTable — onReachEnd on the virtualized path (#103)", () => {
         // 12 rows at 44px inside a 600px viewport — the whole list is
         // within VIRTUAL_REACH_END_ROW_MARGIN of the last row.
         renderTable({ data: makeRows(12), onReachEnd });
+        expect(onReachEnd).toHaveBeenCalledTimes(1);
+    });
+
+    it("still fires past the DEFAULT threshold, with no virtualize prop at all", () => {
+        // The acceptance criterion for the react-window 2 port, stated as a
+        // behaviour rather than as the port's parts: a table big enough to
+        // auto-virtualize must still load on scroll.
+        //
+        // Every other case in this block forces `virtualize`, so all of them
+        // would keep passing if `decideVirtualization`'s threshold arm broke
+        // — the path a real list page takes is the one none of them walks.
+        // The viewport here is tall enough to hold all 1,001 rows, so the
+        // window genuinely reaches the last row instead of a scroll being
+        // simulated.
+        const onReachEnd = jest.fn();
+        const { container } = render(
+            <DataTable<ThingRow>
+                data={makeRows(VIRTUALIZE_DEFAULT_THRESHOLD + 1)}
+                columns={thingColumns}
+                getRowId={(r) => r.id}
+                virtualHeight={(VIRTUALIZE_DEFAULT_THRESHOLD + 1) * 44}
+                selectionEnabled={false}
+                onReachEnd={onReachEnd}
+            />,
+        );
+
+        // It really did auto-virtualize — otherwise this would be the
+        // non-virtual <Table> and the sentinel, a different mechanism.
+        expect(container.querySelector("[data-virtual-table]")).toBeInTheDocument();
+        expect(container.querySelector("table")).toBeNull();
         expect(onReachEnd).toHaveBeenCalledTimes(1);
     });
 

@@ -43,9 +43,18 @@ jest.mock('@/lib/processes/tldraw-canvas-export', () => ({
     attachTldrawCanvasToEvidence: (o: Opts) => attachTldrawCanvasToEvidence(o),
 }));
 
-/** Feature detection, flipped per test. Its own logic is unit-tested. */
+/**
+ * Feature detection, flipped per test. Its own logic is unit-tested.
+ *
+ * Mocks `canvas-export-shared`, which is where the function now lives — this
+ * menu no longer imports anything from the xyflow `canvas-export` module. The
+ * `requireActual` spread matters here: `canvas-export-shared` also exports
+ * `safeFilename`, `resolveBackground` and the padding/background constants, and
+ * replacing it wholesale would hand `undefined` to anything reaching for those.
+ */
 const canCopy = jest.fn(() => false);
-jest.mock('@/lib/processes/canvas-export', () => ({
+jest.mock('@/lib/processes/canvas-export-shared', () => ({
+    ...jest.requireActual('@/lib/processes/canvas-export-shared'),
     canCopyImageToClipboard: () => canCopy(),
 }));
 

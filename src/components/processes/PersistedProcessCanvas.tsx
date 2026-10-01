@@ -68,13 +68,13 @@ import {
 } from "./ProcessPalette";
 import {
     ProcessTypedNode,
-    PROCESS_STEP_NODE_TYPE,
     isProcessNodeSize,
     type ProcessNodeSize,
 } from "./ProcessTypedNode";
 import {
     NODE_TAXONOMY,
     NODE_TAXONOMY_ORDER,
+    PROCESS_STEP_NODE_TYPE,
     isProcessNodeKind,
     type ProcessNodeKind,
 } from "./node-taxonomy";

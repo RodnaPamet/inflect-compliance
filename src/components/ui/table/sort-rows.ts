@@ -5,8 +5,8 @@
  * via `onSortChange` but never orders `data` itself. Each list page owns
  * the ordering. Historically every page hand-rolled a `switch (sortBy)`
  * comparator, and those comparators drifted from what the column actually
- * displayed: e.g. Controls sorted by the raw `control.category` field while
- * the Category cell rendered the *derived* `categorizeControl().category`.
+ * displayed: e.g. one page sorted by the raw `row.category` field while the
+ * Category cell rendered a *derived* `categorize(row).category`.
  * Sorting by an invisible key makes same-displayed-value rows appear
  * interleaved instead of grouped.
  *
