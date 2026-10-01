@@ -1,0 +1,3067 @@
+{
+ "src/components/app-shell/shortcut-help-overlay.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Every visible string goes through next-intl (`t(\"title\")`, `t(\"availableNow\")`, `t(\"showShortcuts\")`). The only literals are keyboard nomenclature (Ctrl/Esc/Space/⌘/arrows) in `prettyKey`, which is modifier-key naming, not product copy. Imports are only `@/lib/hooks/use-keyboard-shortcut` and `@/components/ui/*` — both allowlisted. Sense-check: the three GRC-noun grep hits are false positives — `c"
+ },
+ "src/components/layout/AppShell.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "The host product's composition of the generic AppShellFrame: it imports next-auth `signOut`, picks between the two product sidebars, and carries the `/processes` full-bleed route regex (line 130). The file's own T07 comment (lines 125-128) states the route literal belongs with the product rather than the frame — so the coupling is deliberate and is the point of the file, not a defect. Nothing to e"
+ },
+ "src/components/layout/AppShellFrame.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The already-extracted shared frame, and clean on all five axes. Storage key routes through the seam: `collapseStorageKey ?? uiStorageKey('sidebar-collapsed')` (line 93) with `import { uiStorageKey } from '@/lib/ui-storage'` (line 54). No copy at all (every slot is a render prop), no GRC nouns, no brands, brand tokens absent, and the only other imports are `@/lib/cn` and `@/components/ui/hooks/use-"
+ },
+ "src/components/layout/ClientProviders.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Clean on all five. No JSX text, no aria/title literals, no default copy params. No GRC vocabulary and no brand names. Reads `NEXT_PUBLIC_TEST_MODE` / `NODE_ENV` but writes no storage key. Imports are `@/components/ui/OnboardingTour`, `@/components/dev/swr-devtools`, `@/components/observability/WebVitalsReporter` — none from `src/app-layer` or a `src/lib/<domain>` module. Worth flagging separately:"
+ },
+ "src/components/layout/DashboardLayout.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Structurally generic — a title row plus a `space-y-section animate-dashboard-rise-in` wrapper delegating its header to `<PageHeader>`; the only runtime import is `@/lib/cn`. No copy, no storage key, no brand-as-text (`animate-dashboard-rise-in` and `space-y-section` are layout tokens). The single coupling is a GRC consumer list in one comment, removable in one edit."
+ },
+ "src/components/layout/EntityDetailLayout.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The shell itself is domain-free: tabs/meta/actions/rail are all slots, every visible string goes through next-intl (`t('retry')`, `t('table.detailSections')`, `t('table.context')`), and the caller supplies the error and empty text. The brand token at line 344 is `border-[var(--brand-default)]` on the active tab — a BORDER, which rule 4 explicitly permits (non-text owes 3:1), so NOT a brand-as-text"
+ },
+ "src/components/layout/EntityListPage.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A pure slot-and-passthrough shell: header/filters/table/banner/kpis/aside/leftRail/tableFooter, `Pick<DataTableProps>` for the table surface, zero visible strings of its own, no storage key, no brand tokens. `@/components/filters/FilterToolbar` is a sibling component namespace, not `src/app-layer` or `src/lib/<domain>`, so not a domain-import. All four couplings are GRC prose in the doc comment."
+ },
+ "src/components/layout/IdentityPill.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic in shape — a context pill of avatar plus truncated name, styled entirely from semantic tokens (`border-border-subtle`, `bg-bg-default`, `text-content-muted`), no brand token, no storage key, no GRC vocabulary. Both couplings are the same hardcoded English sentence, and this file is the only chrome component in the slice with NO `useTranslations` import at all — the switchers that supersede"
+ },
+ "src/components/layout/ListPageShell.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The flex/min-h-0 viewport-fit chain itself is fully generic — slots only, `@/lib/cn` the sole import, no storage key, no brand token. Two removable couplings. The aria-label one is worth the follow-up because the fix already exists in the slice: `EntityDetailLayout.tsx:409` labels the same kind of rail with `aria-label={t('table.context')}`, so a catalogue key is proven to be available for exactly"
+ },
+ "src/components/layout/LocaleSwitcher.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The widget is generic (a ToggleGroup over `SUPPORTED_LOCALES`, with endonyms interpolated from constants rather than written as JSX literals precisely to stay off the i18n ratchet). Two couplings. The cookie finding is the material one: the writer bypasses the `uiCookieName` seam, which is exactly the drift `src/lib/ui-storage.ts` was created to end — its own header documents the prior `ThemeProvi"
+ },
+ "src/components/layout/MobileNavDrawer.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Nearly clean: the drawer is a thin `<Sheet direction=\"left\">` consumer, its visible and accessible names both go through `tn('openNavigationMenu')` (lines 103, 125), and its only lib import is the allowlisted `@/lib/hooks/use-keyboard-shortcut`. The one coupling is a user-visible string I verified is actually rendered rather than internal."
+ },
+ "src/components/layout/OrgSidebarNav.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "The org-side GRC nav register. Coupling is the entire content of the file: it enumerates the product's org routes and their drill-down permission gates, and reads `useOrgContext/useOrgHref/useOrgPermissions`. Labels DO go through next-intl (`t('nav.nonPerformingControls')`), so there is no `copy` finding — but a translated label still names a GRC concept, and the hrefs are product routes. Nothing "
+ },
+ "src/components/layout/PageActions.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A 20-line layout cluster: one div, one `cn()` call, `flex flex-wrap-reverse items-center justify-end gap-tight min-h-9`. `@/lib/cn` is the only import. No strings, no GRC nouns, no brands, no storage, no brand tokens. Safe to vendor byte-identical."
+ },
+ "src/components/layout/PageBreadcrumbs.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A thin wrapper: pushes items into the local `breadcrumbs-store` context and renders `<Breadcrumbs>` inside a `md:hidden` div. Imports only `@/components/ui/breadcrumbs` and the sibling store. No copy (items come from the caller), no GRC vocabulary, no storage key, no brand token."
+ },
+ "src/components/layout/PageHeader.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The header primitive is structurally generic — breadcrumbs/back/eyebrow/title/description/meta/actions are all caller-supplied, the back link's only literal is the `←` glyph (line 226), and there is no storage key or brand token. Two couplings. The import one is the substantive one: it makes a shared primitive's visible behaviour (whether the H1 is `sr-only`) depend on this product's route registr"
+ },
+ "src/components/layout/SidebarNav.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "The tenant GRC nav register plus the product's identity block. Coupling is the whole point: `useNavSections()` enumerates assets/risks/controls/audits/tasks/calendar/tests/evidence/policies/vendors/agents/processes/reports with their permission and module gates, and the brand mark is spelled inline. It reads `useTenantContext/useTenantHref/usePermissions/useModules` and the command-palette provide"
+ },
+ "src/components/layout/TopChrome.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Clean on all five, which surprised me for a file this product-shaped: every string goes through next-intl (`t('openOrgNavigationMenu')`, `t('openNavigationMenu')`, `t('noBreadcrumbs')`), there are no GRC nouns and no brand names anywhere in it, no storage key, no brand colour token, and its imports are all slice siblings plus `@/components/ui/breadcrumbs`. One thing I could not score under the fiv"
+ },
+ "src/components/layout/WorkspaceShell.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Canvas-page shell, four slot components over `cn()` class strings; `@/lib/cn` is the only import. No strings, no storage key, no brand token. Sense-check: the one GRC-noun grep hit is a false positive — \"Pages that overload it with too many controls\" (line 79) is the UI-widget sense. \"Alteryx\" (line 6) is a layout-language reference and not one of the four listed brands."
+ },
+ "src/components/layout/breadcrumbs-store.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A React context holding a stack of breadcrumb trails: provider, `useCurrentBreadcrumbs`, `useBreadcrumbs`. Only import is a type from `@/components/ui/breadcrumbs`. No strings, no GRC vocabulary, no brands, no storage key, no class names at all."
+ },
+ "src/components/layout/environment-badge.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Clean on all five. Copy is translated — `t('staging')`, `t('dev')`, `t('stagingAria')`, `t('devAria')` — the uppercase \"STAGING\"/\"DEV\" strings appear only in the header prose describing the states (lines 15-16), not in the render. Tones are deliberately status, not brand (`bg-bg-warning-emphasis`, `bg-bg-error-emphasis`, `text-content-inverted`), and the header says so. Detection is hostname-patte"
+ },
+ "src/components/layout/nav-bar.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The geometry/recipe primitive is generic and well-sealed — every accessible name defaults to a catalogue key (`t('brandHome')`, `t('openNavigationMenu')`) and brand tokens appear only as gradients, shadows and `background-image` (lines 160, 370, 373), i.e. fills, which rule 4 permits. The couplings are the brand identity leaking into the primitive. The default-value one is the real defect: a downs"
+ },
+ "src/components/layout/nav-item.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A genuinely reusable nav-row primitive carrying a large amount of load-bearing CSS; the only strings are caller-supplied (`label`, `badgeLabel`), no storage key, and the slug-hash drift helper is pure. IMPORTANT NON-FINDING: the active label is `text-content-brand` (line 534), i.e. the brand-as-text defect here is already CLOSED — the header at lines 515-532 records the T07 fix and the 4.03:1-vs-4"
+ },
+ "src/components/layout/nav-section.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The thinnest MIXED in the slice. Component is fully generic (optional title span plus a gradient-hairline divider, `@/lib/cn` and the sibling collapse context the only imports, title supplied by the caller, no storage key, no brand colour token — the divider peaks at `--border-subtle`). The one coupling is two brand names in a rationale comment. Secondary, not scored because the nouns are not on t"
+ },
+ "src/components/layout/notifications-bell.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Shape is generic (a bell, a badge, a popover list over a REST/SSE feed) and most copy IS translated — `t('notifications')`, `t('markAllRead')`, `t('sessionExpired')`, `t('loading')`, `t('allClear')`, `t('caughtUp')`, `t('unreadAria', { count })`. No storage key; badge uses status tones (`bg-bg-error-emphasis`), not brand. The couplings are two untranslated strings that both reach the screen, which"
+ },
+ "src/components/layout/org-workspace-switcher.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic in shape — a popover of two membership sections plus a footer link, tokens-only styling, no storage key, no GRC vocabulary (the \"control\" hit at line 4 is the UI-widget sense). This file imports no next-intl at all, so every one of its strings is untranslated; it is the worst copy offender in the slice alongside its tenant twin, and the two share the identical strings so they are one fix. "
+ },
+ "src/components/layout/session-expired-notice.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/auth. Audited note: Clean on all five, and deliberately so — the header (lines 12-14) states \"The figure is kept and the component names are not. They were this product's, and this file is copied verbatim by a downstream one\", i.e. a previous pass already stripped its coupling. Both strings go through next-intl (`t('body')`, `t('action')`). `text-content-brand` on line 55 is the AA-safe token rule 4 names as the repl"
+ },
+ "src/components/layout/sidebar-collapse-context.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Trivially generic: a boolean React context with a provider and a reader, 31 lines, no strings and no imports beyond react."
+ },
+ "src/components/layout/tenant-switcher.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic in shape (popover over JWT memberships, tokens-only styling, no storage key, no GRC vocabulary) but imports no next-intl, so every visible string is hardcoded English — the same four strings as org-workspace-switcher, which is why the pair should be fixed together. NON-FINDING: `text-[var(--brand-default)]` at line 214 is on an `aria-hidden` lucide `<Check>` icon — a non-text fill, permitt"
+ },
+ "src/components/layout/use-calendar-badge.ts": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "A data hook bound to one product endpoint, so it cannot be vendored at all: the SWR key is `/api/t/${tenantSlug}/calendar/upcoming-count` (line 71) and it imports `ApiClientError` from `@/lib/api-client`. The coupling is the point of the file rather than a removable blemish — there is nothing generic left once the endpoint goes. Scored COUPLED on that basis even though the formal five only catch i"
+ },
+ "src/components/layout/user-menu.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The single thinnest finding in the slice, and I want to be explicit that it is only this: every visible and accessible string routes through next-intl (`t('theme')`, `t('language')`, `tNav('account')`, `tNav('accountMenu')`, `tNav('accountMenuFor', { name })`, `tNav('signOut')`, `tSecurity('securityTitle')`); no storage key is written here (ThemeToggle owns its own); no brand colour token; no GRC "
+ },
+ "src/components/ui/ActionCluster.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Typed primary/secondary/overflow action cluster. All labels arrive as props; the only owned string is aria-label={t(\"moreActions\")} via next-intl. JSDoc cites Linear and Stripe as design references — not the four named brands, and no compliance noun appears."
+ },
+ "src/components/ui/ApprovalBanner.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Shape is a generic approve/reject review banner and every user-visible string already routes through next-intl ('approval' namespace). The coupling is policy-specific prose in the docstring only — removable without touching behaviour."
+ },
+ "src/components/ui/ComplianceStatusIndicator.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "A compliance-status dot/chip/bar. The ComplianceStatus domain type, its label table and the announced status word are the entire file."
+ },
+ "src/components/ui/DonutChart.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A visx/gradient donut, generic in its payload shape (label/value/seriesIndex). It DOES use next-intl — which makes the one escaped literal sharper: the a11y label is translated while the visible text beside it is not."
+ },
+ "src/components/ui/EvidenceGallery.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "An evidence-register gallery view: the row type, the badges, the retention/review fields and the name are all the evidence domain. Also carries a domain import and untranslated English."
+ },
+ "src/components/ui/FileDropzone.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Declares itself \"generic, reusable\" and \"does NOT know about the evidence API\" — yet imports from an evidence module and ships a screen's worth of untranslated English. The single most valuable MIXED file in my slice: the shape is right, the coupling is all extractable."
+ },
+ "src/components/ui/FrameworkBuilder.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "A drag-and-drop editor for framework sections and requirements, persisting to the FrameworkRequirementOrder overlay. Framework/requirement is the point. Carries all four other coupling kinds too."
+ },
+ "src/components/ui/FrameworkMinimap.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "A framework section navigator wired to compliance status via ComplianceStatusIndicator and the framework-tree module. Same four couplings as FrameworkBuilder."
+ },
+ "src/components/ui/FreshnessBadge.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Self-describes as \"recency indicator for any timestamped artefact\" and the prop really is generic — but every string is English with no next-intl, and one user-visible title names \"evidence\" outright. Valuable: the pure resolver beside it (freshness.ts) is already clean, so only the presentation layer needs work."
+ },
+ "src/components/ui/GraphExplorer.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A React Flow wrapper that is genuinely payload-driven (colour/icon/pattern all resolve from the payload's `categories`, so a new node kind needs no change here) and renders no owned English. The coupling is its type source, which is swappable for a local structural type."
+ },
+ "src/components/ui/HeroMetric.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Masthead single-number verdict card; value/eyebrow/description/action are all props and the brand token appears only as a radial-gradient background (L208). Two removable couplings."
+ },
+ "src/components/ui/KpiCard.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Executive KPI stat card over MetricCard/AnimatedNumber/MiniAreaChart. Its trend math is correctly extracted to src/lib/kpi-trend.ts (a flat generic helper, not a domain module, so NOT a domain-import). Two removable couplings."
+ },
+ "src/components/ui/MetadataBar.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure layout strip (items of {id,label,value}) — no domain props, no domain imports. One hardcoded English string in JSX. Comments name Linear/Stripe as design references, which are not in the in-scope brand set, so not reported."
+ },
+ "src/components/ui/MetricCard.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Layout-only chassis for single-number cards; every slot is a ReactNode. Coupling is docblock/comment-only: a compliance eyebrow example and the two tenant brand names in a glow-tuning note."
+ },
+ "src/components/ui/NextBestActionCard.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "Coupling IS the file: the card exists to render the compliance readiness chain. Its glow map is keyed by the five compliance action ids and the docblock spells out the evidence/tasks/risks/coverage/readiness priority chain. Not a defect — it simply does not belong in a shared core."
+ },
+ "src/components/ui/OnboardingTour.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The provider/hook shape is generic driver.js plumbing, but it carries the highest-value removable coupling in the slice: a storage key spelled as a literal rather than built through uiStorageKey, plus a brand-named CSS class and an import of this product's tour content."
+ },
+ "src/components/ui/ProgressCard.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Shape is generic (label/value/max/segments/trend/footer); `title={`${seg.label}: ${seg.value}`}` is built from props, not hardcoded. All four coupling sites are comments naming specific compliance dashboard cards."
+ },
+ "src/components/ui/RichTextEditor.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The component API is fully generic (value / contentType / onChange / placeholder) and almost all copy goes through `useTranslations('richtext')` — which makes the two un-translated labels stand out as drift rather than design. The policy references are docblock-only."
+ },
+ "src/components/ui/SankeyChart.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "Coupling IS the file: a cross-tier compliance traceability Sankey (assets → risks → controls → requirements → policies), built on the domain graph library. Not a defect for this repo. BUT it carries one accessibility finding worth fixing regardless, and one a `text-brand-*` grep would never find."
+ },
+ "src/components/ui/StatusBreakdown.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Distinct from the lowercase status-breakdown.tsx. Its runtime copy IS translated (`useTranslations('common.chart')` → t('total'), t('noData')) and the title attribute is built from props, so the only coupling left is the JSDoc, which is pure risk-severity vocabulary."
+ },
+ "src/components/ui/TabSection.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Tab-body wrapper: title/description/actions/children, all ReactNode slots, `space-y-section` plus a Heading. No copy of its own, no domain vocabulary, imports @/lib/cn and local ./typography only."
+ },
+ "src/components/ui/TreeExpandCollapseToggle.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Stateless tri-state expand/collapse pair — genuinely reusable, as its own docblock claims. But it imports the compliance framework-tree helper for its state derivation and hardcodes three English strings. `focus-visible:ring-[var(--brand-default)]` (:81,:98) is a RING (boundary, 3:1 applies) — not a brand-as-text finding."
+ },
+ "src/components/ui/TreeView.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Genuinely generic ARIA tree — visible-flat materialisation, roving tabindex, lazy children, controlled-or-uncontrolled expansion, generic over `T extends TreeViewNode`. The coupling is two imports of the compliance framework-tree module (for pure helpers and a type), one hardcoded empty-state string, and docblock examples."
+ },
+ "src/components/ui/TreeViewItem.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Stateless tree row — label/secondary/meta/depth/expanded/selected/focusable plus two callbacks. Nothing domain in the API, no copy, imports @/lib/cn only. One real brand-as-text finding in the selected state."
+ },
+ "src/components/ui/TrendCard.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/format-date. Audited note: Compact trend tile over the chart platform. All copy via `useTranslations(\"common.chart\")` — `t(\"trendAria\", { label })`; the label/value/format/points/colorClassName all come from the caller. Imports @/lib/format-date (generic util) and local chart/number modules. Judged NOT domain-props: the JSDoc example is `label=\"Coverage\"` and the prose says \"not just the executive dashboard\" — \"coverage\" is"
+ },
+ "src/components/ui/TruncationBanner.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A 52-line warning banner; shape is generic (truncated + cap). Both visible strings are hardcoded English. The import is this app's list-API envelope module."
+ },
+ "src/components/ui/VersionDiff.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The component API is a generic two-version text differ: `versions: {id, versionNumber, contentType, text}[]`, jsdiff line-level, nothing policy-shaped in the props or the exported `htmlToLines`. All copy is translated. The coupling is the docblock and the i18n namespace it reads from."
+ },
+ "src/components/ui/accordion.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Radix accordion wrapper, CVA variants only. No rendered text, no domain nouns, token-backed colours (text-content-muted), imports only @/lib/cn + ./icons. Internal project vocabulary (\"Epic 60\", \"Epic 51 token system\") is not domain coupling."
+ },
+ "src/components/ui/ai-assist-rail.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "An AI risk-assessment CTA rail for the risk register. Compliance vocabulary and untranslated English copy ARE the file; nothing to extract. No next-intl import at all."
+ },
+ "src/components/ui/animated-number.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "NumberFlow wrapper with Intl format presets. The only literal is ANIMATED_NUMBER_EMPTY = '—' (punctuation, not English copy). Comments name sibling components (KpiCard, HeroMetric, TenantCoverageList) — component identifiers, not domain nouns."
+ },
+ "src/components/ui/animated-size-container.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Motion-based width/height animator over a ResizeObserver. 80 lines, no strings, no domain surface. Dub-lineage code but carries no brand text."
+ },
+ "src/components/ui/aside-panel.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A genuinely generic right-rail chrome primitive (collapse, drag-resize, Sheet fallback below xl) carrying three removable couplings. The highest-value MIXED file in the slice after FileDropzone."
+ },
+ "src/components/ui/async-combobox.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Debounce + AbortController wrapper over <Combobox>; fully generic in code, and placeholder/searchPlaceholder/emptyState all default through next-intl. Only the docstring's example list is coupled."
+ },
+ "src/components/ui/badge.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Otherwise a clean CVA badge on semantic tokens; one variant paints a brand FILL token as text. Not allowlisted anywhere — tests/guards/brand-semantic-tokens.test.ts only asserts the four brand keys EXIST, it says nothing about text usage."
+ },
+ "src/components/ui/breadcrumbs.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Semantic <nav>/<ol> trail with collapse-to-ellipsis. aria-label defaults to t(\"breadcrumb\") via next-intl; every label is a caller prop. JSDoc examples are placeholder nouns (Dashboard / Items / Admin / API keys), none from the compliance vocabulary."
+ },
+ "src/components/ui/bulk-action-bar.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic action-picker + value-input + Apply bar for a table selection; every string routes through next-intl ('common' namespace) including the confirm title/description. Coupling is comment-only."
+ },
+ "src/components/ui/button-like-keys.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure a11y helper returning role/tabIndex/aria-expanded/onKeyDown for a non-button element. No strings, no imports beyond a React type."
+ },
+ "src/components/ui/button-variants.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "CVA recipe only. Brand tokens appear solely as gradient stops, borders and shadows; the one text usage is `hover:text-content-brand` (L168) — the AA-safe token, with a comment explaining the 4:1 problem it avoids. No copy, no domain, no storage."
+ },
+ "src/components/ui/button.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The core button primitive — no rendered copy, no storage, and every brand token is used as background/border/shadow (L181 focus halo, L310 kbd background), which the rules explicitly permit. One domain example survives in a comment."
+ },
+ "src/components/ui/card-header.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure layout composition over typography primitives; title/eyebrow/description/actions are all ReactNode props. Coupling is one docstring example."
+ },
+ "src/components/ui/card-list/card-list-card.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic card primitives (Card / CardHeader / CardContent) with a good a11y story. Two couplings. The solid one is an English copy-parameter default that reaches the DOM as an aria-label — rule 1's exact shape, and the only string in the file not supplied by the caller; this file never calls useTranslations. The second is weaker and I flag it as a judgement call: the JSDoc kv example is a complianc"
+ },
+ "src/components/ui/card-list/card-list.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A 95-line responsive grid container — `<ul role=\"list\">`, a loading context, nothing else. Code is entirely generic (no copy; `aria-label` is a pass-through prop with no default). The only coupling is one domain example in the file-header comment naming compliance framework packs among the surfaces this grid is for. I judged \"framework\" here as the GRC sense (framework packs = the compliance frame"
+ },
+ "src/components/ui/card-list/index.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Barrel assembling the `CardList` compound export (Card / CardHeader / CardContent) plus the two context hooks. Re-exports only; the coupling in this directory lives in the two component files."
+ },
+ "src/components/ui/card-variants.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A single cva() of class strings on semantic tokens, split out so server components can call it. Nothing to couple to."
+ },
+ "src/components/ui/card.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Typed density/elevation wrapper over the glass-card recipe, delegating classes to card-variants.ts. Linear/Stripe/Vercel are cited as design references only; no copy, domain or storage."
+ },
+ "src/components/ui/charts/ale-histogram.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "A quantitative-risk (FAIR/ALE) histogram. Props are domain props (ale, bandName/bandColor = tenant matrix band, referenceLine = per-risk appetite cap), it imports a GRC domain module, and its generated a11y summary is compliance prose. The coupling is the point of the file — it does not belong in a shared core."
+ },
+ "src/components/ui/charts/areas.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): areas.tsx:102 text-brand-default. Audited note: Generic visx area-series renderer driven entirely by ChartContext. No domain vocabulary, no UI copy, no storage. The `text-brand-*` defaults are NOT brand-as-text findings: they set `color` so that the SVG `fill`/`stroke` resolve via `currentColor` — a non-text paint, which the rule explicitly permits (see notes)."
+ },
+ "src/components/ui/charts/bar-field-3d.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A stub 3D cross-tab chart that is generic in shape (x/z/y data, seriesIndex, ariaLabel, FallbackComponent) but whose head matter and prop JSDoc are written in product and compliance terms. Removable without touching the API."
+ },
+ "src/components/ui/charts/bars.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): bars.tsx:204 text-brand-emphasis. Audited note: Generic stacked-bar renderer with mount spring + hover bubble. No domain vocabulary, no copy, no storage. `text-brand-emphasis` at :204 is the same non-text fill case as areas.tsx."
+ },
+ "src/components/ui/charts/chart-3d-dynamic.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Twenty-line next/dynamic wrapper around Chart3D. No copy, no domain terms, no storage, no domain imports."
+ },
+ "src/components/ui/charts/chart-3d.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Stub 3D frame: a prefers-reduced-motion hook, a CSS-var-to-hex resolver, and a fallback-rendering div. `ariaLabel` is a required prop with no English default. No domain vocabulary anywhere — the long head matter is entirely about React 19 / r3f compatibility."
+ },
+ "src/components/ui/charts/chart-context.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Two React contexts plus their accessor hooks. The two English strings are thrown `Error` messages ('No chart context'), not JSX text, aria-*, title, or a copy parameter default, so they are not `copy` under the stated rule."
+ },
+ "src/components/ui/charts/chart-frame.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Genuinely generic responsive frame with loading/empty/error branches, and its user-facing copy is correctly routed through next-intl (`useTranslations('common.chart')`). What remains is compliance vocabulary in the JSDoc usage example and the head matter."
+ },
+ "src/components/ui/charts/chart-gloss.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure SVG gradient-def primitives (ChartGloss, ChartSheenSweep) plus two id builders — no runtime coupling at all. The only coupling is the worked example chosen for the id builders' JSDoc."
+ },
+ "src/components/ui/charts/chart-gradient.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Three token-backed SVG gradient defs plus an id builder. Shape is fully generic (series index 1..6, direction, opacity); the coupling is one JSDoc worked example."
+ },
+ "src/components/ui/charts/chart-legend.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic series-swatch / gradient-strip legend, but it composes its gradient variant's aria-label from hardcoded English rather than next-intl, and names a GRC metric as the JSDoc example for `label`. Both are removable without changing the component's shape."
+ },
+ "src/components/ui/charts/chart-motion.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Four motion hooks (hover-pop, gradient flow, entrance spring, sheen sweep) plus a reduced-motion listener. Pure numbers, refs and RAF loops. No copy, no domain vocabulary, no storage, no domain imports."
+ },
+ "src/components/ui/charts/examples.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Sample data for the generic chart contracts, but the samples are compliance samples — and the file's own head matter asserts the opposite, which makes this the clearest removable case in the slice: swap the literals and the module is fully generic."
+ },
+ "src/components/ui/charts/funnel-chart.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic funnel primitive (steps/values/conversion deltas, no compliance vocabulary, copy-free, imports only cn, number-format and ../hooks). Its one finding is an accessibility one: the hovered between-stage conversion annotation paints its TEXT with a brand fill token."
+ },
+ "src/components/ui/charts/gantt-chart.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic Gantt renderer (rows with start/end/seriesIndex/dependencies, token-backed chrome, dependency-chain BFS). Two removable couplings: an English aria-label default and a compliance JSDoc example."
+ },
+ "src/components/ui/charts/index.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A re-export barrel, so no runtime coupling of its own, but its section prose carries the product brand and quantitative-risk vocabulary — and it is also the file that re-exports the two COUPLED widgets into the shared public surface, so it is the edit point for any extraction."
+ },
+ "src/components/ui/charts/interaction.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Hover/keyboard hooks and two token-backed tooltip surface components; the code is entirely generic (all labels and values are caller-supplied ReactNode, no English literals). Coupling is confined to the head-matter prose."
+ },
+ "src/components/ui/charts/layout.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure, deterministic margin/padding/domain/scale/tick-density helpers — the most reusable module in the slice. Only coupling is the brand name in the head comment. (`@/lib/format-date` is a generic util, not a domain module.)"
+ },
+ "src/components/ui/charts/line-chart.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic single-series line chart with area gradient, mount path-draw and hover crosshair. Two removable couplings: an English aria-label default and a compliance JSDoc example."
+ },
+ "src/components/ui/charts/loss-exceedance-curve.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "A quantitative-risk LEC primitive. Its data contract, its reference-line concept and its default formatter are all GRC-specific, and it imports a risk domain module. Coupling is the point of the file."
+ },
+ "src/components/ui/charts/radar-chart.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic multi-axis radar (key/label/value axes, ring count, label anchoring maths) whose comments and JSDoc are the most compliance-saturated of the MIXED charts, plus an English aria-label default. Nothing domain-specific reaches the runtime."
+ },
+ "src/components/ui/charts/time-series-chart.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The slice's generic interactive time-series host — context providers, scales, hover capture, tooltip wrapper. One removable coupling: its default empty state hardcodes English rather than taking it from next-intl (the `emptyState` prop lets callers override, which is exactly why this is the default-value case)."
+ },
+ "src/components/ui/charts/tooltip-sync.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "27-line context provider holding a single hovered-Date state. Nothing but React."
+ },
+ "src/components/ui/charts/types.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Type-only module (plus five tiny ChartState constructors) and the single most vendorable contract surface here — but like examples.ts it claims domain-freedom while its JSDoc carries compliance examples. Removable with a comment edit; no type or field is itself domain-shaped."
+ },
+ "src/components/ui/charts/use-heat-scale.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure math hook (clamp, color-mix string builder, step values) with no runtime coupling — the extracted helpers are unit-testable without React. Coupling is confined to the rationale comments naming the consuming domain widget and hue."
+ },
+ "src/components/ui/charts/use-tooltip.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Internal hook wrapping @visx/tooltip with RAF throttling, bisector nearest-point lookup and cross-chart sync. No copy, no domain vocabulary, no storage, no domain imports."
+ },
+ "src/components/ui/charts/utils.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Trivially generic: a ten-line legacy shim whose entire body is `export { getFactors } from './layout';`."
+ },
+ "src/components/ui/charts/x-axis.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Token-backed visx AxisBottom plus optional grid lines, tick density delegated to layout.ts. All colours are design-system CSS vars (--border-default, --content-muted, --content-emphasis); no brand token, no copy, no domain terms."
+ },
+ "src/components/ui/charts/y-axis.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Token-backed visx AxisLeft with label-width measurement feeding the left margin back into ChartContext. Same clean token vocabulary as x-axis.tsx; no copy, no domain terms."
+ },
+ "src/components/ui/checkbox.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Radix checkbox with CVA sizing. Brand tokens are used only as border and background (`hover:border-brand-emphasis`, `data-[state=checked]:bg-brand-emphasis`), which is permitted; the contrast comments reference border-border-strong for 1.4.11. No copy or domain."
+ },
+ "src/components/ui/checklist-card.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic guided-steps card (done flags, progress count, per-step CTA) with no next-intl import, so both its own strings ship as English. Both are removable without changing the shape."
+ },
+ "src/components/ui/checklist-gear-button.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Shared gear-popover checklist (click-to-order, drag-reorder, cmdk nav). Copy is clean — the one owned string is t('table.resetToDefaults') and `title` is a prop. One brand token is used as text."
+ },
+ "src/components/ui/checklist-order.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure order/visibility transforms (toggle, reconcile, reorder, slot-merge) — no React, no storage access, no rendered copy. The only coupling is the brand prefix spelled literally in a defensive comment."
+ },
+ "src/components/ui/combobox/index.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "860-line generic option picker. Clean on four of five axes: every string resolves via `useTranslations(\"ui.combobox\")` → `getComboboxMessages` (including the trigger's aria-label fallback `t(\"triggerLabel\")` at :442), imports are only `@/lib/cn` plus sibling ui modules, no storage, and no brand token used as text. The one coupling is a GRC entity named as the motivating example in a layout comment"
+ },
+ "src/components/ui/combobox/messages.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A copy-resolution module: `getComboboxMessages(t)` routes all four combobox strings through next-intl, and `COMBOBOX_DEFAULT_MESSAGES` is the last-resort fallback for a translator that throws or returns empty. The English literals match rule 1 literally (copy-parameter defaults), so I report them — but flagging the other direction too: this is a DELIBERATE, documented design, not an oversight (the"
+ },
+ "src/components/ui/combobox/virtualized-options.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "488-line windowed option list with a bespoke keyboard layer and offscreen-canvas line-count measurement for wrapped-row heights. Clean on all five: zero strings beyond key names (\"ArrowDown\", \"Enter\", \"Home\") and a font stack, zero vocabulary hits, no storage, no brand-as-text, and imports confined to `@/lib/cn`, `@/components/ui/virtualized-list` and siblings."
+ },
+ "src/components/ui/confirm-dialog.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A 3-line re-export: `export const ConfirmDialog = Modal.Confirm`, plus type aliases. The JSDoc usage example uses API-key revocation strings (generic SaaS), and its tone semantics (danger/warning/info) carry no compliance noun."
+ },
+ "src/components/ui/control-variants.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Form-control CVA recipes (edge/size/invalid) on --ctrl-edge-* tokens. \"control\" throughout is the UI-widget sense (inputs, selects, combobox triggers), NOT the GRC noun — that is the distinction I judged. No copy, domain or storage."
+ },
+ "src/components/ui/copy-button.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Clipboard icon button. Every string resolves through next-intl ('common.copy'): t(\"copy\"), t(\"copyFailed\"), t(\"labelCopied\"), t(\"copied\"). The `onCopy` docstring's \"callers can audit-log reveal-and-copy actions\" is audit as a logging verb, not the GRC noun — the sense I judged."
+ },
+ "src/components/ui/copy-text.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Inline copyable value; identical i18n hygiene to copy-button (all strings via 'common.copy'). Coupling is a single docstring example."
+ },
+ "src/components/ui/dashboard-widgets/ChartRenderer.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic (chartType, config) dispatcher over three chart primitives with loading/empty/error envelopes. Its three lifecycle strings are hardcoded English rather than next-intl, and its head matter names the product twice. The dispatch shape itself carries no compliance vocabulary."
+ },
+ "src/components/ui/dashboard-widgets/DashboardGrid.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic react-grid-layout wrapper: its public contract is {id, position, size, enabled} plus a renderWidget callback and a layout diff, with a below-md stacked fallback. No copy, no storage, no domain imports. Coupling is comment-only and removable."
+ },
+ "src/components/ui/dashboard-widgets/DashboardWidget.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic card shell: optional title/subtitle/actions slots, a presentational resize handle, and an inline SVG icon. Every string is caller-supplied — `aria-label={title ?? undefined}` has no English fallback. Coupling is comment-only."
+ },
+ "src/components/ui/dashboard-widgets/TargetLine.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "90-line SVG overlay that reads yScale/width/leftAxisMargin off ChartContext and draws a dashed reference line with a label pill. `label` is a caller prop with no English default; colours are token classes (text-content-subtle, fill-bg-default, fill-content-muted). Imports only @/components/ui/charts and ./types."
+ },
+ "src/components/ui/dashboard-widgets/WidgetPicker.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "The org-dashboard widget picker. Its type union, variant catalogue and config defaults mirror a specific product Zod schema, which it imports from the app layer. Notably its copy is clean — every user-facing string goes through next-intl — so the coupling is structural, not textual, and it is the point of the file."
+ },
+ "src/components/ui/dashboard-widgets/index.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "45-line re-export barrel. Its doc comment names only chart shapes (kpi/donut/area) and component names — no brand, no compliance vocabulary, no copy."
+ },
+ "src/components/ui/dashboard-widgets/types.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/kpi-trend. Audited note: Type-only module for the renderer's discriminated payload (KpiConfig/DonutConfig/TimeSeriesConfig/ChartTargetConfig). Deliberately decoupled from the backend widget enum, and its head matter says so. No compliance vocabulary, no copy, no brand. Its three imports resolve to src/components/ui/* and src/lib/kpi-trend, which I judged a generic KPI-math util rather than a domain module (see notes)."
+ },
+ "src/components/ui/date-picker/calendar.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A thin, well-behaved react-day-picker wrapper: all four nav aria-labels go through `useTranslations('common.calendar')` (prevYear/prevMonth/nextMonth/nextYear), and the brand tokens it uses are `bg-brand-emphasis` / `bg-brand-subtle` — background on the selected day and range middle, which is correct for non-text. One doc-comment brand mention is the only coupling."
+ },
+ "src/components/ui/date-picker/date-picker.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic controlled/uncontrolled single-date picker; imports are `@/lib/cn` + `@/lib/format-date` (both generic utils), no storage key, no brand-as-text. Carries two removable English strings and two compliance examples in its \"Not-goals\" comment."
+ },
+ "src/components/ui/date-picker/date-range-picker.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic range picker over the same foundation (draft/commit, preset materialisation, keyboard shortcuts). No storage key, no brand-as-text, no domain import. Coupling is three English strings plus compliance examples in the module JSDoc and an inline comment."
+ },
+ "src/components/ui/date-picker/date-utils.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure UTC-anchored date/range helpers plus preset materialisation; only imports are types from `./types`. No rendered strings, no brand, no storage key. \"our domain `DateRangeValue`\" and \"the vendored picker renderer\" are the type-model and code-vendoring senses respectively, not compliance vocabulary and not a vendor entity."
+ },
+ "src/components/ui/date-picker/index.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Barrel only — type and value re-exports from ./types, ./date-utils, ./presets-catalogue and the three UI modules. No strings, no domain vocabulary."
+ },
+ "src/components/ui/date-picker/presets-catalogue.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The resolver functions are pure, UTC-anchored and entirely generic; the coupling is the `DEFAULT_DATE_RANGE_PRESETS` array, whose labels are the English strings the Presets panel renders verbatim (`presets.tsx:75 <span className=\"truncate\">{preset.label}</span>`) with no i18n route. A second product gets the right date arithmetic and the wrong language."
+ },
+ "src/components/ui/date-picker/presets.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Presentation-only cmdk list; every string it renders comes from props (`preset.label`, `preset.shortcut`, `preset.tooltipContent`). Imports are `@/lib/cn`, cmdk and `../tooltip`. No hardcoded copy, no brand-as-text, no storage key."
+ },
+ "src/components/ui/date-picker/shared.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A React context, a locale-aware `formatDate`, and `validatePresets`. The English text here is all inside `throw new Error(...)` developer messages (`Preset ${preset.label} is before fromYear …`), which are not JSX text / aria / title / copy defaults, so I did not count them as `copy`. No brand, no storage key, no domain vocabulary. (Aside, outside the five: its `formatDate` duplicates `@/lib/forma"
+ },
+ "src/components/ui/date-picker/trigger.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Forward-ref trigger button. `placeholder` is a prop with NO default string, so there is no copy default here; the only text it renders is `{children}` or `{placeholder}`. Edge styling rides `--ctrl-edge-*` custom properties, not `--brand-*`, and nothing uses a brand token as text. (Outside the five: :62 hardcodes `shadow-[0_0_0_3px_rgb(220_38_38_/_0.20)]` as a raw colour — a token nit, not a coupl"
+ },
+ "src/components/ui/date-picker/types.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic type tiers (date primitives, preset shapes, calendar/picker props). One brand reference in a JSDoc is the only coupling — a one-line fix, same shape as filter/types.ts."
+ },
+ "src/components/ui/date-picker/week-start.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "18-line module exporting one constant (WEEK_STARTS_ON). No strings, no imports, no tokens. Classified in the main session: its slice agent reported 26 files opened and returned 25, and the coverage assertion caught the gap."
+ },
+ "src/components/ui/empty-state.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Variant-driven empty/no-results/missing-prereqs state. title/description/action labels are props; the one owned string is t(\"learnMore\"). JSDoc examples (\"Pick a plan before you can add members\", \"Clear filters\") are generic SaaS."
+ },
+ "src/components/ui/entity-picker.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "A typeahead over this product's ten linkable compliance entity types, with their API routes hardcoded in a switch. The domain IS the component. Copy itself is clean (all via next-intl)."
+ },
+ "src/components/ui/entity-prev-next-nav.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The chrome is generic (ordered ids + hrefFor, alt+Arrow shortcuts, ends disabled) and all phrases come from the 'ui.recordStepper' catalog. The coupling is one exported constant that could be a prop or config. `labelSingular = 'item'` is a translation-key slug, not displayed copy, so it is NOT a copy finding."
+ },
+ "src/components/ui/error-state.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Mirror of EmptyState for failed loads. Defaults route through next-intl (t(\"title\"), t(\"tryAgain\")) and L105-107 documents exactly why they were moved out of the parameter list (\"a literal there renders English in every locale\"). The English quoted in the JSDoc describes the en catalog values, not hardcoded copy."
+ },
+ "src/components/ui/field-group.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Grid/gap layout for stacked FormFields with an optional section header. title/description/hint are props; owned strings are t(\"moreInfoAbout\")/t(\"moreInformation\"). The JSDoc hint example (\"Retention — files are soft-deleted on this date\") uses no word from the compliance vocabulary list."
+ },
+ "src/components/ui/file-icon-resolver.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure extension/MIME → icon mapping, correctly extracted for node tests. Both couplings are removable: the labels want a catalog key, the domainKind hint wants a neutral name."
+ },
+ "src/components/ui/file-type-icon.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A 51-line render shim over the resolver. It is the sink that turns the resolver's English labels into an aria-label (L45 `aria-label={label}`), but the literals live in file-icon-resolver.ts, so I record the copy finding there and the domain surface here."
+ },
+ "src/components/ui/file-upload.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The older Dub-lineage single-file upload primitive (distinct from FileDropzone). Generic in mechanism but carries an `evidence` preset in its prop union, a Dub brand reference, and five untranslated error sentences. No next-intl import."
+ },
+ "src/components/ui/filter/edit-filters-button.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Thin wrapper over the shared <ChecklistGearButton>. Its one string is routed through next-intl (`title={t('table.editKpiCards')}`), imports are only `@/components/ui/checklist-gear-button` / `checklist-order` + next-intl + lucide. The comment's phrase \"the filter domain's icon\" is the UI sense of \"domain\", not compliance vocabulary."
+ },
+ "src/components/ui/filter/filter-context.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic URL-synced filter-state context — no copy, no storage key, no brand token, no domain import. Its only coupling is a compliance noun in the usage JSDoc. The `throw new Error(\"useFilters must be used within a <FilterProvider>\")` is a developer error, not UI copy, so I did not count it."
+ },
+ "src/components/ui/filter/filter-definitions.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The `createFilterDefs` / `createTypedFilterDefs` factories and the three URL codecs are entirely generic; the coupling is confined to compliance vocabulary in the JSDoc examples, which a second product would simply rewrite."
+ },
+ "src/components/ui/filter/filter-examples.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The heaviest offender in the slice, and the best follow-up candidate. Shape is generic (reference patterns for the three canonical filter kinds: enum, entity-ref, range) and the barrel deliberately does not re-export it, but every illustrative value is compliance-specific. Judged MIXED rather than COUPLED because the file's POINT is demonstrating the three filter shapes, not being a compliance wid"
+ },
+ "src/components/ui/filter/filter-list.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Structurally a fully generic active-filter pill strip (operator toggle, value dropdown, range pill, remove). No brand-as-text, no storage key, no domain import, no domain vocabulary — but it is the single largest pocket of untranslated English in the slice, and it is the only MIXED file here whose coupling is copy alone. The `console.error(\"Filter.List received an activeFilter without a correspond"
+ },
+ "src/components/ui/filter/filter-range-panel.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The reference example for the rest of the slice: every string goes through `useTranslations(\"common.ui\")` — t('backToFilterList'), t('clear'), t('minValue'), t('maxValue'), t('noMin'), t('noMax'), t('rangeTo') — including the aria-labels. Imports are `@/lib/cn`, next-intl, lucide and `../tooltip`. No brand token used as text, no storage key, no domain vocabulary."
+ },
+ "src/components/ui/filter/filter-range-utils.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Three pure numeric helpers (normalizeRangeBounds / storageToDraft / sanitizeNumericDraft). No strings rendered, no imports at all. Trivially generic."
+ },
+ "src/components/ui/filter/filter-scroll.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Ref-forwarding scroll container with a fade overlay; only import is `../hooks/use-scroll-progress`. No copy, no storage key, no domain vocabulary. (Separate from the five: line 43 uses the raw Tailwind `from-white` rather than a semantic token — a token-discipline nit, not a coupling.)"
+ },
+ "src/components/ui/filter/filter-select-utils.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Four pure decision helpers, generic in every respect except one default string — which is exactly the 'copy parameter's DEFAULT value' case, and the reason this file is not GENERIC."
+ },
+ "src/components/ui/filter/filter-select.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The filter picker popover. Generic in shape (cmdk command palette over caller-supplied filter defs) with no brand-as-text, no storage key and no domain import — `bg-brand-emphasis` at :494 is a BACKGROUND on the active-count badge, which is fine. Coupling is hardcoded English only."
+ },
+ "src/components/ui/filter/filter-state.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure URL↔state functions, React-free. Its only import is a type from `./types`. The JSDoc example `{ status: [\"OPEN\", \"IN_PROGRESS\"], category: [\"Technical\"] }` is generic enum vocabulary, not compliance vocabulary, and nothing here renders a string."
+ },
+ "src/components/ui/filter/index.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Barrel only — re-exports plus the `Filter = { Select, List }` namespace object. No strings rendered, no domain vocabulary; the comment's \"Edit filter cards\" names a UI control, not a compliance concept."
+ },
+ "src/components/ui/filter/types.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The filter type system — generic prop shapes plus the pure `normalizeActiveFilter` / `parseRangeToken` / `encodeRangeToken`. Coupling is a single stale brand reference in a comment, so this is a one-line fix. The `(e.g. picker: \"ACME Inc. — admin@acme.com\", pill: \"ACME Inc.\")` JSDoc at :80 is a placeholder company, not one of the named brands, so not reported."
+ },
+ "src/components/ui/filter/use-filter-card-visibility.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The hook's logic (order reconcile, toggle, reset, reorder over caller-supplied cards) is generic and its imports are all `@/components/ui/*`. But its documentation block is written almost entirely in this product's vocabulary, and it documents a brand-prefixed storage key that bypasses the `uiStorageKey` seam. Note the key is a caller-supplied PARAMETER — this file never constructs it — so the cou"
+ },
+ "src/components/ui/filter/use-filter-presets.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/filters. Audited note: A view adapter over `@/lib/filters/filter-presets`, and I checked that module: `presetsStorageKey()` returns `uiStorageKey('filters', tenantSlug, page)`, so the storage key IS built through the seam and there is no `storage-key` finding. `src/lib/filters` is UI-preference persistence (it imports FROM `@/components/ui/filter/filter-state`), not a compliance domain module, so I did not count it as `"
+ },
+ "src/components/ui/form-description.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Trivially generic: a forwardRef <p> with one canonical class string (mt-1.5 text-xs text-content-muted). 40 lines, no strings, no imports beyond cn + React."
+ },
+ "src/components/ui/form-error.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Trivially generic: a forwardRef <p> with role=\"alert\" + aria-live, rendering nothing when children are empty. No owned copy, no domain."
+ },
+ "src/components/ui/form-field.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Label + control + description/error composable that auto-wires htmlFor/aria-describedby/aria-invalid via cloneElement. Owned strings are t(\"moreInfoAbout\")/t(\"moreInformation\"). The JSDoc's hint examples (\"security settings, retention rules, scoring scales\") name no word from the compliance vocabulary list."
+ },
+ "src/components/ui/form-section.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Eyebrow/title/description + fields section; all content is ReactNode props and there are no owned strings. Coupling is confined to the opening docstring."
+ },
+ "src/components/ui/form.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A small legacy single-input settings form (Dub lineage). No domain vocabulary at all, but one hardcoded English default and raw neutral-* colours instead of semantic tokens."
+ },
+ "src/components/ui/freshness.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure timestamp → level/ageDays resolver with threshold options and a future-date clamp. No strings, no imports, no domain — all the English and the \"evidence\" reference live in FreshnessBadge.tsx."
+ },
+ "src/components/ui/hit-area.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Exports one class string (`before:content-[''] before:absolute before:-inset-px before:rounded-none`) with a long measurement rationale. No copy, domain, brand or storage."
+ },
+ "src/components/ui/hooks/__tests__/use-autosave-fields.test.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Behavioural tests of a generic hook, but both the narrative comments and every fixture are written in compliance vocabulary. The test logic itself is domain-free — renaming the fixtures and the provenance comments would make it portable."
+ },
+ "src/components/ui/hooks/__tests__/use-threshold-load-more.test.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Drives the hook with `range(n)` number arrays only. No domain fixtures, copy, storage or imports beyond the hook under test."
+ },
+ "src/components/ui/hooks/__tests__/use-toast-with-undo.test.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Timer/cancellation contract tests that are otherwise domain-free (most messages are 'x'/'y'/'Item N'); three fixtures use a GRC entity as the toast message. Trivially renameable."
+ },
+ "src/components/ui/hooks/index.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure re-export barrel; every export is a generic hook. One section heading names the GRC Controls feature as the provenance of a hook that is itself domain-free. One-word comment fix."
+ },
+ "src/components/ui/hooks/use-autosave-fields.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The debounce/status machine is entirely generic (Record<string,string> fields, caller-supplied save/validate/canCommit, no copy of its own — networkErrorMessage is a required param with no default). The coupling is the provenance story in the docblock."
+ },
+ "src/components/ui/hooks/use-celebration.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The confetti presets, lazy loader, reduced-motion handling and DI test seam are fully generic. The coupling is the milestone registry binding: the hook's public input type is a closed union of four compliance milestones, so a second product cannot call the keyed path at all. Removable by injecting the registry (the ad-hoc `{ preset, key, message }` path is already generic)."
+ },
+ "src/components/ui/hooks/use-column-visibility.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "TanStack column-visibility state over useLocalStorage. `storageKey` is a caller-supplied parameter with no default and no key construction, so rule 3 lands on the call sites, not here. No copy, no domain nouns, no domain imports."
+ },
+ "src/components/ui/hooks/use-copy-to-clipboard.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Clipboard write with execCommand fallback. The only strings are internal `throw new Error(...)` messages, which are not JSX text / aria / title / a copy default. I judged \"audit logging\" (line 16) in the log-record sense, not the GRC audit-engagement noun; \"MFA enrollment pages\" (line 105) is generic auth."
+ },
+ "src/components/ui/hooks/use-create-query-param.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The mechanism is generic: read `?create=1`, call an opaque callback, strip the param via router.replace. Both parameters (onOpen, basePath) are caller-supplied. The coupling is an enumeration of the seven compliance list pages in the docblock plus the tenant route shape in the examples."
+ },
+ "src/components/ui/hooks/use-cursor-pagination.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Generic `{rows, nextCursor}` accumulator over a caller-built URL. Error values are bounded tokens ('load_failed', 'load_failed_<status>'), not English copy. \"Caller controls cursor encoding\" (line 38) is the verb, not the GRC noun; \"Epic O-4 portfolio drill-down tables\" names no compliance entity."
+ },
+ "src/components/ui/hooks/use-enter-submit.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Enter/Shift+Enter/IME submit policy. No copy, no storage, no imports beyond react. \"Default policy\" and `EnterSubmitModifierPolicy` are the behavioural-rule sense of policy, not a GRC Policy document; \"controlled forms\" is React vocabulary."
+ },
+ "src/components/ui/hooks/use-in-viewport.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Thin IntersectionObserver boolean wrapper. React import only; no strings, no storage, no domain vocabulary."
+ },
+ "src/components/ui/hooks/use-input-focused.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Tracks whether an editable element holds focus via focusin/focusout. \"Epic 57's isEditableTarget policy\" is the behavioural-rule sense. No copy, storage, or domain imports."
+ },
+ "src/components/ui/hooks/use-intersection-observer.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Returns the latest IntersectionObserverEntry with a freezeOnceVisible latch. Platform-only; nothing product-specific."
+ },
+ "src/components/ui/hooks/use-is-below-md.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "matchMedia('(max-width: 767.98px)') boolean. Comments name only UI primitives (DataTable card view, Modal/Sheet). No coupling."
+ },
+ "src/components/ui/hooks/use-keyboard-shortcut.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Three-line compatibility re-export of @/lib/hooks/use-keyboard-shortcut — an explicitly allowed import. The call sites it names (filter-list, selection-toolbar, date-range-picker) are UI components, not domain surfaces."
+ },
+ "src/components/ui/hooks/use-local-storage.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "SSR-safe typed localStorage primitive with cross-tab sync and pluggable serializer. It is the primitive itself: `key` arrives from the caller and is never constructed here, so there is no key for uiStorageKey to namespace — rule 3 applies to its callers. No copy, no domain vocabulary."
+ },
+ "src/components/ui/hooks/use-media-query.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "device/width/height + isMobile/isTablet/isDesktop from matchMedia. Comments name Radix/Vaul/popover.tsx only."
+ },
+ "src/components/ui/hooks/use-optimistic-update.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The overlay/rollback machinery is genuinely generic over T with no domain types in the signature. The coupling is a worked JSDoc example written entirely in risk vocabulary. Note \"Framework-agnostic\" (line 9) is the JS-library sense, not the compliance-framework noun — I did not count it."
+ },
+ "src/components/ui/hooks/use-resize-observer.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "35-line ResizeObserver wrapper returning the latest entry. Nothing product-specific."
+ },
+ "src/components/ui/hooks/use-responsive-presentation.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "dialog/drawer/sheet decision from useMediaQuery, plus a pure resolvePresentation. Surfaces only; no domain vocabulary, copy, or storage."
+ },
+ "src/components/ui/hooks/use-scroll-progress.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "rAF-batched [0..1] scroll progress with an epsilon gate and resize recompute. Pure platform code."
+ },
+ "src/components/ui/hooks/use-scroll.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Boolean 'scrolled past threshold' with a passive listener. No coupling of any kind."
+ },
+ "src/components/ui/hooks/use-ssr-fallback.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Compares `Record<string,string>` filter sets (union of keys, '' == missing) to decide whether an SSR payload may seed SWR. Comments say \"list page\" / \"six copies\" but name no compliance entity; all inputs are untyped records."
+ },
+ "src/components/ui/hooks/use-threshold-load-more.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic in shape — slices ReadonlyArray<TRow> to a window, no I/O, no copy, no types beyond TRow. The coupling is the motivating list of compliance pages in the docblock."
+ },
+ "src/components/ui/hooks/use-toast-with-undo.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Delayed-commit + undo registry over sonner. `message` and `undoMessage` are REQUIRED props with no defaults, so the English strings ('Item deleted', 'Undo') appear only as JSDoc `e.g.` illustrations, not as a copy default — not rule-1 coupling. pendingId is an in-memory Map key, never storage. Imports only @/components/ui/undo-toast, which is allowed."
+ },
+ "src/components/ui/hooks/use-toast.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Four-variant sonner wrapper with locked durations. Every message is a required caller argument; the English strings ('Item created', 'Save failed') are JSDoc usage examples with no default value behind them, and none is domain vocabulary."
+ },
+ "src/components/ui/hooks/use-view-mode.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The storage key is built CORRECTLY through uiStorageKey (line 32), so there is no storage-key finding. The coupling is two comment lines: the brand spelled out as the literal key shape, and a GRC page name as the example argument."
+ },
+ "src/components/ui/icon-action.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Tooltip + aria-label wrapper over <Button size=\"icon\">; the `label` prop supplies both, so no copy is owned. Coupling is docstring examples only."
+ },
+ "src/components/ui/icons/anthropic.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo (Anthropic). One path, fill=currentColor, className passthrough. No copy, no props beyond SVGProps."
+ },
+ "src/components/ui/icons/arrow-up-right-2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG arrow glyph, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/bing.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo with a hardcoded hex fill (#008373); no copy, props, or imports."
+ },
+ "src/components/ui/icons/continents/af.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG map outline (Africa), SVGProps passthrough only."
+ },
+ "src/components/ui/icons/continents/as.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG map outline (Asia), SVGProps passthrough only."
+ },
+ "src/components/ui/icons/continents/eu.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG map outline (Europe), SVGProps passthrough only."
+ },
+ "src/components/ui/icons/continents/index.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Six relative re-exports plus a Figma-community attribution comment. No domain vocabulary, no brand from the list."
+ },
+ "src/components/ui/icons/continents/na.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG map outline (North America), SVGProps passthrough only."
+ },
+ "src/components/ui/icons/continents/oc.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG map outline (Oceania), SVGProps passthrough only."
+ },
+ "src/components/ui/icons/continents/sa.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG map outline (South America), SVGProps passthrough only."
+ },
+ "src/components/ui/icons/copy.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG copy glyph, className-only prop. (File name is the UI verb 'copy', not the coupling class.)"
+ },
+ "src/components/ui/icons/crown-small.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG crown glyph, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/default-domains/amazon.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+ },
+ "src/components/ui/icons/default-domains/chatgpt.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+ },
+ "src/components/ui/icons/default-domains/figma.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+ },
+ "src/components/ui/icons/default-domains/github-enhanced.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+ },
+ "src/components/ui/icons/default-domains/google-enhanced.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+ },
+ "src/components/ui/icons/default-domains/spotify.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+ },
+ "src/components/ui/icons/dub-analytics.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The artwork is two plain stroked bars with fill/stroke=currentColor — fully generic. The only coupling is the exported symbol carrying the brand Dub; a rename makes the file vendorable as-is."
+ },
+ "src/components/ui/icons/dub-api.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Artwork is a generic angle-brackets/code glyph, fill=currentColor. Only coupling is the brand in the exported symbol name; removable by rename."
+ },
+ "src/components/ui/icons/dub-crafted-shield.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A gold conic-gradient shield with a white tick, drawn via clipPath + foreignObject + a drop-shadow filter. No wordmark, no text, no Dub-specific geometry — the artwork is a generic 'verified' badge. Only coupling is the brand in the exported symbol."
+ },
+ "src/components/ui/icons/dub-links.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Artwork is a three-way stroked split (one vertical, two diagonals), currentColor. Only coupling is the brand in the exported symbol name; removable by rename."
+ },
+ "src/components/ui/icons/dub-partners.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Artwork is four plain <circle> elements at the compass points, fill=currentColor. Only coupling is the brand in the exported symbol name."
+ },
+ "src/components/ui/icons/dub-product-icon.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "The file's point is the upstream product's own four-product taxonomy: an `icons` record keyed links/analytics/partners/api, each with a fixed palette chip class, plus a `DubProduct` type exported from it. The generic part is an eight-line badge wrapper; everything that gives the file a reason to exist is the Dub product list, so a second product would write its own map rather than vendor this."
+ },
+ "src/components/ui/icons/expanding-arrow.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Two inline SVG arrows in a hover-swap wrapper; imports @/lib/cn only, className-only prop, no text."
+ },
+ "src/components/ui/icons/facebook.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo. It has a defaulted prop (`fill = \"#1977f3\"`) but that is a colour default, not a copy parameter, so rule 1 does not fire."
+ },
+ "src/components/ui/icons/file-pen.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG glyph, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/file-send.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG glyph, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/github.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, className-only prop."
+ },
+ "src/components/ui/icons/go.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG language logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/google.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo (four hardcoded hex paths), className-only prop."
+ },
+ "src/components/ui/icons/index.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A barrel of relative re-exports plus the `Icon` type alias — generic in shape. It carries removable coupling: a comment naming the brand Dub, and the re-export block that lifts six brand-named modules and the upstream pricing-plan map into the shared public API. Deleting those lines when the coupled files go leaves a clean barrel."
+ },
+ "src/components/ui/icons/instagram.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/ios-app-store.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG badge glyph, className-only prop, no text nodes."
+ },
+ "src/components/ui/icons/linkedin.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo. Uses `cn(\"text-[#0077b5]\", className)` — an arbitrary third-party hex as text colour, which is not the `--brand-*` design token rule 4 names, so no brand-as-text finding."
+ },
+ "src/components/ui/icons/loading-circle.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Spinner SVG with a long JSDoc explaining the track/indicator token choice. The doc is about theming mechanics, not domain examples; classes are semantic tokens (`fill-content-muted text-border-default`); `aria-hidden=\"true\"` carries no human-readable copy."
+ },
+ "src/components/ui/icons/loading-dots.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Three animated dots, inline style only, no props, no text, no imports."
+ },
+ "src/components/ui/icons/loading-spinner.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Twelve-bar spinner with a long JSDoc about animate-pulse and currentColor. The doc discusses Tailwind/vendoring, not domain examples; imports @/lib/cn only."
+ },
+ "src/components/ui/icons/lock-small.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG glyph, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/magic.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG sparkle glyph, className-only prop."
+ },
+ "src/components/ui/icons/markdown-icon.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG glyph, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/matrix-lines.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG decorative line grid, SVGProps passthrough only. ('Matrix' here is the geometric pattern, not a risk matrix — no domain prop or text.)"
+ },
+ "src/components/ui/icons/nucleo/android-logo.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/apple-logo.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/apple.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrow-bold-up.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrow-left.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrow-right.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrow-trend-up.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrow-turn-left.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrow-turn-right2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrow-up-right.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrows-opposite-direction-x.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/arrows-opposite-direction-y.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/at-sign.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/badge-check.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/badge-check2-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/bell.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/blog.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/bolt-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/bolt.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/book-open.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/book2-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/book2-small.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/book2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/books2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/box-archive.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/brackets-curly.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/briefcase-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/brush.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/bullet-list-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/bullet-list.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/calculator.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/calendar-days.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/calendar-refresh.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/calendar.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/calendar6.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/cards.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/caret-up-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/chart-activity2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/chart-area2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/chart-line.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/check.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/check2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/checkbox-checked-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/checkbox-unchecked.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/chevron-left.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/chevron-right.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/chevron-up.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-arrow-right.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-check-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-check.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-dollar-out.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-dollar.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-dollar3.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-dotted.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-half-dotted-check.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-half-dotted-clock.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-info.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-percentage.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-play-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-play.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-question.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-user.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-warning.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circle-xmark.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circles.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/circles3.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/cloud-upload.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/cloud.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/code.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/color-palette2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/connected-dots-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/connected-dots.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/connected-dots4.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/connections3.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/credit-card.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/crosshairs3.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/crown.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/cube-settings-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/cube-settings.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/cube.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/currency-dollar.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/cursor-rays.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/database-key.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/desktop.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/diamond-turn-right-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/diamond-turn-right.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/directions.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/discount.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/dots.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/download.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/duplicate.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/earth-position.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/earth.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/envelope-alert.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/envelope-arrow-right.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/envelope-ban.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/envelope-check.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/envelope-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/envelope-open.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/envelope.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/eye-slash.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/eye.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/face-smile.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/feather-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/file-content.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/file-zip2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/filter-bars.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/filter2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/flag-wavy.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/flag.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/flag2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/flag6.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/flask-small.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/flask.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/folder-bookmark.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/folder-lock.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/folder-plus.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/folder-shield.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/folder.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/folder5.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/gaming-console.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/gauge6.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/gear.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/gear2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/gear3.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/gem.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/gift-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/gift.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/globe-pointer.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/globe-search.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/globe.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/globe2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/greek-temple.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/grid-layout-rows.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/grid-plus.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/grid.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/grip-dots-vertical.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/heading-1.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/heading-2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/headset.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/heart-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/heart.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/hexadecagon-star.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/history.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/hyperlink.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/icosahedron.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/image-icon.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/incognito.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/index.ts": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/infinity-icon.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/input-field.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/input-password-pointer.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/input-password.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/input-search.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/invoice-dollar.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/key.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/layout-sidebar.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/license.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/life-ring-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/life-ring.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/lines-y.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/link-broken.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/link4.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/location-pin.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/lock-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/lock.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/magnifier.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/map-position.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/marketing-target.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/media-pause.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/media-play.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/megaphone.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/menu3.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/message-smile.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/microphone-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/minus.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/mobile-phone.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/money-bill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/money-bill2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/money-bills2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/msg.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/msgs-dotted.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/msgs-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/msgs.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/note.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/office-building.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/page2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/paintbrush.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/palette-2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/paper-plane.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/pen-writing.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/pen2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/percentage-arrow-down.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/photo.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/plug2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/plus.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/plus2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/post.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/pyramid.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/qrcode.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/receipt2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/referred-via.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/refresh2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/robot.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/satellite-dish.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/scan-text.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/scribble.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/shield-alert.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/shield-check.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/shield-keyhole.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/shield-slash.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/shield-user.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/shop.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/shuffle.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/sitemap.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/sliders.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/sort-alpha-ascending.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/sort-alpha-descending.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/sparkle3.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/square-chart.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/square-check.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/square-layout-grid5.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/square-layout-grid6.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/square-user-sparkle2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/square-xmark.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/stack-y-3.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/star-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/star.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/stars2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/suitcase.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/table-icon.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/table-rows2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/tablet.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/tag.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/tags.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/text-bold.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/text-italic.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/text-strike.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/timer2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/toggle2-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/toggles.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/trash.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/triangle-warning.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/trophy.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/tv.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/ui-card.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-arrow-right.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-check.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-crown.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-delete.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-focus.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-minus.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-plus.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-search.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user-xmark.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/user.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/users-fill.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/users-settings.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/users.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/users2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/users6.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/versions2.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/views.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/watch.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/webhook.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/window-search.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/window-settings.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/window.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/workflow.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/nucleo/xmark.tsx": {
+  "classification": "GENERIC",
+  "derivation": "mechanical",
+  "reason": "Nucleo SVG icon: no copy, no storage key, no brand-as-text, no domain import"
+ },
+ "src/components/ui/icons/openai.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, className passthrough."
+ },
+ "src/components/ui/icons/payment-platforms/card-amex.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG card logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/payment-platforms/card-discover.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG card logo with a useId-scoped inner-shadow filter; no props beyond SVGProps, no text."
+ },
+ "src/components/ui/icons/payment-platforms/card-mastercard.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG card logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/payment-platforms/card-visa.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG card logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/payment-platforms/paypal.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo; imports @/lib/cn, className-only prop."
+ },
+ "src/components/ui/icons/payment-platforms/stablecoin.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG coin glyph with layered SVG filters; imports @/lib/cn, className-only prop."
+ },
+ "src/components/ui/icons/payment-platforms/stripe-icon.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo. `cn(\"text-[#543AFD]\", props.className)` is an arbitrary third-party hex, not a `--brand-*` token, so rule 4 does not fire."
+ },
+ "src/components/ui/icons/payment-platforms/stripe-link.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, className-only prop."
+ },
+ "src/components/ui/icons/photo.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG image glyph, className-only prop."
+ },
+ "src/components/ui/icons/php.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG language logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/plan-feature-icons.tsx": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "The entire export is a slug-to-icon map for the upstream product's pricing-plan features — link-shortener and partner-program vocabulary, not GRC vocabulary. There is no generic residue: remove the keys and nothing is left. A second product needs its own map, not a cleaned version of this one. Not consumed anywhere outside src/components/ui/icons/ today."
+ },
+ "src/components/ui/icons/product-hunt.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo; `text-[#FF6055]` is an arbitrary third-party hex, not a `--brand-*` token."
+ },
+ "src/components/ui/icons/python.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG language logo; the only classNames are the decorative `snake snake1`/`snake snake2`. No copy or props."
+ },
+ "src/components/ui/icons/raycast.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, SVGProps passthrough only. (Not re-exported from index.tsx and referenced nowhere else in src — dead, but dead is not coupled.)"
+ },
+ "src/components/ui/icons/reddit.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, className-only prop."
+ },
+ "src/components/ui/icons/ruby.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG language logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/slack.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/sort-order.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Two morphing chevrons driven by an `order: \"asc\" | \"desc\" | null` prop — a table-sort UI prop, not a domain prop. Imports @/lib/cn and motion/react; the comment explains a framer-motion mount bug, no domain example. Uses the semantic token `text-content-emphasis`."
+ },
+ "src/components/ui/icons/success.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG tick-in-circle glyph, className-only prop."
+ },
+ "src/components/ui/icons/tick.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG tick glyph, className-only prop."
+ },
+ "src/components/ui/icons/tiktok.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/twitter.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo; imports @/lib/cn, className-only prop."
+ },
+ "src/components/ui/icons/typescript.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG language logo, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/unsplash.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo, className-only prop."
+ },
+ "src/components/ui/icons/user-clock.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG glyph, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/veriff.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG third-party vendor logo (Veriff, an identity-verification provider). It is a logo asset, not a domain widget: no props, no copy, no imports beyond react. Veriff is not one of the four brands rule 2 names."
+ },
+ "src/components/ui/icons/verified-badge.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG badge with drop-shadow/inner-shadow filters, SVGProps passthrough only."
+ },
+ "src/components/ui/icons/youtube.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure SVG brand logo; `text-[#ff0000]` and inline `fill: \"#ff0000\"` are arbitrary third-party hexes, not `--brand-*` tokens."
+ },
+ "src/components/ui/initials-avatar.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Initials derivation + circle, with an image layer over an always-present fallback. No copy (the empty-input placeholder is `·`), no domain nouns, and deliberately NOT brand-as-text: L109-119 explains at length why the glyphs take --content-emphasis rather than a brand fill token, with measured ratios. `bg-[var(--brand-subtle)]` is a background."
+ },
+ "src/components/ui/inline-empty-state.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Dense icon/title/description empty state; everything is a prop and the icon type is deliberately family-agnostic. Coupling is one docstring example."
+ },
+ "src/components/ui/inline-notice.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Four-variant inline status banner with role/aria-live contract. The one owned string is `aria-label={dismissLabel ?? t(\"dismiss\")}` (L190) via next-intl; body content is children. JSDoc examples (\"Failed to revoke API key\", \"Settings updated.\") are generic SaaS."
+ },
+ "src/components/ui/input.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Token-backed CVA input with password toggle and inline error/description. Every owned string routes through next-intl ('common.ui'): L281-282 t(\"hidePassword\")/t(\"showPassword\"). No domain nouns, no brand-as-text (focus is a box-shadow halo), no storage."
+ },
+ "src/components/ui/kpi-accent.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A seven-key gradient/sparkline accent table plus one helper. No React, no copy, no storage. Coupling is the docstring's fan-out list."
+ },
+ "src/components/ui/kpi-filter-card.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Clickable/selectable KPI filter card extracted from the Risks page. Mechanically generic (tone bag, aria-pressed, Card chassis) but the docstring is written entirely in terms of the product's list pages, and its one owned string is English."
+ },
+ "src/components/ui/kpi-filter/index.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "13-line barrel re-exporting `useKpiFilter` and its two types. No domain content of its own — the risk-register examples are all in use-kpi-filter.ts."
+ },
+ "src/components/ui/kpi-filter/use-kpi-filter.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The hook's code is completely generic — it composes `apply`/`isActive`/`clear` callbacks over the shared FilterContextValue and has no strings, no storage and no domain import (`@/components/ui/filter` is a ui module). But its 65-line design-rationale header and several prop docs are written throughout in risk-register vocabulary: the Risks page is named as the contract this implements, and the wo"
+ },
+ "src/components/ui/label.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Trivially generic: 29-line Radix Label wrapper with a single cva class string. No copy, domain, brand or storage."
+ },
+ "src/components/ui/left-accordion-rail.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Quiet left orientation rail (click-only expand, arrow-key nav, fold-to-spine). Copy is clean — every owned string goes through next-intl ('common.ui'). The coupling is its persistence seam and the example that documents it."
+ },
+ "src/components/ui/meta-strip.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic label-over-value grid; props are {label, value, kind, variant, tone, href}. Nothing domain-specific in the API — the coupling is entirely in the docblock, which is removable."
+ },
+ "src/components/ui/metric.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "HeroMetric + KPIStat are pure type-scale primitives (value/label/tone/trend). No domain props or imports; the coupling is the rationale docblock."
+ },
+ "src/components/ui/mini-area-chart.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic visx sparkline; props are data/variant/padding/yDomain/aria-label. Only coupling is two domain examples in comments. I judged `text-brand-emphasis` (line 89) NOT a brand-as-text finding: it sits on an <svg> with zero text nodes and is consumed only as `currentColor` for the stroke and gradient fill — brand-as-fill, which the rule exempts."
+ },
+ "src/components/ui/modal.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Radix Dialog / Vaul Drawer modal with structured slots and a Confirm sugar. Every user-visible string goes through `useTranslations(\"common\")` — t(\"ui.dialog\"), t(\"close\"), t(\"ui.confirm\"), t(\"cancel\"). No storage keys, no brand-as-text, no domain imports (only @/lib/cn, @/lib/hooks/use-keyboard-inset, local ui modules). The word \"control\" appears at :192/:301/:312 in the UI-widget sense (the cont"
+ },
+ "src/components/ui/next-best-action-logic.ts": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "Pure compliance business logic extracted from the card. Every input field and every returned label/description is GRC-specific. The coupling is the whole point."
+ },
+ "src/components/ui/number-stepper.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Fully generic bounded-integer +/- stepper. No domain anything (its comment examples are \"Retention days\"/\"Max retries\", which are not compliance vocabulary). The only coupling is three hardcoded English a11y defaults."
+ },
+ "src/components/ui/overlay-depth.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A React context counting drawer nesting depth, plus two read hooks. Zero copy, zero imports beyond react. The docblock talks only about Popover/Modal/Sheet/Combobox — UI primitives, not domain."
+ },
+ "src/components/ui/popover.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Radix Popover / Vaul Drawer with Menu/Item/Separator slots and ARIA menu keyboard nav. All copy via `useTranslations(\"common.ui\")` — t(\"menu\"), t(\"popoverContentDesc\"). Imports are @/lib/cn, @/lib/hooks/use-keyboard-inset and local ui modules only. No storage keys, no brand-as-text, no domain vocabulary."
+ },
+ "src/components/ui/progress-bar.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic ARIA progressbar with status variants and an indeterminate mode. `bg-brand-emphasis` (line 66) is a BACKGROUND, which the rule exempts. Two removable couplings."
+ },
+ "src/components/ui/progress-circle.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic stroke-arc progress ring. `text-brand-emphasis` (line 54) is NOT reported as brand-as-text: the <svg> contains no text node and the class only feeds `stroke=\"currentColor\"` on the arc — brand-as-stroke, which the rule exempts. The centre label uses text-content-emphasis."
+ },
+ "src/components/ui/progressive-blur.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure CSS layered-backdrop-blur edge fade. Props are side/strength/steps/size; the only logic is a geometric blur ramp and a mask-band generator. No copy, no domain, no storage, no brand tokens."
+ },
+ "src/components/ui/radio-group.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): radio-group.tsx:32 text-brand-emphasis. Audited note: Radix RadioGroup wrapper, CVA-sized, token-backed. No copy, no domain vocabulary (\"control\" at :22 is the form-control sense), no imports beyond @/lib/cn. I judged `data-[state=checked]:text-brand-emphasis` (line 32) NOT a brand-as-text finding on two grounds: the Item renders no text child (the selected dot is `bg-brand-emphasis`, so the class is vestigial currentColor plumbing)"
+ },
+ "src/components/ui/required-marker.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Trivially generic: one aria-hidden span rendering `*` with text-content-error. The asterisk is a decorative glyph, explicitly aria-hidden, so it is not copy."
+ },
+ "src/components/ui/scroll-container.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "35-line scroll wrapper with a tokenised bottom fade driven by useScrollProgress. Imports only @/lib/cn and the local ./hooks/use-scroll-progress. No copy, no domain, no storage, no brand tokens."
+ },
+ "src/components/ui/selection-summary-panel.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Deliberately resource-agnostic in shape — the caller passes `resourceLabel: {singular, plural}` precisely so the panel carries no entity noun. Two hardcoded English strings and one compliance example in the JSDoc are what remain."
+ },
+ "src/components/ui/sheet.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Vaul side/bottom drawer with Title/Description/Header/Body/Footer/Actions/Close slots. All copy via `useTranslations(\"common\")` — t(\"ui.sheet\"), t(\"close\"). Imports @/lib/cn, @/lib/hooks/use-keyboard-inset and local ui modules only. No domain vocabulary, no brand-as-text, no storage keys. (`shortcut=\"Esc\"` is a key name, not copy.)"
+ },
+ "src/components/ui/shimmer-dots.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic CSS dot-grid loading affordance — rows/cols/dotSize, bg-content-muted, motion-reduce honoured. One hardcoded English a11y default is the only coupling."
+ },
+ "src/components/ui/skeleton.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Skeleton primitives and page-level composites. Every a11y string goes through `useTranslations('common.skeleton')` — t('dashboard'), t('details'), t('settings'); everything else is aria-hidden geometry. Imports are @/lib/cn plus local card modules. The composites are named for page SHAPES (dashboard, detail-tabs, settings, filter-toolbar), not for compliance entities, so no domain-props."
+ },
+ "src/components/ui/slider.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Radix Slider wrapper with the track-inset trick and mark dots. Fully generic otherwise — the comment examples (\"Impact\", \"Volume\") are not compliance vocabulary and I did not report them."
+ },
+ "src/components/ui/status-badge.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "CVA pill with neutral/info/success/warning/error variants, solid/subtle tones, default icons. Every colour is a `text-content-*`/`bg-bg-*` semantic token — no brand token anywhere. No copy (children and tooltip come from the caller), no domain vocabulary, no storage keys. The `{ OPEN: 'error', ...}` comment at :87 is a generic status-mapping illustration. Linear/Stripe/Vercel at :15 are design ref"
+ },
+ "src/components/ui/status-breakdown.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Categorical distribution bars; items are {label, value, variant|colorClass} — no entity noun in the API. `bg-brand-emphasis` (line 90) is a BACKGROUND, exempt. Four hardcoded strings and three comment references are the removable part."
+ },
+ "src/components/ui/switch.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Radix Switch wrapper, CVA size variants, optional disabledTooltip. `data-[state=checked]:bg-brand-emphasis` is a BACKGROUND on the track — exempt. No copy at all (disabledTooltip/thumbIcon are caller-supplied ReactNodes), no domain vocabulary, no storage keys, only @/lib/cn + local tooltip imported."
+ },
+ "src/components/ui/tab-select.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic underline tablist with roving tabindex and APG automatic activation. Options are caller-supplied. Two removable couplings."
+ },
+ "src/components/ui/table-load-more-footer.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Shape is entity-agnostic by design (`resourceName` is threaded in precisely so the footer carries no noun), yet all four of its strings are hardcoded English. Highest copy density in the slice relative to file size."
+ },
+ "src/components/ui/table-title-cell.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "A single-element title cell — children/href/id/tintOn. Carries the slice's clearest brand-as-text finding: --brand-default painting the row identifier text in both hover branches."
+ },
+ "src/components/ui/table/column-visibility-utils.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure visibility math plus persistence, and the model citizen for the storage-key rule: all three localStorage calls (:144, :165, :180) go through `getVisibilityStorageKey` → `COLUMN_VISIBILITY_PREFIX` → `uiStorageKey(\"col-vis\")` at :50, with a comment explaining why the trailing `:` is concatenated rather than supplied by the helper. The `@/lib/ui-storage` import is the sanctioned one. Column-id e"
+ },
+ "src/components/ui/table/columns-dropdown.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "59-line wrapper binding the column domain onto the shared `<ChecklistGearButton>`: the Columns3 icon, `t(\"table.toggleColumns\")` for the title, and a neutral test id. The English phrases \"Toggle columns\" / \"Edit filter cards\" appear only in the header comment describing what those i18n keys render."
+ },
+ "src/components/ui/table/data-table-cards.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The below-md card rendering of a DataTable. Renders no copy of its own — labels come from each column's own `header` string (:140-144) and values from `flexRender`. Imports `@/lib/cn` (sanctioned), `@/components/ui/card`, `button-like-keys` and a local icon. Brand appears once as a focus ring (:122). Good a11y rationale comment, no domain content."
+ },
+ "src/components/ui/table/data-table.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "742 lines of fully generic table orchestration — virtualization decision, mobile card fallback, hover-prefetch dwell cache, pagination union. No copy at all (it renders no text of its own), no storage, no domain imports, no brand-as-text. The single coupling is the `createColumns` JSDoc example typed against the GRC Control entity, with a control `code` column. Removable in one comment edit."
+ },
+ "src/components/ui/table/edit-columns-button.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "cmdk popover for column visibility. Both strings are next-intl (`t(\"editColumns\")` at :70, feeding `triggerTooltip` and `aria-label`; `t(\"resetToDefaults\")` at :140), and `getColumnLabel` derives the rest from the column def by humanising the id. Brand used as border/background/ring only (:99, :160) — never as text."
+ },
+ "src/components/ui/table/features.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The single declaration of the platform's TanStack v9 feature set, plus a long comment explaining what each registered feature puts on the instance and why `expandedRowModel` is deliberately inert. Library composition only — no strings, no domain, nothing product-specific."
+ },
+ "src/components/ui/table/index.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Barrel. 24 lines of re-exports from sibling modules only — no strings, no imports outside the directory."
+ },
+ "src/components/ui/table/infinite-scroll-sentinel.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "67-line zero-height IntersectionObserver marker. `aria-hidden=\"true\"`, no copy, no domain. The quoted \"Load more\" at :40 names the component this replaced, inside a comment."
+ },
+ "src/components/ui/table/pagination-controls.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Footer pagination. Every rendered string is next-intl (`t(\"table.viewing\")`, `t(\"table.of\")`, `t(\"table.items\")`, `t(\"table.previous\")`, `t(\"table.next\")` plus both aria labels at :97/:124/:132). `resourceName` has no default — it falls through to `t(\"table.items\")` at :112, so unlike pagination-utils.ts there is no hardcoded fallback. The English in the header comment is documentation of the rend"
+ },
+ "src/components/ui/table/pagination-utils.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Pure pagination arithmetic (getPageCount/getPageRange/getPaginationState/clampPage) — all generic and React-free. The exception is `formatPageRange`, which builds display text from hardcoded English: a copy-parameter default of \"items\" and the literal connective \" of \" inside the template. Note for the follow-up: this function has ZERO callers in src (grep: only its own definition plus tests/unit/"
+ },
+ "src/components/ui/table/selection-toolbar.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic batch-action toolbar. All user-visible copy goes through next-intl (`t(\"table.selectedCount\")` etc.). The one coupling is the JSDoc usage block, which is written against the GRC Control entity. I judged `controls` (the prop at :153/:157/:299) and `aria-controls` as the UI-widget/attribute sense, NOT the GRC noun, and did not report them — but `BatchAction<Control>` at :29 IS the GRC noun ("
+ },
+ "src/components/ui/table/sort-rows.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure stable display-value sort (decorate-sort-undecorate, nullish-last, numeric/locale aware). No React, no strings, no imports. The comment's example field is `row.category` — a generic list-page column, not a compliance noun."
+ },
+ "src/components/ui/table/table-empty-state.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Backward-compat wrapper over `<EmptyState>`. Title default is the i18n key `t(\"noItemsFound\")` at :119, and `label`/`description` are caller-supplied with no defaults. The header comment mentions \"7 existing callers in the `/org/...` admin views\" — an app route in prose, which is not one of the five couplings (no domain vocabulary, no import); I left it out rather than inflate the finding."
+ },
+ "src/components/ui/table/table-utils.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Three table-local helpers: `cn` (clsx+tailwind-merge), `deepEqual`, and `isClickOnInteractiveChild`. No strings beyond tag names and library data attributes (`data-radix-popper-content-wrapper`, `data-vaul-overlay`). The vocabulary hit at :43 is \"an action control within a row\" — the UI sense."
+ },
+ "src/components/ui/table/table.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The 1745-line TanStack wrapper, and clean on all five axes — which surprised me. Every user-visible string routes through `useTranslations(\"common\")` (:261, :352, :904, :1024-1025, :1282, :1447, :1628-1669); zero text-brand/text-[var(--brand)] (brand appears only as inset box-shadow and background at :114/:119/:121); no localStorage/sessionStorage/cookie; imports are only next-intl, tanstack, moti"
+ },
+ "src/components/ui/table/types.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Type-only module: feature-bound aliases over TanStack's generics plus the `UseTableProps`/`TableProps` contracts. No runtime code, no strings, no storage. It names Linear, Stripe and Vercel at :164 as design precedent for default-on selection — third-party design references, not any of the four brands in scope (Inflect, PwC, METRO, Dub), and not product coupling."
+ },
+ "src/components/ui/table/use-columns-dropdown.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "State hook for the columns gear. Notably it takes `storageKey` as a parameter and documents the convention as `uiStorageKey('col-vis', entity)` (:13, :55) rather than building a key itself, so there is nothing to route. No copy (labels come from the caller's column defs), no domain import, no brand token."
+ },
+ "src/components/ui/table/use-is-below-md.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "A 3-line re-export of `useIsBelowMd` from `../hooks/use-is-below-md`, kept for the table barrel's import sites. Nothing to couple."
+ },
+ "src/components/ui/table/use-list-pagination.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Adapter slicing a flat array into DataTable's manual-pagination mode, with `?page=` URL sync and popstate handling. URL params only — no web storage, no cookie. No strings, no domain vocabulary; `useFilterContext` is mentioned in a comment but never imported."
+ },
+ "src/components/ui/table/use-table-pagination.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "40-line pageIndex mirror between a `page` prop and TanStack's PaginationState. Trivially generic — two effects and a setState, no strings, no imports beyond react and the tanstack type."
+ },
+ "src/components/ui/table/virtual-table-body.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "659-line react-window grid renderer. Copy via `useTranslations(\"common.table\")` (:363-364, :622); brand only as `bg-[var(--brand-subtle)]` and a focus ring; no storage; imports are tanstack/react-window/next-intl plus siblings. The single vocabulary hit, :17 \"The risk of subtly breaking the existing 80+ tables\", is the ordinary English noun, not the GRC entity — I checked the sentence."
+ },
+ "src/components/ui/textarea.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "CVA textarea mirroring the Input contract, with aria-describedby wiring for description/error. Both rendered strings are caller-supplied props. No domain vocabulary, no brand tokens, no storage keys; imports @/lib/cn only."
+ },
+ "src/components/ui/timestamp-tooltip.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic relative-time + exact-tooltip primitive with a real hydration-safety contract. `empty = '—'` is a glyph, not English copy, so not reported. @/lib/format-date and @/lib/hooks/use-hydrated-now are generic utils, not domain modules. Only coupling is two JSDoc examples — the weakest finding in my slice, reported for completeness."
+ },
+ "src/components/ui/toggle-group.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Segmented radiogroup with roving tabindex and link mode. Copy goes through `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"options\")}`. Imports @/lib/cn and local ./hit-area. The :63-70 comment about CSS `capitalize` and Bulgarian orthography is i18n reasoning, not domain. \"Segmented control\" at :21/:30 is the UI-widget sense."
+ },
+ "src/components/ui/tooltip.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Radix Tooltip plus InfoTooltip and DynamicTooltipWrapper. Copy via `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"moreInformation\")}`, with an explicit comment at :238-239 on why the default cannot be a parameter literal. All content/title/shortcut come from callers. Judged NOT domain-props: the JSDoc example `title=\"Scheduled review\"` / `\"A periodic review keeps this record current"
+ },
+ "src/components/ui/typography.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Heading/Eyebrow/Caption/TextLink. Notable as the slice's exemplar for the brand-as-text rule: :157-181 is a docblock explaining that every brand link tone used to paint `text-[var(--brand-default)]` (~4:1, failing AA) and now paints `text-content-brand`, guarded on the ratio by tests/guardrails/token-contrast-content-brand.test.ts. The `text-[var(--brand-default)]` at :160 is inside that prose, no"
+ },
+ "src/components/ui/undo-toast.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Countdown undo toast. `message` and `undoMessage` are REQUIRED props with no English defaults, and both aria strings go through `useTranslations(\"common.ui\")` — t(\"undoWindow\"), t(\"secondsRemaining\"). `focus-visible:ring-brand-emphasis` is a RING (boundary) and fine. No domain vocabulary, no storage keys; imports @/lib/cn and sonner."
+ },
+ "src/components/ui/user-combobox.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic in shape — a people-picker over Member[] with a `preloadedMembers` escape hatch, and its user-facing copy IS translated via useTranslations(\"common.members\"). One un-translated fallback label and compliance references in comments. See `notes` for the hardcoded tenant API route, which I deliberately did not force into one of the five buckets."
+ },
+ "src/components/ui/view-toggle.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "97-line Table/Cards segmented switch over ToggleGroup. Thin and generic, but every one of its three strings is hardcoded English — and unusually, the ToggleGroup it wraps is itself fully translated, so this is drift at the wrapper."
+ },
+ "src/components/ui/views-menu.tsx": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic labelled dropdown over groups of {id,label,icon,href|onSelect,selected,badge}. All copy translated via useTranslations('common.ui') — t('viewsMenu'), t('viewsMenuAria'); it even imports no icon set by design. Comment-only coupling."
+ },
+ "src/components/ui/virtualized-list.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "react-window indirection layer: itemCount/itemSize/renderItem plus height/width/overscan/itemKey/role and an imperative handle. No copy (aria-label is a forwarded prop), no domain vocabulary, no storage keys, no brand tokens, no @/lib imports at all. Its consumer list (DataTable, Combobox, CardList) is UI primitives only."
+ },
+ "src/lib/hooks/__tests__/use-zod-form.test.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Tests the hook with a neutral `{ name, age }` Zod schema and 'Ada' fixtures. No domain data, imports only the hook under test."
+ },
+ "src/lib/hooks/index.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The barrel's actual exports are all generic (useApi, useTenantSWR, useTenantMutation, keyboard shortcuts, unsaved-changes). The docblock advertises a compliance API that does not exist here."
+ },
+ "src/lib/hooks/keyboard-shortcut-internals.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Pure shortcut parser + event matcher (incl. the physical-code fix for non-Latin layouts). Every `control` occurrence here is the keyboard modifier alias — `control: 'ctrl'` at line 50 — not the GRC noun. Error strings are developer-facing throws at registration time, not UI copy."
+ },
+ "src/lib/hooks/use-api.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic typed GET + mutation hooks over apiGet; the signature is fully parameterised (`useApi<T>(url, schema?)`). Only the usage example carries a domain DTO. I judged `@/lib/api-client` infrastructure, not a `src/lib/<domain>` module, so I did not report it as a domain-import."
+ },
+ "src/lib/hooks/use-entity-list-ids.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "The publish/read displayed-order mechanism is generic over T with a pluggable getId; nothing in the runtime code names an entity. But the docblock is the densest domain prose in the slice, and the `CacheKey` type binds it to this app's cache-key registry. Also carries non-rule app coupling: `useParams().tenantSlug` hard-codes the route param name (line 139)."
+ },
+ "src/lib/hooks/use-hydrated-now.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Returns Date|null to avoid hydration drift on time-dependent UI. 31 lines, react only. The rationale mentions \"overdue badges, 'SLA Breached' markers\" (line 17) as illustrations — I judged these generic SaaS time-UI examples, not the listed compliance vocabulary; flagged in notes rather than claimed as a coupling."
+ },
+ "src/lib/hooks/use-keyboard-inset.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "VisualViewport soft-keyboard inset + a keyboardAvoidanceStyle helper. Platform maths only; the Tailwind classes named in comments (max-h-[92vh]) are layout, not brand tokens."
+ },
+ "src/lib/hooks/use-keyboard-shortcut.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The shortcut provider/registry/priority model plus the WCAG 2.1.4 registration guard. 508 lines with no domain vocabulary, no storage, no copy — the long WCAG message at :447-450 is a dev-only `throw new Error`, and `description: 'Open command palette'` is a JSDoc example. Imports only its sibling internals module."
+ },
+ "src/lib/hooks/use-risk-matrix-config.ts": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "The whole file IS the compliance feature: it fetches the tenant's risk matrix config and falls back to the product's default matrix. Not a defect — it simply does not belong in a shared core."
+ },
+ "src/lib/hooks/use-tenant-mutation.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic optimistic-mutation wrapper over SWR: every type parameter is caller-supplied and the runtime code names no entity. Coupling is confined to the (very long) docblock and prop JSDoc. `@/lib/tenant-context-provider` and `@/lib/api-client` I judged app/infra seams, not `src/lib/<domain>` modules."
+ },
+ "src/lib/hooks/use-tenant-swr.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Generic tenant-prefixed SWR read hook (plus usePrefetchTenant). The code is domain-free; the docblock states the product in its own section headings and uses GRC DTOs in every example."
+ },
+ "src/lib/hooks/use-unsaved-changes-warning.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Two generic guards (beforeunload, capture-phase click confirm). `confirmMessage` is a required parameter with NO default, so there is no copy coupling. The coupling is the two call sites named as the extraction's motivation."
+ },
+ "src/lib/hooks/use-zod-form.ts": {
+  "classification": "MIXED",
+  "derivation": "audited",
+  "reason": "Fully generic Zod-driven form hook (values/setField/touchField/fieldError/canSubmit/submit/reset) parameterised on TSchema. The one literal string, 'Submission failed' at :155, is an internal error fallback not routed through next-intl — worth flagging but not one of the five as written. Coupling is the entity list and the app-layer reference in the docblock."
+ },
+ "src/lib/hooks/useUrlFilters.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "URL-param filter state over a caller-supplied `keys: string[]`, with popstate sync and cursor reset. No domain vocabulary, no copy, no storage keys, no imports beyond react + next/navigation."
+ }
+}
