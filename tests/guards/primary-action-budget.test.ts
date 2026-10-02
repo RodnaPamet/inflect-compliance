@@ -175,14 +175,6 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // explanation" follow-through. Modal only mounts when the user
     // clicks the Create-framework secondary trigger.
     "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx": 2,
-
-    // R26-PR-A — the Processes canvas wrapper carries two primaries
-    // for two genuinely separate regions: the toolbar Save action
-    // (only meaningful when a map is open) and the empty-state
-    // "Create your first process" CTA (only mounts when no maps
-    // exist). Mutually exclusive at runtime; the ratchet's static
-    // scan doesn't know that.
-    "src/components/processes/PersistedProcessCanvas.tsx": 2,
 };
 
 const DEFAULT_BUDGET = 1;

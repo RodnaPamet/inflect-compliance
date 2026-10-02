@@ -246,14 +246,33 @@ describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () 
         });
     });
 
-    describe("PersistedProcessCanvas — mounts the sidebar (visibility fix)", () => {
+    describe("TldrawProcessWorkspace — mounts the sidebar (visibility fix)", () => {
+        /*
+            Re-pointed from `PersistedProcessCanvas` (#3079). Measured against
+            BOTH files while both still existed, which is a check that stops
+            being possible once the original is gone: of the five assertions,
+            three transfer verbatim and TWO do not.
+
+              • the import is via the `@/` alias, not a relative path — the
+                house style, so the regex gives rather than the component;
+              • `currentVersion` reads the workspace's own `version` state,
+                not `loadedMap?.version`.
+
+            The two that transfer unchanged are also worth a note: the needles
+            `tenantSlug={tenantSlug}` and `mapId={activeId}` appear EARLIER in
+            this file on `<TldrawCanvasExportMenu>`, a different component
+            taking the same two props. Asserted free-floating they would be
+            satisfied with the sidebar entirely unmounted — which is precisely
+            the defect this block exists to catch. They are therefore bound
+            inside the sidebar's own element span below.
+        */
         const src = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
+            "src/components/processes/TldrawProcessWorkspace.tsx",
         );
 
         it("imports the sidebar component", () => {
             expect(src).toMatch(
-                /import\s*\{\s*CanvasHistorySidebar\s*\}\s*from\s*["']\.\/CanvasHistorySidebar["']/,
+                /import\s*\{\s*CanvasHistorySidebar\s*\}\s*from\s*["']@\/components\/processes\/CanvasHistorySidebar["']/,
             );
         });
 
@@ -262,13 +281,10 @@ describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () 
             // mounted it — the version-history feature was
             // invisible to users. This anchor locks the wire so
             // a future refactor can't silently drop it again.
+            // ONE regex spanning the element, not four free-floating needles:
+            // two of them match an unrelated component eleven lines earlier.
             expect(src).toMatch(
-                /\{\s*activeId\s*&&\s*\(?\s*<CanvasHistorySidebar/,
-            );
-            expect(src).toMatch(/tenantSlug=\{tenantSlug\}/);
-            expect(src).toMatch(/mapId=\{activeId\}/);
-            expect(src).toMatch(
-                /currentVersion=\{loadedMap\?\.version\s*\?\?\s*null\}/,
+                /\{\s*activeId\s*&&\s*\(?\s*<CanvasHistorySidebar[\s\S]{0,160}tenantSlug=\{tenantSlug\}[\s\S]{0,60}mapId=\{activeId\}[\s\S]{0,60}currentVersion=\{version\s*\?\?\s*null\}/,
             );
         });
     });

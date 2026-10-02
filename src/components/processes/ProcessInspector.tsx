@@ -105,13 +105,13 @@ import {
     DEFAULT_NODE_SIZE,
     isProcessNodeSize,
     type ProcessNodeSize,
-} from "./ProcessTypedNode";
+} from "./node-taxonomy";
 import {
     buildEdgeVariantMeta,
     EDGE_VARIANT_ORDER,
     isProcessEdgeVariant,
     type ProcessEdgeVariant,
-} from "./ProcessEdge";
+} from "@/lib/processes/edge-variants";
 
 /**
  * Epic P2-PR-A — shape of an edge-attached control reference.

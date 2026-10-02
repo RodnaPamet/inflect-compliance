@@ -320,6 +320,9 @@
     "docs/scheduled-notification-system.md": {
       "class": "authoritative"
     },
+    "docs/shared-ui-package-design.md": {
+      "class": "living"
+    },
     "docs/shared-ui-policy.md": {
       "class": "authoritative"
     },

@@ -32,10 +32,18 @@ describe('canvas mode toggle + governance link', () => {
         expect(bar).toMatch(/onSwitchMode/);
     });
 
-    it('the canvas wires handleSwitchMode via the helper', () => {
-        const canvas = read('src/components/processes/PersistedProcessCanvas.tsx');
-        expect(canvas).toMatch(/handleSwitchMode/);
-        expect(canvas).toMatch(/patchCanvasMode/);
+    it('the document-bar hook wires the mode switch via the helper', () => {
+        // Re-pointed from `PersistedProcessCanvas` (#3079). The switch did not
+        // move hosts so much as move LAYER: it now lives in the hook that
+        // feeds `CanvasDocumentBar`, which is the component that actually
+        // renders the toggle and is shared by both hosts. That is a better
+        // home than either canvas, and is why this survived the cutover
+        // untouched apart from the path.
+        const hook = read('src/lib/processes/use-tldraw-document-bar.ts');
+        expect(hook).toMatch(/const onSwitchMode\b/);
+        expect(hook).toMatch(/patchCanvasMode\(tenantSlug,\s*activeProcess\.id,\s*next\)/);
+        // DOCUMENT ⇄ AUTOMATION both ways, not a one-way trip.
+        expect(hook).toMatch(/'AUTOMATION'\s*\?\s*'DOCUMENT'\s*:\s*'AUTOMATION'/);
     });
 
     it('the Processes page links to the governance graph', () => {

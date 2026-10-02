@@ -95,7 +95,7 @@ export const NAV_BAR_HEIGHT = 'min-h-16';
  * and the hamburger sit behind the clock and the Dynamic Island. In landscape
  * the same applies horizontally — the notch and the home indicator eat into
  * the left and right edges, which is where this bar's only two interactive
- * controls live.
+ * elements live.
  *
  * `env(safe-area-inset-*)` is 0 in every context that has no inset, including
  * an ordinary browser tab, so this is inert where it is not needed rather than
@@ -105,7 +105,7 @@ export const NAV_BAR_HEIGHT = 'min-h-16';
  *
  *   `h-16` became `min-h-16`. A fixed height plus a top inset would have eaten
  *     the inset out of the CONTENT box, pushing the slots into a 64px box that
- *     starts below the notch — the bar would look right and the controls would
+ *     starts below the notch — the bar would look right and its buttons would
  *     be cramped. `min-h-16` lets the bar grow by exactly the inset.
  *   the horizontal padding takes `max()`, not a sum. Adding the inset to the
  *     16px would double the gap on a device whose inset is already larger than
@@ -252,7 +252,7 @@ export const NAV_BAR_SLOT_PRESS =
  * side so it doesn't run all the way to the corners — same recipe
  * as `<NavItem>`'s gloss treatment from R13-PR6, scaled up to the
  * chrome's geometry. Theme-aware via `--nav-gloss-highlight`
- * (white @ 8% METRO, white @ 70% PwC).
+ * (white @ 8% dark, white @ 70% light).
  */
 export const NAV_BAR_TOP_GLOSS =
     'after:absolute after:top-0 after:left-4 after:right-4 after:h-px after:bg-[var(--nav-gloss-highlight)] after:rounded-full after:pointer-events-none';
@@ -341,7 +341,7 @@ export const NAV_BAR_SLOT_RIGHT =
  *   (1) `h-[22px] w-[22px]` — 22×22 footprint. The compact navbar
  *       control size (stepped 32 → 28 → 22), matched across brand /
  *       bell / user-menu / mobile-menu / tenant-switcher so the
- *       controls read as one tight set within the 64px bar.
+ *       buttons read as one tight set within the 64px bar.
  *
  *   (2) `rounded-lg` — 8px corner radius. Parity with `<NavItem>`
  *       and the `<Button>` primitive (both rounded-lg). Mixing
@@ -359,8 +359,8 @@ export const NAV_BAR_SLOT_RIGHT =
  *       of jewellery.
  *
  *   (5) `text-content-inverted text-[11px] font-bold` — the
- *       initials text. Inverted-content (dark on yellow METRO,
- *       white on dark PwC). 11px is the smallest size at which
+ *       initials text. Inverted-content (dark on yellow in the dark
+ *       theme, white on dark in the light theme). 11px is the smallest size at which
  *       bold "IC" reads clearly at 32×32 without looking cramped.
  *
  *   (6) `animate-nav-brand-pulse` — the 6s breath. Tempo
@@ -375,7 +375,7 @@ export const NAV_BAR_SLOT_RIGHT =
  *
  * Accessibility:
  *   • `<Link>` with `aria-label` carrying the full product name
- *     + destination ("Inflect Compliance — go to dashboard").
+ *     + destination ("<product name> — go to the home page").
  *   • Visible "IC" initials are `aria-hidden="true"` — they're a
  *     visual signature, not the accessible name.
  *   • `focus-visible:ring-2` for keyboard story (same vocabulary
@@ -390,7 +390,7 @@ export const NAV_BAR_SLOT_RIGHT =
  */
 export const NAV_BAR_BRAND_CLASS = [
     // Geometry — 28px navbar control footprint (one step below the
-    // legacy 32px; matches the bell / user-menu / mobile-menu controls).
+    // legacy 32px; matches the bell / user-menu / mobile-menu buttons).
     'relative h-[22px] w-[22px] rounded-lg flex-shrink-0',
     // Flex / type
     'flex items-center justify-center',

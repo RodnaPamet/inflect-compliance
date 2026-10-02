@@ -35,9 +35,22 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 
 /** Every component that mounts a React Flow surface today. */
+/*
+    TRIMMED, not retired, when the process canvas was deleted (#3079).
+
+    The two entries that went were `PersistedProcessCanvas.tsx` and
+    `ProcessCanvas.tsx`. The obligation they carried did NOT go with them: the
+    bow-tie risk canvas and the traceability graph explorer still render React
+    Flow and still owe the attribution. Deleting this guard alongside the
+    renderer would have dropped a licence condition two live surfaces are
+    subject to.
+
+    `@xyflow/react` therefore stays a dependency after the cutover — 16
+    importers become 3, not 0, which is what
+    `canvas-editor-stays-inside-its-module.test.ts` already said in its
+    `ALLOWED_OUTSIDE` note before anyone measured it.
+*/
 const FLOW_SURFACES: readonly string[] = [
-    'src/components/processes/PersistedProcessCanvas.tsx',
-    'src/components/processes/ProcessCanvas.tsx',
     'src/app/t/[tenantSlug]/(app)/risks/[riskId]/BowTieCanvas.tsx',
     'src/components/ui/GraphExplorer.tsx',
 ];

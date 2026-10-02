@@ -82,14 +82,31 @@ export function MobileNavDrawer({ open, onClose, children }: MobileNavDrawerProp
             return;
         }
         const opener = openerRef.current;
-        openerRef.current = null;
         // Only reclaim focus the drawer is actually losing. On first mount —
         // and on any close the user did not trigger from inside the panel —
         // focus is somewhere legitimate and stealing it would be its own bug.
         if (opener && opener.isConnected && document.activeElement === document.body) {
+            openerRef.current = null;
             opener.focus();
         }
+        // Otherwise focus is still INSIDE the closing panel (it went in on
+        // open, `autoFocus` below), and the panel is still mounted while it
+        // animates out. The opener is kept for `onCloseAutoFocus`, which fires
+        // as the panel actually unmounts.
     }, [open]);
+
+    // Where focus goes as the panel unmounts. Radix's modal content would
+    // focus its Trigger here, and this drawer has none (the hamburger lives in
+    // the top bar), so without this focus fell to <body>: measured in
+    // Chromium at 393 px, Escape left `document.activeElement` on <body>.
+    const onCloseAutoFocus = (event: Event) => {
+        const opener = openerRef.current;
+        openerRef.current = null;
+        if (opener && opener.isConnected) {
+            event.preventDefault();
+            opener.focus();
+        }
+    };
 
     return (
         <Sheet
@@ -98,6 +115,14 @@ export function MobileNavDrawer({ open, onClose, children }: MobileNavDrawerProp
                 if (!next) onClose();
             }}
             direction="left"
+            // FOCUS GOES IN on open. Vaul's `autoFocus` defaults to FALSE and
+            // its content then cancels Radix's open auto-focus, so the panel
+            // opened as a modal with focus still on the hamburger behind it:
+            // measured in Chromium at 393 px, `document.activeElement` stayed
+            // on the opener for 2 s after Enter, and a keyboard or switch user
+            // had to Tab blind to reach the first link. With it, Radix moves
+            // focus to the panel's first focusable (the close button).
+            autoFocus
             // Also passed on the root so the dialog has an accessible name
             // even if a future refactor drops the header.
             title={tn('openNavigationMenu')}
@@ -111,6 +136,7 @@ export function MobileNavDrawer({ open, onClose, children }: MobileNavDrawerProp
                 // (they agree), but it puts a second, precedence-blind closer
                 // on a key the app arbitrates centrally.
                 onEscapeKeyDown: (event) => event.preventDefault(),
+                onCloseAutoFocus,
             }}
         >
             {/* The header is here for the CLOSE BUTTON, not the heading.

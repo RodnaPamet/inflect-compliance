@@ -130,7 +130,16 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 //   sitting on the `REDIS_PASSWORD` row below it, guard 8/8 green. Exactly the
 //   sibling-block reach this ratchet names, in markdown rather than code. The
 //   read is now bound to the one row and the span is gone with it.
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 145;
+// 145 -> 142 (2026-10-02, #3079, the phase 4 xyflow deletion).
+//   Deleting twelve test files took their unbounded interior spans with them,
+//   and re-pointing the survivors removed more: a span written to reach across a
+//   2500-line component often needs no span at all once the thing it reached for
+//   lives in a module of its own.
+//
+//   Re-seated DOWNWARD to the live count rather than left with slack, which is
+//   what the sentinel demands of an improvement — headroom is what a future
+//   regression spends on a green build.
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 142;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -176,7 +185,16 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 145;
 // removed it from both. This cap exists so an unbounded span cannot be bought
 // down by rewriting `*?` as `{0,200}`; a span that genuinely leaves must lower
 // it too.
-const INTERIOR_SPAN_BASELINE = 327;
+// 327 -> 310 (2026-10-02, #3079, the phase 4 xyflow deletion). Same cause as
+//   the unbounded figure above: twelve deleted test files plus survivors whose
+//   spans shortened when their subject stopped being one enormous component.
+//
+//   Note the direction. This diff RAISED the un-analysable-read baseline in the
+//   needle ratchet, because re-pointing one guard onto three modules is three
+//   whole-file reads where there was one — and it LOWERED all three span and
+//   needle counts, for the same underlying reason. More, smaller files cost
+//   reads and save reach.
+const INTERIOR_SPAN_BASELINE = 310;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

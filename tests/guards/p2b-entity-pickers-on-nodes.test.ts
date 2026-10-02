@@ -146,45 +146,69 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
     });
 
     describe("Canvas — round-trips linkedEntityId on load + save", () => {
-        // P3.1 — `nodeDataJson` (which carries linkedEntityId into dataJson)
-        // moved into the shared graph serialiser; rehydration stayed in the
-        // canvas. Read both so each half is asserted where it actually lives.
-        const src = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
-        );
-        const serializer = read("src/lib/processes/serialize-graph.ts");
+        /*
+            ═══ RE-POINTED, AND THE MECHANISM IS BETTER (#3079) ═══
 
-        it("nodeDataJson emits linkedEntityId when present", () => {
-            // The save serialiser MUST include the field; the pre-P2-B shape
-            // only emitted size + width + height.
-            expect(serializer).toMatch(
-                /linkedEntityId\?:\s*string;[\s\S]{0,2000}out\.linkedEntityId\s*=\s*linkedEntityId/,
-            );
-            // And the canvas must still route its save through it rather than
-            // reintroducing a local projection.
-            expect(src).toMatch(/serializeGraphForSave\(nodes, edges\)/);
+            The three assertions here pinned an explicit projection: the save
+            serialiser named `linkedEntityId` and wrote it into `dataJson`, and
+            the canvas destructured it back out on load. Three places had to
+            agree about one field, and the test existed because the pre-P2-B
+            shape emitted only size/width/height — i.e. because a field had
+            already been forgotten once.
+
+            On this host `dataJson` is an OPAQUE PASSTHROUGH (#2960): the
+            serialiser carries the whole column through untouched, and the shape
+            props hold it as-is. So `linkedEntityId` round-trips without anybody
+            naming it, and a FOURTH linked-entity field would too. The failure
+            mode the original guarded — a field dropped because one of three
+            places forgot it — is not expressible.
+
+            What that moves rather than removes is the risk: an opaque column is
+            only safe if writers MERGE into it. A whole-value write drops every
+            sibling key, silently, and that is now the thing worth asserting.
+        */
+        const serializer = read("src/components/processes/tldraw/serializer.ts");
+        const adapter = read("src/lib/processes/use-tldraw-selection.ts");
+
+        it("the serialiser carries dataJson through WHOLE, naming no field inside it", () => {
+            // Both directions. Save:
+            expect(serializer).toMatch(/dataJson:\s*n\.dataJson \?\? null/);
+            // and load, off the shape's props:
+            expect(serializer).toMatch(/dataJson:\s*s\.props\.dataJson \?\? null/);
+            // The teeth: a serialiser that started destructuring the column
+            // would reintroduce the three-places-must-agree failure.
+            expect(serializer).not.toMatch(/linkedEntityId/);
         });
 
-        it("rehydration projects linkedEntityId onto data when present", () => {
-            // Anchor on the conditional spread — empty strings
-            // shouldn't bloat data.
-            expect(src).toMatch(
-                /linkedEntityId\s*=\s*typeof json\?\.linkedEntityId === "string"/,
-            );
-            expect(src).toMatch(
-                /\.\.\.\(linkedEntityId\s*\?\s*\{\s*linkedEntityId\s*\}/,
+        it("the inspector write MERGES into dataJson rather than replacing it", () => {
+            /*
+                The hazard the opaque column creates, and the only place that
+                writes into it. `props.dataJson = { linkedEntityId }` would be a
+                one-line change that silently discarded every other key the row
+                carries — and nothing would fail, because the column is opaque
+                to the serialiser by design.
+            */
+            expect(adapter).toMatch(/patch\.linkedEntityId\s*!==\s*undefined/);
+            expect(adapter).toMatch(
+                /props\.dataJson\s*=\s*\{\s*\.\.\.\(prev \?\? \{\}\),\s*linkedEntityId:\s*patch\.linkedEntityId\s*\}/,
             );
         });
 
-        it("handleInspectorUpdate accepts the linkedEntityId patch field", () => {
-            expect(src).toMatch(
-                /patch:\s*\{[\s\S]{0,800}linkedEntityId\?:\s*string \| null;/,
-            );
-            // null clears, string sets, undefined skips — anchor on
-            // the three-state spread-ternary predicate.
-            expect(src).toMatch(
-                /patch\.linkedEntityId\s*!==\s*undefined[\s\S]{0,300}patch\.linkedEntityId\s*===\s*null/,
-            );
+        it("and `size` is deliberately NOT applied, which is a decision not an omission", () => {
+            /*
+                Worth pinning next to the above, because the two look like the
+                same kind of field and are handled oppositely on purpose.
+
+                The inspector offers `size`; this host's node shape renders at a
+                fixed geometry and never reads it, so applying it would save a
+                value that changes nothing the user can see — the same shape of
+                defect as #3090 and #3093, avoided here by DECLINING to write.
+                The adapter says so at length; this assertion keeps the decision
+                from being quietly reversed by someone tidying up an unused
+                patch field.
+            */
+            expect(adapter).toMatch(/size\?:\s*unknown;/);
+            expect(adapter).not.toMatch(/props\.size\s*=/);
         });
     });
 });

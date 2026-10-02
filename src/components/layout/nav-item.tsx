@@ -116,8 +116,8 @@ export const NAV_ITEM_ICON_SIZE = 'h-4 w-4';
  *
  * The icon is `aria-hidden="true"` at the JSX layer (not in this
  * class string). The label is the accessible name; the icon is
- * decorative. Screen readers announce "Controls", not "icon
- * Controls". This is the right semantic and is locked by the
+ * decorative. Screen readers announce "Calendar", not "icon
+ * Calendar". This is the right semantic and is locked by the
  * R12-PR9 ratchet.
  *
  * Why a named const (not inline)?
@@ -161,6 +161,20 @@ export interface NavItemProps {
     badgeLabel?: string;
     /** Optional click handler — used by the mobile drawer to close itself. */
     onClick?: () => void;
+    /**
+     * How far `<Link>` prefetches this route. Defaults to `true`, the full-RSC
+     * prefetch this sidebar has always used (see the note on the `<Link>`
+     * below for why, and for the 2026-08-09 revert).
+     *
+     * A seam, not a change of policy. Prefetch is a property of the HOST's
+     * routes, not of the row: whether a fully prefetched page may be served
+     * from the router cache depends on how stale that page may get, which only
+     * the host knows. A product whose nav lands on a live view (a diary staff
+     * act on) can keep a full prefetch from serving a minutes-old copy by
+     * passing `"auto"`, which fetches each dynamic route only down to its
+     * `loading` boundary. Without the prop that product had to fork the row.
+     */
+    prefetch?: boolean | 'auto' | null;
 }
 
 /**
@@ -182,8 +196,8 @@ export interface NavItemProps {
  * like to the eye.
  *
  * Pair with a soft outer glow (`--nav-band-glow` from tokens.css,
- * resolved per theme — yellow @ 35% on METRO, orange @ 35% on
- * PwC). The glow bleeds 6px of brand-coloured light into the row
+ * resolved per theme — yellow @ 35% on the dark theme, orange @ 35%
+ * on the light one). The glow bleeds 6px of brand-coloured light into the row
  * surface, softening the band's edge so it doesn't read as a
  * stamped line. "No rough edges" turns into "the band has an
  * aura".
@@ -224,8 +238,8 @@ export interface NavItemProps {
  * highlight rather than a hairline divider.
  *
  * Resolved per theme via `--nav-gloss-highlight`:
- *   METRO  rgba(255, 255, 255, 0.08)  — subtle white catch on navy
- *   PwC    rgba(255, 255, 255, 0.70)  — near-white sliver on cream
+ *   dark   rgba(255, 255, 255, 0.08)  — subtle white catch on navy
+ *   light  rgba(255, 255, 255, 0.70)  — near-white sliver on cream
  *
  * Opacity 0 by default; fades to 100 on hover + active (200ms
  * ease-out — same tempo as the band). Pointer-events disabled so
@@ -377,7 +391,7 @@ export const NAV_ITEM_BASE = [
     //
     //   `focus-visible:ring-[var(--ring)]`
     //       The canonical focus tone — brand yellow at ~55% alpha
-    //       (METRO theme) or brand orange at ~40% (PwC theme). The
+    //       (dark theme) or brand orange at ~40% (light theme). The
     //       same token every other focusable primitive uses. NEVER
     //       a hard brand fill — focus signals "the keyboard knows
     //       you're here", not "the system has changed".
@@ -442,12 +456,12 @@ export const NAV_ITEM_DEFAULT =
  * Five cooperating tokens, no single one shouting:
  *
  *   (1) `text-content-brand` (R13-PR5, retargeted by T07 — see the
- *       Brand-coloured letters: yellow on METRO, orange on PwC.
+ *       Brand-coloured letters: yellow on dark, orange on light.
  *       Held permanently on the active row. The active page is now
  *       visually unmissable from across the desk — the band tells
  *       you WHERE, the brand-coloured label tells you WHAT.
- *       Both themes clear WCAG AA: METRO yellow `#FFCD11` on a
- *       deep-navy + 18%-yellow wash reads at >10:1; PwC orange
+ *       Both themes clear WCAG AA: dark-theme yellow `#FFCD11` on a
+ *       deep-navy + 18%-yellow wash reads at >10:1; light-theme orange
  *       `#D04A02` on cream + 9%-orange wash at ~5.5:1.
  *
  *   (2) Radial brand-secondary wash (R13-PR11 evolution)
@@ -554,7 +568,7 @@ export const NAV_ITEM_ACTIVE =
  *       The badge MUST NOT be the thing that shrinks when a row's
  *       label is long. The label has `truncate`; the badge is the
  *       fixed counterweight. Without this, on a row like
- *       "Vendor Risk Assessments (47)" with a narrow sidebar, flex
+ *       "Unread notifications (47)" with a narrow sidebar, flex
  *       would steal width from the badge too.
  *
  *   (4) `animate-in fade-in`
@@ -627,7 +641,16 @@ function hashSlugToDriftDelays(slug: string): {
     };
 }
 
-export function NavItem({ href, icon: Icon, label, active, badge, badgeLabel, onClick }: NavItemProps) {
+export function NavItem({
+    href,
+    icon: Icon,
+    label,
+    active,
+    badge,
+    badgeLabel,
+    onClick,
+    prefetch = true,
+}: NavItemProps) {
     const slug = href.split('/').pop() ?? '';
     const { shimmerDelayMs, breathDelayMs } = hashSlugToDriftDelays(slug);
     const driftStyle = {
@@ -649,8 +672,9 @@ export function NavItem({ href, icon: Icon, label, active, badge, badgeLabel, on
     const link = (
         <Link
             href={href}
-            // Force a FULL-RSC prefetch (not just the loading-boundary slice
-            // Next prefetches by default for `force-dynamic` routes). The
+            // By default (the `prefetch` prop) a FULL-RSC prefetch (not just
+            // the loading-boundary slice Next prefetches by default for
+            // `force-dynamic` routes). The
             // sidebar is always in the viewport, so every hot route prefetches
             // its RSC into the client router cache on mount; combined with the
             // 30 s `staleTimes.dynamic` (next.config.js) the click then renders
@@ -671,7 +695,7 @@ export function NavItem({ href, icon: Icon, label, active, badge, badgeLabel, on
             // and nobody had measured the nav latency either side. If you pick
             // this up again, measure that first — the console warnings alone
             // are not the argument.
-            prefetch
+            prefetch={prefetch}
             onClick={onClick}
             className={cn(
                 NAV_ITEM_BASE,

@@ -130,17 +130,29 @@ describe("Epic P5-PR-B — visual diff + restore wiring", () => {
                 expect(src.includes(`case "${tone}":`)).toBe(true);
             }
         });
-        it("PersistedProcessCanvas wires sidebar callbacks + mounts overlay", () => {
+        it("the tldraw workspace wires sidebar callbacks + mounts overlay", () => {
+            // Re-pointed from `PersistedProcessCanvas` (#3079). All four wires
+            // exist on the successor; two carry different names, and one of
+            // those differences is the interesting half.
             const src = read(
-                "src/components/processes/PersistedProcessCanvas.tsx",
+                "src/components/processes/TldrawProcessWorkspace.tsx",
             );
-            // Sidebar callback wires.
-            expect(src).toMatch(/onDiffRequest=\{setDiffAgainstVersion\}/);
-            expect(src).toMatch(/onRestored=\{[^}]*setReloadCounter/);
+            // Sidebar callback wires — named handlers rather than raw setters,
+            // because a restore and a 409 both remount and the workspace keeps
+            // them as SEPARATE callbacks despite identical bodies, so a reader
+            // cannot mistake a restore for a conflict.
+            expect(src).toMatch(/onDiffRequest=\{handleDiffRequest\}/);
+            expect(src).toMatch(/onRestored=\{handleRestored\}/);
             // Overlay mount.
             expect(src).toMatch(/<CanvasDiffOverlay/);
-            // Snapshot projection helper exists.
-            expect(src).toMatch(/function buildLiveSnapshot\b/);
+            // The snapshot the overlay diffs against. Where the xyflow host
+            // had a `buildLiveSnapshot` helper reading component state, this
+            // serialises the live EDITOR at click time — the snapshot has to
+            // be the canvas as the user sees it now, not as it was when the
+            // component last rendered for some other reason.
+            expect(src).toMatch(
+                /snapshot:\s*toDiffSnapshot\(serializeEditorCanvas\(editor\)\.rows\)/,
+            );
         });
     });
 });

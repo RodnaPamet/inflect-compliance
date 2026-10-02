@@ -29,11 +29,33 @@ describe('VR-6 — execution overlay', () => {
         expect(src).toMatch(/refreshInterval/);
     });
 
-    it('ProcessTypedNode paints the overlay from context (not a tenant hook)', () => {
-        const src = read('src/components/processes/ProcessTypedNode.tsx');
-        expect(src).toMatch(/useNodeOverlayStatus/);
-        expect(src).toMatch(/overlayClass/);
-        // must NOT call the tenant SWR poll per node
-        expect(src).not.toMatch(/useCanvasExecutionOverlay/);
+    it('the per-node overlay paint is UNPORTED, on the record', () => {
+        /*
+            A retirement on the same terms as VR-5's (see
+            `vr5-chain-edges.test.ts` for the full reasoning).
+
+            `useNodeOverlayStatus` and `overlayClass` were read by
+            `ProcessTypedNode.tsx`, the xyflow node renderer.
+            `lib/processes/canvas-execution-overlay.tsx` is now referenced by
+            nothing but itself, and `ProcessNodeShapeUtil` paints no overlay.
+
+            The overlay shows per-node RUN state, which needs an AUTOMATION map
+            to run. Production has **0** of them, so there is nothing to
+            overlay.
+
+            The original assertion's most interesting half is kept and INVERTED
+            below: it insisted the node must not call the tenant SWR poll
+            per-node, because one request per node is how a 500-node map
+            melts. That constraint is the part worth carrying forward to
+            whoever ports this — so it is asserted of the successor now, where
+            it holds trivially, rather than lost with the file that motivated
+            it.
+        */
+        const util = read(
+            'src/components/processes/tldraw/ProcessNodeShapeUtil.tsx',
+        );
+        expect(util).not.toMatch(/useNodeOverlayStatus/);
+        // The constraint that outlives the feature: never a per-node poll.
+        expect(util).not.toMatch(/useCanvasExecutionOverlay/);
     });
 });
