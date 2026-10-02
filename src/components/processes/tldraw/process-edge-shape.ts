@@ -94,6 +94,22 @@ export type ProcessEdgeShapeProps = {
      * distinction between "never set" and "cleared" is the inspector's.
      */
     label: string;
+    /**
+     * The automation edge-kind chip's text, already resolved and already
+     * precedence-checked. Empty for no chip (the common case).
+     *
+     * RESOLVED BY THE HOST, not here, for two reasons a renderer cannot work
+     * around. The text is localised and no shape util in this codebase takes a
+     * translator — the node util reads its per-kind text from `NODE_TAXONOMY`
+     * constants and its label from props, which is the pattern this follows.
+     * And the chip is a FALLBACK: xyflow showed it only when an edge had
+     * neither controls nor an explicit label, and `controls` lives on the
+     * BINDING, which the line cannot cheaply reach.
+     *
+     * So the host decides whether a chip is warranted and what it says; this
+     * prop is the answer, and an empty string is "no".
+     */
+    chipLabel: string;
     /** Offset from this shape's origin to the far endpoint. Derived. */
     dx: number;
     dy: number;
@@ -108,6 +124,7 @@ export const processEdgeShapeProps: RecordProps<ProcessEdgeShape> = {
     edgeKey: T.string,
     edgeKind: T.string,
     label: T.string,
+    chipLabel: T.string,
     dx: T.number,
     dy: T.number,
 };
@@ -160,13 +177,44 @@ export function edgeKeyFromShapeId(id: string): string | null {
 export function edgeStrokeFor(edgeKind: string): {
     strokeDasharray?: string;
     strokeLinecap?: 'round' | 'butt';
+    stroke?: string;
 } {
     switch (edgeKind) {
+        // ── DOCUMENT variants: dash only, colour from the element's token class
         case 'conditional':
             return { strokeDasharray: '7 5' };
         case 'reference':
             // Round caps are what make `1 6` read as dots rather than ticks.
             return { strokeDasharray: '1 6', strokeLinecap: 'round' };
+
+        /*
+            ── AUTOMATION kinds (VR-5) ─────────────────────────────────────
+            `edgeKind` is ONE overloaded field: an edge carries either a
+            document variant or an automation kind, never both. That is why
+            these are more arms on this switch rather than a second mechanism —
+            on the xyflow renderer the automation style OVERRODE the variant
+            style on exactly the same read, which is the same dispatch written
+            twice.
+
+            These DO carry a colour, because the kind is the whole signal: a
+            `condition-fail` branch that looked like a `condition-pass` branch
+            would misdescribe the rule. The document variants deliberately do
+            not — they are distinguished by dash, and inherit the theme's edge
+            token so a map does not become a colour chart.
+        */
+        case 'trigger-flow':
+            return { stroke: 'var(--brand-default)' };
+        case 'condition-pass':
+            return { stroke: 'var(--content-success)' };
+        case 'condition-fail':
+            return { stroke: 'var(--content-error)', strokeDasharray: '6 4' };
+        case 'chain-delay':
+            return { stroke: 'var(--canvas-edge)', strokeDasharray: '2 5' };
+        case 'sla-breach':
+            return { stroke: 'var(--content-warning)' };
+        case 'sla-pass':
+            return { stroke: 'var(--content-success)' };
+
         default:
             // `flow`, and anything unrecognised. `edgeKind` is a free string on
             // the wire (`z.string().min(1).max(64)`), so an unknown value must
@@ -174,6 +222,35 @@ export function edgeStrokeFor(edgeKind: string): {
             // fallback the xyflow renderer makes, asserted there as "an unknown
             // / missing variant falls back to flow (solid)".
             return {};
+    }
+}
+
+/**
+ * The `automation.edges` key naming an automation kind, or null.
+ *
+ * Pure and total, so the HOST can resolve the text without knowing the
+ * taxonomy. `trigger-flow` maps to null deliberately: it is the DEFAULT
+ * automation flow, and the xyflow renderer gave it an empty label for the same
+ * reason — a chip on every ordinary edge is noise, and the colour already says
+ * it is an automation edge.
+ *
+ * Returns null for every document variant too, which is what makes "no chip"
+ * the common case rather than something the caller has to remember.
+ */
+export function automationChipKey(edgeKind: string): string | null {
+    switch (edgeKind) {
+        case 'condition-pass':
+            return 'autoPass';
+        case 'condition-fail':
+            return 'autoFail';
+        case 'chain-delay':
+            return 'autoChain';
+        case 'sla-breach':
+            return 'autoSlaBreach';
+        case 'sla-pass':
+            return 'autoOnTime';
+        default:
+            return null;
     }
 }
 

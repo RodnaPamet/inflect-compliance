@@ -67,6 +67,8 @@
 
 import 'tldraw/tldraw.css';
 
+import { useTranslations } from 'next-intl';
+
 import { useMediaQuery } from '@/components/ui/hooks/use-media-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { atom, type Atom, type Editor, type TLBindingId, Tldraw, type TLShape, type TLShapeId } from 'tldraw';
@@ -88,6 +90,7 @@ import {
     PROCESS_EDGE_SHAPE_TYPE,
     edgeLineGeometry,
     shapeIdForEdgeKey,
+    automationChipKey,
 } from './tldraw/process-edge-shape';
 import {
     PROCESS_NODE_DEFAULT_H,
@@ -244,6 +247,36 @@ export function TldrawProcessCanvas({
      * state is how a future selector change breaks only one of them.
      */
     const { isMobile } = useMediaQuery();
+    /**
+     * For the automation edge-kind chip (VR-5).
+     *
+     * The chip's text is resolved HERE and stored on the line, because no shape
+     * util in this codebase takes a translator — see `chipLabel`'s own note in
+     * `process-edge-shape.ts`. `automation.edges` is the namespace the xyflow
+     * renderer used, and the five keys survived the cutover untouched.
+     */
+    const tEdges = useTranslations('automation.edges');
+
+    /**
+     * The chip text for an edge, or `''` for no chip.
+     *
+     * Three ways to get nothing, and each is a real case rather than a guard
+     * for its own sake:
+     *   • the kind has no chip — every document variant, plus `trigger-flow`,
+     *     which is the default automation flow and would put a pill on every
+     *     ordinary edge;
+     *   • the edge has an explicit label, which the user typed and which wins;
+     *   • the edge carries controls, whose pills already occupy that space.
+     */
+    const chipTextFor = useCallback(
+        (edgeKind: string, labelOverride: unknown, controls: unknown): string => {
+            if (typeof labelOverride === 'string' && labelOverride.length > 0) return '';
+            if (Array.isArray(controls) && controls.length > 0) return '';
+            const key = automationChipKey(edgeKind);
+            return key ? tEdges(key) : '';
+        },
+        [tEdges],
+    );
     const [editorReady, setEditorReady] = useState(false);
 
     /**
@@ -284,6 +317,18 @@ export function TldrawProcessCanvas({
     useEffect(() => {
         onEnterGroupRef.current = onEnterGroup;
     }, [onEnterGroup]);
+    /*
+        `chipTextFor` through a ref for the reason stated on `onDirtyRef`:
+        `handleMount` runs once per editor and installs the arrow converter for
+        that editor's whole life, so a closure would pin whichever translator
+        existed at mount. Reading it from a ref also takes it out of
+        `handleMount`'s dependency list, where adding it would re-seed the
+        entire canvas on a locale change — a remount to re-render two chips.
+    */
+    const chipTextForRef = useRef(chipTextFor);
+    useEffect(() => {
+        chipTextForRef.current = chipTextFor;
+    }, [chipTextFor]);
     // Unregister the side-effect handlers with the component. Without this a
     // remount — which a 409 conflict performs deliberately — would leave the
     // previous editor's handlers registered against a store nobody reads.
@@ -429,6 +474,18 @@ export function TldrawProcessCanvas({
                                 // prop's own note on why the line does not
                                 // carry the null.
                                 label: b.props.labelOverride ?? '',
+                                // PRECEDENCE, resolved here because the binding
+                                // is what carries both competing values: an
+                                // explicit label wins over the chip, and a
+                                // controls-bearing edge shows neither (the
+                                // control pills are the label). Same order the
+                                // xyflow renderer enforced with
+                                // `!hasControls && !label && autoLabel`.
+                                chipLabel: chipTextForRef.current(
+                                    b.props.edgeKind,
+                                    b.props.labelOverride,
+                                    b.props.controls,
+                                ),
                                 dx: g.dx,
                                 dy: g.dy,
                             },
@@ -462,6 +519,15 @@ export function TldrawProcessCanvas({
                     // so a later prop change would mark the wrong host dirty —
                     // which is why `onDirtyRef` exists at all.
                     onConverted: () => onDirtyRef.current?.(),
+                    /*
+                        VR-5's chip on a freshly DRAWN edge. `null, []` are the
+                        label and controls a one-millisecond-old edge has by
+                        construction — the converter writes both empty — so this
+                        is the same precedence function with its two losing
+                        arguments pinned, rather than a second rule that could
+                        drift from the load path's.
+                    */
+                    resolveChipLabel: (kind) => chipTextForRef.current(kind, null, []),
                 });
             }
 
