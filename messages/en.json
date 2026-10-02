@@ -6027,7 +6027,7 @@
       "narrowTo": "Narrow to {mode}",
       "confirmTitle": "Widen to {mode}?",
       "since": "On this rung since {date}. A connection must sit here {days} days before it can widen.",
-      "ceilingNotice": "No external write is dispatched by this build yet, so the ladder is capped at {mode}. The rungs above it would change the policy and nothing else, which is why they are unavailable rather than merely refused.",
+      "ceilingNotice": "This build implements the ladder only as far as {mode}. The rungs above it would change the policy and nothing else, which is why they are unavailable rather than merely refused.",
       "mode": {
         "DISABLED": "Off",
         "DRY_RUN": "Dry run",
