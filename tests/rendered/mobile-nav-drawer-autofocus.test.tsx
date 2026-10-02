@@ -47,4 +47,45 @@ describe('MobileNavDrawer — focus goes in', () => {
         );
         expect(sheetProps.at(-1)?.autoFocus).toBe(true);
     });
+
+    it('hands focus back to the opener as the panel unmounts', () => {
+        // Radix's modal content focuses its Trigger on close, and this drawer
+        // has none, so focus fell to <body> once it had gone in. The handler
+        // is called the way Radix calls it: with a cancellable event.
+        const opener = document.createElement('button');
+        document.body.appendChild(opener);
+        opener.focus();
+        const { rerender } = render(
+            <MobileNavDrawer open={false} onClose={jest.fn()}>
+                <a href="/dashboard">Board</a>
+            </MobileNavDrawer>,
+        );
+        rerender(
+            <MobileNavDrawer open onClose={jest.fn()}>
+                <a href="/dashboard">Board</a>
+            </MobileNavDrawer>,
+        );
+        // Focus moved into the panel, as it now does in a browser.
+        opener.blur();
+        const elsewhere = document.createElement('button');
+        document.body.appendChild(elsewhere);
+        elsewhere.focus();
+        rerender(
+            <MobileNavDrawer open={false} onClose={jest.fn()}>
+                <a href="/dashboard">Board</a>
+            </MobileNavDrawer>,
+        );
+        // Not on <body> at close time, so the effect leaves it to the handler.
+        expect(document.activeElement).toBe(elsewhere);
+
+        const handler = (sheetProps.at(-1)?.contentProps as {
+            onCloseAutoFocus: (e: Event) => void;
+        }).onCloseAutoFocus;
+        const event = new Event('focus.autoFocusOnUnmount', { cancelable: true });
+        handler(event);
+        expect(event.defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe(opener);
+        opener.remove();
+        elsewhere.remove();
+    });
 });
