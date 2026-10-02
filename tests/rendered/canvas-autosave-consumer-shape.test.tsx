@@ -176,26 +176,78 @@ describe('autosave fires from the consumer shape', () => {
  * Rendering PersistedProcessCanvas itself would be better and is not
  * proportionate — 2,504 lines, ReactFlow, SWR and a tenant context.
  */
-describe('the canvas consumes the hook the way the harness does', () => {
+describe('the tldraw host consumes the hook the way the harness does', () => {
+    /*
+        ═══ RE-POINTED (#3079), AND THIS SUITE IS WHY THE FULL GATE MATTERS ═══
+
+        This describe read `PersistedProcessCanvas.tsx` with `fs.readFileSync` at
+        describe scope. When that file was deleted the read threw at COLLECTION,
+        so the suite did not fail an assertion — it failed to RUN, which reports
+        as "Test suite failed to run" and no test count at all.
+
+        It is also the one file the deletion's own sweep missed. I classified
+        every test by what it IMPORTS: this one imports `use-canvas-autosave`,
+        which survives, so it was filed as "lives". The dependency was expressed
+        as a PATH STRING, and an import scan cannot see one. CI's shard 2/4 found
+        it; nothing local did, because the guards gate does not cover
+        `tests/rendered`.
+
+        ═══ THE TWO PROPERTIES, AND WHERE THEY LIVE NOW ═══
+
+        Both were real defects once, and both are about the SEAM between the page
+        and the hook — which is exactly what survives a renderer swap. The hook
+        is unchanged (`use-canvas-autosave`); what changed is the consumer, so
+        each assertion moves to the tldraw consumer that now plays that part.
+    */
     const fs = require('node:fs') as typeof import('node:fs');
     const path = require('node:path') as typeof import('node:path');
-    const src = codeOf(fs.readFileSync(
-        path.resolve(__dirname, '../../src/components/processes/PersistedProcessCanvas.tsx'),
-        'utf8',
-    ));
+    const read = (rel: string) =>
+        codeOf(fs.readFileSync(path.resolve(__dirname, '../../', rel), 'utf8'));
+    const autosave = read('src/lib/processes/use-tldraw-canvas-autosave.ts');
+    const save = read('src/lib/processes/tldraw-save.ts');
 
-    it('the markClean effect depends on the CALLBACK, not the hook object', () => {
-        // `[loading, activeId, autosave]` re-runs every time status changes and
-        // clears the pending save. That is how autosave never fired.
-        expect(src).toMatch(/\}, \[loading, activeId, markClean\]\);/);
-        expect(src).not.toMatch(/\}, \[loading, activeId, autosave\]\);/);
+    it('the save callback is resolved at FIRE time, not captured', () => {
+        /*
+            The tldraw-era form of "the markClean effect depends on the CALLBACK,
+            not the hook object".
+
+            There, `[loading, activeId, autosave]` re-ran every time status
+            changed and cleared the pending save — which is how autosave never
+            fired. Here the equivalent hazard is a stale `save`: the hook holds
+            it and calls it later, so a captured one would send the version from
+            before the first successful save on every subsequent cycle, the
+            server would refuse each with 409, and the canvas would become
+            unsaveable while presenting as a conflict between two users.
+
+            `use-tldraw-canvas-autosave`'s own docblock says it RELIES on
+            `use-canvas-autosave`'s `saveRef` rather than re-solving this, so
+            what is asserted is that it still takes the honest dependency list
+            that makes relying on it correct.
+        */
+        expect(autosave).toMatch(
+            /\}, \[editor, mapId, tenantSlug, expectedVersion, toast, onConflict, onSaved\]\)/,
+        );
+        // And that it did not grow a second `latest` ref of its own, which the
+        // module records as the first version's mistake.
+        expect(autosave).not.toMatch(/latestRef|saveRef\s*=/);
     });
 
-    it('handleSave RETHROWS so the hook can see a failure', () => {
-        // Swallowing made every failure take the hook's saved branch: dirty
-        // cleared, "Saved" rendered over unsaved work, error state unreachable.
-        const i = src.indexOf('reportFailure(err, "failSave")');
-        expect(i).toBeGreaterThan(-1);
-        expect(src.slice(i, i + 900)).toMatch(/throw err;/);
+    it('the save THROWS on a failed response, so the hook can see it', () => {
+        /*
+            "handleSave RETHROWS so the hook can see a failure". Swallowing made
+            every failure take the hook's saved branch: dirty cleared, "Saved"
+            rendered over unsaved work, the error state unreachable.
+
+            On this host the save is a module rather than a component method, so
+            the property is simply that it throws — and the 409 path is
+            deliberately NOT a throw: it returns after the reload toast, because
+            a conflict is handled by the toast rather than by failing the save.
+            Both halves asserted, since swapping them would restore the original
+            bug in mirror image.
+        */
+        expect(save).toMatch(/if \(!res\.ok\) throw new Error\(/);
+        expect(save).toMatch(
+            /if \(await surfaceVersionConflict\(res,\s*toast,\s*onConflict\)\)\s*return/,
+        );
     });
 });
