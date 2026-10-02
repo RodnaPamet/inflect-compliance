@@ -386,11 +386,18 @@ export interface GrantedExternalTool {
      * tool boundary owns the parse because it owns the fail-closed decision:
      * a set whose bounds do not parse must become undispatchable, and that is a
      * statement about the advertised tool rather than about this query.
+     *
+     * `targetPopulation` travels BESIDE it, raw, for the same reason and one
+     * more: the parse needs both halves at once (a target marker with no
+     * population, or the reverse, is an incoherent row that must fail closed),
+     * so splitting them across two reads would put the coherence decision
+     * somewhere that can only see one of them.
      */
     parameterSets: ReadonlyArray<{
         label: string;
         parameters: Record<string, unknown>;
         openFields: unknown;
+        targetPopulation: string | null;
     }>;
 }
 
@@ -438,7 +445,13 @@ export async function resolveGrantedExternalTools(
             where: { tenantId: ctx.tenantId, toolName: { in: [...grantedTools] } },
             orderBy: { label: 'asc' },
             take: 500,
-            select: { toolName: true, label: true, parameters: true, openFields: true },
+            select: {
+                toolName: true,
+                label: true,
+                parameters: true,
+                openFields: true,
+                targetPopulation: true,
+            },
         }),
         pins: await db.mcpToolManifestPin.findMany({
             where: { tenantId: ctx.tenantId, toolName: { in: [...grantedTools] } },
@@ -458,7 +471,12 @@ export async function resolveGrantedExternalTools(
     const pinByName = new Map(pins.map((p) => [p.toolName, p as ApprovedToolManifest]));
     const setsByTool = new Map<
         string,
-        { label: string; parameters: Record<string, unknown>; openFields: unknown }[]
+        {
+            label: string;
+            parameters: Record<string, unknown>;
+            openFields: unknown;
+            targetPopulation: string | null;
+        }[]
     >();
     for (const row of parameterSets) {
         const list = setsByTool.get(row.toolName) ?? [];
@@ -466,6 +484,7 @@ export async function resolveGrantedExternalTools(
             label: row.label,
             parameters: (row.parameters ?? {}) as Record<string, unknown>,
             openFields: row.openFields ?? null,
+            targetPopulation: row.targetPopulation ?? null,
         });
         setsByTool.set(row.toolName, list);
     }

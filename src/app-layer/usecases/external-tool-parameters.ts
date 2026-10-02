@@ -41,11 +41,16 @@ import { canonicalJson } from '@/lib/canonical-json';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import {
+    declaresTargetField,
     OpenFieldsSchema,
+    parseOpenFields,
     refusalForOpenFields,
-    type OpenFields,
 } from '@/lib/integrations/open-fields';
 import { isExternalToolName } from '@/lib/mcp/external-tool-name';
+import {
+    isTargetPopulationKey,
+    targetPopulationKeys,
+} from './external-tool-target-populations';
 
 import { logEvent } from '../events/audit';
 import { assertCanRead, assertCanWrite } from '../policies/common';
@@ -69,7 +74,8 @@ export function hashParameters(parameters: unknown): string {
 }
 
 /**
- * The digest of a TEMPLATE — the exact values AND the bounds on the open ones.
+ * The digest of a TEMPLATE — the exact values, the bounds on the open ones, AND
+ * the target population.
  *
  * Why the open fields have to be inside it: `expectedPendingHash` exists so an
  * approver accepts what they reviewed rather than whatever the row says when
@@ -80,10 +86,26 @@ export function hashParameters(parameters: unknown): string {
  * review and the click with the hash still matching. Both are the failure the
  * hash exists to prevent.
  *
- * A template with NO open fields hashes to EXACTLY what `hashParameters`
- * produced before #3051, byte for byte, so every row written before this change
- * still matches its stored `parametersHash`. No backfill, and the "already in
- * force" check keeps working on legacy rows.
+ * The TARGET POPULATION is inside it for exactly the same reason, and the
+ * reasoning is sharper there (#3051 step 5c). The population is the entire bound
+ * on which ROW the agent may address, so an edit that swapped only the
+ * population — leaving the field list, the exact values and the field names
+ * untouched — is the widest change this table can express. Outside the digest
+ * it would hash identically to what is in force: `proposeParameterChange` would
+ * refuse it as "nothing to approve", and a swap between the review and the click
+ * would match the hash the approver named.
+ *
+ * ── THREE FORMS, AND THE OLDER TWO ARE BYTE-STABLE ───────────────────
+ *
+ *   · neither open fields nor a target — EXACTLY what `hashParameters` produced
+ *     before #3051, so every pre-5b row still matches its stored hash;
+ *   · open fields, no target — EXACTLY the `…template:v1` form 5b shipped, so
+ *     every 5b template still matches its stored hash;
+ *   · a target — a new `…template-target:v2` form.
+ *
+ * That staging is not politeness: `proposeParameterChange` compares a candidate
+ * digest against the STORED `parametersHash` to refuse a no-op edit, so changing
+ * how an existing row would hash makes every such row look changed.
  *
  * The domain tag is a PREFIX rather than a wrapper key, because any wrapper key
  * is a key a tool could genuinely advertise: hashing `{parameters, openFields}`
@@ -91,7 +113,32 @@ export function hashParameters(parameters: unknown): string {
  * `parameters` and `openFields` collide with a template. A prefix cannot be
  * forged from inside the JSON.
  */
-export function hashParameterSet(parameters: unknown, openFields: unknown): string {
+export function hashParameterSet(
+    parameters: unknown,
+    openFields: unknown,
+    targetPopulation?: unknown,
+): string {
+    const target =
+        typeof targetPopulation === 'string' && targetPopulation.length > 0
+            ? targetPopulation
+            : null;
+    if (target !== null) {
+        return createHash('sha256')
+            .update('external-tool-parameter-template-target:v2\n', 'utf8')
+            .update(
+                canonicalJson(
+                    JSON.parse(
+                        JSON.stringify({
+                            openFields: openFields ?? null,
+                            parameters: parameters ?? null,
+                            targetPopulation: target,
+                        }),
+                    ),
+                ),
+                'utf8',
+            )
+            .digest('hex');
+    }
     if (openFields === null || openFields === undefined) return hashParameters(parameters);
     return createHash('sha256')
         .update('external-tool-parameter-template:v1\n', 'utf8')
@@ -121,6 +168,8 @@ export const SaveParameterSetSchema = z
         label: z.string().min(1).max(120).trim(),
         parameters: ParametersSchema,
         openFields: z.unknown().optional(),
+        /** Accepted and refused with its own sentence, like `openFields`. */
+        targetPopulation: z.unknown().optional(),
     })
     .strict();
 
@@ -141,6 +190,20 @@ export const ProposeParameterChangeSchema = z
          * the kind. An explicit `null` removes them.
          */
         openFields: z.unknown().optional(),
+        /**
+         * The target population the template should have AFTER this edit — the
+         * key of an entry in `TARGET_POPULATIONS`.
+         *
+         * Same three-state contract as `openFields`, and for the same reason:
+         * OMITTED carries the row's current population forward, an explicit
+         * `null` removes the target. A propose path that read absence as "no
+         * target" would silently unbind a template's row-level bound whenever
+         * somebody edited only its exact values — which the promotion trigger
+         * would then happily accept, because it is a NARROWING and so needs
+         * only the ordinary signature. A narrowing nobody intended is still a
+         * change nobody reviewed.
+         */
+        targetPopulation: z.unknown().optional(),
     })
     .strict();
 
@@ -184,6 +247,11 @@ export interface ParameterSetState {
      * exact-value set — which is a template with zero open fields.
      */
     openFields: unknown;
+    /**
+     * The registry key bounding the target field, or `null` for a template with
+     * no open target — which is every row step 5b could produce.
+     */
+    targetPopulation: string | null;
     revision: number;
     approvalSource: string;
     approvedByUserId: string | null;
@@ -192,6 +260,7 @@ export interface ParameterSetState {
     pending: {
         parameters: unknown;
         openFields: unknown;
+        targetPopulation: string | null;
         hash: string;
         byUserId: string;
         at: Date;
@@ -218,12 +287,14 @@ const SELECT = {
     parameters: true,
     parametersHash: true,
     openFields: true,
+    targetPopulation: true,
     revision: true,
     approvalSource: true,
     approvedByUserId: true,
     approvedAt: true,
     pendingParameters: true,
     pendingOpenFields: true,
+    pendingTargetPopulation: true,
     pendingHash: true,
     pendingByUserId: true,
     pendingAt: true,
@@ -236,12 +307,14 @@ type Row = {
     parameters: unknown;
     parametersHash: string;
     openFields: unknown;
+    targetPopulation: string | null;
     revision: number;
     approvalSource: string;
     approvedByUserId: string | null;
     approvedAt: Date;
     pendingParameters: unknown;
     pendingOpenFields: unknown;
+    pendingTargetPopulation: string | null;
     pendingHash: string | null;
     pendingByUserId: string | null;
     pendingAt: Date | null;
@@ -292,6 +365,7 @@ function toState(row: Row, signatures: ParameterSetSignature[] = []): ParameterS
         parameters: row.parameters,
         parametersHash: row.parametersHash,
         openFields: row.openFields ?? null,
+        targetPopulation: row.targetPopulation ?? null,
         revision: row.revision,
         approvalSource: row.approvalSource,
         approvedByUserId: row.approvedByUserId,
@@ -306,6 +380,7 @@ function toState(row: Row, signatures: ParameterSetSignature[] = []): ParameterS
                 ? {
                       parameters: row.pendingParameters,
                       openFields: row.pendingOpenFields ?? null,
+                      targetPopulation: row.pendingTargetPopulation ?? null,
                       hash: row.pendingHash,
                       byUserId: row.pendingByUserId as string,
                       at: row.pendingAt as Date,
@@ -426,6 +501,25 @@ export async function saveParameterSet(
         );
     }
 
+    // ── NOR A TARGET, FOR THE SAME REASON ONLY MORE SO (#3051 step 5c) ──────
+    //
+    // An open target is what lets an agent address a row nobody named, and a
+    // baseline has no reviewed moment to stand behind that. Refused separately
+    // from `openFields` rather than folded in, because this is the sentence an
+    // operator needs — being told "a baseline cannot have open fields" when they
+    // passed a population would send them to the wrong field.
+    if (
+        parsed.data.targetPopulation !== undefined &&
+        parsed.data.targetPopulation !== null
+    ) {
+        throw badRequest(
+            'A new parameter set cannot be saved with a target population. A first save is ' +
+                'trust-on-first-use, and an open target is what lets an agent address a row ' +
+                'nobody named. Save the exact values, then propose the target; promoting it ' +
+                'needs an approving signature from a human other than the proposer.',
+        );
+    }
+
     // Parameters are for EXTERNAL tools. A built-in tool's arguments come from
     // the model against a schema this build owns; there is nothing for a tenant
     // to save, and allowing it would create a second, unpinned way to influence
@@ -514,6 +608,8 @@ export async function proposeParameterChange(
     // `z.unknown().optional()` collapses them once parsed.
     const openFieldsGiven =
         typeof input === 'object' && input !== null && 'openFields' in input;
+    const targetGiven =
+        typeof input === 'object' && input !== null && 'targetPopulation' in input;
 
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.externalToolParameterSet.findFirst({
@@ -524,6 +620,7 @@ export async function proposeParameterChange(
                 label: true,
                 parametersHash: true,
                 openFields: true,
+                targetPopulation: true,
             },
         });
         if (!existing) throw notFound('Parameter set not found');
@@ -534,24 +631,101 @@ export async function proposeParameterChange(
         const openFields: unknown = openFieldsGiven
             ? (parsed.data.openFields ?? null)
             : (existing.openFields ?? null);
+        const targetRaw: unknown = targetGiven
+            ? (parsed.data.targetPopulation ?? null)
+            : (existing.targetPopulation ?? null);
 
+        // ── THE TARGET POPULATION MUST NAME A REGISTRY ENTRY (#3051 5c) ──────
+        //
+        // Checked HERE as well as at dispatch, because the two refusals serve
+        // different people. At dispatch an unknown key makes the template
+        // undispatchable, which is the right failure and the one that keeps a
+        // removed population safe — but the person who reads it is a model
+        // mid-run. Refusing at propose time puts the typo in front of the admin
+        // who wrote it, while they are still looking at the form.
+        //
+        // It is NOT a substitute for the dispatch check: this one is a statement
+        // about the registry as it was when the edit was proposed, and a deploy
+        // can remove an entry afterwards.
+        let targetPopulation: string | null = null;
+        if (targetRaw !== null && targetRaw !== undefined) {
+            if (!isTargetPopulationKey(targetRaw)) {
+                throw badRequest(
+                    `external_target_population_unknown: "${String(targetRaw)}" is not a ` +
+                        'target population this build defines. A target is bounded by a ' +
+                        'code-defined population, not by a query or a pattern, so the set of ' +
+                        `names is closed: ${targetPopulationKeys().join(', ')}.`,
+                );
+            }
+            targetPopulation = targetRaw;
+        }
+
+        // THE SHAPE FIRST, so a malformed blob is reported as a malformed blob.
+        // `declaresTargetField` below can only answer about a blob it can parse,
+        // and it answers `false` for one it cannot — so without this the
+        // coherence refusal would fire on garbage openFields submitted beside a
+        // population, telling the operator to mark a target in a blob that will
+        // not parse at all.
         if (openFields !== null) {
             const shape = OpenFieldsSchema.safeParse(openFields);
             if (!shape.success) {
                 throw badRequest('Invalid open fields', shape.error.flatten());
             }
+        }
+
+        // ── THE TWO HALVES OF A TARGET MUST AGREE ───────────────────────────
+        //
+        // Which ARGUMENT is the target is a `{"kind":"target"}` entry in
+        // `openFields`; which POPULATION bounds it is the column. Each is stored
+        // once, so each can be submitted without the other — and either half
+        // alone is incoherent, so both are refused with the sentence that says
+        // which half is missing. The database refuses the same two states
+        // (`..._target_population_matches_marker`), and `parseOpenFields` treats
+        // them as UNREADABLE at dispatch; this is the message layer.
+        //
+        // Checked BEFORE the hydration below, which needs both halves present.
+        const marksTarget = openFields !== null && declaresTargetField(openFields);
+        if (marksTarget && targetPopulation === null) {
+            throw badRequest(
+                'external_target_population_missing: one open field is marked as the target, ' +
+                    'so this edit must also name the target population that bounds it. A ' +
+                    'target with no population is an argument the agent chooses with nothing ' +
+                    `limiting which row it names. Available: ${targetPopulationKeys().join(', ')}.`,
+            );
+        }
+        if (!marksTarget && targetPopulation !== null) {
+            throw badRequest(
+                'external_target_field_missing: this edit names target population ' +
+                    `"${targetPopulation}" but no open field is marked as the target, so the ` +
+                    'population would bound nothing. Mark the argument that names the row with ' +
+                    '{"kind":"target"}, or remove the population.',
+            );
+        }
+
+        if (openFields !== null) {
+            // Through `parseOpenFields` rather than straight off the Zod result,
+            // so the bounds this propose path judges are the same hydrated
+            // bounds the DISPATCH path will read — one parser, so the two cannot
+            // come to different conclusions about one row. Its own coherence
+            // refusals are unreachable here (the two checks above already ran),
+            // and a fail-closed branch is kept rather than asserted.
+            const bounds = parseOpenFields(openFields, targetPopulation);
+            if (bounds.state !== 'ok') {
+                throw badRequest(
+                    `Invalid open fields: ${
+                        bounds.state === 'unreadable' ? bounds.detail : 'no bounds were readable'
+                    }`,
+                );
+            }
             // `refusalForConstraint`, per field, through the shared composer —
             // and with the approved exact values beside it, so a field opened
             // under the name of an approved value is refused rather than
             // silently overriding it at dispatch.
-            const refusal = refusalForOpenFields(
-                shape.data as OpenFields,
-                Object.keys(parameters),
-            );
+            const refusal = refusalForOpenFields(bounds.fields, Object.keys(parameters));
             if (refusal) throw badRequest(`${refusal.code}: ${refusal.detail}`);
         }
 
-        const pendingHash = hashParameterSet(parameters, openFields);
+        const pendingHash = hashParameterSet(parameters, openFields, targetPopulation);
 
         if (existing.parametersHash === pendingHash) {
             throw badRequest(
@@ -569,6 +743,10 @@ export async function proposeParameterChange(
                 // a template's bounds would leave them pending.
                 pendingOpenFields:
                     openFields === null ? Prisma.DbNull : (openFields as object),
+                // A plain nullable TEXT column, so `null` is literal here —
+                // `Prisma.DbNull` is only needed for the Json columns above,
+                // where `null` would be ambiguous with a JSON null.
+                pendingTargetPopulation: targetPopulation,
                 pendingHash,
                 pendingByUserId: ctx.userId as string,
                 pendingAt: new Date(),
@@ -596,6 +774,13 @@ export async function proposeParameterChange(
                     openFields === null
                         ? []
                         : Object.keys(openFields as Record<string, unknown>).sort(),
+                // The population KEY, in full, unlike the bounds beside it. A
+                // key is a code-defined identifier from a closed set in this
+                // repository — it names no host, filter or tenant datum — and it
+                // is the single most important fact an incident reviewer needs
+                // about a target edit: WHICH rows this agent was pointed at.
+                targetPopulation,
+                previousTargetPopulation: existing.targetPopulation ?? null,
                 requiredApprovals: requiredApprovalsFor({
                     openFields: existing.openFields ?? null,
                     pendingOpenFields: openFields,
@@ -776,10 +961,13 @@ function fourEyesRefusal(err: unknown): string | null {
         return 'This edit changes the bounds on an open field, so it needs an approving signature from a human other than the one who proposed it. Collect it before approving.';
     }
     if (text.includes('EXTERNAL_TOOL_OPEN_FIELDS_NOT_PROMOTED')) {
-        return 'The open fields in force can only change by approving the pending edit that proposed them.';
+        return 'The open fields and target population in force can only change by approving the pending edit that proposed them.';
     }
     if (text.includes('EXTERNAL_TOOL_OPEN_FIELDS_NOT_ON_BASELINE')) {
         return 'A parameter set cannot be created with open fields. Save the exact values, then propose the bounds.';
+    }
+    if (text.includes('EXTERNAL_TOOL_TARGET_NOT_ON_BASELINE')) {
+        return 'A parameter set cannot be created with a target population. Save the exact values, then propose the target.';
     }
     return null;
 }
@@ -815,8 +1003,10 @@ export async function approveParameterChange(
                 revision: true,
                 pendingParameters: true,
                 pendingOpenFields: true,
+                pendingTargetPopulation: true,
                 pendingHash: true,
                 openFields: true,
+                targetPopulation: true,
             },
         });
         if (!existing) throw notFound('Parameter set not found');
@@ -850,6 +1040,12 @@ export async function approveParameterChange(
                         existing.pendingOpenFields === null
                             ? Prisma.DbNull
                             : (existing.pendingOpenFields as object),
+                    // PROMOTED TOGETHER WITH THE OPEN FIELDS, and the trigger
+                    // requires it: a promotion whose `targetPopulation` is not
+                    // exactly `pendingTargetPopulation` is refused, so there is
+                    // no arrangement in which the reviewed field list comes into
+                    // force beside an unreviewed population.
+                    targetPopulation: existing.pendingTargetPopulation,
                     // `Prisma.DbNull`, not `undefined` and not `JsonNull`. On a
                     // nullable Json column `undefined` means "leave it alone", so
                     // the superseded proposal would SURVIVE its own approval — and
@@ -859,6 +1055,7 @@ export async function approveParameterChange(
                     // which reads back as a proposal whose content is null.
                     pendingParameters: Prisma.DbNull,
                     pendingOpenFields: Prisma.DbNull,
+                    pendingTargetPopulation: null,
                     pendingHash: null,
                     pendingByUserId: null,
                     pendingAt: null,
@@ -898,6 +1095,11 @@ export async function approveParameterChange(
                         : Object.keys(
                               existing.pendingOpenFields as Record<string, unknown>,
                           ).sort(),
+                // Which rows this agent is now pointed at, and which it was
+                // pointed at before. See the propose event for why the key is
+                // logged in full where a pattern is not.
+                targetPopulation: existing.pendingTargetPopulation,
+                previousTargetPopulation: existing.targetPopulation ?? null,
                 requiredApprovals: requiredApprovalsFor({
                     openFields: existing.openFields ?? null,
                     pendingOpenFields: existing.pendingOpenFields ?? null,
