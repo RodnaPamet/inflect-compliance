@@ -181,6 +181,48 @@ describe('shared-UI coupling classification (#3047)', () => {
         expect(truncated).toEqual([]);
     });
 
+    it('no reason sits exactly on the 400-character cap that severed them', () => {
+        // THE SECOND AXIS, and the one that closes the class.
+        //
+        // The delimiter rule above catches a reason whose cut happens to land
+        // mid-span. It is blind to a cut that lands on a word boundary with every
+        // backtick and bracket balanced — demonstrated by mutation, not assumed.
+        // What both kinds share is the CAUSE: forty reasons were written against
+        // a 400-character cap and stopped dead on it. Length is therefore the
+        // discriminator the content cannot give us.
+        //
+        // This is a per-entry predicate, not a stored count. There is no number
+        // here for two branches to bump, which is the rule this file's header
+        // sets for itself.
+        //
+        // A reason that genuinely wants 400 characters can have 401 or 399. The
+        // assertion costs an author nothing and costs a truncation its invisibility.
+        const AWAITING_NAV_PR: Record<string, string> = {
+            // These four describe files that PR #3100 (`port/t19-nav-wording`) is
+            // rewriting as this lands. Completing prose about a file mid-rewrite
+            // produces text that is wrong on arrival, so they are held rather than
+            // guessed. Delete these four entries — do not add a fifth.
+            'src/components/layout/nav-bar.tsx': '#3100 rewrites it',
+            'src/components/layout/nav-item.tsx': '#3100 rewrites it',
+            'src/components/layout/nav-section.tsx': '#3100 rewrites it',
+            'src/components/layout/user-menu.tsx': '#3100 rewrites it',
+        };
+
+        const atCap = Object.entries(MAP)
+            .filter(([, e]) => e.reason.length === 400)
+            .map(([p]) => p);
+
+        // The exemption list must not outlive what it exempts: an entry that is
+        // no longer at the cap is a line somebody forgot to delete, and it would
+        // silently keep a future truncation exempt.
+        const staleExemptions = Object.keys(AWAITING_NAV_PR).filter(
+            (p) => !atCap.includes(p),
+        );
+        expect(staleExemptions).toEqual([]);
+
+        expect(atCap.filter((p) => !(p in AWAITING_NAV_PR))).toEqual([]);
+    });
+
     it('no file recorded GENERIC trips a MECHANICAL coupling', () => {
         // The half that must not rest on judgement. A GENERIC here is a claim
         // that a second product can vendor the file as-is; these three are
