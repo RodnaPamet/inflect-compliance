@@ -41,7 +41,7 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
     static override props = processEdgeShapeProps;
 
     override getDefaultProps(): ProcessEdgeShape['props'] {
-        return { edgeKey: '', edgeKind: DEFAULT_EDGE_KIND, label: '', dx: 0, dy: 0 };
+        return { edgeKey: '', edgeKind: DEFAULT_EDGE_KIND, label: '', chipLabel: '', dx: 0, dy: 0 };
     }
 
     /**
@@ -90,7 +90,7 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
     }
 
     override component(shape: ProcessEdgeShape) {
-        const { dx, dy, edgeKind, label } = shape.props;
+        const { dx, dy, edgeKind, label, chipLabel } = shape.props;
         // Flow is solid; conditional dashes; reference dots. Spread rather than
         // branched inline so the three cases live in one pure, tested function.
         const variantStroke = edgeStrokeFor(edgeKind);
@@ -113,6 +113,20 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
                         // the node borders do rather than pinning a hex here.
                         className="stroke-border-emphasis"
                         strokeLinecap="round"
+                        /*
+                            The automation COLOUR has to be an inline style, not
+                            the `stroke` attribute, and the distinction is not
+                            cosmetic: a CSS class beats a presentation
+                            attribute, so `className="stroke-border-emphasis"`
+                            below would keep painting the edge while a
+                            `stroke="var(--content-error)"` attribute sat there
+                            looking applied. The xyflow renderer used an inline
+                            style for exactly this reason.
+
+                            Document variants return no `stroke`, so they fall
+                            through to the class and follow the theme.
+                        */
+                        style={variantStroke.stroke ? { stroke: variantStroke.stroke } : undefined}
                         // Last so a variant CAN override a default. Today
                         // nothing does: the only overlapping attribute is the
                         // linecap and both values are `round`, so moving this
@@ -146,6 +160,33 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
                     unlabelled edge is the common case and a zero-height
                     element at every midpoint would still take a hit-test.
                 */}
+                {/*
+                    The automation CHIP (VR-5). A fallback, not an addition: the
+                    host sets `chipLabel` only when an edge has neither controls
+                    nor an explicit label, which is the precedence the xyflow
+                    renderer enforced with `!hasControls && !label && autoLabel`.
+
+                    Rendered as a bordered pill rather than bare text, because
+                    it is machine-derived — a reader should be able to tell
+                    "Fail" that the system inferred from "Fail" that somebody
+                    typed, and the label above is the one somebody typed.
+                */}
+                {chipLabel !== '' && label === '' && (
+                    <div
+                        data-edge-kind-chip={edgeKind}
+                        style={{
+                            position: 'absolute',
+                            left: dx / 2,
+                            top: dy / 2,
+                            transform: 'translate(-50%, -50%)',
+                            pointerEvents: 'none',
+                        }}
+                    >
+                        <span className="inline-flex items-center rounded-[4px] border border-canvas-border bg-canvas-frame px-1.5 py-0.5 text-[10px] leading-4 text-content-muted">
+                            {chipLabel}
+                        </span>
+                    </div>
+                )}
                 {label !== '' && (
                     <div
                         data-process-edge-label={label}

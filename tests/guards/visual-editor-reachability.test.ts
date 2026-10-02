@@ -72,20 +72,23 @@ describe('visual editor reachability', () => {
         );
     });
 
-    it('inferEdgeKind has no consumer, and that is recorded not hidden', () => {
+    it('inferEdgeKind is REACHED again, from the live-draw site (#3093)', () => {
         /*
-            VR-5. `inferEdgeKind` was called on connect by the xyflow canvas to
-            derive a semantic edge kind; `lib/processes/edge-kind-inference.ts`
-            now has zero consumers in `src/`.
+            This assertion was "has no consumer, and that is recorded not
+            hidden" — true from the cutover until VR-5 was ported. The note it
+            carried is worth keeping in one line: the module was KEPT rather
+            than deleted, the `GraphExplorer` treatment, because re-deriving it
+            was worse than leaving it unreferenced. That bet paid out.
 
-            Same reasoning as the overlay, same trigger: it classifies edges on
-            AUTOMATION maps, of which there are none. The module is KEPT rather
-            than deleted — the `GraphExplorer` treatment — because the next
-            AUTOMATION map needs it and re-deriving it from scratch is worse
-            than leaving it unreferenced with this note pointing at it.
+            `arrow-to-edge.ts` is the tldraw equivalent of the xyflow canvas's
+            `onConnect`, which is where the call used to be. The WORKSPACE does
+            not call it and should not: inference belongs with the gesture that
+            creates an edge, not with the component that hosts the canvas.
         */
-        const consumers = ['src/components/processes/tldraw/arrow-to-edge.ts', WORKSPACE];
-        for (const f of consumers) expect(read(f)).not.toMatch(/inferEdgeKind\(/);
+        expect(read('src/components/processes/tldraw/arrow-to-edge.ts')).toMatch(
+            /inferEdgeKind\(/,
+        );
+        expect(read(WORKSPACE)).not.toMatch(/inferEdgeKind\(/);
     });
 
     it('AUTOMATION mode is CONVERTIBLE, though no longer creatable in one step', () => {
