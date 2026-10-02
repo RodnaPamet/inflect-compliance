@@ -393,6 +393,17 @@ const HIGH_MULTIPLICITY = 5;
 //   I dropped the two intermediate merge notes rather than keep them: a note
 //   reading `1189 -> 1188` above a constant of 1186 misinforms a reader, and
 //   the per-branch notes already say which needles moved and why.
+// 1186 -> 1184 (2026-10-02, #3084): -2, both in `cva-primitives.test.ts`. That
+// file's "uses semantic tokens for primary variant" asserted `/--brand-default/`
+// and `/--brand-emphasis/` against the whole of `button-variants.ts`. Writing
+// the Still Surface tile classes out literally — so Tailwind can actually see
+// them — raised each token's code-only occurrence count past
+// `HIGH_MULTIPLICITY`, and this ratchet fired on a diff that did not touch the
+// test. It was right to: a bare token name asserts "this string appears
+// somewhere", which is weaker than what the test means. Both needles now pin a
+// construct (`"bg-[var(--brand-emphasis)]"` and the brand-ramp gradient), which
+// retires them from the ambiguous set entirely rather than merely from the
+// five-plus one.
 // 1186 -> 1178 (2026-10-02, #3079, the phase 4 xyflow deletion): -8 net, and
 //   the arithmetic is worth recording because it moved in both directions.
 //
@@ -422,7 +433,20 @@ const HIGH_MULTIPLICITY = 5;
 //   a satisfying position that was inside a COMMENT stops being one once the
 //   comments are masked. Worth naming because it is the two ratchets agreeing:
 //   the Class A fix is also a Class D improvement.
-const AMBIGUOUS_NEEDLE_BASELINE = 1177;
+//
+//   MERGE RESOLUTION (#3079 x #3084). Both branches lowered this line from
+//   1186, each measured against a base that did not contain the other: #3084
+//   to 1184 by pinning two `cva-primitives` needles to constructs, this one
+//   to 1177. Neither number is right for the union, and the sum is not
+//   either — the two sets could overlap. Re-MEASURED on the merged tree, per
+//   the "RE-SEATED ON THE MERGED TREE" rule the entries above keep repeating,
+//   and both histories are kept because both are true.
+//   The measurement: **1175**, below BOTH branch values. The two sets were
+//   therefore largely disjoint — had they overlapped completely the union would
+//   have measured 1177, and had they been fully independent, 1175 is what
+//   1186 − 2 − 9 gives. Which is the arithmetic working out, not a coincidence
+//   worth trusting next time: measure, do not subtract.
+const AMBIGUOUS_NEEDLE_BASELINE = 1175;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

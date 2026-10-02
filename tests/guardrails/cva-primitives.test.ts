@@ -56,8 +56,23 @@ describe('Button primitive', () => {
         // Still Surface (2026-07-28): the primary fill is a static
         // gradient built from the brand stops directly rather than the
         // pre-baked `--btn-gradient-primary` token.
-        expect(variantsSrc).toMatch(/--brand-default/);
-        expect(variantsSrc).toMatch(/--brand-emphasis/);
+        // Narrowed from the bare token names `/--brand-default/` and
+        // `/--brand-emphasis/` (#3084). Those matched anywhere in the file, and
+        // once the tile classes were written out literally instead of being
+        // built by `stillTile()`, each had 5+ satisfying positions and crossed
+        // `HIGH_MULTIPLICITY` in `assertion-needle-uniqueness-ratchet` — a
+        // Class D ratchet with zero drift allowance, fired by a diff that did
+        // not touch this file. The ratchet was right: a bare token name says
+        // "this string appears somewhere", which is not what this test means.
+        //
+        // These two pin the constructs that carry the intent — the DEEP stop as
+        // the base fill, and the brand ramp as the gradient — so the assertion
+        // now fails if the fill stops being a semantic token rather than merely
+        // if the token name disappears from the file.
+        expect(variantsSrc).toMatch(/"bg-\[var\(--brand-emphasis\)\]"/);
+        expect(variantsSrc).toMatch(
+            /linear-gradient\(to_bottom,var\(--brand-default\),var\(--brand-emphasis\)\)/,
+        );
     });
 
     it('uses semantic tokens for secondary variant', () => {

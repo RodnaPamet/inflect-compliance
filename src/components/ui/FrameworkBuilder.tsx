@@ -291,7 +291,7 @@ export function FrameworkBuilder({
                                                 className="w-3.5 h-3.5 text-content-subtle flex-shrink-0"
                                                 aria-hidden="true"
                                             />
-                                            <code className="font-mono text-[var(--brand-default)] flex-shrink-0 min-w-[3.5rem]">
+                                            <code className="font-mono text-content-brand flex-shrink-0 min-w-[3.5rem]">
                                                 {req.code}
                                             </code>
                                             <span className="truncate flex-1 min-w-0 text-content-default">

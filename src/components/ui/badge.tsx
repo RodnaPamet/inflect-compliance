@@ -30,7 +30,7 @@ const badgeVariants = cva(
                 error: "bg-bg-error text-content-error",
                 info: "bg-bg-info text-content-info",
                 attention: "bg-bg-attention text-content-attention",
-                brand: "bg-brand-subtle text-brand-muted",
+                brand: "bg-brand-subtle text-content-brand",
                 outline:
                     "border border-border-default bg-transparent text-content-muted",
             },

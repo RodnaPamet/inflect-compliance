@@ -36,7 +36,7 @@
  * historical drift, so the rule becomes "the smallest number that keeps
  * ordinary PRs quiet" — and that is not one number for all three:
  *
- *   `domain-import` (41) and `brand-as-text` (16) get 1. An incidental fix
+ *   `domain-import` (41) and `brand-as-text` (10) get 1. An incidental fix
  *     while doing something else should not force an edit to this file.
  *   `storage-key` (1) gets 0. At an allowance of 1 the only remaining file
  *     could be fixed and the ceiling would stay silently at 1 — a ratchet with
@@ -63,7 +63,21 @@ const ROOT = path.resolve(__dirname, '../..');
  */
 const CEILINGS: Record<CouplingKind, { max: number; allowance: number }> = {
     'domain-import': { max: 41, allowance: 1 },
-    'brand-as-text': { max: 16, allowance: 1 },
+    // Re-seated 16 -> 10 by #3096, which replaced the brand fill token with
+    // `text-content-brand` in the six files where it painted real rendered
+    // TEXT and so owed WCAG 1.4.3's 4.5:1 (badge, checklist-gear-button,
+    // FrameworkMinimap, TreeViewItem, FrameworkBuilder, table-title-cell).
+    //
+    // The residual 10 are NOT unfinished work. Every one is non-text content,
+    // which owes 1.4.11's 3:1 and already clears it: six chart files painting
+    // SVG fill/stroke through `currentColor` (charts/areas, charts/bars,
+    // charts/time-series-chart, mini-area-chart, progress-circle,
+    // dashboard-widgets/ChartRenderer), three `aria-hidden` icons
+    // (layout/org-workspace-switcher, layout/tenant-switcher, FileDropzone),
+    // and radio-group's border plus checked indicator. Recolouring any of
+    // them would change charts and icons for no accessibility gain, so 10 is
+    // the floor this kind is expected to sit at.
+    'brand-as-text': { max: 10, allowance: 1 },
     'storage-key': { max: 1, allowance: 0 },
 };
 

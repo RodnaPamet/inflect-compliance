@@ -94,6 +94,18 @@ export interface UserMenuProps {
      */
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
+    /**
+     * Render the built-in language row. Defaults to `true`.
+     *
+     * The row persists the choice to a cookie and refreshes, which is only
+     * the whole story where that cookie IS the preference. A host that keeps
+     * the preference on the user record and re-seeds the cookie from it on
+     * every request would see the row flip the page and then flip it straight
+     * back on the next navigation: a control that visibly does nothing. Such a
+     * host hides the row until it can persist the choice, rather than ship it
+     * broken or fork the menu.
+     */
+    showLanguage?: boolean;
 }
 
 // ─── Recipe ────────────────────────────────────────────────────────
@@ -129,6 +141,7 @@ export function UserMenu({
     items,
     open: controlledOpen,
     onOpenChange,
+    showLanguage = true,
 }: UserMenuProps) {
     const t = useTranslations('common');
     const tNav = useTranslations('nav');
@@ -197,20 +210,24 @@ export function UserMenu({
                         <ThemeToggle id="user-menu-theme-toggle" />
                     </div>
 
-                    <Popover.Separator />
-
                     {/* Language switcher — persists to the inflect_locale
                         cookie + refreshes so server components re-render in
-                        the chosen locale. */}
-                    <div
-                        className="px-2.5 py-1.5 flex items-center justify-between gap-compact text-sm text-content-default"
-                        data-testid="user-menu-language-row"
-                    >
-                        <span>{t('language')}</span>
-                        <LocaleSwitcher />
-                    </div>
-
-                    <Popover.Separator />
+                        the chosen locale. Its separators go with it, so a
+                        menu without the row does not stack two hairlines
+                        above the host's rows. */}
+                    {showLanguage ? (
+                        <>
+                            <Popover.Separator />
+                            <div
+                                className="px-2.5 py-1.5 flex items-center justify-between gap-compact text-sm text-content-default"
+                                data-testid="user-menu-language-row"
+                            >
+                                <span>{t('language')}</span>
+                                <LocaleSwitcher />
+                            </div>
+                            <Popover.Separator />
+                        </>
+                    ) : null}
 
                     {items ? (
                         <>
