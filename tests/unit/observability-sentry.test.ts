@@ -26,6 +26,8 @@ const mockSetTag = jest.fn();
 const mockSetContext = jest.fn();
 const mockSetUser = jest.fn();
 
+const mockFlush = jest.fn(async () => true);
+const mockClose = jest.fn(async () => true);
 jest.mock('@sentry/nextjs', () => ({
     init: mockInit,
     captureException: mockCaptureException,
@@ -33,11 +35,14 @@ jest.mock('@sentry/nextjs', () => ({
     setTag: mockSetTag,
     setContext: mockSetContext,
     setUser: mockSetUser,
+    flush: (...a: unknown[]) => mockFlush(...(a as [])),
+    close: (...a: unknown[]) => mockClose(...(a as [])),
 }));
 
 import {
     initSentry,
     captureError,
+    flushSentry,
     setSentryContext,
     isSentryInitialized,
     _resetForTesting,
@@ -247,5 +252,68 @@ describe('beforeSend redaction', () => {
             originalException: new Error('NEXT_NOT_FOUND'),
         });
         expect(result).toBeNull();
+    });
+});
+
+/**
+ * `flushSentry` — drain the buffer, and KEEP REPORTING.
+ *
+ * Sentry buffers, so a caller that needs to know an event left the process has
+ * to flush. The obvious way to get that is `shutdownSentry`, which already
+ * awaits a drain — and which also calls `Sentry.close()` and clears the
+ * initialised flag. Using it to flush would leave the server running with error
+ * reporting permanently dead and nothing anywhere saying so, which is a far
+ * worse outcome than the unflushed event it was reached for.
+ */
+describe('flushSentry', () => {
+    beforeEach(() => {
+        mockFlush.mockClear();
+        mockClose.mockClear();
+        mockFlush.mockResolvedValue(true);
+    });
+
+    it('drains the buffer with the timeout it was given', async () => {
+        initSentry();
+        await expect(flushSentry(1_234)).resolves.toBe(true);
+        expect(mockFlush).toHaveBeenCalledWith(1_234);
+    });
+
+    it('does NOT close the client — reporting survives a flush', async () => {
+        // THE assertion. A flush implemented via `shutdownSentry` would pass a
+        // "did it drain" test and silently disable the process.
+        initSentry();
+        await flushSentry();
+        expect(mockClose).not.toHaveBeenCalled();
+        expect(isSentryInitialized()).toBe(true);
+    });
+
+    it('returns false when the drain times out, rather than claiming success', async () => {
+        // "Could not confirm" must not read as "delivered".
+        initSentry();
+        mockFlush.mockResolvedValue(false);
+        await expect(flushSentry()).resolves.toBe(false);
+    });
+
+    it('and false when Sentry was never initialised, without calling flush', async () => {
+        _resetForTesting();
+        await expect(flushSentry()).resolves.toBe(false);
+        expect(mockFlush).not.toHaveBeenCalled();
+    });
+});
+
+describe('captureError returns the event id', () => {
+    it('so a caller can correlate the event it just sent', () => {
+        initSentry();
+        mockCaptureException.mockReturnValue('evt-7f3a');
+        expect(captureError(new Error('boom'), { status: 500 })).toBe('evt-7f3a');
+    });
+
+    it('and returns undefined for a 4xx, which it still does not capture', () => {
+        // The skip predates this change and must survive it: widening the
+        // return type must not accidentally start reporting client errors.
+        initSentry();
+        mockCaptureException.mockClear();
+        expect(captureError(new Error('bad request'), { status: 400 })).toBeUndefined();
+        expect(mockCaptureException).not.toHaveBeenCalled();
     });
 });
