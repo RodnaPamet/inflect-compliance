@@ -393,7 +393,18 @@ const HIGH_MULTIPLICITY = 5;
 //   I dropped the two intermediate merge notes rather than keep them: a note
 //   reading `1189 -> 1188` above a constant of 1186 misinforms a reader, and
 //   the per-branch notes already say which needles moved and why.
-const AMBIGUOUS_NEEDLE_BASELINE = 1186;
+// 1186 -> 1184 (2026-10-02, #3084): -2, both in `cva-primitives.test.ts`. That
+// file's "uses semantic tokens for primary variant" asserted `/--brand-default/`
+// and `/--brand-emphasis/` against the whole of `button-variants.ts`. Writing
+// the Still Surface tile classes out literally — so Tailwind can actually see
+// them — raised each token's code-only occurrence count past
+// `HIGH_MULTIPLICITY`, and this ratchet fired on a diff that did not touch the
+// test. It was right to: a bare token name asserts "this string appears
+// somewhere", which is weaker than what the test means. Both needles now pin a
+// construct (`"bg-[var(--brand-emphasis)]"` and the brand-ramp gradient), which
+// retires them from the ambiguous set entirely rather than merely from the
+// five-plus one.
+const AMBIGUOUS_NEEDLE_BASELINE = 1184;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

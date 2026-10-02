@@ -1,4 +1,6 @@
-import { codeOf } from '../helpers/source-blocks';
+import { buttonVariants } from '@/components/ui/button-variants';
+
+import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
 /**
  * STILL SURFACE — the canonical button-material ratchet (2026-07-28).
  *
@@ -253,10 +255,24 @@ describe('Still Surface — the reciprocal hover edge', () => {
     it('destructive keeps its own danger stops and never borrows the reciprocity', () => {
         // A destructive action must not adopt the brand's hover language
         // and read as routine.
-        const block = src.slice(
-            src.indexOf('destructive: ['),
-            src.indexOf(']', src.indexOf('destructive: [')),
+        //
+        // #3084 — the window used to be bounded by the first `]` AFTER
+        // `destructive: [`, which was the array's own closing bracket only
+        // for as long as the variant's classes came from `stillTile(...)`.
+        // Now that they are written out, `bg-[var(--btn-still-danger)]`
+        // closes a bracket on the FIRST line, so that bound collapsed the
+        // window to a few characters and the negated assertion below became
+        // very nearly vacuous — it would have stayed green with
+        // `--brand-secondary-default` added anywhere past the opening line.
+        // Bound on the `variant: { … }` object's own braces instead and take
+        // everything from the last variant key to its end.
+        const variantBlock = braceBlockAfter(src, 'variant:\\s*\\{');
+        const block = variantBlock.slice(
+            variantBlock.indexOf('destructive: ['),
         );
+        // The bound has to be WIDE as well as correct: a collapsed window
+        // passes `not.toMatch` for free.
+        expect(block.length).toBeGreaterThan(400);
         expect(block).toMatch(/--btn-still-danger/);
         expect(block).not.toMatch(/--brand-secondary-default/);
     });
@@ -290,10 +306,9 @@ describe('Still Surface — contrast floors (WCAG AA)', () => {
     const src = code(VARIANTS);
 
     it('secondary declares a solid background-color under its gradient', () => {
-        // primary + destructive get theirs from `stillTile` (asserted
-        // below); secondary paints its gradient inline, so it needs its
-        // own base. `bg-[image:…]` sets background-image; `bg-[var(…)]`
-        // sets background-color — both must be present on the variant.
+        // Every gradient variant needs its own base; `bg-[image:…]` sets
+        // background-image and `bg-[var(…)]` sets background-color, so both
+        // must be present on the variant.
         const block = src.slice(
             src.indexOf('secondary: ['),
             src.indexOf('ghost: ['),
@@ -302,12 +317,53 @@ describe('Still Surface — contrast floors (WCAG AA)', () => {
         expect(block).toMatch(/"bg-\[var\(--bg-muted\)\]"/);
     });
 
-    it('stillTile takes an explicit worst-case base colour', () => {
-        expect(src).toMatch(
-            /function stillTile\(\s*from: string,\s*to: string,\s*lift: string,\s*base: string,?\s*\)/,
-        );
-        expect(src).toMatch(/`bg-\[\$\{base\}\]`/);
-    });
+    // #3084 — this pair used to read
+    //
+    //     expect(src).toMatch(/function stillTile\(…base: string…\)/);
+    //     expect(src).toMatch(/`bg-\[\$\{base\}\]`/);
+    //
+    // which asserted the base colour was an explicit PARAMETER of a helper
+    // and that the helper built the class by INTERPOLATING it. Both halves
+    // were true and the invariant they named — "the tile declares a solid
+    // background-color" — was false in the shipped CSS, because Tailwind
+    // never evaluates a function and so never saw the class. The ratchet
+    // pinned the defect's mechanism in place. It now asserts the property
+    // instead: each tile variant writes its own worst-case base literally.
+    it.each([
+        // variant, where its block ends, the base token it must declare
+        ['primary', 'secondary: [', 'var(--brand-emphasis)'],
+        ['destructive', null, 'var(--btn-still-danger)'],
+    ] as const)(
+        '%s declares its worst-case base colour as a literal class',
+        (key, nextKey, base) => {
+            const variantBlock = braceBlockAfter(src, 'variant:\\s*\\{');
+            const from = variantBlock.indexOf(`${key}: [`);
+            expect(from).toBeGreaterThanOrEqual(0);
+            const to = nextKey
+                ? variantBlock.indexOf(nextKey)
+                : variantBlock.length;
+            const block = variantBlock.slice(from, to);
+            expect(block.length).toBeGreaterThan(400);
+
+            // The solid background-color, written out so Tailwind sees it.
+            expect({ key, base: block.includes(`"bg-[${base}]"`) }).toEqual({
+                key,
+                base: true,
+            });
+
+            // …and it is one of the stops this tile actually paints, not a
+            // flattering midpoint. The rest gradient is the only class on the
+            // variant that names both stops, so find it and look inside.
+            const restGradient = block
+                .split('\n')
+                .find((l) => l.includes('"bg-[image:'));
+            expect(typeof restGradient).toBe('string');
+            expect({ key, stop: (restGradient ?? '').includes(base) }).toEqual({
+                key,
+                stop: true,
+            });
+        },
+    );
 
     // Relative luminance / contrast per WCAG 2.x. Kept inline so the
     // ratchet is self-contained and the numbers are auditable here.
@@ -480,5 +536,187 @@ describe('Still Surface — durable invariants inherited from the retired guards
         // White on METRO-yellow was a low-contrast wash; the inverted
         // token is the semantic text-on-brand colour.
         expect(src).toMatch(/text-content-inverted/);
+    });
+});
+
+/**
+ * Still Surface — every class the variants EMIT is one Tailwind can SEE.
+ *
+ * Tailwind does not evaluate code. It scans source TEXT for candidate class
+ * names, so a class assembled at runtime — from a template literal, a
+ * helper's return value, a `cn()` of fragments — reaches the DOM but never
+ * reaches the stylesheet, and the element is then styled by a rule that does
+ * not exist. There is no build error and no warning; the button simply paints
+ * nothing where the missing rule would have painted.
+ *
+ * #3084 was exactly that. `stillTile(from, to, lift, base)` returned
+ * `bg-[${base}]`, `border-[${to}]` and three interpolated `linear-gradient(…)`
+ * strings. Measured on a real CSS build of `src/app/globals.css`: ELEVEN of
+ * the fourteen classes the two tile variants emit had no rule in the output.
+ * `destructive` rendered with no fill at all — a white label on the white UA
+ * background in the light theme — and `primary` looked roughly right only
+ * because `bg-[var(--brand-emphasis)]` happens to be written literally in ten
+ * other components. Every ratchet above was green throughout.
+ *
+ * So the check has to start from what the function RETURNS, not from what the
+ * source looks like: evaluate the real `buttonVariants` and require each class
+ * to be written, delimited, in a file Tailwind's `content` glob covers. No
+ * prettier abstraction can satisfy it, because the property Tailwind needs
+ * genuinely is "this exact string appears in the source".
+ */
+describe('Still Surface — the emitted classes exist in the stylesheet (#3084)', () => {
+    // `content: ['./src/**/*.{js,ts,jsx,tsx,mdx}']` — tailwind.config.js. There
+    // is no `safelist` and globals.css adds no `@source`, so this glob is the
+    // whole of what Tailwind reads.
+    const SCANNED = /\.(?:js|ts|jsx|tsx|mdx)$/;
+
+    /**
+     * Every scanned file's CODE, concatenated — comments blanked.
+     *
+     * Blanking comments makes this STRICTER than Tailwind, which scans raw
+     * text and therefore does read them. The asymmetry is deliberate and was
+     * found the hard way: the first mutation proof of this ratchet — putting
+     * destructive's base class back into the interpolated form the issue
+     * describes — did NOT turn it red, because the docstring added above the
+     * fix names `bg-[var(--btn-still-danger)]` while EXPLAINING the bug. That
+     * prose was a one-line invisible safelist and it held the guard green
+     * with the defect fully restored. A class mentioned in a comment is one
+     * copy-edit from vanishing, so a mention must not count as a
+     * declaration: the repo's standing rule that prose may never satisfy a
+     * ratchet, applied in the one place where the scanner being modelled
+     * disagrees.
+     */
+    const scannedText: string = (() => {
+        const parts: string[] = [];
+        const walk = (dir: string) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (e.name === 'node_modules') continue;
+                const full = path.join(dir, e.name);
+                if (e.isDirectory()) walk(full);
+                else if (SCANNED.test(e.name)) {
+                    parts.push(codeOf(fs.readFileSync(full, 'utf8')));
+                }
+            }
+        };
+        walk(path.join(ROOT, 'src'));
+        // A separator no candidate can span, so a class cannot be assembled
+        // out of the tail of one file and the head of the next.
+        return parts.join('\n \n');
+    })();
+
+    /**
+     * Is `cls` written in the scanned tree as a candidate IN ITS OWN RIGHT?
+     *
+     * Not a bare substring test. `group-hover:bg-[var(--brand-muted)]` is
+     * written in button.tsx and CONTAINS `hover:bg-[var(--brand-muted)]` —
+     * a DIFFERENT candidate, generating a different rule. The first pass at
+     * this measurement was `grep -F`, which reported the short form present
+     * on the strength of the long one; the CSS build disagreed, and the CSS
+     * build was right. `bg-[var(--x)]/70` swallows `bg-[var(--x)]` the same
+     * way. So an occurrence only counts when neither neighbour could be part
+     * of the same candidate.
+     *
+     * Nor a split-the-tree-into-tokens test, which was the second pass and
+     * was also wrong: `before:content-['']` carries quote characters, so
+     * splitting on quotes shredded it and the check reported a class that is
+     * demonstrably IN the built CSS as missing.
+     */
+    const PART_OF_CANDIDATE = /[A-Za-z0-9_:\-./]/;
+    const isWritten = (cls: string): boolean => {
+        for (
+            let i = scannedText.indexOf(cls);
+            i >= 0;
+            i = scannedText.indexOf(cls, i + 1)
+        ) {
+            const prev = i > 0 ? scannedText[i - 1] : '\n';
+            const next = scannedText[i + cls.length] ?? '\n';
+            if (!PART_OF_CANDIDATE.test(prev) && !PART_OF_CANDIDATE.test(next)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    it('the check can say YES (positive control)', () => {
+        // A read that silently came back empty — a renamed directory, a
+        // changed glob — would report every class as invisible, and the test
+        // names would not say so.
+        expect(scannedText.length).toBeGreaterThan(1_000_000);
+        expect(isWritten('rounded-full')).toBe(true);
+        expect(isWritten('bg-[var(--brand-emphasis)]')).toBe(true);
+        // Carries quote characters. This is the one that caught the
+        // tokenising version of this check out.
+        expect(isWritten("before:content-['']")).toBe(true);
+    });
+
+    it('the check can say NO, and is not fooled by a longer candidate', () => {
+        // Written nowhere and a substring of nothing written.
+        expect(scannedText.includes('bg-[var(--no-such-token-3084)]')).toBe(
+            false,
+        );
+        expect(isWritten('bg-[var(--no-such-token-3084)]')).toBe(false);
+
+        // The substring trap, with both halves asserted so the control
+        // cannot quietly stop discriminating: the long form is written, the
+        // fragment of it is PRESENT IN THE TEXT, and the check must still
+        // reject the fragment.
+        expect(isWritten('group-hover:bg-[var(--brand-muted)]')).toBe(true);
+        expect(scannedText.includes('oup-hover:bg-[var(--brand-muted)]')).toBe(
+            true,
+        );
+        expect(isWritten('oup-hover:bg-[var(--brand-muted)]')).toBe(false);
+    });
+
+    it.each(['primary', 'secondary', 'ghost', 'destructive'] as const)(
+        'every class `%s` emits is written literally in a scanned file',
+        (variant) => {
+            const emitted = buttonVariants({ variant })
+                .split(/\s+/)
+                .filter(Boolean);
+            // A variant that emitted nothing would satisfy the filter below
+            // vacuously. Measured 37–40 per variant when this landed.
+            expect(emitted.length).toBeGreaterThanOrEqual(30);
+
+            const invisible = emitted.filter((c) => !isWritten(c));
+            expect({ variant, invisible }).toEqual({ variant, invisible: [] });
+        },
+    );
+
+    it('button-variants.ts builds no class by interpolation', () => {
+        // The SHAPE of the defect rather than its instances, so the next one
+        // fails on the line that introduces it instead of in a variant's
+        // emitted list. A class that has to be computed belongs in
+        // `tokens.css` as a custom property, not in a template literal.
+        const raw = code(VARIANTS);
+        expect(raw).not.toMatch(/\$\{/);
+    });
+
+    it('every `var(--…)` the variants reference is defined in tokens.css', () => {
+        // The OTHER way to paint nothing, and the check above cannot see it.
+        // `isWritten` asks whether Tailwind generates a rule for the class,
+        // which it does for `border-[var(--btn-still-danger-deeper)]` — the
+        // rule is emitted, the custom property resolves to nothing, and the
+        // declaration is dropped. Same blank tile, no class missing from the
+        // CSS, so a typo in a TOKEN name is invisible to every other
+        // assertion in this file. Measured: mutating one token reference left
+        // all 46 of them green.
+        //
+        // Derived from the source, with no exception list — a token that
+        // genuinely lives elsewhere should fail this and be argued with.
+        const refs = [
+            ...new Set(
+                Array.from(
+                    code(VARIANTS).matchAll(/var\((--[a-z0-9-]+)\)/g),
+                ).map((m) => m[1]),
+            ),
+        ].sort();
+        // A regex that stopped matching would make the loop below vacuous.
+        expect(refs.length).toBeGreaterThanOrEqual(12);
+
+        const tokens = read('src/styles/tokens.css');
+        const undefinedRefs = refs.filter(
+            (t) => !new RegExp(`^\\s*${t}:`, 'm').test(tokens),
+        );
+        expect(undefinedRefs).toEqual([]);
     });
 });
