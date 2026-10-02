@@ -314,7 +314,17 @@ export function installArrowToEdgeConversion(
                         // Same constant the binding was just given, not a
                         // second literal: two defaults that can disagree is how
                         // a freshly drawn edge ends up drawn as the wrong kind.
-                        props: { edgeKey, edgeKind: DEFAULT_EDGE_KIND, dx: g.dx, dy: g.dy },
+                        // No label on a freshly drawn edge: the binding is
+                        // created with `labelOverride: null` just above, and
+                        // these two must agree or the line shows a label the
+                        // data does not have.
+                        props: {
+                            edgeKey,
+                            edgeKind: DEFAULT_EDGE_KIND,
+                            label: '',
+                            dx: g.dx,
+                            dy: g.dy,
+                        },
                     },
                 ] as never);
             }

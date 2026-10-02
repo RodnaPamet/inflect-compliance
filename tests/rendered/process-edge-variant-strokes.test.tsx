@@ -57,9 +57,8 @@ const util = Object.create(
     ProcessEdgeShapeUtil.prototype,
 ) as InstanceType<typeof ProcessEdgeShapeUtil>;
 
-function lineFor(edgeKind: string): SVGLineElement {
-    cleanup();
-    const shape = {
+function shapeWith(over: Record<string, unknown>) {
+    return {
         id: 'shape:edge-e1',
         type: PROCESS_EDGE_SHAPE_TYPE,
         x: 0,
@@ -71,12 +70,20 @@ function lineFor(edgeKind: string): SVGLineElement {
         opacity: 1,
         meta: {},
         typeName: 'shape',
-        props: { edgeKey: 'e1', edgeKind, dx: 120, dy: 80 },
+        props: { edgeKey: 'e1', edgeKind: 'flow', label: '', dx: 120, dy: 80, ...over },
     };
+}
+
+function renderEdge(over: Record<string, unknown>) {
+    cleanup();
     const { container } = render(
-        <>{util.component(shape as never)}</>,
+        <>{util.component(shapeWith(over) as never)}</>,
     );
-    const line = container.querySelector('line');
+    return container;
+}
+
+function lineFor(edgeKind: string): SVGLineElement {
+    const line = renderEdge({ edgeKind }).querySelector('line');
     if (!line) throw new Error('the util rendered no line');
     return line as SVGLineElement;
 }
@@ -148,5 +155,68 @@ describe('edgeStrokeFor, the pure mapping', () => {
         for (const k of ['flow', 'conditional', 'reference', 'nonsense', '']) {
             expect(typeof edgeStrokeFor(k)).toBe('object');
         }
+    });
+});
+
+/**
+ * The LABEL (#3093).
+ *
+ * `labelOverride` was stored, editable, applied and persisted, and drawn
+ * nowhere — the second value on this surface to be settable and invisible,
+ * after the variant above. The inspector offers a CLEAR button for it, which
+ * is the detail that makes the absence hard to read as deliberate.
+ */
+describe('an edge draws its label', () => {
+    it('renders the label text at all', () => {
+        expect(renderEdge({ label: 'approves' }).textContent).toContain('approves');
+    });
+
+    it('positions it at the MIDPOINT of the line, centred on it', () => {
+        // Half of dx/dy, then translated back by half its own box. Without the
+        // translate the text hangs below and right of the line it belongs to,
+        // which reads as a label for something else.
+        const el = renderEdge({ label: 'approves' }).querySelector(
+            '[data-process-edge-label]',
+        ) as HTMLElement | null;
+        expect(el).not.toBeNull();
+        expect(el!.style.left).toBe('60px');
+        expect(el!.style.top).toBe('40px');
+        expect(el!.style.transform).toBe('translate(-50%, -50%)');
+    });
+
+    it('renders NOTHING for an empty label, not an empty box', () => {
+        // The common case. A zero-height element at every midpoint would still
+        // be in the tree, and `toContain('')` passes against anything.
+        const c = renderEdge({ label: '' });
+        expect(c.querySelector('[data-process-edge-label]')).toBeNull();
+    });
+
+    it('and the line is still drawn when there is no label', () => {
+        // Teeth: a conditional that swallowed the whole return would satisfy
+        // the assertion above.
+        expect(renderEdge({ label: '' }).querySelector('line')).not.toBeNull();
+    });
+
+    it('is not aria-hidden — the line is decoration, the label is content', () => {
+        const el = renderEdge({ label: 'approves' }).querySelector(
+            '[data-process-edge-label]',
+        ) as HTMLElement;
+        expect(el.closest('[aria-hidden="true"]')).toBeNull();
+    });
+
+    it('truncates rather than running across the map', () => {
+        const el = renderEdge({
+            label: 'a label considerably longer than any sensible edge caption',
+        }).querySelector('[data-process-edge-label]') as HTMLElement;
+        expect(el.className).toContain('truncate');
+        expect(el.style.maxWidth).toBe('160px');
+    });
+
+    it('a labelled CONDITIONAL edge keeps both its dash and its label', () => {
+        // The two derived props are independent; a reader could reasonably
+        // wonder whether one overwrote the other.
+        const c = renderEdge({ label: 'if rejected', edgeKind: 'conditional' });
+        expect(c.querySelector('line')!.getAttribute('stroke-dasharray')).toBe('7 5');
+        expect(c.textContent).toContain('if rejected');
     });
 });

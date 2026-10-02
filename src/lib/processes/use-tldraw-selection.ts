@@ -208,11 +208,23 @@ export function useTldrawSelection(editor: Editor | null) {
             // place that has to keep the two in step — without it the variant
             // saves, survives a reload, and changes nothing on screen until
             // then, which is the shape of the bug #3090 was filed for.
-            if (patch.variant !== undefined) {
+            // Two props on the line mirror binding values, so the same
+            // argument covers both: the variant and the label are each
+            // re-derived on load, and this is the one write that is not a
+            // load. Built as one patch so a commit that changes both is one
+            // shape update and therefore one undo step.
+            const lineProps: Record<string, unknown> = {};
+            if (patch.variant !== undefined) lineProps.edgeKind = patch.variant;
+            // `label: null` means CLEAR, which on the line is the empty
+            // string — the prop is not nullable. `?? ''` rather than a
+            // truthiness check: `patch.label` of `''` is also a clear, and a
+            // falsy test would treat the two clears differently.
+            if (patch.label !== undefined) lineProps.label = patch.label ?? '';
+            if (Object.keys(lineProps).length > 0) {
                 editor.updateShape({
                     id: shapeIdForEdgeKey(binding.props.edgeKey),
                     type: PROCESS_EDGE_SHAPE_TYPE,
-                    props: { edgeKind: patch.variant },
+                    props: lineProps,
                 } as never);
             }
         },
