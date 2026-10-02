@@ -32,6 +32,7 @@ import { sqlCodeOf } from '../helpers/source-blocks';
 import { EXTERNAL_MAX_MODE, MODE_MIN_DAYS } from '@/lib/integrations/external-write-ladder';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { recordIntent } from '@/app-layer/usecases/external-write-journal';
+import { openApprovedExternalWrite } from '@/app-layer/usecases/external-write-approval';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(60_000);
@@ -528,28 +529,236 @@ describe('what the dwell counts as evidence', () => {
         expect(policy.evidenceInWindow).toBe(0);
     });
 
-    it('reports PROPOSE_ONLY as UNCOUNTABLE rather than zero', async () => {
-        // That rung is asked for APPROVED PROPOSALS, and nothing can produce one
-        // yet — `dispatchWrite` refuses the rung outright. "We could not look" and
-        // "we looked and found none" are different answers; only the second is
-        // evidence, and reporting 0 here would claim the wrong one.
+    it('reports AUTOMATIC as UNCOUNTABLE rather than zero', async () => {
+        // The surviving `undefined` case, and the reason the two answers are not
+        // collapsed. `AUTOMATIC` is the top rung: nothing is widened off it, so
+        // `MODE_MIN_EVIDENCE` names no requirement and no query is written for
+        // it. "We could not look" and "we looked and found none" are different
+        // answers, and a 0 here would claim the second.
         //
-        // Stored directly: `setExternalWriteMode` refuses this rung under the
-        // real clamp, which is the behaviour a different test covers.
+        // Stored directly: the real clamp refuses this rung, which is the
+        // behaviour a different test covers.
         await prisma.integrationConnection.update({
             where: { id: conn },
             data: {
-                externalWriteMode: 'PROPOSE_ONLY',
+                externalWriteMode: 'AUTOMATIC',
                 externalWriteModeSince: new Date(Date.now() - (MODE_MIN_DAYS + 30) * 86_400_000),
             },
         });
 
         const policy = await getExternalWritePolicy(ctx1, conn);
         expect(policy.evidenceInWindow).toBeUndefined();
+    });
+});
 
-        // And the refusal says so, rather than claiming a count of zero.
+/**
+ * WHAT PROPOSE_ONLY COUNTS — step 4 of #2861.
+ *
+ * That rung returned `undefined` on a premise step 6 falsified: "no external
+ * write can be proposed yet". `EXTERNAL_MAX_MODE` is now `PROPOSE_ONLY`, so
+ * proposals and approvals both exist and the rung can be counted.
+ *
+ * ## The join these tests are really about
+ *
+ * `AgentProposal` carries no `connectionId` — it lives inside the encrypted
+ * `payloadJson`, which cannot be filtered in SQL. So an approved proposal is
+ * counted through the `ExternalWriteJournal` row the APPROVAL opens:
+ * `approveAgentProposal` calls `openApprovedExternalWrite` once the full
+ * approval requirement is met, and that is the only thing in the build that
+ * writes a journal row at `mode = 'PROPOSE_ONLY'`.
+ *
+ * Every row below is therefore created through `openApprovedExternalWrite`
+ * itself rather than through `beginWrite` — the seam under test is the join, and
+ * a row inserted past the seam would not exercise it.
+ *
+ * ## UNRUN
+ *
+ * These are DB-backed and the shared test database could not be written to in
+ * the environment this was authored in. They have never been executed.
+ */
+describe('what PROPOSE_ONLY counts as evidence', () => {
+    let conn = '';
+    let proposalSeq = 0;
+
+    const payloadFor = (connectionId: string) => ({
+        connectionId,
+        connectionName: 'approved-conn',
+        endpointUrl: 'https://mcp.example.test/endpoint',
+        toolName: `mcp__${connectionId}__set_employee_work_email`,
+        advertisedToolName: 'set_employee_work_email',
+        arguments: { empNumber: 7, workEmail: 'after@example.test' },
+        priorState: { workEmail: 'before@example.test' },
+    });
+
+    /**
+     * One approved external write, opened exactly as an approval opens it.
+     *
+     * `openApprovedExternalWrite` re-reads the connection's rung and refuses
+     * anything below `PROPOSE_ONLY`, so the connection must be armed first —
+     * which is itself part of the claim: a journal row at this rung cannot exist
+     * unless the connection permitted the write when a human committed to it.
+     */
+    const approvedWrite = (connectionId: string) =>
+        openApprovedExternalWrite(ctx1, {
+            id: `prp_${(proposalSeq += 1)}`,
+            payloadJson: JSON.stringify(payloadFor(connectionId)),
+            agentId: null,
+            runId: null,
+        });
+
+    /** Hold the rung with a window already past the dwell. */
+    async function armAtProposeOnly(connectionId: string) {
+        // Stored directly rather than through `setExternalWriteMode`: reaching
+        // PROPOSE_ONLY legitimately costs a DRY_RUN stint plus recorded intents,
+        // and that path is covered by the DRY_RUN block above.
+        await prisma.integrationConnection.update({
+            where: { id: connectionId },
+            data: {
+                externalWriteMode: 'PROPOSE_ONLY',
+                externalWriteModeSince: new Date(Date.now() - (MODE_MIN_DAYS + 30) * 86_400_000),
+            },
+        });
+    }
+
+    beforeEach(async () => {
+        conn = await makeConnection(T1, `approved-${Date.now()}-${Math.random()}`);
+    });
+
+    it('counts an approved proposal, through the row the approval opens', async () => {
+        // THE MUTATION PROOF for this change: against the old code this is
+        // `undefined`, because the PROPOSE_ONLY branch returned `undefined`
+        // unconditionally.
+        await armAtProposeOnly(conn);
+        await approvedWrite(conn);
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(1);
+    });
+
+    it('reports ZERO — not "could not count" — when the rung has approved nothing', async () => {
+        // The half that makes the number mean something. An empty population is
+        // now a LOOK that found nothing, and the refusal says so; the old code
+        // could not distinguish this connection from one it had never queried.
+        await armAtProposeOnly(conn);
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(0);
+        expect(policy.refusals.AUTOMATIC).toMatch(/above the ceiling/);
+    });
+
+    it('refuses PROPOSE_ONLY → AUTOMATIC naming the count, not the probe', async () => {
+        // The sentence an operator reads. With the clamp raised for this call
+        // only — the same device the DRY_RUN block uses — the refusal must be the
+        // evidence one, never the "we could not look" one.
+        await armAtProposeOnly(conn);
+
         await expect(
             setExternalWriteMode(ctx1, conn, 'AUTOMATIC', 'AUTOMATIC'),
-        ).rejects.toThrow(/Cannot confirm what PROPOSE_ONLY has recorded/);
+        ).rejects.toThrow(/has recorded 0 of the 1 required approved proposals/);
+    });
+
+    it('lets a connection climb to AUTOMATIC once a proposal has been approved', async () => {
+        // The behaviour the count exists for, and the half a count assertion
+        // alone would not show. Clamp raised for this call only.
+        await armAtProposeOnly(conn);
+        await approvedWrite(conn);
+
+        const after = await setExternalWriteMode(ctx1, conn, 'AUTOMATIC', 'AUTOMATIC');
+        expect(after.mode).toBe('AUTOMATIC');
+    });
+
+    it('does NOT count a DRY_RUN intent recorded against the same connection', async () => {
+        // The cross-rung pin. A dry-run intent is evidence for leaving DRY_RUN
+        // and says nothing about whether a human ever reviewed a write, so a
+        // query that filtered on `connectionId` and the window alone would count
+        // it and grant unattended writes off the wrong proof.
+        await armAtProposeOnly(conn);
+        await recordIntent(ctx1, {
+            connectionId: conn,
+            connectionName: 'approved-conn',
+            endpointUrl: 'https://mcp.example.test/endpoint',
+            toolName: `mcp__${conn}__set_employee_work_email`,
+            advertisedToolName: 'set_employee_work_email',
+            mode: 'DRY_RUN',
+            argumentsJson: JSON.stringify({ empNumber: 7 }),
+            priorStateJson: JSON.stringify({ workEmail: 'before@example.test' }),
+        });
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(0);
+    });
+
+    it('does NOT count a RECORDED_ONLY row that claims the PROPOSE_ONLY rung', async () => {
+        // The `DISPATCHED_OUTCOMES` pin. `recordIntent` refuses every mode but
+        // DRY_RUN, so this row is unreachable through either write seam and has
+        // to be inserted directly — which is the point: the filter pins the claim
+        // rather than trusting `recordIntent` to remain the only writer of a
+        // terminal RECORDED_ONLY row.
+        await armAtProposeOnly(conn);
+        await prisma.externalWriteJournal.create({
+            data: {
+                tenantId: T1,
+                connectionId: conn,
+                connectionName: 'approved-conn',
+                endpointUrl: 'https://mcp.example.test/endpoint',
+                toolName: `mcp__${conn}__set_employee_work_email`,
+                advertisedToolName: 'set_employee_work_email',
+                mode: 'PROPOSE_ONLY',
+                argumentsJson: JSON.stringify({ empNumber: 7 }),
+                priorStateJson: JSON.stringify({ workEmail: 'before@example.test' }),
+                outcome: 'RECORDED_ONLY',
+                settledAt: new Date(),
+            },
+        });
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(0);
+    });
+
+    it('counts an approval the far end later REFUSED', async () => {
+        // What the rung is asked to prove is that a human reviewed the write, and
+        // the far end's answer is a different fact. Filtering on APPLIED would
+        // let an unreliable third party hold a tenant at PROPOSE_ONLY for a
+        // reason that has nothing to do with human review.
+        await armAtProposeOnly(conn);
+        const journalId = await approvedWrite(conn);
+        await prisma.externalWriteJournal.update({
+            where: { id: journalId },
+            data: { outcome: 'FAILED', settledAt: new Date() },
+        });
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(1);
+    });
+
+    it('ignores approvals from BEFORE the window opened', async () => {
+        // Evidence from a previous stint at this rung is not evidence about this
+        // one — the same window claim the DRY_RUN block makes.
+        await armAtProposeOnly(conn);
+        await approvedWrite(conn);
+        await prisma.externalWriteJournal.updateMany({
+            where: { tenantId: T1, connectionId: conn },
+            data: { attemptedAt: new Date(Date.now() - 400 * 86_400_000) },
+        });
+        await prisma.integrationConnection.update({
+            where: { id: conn },
+            data: { externalWriteModeSince: new Date(Date.now() - 60 * 86_400_000) },
+        });
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(0);
+    });
+
+    it("does not count another connection's approved proposals", async () => {
+        // Scoping, asserted rather than assumed: the count is per connection, and
+        // a query that dropped the connectionId filter would pass every other
+        // assertion in this block.
+        const other = await makeConnection(T1, `approved-other-${Date.now()}`);
+        await armAtProposeOnly(conn);
+        await armAtProposeOnly(other);
+        await approvedWrite(other);
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(0);
     });
 });

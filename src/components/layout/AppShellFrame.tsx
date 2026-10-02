@@ -131,7 +131,23 @@ export function AppShellFrame({
                 screen does not leave the page in a narrow column;
                 `mx-auto` keeps it centred at every step. `fullBleed`
                 drops both for an edge-to-edge surface — padding stays. */}
-            <div
+            {/* THE `<main>` LANDMARK SITS HERE, not on the column that
+                holds both this and the top bar (#3104).
+
+                It used to wrap both, which put `NavBar`'s
+                `<header role="banner">` INSIDE the main landmark — axe
+                `landmark-banner-is-top-level`, measured moderate by projectZ
+                T19 on a vendored copy of this frame, which had to suppress
+                the rule to stay green. A screen reader's "jump to banner"
+                then lands inside "jump to main".
+
+                The two elements swapped names and NOT classes: every flex,
+                overflow and min-h-0 class stayed on the element it was on,
+                so the layout chain described above is byte-identical. What
+                changed is which of them is the landmark — and this is the
+                honest one, because `<main>` means the page's main content,
+                which is exactly what this container holds. */}
+            <main
                 className={cn(
                     'p-4 md:p-6 md:flex md:flex-col md:flex-1 md:min-h-0 md:overflow-y-auto md:w-full',
                     fullBleed
@@ -140,16 +156,20 @@ export function AppShellFrame({
                 )}
             >
                 {children}
-            </div>
+            </main>
         </>
     );
 
     // Layout chain:
     //   Mobile (<md): natural document scroll. `min-h-screen` on the
-    //     wrapper, `overflow-auto` on <main>, no flex column.
+    //     wrapper, `overflow-auto` on the main-region column, no flex column.
     //   Desktop (md+): viewport-clamped flex chain. Wrapper is
-    //     `h-full overflow-hidden`, <main> a flex column with
-    //     `overflow-hidden`.
+    //     `h-full overflow-hidden`, the main-region column a flex column
+    //     with `overflow-hidden`.
+    //
+    // "main-region column" rather than "<main>" since #3104: the element
+    // carrying these classes is a plain <div>, and the `<main>` landmark is
+    // the content container inside it. The classes did not move.
     //
     // Every flex parent carries `min-h-0` so children can shrink below
     // their content size — without it `flex-1` grows to content and the
@@ -182,9 +202,13 @@ export function AppShellFrame({
 
             {mobileNav({ open: drawerOpen, onClose: closeDrawer })}
 
-            <main className="flex-1 overflow-auto md:overflow-hidden md:flex md:flex-col min-w-0 md:min-h-0">
+            {/* The main REGION — top bar plus content — but deliberately not
+                the `<main>` landmark; see the comment at the content
+                container. `mainProvider` still wraps both, which is what its
+                contract promises. */}
+            <div className="flex-1 overflow-auto md:overflow-hidden md:flex md:flex-col min-w-0 md:min-h-0">
                 {mainProvider ? mainProvider(main) : main}
-            </main>
+            </div>
         </div>
     );
 }
