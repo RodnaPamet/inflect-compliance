@@ -209,6 +209,20 @@ deterministic).
 
 ---
 
+## Shared UI is upstream-first
+
+A second product (playerz.bg) vendors `src/components/ui`,
+`src/components/layout`, `src/components/app-shell` and `src/lib/hooks`
+byte-identical. Changes to a file classified `GENERIC` in
+`docs/_status/ui-core-classification.json` must stay product-neutral: no domain
+copy, no compliance vocabulary, no storage key outside the `uiStorageKey` seam,
+no brand fill token used as text, no import from `src/app-layer` or a domain
+module.
+
+[`docs/shared-ui-policy.md`](docs/shared-ui-policy.md) explains why and names
+the guard that enforces each clause. The doc is advisory — the guards are the
+enforcement, and if the two disagree the guard is right.
+
 ## The contracts you cannot break
 
 Internalize these before touching the relevant area. They're enforced — but the

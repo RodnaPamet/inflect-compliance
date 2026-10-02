@@ -320,6 +320,9 @@
     "docs/scheduled-notification-system.md": {
       "class": "authoritative"
     },
+    "docs/shared-ui-policy.md": {
+      "class": "authoritative"
+    },
     "docs/security-hardening.md": {
       "class": "authoritative"
     },
