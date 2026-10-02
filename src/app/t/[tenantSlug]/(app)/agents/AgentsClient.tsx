@@ -418,6 +418,31 @@ function AgentsInner({
             router.push(`/t/${tenantSlug}/agents/${row.original.id}`),
         [router, tenantSlug],
     );
+    // Warm that row's detail route once the pointer RESTS on it, which is what
+    // the other seven entity list clients do (`assets`, `controls`, `evidence`,
+    // `policies`, `risks`, `tasks`, `vendors`). This register was the only one
+    // without it, so an agent row's first click paid the full chunk + RSC wait
+    // that no sibling's does — and `/agents/[agentId]` is a heavy page (policy
+    // card, tool pins, ASI coverage, circuit breaker, kill switch).
+    //
+    // `router.prefetch` ONLY, like `policies` and `vendors`. Four siblings also
+    // call `usePrefetchTenant()` to warm the detail page's own SWR key; that is
+    // a SECOND request per dwelt row, and the route prefetch is the half that
+    // removes the chunk + RSC wait. The href is spelled the same way the push
+    // above spells it so the two cannot drift apart.
+    //
+    // NOT a fix for #3099, and must not be read as a test of its hypothesis.
+    // `<DataTable>` gates this behind a 120 ms pointer DWELL
+    // (`ROW_PREFETCH_DWELL_MS`), while Playwright's `click()` moves the pointer
+    // and presses inside one action window — so under E2E the dwell timer is
+    // still pending when `handleAgentRowClick` runs and the segment cache is
+    // exactly as cold as it was before this existed. A real user who looks at a
+    // row before clicking it is the only beneficiary.
+    const handleAgentRowPrefetch = useCallback(
+        (row: { original: AgentRow }) =>
+            router.prefetch(`/t/${tenantSlug}/agents/${row.original.id}`),
+        [router, tenantSlug],
+    );
 
     return (
         <>
@@ -532,6 +557,7 @@ function AgentsInner({
                     columns,
                     getRowId: getAgentRowId,
                     onRowClick: handleAgentRowClick,
+                    onRowPrefetch: handleAgentRowPrefetch,
                     // No batch actions exist on the register, so the select
                     // column was a checkbox that did nothing AND it took the
                     // single click away from the row's real action (#2434).

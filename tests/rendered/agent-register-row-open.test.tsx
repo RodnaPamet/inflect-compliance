@@ -25,7 +25,7 @@
  * conflict marker, so single ownership is recorded here as well as in the issue.
  */
 import * as React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 jest.setTimeout(180_000);
@@ -63,6 +63,10 @@ jest.mock('next-intl', () => {
 });
 
 const push = jest.fn();
+// Hoisted for the same reason `push` is: an inline `jest.fn()` inside the
+// factory is a FRESH spy on every `useRouter()` call, so a test could never
+// read what the component did with it.
+const prefetch = jest.fn();
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
     useRouter: () => ({
@@ -71,7 +75,7 @@ jest.mock('next/navigation', () => ({
         back: jest.fn(),
         forward: jest.fn(),
         refresh: jest.fn(),
-        prefetch: jest.fn(),
+        prefetch,
     }),
     usePathname: () => '/t/acme/agents',
     useSearchParams: () => new URLSearchParams(),
@@ -128,6 +132,7 @@ function renderRegister() {
 
 beforeEach(() => {
     push.mockClear();
+    prefetch.mockClear();
 });
 
 describe('one click opens the agent', () => {
@@ -167,6 +172,65 @@ describe('one click opens the agent', () => {
         expect(table.querySelectorAll('tbody tr svg').length).toBeGreaterThanOrEqual(
             ROWS.length,
         );
+    });
+});
+
+/**
+ * A RESTING POINTER WARMS THE ROW'S DETAIL ROUTE (#3099 lever 1).
+ *
+ * The register was the only entity list that wired no `onRowPrefetch`, so an
+ * agent row's first click paid the full chunk + RSC wait that no sibling's
+ * does. The assertion is `router.prefetch` with THAT row's href — not "prefetch
+ * was called", which warming the wrong row would also satisfy.
+ *
+ * This is a consistency + first-click-latency test and nothing more. It does
+ * NOT demonstrate anything about #3099's dropped-navigation flake: the dwell
+ * below is 200 ms of fake time, while Playwright's `click()` moves the pointer
+ * and presses inside one action window, so in E2E the prefetch has not fired by
+ * the time the push runs.
+ */
+describe('a resting pointer warms that row’s detail route', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => {
+        jest.runOnlyPendingTimers();
+        jest.useRealTimers();
+    });
+
+    /** Past `ROW_PREFETCH_DWELL_MS` (120) in `data-table.tsx`. */
+    const PAST_DWELL_MS = 200;
+
+    it('prefetches the hovered agent, once, and no other', () => {
+        renderRegister();
+        const row = screen.getByTestId('agent-row-second-agent').closest('tr');
+        expect(row).not.toBeNull();
+
+        fireEvent.mouseEnter(row as HTMLElement);
+        act(() => {
+            jest.advanceTimersByTime(PAST_DWELL_MS);
+        });
+
+        expect(prefetch).toHaveBeenCalledTimes(1);
+        expect(prefetch).toHaveBeenCalledWith('/t/acme/agents/second-agent');
+        // Warming must not navigate. A prefetch that pushed would open the
+        // agent on hover, which is a worse bug than the latency it fixes.
+        expect(push).not.toHaveBeenCalled();
+    });
+
+    it('does NOT prefetch a row the pointer merely passes over', () => {
+        // The dwell is the whole point — without it, dragging the pointer down
+        // the register warmed every row it crossed.
+        renderRegister();
+        const row = screen.getByTestId('agent-row-first-agent').closest('tr');
+        fireEvent.mouseEnter(row as HTMLElement);
+        act(() => {
+            jest.advanceTimersByTime(40);
+        });
+        fireEvent.mouseLeave(row as HTMLElement);
+        act(() => {
+            jest.advanceTimersByTime(PAST_DWELL_MS);
+        });
+
+        expect(prefetch).not.toHaveBeenCalled();
     });
 });
 
