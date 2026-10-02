@@ -48,48 +48,61 @@ import { HIT_AREA_CLASS } from "./hit-area";
  */
 
 /**
- * The shared solid-tile recipe: edge light over a body gradient, a
- * seat line, and a rest lift that inverts on press.
+ * THE SHARED SOLID-TILE RECIPE — eight classes, written out per variant.
  *
- * Colour-agnostic — callers pass the two gradient stops, so primary
- * and destructive share one material and differ only in hue. That is
- * the point: a destructive button must read as the SAME physical
- * object as a primary one, or "dangerous" gets confused with
- * "different kind of control".
+ * Edge light over a body gradient, a seat line, and a rest lift that
+ * inverts on press. Primary and destructive wear the SAME material and
+ * differ only in hue — a destructive button must read as the same
+ * physical object as a primary one, or "dangerous" gets confused with
+ * "different kind of control". The four hue slots, in the order the
+ * classes appear below:
+ *
+ *   base  solid background-color (see A11Y below)
+ *   from  rest gradient head        to  rest gradient tail + rest edge
+ *   lift  hover brighten
+ *
+ * WHY THE EIGHT ARE SPELLED OUT RATHER THAN GENERATED (#3084). This was
+ * `stillTile(from, to, lift, base)`, which returned them as template
+ * literals — `bg-[${base}]`, `border-[${to}]`, the two `bg-[image:…]`
+ * gradients, the `active:` flat gradient. Tailwind finds classes by
+ * SCANNING SOURCE TEXT and never evaluates a function, so
+ * `bg-[var(--btn-still-danger)]` was a string that existed nowhere in the
+ * tree. Measured on a real CSS build of this entry point: ELEVEN of the
+ * tile's fourteen classes had no rule in the output at all. Destructive
+ * therefore painted no fill — a white label on the white UA background in
+ * the light theme — and primary looked roughly right only because
+ * `bg-[var(--brand-emphasis)]` happens to be written literally in ten
+ * other components.
+ *
+ * So the literal strings ARE the contract, and the duplication is the
+ * price of it: a class Tailwind cannot see does not exist. Do not DRY
+ * these back into a helper, an interpolation or a `cn()` of fragments,
+ * and do not reach for a `tailwind.config.js` safelist — that is a second
+ * list, kept in sync by hand, that drifts. `still-surface-button-material`
+ * evaluates `buttonVariants()` for every variant and fails if any class it
+ * returns is not written literally in a file Tailwind scans.
+ *
+ * A11Y — WHY `base` EXISTS AT ALL. A tile painted only with
+ * `background-image` has no colour for a contrast checker to resolve, so
+ * axe walks up to the nearest ancestor with a real `background-color` —
+ * the page — and measures the label against THAT. On primary that meant
+ * navy-on-navy (~1:1) and a serious colour-contrast violation on every
+ * page, even though the label against the actual gradient is ~9.6:1. Each
+ * variant's `base` is deliberately the WORST-CASE stop for its own text
+ * colour, so a checker measures the true floor rather than a flattering
+ * midpoint: the DEEP stop where the label is dark (primary — dark ink
+ * needs a light field) and the LIGHTEST stop where the label is white
+ * (destructive — white needs a dark field).
+ *
+ * HOVER brightens the gradient by shifting BOTH stops one rung up the
+ * ramp: the tile gets lighter without losing its fall, where a flat brand
+ * fill would read as the gradient collapsing. The hover base tracks the
+ * hover gradient for the same reason.
+ *
+ * PRESS inverts the lift to an inset and flattens the gradient to the deep
+ * stop. Pressed reads as pressed with nothing travelling — the shadow does
+ * the work the transform used to.
  */
-function stillTile(from: string, to: string, lift: string, base: string) {
-  return [
-    // SOLID background-color under the gradient. Load-bearing for
-    // accessibility, not a fallback nicety: a tile painted only with
-    // `background-image` has no colour for a contrast checker to resolve,
-    // so axe walks up to the nearest ancestor with a real
-    // `background-color` — the page — and measures the label against
-    // THAT. On primary that meant navy-on-navy (~1:1) and axe reported a
-    // serious colour-contrast violation on every page, even though the
-    // label against the actual gradient is ~9.6:1.
-    //
-    // `base` is deliberately the WORST-CASE stop for this variant's text
-    // colour, so what a checker measures is the true floor rather than a
-    // flattering midpoint: the DEEP stop where the label is dark (primary
-    // — dark ink needs a light field) and the LIGHTEST stop where the
-    // label is white (destructive — white needs a dark field).
-    `bg-[${base}]`,
-    `bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,${from},${to})]`,
-    `border-[${to}]`,
-    "shadow-[var(--btn-still-lift),inset_0_-1px_0_var(--btn-still-bot)]",
-    // Hover brightens the gradient by shifting BOTH stops one rung up
-    // the ramp — the tile gets lighter without losing its fall. A flat
-    // brand fill on hover would read as the gradient collapsing.
-    // The hover base tracks the hover gradient for the same reason.
-    `hover:bg-[${lift}]`,
-    `hover:bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,${lift},${from})]`,
-    // Press: the lift inverts to an inset and the gradient flattens to
-    // the deep stop. Pressed still reads as pressed with nothing
-    // travelling — the shadow does the work the transform used to.
-    `active:bg-[image:linear-gradient(to_bottom,${to},${to})]`,
-    "active:shadow-[var(--btn-still-press)]",
-  ];
-}
 
 export const buttonVariants = cva(
   [
@@ -138,13 +151,17 @@ export const buttonVariants = cva(
         // ── Primary. Brand tile; hover trades its own deep edge for
         //    the COMPLEMENTARY hue, whatever the theme's brand is.
         primary: [
-          ...stillTile(
-            "var(--brand-default)",
-            "var(--brand-emphasis)",
-            "var(--brand-muted)",
-            // Dark ink on a light field → the DEEP stop is the floor.
-            "var(--brand-emphasis)",
-          ),
+          // base — dark ink on a light field, so the DEEP stop is the floor.
+          "bg-[var(--brand-emphasis)]",
+          // from → to: brand → brand-emphasis.
+          "bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,var(--brand-default),var(--brand-emphasis))]",
+          "border-[var(--brand-emphasis)]",
+          "shadow-[var(--btn-still-lift),inset_0_-1px_0_var(--btn-still-bot)]",
+          // lift — one rung up the brand ramp.
+          "hover:bg-[var(--brand-muted)]",
+          "hover:bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,var(--brand-muted),var(--brand-default))]",
+          "active:bg-[image:linear-gradient(to_bottom,var(--brand-emphasis),var(--brand-emphasis))]",
+          "active:shadow-[var(--btn-still-press)]",
           "text-content-inverted",
           "hover:border-[var(--brand-secondary-default)]",
           "active:border-[var(--brand-secondary-default)]",
@@ -181,13 +198,18 @@ export const buttonVariants = cva(
         //    the brand's hover language and read as routine, so it
         //    keeps a red edge through every state.
         destructive: [
-          ...stillTile(
-            "var(--btn-still-danger)",
-            "var(--btn-still-danger-deep)",
-            "var(--btn-still-danger-lift)",
-            // White label on a dark field → the LIGHTEST stop is the floor.
-            "var(--btn-still-danger)",
-          ),
+          // base — white label on a dark field, so the LIGHTEST stop is the
+          // floor; that is `--btn-still-danger`, the rest head, not the tail.
+          "bg-[var(--btn-still-danger)]",
+          // from → to: danger → danger-deep.
+          "bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,var(--btn-still-danger),var(--btn-still-danger-deep))]",
+          "border-[var(--btn-still-danger-deep)]",
+          "shadow-[var(--btn-still-lift),inset_0_-1px_0_var(--btn-still-bot)]",
+          // lift — one rung up the danger ramp.
+          "hover:bg-[var(--btn-still-danger-lift)]",
+          "hover:bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,var(--btn-still-danger-lift),var(--btn-still-danger))]",
+          "active:bg-[image:linear-gradient(to_bottom,var(--btn-still-danger-deep),var(--btn-still-danger-deep))]",
+          "active:shadow-[var(--btn-still-press)]",
           "text-white",
         ],
       },

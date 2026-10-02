@@ -151,6 +151,40 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
             // press inside the name cell, which holds no interactive child.
             const rowEl = main.locator(`tr:has([data-testid="agent-row-${agentId}"])`);
             await expect(rowEl).toBeVisible({ timeout: 30_000 });
+
+            // LET THE PREFETCH STORM DRAIN BEFORE PRESSING.
+            //
+            // `nav-item.tsx` sets `prefetch` on all fourteen sidebar links, so
+            // every document load fires fourteen segment-tree prefetches AND
+            // fourteen FULL-page dynamic RSC requests plus their chunk graphs —
+            // a cost that file documents and deliberately accepts. All three
+            // attempts in run 36929866055 clicked ~670 ms after
+            // `domcontentloaded`, with 59-63 of those requests still in flight,
+            // and each time the artifacts show the same two facts:
+            //
+            //   • the handler RAN. One request for `/t/{slug}/agents/{id}`,
+            //     carrying `rsc: 1` + `next-router-state-tree` and NO
+            //     `next-router-prefetch` — a NAVIGATION, not a prefetch — 200
+            //     in 12-43 ms, with the `[agentId]/page` chunk 200 beside it.
+            //   • the navigation never COMMITTED. URL, DOM and `history.length`
+            //     unchanged, no console or page error, and zero further
+            //     requests for the whole 30 s wait.
+            //
+            // So the press is not missing the row, and this wait is not a
+            // retry: `agents-page.spec.ts` makes the IDENTICAL cold row-click
+            // push on this same page and passed in 5.5 s in the very run that
+            // failed this one three times — and it is the one that waits for
+            // `networkidle` first. Matching it is the narrowest change that
+            // stops this spec pressing into a storm it caused.
+            //
+            // It does NOT fix the product half, which is filed separately: a
+            // row that advertises itself as clickable, fetches its route on
+            // click and then does nothing is a defect, not a refusal. `/agents`
+            // is also the only list page whose row target is never warmed —
+            // seven others wire `onRowPrefetch`, so their row click is served
+            // from the prefetch cache and never makes this cold push.
+            await page.waitForLoadState('networkidle').catch(() => {});
+
             await rowEl.click({ position: { x: 12, y: 12 } });
 
             try {
@@ -178,11 +212,16 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
                               | Record<string, unknown>
                               | undefined)
                         : undefined;
-                    // `onRowPrefetch` warms this exact URL on the row's first
-                    // pointer-enter, and Playwright moves the pointer inside the click's
-                    // own action window — so the REQUEST cannot tell prefetch from push,
-                    // and nor can its position between the action's start and end.
-                    // Record the entries so a reader sees how many fired, and when.
+                    // CORRECTION (2026-10-02). This read "`onRowPrefetch` warms this
+                    // exact URL … so the REQUEST cannot tell prefetch from push". On
+                    // THIS page it can: the register never wires `onRowPrefetch` —
+                    // only assets, risks, policies, controls, tasks, vendors and
+                    // evidence do — and nothing else prefetches an agent detail URL,
+                    // so an entry here IS the push. Kept anyway, because how many
+                    // fired and when is what separates a push never made from a push
+                    // made and dropped. Read it beside the request HEADERS in the
+                    // trace: a prefetch carries `next-router-prefetch`, a navigation
+                    // does not.
                     const detailEntries = performance
                         .getEntriesByType('resource')
                         .filter((e) => e.name.includes(`/agents/${id}`))
