@@ -300,9 +300,11 @@ describe('proposeParameterChange — the bounds are checked at save time', () =>
             openFields: { workEmail: NARROW },
         });
         expect(after.pending?.openFields).toEqual({ workEmail: NARROW });
-        // Two signatures, because the pending side has open fields — reported
-        // by the usecase, enforced by the trigger.
-        expect(after.pending?.requiredApprovals).toBe(2);
+        // ONE signature, from a human other than the proposer — reported by the
+        // usecase, enforced by the trigger. Two counted signatures plus the
+        // exclusion would have meant three people and locked out a two-admin
+        // tenant (owner ruling, 2026-10-02).
+        expect(after.pending?.requiredApprovals).toBe(1);
     });
 
     it('CARRIES FORWARD the existing bounds when the key is omitted', async () => {

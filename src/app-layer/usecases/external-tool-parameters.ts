@@ -263,7 +263,25 @@ export function requiredApprovalsFor(row: {
     openFields: unknown;
     pendingOpenFields: unknown;
 }): number {
-    return row.openFields !== null || row.pendingOpenFields !== null ? 2 : 1;
+    // ONE, not two, and unconditionally (owner ruling, 2026-10-02 — carried by
+    // `20261002130000_template_edit_needs_two_humans`).
+    //
+    // Two counted signatures PLUS the promotion trigger's proposer exclusion
+    // composed into THREE distinct humans per template edit, which locked a
+    // two-admin tenant out of template edits altogether. The exclusion is the
+    // half that carries the four-eyes property — two signatures from one person
+    // is one review — so the count does not need to be 2 on top of it.
+    //
+    // Unconditional because an exact-value edit never reaches the counted gate
+    // at all: the promotion trigger returns early unless the row is a template.
+    // And 0 is not expressible anyway, since `requiredApprovals` on the
+    // signature row carries a `CHECK >= 1`.
+    //
+    // The row stays the parameter rather than this being a bare constant: the
+    // requirement is a property OF a row, and a later kind of open field may
+    // want a different number.
+    void row;
+    return 1;
 }
 
 function toState(row: Row, signatures: ParameterSetSignature[] = []): ParameterSetState {
@@ -471,8 +489,10 @@ export async function saveParameterSet(
  * Propose a change. Saved as PENDING; the agent keeps running what is approved.
  *
  * An edit that touches the OPEN FIELDS — adding them, changing a bound, or
- * removing them — needs two approving signatures from humans other than the
- * proposer before it can be promoted. So does an edit to the exact values of a
+ * removing them — needs one approving signature from a human other than the
+ * proposer before it can be promoted. That is four eyes: the proposer's and the
+ * approver's. The exclusion is what makes them different eyes; the count does
+ * not have to be 2 on top of it. So does an edit to the exact values of a
  * row that already has open fields. The database decides that, not this
  * function; `pending.requiredApprovals` in the returned state reports it.
  */
@@ -753,7 +773,7 @@ function fourEyesRefusal(err: unknown): string | null {
         return 'Parameter set not found.';
     }
     if (text.includes('EXTERNAL_TOOL_OPEN_FIELDS_FOUR_EYES')) {
-        return 'This edit changes the bounds on an open field, so it needs two approving signatures from humans other than the one who proposed it. Collect them before approving.';
+        return 'This edit changes the bounds on an open field, so it needs an approving signature from a human other than the one who proposed it. Collect it before approving.';
     }
     if (text.includes('EXTERNAL_TOOL_OPEN_FIELDS_NOT_PROMOTED')) {
         return 'The open fields in force can only change by approving the pending edit that proposed them.';

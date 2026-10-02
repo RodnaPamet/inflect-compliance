@@ -234,26 +234,33 @@ describe('open fields move only by promoting what was pending', () => {
     });
 });
 
-describe('the promotion is refused below two signatures', () => {
+describe('the promotion needs one signature from a non-proposer', () => {
     it('refuses with none', async () => {
         const { id, hash } = await proposeTemplate();
         await expect(
             approveParameterChange(ctxFor(T1), { id, expectedPendingHash: hash }),
-        ).rejects.toThrow(/two approving signatures/);
+        ).rejects.toThrow(/an approving signature from a human other than/);
         const still = await prisma.externalToolParameterSet.findUniqueOrThrow({ where: { id } });
         expect(still.openFields).toBeNull();
         expect(still.revision).toBe(1);
     });
 
-    it('refuses with ONE', async () => {
+    it('PROMOTES with one, from a human other than the proposer', async () => {
+        // Was "refuses with ONE" until the owner ruled on 2026-10-02. Two
+        // counted signatures plus the proposer exclusion composed into three
+        // distinct humans, which locked a two-admin tenant out of template
+        // edits entirely. One counted signature plus the exclusion is four eyes
+        // in the literal sense — the proposer's pair and one other.
         const { id, hash } = await proposeTemplate();
         await signParameterChange(ctxFor(T1, 'approver-a'), { id, expectedPendingHash: hash });
-        await expect(
-            approveParameterChange(ctxFor(T1), { id, expectedPendingHash: hash }),
-        ).rejects.toThrow(/two approving signatures/);
+        const promoted = await approveParameterChange(ctxFor(T1), {
+            id,
+            expectedPendingHash: hash,
+        });
+        expect(promoted).toMatchObject({ openFields: TEMPLATE, revision: 2, pending: null });
     });
 
-    it('promotes with TWO from humans other than the proposer', async () => {
+    it('also promotes with TWO — more than the minimum is not a refusal', async () => {
         const { id, hash } = await proposeTemplate();
         await signParameterChange(ctxFor(T1, 'approver-a'), { id, expectedPendingHash: hash });
         await signParameterChange(ctxFor(T1, 'approver-b'), { id, expectedPendingHash: hash });
@@ -294,14 +301,13 @@ describe('the promotion is refused below two signatures', () => {
         expect(after).toMatchObject({ parameters: changed, revision: 2, openFields: null });
     });
 
-    it('needs two to NARROW a template back to exact values', async () => {
+    it('still needs a signature to NARROW a template back to exact values', async () => {
         // Removing the bounds is safe in itself, but it is still an edit to a
-        // row that has open fields, and the requirement is a property of the
-        // row rather than of the direction of travel. Stated as a test because
-        // it is the one place the rule is more conservative than it needs to be.
+        // row that HAS open fields, and the requirement is a property of the row
+        // rather than of the direction of travel. Stated as a test because it is
+        // the one place the rule is more conservative than it needs to be.
         const { id, hash } = await proposeTemplate();
         await signParameterChange(ctxFor(T1, 'approver-a'), { id, expectedPendingHash: hash });
-        await signParameterChange(ctxFor(T1, 'approver-b'), { id, expectedPendingHash: hash });
         await approveParameterChange(ctxFor(T1), { id, expectedPendingHash: hash });
 
         const narrowing = await proposeParameterChange(ctxFor(T1), {
@@ -314,7 +320,7 @@ describe('the promotion is refused below two signatures', () => {
                 id,
                 expectedPendingHash: narrowing.pending!.hash,
             }),
-        ).rejects.toThrow(/two approving signatures/);
+        ).rejects.toThrow(/an approving signature from a human other than/);
     });
 });
 
@@ -335,9 +341,17 @@ describe('the proposer is excluded as a SET property', () => {
         // content, and their earlier signature is still on file. Only a check at
         // PROMOTION sees that, which is why the count excludes
         // `pendingByUserId` rather than trusting the insert-time refusal.
+        // Only approver-a signs, and then becomes the author of that same
+        // pending edit. The signature on file is now the proposer's own, so the
+        // live count is ZERO and the promotion must still be refused.
+        //
+        // Shaped at zero rather than at "one of two" deliberately: the
+        // requirement dropped to one signature on 2026-10-02, and a scenario
+        // that refused only because 1 < 2 would now PROMOTE while appearing to
+        // still test the exclusion. The property under test is unchanged; the
+        // arithmetic that exposes it is not.
         const { id, hash } = await proposeTemplate();
         await signParameterChange(ctxFor(T1, 'approver-a'), { id, expectedPendingHash: hash });
-        await signParameterChange(ctxFor(T1, 'approver-b'), { id, expectedPendingHash: hash });
 
         // approver-a takes over authorship of the identical pending edit.
         await prisma.externalToolParameterSet.update({
@@ -347,7 +361,15 @@ describe('the proposer is excluded as a SET property', () => {
 
         await expect(
             approveParameterChange(ctxFor(T1), { id, expectedPendingHash: hash }),
-        ).rejects.toThrow(/two approving signatures/);
+        ).rejects.toThrow(/an approving signature from a human other than/);
+
+        // The control: a human who is NOT the proposer signs the same content
+        // and it promotes — so the refusal above is the exclusion doing work,
+        // not the promotion being broken outright.
+        await signParameterChange(ctxFor(T1, 'approver-b'), { id, expectedPendingHash: hash });
+        await expect(
+            approveParameterChange(ctxFor(T1), { id, expectedPendingHash: hash }),
+        ).resolves.toMatchObject({ openFields: TEMPLATE, revision: 2 });
     });
 });
 
@@ -364,21 +386,31 @@ describe('a signature names the digest it signed', () => {
         });
         expect(revised.pending!.hash).not.toBe(hash);
 
-        await signParameterChange(ctxFor(T1, 'approver-b'), {
-            id,
-            expectedPendingHash: revised.pending!.hash,
-        });
-        // One signature on THIS content, so still refused — the stale one does
-        // not count.
+        // NOBODY has signed the revised content, so the live count is ZERO and
+        // approver-a's signature on the superseded digest must not carry over.
+        //
+        // At zero rather than at "one of two": the requirement dropped to one
+        // signature on 2026-10-02, so a scenario that refused because 1 < 2
+        // would now promote on the strength of a signature given to different
+        // content — which is exactly what this test exists to forbid.
         await expect(
             approveParameterChange(ctxFor(T1), {
                 id,
                 expectedPendingHash: revised.pending!.hash,
             }),
-        ).rejects.toThrow(/two approving signatures/);
+        ).rejects.toThrow(/an approving signature from a human other than/);
 
-        // And the listing reports only the live signature, so an operator is
-        // never shown a count the promotion will not honour.
+        // Now a signature IS given against the revised digest.
+        await signParameterChange(ctxFor(T1, 'approver-b'), {
+            id,
+            expectedPendingHash: revised.pending!.hash,
+        });
+
+        // The listing reports only the LIVE signature — approver-a's, against
+        // the superseded digest, is not shown. That is the control for the
+        // refusal above: the stale one is absent from the count rather than the
+        // count being broken, and an operator is never shown a number the
+        // promotion will not honour.
         const [listed] = await listParameterSets(ctxFor(T1), TOOL);
         expect(listed.signatures.map((s) => s.approverUserId)).toEqual([
             users[`${T1}:approver-b`],
@@ -471,7 +503,7 @@ describe('one signature per human per revision', () => {
                     approverUserId: users[`${T1}:approver-a`],
                     revision: 1,
                     pendingHash: hash,
-                    requiredApprovals: 2,
+                    requiredApprovals: 1,
                 },
             }),
         ).rejects.toThrow();
