@@ -140,48 +140,88 @@ describe("Epic P6-PR-A — sub-flow drill-down", () => {
         });
     });
 
-    describe("PersistedProcessCanvas — wires drill-down end-to-end", () => {
-        const src = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
-        );
+    describe("TldrawProcessWorkspace — wires drill-down end-to-end", () => {
+        /*
+            ═══ RE-POINTED, AND THE SCOPE MECHANISM IS DIFFERENT (#3079) ═══
+
+            The CAPABILITY is intact and the hook and breadcrumb are literally
+            the same modules — both are engine-free and were reused rather than
+            ported, which is also what preserved Escape-pops-a-level.
+
+            What changed is how the scope reaches the canvas, and the difference
+            is worth stating because the xyflow version is not expressible here.
+            There, `filterByDrillScope(...).visibleNodes` was handed to the
+            `nodes` prop: the renderer was given a filtered ARRAY. tldraw has no
+            such prop — the store IS the document — so filtering the input would
+            mean deleting shapes. The scope is applied through
+            `getShapeVisibility` instead, which hides without removing.
+
+            That distinction is load-bearing and asserted on its own below: a
+            canvas that filtered its store would make drilling in and
+            autosaving delete every node outside the group.
+
+            The enter gesture also moved layer: the canvas owns it (it has to
+            hit-test, because `TLClickEventInfo` carries no shape) and reports
+            upward, so the workspace supplies `onEnterGroup` rather than
+            handling a double-click itself.
+        */
+        const src = read("src/components/processes/TldrawProcessWorkspace.tsx");
+        const canvas = read("src/components/processes/TldrawProcessCanvas.tsx");
 
         it("imports the hook + helpers + breadcrumb", () => {
+            // `@/` alias rather than a relative path — house style on this host.
             expect(src).toMatch(
-                /import\s*\{\s*CanvasDrillBreadcrumb\s*\}\s*from\s*["']\.\/CanvasDrillBreadcrumb["']/,
+                /import\s*\{\s*CanvasDrillBreadcrumb\s*\}\s*from\s*["']@\/components\/processes\/CanvasDrillBreadcrumb["']/,
             );
             expect(src).toMatch(
                 /import\s*\{\s*useCanvasDrillStack\s*\}\s*from\s*["']@\/lib\/processes\/use-canvas-drill-stack["']/,
             );
+            // `drillTrail` wraps `buildDrillBreadcrumbs` with the editor's own
+            // node list, so the workspace imports the wrapper. The pure builder
+            // is still asserted directly in the describes above.
             expect(src).toMatch(
-                /import\s*\{[\s\S]{0,200}buildDrillBreadcrumbs[\s\S]{0,200}filterByDrillScope[\s\S]{0,100}\}\s*from\s*["']@\/lib\/processes\/canvas-drill-filter["']/,
+                /import\s*\{\s*drillTrail\s*\}\s*from\s*["']@\/components\/processes\/tldraw\/drill-scope-host["']/,
             );
         });
 
-        it("uses the hook + threads currentGroupId into the ReactFlow nodes prop", () => {
+        it("uses the hook and threads currentGroupId to the canvas", () => {
             expect(src).toMatch(/const drill = useCanvasDrillStack\(\)/);
-            // The nodes prop branches on currentGroupId.
-            expect(src).toMatch(
-                /drill\.currentGroupId\s*\?\s*filterByDrillScope\(\s*nodes,\s*edges,\s*drill\.currentGroupId,?\s*\)\.visibleNodes/,
-            );
+            expect(src).toMatch(/drillGroupId=\{drill\.currentGroupId\}/);
+            expect(src).toMatch(/onEnterGroup=\{drill\.enter\}/);
+        });
+
+        it("scopes by HIDING, never by filtering the store", () => {
+            /*
+                The assertion that replaces "threads currentGroupId into the
+                ReactFlow nodes prop", and the one that matters most.
+
+                tldraw's store is the document, so a host that filtered its
+                shapes to the drill scope would make drilling in and
+                autosaving DELETE every node outside the group. The scope is a
+                visibility predicate instead.
+            */
+            expect(canvas).toMatch(/getShapeVisibility=\{getShapeVisibility\}/);
+            expect(canvas).toMatch(/shapeVisibilityForScope\(/);
         });
 
         it("double-clicking a group node enters the drill", () => {
-            // The handler reads node.data.kind; only group nodes
-            // trigger drill.enter().
-            expect(src).toMatch(
-                /onNodeDoubleClick=\{[\s\S]{0,400}kind === ["']group["'][\s\S]{0,200}drill\.enter\(node\.id\)/,
-            );
+            // On the CANVAS, which is where the gesture can hit-test — the
+            // event carries no shape. Gated to `nodeType === 'group'`, because
+            // double-clicking a step is how tldraw starts label editing.
+            expect(canvas).toMatch(/nodeType !== ['"]group['"]/);
+            expect(canvas).toMatch(/onEnterGroupRef\.current\?\./);
         });
 
         it("mounts the breadcrumb with the canonical trail builder", () => {
             expect(src).toMatch(
-                /<CanvasDrillBreadcrumb[\s\S]{0,400}trail=\{buildDrillBreadcrumbs\(drill\.stack,\s*nodes\)\}/,
+                /<CanvasDrillBreadcrumb[\s\S]{0,200}trail=\{editor \? drillTrail\(editor, drill\.stack\) : \[\]\}/,
             );
         });
 
         it("breadcrumb jump truncates the stack to the target depth", () => {
-            // Depth 0 → reset to root; deeper → pop until length
-            // === depth.
+            // Unchanged arithmetic, deliberately: depth 0 resets, deeper pops
+            // `stack.length - depth`. Same expression as the xyflow host had,
+            // so if it is wrong it is wrong in one place.
             expect(src).toMatch(/depth === 0[\s\S]{0,100}drill\.reset\(\)/);
             expect(src).toMatch(/drill\.stack\.length - depth/);
         });

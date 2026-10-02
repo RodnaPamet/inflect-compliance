@@ -95,59 +95,88 @@ describe("Epic P4-PR-A — canvas auto-layout (dagre)", () => {
         });
     });
 
-    describe("PersistedProcessCanvas — handler + command-palette wire", () => {
-        const src = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
-        );
+    describe("Auto-layout host + command-palette wire", () => {
+        /*
+            ═══ RE-POINTED, AND THE HANDLER IS NO LONGER IN A COMPONENT (#3079) ═══
 
-        it("imports the helper + the type", () => {
-            expect(src).toMatch(
-                /import\s*\{[\s\S]{0,300}computeAutoLayout[\s\S]{0,200}AutoLayoutDirection[\s\S]{0,100}\}\s*from\s*["']@\/lib\/processes\/canvas-auto-layout["']/,
+            `canvas-auto-layout.ts` itself is untouched and its six assertions
+            above still pass: it survived the cutover because it imports DAGRE,
+            not xyflow (#3063 de-coupled it precisely so this deletion would not
+            take auto-layout with it). It is also still the only importer of
+            `@dagrejs/dagre`, so that dependency stays too.
+
+            What moved is the WIRE. The xyflow host declared `handleAutoLayout`
+            inline, pushed to its own history stack, called `setNodes`, and
+            emitted a `node.move` change event. On tldraw that is three separate
+            places: `auto-layout-host.ts` applies, `canvas-command-groups.ts`
+            declares the commands, and the workspace supplies the action. Each
+            assertion below goes to whichever of the three now owns it.
+
+            Two of the original five are RETIRED rather than moved, and both for
+            the same reason — the mechanism they pinned does not exist here:
+
+              • `history.push({ nodes, edges })` — the app kept its own undo
+                stack for xyflow. tldraw owns history natively, and
+                `use-canvas-history.ts` was deleted as superseded rather than
+                ported, because two stacks would disagree about what an undo is.
+              • `changeEmitter.emit("node.move")` — `canvas-change-events.ts`
+                had ZERO subscribers (its own docblock said autosave "still
+                lives on its own markDirty channel"), so this emitted into
+                nothing. Deleting it removed a seam, not a feature.
+        */
+        const host = read("src/components/processes/tldraw/auto-layout-host.ts");
+        const commands = read("src/lib/processes/canvas-command-groups.ts");
+        const workspace = read("src/components/processes/TldrawProcessWorkspace.tsx");
+
+        it("the host imports the helper + the type", () => {
+            expect(host).toMatch(
+                /import\s*\{[\s\S]{0,300}computeAutoLayout[\s\S]{0,300}\}\s*from\s*["']@\/lib\/processes\/canvas-auto-layout["']/,
             );
         });
 
-        it("declares handleAutoLayout with history push + autosave mark", () => {
-            // The handler MUST push the current layout to history
-            // before mutating so undo restores the hand-placed
-            // positions. Mark dirty so autosave fires.
-            expect(src).toMatch(
-                /const handleAutoLayout\s*=\s*useCallback\([\s\S]{0,1000}history\.push\(\{\s*nodes,\s*edges\s*\}\)[\s\S]{0,400}computeAutoLayout\(nodes,\s*edges,\s*direction\)[\s\S]{0,400}autosave\.markDirty\(\)/,
-            );
-        });
+        it("applies positions in ONE updateShapes call, not a loop", () => {
+            /*
+                Replaces "applies positions via setNodes preserving every other
+                field". The property the original protected was that a layout
+                must not drop a node's other state — xyflow's `{...n, position}`
+                spread. tldraw's `updateShapes` takes a partial per shape, so
+                every unmentioned field is preserved by the API rather than by
+                the caller remembering to spread.
 
-        it("applies positions via setNodes preserving every other field", () => {
-            // The spread {...n, position} pattern preserves data,
-            // selected, style, etc. A refactor that returns a fresh
-            // node would drop those.
-            expect(src).toMatch(
-                /positions\[n\.id\]\s*\?\s*\{\s*\.\.\.n,\s*position:\s*positions\[n\.id\]\s*\}/,
-            );
-        });
-
-        it("emits node.move so the change-event consumers see the layout swap", () => {
-            expect(src).toMatch(
-                /changeEmitter\.emit\(["']node\.move["'][\s\S]{0,300}Object\.keys\(positions\)/,
-            );
+                What IS worth pinning here is the batching: the host's own
+                comment says a thirty-node layout as thirty `updateShape` calls
+                is thirty store transactions and thirty renders.
+            */
+            expect(host).toMatch(/editor\.updateShapes\(/);
+            expect(host).not.toMatch(/for\s*\([\s\S]{0,80}editor\.updateShape\(/);
         });
 
         it("the command palette has a Layout group with both directions", () => {
-            // The palette group heading is localized.
             // eslint-disable-next-line @typescript-eslint/no-var-requires
             const en = require('../../messages/en.json');
             expect(en.automation.canvas.groupLayout).toBe('Layout');
-            expect(src).toMatch(/heading:\s*t\("groupLayout"\)/);
-            expect(src).toMatch(/id:\s*["']arrange-lr["']/);
-            expect(src).toMatch(/id:\s*["']arrange-tb["']/);
-            expect(src).toMatch(/handleAutoLayout\(["']LR["']\)/);
-            expect(src).toMatch(/handleAutoLayout\(["']TB["']\)/);
+            expect(commands).toMatch(/heading:\s*t\(['"]groupLayout['"]\)/);
+            expect(commands).toMatch(/id:\s*['"]arrange-lr['"]/);
+            expect(commands).toMatch(/id:\s*['"]arrange-tb['"]/);
         });
 
-        it("commands disable when no nodes / canvas is busy", () => {
-            // Empty canvas shouldn't offer the command; saving/
-            // loading shouldn't either.
-            expect(src).toMatch(
-                /disabled:\s*nodes\.length === 0 \|\| saving \|\| loading/,
-            );
+        it("and the workspace supplies the action the commands call", () => {
+            // The teeth for the group above: a palette that declared the
+            // commands while nothing wired `arrange` would render two entries
+            // that do nothing. The builder omits a command whose action is
+            // absent, so the absence would be SILENT — which is exactly the
+            // "reachable from nothing" failure this epic family keeps hitting.
+            expect(workspace).toMatch(/arrange:\s*\(direction,\s*scope\)\s*=>/);
+            expect(workspace).toMatch(/runAutoLayout\(editor,\s*direction,\s*scope\)/);
+        });
+
+        it("commands disable when there are no nodes to arrange", () => {
+            // Same property, different source of truth: the xyflow host read
+            // its own `nodes.length === 0 || saving || loading`, and the
+            // builder takes a context object instead — so the condition is
+            // asserted where it is now expressed.
+            expect(commands).toMatch(/disabled:\s*noNodes/);
+            expect(commands).toMatch(/const noNodes\s*=/);
         });
     });
 });
