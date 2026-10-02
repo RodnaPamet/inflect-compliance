@@ -91,6 +91,138 @@ describe('shared-UI coupling classification (#3047)', () => {
         expect(bad).toEqual([]);
     });
 
+    it('no reason is severed mid-thought — balanced delimiters, no dangling connective', () => {
+        // #3098 §2. The assertion above is a PRESENCE check, and a presence
+        // check cannot tell a complete sentence from a truncated one. Two
+        // reasons shipped cut off — one mid-identifier (`…use-`), one at a
+        // bare colon — and both passed it.
+        //
+        // Why NOT "ends in terminal punctuation": measured over all 613
+        // strings, that rule flags 319. Most are legitimate — the ~240 nucleo
+        // icons share the complete-but-unpunctuated reason "Pure presentational
+        // SVG icon: no copy, no storage key, no brand-as-text, no domain
+        // import". A rule that flags half the population is noise, and noise
+        // gets a blanket allowlist, which is a gate narrow enough to always
+        // pass.
+        //
+        // So the rule is INTRINSIC instead: a string cut at an arbitrary
+        // offset leaves evidence in its own grammar. An opened `code span`,
+        // paren or quote never closes, or the last character is a connective
+        // the author was mid-way through. Measured on the pre-fix tree it
+        // flagged 14 and NOTHING ELSE — zero false positives over 613.
+        //
+        // Known blind spot, MEASURED rather than assumed: truncating a
+        // complete reason at a word boundary, delimiters left balanced, was
+        // run against this assertion and PASSED. So a cut that lands cleanly
+        // is invisible here, and the population proves it is not theoretical
+        // — 13 of the 14 were exactly 400 characters, the truncator's
+        // fingerprint, and 27 reasons still are. Most of those read as cut
+        // off (`typography.tsx` ends "is inside that prose, no"). No issue
+        // tracks them as of 2026-10-02; completing them is prose authoring
+        // per file.
+        //
+        // A second axis — "no reason is exactly 400 characters" — would catch
+        // that whole class, and is deliberately NOT added: it needs a stored
+        // count of the 27 survivors, and this file's header forbids stored
+        // totals ("Every count below is derived from the map at run time.
+        // There is no number for two branches to bump"). Closing the blind
+        // spot means completing the 27, not seating a ceiling.
+        //
+        // So: this guard holds the line against a reason severed in a way
+        // that shows, and it does not claim the existing ones are whole.
+        const severed = (reason: string): string[] => {
+            const why: string[] = [];
+            if ((reason.match(/`/g) ?? []).length % 2) why.push('unbalanced backtick');
+            if ((reason.match(/"/g) ?? []).length % 2) why.push('unbalanced double quote');
+            let depth = 0;
+            for (const ch of reason) {
+                if (ch === '(') depth += 1;
+                else if (ch === ')') depth -= 1;
+                if (depth < 0) break;
+            }
+            if (depth !== 0) why.push('unbalanced parenthesis');
+            // A reason may legitimately end on a word or `.`/`!`/`?`/`)`/`"`/
+            // backtick-closed span. It may not end on a character that is
+            // grammatically mid-phrase.
+            if (/[:,;\-\/—–([=]$/.test(reason.trimEnd())) {
+                why.push(`dangling final character ${JSON.stringify(reason.trimEnd().slice(-1))}`);
+            }
+            return why;
+        };
+
+        // Positive control FIRST. Without it this passes when `severed` has
+        // rotted into a function that returns [] for everything, which is the
+        // shape a dead detector shares with a clean population. Each case is
+        // the real failure mode it is named for.
+        expect(severed('Imports are `@/lib/cn` and `@/components/ui/hooks/use-'))
+            .toEqual(['unbalanced backtick', 'dangling final character "-"']);
+        expect(severed('…module. Worth flagging separately:'))
+            .toEqual(['dangling final character ":"']);
+        expect(severed('(Outside the five: a token nit, not a coupl'))
+            .toEqual(['unbalanced parenthesis']);
+        expect(severed('The `console.error("Filter.List received an activeFilter')).toEqual([
+            'unbalanced backtick',
+            'unbalanced double quote',
+            'unbalanced parenthesis',
+        ]);
+        // And the negative control: the reason 240 icon entries share, which a
+        // terminal-punctuation rule would have flagged.
+        expect(
+            severed(
+                'Pure presentational SVG icon: no copy, no storage key, ' +
+                    'no brand-as-text, no domain import',
+            ),
+        ).toEqual([]);
+
+        const truncated = Object.entries(MAP)
+            .map(([p, e]) => [p, severed(e.reason)] as const)
+            .filter(([, why]) => why.length > 0)
+            .map(([p, why]) => `${p} -> ${why.join(', ')}`);
+        expect(truncated).toEqual([]);
+    });
+
+    it('no reason sits exactly on the 400-character cap that severed them', () => {
+        // THE SECOND AXIS, and the one that closes the class.
+        //
+        // The delimiter rule above catches a reason whose cut happens to land
+        // mid-span. It is blind to a cut that lands on a word boundary with every
+        // backtick and bracket balanced — demonstrated by mutation, not assumed.
+        // What both kinds share is the CAUSE: forty reasons were written against
+        // a 400-character cap and stopped dead on it. Length is therefore the
+        // discriminator the content cannot give us.
+        //
+        // This is a per-entry predicate, not a stored count. There is no number
+        // here for two branches to bump, which is the rule this file's header
+        // sets for itself.
+        //
+        // A reason that genuinely wants 400 characters can have 401 or 399. The
+        // assertion costs an author nothing and costs a truncation its invisibility.
+        const AWAITING_NAV_PR: Record<string, string> = {
+            // These four describe files that PR #3100 (`port/t19-nav-wording`) is
+            // rewriting as this lands. Completing prose about a file mid-rewrite
+            // produces text that is wrong on arrival, so they are held rather than
+            // guessed. Delete these four entries — do not add a fifth.
+            'src/components/layout/nav-bar.tsx': '#3100 rewrites it',
+            'src/components/layout/nav-item.tsx': '#3100 rewrites it',
+            'src/components/layout/nav-section.tsx': '#3100 rewrites it',
+            'src/components/layout/user-menu.tsx': '#3100 rewrites it',
+        };
+
+        const atCap = Object.entries(MAP)
+            .filter(([, e]) => e.reason.length === 400)
+            .map(([p]) => p);
+
+        // The exemption list must not outlive what it exempts: an entry that is
+        // no longer at the cap is a line somebody forgot to delete, and it would
+        // silently keep a future truncation exempt.
+        const staleExemptions = Object.keys(AWAITING_NAV_PR).filter(
+            (p) => !atCap.includes(p),
+        );
+        expect(staleExemptions).toEqual([]);
+
+        expect(atCap.filter((p) => !(p in AWAITING_NAV_PR))).toEqual([]);
+    });
+
     it('no file recorded GENERIC trips a MECHANICAL coupling', () => {
         // The half that must not rest on judgement. A GENERIC here is a claim
         // that a second product can vendor the file as-is; these three are

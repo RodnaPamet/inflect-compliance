@@ -2,22 +2,22 @@
  "src/components/app-shell/shortcut-help-overlay.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Every visible string goes through next-intl (`t(\"title\")`, `t(\"availableNow\")`, `t(\"showShortcuts\")`). The only literals are keyboard nomenclature (Ctrl/Esc/Space/⌘/arrows) in `prettyKey`, which is modifier-key naming, not product copy. Imports are only `@/lib/hooks/use-keyboard-shortcut` and `@/components/ui/*` — both allowlisted. Sense-check: the three GRC-noun grep hits are false positives — `c"
+  "reason": "Every visible string goes through next-intl (`t(\"title\")`, `t(\"availableNow\")`, `t(\"showShortcuts\")`). The only literals are keyboard nomenclature (Ctrl/Esc/Space/⌘/arrows) in `prettyKey`, which is modifier-key naming, not product copy. Imports are only `@/lib/hooks/use-keyboard-shortcut` and `@/components/ui/*` — both allowlisted. Sense-check: the three GRC-noun grep hits are false positives — `case \"control\"` at :86 is the Ctrl modifier-key alias in `prettyKey`, and \"policy\" at :18 (header) and :149 (an inline comment above the `if (!s.description) continue` skip) is this file’s own \"label it or it’s internal\" shortcut rule, not a GRC policy."
  },
  "src/components/layout/AppShell.tsx": {
   "classification": "COUPLED",
   "derivation": "audited",
-  "reason": "The host product's composition of the generic AppShellFrame: it imports next-auth `signOut`, picks between the two product sidebars, and carries the `/processes` full-bleed route regex (line 130). The file's own T07 comment (lines 125-128) states the route literal belongs with the product rather than the frame — so the coupling is deliberate and is the point of the file, not a defect. Nothing to e"
+  "reason": "The host product's composition of the generic AppShellFrame: it imports next-auth `signOut`, picks between the two product sidebars, and carries the `/processes` full-bleed route regex (line 130). The file's own T07 comment (lines 125-128) states the route literal belongs with the product rather than the frame — so the coupling is deliberate and is the point of the file, not a defect. Nothing to extract: the file renders no strings at all — `appName` is accepted for caller compatibility and deliberately unrendered (:66-76, :110-112) — so there is no hardcoded copy, no storage key and no brand token. Its imports are `react`, `next/navigation`, `next-auth/react` and the sibling layout modules at :6-12, so nothing arrives from `src/app-layer` or a domain `src/lib` and no mechanical detector fires: the auth dependency is a package import, and the T08 note at :163-168 has already pushed sign-out down a level so a vendoring `UserMenu` does not inherit it. The only GRC vocabulary is comment-side — the sidebar inventories at :79-80 (`Dashboard, Risks, Controls`, `Portfolio, Tenants, Members`)."
  },
  "src/components/layout/AppShellFrame.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The already-extracted shared frame, and clean on all five axes. Storage key routes through the seam: `collapseStorageKey ?? uiStorageKey('sidebar-collapsed')` (line 93) with `import { uiStorageKey } from '@/lib/ui-storage'` (line 54). No copy at all (every slot is a render prop), no GRC nouns, no brands, brand tokens absent, and the only other imports are `@/lib/cn` and `@/components/ui/hooks/use-"
+  "reason": "The already-extracted shared frame, and clean on all five axes. Storage key routes through the seam: `collapseStorageKey ?? uiStorageKey('sidebar-collapsed')` (line 93) with `import { uiStorageKey } from '@/lib/ui-storage'` (line 54). No copy at all (every slot is a render prop), no GRC nouns, no brands, brand tokens absent, and the only other imports are `@/lib/cn` and `@/components/ui/hooks/use-local-storage` (`use-local-storage` at :52, `cn` at :53) — the first inside the `src/components/ui` shared-UI root and the second on the detector's `NEUTRAL_LIB` allowlist, so neither is a domain module — plus framework modules only (`react`, `usePathname` from `next/navigation`)."
  },
  "src/components/layout/ClientProviders.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Clean on all five. No JSX text, no aria/title literals, no default copy params. No GRC vocabulary and no brand names. Reads `NEXT_PUBLIC_TEST_MODE` / `NODE_ENV` but writes no storage key. Imports are `@/components/ui/OnboardingTour`, `@/components/dev/swr-devtools`, `@/components/observability/WebVitalsReporter` — none from `src/app-layer` or a `src/lib/<domain>` module. Worth flagging separately:"
+  "reason": "Clean on all five. No JSX text, no aria/title literals, no default copy params. No GRC vocabulary and no brand names. Reads `NEXT_PUBLIC_TEST_MODE` / `NODE_ENV` but writes no storage key. Imports are `@/components/ui/OnboardingTour`, `@/components/dev/swr-devtools`, `@/components/observability/WebVitalsReporter` — none from `src/app-layer` or a `src/lib/<domain>` module. Worth flagging separately: two of those three sit OUTSIDE the four shared-UI roots — `@/components/dev/swr-devtools` and `@/components/observability/WebVitalsReporter` — so a consumer that vendors this file must vendor or stub two product components it was never told about, and the `domain-import` detector cannot see either because its regex covers only `@/app-layer` and `@/lib`. Tracked as #3098 §1; the classification is left GENERIC here because reclassifying it belongs with the widened detector."
  },
  "src/components/layout/DashboardLayout.tsx": {
   "classification": "MIXED",
@@ -27,7 +27,7 @@
  "src/components/layout/EntityDetailLayout.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The shell itself is domain-free: tabs/meta/actions/rail are all slots, every visible string goes through next-intl (`t('retry')`, `t('table.detailSections')`, `t('table.context')`), and the caller supplies the error and empty text. The brand token at line 344 is `border-[var(--brand-default)]` on the active tab — a BORDER, which rule 4 explicitly permits (non-text owes 3:1), so NOT a brand-as-text"
+  "reason": "The shell itself is domain-free: tabs/meta/actions/rail are all slots, every visible string goes through next-intl (`t('retry')`, `t('table.detailSections')`, `t('table.context')`), and the caller supplies the error and empty text. The brand token at line 344 is `border-[var(--brand-default)]` on the active tab — a BORDER, which rule 4 explicitly permits (non-text owes 3:1), so NOT a brand-as-text finding. Its one `@/lib` import, `@/lib/cn` (line 43), is clean via the `NEUTRAL_LIB` allowlist in `tests/helpers/shared-ui-couplings.ts`, not via `SHARED_UI_ROOTS` — `src/lib/cn` is not one of those four roots. What holds the file at MIXED is comment prose alone: the header names the product and its GRC detail pages at lines 6-8 and the panels the shell refuses to absorb at lines 17-19 (TraceabilityPanel, LinkedTasksPanel, TestPlansPanel, the risk inherent-vs-residual scorer), the `prevNext` JSDoc cites the domain module `@/lib/list-backfill-cap` at line 96 without importing it, and the JSX comment at lines 372-375 lists risk-detail, traceability and treatment plan. All of it is comment text, removable in one edit with no behaviour change."
  },
  "src/components/layout/EntityListPage.tsx": {
   "classification": "MIXED",
@@ -37,17 +37,17 @@
  "src/components/layout/IdentityPill.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Generic in shape — a context pill of avatar plus truncated name, styled entirely from semantic tokens (`border-border-subtle`, `bg-bg-default`, `text-content-muted`), no brand token, no storage key, no GRC vocabulary. Both couplings are the same hardcoded English sentence, and this file is the only chrome component in the slice with NO `useTranslations` import at all — the switchers that supersede"
+  "reason": "Generic in shape — a context pill of avatar plus truncated name, styled entirely from semantic tokens (`border-border-subtle`, `bg-bg-default`, `text-content-muted`), no brand token, no storage key, no GRC vocabulary. Both aria-labels are the same hardcoded English sentence bar the noun (`Current tenant: ${tenantName}. Click to switch.` at :37, `Current organization: ${orgName}. Click to switch.` at :57), and this file has NO `useTranslations` import at all — the switchers that supersede it share the gap rather than close it: `tenant-switcher.tsx` and `org-workspace-switcher.tsx` import no next-intl either, and :57's label is repeated verbatim at `org-workspace-switcher.tsx:190`, so the three are one copy fix. The second coupling is the fifth axis, not copy — `@/lib/tenant-context-provider` (:23) and `@/lib/org-context-provider` (:24) are domain imports outside `NEUTRAL_LIB`, and they are the point of the pill: a vendoring product must supply both contexts before either variant renders."
  },
  "src/components/layout/ListPageShell.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The flex/min-h-0 viewport-fit chain itself is fully generic — slots only, `@/lib/cn` the sole import, no storage key, no brand token. Two removable couplings. The aria-label one is worth the follow-up because the fix already exists in the slice: `EntityDetailLayout.tsx:409` labels the same kind of rail with `aria-label={t('table.context')}`, so a catalogue key is proven to be available for exactly"
+  "reason": "The flex/min-h-0 viewport-fit chain itself is fully generic — slots only, `@/lib/cn` the sole import, no storage key, no brand token. Two removable couplings. The aria-label one is worth the follow-up because the fix already exists in the slice: `EntityDetailLayout.tsx:409` labels the same kind of rail with `aria-label={t('table.context')}`, so a catalogue key is proven to be available for exactly this label: `common.table.context` is \"Context\", the literal at :175. The `<LeftAccordionRail>` that fills the :149-157 rail also defaults its own label to `t('tableOrientation')`, so :152's \"Orientation\" is redundant as well as untranslated. The second coupling is prose only: the header usage example names the GRC noun (`<h1>Risks</h1>`, :16-17). Beyond `@/lib/cn` the only import is the type-only `ReactNode` (:45)."
  },
  "src/components/layout/LocaleSwitcher.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The widget is generic (a ToggleGroup over `SUPPORTED_LOCALES`, with endonyms interpolated from constants rather than written as JSX literals precisely to stay off the i18n ratchet). Two couplings. The cookie finding is the material one: the writer bypasses the `uiCookieName` seam, which is exactly the drift `src/lib/ui-storage.ts` was created to end — its own header documents the prior `ThemeProvi"
+  "reason": "The widget is generic (a ToggleGroup over `SUPPORTED_LOCALES`, with endonyms interpolated from constants rather than written as JSX literals precisely to stay off the i18n ratchet). Two couplings. The cookie finding is the material one: the writer bypasses the `uiCookieName` seam, which is exactly the drift `src/lib/ui-storage.ts` was created to end — its own header documents the prior `ThemeProvider.persistTheme` as the pattern it mirrors, and `persistLocale` (:63) writes `document.cookie` (:66) from `LOCALE_COOKIE` in `@/lib/locale-constants` rather than through `uiCookieName('locale')`."
  },
  "src/components/layout/MobileNavDrawer.tsx": {
   "classification": "MIXED",
@@ -57,7 +57,7 @@
  "src/components/layout/OrgSidebarNav.tsx": {
   "classification": "COUPLED",
   "derivation": "audited",
-  "reason": "The org-side GRC nav register. Coupling is the entire content of the file: it enumerates the product's org routes and their drill-down permission gates, and reads `useOrgContext/useOrgHref/useOrgPermissions`. Labels DO go through next-intl (`t('nav.nonPerformingControls')`), so there is no `copy` finding — but a translated label still names a GRC concept, and the hrefs are product routes. Nothing "
+  "reason": "The org-side GRC nav register. Coupling is the entire content of the file: it enumerates the product's org routes and their drill-down permission gates, and reads `useOrgContext/useOrgHref/useOrgPermissions`. Labels DO go through next-intl (`t('nav.nonPerformingControls')`), so there is no `copy` finding — but a translated label still names a GRC concept, and the hrefs are product routes. Nothing portable survives, and the mechanical pass agrees independently: `@/lib/org-context-provider` (:16) is a domain `src/lib` module outside `NEUTRAL_LIB`, so `domain-import` fires — joined by the un-detected product import `@/components/org-switcher` (:20). No storage key, and no brand fill used as text: the JSX comment at :243-245 records the GAP-CI-77 fix that left `org.role` on `text-content-muted` (:246). The only untranslated literal that renders is the `'O'` initial fallback at :163."
  },
  "src/components/layout/PageActions.tsx": {
   "classification": "GENERIC",
@@ -72,17 +72,17 @@
  "src/components/layout/PageHeader.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The header primitive is structurally generic — breadcrumbs/back/eyebrow/title/description/meta/actions are all caller-supplied, the back link's only literal is the `←` glyph (line 226), and there is no storage key or brand token. Two couplings. The import one is the substantive one: it makes a shared primitive's visible behaviour (whether the H1 is `sr-only`) depend on this product's route registr"
+  "reason": "The header primitive is structurally generic — breadcrumbs/back/eyebrow/title/description/meta/actions are all caller-supplied, the back link's only literal is the `←` glyph (line 226), and there is no storage key or brand token. Two couplings. The import one is the substantive one: it makes a shared primitive's visible behaviour (whether the H1 is `sr-only`) depend on this product's route registry: `classifyRoute` comes from `@/lib/nav/page-segregation` (:63), a domain module whose `MAIN_PAGES`/`SUBPAGES` lists are this product's own routes, and it decides at :198 whether the H1 renders `sr-only` (:264) — a route it does not list classifies `unknown`, so a vendoring product gets a visible H1 on every page. The second coupling is prose: the `titleAdornment` docstring's worked example at :131 is a security-incident sentence (`Ransomware on the billing cluster`), removable in one comment edit. The two near misses are worth naming — `@/lib/cn` (:62) is NEUTRAL_LIB-allowlisted, and `@/components/nav/BackAffordance` (:70) is a sibling component namespace, not `src/app-layer` or a domain `src/lib`."
  },
  "src/components/layout/SidebarNav.tsx": {
   "classification": "COUPLED",
   "derivation": "audited",
-  "reason": "The tenant GRC nav register plus the product's identity block. Coupling is the whole point: `useNavSections()` enumerates assets/risks/controls/audits/tasks/calendar/tests/evidence/policies/vendors/agents/processes/reports with their permission and module gates, and the brand mark is spelled inline. It reads `useTenantContext/useTenantHref/usePermissions/useModules` and the command-palette provide"
+  "reason": "The tenant GRC nav register plus the product's identity block. Coupling is the whole point: `useNavSections()` enumerates assets/risks/controls/audits/tasks/calendar/tests/evidence/policies/vendors/agents/processes/reports with their permission and module gates, and the brand mark is spelled inline. It reads `useTenantContext/useTenantHref/usePermissions/useModules` and the command-palette provider. Only one of those is an `@/lib` path — `@/lib/tenant-context-provider` (line 7), which this audit reads as an app/infra seam rather than a domain module, the same call it recorded on `src/lib/hooks/use-tenant-mutation.ts`; `@/components/command-palette/command-palette-provider` (line 11) is a sibling component namespace the mechanical detector does not count either way. Nothing else trips: labels and accessible names all route through the `nav` and `common` catalogs (lines 98-191, 238, 249, 259, 266, 323, 339, 374-390), the only hardcoded text is the `IC` monogram at line 256 — a brand mark, not translatable copy — the brand tokens at line 255 are a gradient BACKGROUND, with the comment at lines 364-368 recording the contrast reason the role line declined `brand-default` for text, and there is no storage key. COUPLED is right: this file IS the register, so the GRC vocabulary is its content rather than a leak."
  },
  "src/components/layout/TopChrome.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Clean on all five, which surprised me for a file this product-shaped: every string goes through next-intl (`t('openOrgNavigationMenu')`, `t('openNavigationMenu')`, `t('noBreadcrumbs')`), there are no GRC nouns and no brand names anywhere in it, no storage key, no brand colour token, and its imports are all slice siblings plus `@/components/ui/breadcrumbs`. One thing I could not score under the fiv"
+  "reason": "Clean on all five, which surprised me for a file this product-shaped: every string goes through next-intl (`t('openOrgNavigationMenu')`, `t('openNavigationMenu')`, `t('noBreadcrumbs')`), there are no GRC nouns and no brand names anywhere in it, no storage key, no brand colour token, and its imports are all slice siblings plus `@/components/ui/breadcrumbs`. One thing I could not score under the five axes, and it is what makes the file read product-shaped: T08 (#3003) parked the product's own identity here on purpose. :171 hands `<NavBarBrand>` the wordmark glyph `initials=\"IC\"` — visible text, but `aria-hidden` at `nav-bar.tsx:440` with the accessible name coming from `t('brandHome')`, which is why the copy axis does not see it, and `nav-bar.tsx:417-426` records the prop losing its `'IC'` default in T08 so a second product cannot inherit this one's initials. :211 likewise hardcodes the `/account/security` route, with sign-out taken as an `onLogout` prop (:66) so no next-auth import follows it. A two-letter glyph and a route literal are neither copy, GRC vocabulary, a storage key, a brand fill token nor an import, so none of the five sees them; the other `@/components/ui` imports (`popover` :43, `icons/nucleo` :44) sit on the same footing as `breadcrumbs`."
  },
  "src/components/layout/WorkspaceShell.tsx": {
   "classification": "GENERIC",
@@ -97,7 +97,7 @@
  "src/components/layout/environment-badge.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Clean on all five. Copy is translated — `t('staging')`, `t('dev')`, `t('stagingAria')`, `t('devAria')` — the uppercase \"STAGING\"/\"DEV\" strings appear only in the header prose describing the states (lines 15-16), not in the render. Tones are deliberately status, not brand (`bg-bg-warning-emphasis`, `bg-bg-error-emphasis`, `text-content-inverted`), and the header says so. Detection is hostname-patte"
+  "reason": "Clean on all five. Copy is translated — `t('staging')`, `t('dev')`, `t('stagingAria')`, `t('devAria')` — the uppercase \"STAGING\"/\"DEV\" strings appear only in the header prose describing the states (lines 15-16), not in the render. Tones are deliberately status, not brand (`bg-bg-warning-emphasis`, `bg-bg-error-emphasis`, `text-content-inverted`), and the header says so. Detection is hostname-pattern matching in the file's own `useAppEnv` hook (lines 86-115) — `window.location.hostname` only, no storage key, and `react` plus `next-intl` the only imports. The rendered copy is the catalogue's \"Staging\"/\"Dev\"; the all-caps look is the `uppercase` class at :58, not a literal. The tokens recur as state names at :40-47, still comment-side, and Vercel at :77 is a deploy aside, not a tenant brand."
  },
  "src/components/layout/nav-bar.tsx": {
   "classification": "MIXED",
@@ -117,12 +117,12 @@
  "src/components/layout/notifications-bell.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Shape is generic (a bell, a badge, a popover list over a REST/SSE feed) and most copy IS translated — `t('notifications')`, `t('markAllRead')`, `t('sessionExpired')`, `t('loading')`, `t('allClear')`, `t('caughtUp')`, `t('unreadAria', { count })`. No storage key; badge uses status tones (`bg-bg-error-emphasis`), not brand. The couplings are two untranslated strings that both reach the screen, which"
+  "reason": "Shape is generic (a bell, a badge, a popover list over a REST/SSE feed) and most copy IS translated — `t('notifications')`, `t('markAllRead')`, `t('sessionExpired')`, `t('loading')`, `t('allClear')`, `t('caughtUp')`, `t('unreadAria', { count })`. No storage key; badge uses status tones (`bg-bg-error-emphasis`), not brand. The couplings are two untranslated strings that both reach the screen, which is what keeps it out of GENERIC: the fetch error `Failed to load notifications` (:195 thrown, :201 the catch fallback) renders raw in the error branch at :476, and `formatRelativeTime` returns the English `now` plus bare `m`/`h`/`d` suffixes (:114-119) into the row timestamp at :495 — neither goes through `panels.bell`. Correcting that sentence: those are the two COPY couplings, not the file's only ones. The import axis fires too — `@/lib/format-date` (:45) and `@/lib/auth/session-expiry` (:46) are both outside `NEUTRAL_LIB`, so `mechanicalCouplings` returns `domain-import` (the same two modules it records on `TrendCard.tsx` and `session-expired-notice.tsx`); it went unrecorded here only because that pass upgrades a GENERIC entry and this one was already MIXED."
  },
  "src/components/layout/org-workspace-switcher.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Generic in shape — a popover of two membership sections plus a footer link, tokens-only styling, no storage key, no GRC vocabulary (the \"control\" hit at line 4 is the UI-widget sense). This file imports no next-intl at all, so every one of its strings is untranslated; it is the worst copy offender in the slice alongside its tenant twin, and the two share the identical strings so they are one fix. "
+  "reason": "Generic in shape — a popover of two membership sections plus a footer link, tokens-only styling, no storage key, no GRC vocabulary (the \"control\" hit at line 4 is the UI-widget sense). This file imports no next-intl at all, so every one of its strings is untranslated; it is the worst copy offender in the slice alongside its tenant twin, and the two share the identical strings so they are one fix. Eight strings in all: the popover `aria-label` at :89, both section headings (:96, :140), both empty states (:100, :144), the `org · ` connective at :122, the footer link at :181 and the trigger `aria-label` at :190. Two notes on the mechanical axes. `useOrgContext` comes from `@/lib/org-context-provider` (:41), a domain `src/lib` module, so `domain-import` fires here as well as the copy finding. And `text-[var(--brand-default)]` at :128 does trip the `brand-as-text` regex but is NOT a finding — it rides an `aria-hidden` lucide `<Check>` whose stroke resolves through `currentColor`, the non-text paint the rule permits, exactly as at the tenant twin's :214."
  },
  "src/components/layout/session-expired-notice.tsx": {
   "classification": "MIXED",
@@ -137,12 +137,12 @@
  "src/components/layout/tenant-switcher.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Generic in shape (popover over JWT memberships, tokens-only styling, no storage key, no GRC vocabulary) but imports no next-intl, so every visible string is hardcoded English — the same four strings as org-workspace-switcher, which is why the pair should be fixed together. NON-FINDING: `text-[var(--brand-default)]` at line 214 is on an `aria-hidden` lucide `<Check>` icon — a non-text fill, permitt"
+  "reason": "Generic in shape (popover over JWT memberships, tokens-only styling, no storage key, no GRC vocabulary) but imports no next-intl, so every visible string is hardcoded English — the same five strings as org-workspace-switcher, which is why the pair should be fixed together. NON-FINDING: `text-[var(--brand-default)]` at line 214 is on an `aria-hidden` lucide `<Check>` icon — a non-text fill, permitted under rule 4 on reading — though the mechanical `BRAND_AS_TEXT` regex DOES match that class, so this is an audited override and not a clean grep: the class is the icon's `currentColor` fill and the icon is `aria-hidden`, so nothing textual is painted at 4.03:1. The five are `Organizations` (line 148), the `org · ` role prefix (166), `Workspaces` (176), `No workspaces in this session.` (186) and `Manage workspaces` (233); the popover `aria-label` at line 139 is byte-identical in the org file too, and the trigger label at 242 differs from its twin there only in the noun. The one `@/lib` import, `@/lib/tenant-context-provider` (52), is the app/infra seam this audit does not count as a domain module."
  },
  "src/components/layout/use-calendar-badge.ts": {
   "classification": "COUPLED",
   "derivation": "audited",
-  "reason": "A data hook bound to one product endpoint, so it cannot be vendored at all: the SWR key is `/api/t/${tenantSlug}/calendar/upcoming-count` (line 71) and it imports `ApiClientError` from `@/lib/api-client`. The coupling is the point of the file rather than a removable blemish — there is nothing generic left once the endpoint goes. Scored COUPLED on that basis even though the formal five only catch i"
+  "reason": "A data hook bound to one product endpoint, so it cannot be vendored at all: the SWR key is `/api/t/${tenantSlug}/calendar/upcoming-count` (line 71) and it imports `ApiClientError` from `@/lib/api-client`. The coupling is the point of the file rather than a removable blemish — there is nothing generic left once the endpoint goes. Scored COUPLED on that basis even though the formal five only catch its `@/lib/api-client` import (:41, a module outside `NEUTRAL_LIB`). The endpoint literal itself is a string no detector reads; the copy axis sees only `'99+'` at :92, a numeral rather than prose; there is no storage key, since `NEXT_PUBLIC_TEST_MODE` at :52 is an env read and not a `useLocalStorage` call; and there is no brand token. GRC vocabulary appears exactly once and only in the header prose — `control-edit-modal` at :26, naming the E2E hang that motivated the test-mode opt-out — which the comment mask in `codeOf` hides from the mechanical pass as well."
  },
  "src/components/layout/user-menu.tsx": {
   "classification": "MIXED",
@@ -352,12 +352,12 @@
  "src/components/ui/card-list/card-list-card.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Generic card primitives (Card / CardHeader / CardContent) with a good a11y story. Two couplings. The solid one is an English copy-parameter default that reaches the DOM as an aria-label — rule 1's exact shape, and the only string in the file not supplied by the caller; this file never calls useTranslations. The second is weaker and I flag it as a judgement call: the JSDoc kv example is a complianc"
+  "reason": "Generic card primitives (Card / CardHeader / CardContent) with a good a11y story. Two couplings. The solid one is an English copy-parameter default that reaches the DOM as an aria-label — rule 1's exact shape, and the only string in the file not supplied by the caller; this file never calls useTranslations. The second is weaker and I flag it as a judgement call: the JSDoc kv example is a compliance-shaped one — `{ label: 'Owner', value: 'ciso@acme.com' }` and a Coverage row (:24-25), echoed in the `kv` doc at :285-286 — but it is prose only, and the placeholder tenant \"Acme Corp\" (:18) is no named brand. The other three axes are clean: no storage key, nothing imported from `src/app-layer` or a domain `src/lib`, and every `--brand-default` rides a ring, border or background (:153, :164-165, :206), never text."
  },
  "src/components/ui/card-list/card-list.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "A 95-line responsive grid container — `<ul role=\"list\">`, a loading context, nothing else. Code is entirely generic (no copy; `aria-label` is a pass-through prop with no default). The only coupling is one domain example in the file-header comment naming compliance framework packs among the surfaces this grid is for. I judged \"framework\" here as the GRC sense (framework packs = the compliance frame"
+  "reason": "A 95-line responsive grid container — `<ul role=\"list\">`, a loading context, nothing else. Code is entirely generic (no copy; `aria-label` is a pass-through prop with no default). The only coupling is one domain example in the file-header comment naming compliance framework packs among the surfaces this grid is for. I judged \"framework\" here as the GRC sense (framework packs = the compliance frameworks a tenant adopts, at :7) rather than the software sense, so it counts as domain vocabulary in prose — removable by generalising the example list."
  },
  "src/components/ui/card-list/index.ts": {
   "classification": "GENERIC",
@@ -542,12 +542,12 @@
  "src/components/ui/combobox/index.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "860-line generic option picker. Clean on four of five axes: every string resolves via `useTranslations(\"ui.combobox\")` → `getComboboxMessages` (including the trigger's aria-label fallback `t(\"triggerLabel\")` at :442), imports are only `@/lib/cn` plus sibling ui modules, no storage, and no brand token used as text. The one coupling is a GRC entity named as the motivating example in a layout comment"
+  "reason": "860-line generic option picker. Clean on four of five axes: every string resolves via `useTranslations(\"ui.combobox\")` → `getComboboxMessages` (including the trigger's aria-label fallback `t(\"triggerLabel\")` at :442), imports are only `@/lib/cn` plus sibling ui modules, no storage, and no brand token used as text. The one coupling is a GRC entity named as the motivating example in a layout comment: the wrap-rather-than-truncate rationale at :757-760 says a narrow dropdown was \"clipping full entity names like asset titles\", and Asset is a product register (`prisma/schema/assets.prisma`). Prose only — nothing reaches the screen, so vendoring this file costs one comment edit. The rest of what prose names is repo-internal roadmap rather than GRC vocabulary: Epic 55 and Epic-54 in the header prose (:9, :12, :14), Epic 68 in two inline comments (:268, :637), and `useTenantSWR` in the TODO block at :2-5. One precision on the copy axis — `t(\"triggerLabel\")` is called on the namespace translator directly, not through `getComboboxMessages`, so it is the one string with no English `safeT` fallback behind it."
  },
  "src/components/ui/combobox/messages.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "A copy-resolution module: `getComboboxMessages(t)` routes all four combobox strings through next-intl, and `COMBOBOX_DEFAULT_MESSAGES` is the last-resort fallback for a translator that throws or returns empty. The English literals match rule 1 literally (copy-parameter defaults), so I report them — but flagging the other direction too: this is a DELIBERATE, documented design, not an oversight (the"
+  "reason": "A copy-resolution module: `getComboboxMessages(t)` routes all four combobox strings through next-intl, and `COMBOBOX_DEFAULT_MESSAGES` is the last-resort fallback for a translator that throws or returns empty. The English literals match rule 1 literally (copy-parameter defaults), so I report them — but flagging the other direction too: this is a DELIBERATE, documented design, not an oversight (the header at :15-16 states the values are reached only when a translator throws or returns empty, and `safeT` at :45-51 is that catch), so deleting them would leave the combobox blank rather than untranslated."
  },
  "src/components/ui/combobox/virtualized-options.tsx": {
   "classification": "GENERIC",
@@ -647,12 +647,12 @@
  "src/components/ui/date-picker/shared.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A React context, a locale-aware `formatDate`, and `validatePresets`. The English text here is all inside `throw new Error(...)` developer messages (`Preset ${preset.label} is before fromYear …`), which are not JSX text / aria / title / copy defaults, so I did not count them as `copy`. No brand, no storage key, no domain vocabulary. (Aside, outside the five: its `formatDate` duplicates `@/lib/forma"
+  "reason": "A React context, a locale-aware `formatDate`, and `validatePresets`. The English text here is all inside `throw new Error(...)` developer messages (`Preset ${preset.label} is before fromYear …`), which are not JSX text / aria / title / copy defaults, so I did not count them as `copy`. No brand, no storage key, no domain vocabulary. (Aside, outside the five: its `formatDate` at :24 duplicates `@/lib/format-date.ts`, which exports its own `formatDate` at :149 — a dedup opportunity, not a coupling, since neither is a domain module.)"
  },
  "src/components/ui/date-picker/trigger.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Forward-ref trigger button. `placeholder` is a prop with NO default string, so there is no copy default here; the only text it renders is `{children}` or `{placeholder}`. Edge styling rides `--ctrl-edge-*` custom properties, not `--brand-*`, and nothing uses a brand token as text. (Outside the five: :62 hardcodes `shadow-[0_0_0_3px_rgb(220_38_38_/_0.20)]` as a raw colour — a token nit, not a coupl"
+  "reason": "Forward-ref trigger button. `placeholder` is a prop with NO default string, so there is no copy default here; the only text it renders is `{children}` or `{placeholder}`. Edge styling rides `--ctrl-edge-*` custom properties, not `--brand-*`, and nothing uses a brand token as text. (Outside the five: :62 hardcodes `shadow-[0_0_0_3px_rgb(220_38_38_/_0.20)]` as a raw colour — a token nit, not a coupling: rule 4 covers a brand TOKEN used as TEXT, and this is the error halo on the `hasError` variant (the focus channel rides `--ctrl-edge-focus` at :54), so neither.)"
  },
  "src/components/ui/date-picker/types.ts": {
   "classification": "MIXED",
@@ -722,12 +722,12 @@
  "src/components/ui/filter/filter-examples.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The heaviest offender in the slice, and the best follow-up candidate. Shape is generic (reference patterns for the three canonical filter kinds: enum, entity-ref, range) and the barrel deliberately does not re-export it, but every illustrative value is compliance-specific. Judged MIXED rather than COUPLED because the file's POINT is demonstrating the three filter shapes, not being a compliance wid"
+  "reason": "The heaviest offender in the slice, and the best follow-up candidate. Shape is generic (reference patterns for the three canonical filter kinds: enum, entity-ref, range) and the barrel deliberately does not re-export it, but every illustrative value is compliance-specific. Judged MIXED rather than COUPLED because the file's POINT is demonstrating the three filter shapes, not being a compliance widget. The domain is entirely in the values: the `ControlStatus` union and `CONTROL_STATUS_LABELS` mirroring Prisma's enum (:25-:45), the control-lifecycle description at :54, the Owner/People entity-reference block (:67-:88), and the inherent-risk-score description with its `riskScore` bundle key (:114, :137). The copy is hardcoded English throughout, which is the other half of the finding; nothing mechanical trips (imports are `lucide-react` plus two sibling modules at :18-21, no storage key, no brand token). And it is cheap: no file under `src/` imports it, so `tests/unit/filter-contracts.test.ts` is the only consumer a rename has to follow."
  },
  "src/components/ui/filter/filter-list.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Structurally a fully generic active-filter pill strip (operator toggle, value dropdown, range pill, remove). No brand-as-text, no storage key, no domain import, no domain vocabulary — but it is the single largest pocket of untranslated English in the slice, and it is the only MIXED file here whose coupling is copy alone. The `console.error(\"Filter.List received an activeFilter without a correspond"
+  "reason": "Structurally a fully generic active-filter pill strip (operator toggle, value dropdown, range pill, remove). No brand-as-text, no storage key, no domain import, no domain vocabulary — but it is the single largest pocket of untranslated English in the slice, and it is the only MIXED file here whose coupling is copy alone. The `console.error` at :107-109 (\"Filter.List received an activeFilter without a corresponding filter\") is excluded from that count: it is a developer diagnostic, never rendered."
  },
  "src/components/ui/filter/filter-range-panel.tsx": {
   "classification": "GENERIC",
@@ -772,12 +772,12 @@
  "src/components/ui/filter/use-filter-card-visibility.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The hook's logic (order reconcile, toggle, reset, reorder over caller-supplied cards) is generic and its imports are all `@/components/ui/*`. But its documentation block is written almost entirely in this product's vocabulary, and it documents a brand-prefixed storage key that bypasses the `uiStorageKey` seam. Note the key is a caller-supplied PARAMETER — this file never constructs it — so the cou"
+  "reason": "The hook's logic (order reconcile, toggle, reset, reorder over caller-supplied cards) is generic and its imports are all `@/components/ui/*`. But its documentation block is written almost entirely in this product's vocabulary, and it documents a brand-prefixed storage key that bypasses the `uiStorageKey` seam. Note the key is a caller-supplied PARAMETER — this file never constructs it — so the coupling here is the documented CONVENTION, not a key this module builds: `useLocalStorage<string[]>(storageKey, defaults)` at line 178 takes an identifier, so `RAW_STORAGE_HOOK` never fires and `codeOf` masks the docblock where the literal sits — mechanically this file is clean. Nine pages hand-spell the key themselves, from `PoliciesClient.tsx:510` to `AgentsClient.tsx:210`, all outside `SHARED_UI_ROOTS` and so outside this population; `uiStorageKey('filter-vis', entity)` yields that same string, since `UI_STORAGE_PREFIX` is `inflect`, so the fix is one seam call per caller. The vocabulary is likewise docblock prose only — lines 3-48, policies/evidence/tasks/vendors/risks, #1886 and #1905, `kpi-sparkline-canonical` — and not code."
  },
  "src/components/ui/filter/use-filter-presets.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/filters. Audited note: A view adapter over `@/lib/filters/filter-presets`, and I checked that module: `presetsStorageKey()` returns `uiStorageKey('filters', tenantSlug, page)`, so the storage key IS built through the seam and there is no `storage-key` finding. `src/lib/filters` is UI-preference persistence (it imports FROM `@/components/ui/filter/filter-state`), not a compliance domain module, so I did not count it as `"
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/filters. Audited note: A view adapter over `@/lib/filters/filter-presets`, and I checked that module: `presetsStorageKey()` returns `uiStorageKey('filters', tenantSlug, page)`, so the storage key IS built through the seam and there is no `storage-key` finding. `src/lib/filters` is UI-preference persistence (it imports FROM `@/components/ui/filter/filter-state` at filter-presets.ts:21), not a compliance domain module, so I did not count it as `domain-import` — the mechanical pass overrules that judgement and the entry stands MIXED, which is the audit/grep asymmetry working as designed."
  },
  "src/components/ui/form-description.tsx": {
   "classification": "GENERIC",
@@ -2702,7 +2702,7 @@
  "src/components/ui/kpi-filter/use-kpi-filter.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The hook's code is completely generic — it composes `apply`/`isActive`/`clear` callbacks over the shared FilterContextValue and has no strings, no storage and no domain import (`@/components/ui/filter` is a ui module). But its 65-line design-rationale header and several prop docs are written throughout in risk-register vocabulary: the Risks page is named as the contract this implements, and the wo"
+  "reason": "The hook's code is completely generic — it composes `apply`/`isActive`/`clear` callbacks over the shared FilterContextValue and has no strings, no storage and no domain import (`@/components/ui/filter` is a ui module). But its 65-line design-rationale header and several prop docs are written throughout in risk-register vocabulary: the Risks page is named as the contract this implements, and the worked examples are drawn from its fields — `Open → status=OPEN` and `Critical → impact=5,4 + likelihood=5,4` at :27-29, `status=OPEN, severity=CRITICAL` at :102, and `High-Criticality → Active` in the B2 comment at :140-143, with the `toggle` doc at :113-115 naming the Risks page outright. Every hit is prose, so the comment mask in `codeOf` hides all of it from the mechanical pass and only a reader scores it — which makes this a documentation fix: neutral examples in the header and the prop docs, after which the hook ships unchanged on its two imports, `react` and `@/components/ui/filter`."
  },
  "src/components/ui/label.tsx": {
   "classification": "GENERIC",
@@ -2732,7 +2732,7 @@
  "src/components/ui/modal.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Radix Dialog / Vaul Drawer modal with structured slots and a Confirm sugar. Every user-visible string goes through `useTranslations(\"common\")` — t(\"ui.dialog\"), t(\"close\"), t(\"ui.confirm\"), t(\"cancel\"). No storage keys, no brand-as-text, no domain imports (only @/lib/cn, @/lib/hooks/use-keyboard-inset, local ui modules). The word \"control\" appears at :192/:301/:312 in the UI-widget sense (the cont"
+  "reason": "Radix Dialog / Vaul Drawer modal with structured slots and a Confirm sugar. Every user-visible string goes through `useTranslations(\"common\")` — t(\"ui.dialog\"), t(\"close\"), t(\"ui.confirm\"), t(\"cancel\"). No storage keys, no brand-as-text, no domain imports (only @/lib/cn, @/lib/hooks/use-keyboard-inset, local ui modules). The word \"control\" appears at :192/:301/:312 in the UI-widget sense (the triggering element focus returns to, and \"focus control\" inside a quoted note on popovers) — all three in comments, none the GRC noun."
  },
  "src/components/ui/next-best-action-logic.ts": {
   "classification": "COUPLED",
@@ -2812,7 +2812,7 @@
  "src/components/ui/status-badge.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "CVA pill with neutral/info/success/warning/error variants, solid/subtle tones, default icons. Every colour is a `text-content-*`/`bg-bg-*` semantic token — no brand token anywhere. No copy (children and tooltip come from the caller), no domain vocabulary, no storage keys. The `{ OPEN: 'error', ...}` comment at :87 is a generic status-mapping illustration. Linear/Stripe/Vercel at :15 are design ref"
+  "reason": "CVA pill with neutral/info/success/warning/error variants, solid/subtle tones, default icons. Every colour is a `text-content-*`/`bg-bg-*` semantic token — no brand token anywhere. No copy (children and tooltip come from the caller), no domain vocabulary, no storage keys. The `{ OPEN: 'error', ...}` comment at :87 is a generic status-mapping illustration. Linear/Stripe/Vercel at :15 are design references of the kind this repo's own guards cite, not tenant brand names, and they sit in an inline comment at :14-16, not in anything rendered. Imports are `@/lib/cn` (NEUTRAL_LIB-allowlisted), `class-variance-authority` and the siblings `./icons` / `./tooltip` — nothing from `src/app-layer` or a domain `src/lib`. Vendorable as-is."
  },
  "src/components/ui/status-breakdown.tsx": {
   "classification": "MIXED",
@@ -2842,7 +2842,7 @@
  "src/components/ui/table/column-visibility-utils.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure visibility math plus persistence, and the model citizen for the storage-key rule: all three localStorage calls (:144, :165, :180) go through `getVisibilityStorageKey` → `COLUMN_VISIBILITY_PREFIX` → `uiStorageKey(\"col-vis\")` at :50, with a comment explaining why the trailing `:` is concatenated rather than supplied by the helper. The `@/lib/ui-storage` import is the sanctioned one. Column-id e"
+  "reason": "Pure visibility math plus persistence, and the model citizen for the storage-key rule: all three localStorage calls (:144, :165, :180) go through `getVisibilityStorageKey` → `COLUMN_VISIBILITY_PREFIX` → `uiStorageKey(\"col-vis\")` at :50, with a comment explaining why the trailing `:` is concatenated rather than supplied by the helper. The `@/lib/ui-storage` import is the sanctioned one. Column-id examples in the JSDoc are generic table vocabulary — `code`/`name`/`status`/`owner`/`updatedAt` at :20 and the table ids \"members\"/\"items\" at :55 — so no GRC noun, and the module renders nothing, so no copy and no brand-as-text either. Clean on all five."
  },
  "src/components/ui/table/columns-dropdown.tsx": {
   "classification": "GENERIC",
@@ -2882,17 +2882,17 @@
  "src/components/ui/table/pagination-controls.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Footer pagination. Every rendered string is next-intl (`t(\"table.viewing\")`, `t(\"table.of\")`, `t(\"table.items\")`, `t(\"table.previous\")`, `t(\"table.next\")` plus both aria labels at :97/:124/:132). `resourceName` has no default — it falls through to `t(\"table.items\")` at :112, so unlike pagination-utils.ts there is no hardcoded fallback. The English in the header comment is documentation of the rend"
+  "reason": "Footer pagination. Every rendered string is next-intl (`t(\"table.viewing\")`, `t(\"table.of\")`, `t(\"table.items\")`, `t(\"table.previous\")`, `t(\"table.next\")` plus all three aria labels at :97/:124/:132). `resourceName` has no default — it falls through to `t(\"table.items\")` at :112, so unlike pagination-utils.ts there is no hardcoded fallback. The English in the header comment is documentation of the rendered output, not copy: the `Viewing X–Y of Z items` sentence at :6 and the `resourceName` usage example at :15, with the same sentence recurring at :100 — an inline JSX comment beside the block it describes, not header prose. Nothing mechanical trips either: the imports are `next-intl`, `next/link`, `./table-utils` and `./pagination-utils` (:23-32), none from `src/app-layer` or a domain `src/lib`; no storage key; and the colours are background, border and content tokens only, the `before:` scroll-fade gradient at :83-91 included, so no brand token rides a text channel. Vendorable as-is."
  },
  "src/components/ui/table/pagination-utils.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Pure pagination arithmetic (getPageCount/getPageRange/getPaginationState/clampPage) — all generic and React-free. The exception is `formatPageRange`, which builds display text from hardcoded English: a copy-parameter default of \"items\" and the literal connective \" of \" inside the template. Note for the follow-up: this function has ZERO callers in src (grep: only its own definition plus tests/unit/"
+  "reason": "Pure pagination arithmetic (getPageCount/getPageRange/getPaginationState/clampPage) — all generic and React-free. The exception is `formatPageRange`, which builds display text from hardcoded English: a copy-parameter default of \"items\" and the literal connective \" of \" inside the template. Note for the follow-up: this function has ZERO callers in src (grep: only its own definition at :129 plus `tests/unit/data-table.test.ts`), so the copy is unreachable from the product today and deleting the function would remove the coupling outright."
  },
  "src/components/ui/table/selection-toolbar.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Generic batch-action toolbar. All user-visible copy goes through next-intl (`t(\"table.selectedCount\")` etc.). The one coupling is the JSDoc usage block, which is written against the GRC Control entity. I judged `controls` (the prop at :153/:157/:299) and `aria-controls` as the UI-widget/attribute sense, NOT the GRC noun, and did not report them — but `BatchAction<Control>` at :29 IS the GRC noun ("
+  "reason": "Generic batch-action toolbar. All user-visible copy goes through next-intl (`t(\"table.selectedCount\")` etc.). The one coupling is the JSDoc usage block, which is written against the GRC Control entity. I judged `controls` (the prop at :153/:157/:299) and `aria-controls` as the UI-widget/attribute sense, NOT the GRC noun, and did not report them — but `BatchAction<Control>` at :29 IS the GRC noun (it is the usage example's type argument, continued by `exportControls` at :33), and that is the coupling reported: comment prose, removable by generalising the example."
  },
  "src/components/ui/table/sort-rows.ts": {
   "classification": "GENERIC",
@@ -2912,7 +2912,7 @@
  "src/components/ui/table/table.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The 1745-line TanStack wrapper, and clean on all five axes — which surprised me. Every user-visible string routes through `useTranslations(\"common\")` (:261, :352, :904, :1024-1025, :1282, :1447, :1628-1669); zero text-brand/text-[var(--brand)] (brand appears only as inset box-shadow and background at :114/:119/:121); no localStorage/sessionStorage/cookie; imports are only next-intl, tanstack, moti"
+  "reason": "The 1745-line TanStack wrapper, and clean on all five axes — which surprised me. Every user-visible string routes through `useTranslations(\"common\")` (:261, :352, :904, :1024-1025, :1282, :1447, :1628-1669); zero text-brand/text-[var(--brand)] (brand rides only non-text channels: inset box-shadow at :114/:121, background at :119 and on the select checkboxes at :265/:356, and a focus-visible ring at :1293); no localStorage/sessionStorage/cookie; imports are only next-intl, tanstack, motion/react, next/link, react and sibling `src/components/ui` files (`../button`, `../checkbox`, `../error-state`, `../icons`, `../tooltip`) plus its own `./` modules — not one `@/` path in the file, so even `cn` arrives from `./table-utils` and a domain-import is structurally impossible here. No GRC vocabulary either: `control` at :248 is the form-control sense, `controls` at :1266 is a prop name, and the only entity nouns the table can paint come from the caller's `resourceName()` pluraliser (:1628, :1651). One reading note: the expand/collapse labels cross a rename — `expandRowLabel`/`collapseRowLabel` at :1024-1025 are passed as `expandLabel`/`collapseLabel` at :1560-1561 and consumed at :904 — so this axis cannot be settled by a token grep, only by following the thread."
  },
  "src/components/ui/table/types.ts": {
   "classification": "GENERIC",
@@ -2962,12 +2962,12 @@
  "src/components/ui/tooltip.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Radix Tooltip plus InfoTooltip and DynamicTooltipWrapper. Copy via `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"moreInformation\")}`, with an explicit comment at :238-239 on why the default cannot be a parameter literal. All content/title/shortcut come from callers. Judged NOT domain-props: the JSDoc example `title=\"Scheduled review\"` / `\"A periodic review keeps this record current"
+  "reason": "Radix Tooltip plus InfoTooltip and DynamicTooltipWrapper. Copy via `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"moreInformation\")}`, with an explicit comment at :238-239 on why the default cannot be a parameter literal. All content/title/shortcut come from callers. Judged NOT domain-props: the JSDoc example `title=\"Scheduled review\"` / `content=\"A periodic review keeps this record current.\"` at :17-18 is illustrative comment prose, not a prop default or a runtime string — nothing in the component carries it."
  },
  "src/components/ui/typography.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Heading/Eyebrow/Caption/TextLink. Notable as the slice's exemplar for the brand-as-text rule: :157-181 is a docblock explaining that every brand link tone used to paint `text-[var(--brand-default)]` (~4:1, failing AA) and now paints `text-content-brand`, guarded on the ratio by tests/guardrails/token-contrast-content-brand.test.ts. The `text-[var(--brand-default)]` at :160 is inside that prose, no"
+  "reason": "Heading/Eyebrow/Caption/TextLink. Notable as the slice's exemplar for the brand-as-text rule: :157-181 is a docblock explaining that every brand link tone used to paint `text-[var(--brand-default)]` (~4:1, failing AA) and now paints `text-content-brand`, guarded on the ratio by tests/guardrails/token-contrast-content-brand.test.ts. The `text-[var(--brand-default)]` at :160 is inside that prose, not in a class string, so rule 4 reads NON-FINDING: `codeOf` masks comments before `BRAND_AS_TEXT` runs, the same seam that keeps `use-local-storage.ts` off the storage axis — without it the file that documents the rule would be reported as breaching it. The live tones at :186-205 are all `text-content-*`, and the `bg-[var(--brand-subtle)]` at :179 is prose about fills, which owe 1.4.11's 3:1 rather than 1.4.3's 4.5:1. Clean on the other four: the primitives render `children`, so there is no copy to translate, no GRC vocabulary and no storage, and the only `@/lib` import is `cn` at :33 — permitted by the `NEUTRAL_LIB` allowlist, not by being a shared-UI root."
  },
  "src/components/ui/undo-toast.tsx": {
   "classification": "GENERIC",
