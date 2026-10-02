@@ -228,7 +228,66 @@ const ROOT = path.resolve(__dirname, '../..');
 // `ls tests/rendered/*.test.tsx | wc -l` = 343, not to a projected total: the
 // floor's other tooth is `count >= floor`, so a floor above the live count
 // fails on the very PR that raises it.
-const RENDERED_TEST_FLOOR = 343;
+// ADJUSTED 343 -> 340 (2026-10-02, #3079, the phase 4 xyflow deletion).
+//
+// The documented exception this ratchet contemplates — "if a test was
+// legitimately merged or renamed, account for it" — used once before, when
+// `canvas-help-strip` was retired alongside its component. Same shape here, six
+// times over, so the accounting is per file rather than a total.
+//
+// SIX rendered suites were retired with the renderer they tested. Four had their
+// coverage already standing on the tldraw side; two did not, and those two are
+// the new files below:
+//
+//   canvas-change-events.test.tsx
+//       `useCanvasChangeEmitter` had ZERO subscribers — its own docblock said
+//       autosave "still lives on its own markDirty channel". A seam, not a
+//       feature. Nothing to replace.
+//
+//   canvas-export-menu.test.tsx          -> tldraw-export-menu.test.tsx
+//       Already present, and stronger: it mounts the component and checks the
+//       trigger's disabled states against a real editor rather than matching
+//       source.
+//
+//   process-edge.test.tsx                -> process-edge-variant-strokes.test.tsx
+//       Written for #3090, which is the gap this test's deletion EXPOSED: the
+//       tldraw edge rendered one stroke for all three variants. The replacement
+//       asserts the rendered attributes per variant, and the label (#3093).
+//
+//   process-typed-node.test.tsx          -> process-shape-render.test.tsx
+//       Already present. Generates its cases from `NODE_TAXONOMY`, so a kind
+//       added later is covered the day it is added.
+//
+//   use-canvas-history.test.tsx          -> tldraw-arrow-becomes-an-edge.test.tsx
+//       The xyflow undo STACK is superseded, not ported — tldraw owns history,
+//       and two stacks would disagree about what an undo is. What still needed
+//       covering is that APP-originated mutations are undoable at all, which
+//       #3067 proved is not free: the conversion was unrecorded until wrapped in
+//       `editor.run`. That suite's `describe('undo')` is where it lives.
+//
+//   canvas-export-binds-to-the-mounted-canvas.test.tsx
+//       -> tldraw-selection-adapter-against-a-live-store.test.tsx (NEW)
+//       Not a like-for-like port. The original asserted that the export resolved
+//       against the real mounted DOM subtree; tldraw takes an editor and there
+//       is no subtree to resolve. The PROPERTY worth keeping was "the thing the
+//       panel is handed is the live one", and the gap that actually existed was
+//       the selection adapter: its unit test drives a hand-written `fakeEditor`,
+//       which cannot say whether a REAL editor's shapes carry the fields the
+//       adapter reads. That is what the new file does.
+//
+// Plus one more new suite with no deleted counterpart, added because the
+// cutover is when it matters:
+//
+//   processes-page-mounts-the-real-canvas.test.tsx (NEW)
+//       Every other suite here mocks the layer below it, so nothing asserted the
+//       chain CONNECTS. `visual-editor-reachability` and `p5a` both exist
+//       because a component shipped unmounted; removing the renderer-selecting
+//       flag leaves one path to one canvas, and if it is wrong the page renders
+//       an empty frame for every tenant.
+//
+// 340 is the live count, not 343 with three points of headroom. The floor
+// resumes its upward-only ratchet from here on the next addition.
+const RENDERED_TEST_FLOOR = 340;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
