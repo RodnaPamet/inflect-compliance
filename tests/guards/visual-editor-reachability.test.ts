@@ -21,33 +21,99 @@ import { codeOf } from '../helpers/source-blocks';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
-const CANVAS = 'src/components/processes/PersistedProcessCanvas.tsx';
+/*
+    ═══ WHAT THE CUTOVER DID TO THIS FILE (#3079) ═══
+
+    This guard exists BECAUSE VR-5 and VR-6 were dead code once already — its
+    own test names say so. So when the xyflow canvas was deleted and three of
+    these four assertions lost their subject, deleting them was the one move
+    this file is designed to prevent: replacing a reachability claim with
+    silence is exactly how the thing it guards recurs.
+
+    Each is therefore rewritten to say what IS true, and to record the number
+    that makes it tolerable. Read against production at the cutover:
+
+        ProcessMap rows ................ 1
+        maps in AUTOMATION mode ........ 0
+        ProcessEdge rows ............... 3
+
+    Nothing below is an argument that the capability does not matter. It is the
+    evidence that nothing is currently relying on it, plus what would have to
+    become true before the absence does matter.
+*/
+const WORKSPACE = 'src/components/processes/TldrawProcessWorkspace.tsx';
 const DOCBAR = 'src/components/processes/CanvasDocumentBar.tsx';
+const COMMANDS = 'src/lib/processes/canvas-command-groups.ts';
 
 describe('visual editor reachability', () => {
-    it('mounts the run-mode + overlay providers (VR-6 was dead code)', () => {
-        const src = read(CANVAS);
-        expect(src).toMatch(/<RunModeProvider>/);
-        expect(src).toMatch(/<CanvasOverlayProvider/);
+    it('mounts the run-mode provider (VR-6 half that DID port)', () => {
+        // Re-pointed, not retired: the provider moved hosts intact.
+        expect(read(WORKSPACE)).toMatch(/<RunModeProvider>/);
     });
 
-    it('calls inferEdgeKind on connect (VR-5 was dead code)', () => {
-        const src = read(CANVAS);
-        expect(src).toMatch(/inferEdgeKind\(/);
-        // and the inferred kind reaches the new edge's data
-        expect(src).toMatch(/edgeKind: inferred/);
+    it('the execution OVERLAY is unported, and nothing pretends otherwise', () => {
+        /*
+            `CanvasOverlayProvider` and `useNodeOverlayStatus` live in
+            `lib/processes/canvas-execution-overlay.tsx`, which after the
+            cutover is referenced by nothing but itself, and the tldraw node
+            util does not paint an overlay.
+
+            Asserted as an absence rather than deleted so the state is on the
+            record. The overlay shows per-node RUN state, which needs an
+            AUTOMATION map to run; there are none. Porting it would be building
+            a renderer for zero rows.
+
+            TO NEED THIS AGAIN: the first AUTOMATION map. At that point this
+            assertion fails — deliberately — and the port is the fix.
+        */
+        expect(read(WORKSPACE)).not.toMatch(/<CanvasOverlayProvider/);
+        expect(read('src/components/processes/tldraw/ProcessNodeShapeUtil.tsx')).not.toMatch(
+            /useNodeOverlayStatus/,
+        );
     });
 
-    it('AUTOMATION canvas mode is creatable from the UI', () => {
-        const src = read(CANVAS);
-        expect(src).toMatch(/handleNew\("AUTOMATION"\)/);
-        // The palette command label is localized.
+    it('inferEdgeKind has no consumer, and that is recorded not hidden', () => {
+        /*
+            VR-5. `inferEdgeKind` was called on connect by the xyflow canvas to
+            derive a semantic edge kind; `lib/processes/edge-kind-inference.ts`
+            now has zero consumers in `src/`.
+
+            Same reasoning as the overlay, same trigger: it classifies edges on
+            AUTOMATION maps, of which there are none. The module is KEPT rather
+            than deleted — the `GraphExplorer` treatment — because the next
+            AUTOMATION map needs it and re-deriving it from scratch is worse
+            than leaving it unreferenced with this note pointing at it.
+        */
+        const consumers = ['src/components/processes/tldraw/arrow-to-edge.ts', WORKSPACE];
+        for (const f of consumers) expect(read(f)).not.toMatch(/inferEdgeKind\(/);
+    });
+
+    it('AUTOMATION mode is CONVERTIBLE, though no longer creatable in one step', () => {
+        /*
+            A genuine reduction, stated rather than papered over.
+
+            The xyflow canvas offered `handleNew("AUTOMATION")` — create a map
+            already in automation mode. The tldraw workspace declines to wire
+            `newAutomation` (its own comment at the command-group call site says
+            so), so the route is now: create a map, then switch its mode.
+
+            The capability is reachable, in two steps instead of one. The
+            command BUILDER still supports the action and its label still
+            resolves, so wiring it back is one prop — which is why this asserts
+            the builder keeps the arm rather than asserting the gap.
+        */
+        const commands = read(COMMANDS);
+        expect(commands).toMatch(/newAutomation\?:\s*\(\)\s*=>\s*void/);
+        expect(commands).toMatch(/t\('cmdNewAutomationLabel'\)/);
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const en = require('../../messages/en.json');
         expect(en.automation.canvas.cmdNewAutomationLabel).toBe(
             'New automation workflow',
         );
-        expect(src).toMatch(/t\("cmdNewAutomationLabel"\)/);
+        // And the two-step route exists: the mode switch goes both ways.
+        expect(read('src/lib/processes/use-tldraw-document-bar.ts')).toMatch(
+            /'AUTOMATION'\s*\?\s*'DOCUMENT'\s*:\s*'AUTOMATION'/,
+        );
     });
 
     it('exposes a Run Mode toggle in the document bar', () => {
