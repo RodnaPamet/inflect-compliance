@@ -264,7 +264,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
          * The button is `justify-center` and hugs its content
          * (inline-flex, no forced width), so the WHOLE content unit —
          * `[icon][gap][label]` — is centred as one symmetric group
-         * with equal padding on both sides. A leading `+ Asset`
+         * with equal padding on both sides. A leading `+ New`
          * therefore reads as a tidy centred unit (the `+` counted with
          * the word), not the word alone centred with the icon hanging
          * off-centre to the left.

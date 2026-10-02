@@ -2,9 +2,11 @@
 
 > **Status: living design** — nothing is extracted. No file has moved, no import has changed and no
 > package exists. This document is the design record for #3046, and its central measured finding is
-> that the extractable set is **not** the 454 files `docs/_status/ui-core-classification.json`
-> records as `GENERIC`: it is **408**, because `GENERIC` is a per-file neutrality verdict and a
-> package needs a closed module graph. Everything true today is under
+> that the extractable set is **not** every file `docs/_status/ui-core-classification.json`
+> records as `GENERIC` (462 today): it is **426**, because `GENERIC` is a per-file neutrality
+> verdict and a package needs a closed module graph. It was 408 of 454 when this doc was written
+> — see [Update 2026-10-02](#update-2026-10-02--batch-1-of-the-blocker-neutralisation) for what
+> moved and which figures below are superseded. Everything true today is under
 > [Current state](#current-state--what-was-measured-and-how). The step order is under
 > [Roadmap](#roadmap--the-sequence-and-what-verifies-each-step).
 
@@ -24,6 +26,137 @@ Prerequisite check: #3046 lists "#3003 (T01–T08)". #3003 is closed with T03, T
 document calls a worked example is live at `src/components/layout/user-menu.tsx:88`
 (`items?: (props: { close: () => void }) => ReactNode`), with `USER_MENU_ITEM_CLASS` commented
 "Exported since T08 (#3003)". The parent's checkboxes are stale; the work is in.
+
+---
+
+## Update 2026-10-02 — batch 1 of the blocker neutralisation
+
+Nine of the direct blockers were neutralised and reclassified `GENERIC`, so several figures below
+are superseded. This section states what was **re-measured**; everything it does not list was not
+re-derived and the older figure stands only as a figure from `2b2348305`.
+
+First, the derivation below was **reproduced exactly** against `2b2348305` before anything changed
+— 454 GENERIC, 82 edges, 43 sources, 41 targets, 362 / 408 closed, 434 with every blocker promoted.
+Two notes on how to read those numbers, because both were ambiguous:
+
+- **82 is import-statement OCCURRENCES, not distinct source→target pairs.** The deduplicated pair
+  count at that commit was 74.
+- **434 is the STRICT model of "neutralise"** — a promoted blocker becomes `GENERIC` and must then
+  be import-closed on its own merits, like every other member. A looser model that waves the
+  promoted file through regardless of its own dependencies gives 475. The doc's `button.tsx`
+  buys 4 is the same under both.
+
+**What moved between `2b2348305` and the start of this batch.** #3098 reclassified
+`layout/ClientProviders.tsx` `GENERIC → MIXED` when the detector gained its `@/components` arm, so
+the live figures were already 453 GENERIC / 81 occurrences / 42 sources / **40** targets — not 43
+and 41.
+
+**Re-measured after this batch:**
+
+| | `2b2348305` | before batch | after batch |
+|---|---|---|---|
+| GENERIC / MIXED / COUPLED | 454 / 140 / 19 | 453 / 141 / 19 | **462 / 132 / 19** |
+| direct GENERIC→(MIXED\|COUPLED) edges (occurrences) | 82 | 81 | **59** |
+| …deduplicated source→target pairs | 74 | 73 | **53** |
+| distinct GENERIC sources / distinct blocker targets | 43 / 41 | 42 / 40 | **32 / 31** |
+| import-closed subset (4 neutral extras) | 408 | 408 | **426** |
+| ceiling if every direct blocker were neutralised | 434 | 434 | 434 |
+| population | 613 | 613 | 613 |
+
+The nine files are `ui/button.tsx`, `ui/filter/types.ts`, `ui/charts/types.ts`,
+`ui/hooks/use-threshold-load-more.ts`, `lib/hooks/use-zod-form.ts`, `ui/checklist-order.ts`,
+`ui/card-list/card-list.tsx`, `ui/dashboard-widgets/DashboardWidget.tsx` and
+`ui/date-picker/calendar.tsx`. Each one's map entry says what was removed.
+
+**The finding that matters more than the +18.** Every blocker with a non-zero marginal gain turned
+out to be `MIXED` for **prose** — a domain example or a brand name in a comment — and not for a
+mechanical coupling. Of the 40 blockers only 12 trip a mechanical detector at all, and **none of
+the 11 productive ones do**. So the `#3048` `domain-import` ceiling did **not** move: `codeOf()`
+masks comments at the read seam, which is exactly why these couplings were invisible to it in the
+first place. Live counts are unchanged at `domain-import` 46, `brand-as-text` 10, `storage-key` 1.
+A §5-style expectation that neutralisation and the ratchet descend together is wrong for this
+class of blocker.
+
+**The shape of the new closed set, re-measured:** 426 files / 29,805 lines — 333 files / 15,966
+lines of icons and **93 files / 13,839 lines** of real library (79 `components/ui` non-icon, 7
+`components/layout`, 7 `lib/hooks`, and still **0** `components/app-shell`).
+
+**§1's "No test file is in the set" is now FALSE, and §5.6's concern now bites.** The two
+`GENERIC` co-located tests fell out of the closure only because they tested `MIXED` hooks;
+neutralising those two hooks pulled both tests in. See the correction at §1 and at §5.6.
+
+**What this batch did NOT re-derive**, so the older figures stand unverified: the playerz overlap
+(§"The consumer" — the 38/21 split and the 59/494 manifest rows, which need the projectZ
+manifests), the token contract over the new 426 (§4 — the 45 names were stable across three
+populations, so a change is unlikely but unmeasured), §5.3's 173-file / 183-path test rewrite,
+§5.7's coverage denominator, and §7's lines-moved row.
+
+**The ranked remainder.** Only four of the 31 remaining blockers have a non-zero *individual*
+gain: `ui/table/pagination-utils.ts` (+3 — but its coupling is hardcoded English inside
+`formatPageRange`, which has zero callers in `src`, so the fix is a deletion plus a test change
+rather than a comment edit), `ui/card-list/card-list-card.tsx` (+2 — an English copy-parameter
+default that reaches the DOM as an `aria-label`, i.e. a real clause-1 fix),
+`layout/nav-bar.tsx` (+1 — a real default-value change, and #3100 is rewriting the file, and its
+map reason is one of the four at the 400-character cap that
+`tests/guards/ui-core-classification.test.ts` exempts by name, so editing it means deleting that
+exemption in the same diff), and `ui/filter/filter-definitions.ts` (+1, JSDoc only). The other 27 need a CLUSTER to
+move together, and two barrels dominate: `ui/hooks/index.ts` blocks `modal`, `popover`, `sheet`,
+`copy-button`, `animated-size-container`, `table/infinite-scroll-sentinel` and
+`table/use-columns-dropdown` (and, through `modal`, `confirm-dialog` and
+`app-shell/shortcut-help-overlay`); `ui/icons/index.tsx` blocks `accordion`, `checkbox`, `input`,
+`status-badge`, `combobox/virtualized-options`, `table/table.tsx` and `table/virtual-table-body`.
+**So the doc's claim that the consumer's 21 primitives are blocked on `button.tsx` was wrong on
+the cause** — `button.tsx` is now `GENERIC` and in the set, and those primitives are still out,
+behind the two barrels.
+
+**The highest-value item left is ONE import, and it is a real mechanical coupling.** The hooks
+barrel cannot close no matter how its prose is cleaned, because it re-exports
+`ui/hooks/use-celebration.ts`, whose *only* import is `@/lib/celebrations` — a genuine
+`domain-import`, the one mechanical coupling in the barrel's six files (the other five are
+prose-only `MIXED`, the same class as batch 1, and `hooks/index.ts` is a one-word comment fix).
+Measured: inverting that single edge and reclassifying the six takes the closed set **426 → 442
+(+16)** and brings in `modal`, `popover`, `sheet`, `confirm-dialog`, `copy-button`,
+`animated-size-container`, `ActionCluster`, `table/edit-columns-button`,
+`table/infinite-scroll-sentinel` and `app-shell/shortcut-help-overlay` — five of them on the
+consumer's most-leaned-on list. It is also the first blocker whose removal WOULD lower the #3048
+`domain-import` ceiling, 46 → 45.
+
+**442 is deliberately larger than the 434 ceiling in the table above, and the two are not in
+conflict.** 434 is the fixed point of *reclassifying* every direct blocker; it is a ceiling only on
+promotion. Inverting `@/lib/celebrations` deletes an EDGE instead, which is the operation
+reclassification cannot perform — the 434 figure's own "34 GENERIC files stay out, because the
+promoted blockers have non-`GENERIC` dependencies of their own" is exactly this edge, named.
+
+For contrast, measured on the same tree: promoting the barrel cluster *without* inverting that
+edge buys only **+4** (the barrel still falls out behind `use-celebration`), and the whole filter
+cluster of seven files buys **+2**, the date-picker cluster of four buys **0**, and the icons
+barrel alone buys **0**. Clusters are a poor trade; that one import is not.
+
+A second route exists and was deliberately NOT taken: each of the seven files importing the barrel
+pulls exactly ONE hook from it, and every one of those is already `GENERIC`, so rewriting seven
+import specifiers to name the hook directly reaches **436** with nothing reclassified. Against it:
+CLAUDE.md's Epic 60 convention is "import shared hooks from `@/components/ui/hooks` (barrel)", and
+14 test files `jest.mock('@/components/ui/hooks')` — a deep import escapes those mocks silently,
+which is a behaviour change in the tests rather than in the product. It needs an owner decision on
+the convention, not a quiet refactor, and it is worth less than the inversion anyway.
+
+**One blocker needs no work at all — its map entry is simply stale.**
+`ui/checklist-gear-button.tsx` is `MIXED` on a reason that names exactly one coupling, "One brand
+token is used as text", and #3102 removed it (the file's brand tokens are now
+`text-content-brand`, a background and a ring). Its marginal gain today is 0, so it was left for
+whichever batch takes the filter cluster, but it is a reclassification with no source edit.
+
+**And one `domain-import` hit in the live 46 is a detector false positive the map already
+records.** `ui/charts/layout.ts` trips the kind on `@/lib/format-date`, and its own entry says
+"(`@/lib/format-date` is a generic util, not a domain module.)". `format-date` is the single most
+common coupled specifier in the live count — **6 of the 46** files import it, more than any other,
+and for **five of those six it is the ONLY coupled specifier** (`TrendCard`, `charts/layout`,
+`date-picker/date-picker`, `date-picker/date-range-picker`, `timestamp-tooltip`; only
+`layout/notifications-bell` has another, `@/lib/auth`). So if the map's judgement is right, the
+honest reading of 46 is **41**. Resolving it means adding `format-date` to
+`NEUTRAL_LIB` in `tests/helpers/shared-ui-couplings.ts`, which WIDENS an allowlist the helper's
+own docstring argues for keeping narrow, so it is a decision rather than a tidy-up and is recorded
+here rather than taken.
 
 ---
 
@@ -197,23 +330,38 @@ packages/ui/
     index.ts              the public surface
 ```
 
-63 + 333 + 7 + 5 = 408, and 63 + 7 + 5 = the 75 non-icon modules. **No test file is in the set** —
-both of the classification map's two `GENERIC` co-located tests
+63 + 333 + 7 + 5 = 408, and 63 + 7 + 5 = the 75 non-icon modules. (Superseded: the split is
+79 + 333 + 7 + 7 = 426, 93 non-icon — see
+[Update 2026-10-02](#update-2026-10-02--batch-1-of-the-blocker-neutralisation).)
+
+**CORRECTED 2026-10-02 — there ARE two test files in the set, and §5.6's `testMatch` concern
+bites.** This paragraph used to say "No test file is in the set", on the reasoning that both of the
+classification map's two `GENERIC` co-located tests
 (`src/components/ui/hooks/__tests__/use-threshold-load-more.test.tsx`,
-`src/lib/hooks/__tests__/use-zod-form.test.tsx`) test `MIXED` hooks and fall out of the closure, so
-step 1 ships no tests and §5.6's `testMatch` concern does not bite in step 1.
+`src/lib/hooks/__tests__/use-zod-form.test.tsx`) test `MIXED` hooks and so fall out of the closure.
+That reasoning was sound and its premise has since gone: both hooks were neutralised in batch 1, so
+both tests are now inside the closed set. Step 1 therefore does ship tests, and the
+`testPathIgnorePatterns` entry §5.6 recommends adding "at step 1 rather than discovering it later"
+is now load-bearing rather than precautionary.
 
 `src/components/app-shell/shortcut-help-overlay.tsx` is the root's only file and it is `GENERIC`,
-but it imports `src/components/ui/modal.tsx`, which falls out of the closure behind `button.tsx`.
-So `src/components/app-shell` contributes **nothing** in step 1 — the one-file root the issue's table
-lists as trivially extractable is in fact blocked on the hardest file in the library.
+but it imports `src/components/ui/modal.tsx`, which falls out of the closure. So
+`src/components/app-shell` contributes **nothing** in step 1. The blame has moved: this said
+"behind `button.tsx`", and `button.tsx` is `GENERIC` and in the set since batch 1 — `modal.tsx`
+falls out behind the `src/components/ui/hooks/index.ts` barrel instead, for one `useMediaQuery`
+import.
 
-**What happens to the 140 MIXED.** They stay in `src/`. 58 of them are paths playerz tracks and 5
-are paths it has already copied, so "they stay" means the vendoring machinery stays too, for those
-5 files, until they are neutralised one at a time under the existing #3048 ratchet (whose whole
-point is that the MIXED coupling totals may only fall: `domain-import` 41, `brand-as-text` 16,
-`storage-key` 1). The package does not wait for them; it ships without them and grows as the ratchet
-descends.
+**What happens to the MIXED set** (140 then, 132 now). They stay in `src/`. 58 of them are paths
+playerz tracks and 5 are paths it has already copied, so "they stay" means the vendoring machinery
+stays too, for those 5 files, until they are neutralised one at a time. The #3048 ratchet is the
+enforcement that they do not get WORSE — read its ceilings from
+`tests/guards/shared-ui-coupling-ratchet.test.ts`, not from here: the `domain-import` 41 /
+`brand-as-text` 16 / `storage-key` 1 quoted in this sentence was already two re-seatings stale
+(#3096 took brand-as-text to 10, #3098 took domain-import to 46) and this is a count stored beside
+its own source, which is the mistake `doc-classification.json`'s deleted `counts` header records.
+And the ratchet is not the *driver*: batch 1 removed nine blockers and moved none of the three
+counts, because its couplings were all prose and `codeOf()` masks comments. The package grows when a
+blocker stops being `MIXED`, which is not the same event as a ceiling falling.
 
 **What happens to the 19 COUPLED.** Nothing. They are product composition by design —
 `src/components/layout/AppShell.tsx` is the worked example, and its own in-file T07 comment
@@ -421,10 +569,12 @@ which hides a broken install.
 `349-352` (jsdom) and `559-562` (flue). Module resolution for `@inflect/ui` goes through
 `node_modules`, so no new mapper is needed *if* the workspace is installed; but the node project's
 `testMatch: ['**/*.test.ts', '**/*.test.js']` will start collecting any test file inside
-`packages/ui`, under the node environment, where a `.tsx` render test does not belong. Step 1 is
-safe because the set contains no test file at all (§1), but the moment one is written there it is
-collected by the wrong project — so add the `testPathIgnorePatterns` entry at step 1 rather than
-discovering it later.
+`packages/ui`, under the node environment, where a `.tsx` render test does not belong. **No longer
+precautionary (2026-10-02):** this said step 1 was safe because the set contained no test file at
+all, which was true of a closure of 408 and is false of 426 — batch 1 neutralised the two `MIXED`
+hooks that were keeping their own `GENERIC` co-located tests out, so the set now contains
+`use-threshold-load-more.test.tsx` and `use-zod-form.test.tsx`, both `.tsx`. The
+`testPathIgnorePatterns` entry has to land with step 1.
 
 **5.7 Coverage denominator and the `./src/lib/` floor.** `collectCoverageFrom` excludes
 `src/components/**` entirely, so the 70 component files cost nothing. But it *includes*

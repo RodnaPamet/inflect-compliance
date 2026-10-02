@@ -68,9 +68,9 @@ export function reconcileOrder(
 ): string[] {
     // Defensive: a persisted value from BEFORE the gear shipped is a
     // TanStack VisibilityState OBJECT (`{ id: bool }`), not an order array
-    // — reusing the `inflect:col-vis:<entity>` key means old browsers hand
-    // us that shape. Fall back to the default order rather than crashing on
-    // `.filter` ("e.filter is not a function"). The next toggle persists the
+    // — the caller reuses its existing column-visibility storage key, so old
+    // browsers hand us that shape. Fall back to the default order rather than
+    // crashing on `.filter` ("e.filter is not a function"). The next toggle persists the
     // new array shape, migrating the user forward.
     if (!Array.isArray(order)) {
         return defs.map((d) => d.id);
