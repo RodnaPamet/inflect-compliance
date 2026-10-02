@@ -413,6 +413,11 @@ export function TldrawProcessCanvas({
                             props: {
                                 edgeKey: b.props.edgeKey,
                                 edgeKind: b.props.edgeKind,
+                                // `?? ''` because the binding's label is
+                                // NULLABLE and the shape prop is not — see the
+                                // prop's own note on why the line does not
+                                // carry the null.
+                                label: b.props.labelOverride ?? '',
                                 dx: g.dx,
                                 dy: g.dy,
                             },

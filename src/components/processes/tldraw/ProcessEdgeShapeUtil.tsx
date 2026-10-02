@@ -41,7 +41,7 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
     static override props = processEdgeShapeProps;
 
     override getDefaultProps(): ProcessEdgeShape['props'] {
-        return { edgeKey: '', edgeKind: DEFAULT_EDGE_KIND, dx: 0, dy: 0 };
+        return { edgeKey: '', edgeKind: DEFAULT_EDGE_KIND, label: '', dx: 0, dy: 0 };
     }
 
     /**
@@ -90,7 +90,7 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
     }
 
     override component(shape: ProcessEdgeShape) {
-        const { dx, dy, edgeKind } = shape.props;
+        const { dx, dy, edgeKind, label } = shape.props;
         // Flow is solid; conditional dashes; reference dots. Spread rather than
         // branched inline so the three cases live in one pure, tested function.
         const variantStroke = edgeStrokeFor(edgeKind);
@@ -124,6 +124,44 @@ export class ProcessEdgeShapeUtil extends ShapeUtil<ProcessEdgeShape> {
                         {...variantStroke}
                     />
                 </svg>
+                {/*
+                    The LABEL, at the line's midpoint (#3093).
+
+                    `labelOverride` was stored, editable, applied and persisted
+                    and drawn nowhere: a user typed a label on an edge, it
+                    saved, it survived a reload, and the canvas never showed
+                    it. The inspector even offers a clear button for it.
+
+                    Outside the `<svg>` on purpose. An SVG `<text>` cannot wrap
+                    or ellipsize, so a long label would run across the map; a
+                    div takes the same type ramp as the node labels and can be
+                    bounded. It is also why this is not `aria-hidden` like the
+                    line is — the line is decoration, the label is content.
+
+                    `translate(-50%, -50%)` after the midpoint offset so the
+                    text is CENTRED on the line rather than hanging below and
+                    right of it, which is what positioning alone would give.
+
+                    Empty renders nothing at all rather than an empty box: an
+                    unlabelled edge is the common case and a zero-height
+                    element at every midpoint would still take a hit-test.
+                */}
+                {label !== '' && (
+                    <div
+                        data-process-edge-label={label}
+                        style={{
+                            position: 'absolute',
+                            left: dx / 2,
+                            top: dy / 2,
+                            transform: 'translate(-50%, -50%)',
+                            maxWidth: 160,
+                            pointerEvents: 'none',
+                        }}
+                        className="truncate rounded-[3px] bg-canvas-frame px-1 text-[10px] leading-4 text-content-muted"
+                    >
+                        {label}
+                    </div>
+                )}
             </HTMLContainer>
         );
     }

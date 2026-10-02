@@ -279,16 +279,20 @@ describe('a variant change also redraws the line', () => {
         expect(f.shapeUpdates[0]!.id).not.toBe('binding:b1');
     });
 
-    it('a label-only change leaves the line ALONE', () => {
-        // Teeth for the `patch.variant !== undefined` guard. Without it every
-        // edge edit would rewrite the line's kind to undefined, which a
-        // validated record rejects — a label edit throwing on an unrelated
-        // field.
+    it('writes ONLY the variant, leaving the label prop untouched', () => {
+        // This assertion used to read "a label-only change leaves the line
+        // ALONE", which was true while the variant was the only mirrored prop
+        // and became false the moment the label started mirroring too (#3093).
+        // Its job was teeth for the `!== undefined` guards — that every edge
+        // edit must not rewrite an unrelated line prop to `undefined`, which a
+        // `T.string` record rejects. That job now belongs to the controls-only
+        // case below, and what is worth asserting here is the narrower claim
+        // the patch builder actually makes.
         const f = fakeEditor([LINE_SHAPE]);
         const h = renderHook(() => useTldrawSelection(f.editor as never));
-        act(() => h.result.current.onEdgeUpdate('e1', { label: 'approves' }));
-        expect(f.bindingUpdates).toHaveLength(1);
-        expect(f.shapeUpdates).toHaveLength(0);
+        act(() => h.result.current.onEdgeUpdate('e1', { variant: 'conditional' }));
+        expect(f.shapeUpdates).toHaveLength(1);
+        expect(f.shapeUpdates[0]!.props).toEqual({ edgeKind: 'conditional' });
     });
 
     it('and an unknown edge key touches neither record', () => {
@@ -296,6 +300,57 @@ describe('a variant change also redraws the line', () => {
         const h = renderHook(() => useTldrawSelection(f.editor as never));
         act(() => h.result.current.onEdgeUpdate('nope', { variant: 'reference' }));
         expect(f.bindingUpdates).toHaveLength(0);
+        expect(f.shapeUpdates).toHaveLength(0);
+    });
+});
+
+/** The label is the second mirrored prop, and clears are the interesting case. */
+describe('a label change also redraws the line (#3093)', () => {
+    it('writes the new label to the line', () => {
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('e1', { label: 'approves' }));
+        expect(f.shapeUpdates[0]).toMatchObject({ props: { label: 'approves' } });
+    });
+
+    it('a NULL label clears the line to empty, not to null', () => {
+        // `null` means CLEAR on the binding, whose column is nullable. The
+        // line's prop is `T.string`, so a null written through would fail
+        // validation on a record tldraw is about to re-render.
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('e1', { label: null }));
+        expect(f.bindingUpdates[0]).toMatchObject({ props: { labelOverride: null } });
+        expect(f.shapeUpdates[0]).toMatchObject({ props: { label: '' } });
+    });
+
+    it("an EMPTY-STRING label is also a clear, not a no-op", () => {
+        // `?? ''` and not a truthiness check: `''` is falsy, and a falsy test
+        // would skip the line update and leave the old label drawn.
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('e1', { label: '' }));
+        expect(f.shapeUpdates).toHaveLength(1);
+        expect(f.shapeUpdates[0]).toMatchObject({ props: { label: '' } });
+    });
+
+    it('a label AND a variant together are ONE shape update, so one undo', () => {
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() =>
+            h.result.current.onEdgeUpdate('e1', { label: 'if rejected', variant: 'conditional' }),
+        );
+        expect(f.shapeUpdates).toHaveLength(1);
+        expect(f.shapeUpdates[0]).toMatchObject({
+            props: { label: 'if rejected', edgeKind: 'conditional' },
+        });
+    });
+
+    it('a controls-only change still leaves the line alone', () => {
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('e1', { controls: [] }));
+        expect(f.bindingUpdates).toHaveLength(1);
         expect(f.shapeUpdates).toHaveLength(0);
     });
 });

@@ -80,6 +80,20 @@ export type ProcessEdgeShapeProps = {
      * therefore updates this alongside it.
      */
     edgeKind: string;
+    /**
+     * The edge's label, copied from the binding's `labelOverride`.
+     *
+     * Here for the same reason as `edgeKind` and with the same lifecycle: the
+     * binding is not cheaply findable from this line, the value is re-derived
+     * on every load, and nothing persists this copy.
+     *
+     * `''` rather than `null` for the empty case. The props are validated by
+     * `T.string`, and a nullable prop would make every reader ask the same
+     * question twice — "is it absent, or is it empty" — for two states that
+     * render identically. `labelOverride` stays nullable at rest, where the
+     * distinction between "never set" and "cleared" is the inspector's.
+     */
+    label: string;
     /** Offset from this shape's origin to the far endpoint. Derived. */
     dx: number;
     dy: number;
@@ -93,6 +107,7 @@ export type ProcessEdgeShape = TLBaseShape<
 export const processEdgeShapeProps: RecordProps<ProcessEdgeShape> = {
     edgeKey: T.string,
     edgeKind: T.string,
+    label: T.string,
     dx: T.number,
     dy: T.number,
 };

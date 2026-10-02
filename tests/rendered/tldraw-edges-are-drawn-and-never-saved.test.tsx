@@ -77,7 +77,7 @@ function lines(editor: Editor) {
             (r) =>
                 r.typeName === 'shape' &&
                 (r as { type?: string }).type === PROCESS_EDGE_SHAPE_TYPE,
-        ) as Array<{ id: string; x: number; y: number; props: { dx: number; dy: number; edgeKey: string; edgeKind: string } }>;
+        ) as Array<{ id: string; x: number; y: number; props: { dx: number; dy: number; edgeKey: string; edgeKind: string; label: string } }>;
 }
 
 describe('an edge is drawn', () => {
@@ -124,6 +124,25 @@ describe('an edge is drawn', () => {
             edges: [{ ...ROWS.edges[0]!, edgeKind: 'reference' }],
         });
         expect(lines(editor)[0]!.props.edgeKind).toBe('reference');
+    });
+
+    it("carrying the row's label too, so it is drawable (#3093)", async () => {
+        const editor = await mount({
+            nodes: ROWS.nodes,
+            edges: [{ ...ROWS.edges[0]!, labelOverride: 'approves' }],
+        });
+        expect(lines(editor)[0]!.props.label).toBe('approves');
+    });
+
+    it('and a NULL labelOverride becomes the empty string, not undefined', async () => {
+        // The binding's label is nullable and the line's is not. An undefined
+        // reaching a `T.string` prop is a validation failure on load, which
+        // would take the whole map down rather than one label.
+        const editor = await mount({
+            nodes: ROWS.nodes,
+            edges: [{ ...ROWS.edges[0]!, labelOverride: null }],
+        });
+        expect(lines(editor)[0]!.props.label).toBe('');
     });
 });
 
