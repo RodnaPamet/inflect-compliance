@@ -790,7 +790,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
 // 15842 characters to EOF where the section is 800, and a `.toLowerCase()`
 // over a whole 702-line runbook that is now over one playbook.
 /**
- * RAISED 1443 -> 1447 on 2026-10-02 (#3079, the phase 4 xyflow deletion), and
+ * RAISED 1443 -> 1445 on 2026-10-02 (#3079, the phase 4 xyflow deletion), and
  * recorded as a finding because a rise here is one.
  *
  * ── The cause is architectural, not an assertion getting lazier ──────
@@ -832,8 +832,21 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
  * Three baselines moving down and one up is the same shape as the 2026-09-06
  * entry above, and for the same reason: a sweep that relocates assertions pays
  * for its own residue elsewhere.
+ *
+ * ── RE-MEASURED at 1445, and the reason is a lesson about WHEN ──────
+ *
+ * This said 1447, measured on the merged tree. Then CI's shard 2/4 found a
+ * suite reading the deleted canvas by PATH STRING rather than by import, and
+ * re-pointing it to construct-bound reads (`use-tldraw-canvas-autosave` and
+ * `tldraw-save` instead of one whole-file read of a 2,504-line component) paid
+ * down two more. 1447 became stale slack the sentinel correctly refused.
+ *
+ * The entries above all say "RE-MEASURE BEFORE MERGE" about concurrent
+ * branches. This is the same rule at a finer grain: before merge means after
+ * the LAST edit, not after the merge commit. Measuring once and then continuing
+ * to edit leaves a number that was true and no longer is.
  */
-const UNANALYSABLE_READ_BASELINE = 1447;
+const UNANALYSABLE_READ_BASELINE = 1445;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
