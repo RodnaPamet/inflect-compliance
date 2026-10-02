@@ -25,7 +25,7 @@
  *   - `font-medium text-content-emphasis text-sm` — the locked
  *     visual signature for "this is the row's identifier."
  *   - When `href` is provided, wraps in `<Link>` with the canonical
- *     hover transition (`hover:text-[var(--brand-default)]`).
+ *     hover transition (`hover:text-content-brand`).
  *   - When `href` is omitted, renders a `<span>` — the row's
  *     `onRowClick` carries the page-navigation contract for
  *     entire-row click targets (Risks / Assets / Findings).
@@ -68,7 +68,7 @@ const TITLE_CELL_BASE =
     'font-medium text-content-emphasis text-sm';
 
 const TITLE_CELL_LINK_HOVER =
-    'hover:text-[var(--brand-default)] transition-colors duration-150 ease-out';
+    'hover:text-content-brand transition-colors duration-150 ease-out';
 
 /**
  * Row-level hover tint applied on the **no-href** branch. When the
@@ -81,7 +81,7 @@ const TITLE_CELL_LINK_HOVER =
  * href branch already covers.
  */
 const TITLE_CELL_ROW_HOVER =
-    'group-hover/row:text-[var(--brand-default)] transition-colors duration-150 ease-out';
+    'group-hover/row:text-content-brand transition-colors duration-150 ease-out';
 
 export function TableTitleCell({
     children,
