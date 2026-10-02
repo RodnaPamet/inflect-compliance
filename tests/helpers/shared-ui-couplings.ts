@@ -51,7 +51,28 @@ const SEAM = /uiStorageKey|uiCookieName/;
  * 1.4.11's 3:1, which 4.03:1 already clears.
  */
 const BRAND_AS_TEXT = /text-brand-[\w-]+|text-\[var\(--brand-[\w-]+\)\]/;
-const IMPORT = /from\s+['"]@\/(app-layer|lib)\/([\w.-]+)/g;
+/**
+ * The shared-component namespaces a file in the roots may import from. There is
+ * no allowlist beyond the roots themselves, and that asymmetry with
+ * `NEUTRAL_LIB` is the point: `@/lib` holds genuinely neutral utilities every
+ * shared file needs, whereas an `@/components/<x>` outside these three is by
+ * construction a component NOBODY AUDITED — the classification map covers only
+ * `SHARED_UI_ROOTS`, so such a target has no entry at all. Carving out
+ * `theme` or `icons` here would be asserting they are neutral when no pass has
+ * ever looked at them.
+ */
+const SHARED_COMPONENT_DIRS = new Set(['ui', 'layout', 'app-shell']);
+
+/**
+ * `@/app-layer/...`, `@/lib/<domain>` and `@/components/<non-shared>`.
+ *
+ * The `components` arm was MISSING until #3098, and the gap was silent: a file
+ * could reach the rest of the product through `@/components/` and still be
+ * recorded GENERIC — the precise claim a vendoring consumer relies on. One file
+ * was doing exactly that (`layout/ClientProviders.tsx`, reclassified with this
+ * change), and seven more tripped it on top of couplings they already had.
+ */
+const IMPORT = /from\s+['"]@\/(app-layer|lib|components)\/([\w.-]+)/g;
 
 export function sharedUiPopulation(repoRoot: string): string[] {
     const walk = (rel: string): string[] => {
@@ -74,7 +95,12 @@ export function mechanicalCouplings(repoRoot: string, rel: string): CouplingKind
     if (RAW_STORAGE_HOOK.test(code) && !SEAM.test(code)) found.push('storage-key');
     if (BRAND_AS_TEXT.test(code)) found.push('brand-as-text');
     for (const m of code.matchAll(IMPORT)) {
-        if (m[1] === 'app-layer' || !NEUTRAL_LIB.has(m[2])) {
+        const [, scope, name] = m;
+        const coupled =
+            scope === 'app-layer' ||
+            (scope === 'lib' && !NEUTRAL_LIB.has(name)) ||
+            (scope === 'components' && !SHARED_COMPONENT_DIRS.has(name));
+        if (coupled) {
             found.push('domain-import');
             break;
         }
