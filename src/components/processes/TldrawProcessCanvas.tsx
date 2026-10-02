@@ -65,6 +65,7 @@
 
 import 'tldraw/tldraw.css';
 
+import { useMediaQuery } from '@/components/ui/hooks/use-media-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { atom, type Atom, type Editor, type TLBindingId, Tldraw, type TLShape, type TLShapeId } from 'tldraw';
 
@@ -233,6 +234,14 @@ export function TldrawProcessCanvas({
      * mutable object and putting it in state invites a re-render on identity
      * change. The ref stays the accessor; this only says "it is there now".
      */
+    /**
+     * `undefined` rather than `"false"` when not mobile, matching what the
+     * xyflow canvas emitted. The CSS selector is an attribute PRESENCE match
+     * on `[data-mobile-layout="true"]`, so a literal "false" would be inert
+     * either way — but the two hosts emitting different shapes for the same
+     * state is how a future selector change breaks only one of them.
+     */
+    const { isMobile } = useMediaQuery();
     const [editorReady, setEditorReady] = useState(false);
 
     /**
@@ -592,7 +601,29 @@ export function TldrawProcessCanvas({
     return (
         <div
             className="h-full w-full"
+            /*
+                TWO canvas attributes, and both are load-bearing.
+
+                `data-tldraw-process-canvas` is this host's own marker and is
+                what `tldraw-palette-drop-creates-a-node` resolves the drop
+                target by.
+
+                `data-process-canvas` is the RENDERER-AGNOSTIC one, and it is
+                here because `globals.css` carries a `max-width: 767px` rule
+                keyed on `[data-process-canvas][data-mobile-layout]` that turns
+                the node palette from a vertical sidebar into a horizontal
+                strip. The xyflow canvas emitted it; this one did not, so after
+                the cutover that rule would have matched nothing and the
+                palette would have kept a sidebar's width on a phone.
+
+                Emitting the generic name rather than widening the selector:
+                the selector is about THE PROCESS CANVAS, not about a renderer,
+                and a second renderer-specific arm in CSS is a thing nobody
+                would think to update next time.
+            */
             data-tldraw-process-canvas="true"
+            data-process-canvas="true"
+            data-mobile-layout={isMobile ? 'true' : undefined}
             onDragOver={onDragOver}
             onDrop={onDrop}
         >
