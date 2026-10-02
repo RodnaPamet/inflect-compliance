@@ -29,13 +29,30 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { declarationOf, codeOf } from "../helpers/source-blocks";
+
 const ROOT = path.resolve(__dirname, "../..");
-const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
+/*
+    MASKED AT THE READ SEAM — #2246 Class A, applied when #3079 re-pointed this
+    file onto the tldraw hosts.
+
+    These reads were raw. That was survivable while the subject was one
+    2500-line component nobody was editing; it is not survivable now, because
+    the surviving modules carry long explanatory docblocks — several of which
+    name the very symbols these assertions match. On a raw read "delete the code,
+    keep the note explaining it" is a green diff, and on a `.not.toMatch` the
+    mirror image: a comment mentioning a forbidden token fails a guard whose
+    code is fine.
+
+    At the SEAM rather than per assertion, so a new `expect(read(...))` inherits
+    it. String literals are KEPT — masking them would silently empty assertions
+    that harvest testids and i18n keys from source.
+*/
+const read = (p: string) => codeOf(readFileSync(path.join(ROOT, p), "utf-8"));
 
 describe("PR-A polish — canvas micro-polish wiring", () => {
-    const canvas = () =>
-        read("src/components/processes/TldrawProcessWorkspace.tsx");
-    const layout = () => read("src/lib/processes/canvas-auto-layout.ts");
+    const canvas = read("src/components/processes/TldrawProcessWorkspace.tsx");
+    const layout = read("src/lib/processes/canvas-auto-layout.ts");
 
     describe("1. Loose connection targeting — NATIVE here", () => {
         /*
@@ -75,16 +92,25 @@ describe("PR-A polish — canvas micro-polish wiring", () => {
             one inspector edit is one undo, which the xyflow version got from
             its own stack.
         */
-        const adapter = () => read("src/lib/processes/use-tldraw-selection.ts");
+        const adapter = read("src/lib/processes/use-tldraw-selection.ts");
 
         it("writes through updateShape, not a whole-collection replace", () => {
-            expect(adapter()).toMatch(/editor\.updateShape\(\{\s*id,/);
-            expect(adapter()).not.toMatch(/setNodes\(/);
+            // Bound to `onUpdate`, the node-patch callback: the claim is about
+            // how THAT writes, and a whole-file read would also be satisfied by
+            // the edge path.
+            // `declarationOf`, not `functionBodyOf`: `onUpdate` is a `const`
+            // bound to a `useCallback`, not a function declaration — the two
+            // helpers bind different constructs and the wrong one returns empty,
+            // which a `toMatch` fails on loudly rather than passing vacuously.
+            expect(declarationOf(adapter, "onUpdate")).toMatch(
+                /editor\.updateShape\(\{\s*id,/,
+            );
+            expect(adapter).not.toMatch(/setNodes\(/);
         });
 
         it("marks ONE history stopping point per inspector commit", () => {
             // So an inspector edit is one undo rather than none or several.
-            expect(adapter()).toMatch(
+            expect(adapter).toMatch(
                 /editor\.markHistoryStoppingPoint\(\);[\s\S]{0,120}editor\.updateShape\(/,
             );
         });
@@ -104,36 +130,38 @@ describe("PR-A polish — canvas micro-polish wiring", () => {
             shared toast id so a run of misclicks collapses into a single
             toast. Both asserted below, because both were nearly lost.
         */
-        const host = () => read("src/components/processes/TldrawProcessMap.tsx");
+        const host = read("src/components/processes/TldrawProcessMap.tsx");
 
         it("a message table covers every refusal code, as a total map", () => {
             // `Record<EdgeRefusal['code'], string>` makes a missing arm a TYPE
             // error rather than a toast reading "undefined". The tldraw
             // validator refuses FIVE things where xyflow refused three.
-            expect(host()).toMatch(
+            expect(host).toMatch(
                 /Record<EdgeRefusal\[['"]code['"]\],\s*string>/,
             );
-            for (const key of ['rejectSelf', 'rejectDuplicate', 'rejectAnnotation',
-                               'rejectGroup', 'rejectUnknownNode']) {
-                expect(host()).toMatch(new RegExp(`t\\(['"]${key}['"]\\)`));
-            }
+            // Literal needles: an interpolated one is a Class D blind spot.
+            expect(host).toMatch(/t\(['"]rejectSelf['"]\)/);
+            expect(host).toMatch(/t\(['"]rejectDuplicate['"]\)/);
+            expect(host).toMatch(/t\(['"]rejectAnnotation['"]\)/);
+            expect(host).toMatch(/t\(['"]rejectGroup['"]\)/);
+            expect(host).toMatch(/t\(['"]rejectUnknownNode['"]\)/);
         });
 
         it("fires toast.warning with ONE shared id, not an error per misclick", () => {
-            expect(host()).toMatch(/toast\.warning\(text,\s*\{\s*id:\s*REFUSAL_TOAST_ID\s*\}\)/);
-            expect(host()).toMatch(/REFUSAL_TOAST_ID\s*=\s*['"]canvas-connection-rejected['"]/);
+            expect(host).toMatch(/toast\.warning\(text,\s*\{\s*id:\s*REFUSAL_TOAST_ID\s*\}\)/);
+            expect(host).toMatch(/REFUSAL_TOAST_ID\s*=\s*['"]canvas-connection-rejected['"]/);
         });
 
         it("and the canvas actually supplies the channel", () => {
             // The teeth. The prop existed for two PRs with no supplier; a
             // message table nobody calls is the same bug in a new place.
-            expect(host()).toMatch(/onEdgeRefused=\{handleEdgeRefused\}/);
+            expect(host).toMatch(/onEdgeRefused=\{handleEdgeRefused\}/);
         });
     });
 
     describe("4. Selection-only auto-layout", () => {
         it("computeAutoLayout exposes a fourth `nodeIdsFilter` parameter", () => {
-            expect(layout()).toMatch(
+            expect(layout).toMatch(
                 /export function computeAutoLayout\(\s*nodes:[\s\S]*?direction:[\s\S]*?nodeIdsFilter\?:/,
             );
         });
@@ -143,7 +171,7 @@ describe("PR-A polish — canvas micro-polish wiring", () => {
             // arm. Locking the presence of both the dx/dy
             // computation AND the application loop ensures the
             // translation step can't silently regress.
-            const src = layout();
+            const src = layout;
             expect(src).toMatch(/before\.x\s*\/\s*before\.count/);
             expect(src).toMatch(/after\.x\s*\/\s*after\.count/);
             expect(src).toMatch(/positions\[id\]\.x\s*\+\s*dx/);

@@ -29,7 +29,7 @@ import * as path from "node:path";
 // Every path this file READS is a TypeScript-alike: the `.json` it touches
 // arrives through `require()`, which is a module import, not a text read — so
 // it never reaches this seam and needs no separate reader.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
@@ -76,7 +76,11 @@ describe("Epic P4-PR-A — canvas auto-layout (dagre)", () => {
             // participate in the flow direction; they should
             // keep their hand-placed positions across layouts.
             expect(src).toMatch(/kind === ["']annotation["']/);
-            expect(src).toMatch(/continue;/);
+            // `/continue;/` matched SEVEN places in that module — every
+            // loop guard in it. The test is named for the ANNOTATION skip,
+            // so it names that condition now. Not my regression, but it is
+            // in a file this diff rewrites and the fix is one line.
+            expect(src).toMatch(/if \(kind === "annotation"\) continue;/);
         });
 
         it("converts dagre's centre coords to xyflow's top-left coords", () => {
@@ -147,7 +151,10 @@ describe("Epic P4-PR-A — canvas auto-layout (dagre)", () => {
                 comment says a thirty-node layout as thirty `updateShape` calls
                 is thirty store transactions and thirty renders.
             */
-            expect(host).toMatch(/editor\.updateShapes\(/);
+            // Bound to `applyLayout`, the one function that writes positions —
+            // a whole-file read cannot say WHICH construct batches, and the
+            // Class D ratchet counts it as un-analysable for that reason.
+            expect(functionBodyOf(host, "applyLayout")).toMatch(/editor\.updateShapes\(/);
             expect(host).not.toMatch(/for\s*\([\s\S]{0,80}editor\.updateShape\(/);
         });
 

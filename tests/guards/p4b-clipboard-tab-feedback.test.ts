@@ -123,7 +123,11 @@ describe("Epic P4-PR-B — clipboard + Tab + connection-rejection", () => {
     });
 
     describe("globals.css — the shake rules are now DEAD", () => {
-        const css = () => readRaw("src/app/globals.css");
+        // `cssCodeOf`, not `readRaw`: the stylesheet carries a prose comment above
+        // these very rules explaining what the shake is for, and a raw read lets
+        // that comment satisfy the assertion. #2246 Class A counts a raw read as
+        // an offender for exactly this reason.
+        const css = readCss("src/app/globals.css");
 
         it("still selects .react-flow__node, which the process canvas no longer renders", () => {
             /*
@@ -147,7 +151,7 @@ describe("Epic P4-PR-B — clipboard + Tab + connection-rejection", () => {
                 has React Flow nodes, or delete the three rules together with
                 the `canvas-rejected` className that nothing sets.
             */
-            expect(css()).toMatch(/\.react-flow__node\.canvas-rejected/);
+            expect(css).toMatch(/\.react-flow__node\.canvas-rejected/);
             // And nothing sets the className any more, which is what makes the
             // rules dead rather than merely unused by one host.
             const canvasSrcs = [
@@ -161,7 +165,7 @@ describe("Epic P4-PR-B — clipboard + Tab + connection-rejection", () => {
         it("the reduced-motion fallback is still paired with the full keyframes", () => {
             // Kept from the original: whatever happens to these rules, the
             // accessible variant must not be the one that gets dropped.
-            expect(css()).toMatch(/@media\s*\(prefers-reduced-motion/);
+            expect(css).toMatch(/@media\s*\(prefers-reduced-motion/);
         });
     });
 });

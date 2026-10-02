@@ -20,10 +20,28 @@
  */
 
 import { readFileSync } from "node:fs";
+
+import { codeOf } from "../helpers/source-blocks";
 import path from "node:path";
 
 const ROOT = path.resolve(__dirname, "../..");
-const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
+/*
+    MASKED AT THE READ SEAM — #2246 Class A, applied when #3079 re-pointed this
+    file onto the tldraw hosts.
+
+    These reads were raw. That was survivable while the subject was one
+    2500-line component nobody was editing; it is not survivable now, because
+    the surviving modules carry long explanatory docblocks — several of which
+    name the very symbols these assertions match. On a raw read "delete the code,
+    keep the note explaining it" is a green diff, and on a `.not.toMatch` the
+    mirror image: a comment mentioning a forbidden token fails a guard whose
+    code is fine.
+
+    At the SEAM rather than per assertion, so a new `expect(read(...))` inherits
+    it. String literals are KEPT — masking them would silently empty assertions
+    that harvest testids and i18n keys from source.
+*/
+const read = (p: string) => codeOf(readFileSync(path.join(ROOT, p), "utf-8"));
 
 describe("PR-C polish — force-directed layout via elkjs", () => {
     describe("1. Dependency", () => {
@@ -38,7 +56,7 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
     });
 
     describe("2. Helper", () => {
-        const src = () => read("src/lib/processes/canvas-auto-layout.ts");
+        const src = read("src/lib/processes/canvas-auto-layout.ts");
 
         it("exports computeForceLayout as an async function", () => {
         // The parameter types are STRUCTURAL (`LayoutNode` / `LayoutEdge`),
@@ -48,7 +66,7 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
         // tldraw has no equivalent. xyflow's own `Node` / `Edge` remain
         // assignable, which is why every behavioural suite here passed
         // unchanged across the port.
-            expect(src()).toMatch(
+            expect(src).toMatch(
                 /export async function computeForceLayout\(\s*nodes:\s*readonly LayoutNode\[\],\s*edges:\s*readonly LayoutEdge\[\],\s*nodeIdsFilter\?:\s*ReadonlySet<string>,?\s*\):\s*Promise<AutoLayoutResult>/,
             );
         });
@@ -57,16 +75,16 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
             // Static `import ... from "elkjs"` would put the ~600KB
             // bundle in the initial chunk; the dynamic `await
             // import(...)` defers it.
-            expect(src()).toMatch(
+            expect(src).toMatch(
                 /await import\("elkjs\/lib\/elk\.bundled\.js"\)/,
             );
-            expect(src()).not.toMatch(
+            expect(src).not.toMatch(
                 /^import [^{]*from "elkjs"/m,
             );
         });
 
         it("uses ELK's force algorithm with the documented iteration count", () => {
-            const s = src();
+            const s = src;
             expect(s).toMatch(/"elk\.algorithm":\s*"force"/);
             expect(s).toMatch(/"elk\.force\.iterations":/);
         });
@@ -75,7 +93,7 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
             // Both `computeAutoLayout` AND `computeForceLayout`
             // should call the same helper so selection-only mode
             // behaves identically across the two engines.
-            const s = src();
+            const s = src;
             expect(s).toMatch(/function finaliseSubsetPositions\b/);
             // Two call sites — once from dagre, once from force.
             const calls = s.match(/finaliseSubsetPositions\(/g) ?? [];
@@ -85,7 +103,7 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
         it("skips annotation nodes (parity with dagre)", () => {
             // The same convention the dagre helper holds — floating
             // tags don't participate in flow algorithms.
-            const s = src();
+            const s = src;
             const forceStart = s.indexOf("export async function computeForceLayout");
             expect(forceStart).toBeGreaterThan(-1);
             const forceBody = s.slice(forceStart);
@@ -114,19 +132,18 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
             then writes, so there is no window in which a partial apply is
             expressible.
         */
-        const host = () => read("src/components/processes/tldraw/auto-layout-host.ts");
-        const commands = () => read("src/lib/processes/canvas-command-groups.ts");
-        const workspace = () =>
-            read("src/components/processes/TldrawProcessWorkspace.tsx");
+        const host = read("src/components/processes/tldraw/auto-layout-host.ts");
+        const commands = read("src/lib/processes/canvas-command-groups.ts");
+        const workspace = read("src/components/processes/TldrawProcessWorkspace.tsx");
 
         it("the host imports computeForceLayout alongside computeAutoLayout", () => {
-            expect(host()).toMatch(
+            expect(host).toMatch(
                 /import\s*\{[\s\S]*?\bcomputeAutoLayout\b[\s\S]*?\bcomputeForceLayout\b[\s\S]*?\}\s*from\s*['"]@\/lib\/processes\/canvas-auto-layout['"]/,
             );
         });
 
         it("runForceLayout is async, because elk is", () => {
-            expect(host()).toMatch(/export async function runForceLayout\(/);
+            expect(host).toMatch(/export async function runForceLayout\(/);
         });
 
         it("AWAITS the layout before applying any position", () => {
@@ -134,7 +151,7 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
             // the await resolved would leave the canvas half-moved — and elk
             // is the slow path, so the window would be real rather than
             // theoretical.
-            const h = host();
+            const h = host;
             const awaitIdx = h.indexOf('await computeForceLayout');
             const applyIdx = h.indexOf('applyLayout', awaitIdx);
             expect(awaitIdx).toBeGreaterThan(-1);
@@ -142,7 +159,7 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
         });
 
         it("the command palette has both force-layout entries", () => {
-            const c = commands();
+            const c = commands;
             expect(c).toMatch(/id:\s*['"]arrange-force['"]/);
             expect(c).toMatch(/id:\s*['"]arrange-force-selection['"]/);
             expect(c).toMatch(/actions\.arrangeForce\(['"]all['"]\)/);
@@ -159,8 +176,8 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
         it("and the workspace supplies the action", () => {
             // Teeth: the builder omits a command whose action is absent, so an
             // unwired `arrangeForce` would silently remove both entries.
-            expect(workspace()).toMatch(/arrangeForce:\s*\(scope\)\s*=>/);
-            expect(workspace()).toMatch(/runForceLayout\(editor,\s*scope\)/);
+            expect(workspace).toMatch(/arrangeForce:\s*\(scope\)\s*=>/);
+            expect(workspace).toMatch(/runForceLayout\(editor,\s*scope\)/);
         });
     });
 });

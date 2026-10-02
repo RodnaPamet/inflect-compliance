@@ -101,7 +101,13 @@ describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
                 `getCurrentPageShapes()` choice deliberate for that reason.
                 Same requirement, different thing to get wrong.
             */
-            expect(src).toMatch(/editor\.getCurrentPageShapes\(\)/);
+            // Bound to the collector rather than read whole-file: the needle
+            // should name the one function that chooses the shape set, and a
+            // whole-file read is what the Class D ratchet counts as
+            // un-analysable — it cannot tell which construct the claim is about.
+            expect(functionBodyOf(src, "shapesToExport")).toMatch(
+                /editor\.getCurrentPageShapes\(\)/,
+            );
             expect(src).not.toMatch(/store\.allRecords\(\)/);
         });
 
@@ -118,8 +124,16 @@ describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
                 and that `html-to-image` has NOT been reintroduced alongside,
                 which would mean two rasterisers disagreeing about bounds.
             */
-            expect(src).toMatch(/editor\.getSvgString\(shapes,/);
-            expect(src).toMatch(/editor\.toImage\(shapes,/);
+            expect(functionBodyOf(src, "exportTldrawCanvasAsSvg")).toMatch(
+                /editor\.getSvgString\(shapes,/,
+            );
+            // `toImage` sits in `rasterise`, the shared raster step both the PNG
+            // download and the clipboard copy go through — not in the PNG export
+            // itself. Binding to the function that actually calls it is the
+            // point of binding at all.
+            expect(functionBodyOf(src, "rasterise")).toMatch(/editor\.toImage\(shapes,/);
+            // This one stays whole-file on purpose: it is an assertion about the
+            // MODULE's imports, which is not a construct.
             expect(src).not.toMatch(/from ["']html-to-image["']/);
         });
 
@@ -185,13 +199,13 @@ describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
         it("renders the items + the trigger with canonical testids", () => {
             // PREFIXED, so this is not a free re-path: the ids are different
             // strings for the same affordances.
-            for (const id of [
-                "tldraw-export-trigger",
-                "tldraw-export-png",
-                "tldraw-export-svg",
-            ]) {
-                expect(src).toMatch(new RegExp(`data-testid="${id}"`));
-            }
+            // LITERAL needles, not `new RegExp(\`…${id}\`)`. An interpolated
+            // needle is invisible to the Class D analyser — it counts such an
+            // assertion as a blind spot, because an ambiguous needle can hide
+            // behind a template. Three lines beat a loop the ratchet cannot read.
+            expect(src).toMatch(/data-testid="tldraw-export-trigger"/);
+            expect(src).toMatch(/data-testid="tldraw-export-png"/);
+            expect(src).toMatch(/data-testid="tldraw-export-svg"/);
         });
 
         it("disables the menu items while a render is in flight", () => {

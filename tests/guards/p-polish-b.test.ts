@@ -19,10 +19,28 @@
  */
 
 import { readFileSync } from "node:fs";
+
+import { codeOf } from "../helpers/source-blocks";
 import path from "node:path";
 
 const ROOT = path.resolve(__dirname, "../..");
-const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
+/*
+    MASKED AT THE READ SEAM — #2246 Class A, applied when #3079 re-pointed this
+    file onto the tldraw hosts.
+
+    These reads were raw. That was survivable while the subject was one
+    2500-line component nobody was editing; it is not survivable now, because
+    the surviving modules carry long explanatory docblocks — several of which
+    name the very symbols these assertions match. On a raw read "delete the code,
+    keep the note explaining it" is a green diff, and on a `.not.toMatch` the
+    mirror image: a comment mentioning a forbidden token fails a guard whose
+    code is fine.
+
+    At the SEAM rather than per assertion, so a new `expect(read(...))` inherits
+    it. String literals are KEPT — masking them would silently empty assertions
+    that harvest testids and i18n keys from source.
+*/
+const read = (p: string) => codeOf(readFileSync(path.join(ROOT, p), "utf-8"));
 
 describe("PR-B polish — clipboard copy + collapsible groups", () => {
     describe("1. Clipboard copy", () => {
@@ -163,7 +181,11 @@ describe("PR-B polish — clipboard copy + collapsible groups", () => {
             // filter, not node chrome, which is why it lives elsewhere.
             const canvas = read("src/components/processes/TldrawProcessCanvas.tsx");
             expect(canvas).toMatch(/getShapeVisibility=\{getShapeVisibility\}/);
-            expect(canvas).toMatch(/onEnterGroup/);
+            // The prop DECLARATION, not the bare word: `onEnterGroup` occurs
+            // eight times in that file (prop, destructure, ref, effect, the
+            // handler), so the bare needle is a text search written as an
+            // assertion — which is exactly what Class D counts.
+            expect(canvas).toMatch(/onEnterGroup\?:\s*\(nodeKey: string\) => void/);
         });
     });
 });

@@ -393,7 +393,36 @@ const HIGH_MULTIPLICITY = 5;
 //   I dropped the two intermediate merge notes rather than keep them: a note
 //   reading `1189 -> 1188` above a constant of 1186 misinforms a reader, and
 //   the per-branch notes already say which needles moved and why.
-const AMBIGUOUS_NEEDLE_BASELINE = 1186;
+// 1186 -> 1178 (2026-10-02, #3079, the phase 4 xyflow deletion): -8 net, and
+//   the arithmetic is worth recording because it moved in both directions.
+//
+//   DOWN: deleting the xyflow canvas removed twelve test files whose subjects no
+//   longer exist, and those carried ambiguous needles with them. Re-pointing the
+//   surviving guards off a 2500-line component and onto focused modules removed
+//   more: a needle that matched four places in `PersistedProcessCanvas.tsx`
+//   often matches once in the module that now owns the thing.
+//
+//   UP, then fixed rather than absorbed: my own re-points added five. Asserting
+//   a kind union as five bare `/['"]png['"]/` needles is a text search written
+//   as an assertion, which is precisely what this class counts; one needle
+//   naming `type TldrawExportKind = …` says the same thing unambiguously.
+//
+//   Two 5+ needles were narrowed in the same diff rather than raising
+//   HIGHLY_AMBIGUOUS_NEEDLE_BASELINE, following the #3050 precedent above:
+//   `/onEnterGroup/` (8 sites — prop, destructure, ref, effect, handler) now
+//   names the prop declaration, and `/continue;/` (7 sites — every loop guard in
+//   `canvas-auto-layout.ts`) now names the annotation condition the test is
+//   titled for. The second was not this diff's regression; it is a one-line fix
+//   in a file this diff rewrites.
+//
+//   RE-MEASURE BEFORE MERGE — concurrent branches move this number and two
+//   branches lowering the same line to different values merge without conflict.
+//   RE-SEATED 1178 -> 1177 in the same diff: masking three guards at the read
+//   seam (Class A, below) removed one more ambiguous needle as a side effect —
+//   a satisfying position that was inside a COMMENT stops being one once the
+//   comments are masked. Worth naming because it is the two ratchets agreeing:
+//   the Class A fix is also a Class D improvement.
+const AMBIGUOUS_NEEDLE_BASELINE = 1177;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -462,7 +491,29 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1186;
 // own vocabulary in every playbook. `--namespace inflect-production` at 20
 // and `Rollback` at 22 are both five-plus sites that the Rollback playbook's
 // own bounds retire outright.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 168;
+// 168 -> 167 (2026-10-02, #3079, the phase 4 xyflow deletion): -1 net, from
+//   +1 then -2 rather than a tidy drain.
+//
+//   The +1 arrived with the deletion and I could not name it: none of the
+//   needles in the twenty re-pointed guards matches 5+ places, measured
+//   directly. The likeliest cause is a needle now measured against a smaller
+//   module than the 2500-line component it used to read — but "likeliest" is not
+//   a measurement, and it is recorded as unidentified rather than dressed up.
+//
+//   The -2 is named and deliberate, taken instead of raising this line (the
+//   #3050 precedent above):
+//     • `/onEnterGroup/` matched EIGHT sites in `TldrawProcessCanvas.tsx` — the
+//       prop, its destructure, the ref, the refreshing effect and the handler.
+//       It now names the prop declaration.
+//     • `/continue;/` matched SEVEN in `canvas-auto-layout.ts`, i.e. every loop
+//       guard in the module, while the test is titled for the ANNOTATION skip
+//       specifically. It now names `if (kind === "annotation") continue;`. Not
+//       this diff's regression; a one-line fix in a file it rewrites anyway.
+//
+//   Re-seated DOWNWARD in the same diff, which is what the sentinel below
+//   demands of an improvement: 167 is the live count, not 168 with a point of
+//   headroom a future regression could spend on a green build.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -714,7 +765,51 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 168;
 // `src.split('## SLO Summary Table')[1]`, which had no end bound and ran
 // 15842 characters to EOF where the section is 800, and a `.toLowerCase()`
 // over a whole 702-line runbook that is now over one playbook.
-const UNANALYSABLE_READ_BASELINE = 1443;
+/**
+ * RAISED 1443 -> 1447 on 2026-10-02 (#3079, the phase 4 xyflow deletion), and
+ * recorded as a finding because a rise here is one.
+ *
+ * ── The cause is architectural, not an assertion getting lazier ──────
+ *
+ * The deletion removed a 2500-line component that held every process-canvas
+ * write path inline. Twenty guards read it. The migration had deliberately
+ * split that component into focused modules, so re-pointing each guard means
+ * reading TWO to FOUR files where it used to read one:
+ *
+ *   p1-optimistic-concurrency   1 -> 3   (save module / container / workspace)
+ *   p4a-auto-layout-dagre       1 -> 3   (host / command builder / workspace)
+ *   p2a-control-picker-on-edge  1 -> 4   (binding / serialiser / adapter / host)
+ *
+ * Each added read is a legitimate whole-file read of a constant path. The
+ * analyser follows them; what it cannot do is bind every needle to a construct,
+ * and the +4 is that residue.
+ *
+ * ── What was done first, so the rise is the remainder and not the reflex ──
+ *
+ * Measured at +5 before any fix, and brought to +4 by converting the shapes the
+ * analyser genuinely cannot follow:
+ *
+ *   • `const x = () => read("p")` -> `const x = read("p")` in four guards. A
+ *     read behind an arrow is `binding-not-resolvable`, which is a blind spot
+ *     rather than a reading.
+ *   • `new RegExp(`data-testid="${id}"`)` loops -> literal needles, in three
+ *     guards. An interpolated needle is invisible to the ambiguity check above,
+ *     so a loop is strictly worse than the three lines it saves.
+ *   • five assertions bound to their construct with `functionBodyOf` /
+ *     `declarationOf` — `shapesToExport`, `rasterise`, `applyLayout`,
+ *     `exportTldrawCanvasAsSvg`, `onUpdate`.
+ *
+ * ── Net effect on this file's other numbers, in the same diff ────────
+ *
+ *   AMBIGUOUS_NEEDLE_BASELINE          1186 -> 1178   (-8)
+ *   HIGHLY_AMBIGUOUS_NEEDLE_BASELINE   unchanged at 168, by narrowing two
+ *                                      needles rather than raising it
+ *
+ * Three baselines moving down and one up is the same shape as the 2026-09-06
+ * entry above, and for the same reason: a sweep that relocates assertions pays
+ * for its own residue elsewhere.
+ */
+const UNANALYSABLE_READ_BASELINE = 1447;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

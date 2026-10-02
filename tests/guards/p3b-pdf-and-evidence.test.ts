@@ -167,12 +167,9 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
             // `showServerItems` (which derives from tenantSlug +
             // mapId). Anchor the gate + the testids.
             expect(src).toMatch(/showServerItems\s*=\s*Boolean\(tenantSlug\s*&&\s*mapId\)/);
-            for (const id of [
-                "tldraw-export-pdf",
-                "tldraw-export-evidence",
-            ]) {
-                expect(src).toMatch(new RegExp(`data-testid="${id}"`));
-            }
+            // Literal needles — an interpolated one is a Class D blind spot.
+            expect(src).toMatch(/data-testid="tldraw-export-pdf"/);
+            expect(src).toMatch(/data-testid="tldraw-export-evidence"/);
             // Items live INSIDE the showServerItems conditional —
             // anchor it.
             expect(src).toMatch(
@@ -185,11 +182,13 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
             // a union over the type rather than a count of branches: a
             // dispatcher missing an arm is a type error, where a count is
             // satisfied by any five branches.
-            for (const kind of ["png", "svg", "pdf", "evidence", "clipboard"]) {
-                expect(read("src/components/processes/TldrawCanvasExportMenu.tsx")).toMatch(
-                    new RegExp(`[\'"]${kind}[\'"]`),
-                );
-            }
+            // The TYPE UNION, not five bare quoted strings. `'png'` occurs all
+            // over the menu, so a needle of `/['"]png['"]/` is a text search
+            // written as an assertion — Class D counts exactly that. One needle
+            // naming the declaration says the same thing unambiguously.
+            expect(read("src/components/processes/TldrawCanvasExportMenu.tsx")).toMatch(
+                /type TldrawExportKind\s*=\s*['"]png['"]\s*\|\s*['"]svg['"]\s*\|\s*['"]pdf['"]\s*\|\s*['"]evidence['"]\s*\|\s*['"]clipboard['"]/,
+            );
         });
 
         it("Evidence success surfaces toast.success", () => {
