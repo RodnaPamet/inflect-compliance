@@ -29,6 +29,7 @@ import { act, render } from '@testing-library/react';
 import type { RefObject } from 'react';
 
 import { TldrawProcessWorkspace } from '@/components/processes/TldrawProcessWorkspace';
+import { TenantProvider } from '@/lib/tenant-context-provider';
 import type { CanvasCommandGroup } from '@/components/processes/CanvasCommandPalette';
 import { shapeIdForNodeKey } from '@/components/processes/tldraw/process-node-shape';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
@@ -129,13 +130,15 @@ async function mount() {
     liveEditor = undefined;
     await act(async () => {
         render(
-            <TldrawProcessWorkspace
-                tenantSlug="acme"
-                processes={PROCESSES}
-                activeId="map-1"
-                onActiveIdChange={() => {}}
-                onProcessesChange={() => {}}
-            />,
+            <TenantProvider value={TENANT_CTX}>
+                <TldrawProcessWorkspace
+                    tenantSlug="acme"
+                    processes={PROCESSES}
+                    activeId="map-1"
+                    onActiveIdChange={() => {}}
+                    onProcessesChange={() => {}}
+                />,
+            </TenantProvider>
         );
     });
 }
@@ -148,6 +151,30 @@ const posOf = (nodeKey: string) => {
     if (!s) throw new Error(`no shape for ${nodeKey}`);
     return { x: s.x, y: s.y };
 };
+
+
+/*
+    `TenantProvider` is required as of #3115, and it is a product fact rather
+    than scaffolding: the workspace mounts `OverlayBridge`, whose `useTenantSWR`
+    resolves the tenant API URL through `useTenantContext` EAGERLY — before the
+    null key is consulted — so it throws without a provider even with Run Mode
+    off and nothing being fetched.
+
+    Satisfied in the app: `ProcessesClient` renders under
+    `src/app/t/[tenantSlug]/layout.tsx`, which mounts this. The workspace
+    previously needed no context at all — it takes `tenantSlug` as a PROP and
+    builds its own URLs — which is why this arrived with the overlay and not
+    before. A per-file literal rather than a shared helper, following the
+    pattern every other rendered test here uses.
+*/
+const TENANT_CTX = {
+    userId: 'user-1',
+    tenantId: 'tenant-1',
+    tenantSlug: 'acme',
+    tenantName: 'Acme',
+    role: 'OWNER' as const,
+    permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+} as never;
 
 describe('the palette is mounted and fed', () => {
     it('receives the four groups', async () => {

@@ -64,6 +64,7 @@ installTldrawJsdomShims();
 import { render, waitFor } from '@testing-library/react';
 
 import { TldrawProcessWorkspace } from '@/components/processes/TldrawProcessWorkspace';
+import { TenantProvider } from '@/lib/tenant-context-provider';
 
 jest.mock('next/navigation', () => ({
     useSearchParams: () => new URLSearchParams(),
@@ -74,6 +75,33 @@ jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
     usePathname: () => '/t/acme/processes',
 }));
+
+/*
+    `TenantProvider` is required as of #3115, and it is a product fact rather
+    than scaffolding: the workspace mounts `OverlayBridge`, whose `useTenantSWR`
+    resolves the tenant API URL through `useTenantContext` EAGERLY — before the
+    null key is consulted — so it throws without a provider even with Run Mode
+    off and nothing being fetched.
+
+    Satisfied in the app: `ProcessesClient` renders under
+    `src/app/t/[tenantSlug]/layout.tsx`, which mounts this. The workspace
+    previously needed no context at all — it takes `tenantSlug` as a PROP and
+    builds its own URLs — which is why this arrived with the overlay and not
+    before.
+
+    Worth noting for THIS file in particular: the throw happened at mount, so the
+    failure here was the canvas never appearing — which this file's own header
+    warns reads identically to the `act`-never-draining problem it was written
+    for. The cause was in the error output, not in the timing.
+*/
+const TENANT_CTX = {
+    userId: 'user-1',
+    tenantId: 'tenant-1',
+    tenantSlug: 'acme',
+    tenantName: 'Acme',
+    role: 'OWNER' as const,
+    permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+} as never;
 
 const MOUNT_BUDGET_MS = 120_000;
 
@@ -114,13 +142,15 @@ const MAP = {
 async function mountPage(): Promise<HTMLElement> {
     const { container } = render(
         <div style={{ width: 1000, height: 700 }}>
-            <TldrawProcessWorkspace
-                tenantSlug="acme"
-                processes={PROCESSES}
-                activeId="map-1"
-                onActiveIdChange={() => {}}
-                onProcessesChange={() => {}}
-            />
+            <TenantProvider value={TENANT_CTX}>
+                <TldrawProcessWorkspace
+                    tenantSlug="acme"
+                    processes={PROCESSES}
+                    activeId="map-1"
+                    onActiveIdChange={() => {}}
+                    onProcessesChange={() => {}}
+                />
+            </TenantProvider>
         </div>,
     );
     await waitFor(

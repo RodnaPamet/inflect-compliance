@@ -31,6 +31,8 @@
 import { act, render, screen } from '@testing-library/react';
 
 import { TldrawProcessWorkspace } from '@/components/processes/TldrawProcessWorkspace';
+import { TenantProvider } from '@/lib/tenant-context-provider';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 import type { GraphRows } from '@/components/processes/tldraw/serializer';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
 
@@ -154,9 +156,44 @@ jest.mock('@/components/processes/TldrawProcessMap', () => {
     };
 });
 
-jest.mock('@/components/processes/CanvasDocumentBar', () => ({
-    CanvasDocumentBar: () => <div data-testid="bar-stub" />,
+/*
+    VR-6 (#3115) — the overlay provider polls through `useTenantSWR`, so it is
+    captured here rather than left live: an unmocked SWR with a real key would
+    reach for the network in jsdom, and the KEY is exactly what these assertions
+    are about — whether the poll is off on a document map.
+*/
+const swrCalls: Array<{ key: unknown; opts: unknown }> = [];
+jest.mock('@/lib/hooks/use-tenant-swr', () => ({
+    useTenantSWR: (key: unknown, opts: unknown) => {
+        swrCalls.push({ key, opts });
+        return { data: undefined };
+    },
 }));
+
+/*
+    The bar is stubbed, and the Run Mode toggle lives in the real one — so the
+    stub carries a button that flips the flag. That is the seam the real bar
+    occupies (`CanvasDocumentBar` calls the same `setRunMode`), which is what
+    makes the ON direction assertable without mounting the whole bar.
+*/
+jest.mock('@/components/processes/CanvasDocumentBar', () => {
+    const { useRunMode } =
+        jest.requireActual<typeof import('@/lib/processes/run-mode-context')>(
+            '@/lib/processes/run-mode-context',
+        );
+    return {
+        CanvasDocumentBar: () => {
+            const { isRunMode, setRunMode } = useRunMode();
+            return (
+                <div data-testid="bar-stub">
+                    <button data-testid="run-mode-on" onClick={() => setRunMode(true)}>
+                        {isRunMode ? 'on' : 'off'}
+                    </button>
+                </div>
+            );
+        },
+    };
+});
 /** The inspector's props, so the workspace's wiring to it is assertable. */
 const inspectorProps: Array<{ rendererHonoursSize?: boolean }> = [];
 jest.mock('@/components/processes/ProcessInspector', () => ({
@@ -200,6 +237,16 @@ const ROWS: GraphRows = {
     edges: [{ edgeKey: 'e1', sourceKey: 'n1', targetKey: 'n1', edgeKind: 'flow', controls: [] }],
 };
 
+/** The minimum the overlay bridge's URL resolution needs. */
+const TENANT_CTX = {
+    userId: 'user-1',
+    tenantId: 'tenant-1',
+    tenantSlug: 'acme',
+    tenantName: 'Acme',
+    role: 'OWNER' as const,
+    permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+} as never;
+
 const PROCESSES = [
     {
         id: 'map-1',
@@ -224,13 +271,28 @@ function mount(activeId: string | null = 'map-1') {
     sidebarMounts = 0;
     serializeImpl = () => ({ rows: ROWS, freeform: [] });
     return render(
-        <TldrawProcessWorkspace
-            tenantSlug="acme"
-            processes={PROCESSES}
-            activeId={activeId}
-            onActiveIdChange={() => {}}
-            onProcessesChange={() => {}}
-        />,
+        /*
+            `TenantProvider` is REQUIRED as of #3115, and that is a real change
+            rather than test scaffolding. The workspace mounts `OverlayBridge`,
+            whose `useTenantSWR` resolves the tenant API URL through
+            `useTenantContext` EAGERLY — before the null key is consulted — so
+            the component throws without a provider even with run mode off.
+
+            Satisfied in the app: `ProcessesClient` renders under
+            `src/app/t/[tenantSlug]/layout.tsx`, which mounts this. The
+            workspace previously needed no context at all, taking `tenantSlug`
+            as a prop and building its own URLs, which is why 12 tests in this
+            file went red the moment the bridge landed.
+        */
+        <TenantProvider value={TENANT_CTX}>
+            <TldrawProcessWorkspace
+                tenantSlug="acme"
+                processes={PROCESSES}
+                activeId={activeId}
+                onActiveIdChange={() => {}}
+                onProcessesChange={() => {}}
+            />
+        </TenantProvider>,
     );
 }
 
@@ -374,5 +436,60 @@ describe('the inert size control is not offered on this host', () => {
         // `undefined` would read as "host did not say" and fall back to TRUE.
         mount();
         expect(inspectorProps.at(-1)?.rendererHonoursSize).not.toBeUndefined();
+    });
+});
+
+/**
+ * VR-6 — the workspace gates the overlay poll on Run Mode (#3115).
+ *
+ * The provider's own behaviour given `enabled` is covered in
+ * `canvas-execution-overlay-provider`. What only this file can show is that the
+ * WORKSPACE supplies the flag correctly — and the off direction is the one that
+ * matters in production, where every map is a DOCUMENT map and an ungated mount
+ * would put a 3s poll on all of them.
+ */
+describe('the live-execution poll is gated on Run Mode', () => {
+    const overlayCalls = () =>
+        swrCalls.filter(
+            (c) => c.key === null || c.key === CACHE_KEYS.automation.executions.live(),
+        );
+
+    beforeEach(() => {
+        swrCalls.length = 0;
+    });
+
+    it('is OFF by default — a null key, so nothing is fetched at all', () => {
+        mount();
+        const calls = overlayCalls();
+        // Non-empty first: an empty selection passes every `every()` below.
+        expect(calls.length).toBeGreaterThan(0);
+        expect(calls.every((c) => c.key === null)).toBe(true);
+        // A null key AND a zero interval — either alone still schedules work.
+        expect(calls.every((c) => (c.opts as { refreshInterval: number }).refreshInterval === 0)).toBe(
+            true,
+        );
+    });
+
+    it('and turns ON when Run Mode does, at the live key and a 3s cadence', () => {
+        mount();
+        act(() => {
+            screen.getByTestId('run-mode-on').click();
+        });
+        const live = swrCalls.filter(
+            (c) => c.key === CACHE_KEYS.automation.executions.live(),
+        );
+        expect(live.length).toBeGreaterThan(0);
+        expect((live.at(-1)!.opts as { refreshInterval: number }).refreshInterval).toBe(3000);
+    });
+
+    it('the stub really did flip the flag, not just fire a handler', () => {
+        // Positive control for the test above: if `setRunMode` were inert, the
+        // key assertion would fail for a reason that looks like a product bug.
+        mount();
+        expect(screen.getByTestId('run-mode-on')).toHaveTextContent('off');
+        act(() => {
+            screen.getByTestId('run-mode-on').click();
+        });
+        expect(screen.getByTestId('run-mode-on')).toHaveTextContent('on');
     });
 });
