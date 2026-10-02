@@ -167,7 +167,7 @@ export function ChecklistGearButton({
                                         className={cn(
                                             'flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-semibold tabular-nums',
                                             item.visible
-                                                ? 'bg-[var(--brand-subtle)] text-[var(--brand-default)]'
+                                                ? 'bg-[var(--brand-subtle)] text-content-brand'
                                                 : 'text-content-subtle',
                                         )}
                                         data-testid={`checklist-order-${item.id}`}
