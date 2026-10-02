@@ -432,7 +432,17 @@ function AgentsInner({
     // above spells it so the two cannot drift apart.
     //
     // NOT a fix for #3099, and must not be read as a test of its hypothesis.
-    // `<DataTable>` gates this behind a 120 ms pointer DWELL
+    //
+    // (Written as `DataTable` rather than as its JSX opening tag on purpose:
+    // `filter-toolbar-coverage` and `columns-dropdown-coverage` decide whether a
+    // file mounts a table by matching that opening tag against the file's RAW
+    // text, comments included. Writing it that way here made both guards report
+    // this file as a table surface with no toolbar and no column gear, which it
+    // is not — it mounts no table at all. Twice, in fact: the first attempt to
+    // explain the trap quoted the tag and re-triggered it. Tracked separately;
+    // the guards should match against code with comments masked.)
+    //
+    // The shared `DataTable` gates this behind a 120 ms pointer DWELL
     // (`ROW_PREFETCH_DWELL_MS`), while Playwright's `click()` moves the pointer
     // and presses inside one action window — so under E2E the dwell timer is
     // still pending when `handleAgentRowClick` runs and the segment cache is
