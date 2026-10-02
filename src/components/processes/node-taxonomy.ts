@@ -204,6 +204,22 @@ export interface NodeTypeMeta {
  * compiler prove the value is a real `ProcessNodeKind`. The previous
  * declaration asserted nothing of the sort.
  */
+/**
+ * Per-instance footprint. Three discrete steps — not free resize.
+ *
+ * Moved here from the xyflow node renderer when that was deleted (#3079). The
+ * size is a property of a NODE, not of whichever component draws it, and the
+ * inspector reads it on both hosts — on tldraw it is deliberately not applied,
+ * for the reason `use-tldraw-selection.ts` sets out at length.
+ */
+export type ProcessNodeSize = 'sm' | 'md' | 'lg';
+export const PROCESS_NODE_SIZES: ProcessNodeSize[] = ['sm', 'md', 'lg'];
+export const DEFAULT_NODE_SIZE: ProcessNodeSize = 'md';
+
+export function isProcessNodeSize(value: unknown): value is ProcessNodeSize {
+    return value === 'sm' || value === 'md' || value === 'lg';
+}
+
 export const PROCESS_STEP_NODE_TYPE = 'processStep' satisfies ProcessNodeKind;
 
 export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
