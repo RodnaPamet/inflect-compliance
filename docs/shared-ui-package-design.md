@@ -468,6 +468,11 @@ in place.
 
 ## Roadmap — the sequence, and what verifies each step
 
+*(This is section 6. It is named `Roadmap` rather than numbered because this doc is
+classified `living`, and `tests/guardrails/docs-accuracy.test.ts` requires a literal
+`^## Roadmap` H2 of every living doc — so the heading cannot carry its number. The gap
+between §5 and §7 is that requirement, not a missing section.)*
+
 The constraint is §5.1: the population floor has a 13-file margin, so **no file moves until
 `SHARED_UI_ROOTS` covers its destination.** And the in-flight shared-UI work must land first — a
 file move conflicts with every open PR that edits the moved file, and resolving that conflict is
