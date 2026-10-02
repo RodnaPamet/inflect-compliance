@@ -279,20 +279,27 @@ describe('a variant change also redraws the line', () => {
         expect(f.shapeUpdates[0]!.id).not.toBe('binding:b1');
     });
 
-    it('writes ONLY the variant, leaving the label prop untouched', () => {
-        // This assertion used to read "a label-only change leaves the line
-        // ALONE", which was true while the variant was the only mirrored prop
-        // and became false the moment the label started mirroring too (#3093).
-        // Its job was teeth for the `!== undefined` guards — that every edge
-        // edit must not rewrite an unrelated line prop to `undefined`, which a
-        // `T.string` record rejects. That job now belongs to the controls-only
-        // case below, and what is worth asserting here is the narrower claim
-        // the patch builder actually makes.
+    it('writes the variant and the chip, and NOT the label', () => {
+        /*
+            This assertion used to read "a label-only change leaves the line
+            ALONE", which was true while the variant was the only mirrored prop
+            and became false the moment the label started mirroring too.
+            Its job was teeth for the `!== undefined` guards — that every edge
+            edit must not rewrite an unrelated line prop to `undefined`, which a
+            `T.string` record rejects. That job now belongs to the controls-only
+            case below, and what is worth asserting here is the narrower claim
+            the patch builder actually makes.
+
+            `chipLabel: ''` joins it for #3093: a variant change can move an
+            edge off an automation kind, and the chip has to go with it. The
+            exact `toEqual` is deliberate — it is what keeps `label` out, and a
+            widened `toMatchObject` would admit the `undefined` this guards.
+        */
         const f = fakeEditor([LINE_SHAPE]);
         const h = renderHook(() => useTldrawSelection(f.editor as never));
         act(() => h.result.current.onEdgeUpdate('e1', { variant: 'conditional' }));
         expect(f.shapeUpdates).toHaveLength(1);
-        expect(f.shapeUpdates[0]!.props).toEqual({ edgeKind: 'conditional' });
+        expect(f.shapeUpdates[0]!.props).toEqual({ edgeKind: 'conditional', chipLabel: '' });
     });
 
     it('and an unknown edge key touches neither record', () => {
@@ -344,6 +351,29 @@ describe('a label change also redraws the line (#3093)', () => {
         expect(f.shapeUpdates[0]).toMatchObject({
             props: { label: 'if rejected', edgeKind: 'conditional' },
         });
+    });
+
+    it('EITHER edit clears the chip, because a chip only shows without a label', () => {
+        /*
+            The asymmetry worth pinning (#3093). A chip renders only on an edge
+            with no label, so typing one must remove it — and changing the
+            variant away from an automation kind must too.
+
+            CLEARED rather than recomputed: this adapter has no translator, and
+            the chip's text is localised. That is sound because an inspector edit
+            can only ever REMOVE a chip, never add one — the variant cycle offers
+            `flow`/`conditional`/`reference` only, so no edit here can turn an
+            edge INTO an automation kind. The next load resolves anything else.
+        */
+        const f = fakeEditor([LINE_SHAPE]);
+        const h = renderHook(() => useTldrawSelection(f.editor as never));
+        act(() => h.result.current.onEdgeUpdate('e1', { label: 'typed' }));
+        expect(f.shapeUpdates[0]).toMatchObject({ props: { chipLabel: '' } });
+
+        const g = fakeEditor([LINE_SHAPE]);
+        const h2 = renderHook(() => useTldrawSelection(g.editor as never));
+        act(() => h2.result.current.onEdgeUpdate('e1', { variant: 'reference' }));
+        expect(g.shapeUpdates[0]).toMatchObject({ props: { chipLabel: '' } });
     });
 
     it('a controls-only change still leaves the line alone', () => {

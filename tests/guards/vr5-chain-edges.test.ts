@@ -34,47 +34,83 @@ describe('VR-5 — chain edges', () => {
         expect(src).toMatch(/export function inferEdgeKind/);
     });
 
-    it('the per-kind automation style + chip are UNPORTED, on the record', () => {
+    it('the per-kind automation style and the chip are PORTED (#3093)', () => {
         /*
-            ═══ A RETIREMENT, NOT A DELETION (#3079) ═══
+            ═══ A RETIREMENT, REVERSED BY THE OWNER ═══
 
-            `buildAutomationEdgeStyle` and `data-edge-kind-chip` lived only in
-            `components/processes/ProcessEdge.tsx`, the xyflow edge renderer.
-            On an AUTOMATION map that gave each semantic edge kind a distinct
-            stroke plus a label chip so — per that file's own docblock — "the
-            workflow graph reads without opening any node". The tldraw edge
-            draws every automation edge identically.
+            This assertion used to pin the ABSENCE of the per-kind styling, and
+            the reasoning it gave was sound as far as it went: `0 maps in
+            AUTOMATION mode` in production at the cutover, so the styling was
+            decoration for a surface nobody had created.
 
-            Deleting this test was the obvious move and the wrong one. The
-            sibling guard `visual-editor-reachability` exists BECAUSE VR-5 was
-            dead code once already; replacing a reachability claim with silence
-            is precisely how that recurs.
+            The owner decided to port it anyway, which is their call to make —
+            the production count argues about PRIORITY and this file had turned
+            it into an argument about CORRECTNESS. Recorded here rather than
+            quietly swapped, because the previous text is the kind of note a
+            later reader would otherwise find contradicted with no explanation.
 
-            ═══ THE NUMBER THAT MAKES IT TOLERABLE ═══
+            ═══ WHAT PORTED, AND WHERE IT LIVES NOW ═══
 
-            Read against production at the cutover: **0 maps in AUTOMATION
-            mode** (1 ProcessMap total, 3 ProcessEdge rows). So the styling is
-            decoration for a surface nobody has created, and porting it would
-            be building a renderer for zero rows.
+            Not as `buildAutomationEdgeStyle` — the xyflow renderer had TWO
+            dispatches on one field, a variant style and an automation style
+            where the second overrode the first on the same read. Here they are
+            arms of one `edgeStrokeFor`, because `edgeKind` carries either a
+            document variant or an automation kind and never both.
 
-            ═══ WHAT WOULD HAVE TO CHANGE ═══
-
-            The first AUTOMATION map. The tldraw edge already reads `edgeKind`
-            for the flow/conditional/reference strokes (#3090) and `label` for
-            the caption (#3093), so the port is a third arm on an existing
-            branch plus the chip — not new machinery.
-
-            Asserted as an ABSENCE so the state cannot drift silently into
-            "somebody probably did it".
+            The CHIP is split: `automationChipKey` is the pure mapping, and the
+            HOST resolves the text, because no shape util in this codebase takes
+            a translator and the chip loses to a typed label and to controls —
+            and `controls` lives on the binding, which the line cannot reach.
         */
-        const util = read(
-            'src/components/processes/tldraw/ProcessEdgeShapeUtil.tsx',
-        );
-        expect(util).not.toMatch(/buildAutomationEdgeStyle/);
-        expect(util).not.toMatch(/data-edge-kind-chip/);
-        // The variant + label arms it DOES have, so this is a narrow absence
-        // rather than "the edge renderer is empty".
+        const util = read('src/components/processes/tldraw/ProcessEdgeShapeUtil.tsx');
+        const shape = read('src/components/processes/tldraw/process-edge-shape.ts');
+
+        // The chip renders, tagged with the kind that produced it.
+        expect(util).toMatch(/data-edge-kind-chip/);
+        // Still ONE dispatch, not the xyflow pair.
         expect(util).toMatch(/edgeStrokeFor\(edgeKind\)/);
+        expect(util).not.toMatch(/buildAutomationEdgeStyle/);
         expect(util).toMatch(/data-process-edge-label/);
+
+        /*
+            The colour must be an INLINE STYLE, not the `stroke` attribute, and
+            this is the assertion that pins it: a CSS class beats a presentation
+            attribute, so the element's own `stroke-border-emphasis` would keep
+            painting while a `stroke="var(--content-error)"` sat there looking
+            applied. Pinned in a guard as well as in a rendered test because the
+            rendered test reads the computed style and a reader changing this
+            line would not necessarily think to run it.
+        */
+        expect(util).toMatch(/style=\{variantStroke\.stroke \? \{ stroke: variantStroke\.stroke \}/);
+
+        // All six kinds carry a token, and the mapping is total.
+        for (const k of [
+            'trigger-flow',
+            'condition-pass',
+            'condition-fail',
+            'chain-delay',
+            'sla-breach',
+            'sla-pass',
+        ]) {
+            expect(shape).toMatch(new RegExp(`case '${k}':`));
+        }
+        expect(shape).toMatch(/export function automationChipKey/);
+    });
+
+    it('and inferEdgeKind has its consumer back — the live-draw site', () => {
+        /*
+            The module's own reason for existing: `visual-editor-reachability`
+            was written BECAUSE VR-5 was dead code once already. It became dead
+            a second time when the xyflow canvas took its `onConnect` call site
+            with it, and this is the tldraw equivalent of that call site.
+
+            Asserted in BOTH files deliberately — the sibling guard asserts the
+            same consumer from the reachability side. One of the two will be
+            edited by someone removing this; two make that visible.
+        */
+        const arrow = read('src/components/processes/tldraw/arrow-to-edge.ts');
+        expect(arrow).toMatch(/inferEdgeKind\(/);
+        // In the PURE classifier, not buried in the editor plumbing.
+        expect(arrow).toMatch(/edgeKind: inferEdgeKind\(/);
     });
 });

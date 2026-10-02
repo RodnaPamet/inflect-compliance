@@ -114,7 +114,9 @@ async function drawArrow(
 const processEdges = (editor: Editor) =>
     editor.store.allRecords().filter(
         (r) => r.typeName === 'binding' && (r as { type?: string }).type === PROCESS_EDGE_BINDING_TYPE,
-    ) as unknown as Array<{ props: { edgeKey: string; sourceKey: string; targetKey: string } }>;
+    ) as unknown as Array<{
+        props: { edgeKey: string; sourceKey: string; targetKey: string; edgeKind: string };
+    }>;
 
 const lines = (editor: Editor) =>
     editor.store.allRecords().filter(
@@ -161,6 +163,71 @@ describe('an arrow between two process nodes', () => {
         await drawArrow(editor, 'a', 'b');
         const key = processEdges(editor)[0]!.props.edgeKey;
         expect(String(lines(editor)[0]!.id)).toContain(key);
+    });
+});
+
+/**
+ * VR-5's on-connect inference, through the REAL editor (#3093).
+ *
+ * The pure matrix is asserted in `arrow-to-edge-classify`; what these add is
+ * the half a pure test cannot reach — that the inferred kind lands on BOTH
+ * records, and that the host resolves the chip for a drawn edge. The binding
+ * and the line each carry `edgeKind`, and the converter writes them from one
+ * verdict precisely so they cannot disagree; a test that read only one of them
+ * would pass while a freshly drawn edge was drawn as one kind and saved as
+ * another.
+ */
+describe('a drawn edge between AUTOMATION nodes infers its kind', () => {
+    const AUTO_ROWS: GraphRows = {
+        nodes: [node('t', 'trigger', 0), node('x', 'action', 400), node('y', 'action', 800)],
+        edges: [],
+    };
+
+    it('writes the inferred kind to the BINDING and the LINE alike', async () => {
+        const editor = await mount(AUTO_ROWS);
+        await drawArrow(editor, 'x', 'y');
+        const binding = processEdges(editor)[0]!;
+        const line = lines(editor)[0]! as unknown as { props: { edgeKind: string } };
+        // action -> action is a chained rule.
+        expect(binding.props.edgeKind).toBe('chain-delay');
+        expect(line.props.edgeKind).toBe('chain-delay');
+        expect(line.props.edgeKind).toBe(binding.props.edgeKind);
+    });
+
+    it('and the host resolves the CHIP for it, localised', async () => {
+        // The chip text comes from `messages/en.json` through the host's
+        // translator — compared against the catalogue rather than a literal,
+        // so a copy change moves both together instead of reddening this.
+        const en = require('../../messages/en.json') as {
+            automation: { edges: Record<string, string> };
+        };
+        const editor = await mount(AUTO_ROWS);
+        await drawArrow(editor, 'x', 'y');
+        const line = lines(editor)[0]! as unknown as { props: { chipLabel: string } };
+        expect(line.props.chipLabel).toBe(en.automation.edges.autoChain);
+        expect(line.props.chipLabel.length).toBeGreaterThan(0);
+    });
+
+    it('trigger -> action infers the default flow, which gets NO chip', async () => {
+        // Teeth against "every automation edge gets a pill": `trigger-flow` is
+        // the ordinary automation edge and its colour already says so.
+        const editor = await mount(AUTO_ROWS);
+        await drawArrow(editor, 't', 'x');
+        const line = lines(editor)[0]! as unknown as { props: { edgeKind: string; chipLabel: string } };
+        expect(line.props.edgeKind).toBe('trigger-flow');
+        expect(line.props.chipLabel).toBe('');
+    });
+
+    it('and a DOCUMENT pair still draws as flow with no chip', async () => {
+        // The regression that matters most: every existing tenant map is a
+        // document map, and wiring inference must not change one of them.
+        const editor = await mount();
+        await drawArrow(editor, 'a', 'b');
+        const binding = processEdges(editor)[0]!;
+        const line = lines(editor)[0]! as unknown as { props: { edgeKind: string; chipLabel: string } };
+        expect(binding.props.edgeKind).toBe('flow');
+        expect(line.props.edgeKind).toBe('flow');
+        expect(line.props.chipLabel).toBe('');
     });
 });
 
