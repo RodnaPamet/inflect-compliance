@@ -3,7 +3,7 @@
  *
  *   1. Copy canvas as image to clipboard via `ClipboardItem`.
  *      Helper at `src/lib/processes/canvas-export.ts`; menu item
- *      at `src/components/processes/CanvasExportMenu.tsx`.
+ *      at `src/components/processes/TldrawCanvasExportMenu.tsx`.
  *   2. Collapsible group nodes — chevron toggle in the group's
  *      title sticker flips `data.collapsed`, shrinks the xyflow
  *      bbox to `COLLAPSED_GROUP_W/H`, and sets `hidden: true` on
@@ -26,7 +26,7 @@ const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
 
 describe("PR-B polish — clipboard copy + collapsible groups", () => {
     describe("1. Clipboard copy", () => {
-        const helper = () => read("src/lib/processes/canvas-export.ts");
+        const helper = () => read("src/lib/processes/tldraw-canvas-export.ts");
         /**
          * The engine-free half. `canCopyImageToClipboard` lives here because it
          * is a browser feature check, and because both export menus need it —
@@ -36,27 +36,29 @@ describe("PR-B polish — clipboard copy + collapsible groups", () => {
         const sharedHelper = () =>
             read("src/lib/processes/canvas-export-shared.ts");
         const menu = () =>
-            read("src/components/processes/CanvasExportMenu.tsx");
+            read("src/components/processes/TldrawCanvasExportMenu.tsx");
 
-        it("exports copyCanvasAsImageToClipboard from canvas-export", () => {
+        it("exports copyTldrawCanvasToClipboard from canvas-export", () => {
             expect(helper()).toMatch(
-                /export async function copyCanvasAsImageToClipboard/,
+                /export async function copyTldrawCanvasToClipboard/,
             );
         });
 
         it("uses navigator.clipboard.write + ClipboardItem", () => {
             const src = helper();
             expect(src).toMatch(/navigator\.clipboard\.write\(\[/);
-            expect(src).toMatch(/new ClipboardItem\(\{[\s\S]*?"image\/png"/);
+            // Quote-agnostic: the two eras ship different prettier configs, and a
+            // guard that pins a quote style is pinning formatting, not behaviour.
+            expect(src).toMatch(/new ClipboardItem\(\{[\s\S]{0,40}['"]image\/png['"]/);
         });
 
         it("feature-detects clipboard support (throws on unsupported)", () => {
             // Guarding `navigator.clipboard?.write` AND
-            // `typeof ClipboardItem === "undefined"` catches both
+            // `typeof ClipboardItem === ["\']undefined["\']` catches both
             // older Safari and Firefox builds.
             const src = helper();
             expect(src).toMatch(/navigator\.clipboard\?\.write/);
-            expect(src).toMatch(/typeof ClipboardItem === "undefined"/);
+            expect(src).toMatch(/typeof ClipboardItem === ["\']undefined["\']/);
         });
 
         it("exports canCopyImageToClipboard for the menu's visibility gate", () => {
@@ -70,20 +72,23 @@ describe("PR-B polish — clipboard copy + collapsible groups", () => {
             );
         });
 
-        it("CanvasExportMenu wires the new item gated by canCopyImageToClipboard", () => {
+        it("TldrawCanvasExportMenu wires the new item gated by canCopyImageToClipboard", () => {
             const src = menu();
             expect(src).toMatch(/canCopyImageToClipboard/);
-            expect(src).toMatch(/copyCanvasAsImageToClipboard/);
-            expect(src).toMatch(/data-testid="canvas-export-clipboard"/);
+            expect(src).toMatch(/copyTldrawCanvasToClipboard/);
+            expect(src).toMatch(/data-testid="tldraw-export-clipboard"/);
             // Localised via next-intl — assert the key wiring + the
             // English catalog value rather than the inline literal.
-            expect(src).toMatch(/t\("copyAsImage"\)/);
+            expect(src).toMatch(/t\(['"]copyAsImage['"]\)/);
             const en = require("../../messages/en.json");
             expect(en.automation.exportMenu.copyAsImage).toBe("Copy as image");
-            // The menu's `run` callback must handle the new
-            // "clipboard" kind alongside the existing four.
+            // The menu's `run` callback must handle the new "clipboard" kind
+            // alongside the existing four. On this host the union is a NAMED
+            // type rather than an inline annotation, and quoted with single
+            // quotes — so the needle matches the alias and is quote-agnostic.
+            // Pinning either detail would be pinning formatting.
             expect(src).toMatch(
-                /kind:\s*"png"\s*\|\s*"svg"\s*\|\s*"pdf"\s*\|\s*"evidence"\s*\|\s*"clipboard"/,
+                /type TldrawExportKind\s*=\s*['"]png['"]\s*\|\s*['"]svg['"]\s*\|\s*['"]pdf['"]\s*\|\s*['"]evidence['"]\s*\|\s*['"]clipboard['"]/,
             );
         });
 
@@ -92,88 +97,73 @@ describe("PR-B polish — clipboard copy + collapsible groups", () => {
             // Find the clipboard branch within `run(...)` and scope
             // to it via the NEXT `else if` (the PDF branch is the
             // structural neighbour and won't move under it).
-            const start = src.indexOf('kind === "clipboard"');
-            expect(start).toBeGreaterThan(-1);
-            const end = src.indexOf('else if (kind === "pdf"', start);
-            expect(end).toBeGreaterThan(start);
-            const body = src.slice(start, end);
-            expect(body).toMatch(/copyCanvasAsImageToClipboard\(/);
+            // Located by regex rather than `indexOf` of a quoted literal: the
+            // two hosts quote differently, and an `indexOf` that misses
+            // returns -1, which the `toBeGreaterThan(-1)` below would catch —
+            // but only after the slice had already been taken from 0.
+            const startMatch = /kind === ['"]clipboard['"]/.exec(src);
+            expect(startMatch).not.toBeNull();
+            const start = startMatch!.index;
+            const endMatch = /else if \(kind === ['"]pdf['"]/.exec(src.slice(start));
+            expect(endMatch).not.toBeNull();
+            const body = src.slice(start, start + endMatch!.index);
+            expect(body).toMatch(/copyTldrawCanvasToClipboard\(/);
             expect(body).toMatch(/toast\.success/);
         });
     });
 
-    describe("2. Collapsible groups", () => {
-        const node = () =>
-            read("src/components/processes/ProcessTypedNode.tsx");
+    describe("2. Collapsible groups — RETIRED, on the record", () => {
+        /*
+            ═══ WHY THIS IS SIX ASSERTIONS REPLACED BY ONE ═══
 
-        it("imports useReactFlow + Nucleo's ChevronRight (rotated 90° for the expanded state)", () => {
-            const src = node();
-            expect(src).toMatch(
-                /import\s*\{[\s\S]*?\buseReactFlow\b[\s\S]*?\}\s*from\s*"@xyflow\/react"/,
-            );
-            // Nucleo doesn't ship ChevronDown today — we rotate
-            // ChevronRight via `rotate-90` instead of pulling
-            // lucide back into the canvas (locked by no-lucide).
-            expect(src).toMatch(
-                /import\s*\{\s*ChevronRight\s*\}\s*from\s*"@\/components\/ui\/icons\/nucleo\/chevron-right"/,
-            );
-            // The renderer chooses rotation by collapsed state.
-            expect(src).toMatch(
-                /const chevronRotation = collapsed \? "" : "rotate-90"/,
-            );
-        });
+            Collapsible group nodes lived entirely in `ProcessTypedNode.tsx` —
+            `GroupNodeChrome`, a chevron toggle, `COLLAPSED_GROUP_W/H`, and a
+            handler that shrank the node and flipped its descendants' `hidden`
+            flags. None of it ported to the tldraw node shape.
 
-        it("declares the collapsed-group geometry constants", () => {
-            const src = node();
-            expect(src).toMatch(/const COLLAPSED_GROUP_W\s*=\s*\d+/);
-            expect(src).toMatch(/const COLLAPSED_GROUP_H\s*=\s*\d+/);
-        });
+            Retired rather than deleted, for the reason `vr5-chain-edges` gives
+            at length: this epic's sibling guards exist BECAUSE features here
+            have been dead code before, and silence is how that recurs.
 
-        it("GroupNodeChrome subcomponent exists with a chevron toggle button", () => {
-            const src = node();
-            expect(src).toMatch(/function GroupNodeChrome\b/);
-            expect(src).toMatch(/data-testid="group-collapse-toggle"/);
-        });
+            ═══ THREE MEASUREMENTS, AND THE THIRD IS THE ONE THAT MATTERS ═══
 
-        it("toggle handler shrinks style + flips descendants' hidden flag", () => {
-            const src = node();
-            const start = src.indexOf("const toggleCollapsed");
-            expect(start).toBeGreaterThan(-1);
-            const end = src.indexOf("[id, collapsed, setNodes]", start);
-            expect(end).toBeGreaterThan(start);
-            const body = src.slice(start, end);
-            // The handler must do all three things:
-            //   (a) walk descendants via parentId chains,
-            //   (b) flip data.collapsed on the group itself,
-            //   (c) set style.width/height to COLLAPSED_GROUP_*
-            //       (collapsing) or back to data.width/height
-            //       (expanding),
-            //   (d) flip `hidden` on every descendant.
-            expect(body).toMatch(/parentId/);
-            expect(body).toMatch(/data:\s*\{\s*\.\.\.prevData,\s*collapsed:\s*nextCollapsed/);
-            expect(body).toMatch(/COLLAPSED_GROUP_W/);
-            expect(body).toMatch(/COLLAPSED_GROUP_H/);
-            expect(body).toMatch(/hidden:\s*nextCollapsed/);
-        });
+            1. It was NEVER PERSISTED. The xyflow renderer's own comment says
+               "the save serialiser intentionally drops `collapsed`" — so this
+               was session-only view state by design, not data. Nothing stored
+               is being hidden by its absence.
 
-        it("the renderer reads data.collapsed + branches on it", () => {
-            const src = node();
-            expect(src).toMatch(
-                /collapsed = \(nodeData as \{ collapsed\?: boolean \}\)\.collapsed === true/,
-            );
-            // Two `data-process-node-collapsed` paths — one for the
-            // pill (true) and one for the dashed container (false).
-            expect(src).toMatch(/data-process-node-collapsed="true"/);
-            expect(src).toMatch(/data-process-node-collapsed="false"/);
-        });
+            2. Production has **0 group nodes** (5 ProcessNode rows, none of
+               type `group`). Collapse had nothing to collapse.
 
-        it("toggle handler stops propagation + prevents default", () => {
-            // Without these, the chevron click would also trigger
-            // xyflow selection + the canvas's double-click drill
-            // (a stray rapid double-click pattern).
-            const src = node();
-            expect(src).toMatch(/event\.stopPropagation\(\)/);
-            expect(src).toMatch(/event\.preventDefault\(\)/);
+            3. The NEED it served is ported, differently and arguably better.
+               #3085 and #3088 shipped drill-down: double-clicking a group
+               scopes the canvas to that group's children and a breadcrumb
+               shows the trail. Collapsing hid a group's contents in place;
+               drilling in shows only them. Both answer "this sub-process is
+               cluttering the map", and the tldraw host answers it.
+
+            ═══ WHAT WOULD HAVE TO CHANGE ═══
+
+            A user wanting a group's contents hidden WITHOUT leaving the
+            top-level view — collapse and drill-down are not the same gesture,
+            and the first group node in production is when the difference stops
+            being theoretical. At that point reach for `getShapeVisibility`,
+            which already filters by scope for the drill-down.
+        */
+        const nodeUtil = () =>
+            read("src/components/processes/tldraw/ProcessNodeShapeUtil.tsx");
+
+        it("is absent from the tldraw node shape, and the successor gesture is present", () => {
+            // The absence, asserted so it cannot drift into "somebody probably
+            // did it".
+            expect(nodeUtil()).not.toMatch(/GroupNodeChrome/);
+            expect(nodeUtil()).not.toMatch(/data\.collapsed/);
+            // And the replacement capability, so this is a substitution on the
+            // record rather than a hole. Drill-down is a canvas-level scope
+            // filter, not node chrome, which is why it lives elsewhere.
+            const canvas = read("src/components/processes/TldrawProcessCanvas.tsx");
+            expect(canvas).toMatch(/getShapeVisibility=\{getShapeVisibility\}/);
+            expect(canvas).toMatch(/onEnterGroup/);
         });
     });
 });

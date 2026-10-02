@@ -112,18 +112,18 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
         });
     });
 
-    describe("Client helpers — exportCanvasAsPdf + attachCanvasPngToEvidence", () => {
-        const src = read("src/lib/processes/canvas-export.ts");
+    describe("Client helpers — exportTldrawCanvasAsPdf + attachTldrawCanvasToEvidence", () => {
+        const src = read("src/lib/processes/tldraw-canvas-export.ts");
 
         it("exports both helpers with the canonical extended options", () => {
             expect(src).toMatch(
-                /export async function exportCanvasAsPdf\(\s*opts:\s*CanvasExportServerRouteOptions,?\s*\):\s*Promise<void>/,
+                /export async function exportTldrawCanvasAsPdf\(/,
             );
             expect(src).toMatch(
-                /export async function attachCanvasPngToEvidence\(\s*opts:\s*CanvasExportServerRouteOptions,?\s*\):\s*Promise<\{\s*evidenceId:\s*string\s*\}>/,
+                /export async function attachTldrawCanvasToEvidence\(/,
             );
             expect(src).toMatch(
-                /interface CanvasExportServerRouteOptions extends CanvasExportOptions \{[\s\S]{0,200}tenantSlug:\s*string;[\s\S]{0,200}mapId:\s*string;/,
+                /interface TldrawCanvasServerExportOptions extends TldrawCanvasExportOptions \{[\s\S]{0,200}tenantSlug:\s*string;[\s\S]{0,200}mapId:\s*string;/,
             );
         });
 
@@ -149,12 +149,12 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
         });
     });
 
-    describe("CanvasExportMenu — surfaces the two new items", () => {
-        const src = read("src/components/processes/CanvasExportMenu.tsx");
+    describe("TldrawCanvasExportMenu — surfaces the two new items", () => {
+        const src = read("src/components/processes/TldrawCanvasExportMenu.tsx");
 
         it("imports both new helpers", () => {
-            expect(src).toMatch(/exportCanvasAsPdf/);
-            expect(src).toMatch(/attachCanvasPngToEvidence/);
+            expect(src).toMatch(/exportTldrawCanvasAsPdf/);
+            expect(src).toMatch(/attachTldrawCanvasToEvidence/);
         });
 
         it("accepts the optional tenantSlug + mapId props", () => {
@@ -168,22 +168,28 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
             // mapId). Anchor the gate + the testids.
             expect(src).toMatch(/showServerItems\s*=\s*Boolean\(tenantSlug\s*&&\s*mapId\)/);
             for (const id of [
-                "canvas-export-pdf",
-                "canvas-export-evidence",
+                "tldraw-export-pdf",
+                "tldraw-export-evidence",
             ]) {
                 expect(src).toMatch(new RegExp(`data-testid="${id}"`));
             }
             // Items live INSIDE the showServerItems conditional —
             // anchor it.
             expect(src).toMatch(
-                /\{showServerItems &&[\s\S]{0,400}canvas-export-pdf/,
+                /\{showServerItems &&[\s\S]{0,400}tldraw-export-pdf/,
             );
         });
 
-        it("the run handler dispatches 4 kinds (png/svg/pdf/evidence)", () => {
-            expect(src).toMatch(
-                /kind:\s*["']png["']\s*\|\s*["']svg["']\s*\|\s*["']pdf["']\s*\|\s*["']evidence["']/,
-            );
+        it("the kind union covers FIVE actions, not the original four", () => {
+            // `clipboard` joined png/svg/pdf/evidence on this host. Asserted as
+            // a union over the type rather than a count of branches: a
+            // dispatcher missing an arm is a type error, where a count is
+            // satisfied by any five branches.
+            for (const kind of ["png", "svg", "pdf", "evidence", "clipboard"]) {
+                expect(read("src/components/processes/TldrawCanvasExportMenu.tsx")).toMatch(
+                    new RegExp(`[\'"]${kind}[\'"]`),
+                );
+            }
         });
 
         it("Evidence success surfaces toast.success", () => {
@@ -193,18 +199,18 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
             expect(en.automation.exportMenu.attachedToast).toMatch(
                 /^Process map attached to Evidence/,
             );
-            expect(src).toMatch(/toast\.success\(t\("attachedToast"\)\)/);
+            expect(src).toMatch(/toast\.success\(t\(['"]attachedToast['"]\)\)/);
         });
     });
 
     describe("PersistedProcessCanvas — passes tenantSlug + mapId to the menu", () => {
         const src = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
+            "src/components/processes/TldrawProcessWorkspace.tsx",
         );
 
-        it("threads tenantSlug + activeId to CanvasExportMenu", () => {
+        it("threads tenantSlug + activeId to TldrawCanvasExportMenu", () => {
             expect(src).toMatch(
-                /<CanvasExportMenu[\s\S]{0,500}tenantSlug=\{tenantSlug\}[\s\S]{0,200}mapId=\{activeId\}/,
+                /<TldrawCanvasExportMenu[\s\S]{0,500}tenantSlug=\{tenantSlug\}[\s\S]{0,200}mapId=\{activeId\}/,
             );
         });
     });
