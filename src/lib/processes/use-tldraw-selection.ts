@@ -220,6 +220,22 @@ export function useTldrawSelection(editor: Editor | null) {
             // truthiness check: `patch.label` of `''` is also a clear, and a
             // falsy test would treat the two clears differently.
             if (patch.label !== undefined) lineProps.label = patch.label ?? '';
+            /*
+                The CHIP has to be cleared by either edit, and that asymmetry is
+                the point: a chip only shows when an edge has no label, so
+                TYPING a label must remove it, and changing the variant away
+                from an automation kind must too.
+                
+                Cleared rather than recomputed, because this adapter has no
+                translator and the chip's text is localised. The next load
+                resolves it — which is correct for the only case that can
+                produce a chip here: changing the kind TO an automation one from
+                the inspector, where the variant cycle offers document variants
+                only. So an edit can only ever remove a chip, never add one.
+            */
+            if (patch.variant !== undefined || patch.label !== undefined) {
+                lineProps.chipLabel = '';
+            }
             if (Object.keys(lineProps).length > 0) {
                 editor.updateShape({
                     id: shapeIdForEdgeKey(binding.props.edgeKey),

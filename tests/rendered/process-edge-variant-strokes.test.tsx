@@ -50,7 +50,13 @@ jest.mock('tldraw', () => ({
 // Imported AFTER the mock so the util picks up the stubbed container.
 const { ProcessEdgeShapeUtil } =
     require('@/components/processes/tldraw/ProcessEdgeShapeUtil') as typeof import('@/components/processes/tldraw/ProcessEdgeShapeUtil');
-const { PROCESS_EDGE_SHAPE_TYPE, edgeStrokeFor } =
+// The real catalogue, `require`d to match the pattern this file already uses
+// below the `jest.mock` — a top-level `import` would be hoisted above it.
+const en = require('../../messages/en.json') as {
+    automation: { edges: Record<string, string> };
+};
+
+const { PROCESS_EDGE_SHAPE_TYPE, edgeStrokeFor, automationChipKey } =
     require('@/components/processes/tldraw/process-edge-shape') as typeof import('@/components/processes/tldraw/process-edge-shape');
 
 const util = Object.create(
@@ -70,7 +76,7 @@ function shapeWith(over: Record<string, unknown>) {
         opacity: 1,
         meta: {},
         typeName: 'shape',
-        props: { edgeKey: 'e1', edgeKind: 'flow', label: '', dx: 120, dy: 80, ...over },
+        props: { edgeKey: 'e1', edgeKind: 'flow', label: '', chipLabel: '', dx: 120, dy: 80, ...over },
     };
 }
 
@@ -218,5 +224,142 @@ describe('an edge draws its label', () => {
         const c = renderEdge({ label: 'if rejected', edgeKind: 'conditional' });
         expect(c.querySelector('line')!.getAttribute('stroke-dasharray')).toBe('7 5');
         expect(c.textContent).toContain('if rejected');
+    });
+});
+
+/**
+ * VR-5 — the automation edge kinds (#3093).
+ *
+ * ═══ WHY THESE ARE MORE ARMS, NOT A SECOND MECHANISM ═══
+ *
+ * `edgeKind` is ONE overloaded field. An edge carries either a document variant
+ * (`flow`/`conditional`/`reference`) or an automation kind, never both — and on
+ * the deleted xyflow renderer the automation style OVERRODE the variant style on
+ * exactly the same read. So porting VR-5 meant extending the switch the
+ * document variants already dispatch through, which is why these assertions sit
+ * in this file rather than a new one.
+ *
+ * ═══ THE ONE THING THAT WOULD SILENTLY NOT WORK ═══
+ *
+ * Automation kinds carry a COLOUR, and a colour cannot be a `stroke` attribute
+ * here: a CSS class beats a presentation attribute, so the element's
+ * `className="stroke-border-emphasis"` would keep painting while a
+ * `stroke="var(--content-error)"` attribute sat there looking applied. It has to
+ * be an inline style. That is asserted on `style.stroke` rather than
+ * `getAttribute('stroke')` for precisely that reason — the attribute form is the
+ * version that passes while doing nothing.
+ */
+describe('automation edge kinds carry a colour', () => {
+    const CASES: Array<[string, string]> = [
+        ['trigger-flow', 'var(--brand-default)'],
+        ['condition-pass', 'var(--content-success)'],
+        ['condition-fail', 'var(--content-error)'],
+        ['chain-delay', 'var(--canvas-edge)'],
+        ['sla-breach', 'var(--content-warning)'],
+        ['sla-pass', 'var(--content-success)'],
+    ];
+
+    it('each kind paints its token, as an inline style not an attribute', () => {
+        for (const [kind, token] of CASES) {
+            const line = renderEdge({ edgeKind: kind }).querySelector('line') as SVGLineElement;
+            expect(line.style.stroke).toBe(token);
+        }
+    });
+
+    it('and a DOCUMENT variant sets no stroke, so it follows the theme', () => {
+        // The teeth for the above: if every kind returned a colour, the three
+        // document variants would stop following the canvas-edge token and a
+        // map would become a colour chart.
+        for (const kind of ['flow', 'conditional', 'reference']) {
+            const line = renderEdge({ edgeKind: kind }).querySelector('line') as SVGLineElement;
+            expect(line.style.stroke).toBe('');
+            expect(line.getAttribute('class')).toContain('stroke-border-emphasis');
+        }
+    });
+
+    it('condition-fail and chain-delay also dash, and differently', () => {
+        // Colour alone is not enough: these two are the pair a colour-blind
+        // reader most needs told apart from their positive counterparts.
+        const fail = renderEdge({ edgeKind: 'condition-fail' }).querySelector('line')!;
+        const chain = renderEdge({ edgeKind: 'chain-delay' }).querySelector('line')!;
+        expect(fail.getAttribute('stroke-dasharray')).toBe('6 4');
+        expect(chain.getAttribute('stroke-dasharray')).toBe('2 5');
+        expect(fail.getAttribute('stroke-dasharray')).not.toBe(
+            chain.getAttribute('stroke-dasharray'),
+        );
+    });
+
+    it('pass and breach are distinguishable from each other', () => {
+        // `condition-pass` and `sla-pass` share a token deliberately — both mean
+        // "the good path". `sla-breach` must not share with either.
+        const pass = renderEdge({ edgeKind: 'condition-pass' }).querySelector('line')!;
+        const breach = renderEdge({ edgeKind: 'sla-breach' }).querySelector('line')!;
+        expect((pass as SVGLineElement).style.stroke).not.toBe(
+            (breach as SVGLineElement).style.stroke,
+        );
+    });
+});
+
+describe('the automation CHIP', () => {
+    it('renders the host-resolved text, tagged with its kind', () => {
+        const c = renderEdge({ edgeKind: 'condition-fail', chipLabel: 'Fail' });
+        const chip = c.querySelector('[data-edge-kind-chip]') as HTMLElement | null;
+        expect(chip).not.toBeNull();
+        expect(chip!.getAttribute('data-edge-kind-chip')).toBe('condition-fail');
+        expect(chip!.textContent).toContain('Fail');
+    });
+
+    it('is suppressed by an explicit label — the precedence that matters', () => {
+        // A label the user TYPED wins over one the system inferred. Both
+        // rendering would stack two captions on one line.
+        const c = renderEdge({ edgeKind: 'condition-fail', chipLabel: 'Fail', label: 'if over limit' });
+        expect(c.querySelector('[data-edge-kind-chip]')).toBeNull();
+        expect(c.textContent).toContain('if over limit');
+    });
+
+    it('renders nothing when the host supplied no chip', () => {
+        expect(renderEdge({ edgeKind: 'flow' }).querySelector('[data-edge-kind-chip]')).toBeNull();
+    });
+
+    it('sits at the midpoint, like the label it stands in for', () => {
+        const chip = renderEdge({ edgeKind: 'sla-pass', chipLabel: 'On time' })
+            .querySelector('[data-edge-kind-chip]') as HTMLElement;
+        expect(chip.style.left).toBe('60px');
+        expect(chip.style.top).toBe('40px');
+        expect(chip.style.transform).toBe('translate(-50%, -50%)');
+    });
+});
+
+describe('automationChipKey — the pure mapping the host resolves through', () => {
+    it('names a key for the five kinds that get a chip', () => {
+        expect(automationChipKey('condition-pass')).toBe('autoPass');
+        expect(automationChipKey('condition-fail')).toBe('autoFail');
+        expect(automationChipKey('chain-delay')).toBe('autoChain');
+        expect(automationChipKey('sla-breach')).toBe('autoSlaBreach');
+        expect(automationChipKey('sla-pass')).toBe('autoOnTime');
+    });
+
+    it('and NULL for trigger-flow, which is the default automation flow', () => {
+        // The xyflow renderer gave it an empty label for the same reason: a pill
+        // on every ordinary automation edge is noise, and the colour already
+        // says the edge is automated.
+        expect(automationChipKey('trigger-flow')).toBeNull();
+    });
+
+    it('and null for every document variant and anything unknown', () => {
+        for (const k of ['flow', 'conditional', 'reference', 'nonsense', '']) {
+            expect(automationChipKey(k)).toBeNull();
+        }
+    });
+
+    it('every key it returns exists in the catalogue', () => {
+        // The chip resolves through `t(key)`, so a key the catalogue lacks
+        // renders "undefined" into the pill.
+        const edges = en.automation.edges;
+        for (const k of ['condition-pass', 'condition-fail', 'chain-delay', 'sla-breach', 'sla-pass']) {
+            const key = automationChipKey(k)!;
+            expect(typeof edges[key]).toBe('string');
+            expect(edges[key]!.length).toBeGreaterThan(0);
+        }
     });
 });

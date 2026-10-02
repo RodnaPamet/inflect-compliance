@@ -77,7 +77,7 @@ function lines(editor: Editor) {
             (r) =>
                 r.typeName === 'shape' &&
                 (r as { type?: string }).type === PROCESS_EDGE_SHAPE_TYPE,
-        ) as Array<{ id: string; x: number; y: number; props: { dx: number; dy: number; edgeKey: string; edgeKind: string; label: string } }>;
+        ) as Array<{ id: string; x: number; y: number; props: { dx: number; dy: number; edgeKey: string; edgeKind: string; label: string; chipLabel: string } }>;
 }
 
 describe('an edge is drawn', () => {
@@ -132,6 +132,64 @@ describe('an edge is drawn', () => {
             edges: [{ ...ROWS.edges[0]!, labelOverride: 'approves' }],
         });
         expect(lines(editor)[0]!.props.label).toBe('approves');
+    });
+
+    it("resolving the automation CHIP from the row's kind (#3093)", async () => {
+        // The host resolves the chip's localised text at load, because no shape
+        // util takes a translator. `condition-fail` maps to `autoFail`, which
+        // the real English catalogue renders as "Fail".
+        const editor = await mount({
+            nodes: ROWS.nodes,
+            edges: [{ ...ROWS.edges[0]!, edgeKind: 'condition-fail' }],
+        });
+        expect(lines(editor)[0]!.props.chipLabel).toBe('Fail');
+    });
+
+    it('but an explicit label SUPPRESSES the chip at load, not at render', async () => {
+        /*
+            The precedence is resolved by the HOST, which is the only place that
+            can: the chip loses to a typed label and to controls, and `controls`
+            lives on the binding where the line cannot cheaply reach it.
+
+            Asserted on the stored prop rather than the rendered output, because
+            a renderer-side check would pass even if the host had computed a chip
+            that the renderer then happened to hide — leaving a resolved string
+            on every labelled edge for no reason.
+        */
+        const editor = await mount({
+            nodes: ROWS.nodes,
+            edges: [{
+                ...ROWS.edges[0]!,
+                edgeKind: 'condition-fail',
+                labelOverride: 'if over limit',
+            }],
+        });
+        expect(lines(editor)[0]!.props.chipLabel).toBe('');
+        expect(lines(editor)[0]!.props.label).toBe('if over limit');
+    });
+
+    it('and CONTROLS suppress it too — the pills are the caption', async () => {
+        const editor = await mount({
+            nodes: ROWS.nodes,
+            edges: [{
+                ...ROWS.edges[0]!,
+                edgeKind: 'sla-breach',
+                controls: [{ controlKey: 'c1', label: 'Approval', controlId: 'ctl_1', dataJson: null }],
+            }],
+        });
+        expect(lines(editor)[0]!.props.chipLabel).toBe('');
+    });
+
+    it('trigger-flow gets no chip, though it IS an automation kind', async () => {
+        // Teeth against "any automation kind gets a pill": the default flow
+        // would put one on every ordinary automation edge.
+        const editor = await mount({
+            nodes: ROWS.nodes,
+            edges: [{ ...ROWS.edges[0]!, edgeKind: 'trigger-flow' }],
+        });
+        expect(lines(editor)[0]!.props.chipLabel).toBe('');
+        // …but it still carries its kind, so the COLOUR applies.
+        expect(lines(editor)[0]!.props.edgeKind).toBe('trigger-flow');
     });
 
     it('and a NULL labelOverride becomes the empty string, not undefined', async () => {

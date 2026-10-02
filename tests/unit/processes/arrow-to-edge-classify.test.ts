@@ -37,6 +37,9 @@ describe('an arrow bound to two process nodes is an edge', () => {
             kind: 'convert',
             sourceKey: 'a',
             targetKey: 'b',
+            // Two `processStep`s are not an automation pair, so the
+            // inference yields the generic document edge (#3093).
+            edgeKind: 'flow',
         });
     });
 
@@ -52,6 +55,7 @@ describe('an arrow bound to two process nodes is an edge', () => {
             kind: 'convert',
             sourceKey: 'a',
             targetKey: 'b',
+            edgeKind: 'flow',
         });
     });
 
@@ -63,6 +67,7 @@ describe('an arrow bound to two process nodes is an edge', () => {
             kind: 'convert',
             sourceKey: 'b',
             targetKey: 'a',
+            edgeKind: 'flow',
         });
     });
 });
@@ -175,5 +180,83 @@ describe('mintEdgeKey', () => {
 
     it('is prefixed, so an id reads as an edge key', () => {
         expect(mintEdgeKey()).toMatch(/^edge-\d+-[a-z0-9]+$/);
+    });
+});
+
+/**
+ * VR-5's on-connect inference, restored with the canvas (#3093).
+ *
+ * The xyflow canvas called `inferEdgeKind` from `onConnect` with the two
+ * endpoint node kinds, and that call site went with the canvas — leaving the
+ * module with zero consumers, which two guards then recorded as an absence.
+ * `classifyArrow` is now where it happens, which puts it in the pure function
+ * this file exists to test rather than behind a mounted editor and a drag.
+ */
+describe('a drawn edge infers its automation kind from the endpoints', () => {
+    const AUTO: KnownNode[] = [
+        { nodeKey: 't', nodeType: 'trigger' },
+        { nodeKey: 'c', nodeType: 'condition' },
+        { nodeKey: 'x', nodeType: 'action' },
+        { nodeKey: 'y', nodeType: 'action' },
+        { nodeKey: 'g', nodeType: 'slaGate' },
+        { nodeKey: 's', nodeType: 'processStep' },
+        { nodeKey: 's2', nodeType: 'processStep' },
+    ];
+    const kindOf = (from: string, to: string): string | undefined => {
+        const v = classifyArrow(ends(from, to), AUTO, []);
+        return v.kind === 'convert' ? v.edgeKind : undefined;
+    };
+
+    it('trigger -> condition is the default automation flow', () => {
+        expect(kindOf('t', 'c')).toBe('trigger-flow');
+    });
+
+    it('action -> action is a CHAIN, and action -> anything else is not', () => {
+        // The one pair where the TARGET matters. Both arms asserted, because
+        // reading only the source would make every `action` edge a chain and
+        // the test for it would still pass.
+        expect(kindOf('x', 'y')).toBe('chain-delay');
+        expect(kindOf('x', 'c')).toBe('trigger-flow');
+    });
+
+    it('a branching source defaults to its POSITIVE branch', () => {
+        // The negative branch is the user's pick, not an inference — the
+        // inspector flips it. Defaulting to `condition-fail` would label a
+        // freshly drawn edge as a failure path nobody chose.
+        expect(kindOf('c', 'x')).toBe('condition-pass');
+        expect(kindOf('g', 'x')).toBe('sla-pass');
+    });
+
+    it('and a DOCUMENT pair stays flow, so document maps are unaffected', () => {
+        // The property that makes this safe to wire on every canvas rather
+        // than only on AUTOMATION maps.
+        //
+        // TWO distinct steps, not one twice: `validateEdge` refuses a self-edge
+        // and the verdict is then `refuse`, so the first draft of this read
+        // `undefined` and would have passed had it been written as a negation.
+        expect(kindOf('s', 's2')).toBe('flow');
+    });
+
+    it('every inferred kind is one the renderer can draw', () => {
+        /*
+            The seam between the two halves of VR-5, and the one a type cannot
+            check: `inferEdgeKind` returns an `AutomationEdgeKind` while
+            `edgeStrokeFor` takes a `string`, because `edgeKind` is a free
+            string on the wire. So a kind could be inferred that the renderer
+            falls through to the default arm for — drawn as an ordinary flow
+            edge, saved as something else, with nothing failing anywhere.
+        */
+        const { edgeStrokeFor } = require('@/components/processes/tldraw/process-edge-shape');
+        const pairs: Array<[string, string]> = [
+            ['t', 'c'],
+            ['c', 'x'],
+            ['x', 'y'],
+            ['x', 'c'],
+            ['g', 'x'],
+        ];
+        for (const [from, to] of pairs) {
+            const kind = kindOf(from, to)!;
+            expect(edgeStrokeFor(kind).stroke).toMatch(/^var\(--/);
+        }
     });
 });
