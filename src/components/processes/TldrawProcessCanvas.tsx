@@ -80,6 +80,7 @@ import { PALETTE_DRAG_MIME, type PaletteDropPayload } from './ProcessPalette';
 import { installArrowToEdgeConversion } from './tldraw/arrow-to-edge';
 import {
     edgeEndpointIndex,
+    collapsedHiddenKeys,
     shapeVisibilityForScope,
     visibleNodeKeys,
 } from './tldraw/drill-scope-host';
@@ -307,6 +308,22 @@ export function TldrawProcessCanvas({
         () => atom('processEdgeEndpoints', new Map()),
         [],
     );
+    /*
+        #3117 — keys folded away by a collapsed ancestor group. A THIRD atom
+        rather than folding this into `scopeAtom`, because the two are
+        independent reasons to hide and the scope's `null` means "no drill
+        filtering" — a meaning collapse must not borrow. `collapsedHiddenKeys`
+        says why at length.
+
+        An atom and not a ref, for the reason the scope atom records: the
+        hidden-shape cache is `@computed` and invalidates only on signals read
+        during evaluation, so a ref would be correct in code and stale on screen
+        with every direct-call test green.
+    */
+    const collapsedAtom = useMemo<Atom<Set<string>>>(
+        () => atom('processCollapsedHidden', new Set<string>()),
+        [],
+    );
     const disposeArrowConversion = useRef<(() => void) | null>(null);
     useEffect(() => {
         onDirtyRef.current = onDirty;
@@ -351,14 +368,18 @@ export function TldrawProcessCanvas({
      */
     const getShapeVisibility = useCallback(
         (shape: TLShape) =>
-            shapeVisibilityForScope(scopeAtom.get(), endpointsAtom.get())(
+            shapeVisibilityForScope(
+                scopeAtom.get(),
+                endpointsAtom.get(),
+                collapsedAtom.get(),
+            )(
                 // `TLShape` is a union whose `props` differ per type; the
                 // predicate reads only `id`, `type` and `props.nodeKey`, so it
                 // takes the structural minimum rather than discriminating a
                 // union it does not care about.
                 shape as unknown as { id: string; type?: string; props?: { nodeKey?: unknown } },
             ),
-        [scopeAtom, endpointsAtom],
+        [scopeAtom, endpointsAtom, collapsedAtom],
     );
 
     /**
@@ -374,10 +395,14 @@ export function TldrawProcessCanvas({
         const recompute = () => {
             scopeAtom.set(visibleNodeKeys(editor, drillGroupId));
             endpointsAtom.set(edgeEndpointIndex(editor));
+            // Same listener, because a fold is a store change like any other —
+            // toggling one, dragging a node into a folded group, or loading a
+            // map that was saved folded all arrive the same way.
+            collapsedAtom.set(collapsedHiddenKeys(editor));
         };
         recompute();
         return editor.store.listen(recompute);
-    }, [drillGroupId, scopeAtom, endpointsAtom, editorReady]);
+    }, [drillGroupId, scopeAtom, endpointsAtom, collapsedAtom, editorReady]);
 
     /**
      * Double-click a GROUP node to go inside it.
