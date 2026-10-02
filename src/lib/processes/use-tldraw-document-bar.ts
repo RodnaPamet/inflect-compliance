@@ -228,19 +228,55 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
         }
     }, [activeProcess, editedName, saveNow, processes, onProcessesChange]);
 
-    const handleNew = useCallback(async () => {
+    /**
+     * Create a map, in either canvas mode (#3116).
+     *
+     * ── WHY THE ARGUMENT IS NORMALISED ──────────────────────────────────
+     *
+     * `CanvasDocumentBar` renders `onClick={handleNew}`, so React hands this a
+     * SyntheticEvent as its first argument. Before this took a parameter that
+     * was harmless; now an un-normalised read would put an event object into the
+     * request body, where `CreateProcessMapSchema`'s enum rejects it — so the
+     * bar's own New button would 400 while the command palette worked.
+     *
+     * Only an explicit `'AUTOMATION'` flips the mode. Anything else — an event,
+     * undefined, a stray string — is a DOCUMENT map, which is the safe
+     * direction: a document map created by accident is renameable, whereas an
+     * automation map created by accident offers a rule editor over a process
+     * nobody modelled as one.
+     *
+     * Lifted verbatim in intent from the deleted xyflow canvas, which had the
+     * same two call shapes and the same normalisation for the same reason.
+     */
+    const handleNew = useCallback(async (canvasMode: CanvasMode | unknown = 'DOCUMENT') => {
         setCreating(true);
         setError(null);
         try {
-            const name = `Untitled process ${processes.length + 1}`;
+            const mode: CanvasMode = canvasMode === 'AUTOMATION' ? 'AUTOMATION' : 'DOCUMENT';
+            // Distinct names, because the two are different artefacts to the
+            // person reading the list: a workflow is a rule graph, a process is
+            // a map. The xyflow bar used exactly these two strings.
+            const name =
+                mode === 'AUTOMATION'
+                    ? `Untitled workflow ${processes.length + 1}`
+                    : `Untitled process ${processes.length + 1}`;
             const res = await doFetch(`/api/t/${tenantSlug}/processes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, canvasMode: 'DOCUMENT' }),
+                body: JSON.stringify({ name, canvasMode: mode }),
             });
             if (!res.ok) throw new Error(`Create failed (${res.status})`);
             const data = (await res.json()) as P;
-            onProcessesChange([...processes, data]);
+            /*
+                `canvasMode` is filled in from the request when the response
+                omits it. The server is the authority and does return it — but a
+                summary missing the field reads as DOCUMENT everywhere
+                downstream (`activeProcess.canvasMode ?? 'DOCUMENT'`), so a
+                freshly created AUTOMATION map would open on the document bar
+                until the next list refresh. The deleted bar did the same, with
+                the same `?? mode` shape.
+            */
+            onProcessesChange([...processes, { ...data, canvasMode: data.canvasMode ?? mode }]);
             onActiveIdChange(data.id);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Create failed');

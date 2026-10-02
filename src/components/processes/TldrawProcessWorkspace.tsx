@@ -384,12 +384,23 @@ function Inner({
                 undo: bar.handlers.handleUndo,
                 redo: bar.handlers.handleRedo,
                 duplicate: bar.handlers.handleDuplicate,
-                // No `newAutomation` or `newFromTemplate`: this bar's
-                // `handleNew` takes no argument and hardcodes
-                // `canvasMode: 'DOCUMENT'`, and `ProcessTemplateModal` is not
-                // mounted here. The builder omits a command whose action is
-                // absent rather than offering one that opens nothing.
                 newDocument: () => void bar.handlers.handleNew(),
+                /*
+                    One-step AUTOMATION creation (#3116). The builder's arm for
+                    this already existed and was dark for want of an action —
+                    `handleNew` hardcoded DOCUMENT, so the only route to an
+                    automation map was create-then-convert.
+
+                    Called through an arrow rather than passed bare: the handler
+                    normalises anything that is not exactly `'AUTOMATION'` to
+                    DOCUMENT, so a bare reference reaching an onClick would
+                    silently create the wrong kind. Explicit here, normalised
+                    there — both, because either alone is one edit from wrong.
+                */
+                newAutomation: () => void bar.handlers.handleNew('AUTOMATION'),
+                // Still no `newFromTemplate`: `ProcessTemplateModal` is not
+                // mounted here, and the builder omits a command whose action is
+                // absent rather than offering one that opens nothing.
                 arrange: (direction, scope) => {
                     if (editor) runAutoLayout(editor, direction, scope);
                 },
