@@ -48,10 +48,9 @@
  */
 import type { Editor, TLShapeId } from 'tldraw';
 
-import {
-    DEFAULT_EDGE_KIND,
-    PROCESS_EDGE_BINDING_TYPE,
-} from './process-edge-binding';
+import { inferEdgeKind, type AutomationEdgeKind } from '@/lib/processes/edge-kind-inference';
+
+import { PROCESS_EDGE_BINDING_TYPE } from './process-edge-binding';
 import {
     PROCESS_EDGE_SHAPE_TYPE,
     edgeLineGeometry,
@@ -97,8 +96,16 @@ export interface ArrowEnd {
 }
 
 export type ArrowVerdict =
-    /** Both ends are process nodes and the edge is legal. */
-    | { kind: 'convert'; sourceKey: string; targetKey: string }
+    /**
+     * Both ends are process nodes and the edge is legal.
+     *
+     * `edgeKind` is INFERRED here rather than defaulted, which is VR-5's
+     * on-connect behaviour restored: the xyflow canvas called `inferEdgeKind`
+     * from `onConnect` with the two endpoint node kinds, and that call site
+     * went with the canvas. `'flow'` for any non-automation pair, so document
+     * maps draw exactly as before.
+     */
+    | { kind: 'convert'; sourceKey: string; targetKey: string; edgeKind: AutomationEdgeKind }
     /** Not an edge at all — leave it on the annotation layer. */
     | { kind: 'annotation'; why: 'FEWER_THAN_TWO_ENDS' | 'END_IS_NOT_A_NODE' }
     /** Both ends are nodes, but the edge is not allowed. */
@@ -146,7 +153,34 @@ export function classifyArrow(
     const refusals = validateEdge(start.nodeKey, end.nodeKey, nodes, edges);
     if (refusals.length > 0) return { kind: 'refuse', refusals };
 
-    return { kind: 'convert', sourceKey: start.nodeKey, targetKey: end.nodeKey };
+    /*
+        VR-5 — the semantic kind comes from the two endpoints' node types
+        (trigger→anything = trigger-flow, action→action = chain-delay, a
+        `condition` source = condition-pass as the positive default, …).
+
+        Inferred HERE, in the pure function, rather than in `convert`: this is
+        the module's stated split — "a decision reachable only through a mounted
+        editor and a simulated drag is a decision nobody tests the edges of" —
+        and the inference is nine branches over a taxonomy, which is exactly the
+        kind of decision that split exists for.
+
+        Resolved through `nodes` rather than carried on `ArrowEnd`. The ends hold
+        a `nodeKey` and the validator already needs the full node list to do its
+        own work, so the type stays as it is and the lookup is local. A node key
+        with no matching node yields `undefined`, which `inferEdgeKind` maps to
+        `'flow'` — but `validateEdge` reports `UNKNOWN_NODE_KEY` for exactly that
+        case and returns above, so the fallback is unreachable rather than a
+        silent default. Belt and braces, in that order.
+    */
+    const typeOf = (key: string): string | undefined =>
+        nodes.find((n) => n.nodeKey === key)?.nodeType;
+
+    return {
+        kind: 'convert',
+        sourceKey: start.nodeKey,
+        targetKey: end.nodeKey,
+        edgeKind: inferEdgeKind(typeOf(start.nodeKey), typeOf(end.nodeKey)),
+    };
 }
 
 interface InstallOptions {
@@ -154,6 +188,20 @@ interface InstallOptions {
     onRefuse?: (refusals: EdgeRefusal[]) => void;
     /** Called after a successful conversion, so the host can mark dirty. */
     onConverted?: (edgeKey: string) => void;
+    /**
+     * The chip text for a freshly inferred automation kind, or `''` for none.
+     *
+     * Injected, because the chip's text is LOCALISED and no shape util or
+     * canvas helper in this codebase takes a translator — the host resolves
+     * chips on the load path for the same reason, and this keeps one answer to
+     * "who decides what a chip says" instead of two.
+     *
+     * Optional, and omitting it means no chip rather than a broken one: a
+     * drawn edge then shows its colour immediately and gains its chip on the
+     * next load. That is the right default for a caller that has no
+     * translator to offer.
+     */
+    resolveChipLabel?: (edgeKind: string) => string;
 }
 
 /**
@@ -289,7 +337,7 @@ export function installArrowToEdgeConversion(
                     edgeKey,
                     sourceKey: verdict.sourceKey,
                     targetKey: verdict.targetKey,
-                    edgeKind: DEFAULT_EDGE_KIND,
+                    edgeKind: verdict.edgeKind,
                     labelOverride: null,
                     dataJson: null,
                     controls: [],
@@ -311,17 +359,24 @@ export function installArrowToEdgeConversion(
                         type: PROCESS_EDGE_SHAPE_TYPE,
                         x: g.x,
                         y: g.y,
-                        // Same constant the binding was just given, not a
-                        // second literal: two defaults that can disagree is how
-                        // a freshly drawn edge ends up drawn as the wrong kind.
+                        // Same value the binding was just given, read from the
+                        // same verdict rather than inferred twice: two
+                        // derivations that can disagree is how a freshly drawn
+                        // edge ends up drawn as one kind and saved as another.
                         // No label on a freshly drawn edge: the binding is
                         // created with `labelOverride: null` just above, and
                         // these two must agree or the line shows a label the
                         // data does not have.
                         props: {
                             edgeKey,
-                            edgeKind: DEFAULT_EDGE_KIND,
+                            edgeKind: verdict.edgeKind,
                             label: '',
+                            // The chip needs no precedence check here, unlike
+                            // the load path: this edge is one millisecond old,
+                            // so it has no label and no controls by
+                            // construction — both are written as empty three
+                            // lines up and down.
+                            chipLabel: opts.resolveChipLabel?.(verdict.edgeKind) ?? '',
                             dx: g.dx,
                             dy: g.dy,
                         },

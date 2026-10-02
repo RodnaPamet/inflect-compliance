@@ -62,7 +62,23 @@ const ROOT = path.resolve(__dirname, '../..');
  * sentinel below will tell you when you have to.
  */
 const CEILINGS: Record<CouplingKind, { max: number; allowance: number }> = {
-    'domain-import': { max: 41, allowance: 1 },
+    // RAISED 41 -> 46 by #3098 §1, and a rise here is normally a regression, so
+    // the reason matters: nothing acquired a coupling. The DETECTOR got its
+    // sight back. Its regex matched only `@/app-layer` and `@/lib`, so an import
+    // of `@/components/<anything outside the roots>` was invisible — a shared
+    // file could reach the rest of the product and still be recorded GENERIC,
+    // which is the one claim a vendoring consumer actually relies on.
+    //
+    // Eight files in the roots import a non-shared `@/components` target; three
+    // already tripped this kind via `@/lib`, so the live count moves by five.
+    // Seven of the eight were already MIXED or COUPLED for other reasons. The
+    // eighth, `layout/ClientProviders.tsx`, was GENERIC and is reclassified
+    // MIXED in the same change — a file tripping a mechanical coupling cannot
+    // be GENERIC, and that assertion is what forced the pairing.
+    //
+    // 46 is therefore the first HONEST reading of this number, not a worse one.
+    // It should fall as those imports become props or slots.
+    'domain-import': { max: 46, allowance: 1 },
     // Re-seated 16 -> 10 by #3096, which replaced the brand fill token with
     // `text-content-brand` in the six files where it painted real rendered
     // TEXT and so owed WCAG 1.4.3's 4.5:1 (badge, checklist-gear-button,
