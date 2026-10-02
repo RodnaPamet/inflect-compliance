@@ -23,6 +23,7 @@
 import { render } from '@testing-library/react';
 
 import { TldrawProcessWorkspace } from '@/components/processes/TldrawProcessWorkspace';
+import { TenantProvider } from '@/lib/tenant-context-provider';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
 
 /** Every value the two guards were handed, in call order. */
@@ -102,19 +103,45 @@ function mount(status: AutosaveStatus) {
     navCalls.length = 0;
     reportStatus = status;
     render(
-        <TldrawProcessWorkspace
-            tenantSlug="acme"
-            processes={PROCESSES}
-            activeId="map-1"
-            onActiveIdChange={() => {}}
-            onProcessesChange={() => {}}
-        />,
+        <TenantProvider value={TENANT_CTX}>
+            <TldrawProcessWorkspace
+                tenantSlug="acme"
+                processes={PROCESSES}
+                activeId="map-1"
+                onActiveIdChange={() => {}}
+                onProcessesChange={() => {}}
+            />,
+        </TenantProvider>
     );
 }
 
 /** The last value each guard saw. */
 const lastWarn = () => warnCalls[warnCalls.length - 1];
 const lastNav = () => navCalls[navCalls.length - 1];
+
+
+/*
+    `TenantProvider` is required as of #3115, and it is a product fact rather
+    than scaffolding: the workspace mounts `OverlayBridge`, whose `useTenantSWR`
+    resolves the tenant API URL through `useTenantContext` EAGERLY — before the
+    null key is consulted — so it throws without a provider even with Run Mode
+    off and nothing being fetched.
+
+    Satisfied in the app: `ProcessesClient` renders under
+    `src/app/t/[tenantSlug]/layout.tsx`, which mounts this. The workspace
+    previously needed no context at all — it takes `tenantSlug` as a PROP and
+    builds its own URLs — which is why this arrived with the overlay and not
+    before. A per-file literal rather than a shared helper, following the
+    pattern every other rendered test here uses.
+*/
+const TENANT_CTX = {
+    userId: 'user-1',
+    tenantId: 'tenant-1',
+    tenantSlug: 'acme',
+    tenantName: 'Acme',
+    role: 'OWNER' as const,
+    permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+} as never;
 
 describe('both guards are wired, because neither covers the other', () => {
     it('the tab-close guard is armed while a save is PENDING', () => {

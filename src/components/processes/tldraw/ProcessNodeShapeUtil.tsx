@@ -46,6 +46,12 @@
  * a node inside it.
  */
 import { HTMLContainer, Rectangle2d, ShapeUtil } from 'tldraw';
+
+import {
+    overlayClassFor,
+    useNodeOverlayStatus,
+} from '@/lib/processes/canvas-execution-overlay';
+
 import {
     NODE_ACCENT_BORDER,
     NODE_ACCENT_ICON_TONE,
@@ -60,6 +66,29 @@ import {
     processNodeShapeProps,
     type ProcessNodeShape,
 } from './process-node-shape';
+
+/**
+ * The automation rule this node stands for, if it names one (VR-6).
+ *
+ * Pure and total, so "which rule is this node" is answerable without a store, a
+ * provider or a network — the same reason `automationChipKey` is pure on the
+ * edge side.
+ *
+ * `dataJson` is the opaque passthrough #2960 established: the server writes keys
+ * the client does not enumerate, and `ruleId` is one of them. So this NARROWS
+ * rather than casts. A cast would turn a row whose `ruleId` is a number, or
+ * whose `dataJson` is a JSON array, into a render-time crash on the canvas — and
+ * the deleted xyflow renderer narrowed for exactly this reason
+ * (`ProcessTypedNode.tsx`: `typeof … === 'string' ? … : undefined`).
+ *
+ * `null` is a valid `dataJson` and `typeof null === 'object'`, which is why the
+ * null check is explicit rather than left to the property read.
+ */
+export function ruleIdFromDataJson(dataJson: unknown): string | undefined {
+    if (typeof dataJson !== 'object' || dataJson === null) return undefined;
+    const id = (dataJson as { ruleId?: unknown }).ruleId;
+    return typeof id === 'string' && id.length > 0 ? id : undefined;
+}
 
 /**
  * The taxonomy entry for a stored `nodeType`, or a safe stand-in.
@@ -172,48 +201,96 @@ export class ProcessNodeShapeUtil extends ShapeUtil<ProcessNodeShape> {
         return true;
     }
 
+    /**
+     * Rendered through a named function component, NOT inline.
+     *
+     * `component()` is a method on a `ShapeUtil`, and the body now reads React
+     * context (`useNodeOverlayStatus`). A hook in a class method is outside what
+     * `react-hooks/rules-of-hooks` can verify — tldraw does invoke this during a
+     * render, so it would work, but "works and cannot be checked" is how a
+     * conditional hook gets added later with nothing to catch it.
+     *
+     * This is the first shape util here to need a hook, so it sets the pattern
+     * rather than following one.
+     */
     override component(shape: ProcessNodeShape) {
-        const meta = metaForNodeType(shape.props.nodeType);
-        const Icon = meta.icon;
-        const isNote = meta.shape === 'note';
-
-        return (
-            <HTMLContainer
-                id={shape.id}
-                style={{ width: shape.props.w, height: shape.props.h }}
-                className={[
-                    'flex h-full w-full flex-col gap-tight overflow-hidden border p-compact',
-                    isNote ? 'rounded-sm' : 'rounded-md',
-                    NODE_ACCENT_BORDER[meta.accent],
-                    // `category` is the second-order signal the taxonomy
-                    // describes: flow nodes read as solid, context nodes as
-                    // annotations ON the flow rather than part of it.
-                    meta.category === 'flow' ? 'bg-bg-default' : 'bg-bg-subtle',
-                ].join(' ')}
-                data-testid={`process-node-${shape.props.nodeKey || shape.id}`}
-                data-node-type={shape.props.nodeType}
-                data-has-handles={meta.hasHandles ? 'true' : 'false'}
-            >
-                <div className="flex items-center gap-tight">
-                    <Icon
-                        className={`h-4 w-4 shrink-0 ${NODE_ACCENT_ICON_TONE[meta.accent]}`}
-                        // Decorative: the label below is the accessible name.
-                        aria-hidden="true"
-                    />
-                    <span className="truncate text-sm font-medium text-content-emphasis">
-                        {shape.props.label}
-                    </span>
-                </div>
-                {shape.props.subtitle ? (
-                    <span className="truncate text-xs text-content-muted">
-                        {shape.props.subtitle}
-                    </span>
-                ) : null}
-            </HTMLContainer>
-        );
+        return <ProcessNodeBody shape={shape} />;
     }
 
     override indicator(shape: ProcessNodeShape) {
         return <rect width={shape.props.w} height={shape.props.h} rx={6} />;
     }
+}
+
+/**
+ * A process node's chassis and contents.
+ *
+ * Split out of `ProcessNodeShapeUtil.component` so the overlay hook has a real
+ * component to live in — see that method's note.
+ */
+function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
+    const meta = metaForNodeType(shape.props.nodeType);
+    const Icon = meta.icon;
+    const isNote = meta.shape === 'note';
+
+    /*
+        VR-6 — live execution state, in Run Mode only.
+
+        Read UNCONDITIONALLY, which is what keeps the hook rules satisfiable:
+        without a `CanvasOverlayProvider` above this the context holds an empty
+        map, `useNodeOverlayStatus` returns undefined, and `overlayClassFor`
+        returns `''`. So a node still renders in isolation in a test and under
+        SSR — the overlay module's header states that as a design property, and
+        gating the hook on run mode would break it.
+
+        That also means an assertion that merely renders a node and finds no
+        overlay proves NOTHING: the empty-map path produces byte-identical
+        output to a correctly-absent overlay. A test for this has to mount the
+        provider with a populated map.
+    */
+    const overlayStatus = useNodeOverlayStatus(ruleIdFromDataJson(shape.props.dataJson));
+    const overlayClass = overlayClassFor(overlayStatus);
+
+    return (
+        <HTMLContainer
+            id={shape.id}
+            style={{ width: shape.props.w, height: shape.props.h }}
+            className={[
+                'flex h-full w-full flex-col gap-tight overflow-hidden border p-compact',
+                isNote ? 'rounded-sm' : 'rounded-md',
+                NODE_ACCENT_BORDER[meta.accent],
+                // `category` is the second-order signal the taxonomy
+                // describes: flow nodes read as solid, context nodes as
+                // annotations ON the flow rather than part of it.
+                meta.category === 'flow' ? 'bg-bg-default' : 'bg-bg-subtle',
+                // Last, so the run-state ring wins over the accent border it
+                // overlaps. `''` when there is no overlay, which `join` renders
+                // as a harmless double space.
+                overlayClass,
+            ].join(' ')}
+            data-testid={`process-node-${shape.props.nodeKey || shape.id}`}
+            data-node-type={shape.props.nodeType}
+            data-has-handles={meta.hasHandles ? 'true' : 'false'}
+            // The STATUS, not the class. A Tailwind ring string is a
+            // presentation detail a redesign may reword; the status is the
+            // fact, and it is what a test should be able to read.
+            data-overlay-status={overlayStatus}
+        >
+            <div className="flex items-center gap-tight">
+                <Icon
+                    className={`h-4 w-4 shrink-0 ${NODE_ACCENT_ICON_TONE[meta.accent]}`}
+                    // Decorative: the label below is the accessible name.
+                    aria-hidden="true"
+                />
+                <span className="truncate text-sm font-medium text-content-emphasis">
+                    {shape.props.label}
+                </span>
+            </div>
+            {shape.props.subtitle ? (
+                <span className="truncate text-xs text-content-muted">
+                    {shape.props.subtitle}
+                </span>
+            ) : null}
+        </HTMLContainer>
+    );
 }

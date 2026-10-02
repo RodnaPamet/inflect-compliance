@@ -51,24 +51,29 @@ describe('visual editor reachability', () => {
         expect(read(WORKSPACE)).toMatch(/<RunModeProvider>/);
     });
 
-    it('the execution OVERLAY is unported, and nothing pretends otherwise', () => {
+    it('the execution OVERLAY is REACHED, from the workspace and the node (#3115)', () => {
         /*
-            `CanvasOverlayProvider` and `useNodeOverlayStatus` live in
-            `lib/processes/canvas-execution-overlay.tsx`, which after the
-            cutover is referenced by nothing but itself, and the tldraw node
-            util does not paint an overlay.
+            This asserted the absence, with "TO NEED THIS AGAIN: the first
+            AUTOMATION map" as the trigger that would fail it deliberately. What
+            actually fired it was an owner decision rather than a row appearing —
+            the same reversal as VR-5's, recorded the same way.
 
-            Asserted as an absence rather than deleted so the state is on the
-            record. The overlay shows per-node RUN state, which needs an
-            AUTOMATION map to run; there are none. Porting it would be building
-            a renderer for zero rows.
-
-            TO NEED THIS AGAIN: the first AUTOMATION map. At that point this
-            assertion fails — deliberately — and the port is the fix.
+            `canvas-execution-overlay.tsx` was referenced by nothing but itself;
+            it now has both of its intended consumers. The sibling guard
+            `vr6-execution-overlay` asserts the detail — the gating, the narrowed
+            id, and the never-poll-per-node constraint. This one only asserts
+            reachability, which is this file's whole subject.
         */
-        expect(read(WORKSPACE)).not.toMatch(/<CanvasOverlayProvider/);
-        expect(read('src/components/processes/tldraw/ProcessNodeShapeUtil.tsx')).not.toMatch(
-            /useNodeOverlayStatus/,
+        expect(read(WORKSPACE)).toMatch(/<CanvasOverlayProvider/);
+        /*
+            The CALL, not the bare name. `useNodeOverlayStatus` appears twice in
+            that file once comments are masked — the import and the call — and an
+            import with no call is precisely the state this assertion exists to
+            reject. The Class D needle ratchet caught the first version of this
+            line for that reason, at +1 over its ceiling.
+        */
+        expect(read('src/components/processes/tldraw/ProcessNodeShapeUtil.tsx')).toMatch(
+            /useNodeOverlayStatus\(/,
         );
     });
 
