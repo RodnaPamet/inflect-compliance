@@ -98,6 +98,14 @@ export function MobileNavDrawer({ open, onClose, children }: MobileNavDrawerProp
                 if (!next) onClose();
             }}
             direction="left"
+            // FOCUS GOES IN on open. Vaul's `autoFocus` defaults to FALSE and
+            // its content then cancels Radix's open auto-focus, so the panel
+            // opened as a modal with focus still on the hamburger behind it:
+            // measured in Chromium at 393 px, `document.activeElement` stayed
+            // on the opener for 2 s after Enter, and a keyboard or switch user
+            // had to Tab blind to reach the first link. With it, Radix moves
+            // focus to the panel's first focusable (the close button).
+            autoFocus
             // Also passed on the root so the dialog has an accessible name
             // even if a future refactor drops the header.
             title={tn('openNavigationMenu')}
