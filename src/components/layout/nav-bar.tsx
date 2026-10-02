@@ -85,7 +85,34 @@ import { useTranslations } from 'next-intl';
  * (4px × 16). Pairs cleanly with `NAV_BAR_GAP` (8px) — the
  * horizontal rhythm and the vertical rhythm share a multiple.
  */
-export const NAV_BAR_HEIGHT = 'h-16';
+export const NAV_BAR_HEIGHT = 'min-h-16';
+
+/**
+ * **Safe-area insets — T08 (#3003).**
+ *
+ * The bar is `sticky top-0` (see `NAV_BAR_POSITION`), so in a standalone
+ * display mode it renders UNDER the status bar: on a notched phone the brand
+ * and the hamburger sit behind the clock and the Dynamic Island. In landscape
+ * the same applies horizontally — the notch and the home indicator eat into
+ * the left and right edges, which is where this bar's only two interactive
+ * controls live.
+ *
+ * `env(safe-area-inset-*)` is 0 in every context that has no inset, including
+ * an ordinary browser tab, so this is inert where it is not needed rather than
+ * conditional on a user-agent sniff.
+ *
+ * Two consequences worth stating:
+ *
+ *   `h-16` became `min-h-16`. A fixed height plus a top inset would have eaten
+ *     the inset out of the CONTENT box, pushing the slots into a 64px box that
+ *     starts below the notch — the bar would look right and the controls would
+ *     be cramped. `min-h-16` lets the bar grow by exactly the inset.
+ *   the horizontal padding takes `max()`, not a sum. Adding the inset to the
+ *     16px would double the gap on a device whose inset is already larger than
+ *     the padding; `max()` keeps whichever is bigger, so the edge breath is the
+ *     same everywhere it can be.
+ */
+export const NAV_BAR_SAFE_AREA = 'pt-[env(safe-area-inset-top)]';
 
 /**
  * **16px horizontal padding mobile, 24px desktop.** The bar lives
@@ -99,7 +126,8 @@ export const NAV_BAR_HEIGHT = 'h-16';
  * `px-4 md:px-6` resolves to 16px / 24px — Tailwind's spacing
  * scale at 4-unit + 6-unit.
  */
-export const NAV_BAR_PADDING = 'px-4 md:px-6';
+export const NAV_BAR_PADDING =
+    'pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]';
 
 /**
  * **8px gap between slots.** The shell uses `justify-between` so
@@ -255,6 +283,7 @@ export const NAV_BAR_SHELL = [
     'flex',
     NAV_BAR_POSITION,
     NAV_BAR_HEIGHT,
+    NAV_BAR_SAFE_AREA,
     // `relative` anchors the `::before` (bottom hairline) and
     // `::after` (top gloss) pseudo-elements. Without it the
     // pseudo's absolute positioning escapes to the next
@@ -384,17 +413,22 @@ export const NAV_BAR_BRAND_CLASS = [
 export interface NavBarBrandProps {
     /** Destination href — usually the dashboard root for the current variant. */
     href: string;
-    /** Two-letter initials. Defaults to `IC` (Inflect Compliance). */
-    initials?: string;
+    /**
+     * The wordmark glyph, REQUIRED since T08 (#3003).
+     *
+     * It defaulted to `'IC'` — one product's initials, baked into the
+     * component as a fallback. A default is the wrong shape for this prop
+     * specifically: it cannot be right for a second consumer, and being
+     * optional meant a caller that forgot it rendered the WRONG brand rather
+     * than failing. Required, the type system asks the only question the
+     * component cannot answer for itself.
+     */
+    initials: string;
     /** Accessible name. Defaults to `nav.brandHome`. */
     ariaLabel?: string;
 }
 
-export function NavBarBrand({
-    href,
-    initials = 'IC',
-    ariaLabel,
-}: NavBarBrandProps) {
+export function NavBarBrand({ href, initials, ariaLabel }: NavBarBrandProps) {
     const t = useTranslations('nav');
     return (
         <Link
@@ -438,7 +472,13 @@ export function NavBarMobileMenu({
         <button
             type="button"
             onClick={onClick}
-            className={`md:hidden inline-flex items-center justify-center h-[22px] w-[22px] rounded-lg text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS}`}
+            // 44px ON TOUCH, 22px painted. WCAG 2.5.5 asks for 44x44 and this
+            // was 22x22 — the primary navigation control on a phone, at a
+            // quarter of the required area. `pointer-coarse:` expands only
+            // where the pointer is a finger, so the bar's visual density is
+            // unchanged on a mouse; `NAV_BAR_SLOT_PRESS` is a transform and
+            // never contributed hit area, which is why the shortfall survived.
+            className={`md:hidden inline-flex items-center justify-center h-[22px] w-[22px] pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-lg text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS}`}
             aria-label={ariaLabel ?? t('openNavigationMenu')}
             data-testid={dataTestId}
         >

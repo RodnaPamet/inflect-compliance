@@ -160,6 +160,13 @@ export function AppShell({
                     variant={variant}
                     user={user}
                     onMobileMenuClick={onMobileMenuClick}
+                    // T08 (#3003) — sign-out is handed down, not imported.
+                    // `UserMenu` no longer pulls `signOut` from
+                    // `next-auth/react`, so a vendoring product does not
+                    // inherit an auth dependency from a menu component. The
+                    // chrome supplies the row; this shell, which already owns
+                    // the auth call for the sidebar, supplies the action.
+                    onLogout={handleLogout}
                 />
             )}
             // Breadcrumbs must span the chrome AND the page tree, which sit in

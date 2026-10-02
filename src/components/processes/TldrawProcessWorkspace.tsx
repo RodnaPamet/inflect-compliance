@@ -55,11 +55,14 @@ import { useToast } from '@/components/ui/hooks';
 import { CanvasCommandPalette } from '@/components/processes/CanvasCommandPalette';
 import { CanvasDiffOverlay } from '@/components/processes/CanvasDiffOverlay';
 import { CanvasDocumentBar } from '@/components/processes/CanvasDocumentBar';
+import { CanvasDrillBreadcrumb } from '@/components/processes/CanvasDrillBreadcrumb';
 import { CanvasHistorySidebar } from '@/components/processes/CanvasHistorySidebar';
 import { ProcessInspector } from '@/components/processes/ProcessInspector';
 import { ProcessPalette } from '@/components/processes/ProcessPalette';
 import { TldrawCanvasExportMenu } from '@/components/processes/TldrawCanvasExportMenu';
 import { TldrawProcessMap } from '@/components/processes/TldrawProcessMap';
+import { drillTrail } from '@/components/processes/tldraw/drill-scope-host';
+import { useCanvasDrillStack } from '@/lib/processes/use-canvas-drill-stack';
 import {
     useUnsavedChangesWarning,
     useUnsavedNavigationGuard,
@@ -291,6 +294,18 @@ function Inner({
     const counts = useTldrawCanvasCounts(editor);
 
     /**
+     * The drill stack, from the SAME hook the xyflow canvas uses.
+     *
+     * Zero engine references in that module, so there is nothing to port — and
+     * reusing it keeps one behaviour this canvas would otherwise have silently
+     * dropped: it binds Escape to pop a level, enabled only above root so other
+     * Escape consumers (modal close, popover dismiss) keep working. A
+     * hand-rolled `useState<string[]>` here would have looked complete and lost
+     * the keyboard parity.
+     */
+    const drill = useCanvasDrillStack();
+
+    /**
      * The `/` shortcut is scoped to this element.
      *
      * `CanvasCommandPalette`'s own docblock is firm about why: `/` is a single
@@ -375,6 +390,33 @@ function Inner({
                 }
             />
 
+            {/*
+                The drill-down trail. `CanvasDrillBreadcrumb` is engine-free and
+                already mounted by the xyflow canvas, so this is the same
+                component in the same position rather than a second one — it
+                hides itself at root, which is why there is no condition here.
+
+                The trail is computed on render rather than memoised: it reads
+                node LABELS out of the store, and a `useMemo` keyed on the stack
+                would keep showing a group's old name after the inspector
+                renamed it. Recomputing is a map over the node list.
+            */}
+            <CanvasDrillBreadcrumb
+                trail={editor ? drillTrail(editor, drill.stack) : []}
+                onJump={(depth) => {
+                    if (depth === 0) {
+                        drill.reset();
+                        return;
+                    }
+                    // `trail[0]` is the root row, so depth N means a stack of
+                    // length N — pop the difference. Same arithmetic as the
+                    // xyflow host, deliberately: if it is wrong it is wrong in
+                    // one place and fixed in one place.
+                    const pops = drill.stack.length - depth;
+                    for (let i = 0; i < pops; i++) drill.exit();
+                }}
+            />
+
             <CanvasCommandPalette groups={commandGroups} hostRef={canvasHostRef} />
 
             <div className="flex min-h-0 flex-1">
@@ -386,6 +428,8 @@ function Inner({
                         key={`${activeId ?? 'none'}:${reloadKey}`}
                         tenantSlug={tenantSlug}
                         mapId={activeId}
+                        drillGroupId={drill.currentGroupId}
+                        onEnterGroup={drill.enter}
                         onEditorReady={setEditor}
                         onStateChange={handleState}
                         onSaved={handleSaved}

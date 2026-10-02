@@ -76,7 +76,7 @@ describe('<NavBar>', () => {
         it('renders a `<Link>` with the 3-stop brand gradient + glow + pulse', () => {
             render(
                 <NavBar
-                    left={<NavBarBrand href="/t/foo/dashboard" />}
+                    left={<NavBarBrand href="/t/foo/dashboard" initials="IC" />}
                 />,
             );
             // next/link renders an <a> element with the className
@@ -101,7 +101,7 @@ describe('<NavBar>', () => {
         it('the brand mark uses `href` to navigate to the variant root', () => {
             render(
                 <NavBar
-                    left={<NavBarBrand href="/t/foo/dashboard" />}
+                    left={<NavBarBrand href="/t/foo/dashboard" initials="IC" />}
                 />,
             );
             const link = screen.getByRole('link', {
@@ -113,7 +113,7 @@ describe('<NavBar>', () => {
         it('shows the "IC" initials as aria-hidden decoration', () => {
             render(
                 <NavBar
-                    left={<NavBarBrand href="/t/foo/dashboard" />}
+                    left={<NavBarBrand href="/t/foo/dashboard" initials="IC" />}
                 />,
             );
             const link = screen.getByRole('link', {

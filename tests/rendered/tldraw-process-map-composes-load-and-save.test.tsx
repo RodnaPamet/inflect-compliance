@@ -39,10 +39,18 @@ jest.mock('@/lib/processes/use-tldraw-canvas-autosave', () => ({
 
 /** Records the rows the canvas was asked to render. */
 const canvasRows: Array<unknown> = [];
+/** Every prop set the canvas was handed, for the pass-through assertions. */
+const canvasProps: Array<Record<string, unknown>> = [];
 
 jest.mock('@/components/processes/TldrawProcessCanvas', () => ({
-    TldrawProcessCanvas: (props: { rows: unknown; readOnly?: boolean }) => {
+    TldrawProcessCanvas: (props: {
+        rows: unknown;
+        readOnly?: boolean;
+        drillGroupId?: string | null;
+        onEnterGroup?: (nodeKey: string) => void;
+    }) => {
         canvasRows.push(props.rows);
+        canvasProps.push(props as unknown as Record<string, unknown>);
         return <div data-testid="canvas-stub" data-readonly={String(props.readOnly)} />;
     },
 }));
@@ -89,6 +97,55 @@ const lastAutosave = () => autosaveCalls[autosaveCalls.length - 1]!;
 beforeEach(() => {
     autosaveCalls.length = 0;
     canvasRows.length = 0;
+    canvasProps.length = 0;
+});
+
+describe('the drill scope passes straight through', () => {
+    /**
+     * This container holds no drill state and must not: the stack belongs with
+     * the breadcrumb, which is workspace chrome. So the only thing to assert is
+     * that both halves ARRIVE — and that is worth asserting here because the
+     * workspace's own test mocks this component out, so a container that
+     * accepted the props and dropped them would pass every test over there.
+     */
+    it('forwards drillGroupId to the canvas', async () => {
+        const f = okFetch(payload());
+        render(
+            <TldrawProcessMap
+                tenantSlug="acme"
+                mapId="map-1"
+                fetchImpl={f}
+                drillGroupId="grp"
+            />,
+        );
+        await waitFor(() => expect(screen.getByTestId('canvas-stub')).toBeInTheDocument());
+        expect(canvasProps[canvasProps.length - 1]!.drillGroupId).toBe('grp');
+    });
+
+    it('forwards onEnterGroup, by identity', async () => {
+        const onEnterGroup = jest.fn();
+        const f = okFetch(payload());
+        render(
+            <TldrawProcessMap
+                tenantSlug="acme"
+                mapId="map-1"
+                fetchImpl={f}
+                onEnterGroup={onEnterGroup}
+            />,
+        );
+        await waitFor(() => expect(screen.getByTestId('canvas-stub')).toBeInTheDocument());
+        expect(canvasProps[canvasProps.length - 1]!.onEnterGroup).toBe(onEnterGroup);
+    });
+
+    it('defaults the scope to null rather than undefined', async () => {
+        // `undefined` would make the canvas fall back to its own default, which
+        // happens to be null too — so this pins the container's answer rather
+        // than relying on two defaults agreeing forever.
+        const f = okFetch(payload());
+        render(<TldrawProcessMap tenantSlug="acme" mapId="map-1" fetchImpl={f} />);
+        await waitFor(() => expect(screen.getByTestId('canvas-stub')).toBeInTheDocument());
+        expect(canvasProps[canvasProps.length - 1]!.drillGroupId).toBeNull();
+    });
 });
 
 describe('loading a map', () => {
