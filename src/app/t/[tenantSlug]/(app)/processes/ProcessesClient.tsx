@@ -71,14 +71,6 @@ const TldrawProcessWorkspace = dynamic(
 interface ProcessesClientProps {
     tenantSlug: string;
     initialProcesses: ProcessMapSummary[];
-    /**
-     * #2961 — mount the tldraw workspace instead of the xyflow canvas.
-     *
-     * Resolved on the server by `isProcessCanvasTldrawEnabled`, so this is a
-     * boolean rather than something to ask for. Defaults FALSE: a tenant whose
-     * flag could not be read gets the engine that has been shipping, which is
-     * the only safe direction for a default to fail in.
-     */
 }
 
 export function ProcessesClient({

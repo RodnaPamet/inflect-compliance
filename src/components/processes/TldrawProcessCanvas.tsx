@@ -15,9 +15,11 @@
  * `tldrawToRows` in its own diff, where the concurrency behaviour can be
  * reviewed on its own.
  *
- * NOTHING MOUNTS THIS YET. `isProcessCanvasTldrawEnabled` (#2996) has zero
- * consumers and still does after this file, so "which renderer" and "does the
- * renderer work" stay separate diffs.
+ * THIS IS NOW THE ONLY PROCESS CANVAS. The paragraph here used to read
+ * "NOTHING MOUNTS THIS YET" — true when the file was written, and the exact
+ * opposite of true since #3079 deleted the xyflow renderer and the flag that
+ * chose between them. Left uncorrected it would tell the next reader that the
+ * component they are looking at is unreachable.
  *
  * ═══ HISTORY IS THE EDITOR'S, NOT THE APP'S ═══
  *
