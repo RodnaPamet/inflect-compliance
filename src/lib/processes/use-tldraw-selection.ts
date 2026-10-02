@@ -48,7 +48,11 @@ import {
     PROCESS_EDGE_BINDING_TYPE,
     type ProcessEdgeBinding,
 } from '@/components/processes/tldraw/process-edge-binding';
-import { edgeKeyFromShapeId } from '@/components/processes/tldraw/process-edge-shape';
+import {
+    PROCESS_EDGE_SHAPE_TYPE,
+    edgeKeyFromShapeId,
+    shapeIdForEdgeKey,
+} from '@/components/processes/tldraw/process-edge-shape';
 import { PROCESS_NODE_SHAPE_TYPE } from '@/components/processes/tldraw/process-node-shape';
 import {
     resolveSelection,
@@ -196,6 +200,21 @@ export function useTldrawSelection(editor: Editor | null) {
                 type: PROCESS_EDGE_BINDING_TYPE,
                 props,
             } as never);
+
+            // The DRAWN line carries its own copy of `edgeKind`, because the
+            // binding is not cheaply findable from the line (it joins the two
+            // node shapes; the line is a third record neither end references).
+            // This is the one write that is not a reload, so it is the one
+            // place that has to keep the two in step — without it the variant
+            // saves, survives a reload, and changes nothing on screen until
+            // then, which is the shape of the bug #3090 was filed for.
+            if (patch.variant !== undefined) {
+                editor.updateShape({
+                    id: shapeIdForEdgeKey(binding.props.edgeKey),
+                    type: PROCESS_EDGE_SHAPE_TYPE,
+                    props: { edgeKind: patch.variant },
+                } as never);
+            }
         },
         [editor],
     );

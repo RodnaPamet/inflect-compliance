@@ -223,7 +223,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // 334, so a floor of 335 would fail on this very PR. A sibling PR adds the
 // next file, and at that point 335 vs 334 is slack 1. Either merge order
 // passes at 334; only one of them passes at 335.
-const RENDERED_TEST_FLOOR = 334;
+// #3090 — the edge-variant strokes: a renderer test exercising
+// `ProcessEdgeShapeUtil.component()` per variant. Raised to this tree's own
+// `ls tests/rendered/*.test.tsx | wc -l` = 343, not to a projected total: the
+// floor's other tooth is `count >= floor`, so a floor above the live count
+// fails on the very PR that raises it.
+const RENDERED_TEST_FLOOR = 343;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

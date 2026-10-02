@@ -60,6 +60,26 @@ export type ProcessEdgeShapeProps = {
      * editor before a key is minted for it.
      */
     edgeKey: string;
+    /**
+     * The edge's variant, copied from the binding so the line can draw it.
+     *
+     * Duplicated rather than looked up, and the alternative is worth naming:
+     * the binding is not findable from this shape cheaply. The binding joins
+     * the two NODE shapes — this line is a third record that neither end
+     * references — so resolving it means scanning the store for a matching
+     * `edgeKey`, per line, per render.
+     *
+     * Derived exactly like `dx`/`dy`, and safe to duplicate for the same
+     * reason: the line is rebuilt from the bindings on every load and lands in
+     * `partitionCanvas`'s `derived` bucket, which nothing persists. So there is
+     * no stored copy to migrate and no second source of truth at rest —
+     * `ProcessEdge.edgeKind` stays the only one.
+     *
+     * The one write that is NOT a reload is the inspector's variant cycle,
+     * which edits the binding directly; `useTldrawSelection.onEdgeUpdate`
+     * therefore updates this alongside it.
+     */
+    edgeKind: string;
     /** Offset from this shape's origin to the far endpoint. Derived. */
     dx: number;
     dy: number;
@@ -72,6 +92,7 @@ export type ProcessEdgeShape = TLBaseShape<
 
 export const processEdgeShapeProps: RecordProps<ProcessEdgeShape> = {
     edgeKey: T.string,
+    edgeKind: T.string,
     dx: T.number,
     dy: T.number,
 };
@@ -91,6 +112,54 @@ export function shapeIdForEdgeKey(edgeKey: string): TLShapeId {
 export function edgeKeyFromShapeId(id: string): string | null {
     const prefix = 'shape:edge-';
     return id.startsWith(prefix) ? id.slice(prefix.length) : null;
+}
+
+/**
+ * How a variant is drawn.
+ *
+ * ═══ WHY THIS EXISTS AT ALL ═══
+ *
+ * The xyflow canvas draws flow SOLID, conditional DASHED and reference DOTTED,
+ * and `ProcessEdge.tsx`'s docblock explains the semantics: conditional is "an
+ * optional / branch path", reference is "a non-flow informational dependency".
+ * This renderer drew one stroke for all three, so the inspector's variant cycle
+ * was settable, applied and persisted — and invisible. On a compliance process
+ * map an optional branch indistinguishable from a required step misrepresents
+ * the process to whoever reads it (#3090).
+ *
+ * ═══ WHAT IS PORTED, AND WHAT IS DELIBERATELY NOT ═══
+ *
+ * The DASH SIGNATURE is, with xyflow's exact patterns so the two canvases agree
+ * during the cutover: `7 5` for conditional, `1 6` round-capped for reference.
+ *
+ * The SELECTED stroke is not. xyflow had to widen and re-tint the path itself
+ * because it has no separate selection layer; tldraw draws `indicator()` over
+ * the shape, so doing it here would stack two affordances. What matters from
+ * xyflow's "a selected edge keeps its dash signature" is that selection must
+ * not erase the distinction — and here it cannot, because selection does not
+ * touch this line at all.
+ *
+ * Returns SVG presentation attributes rather than a className: a dash pattern
+ * is geometry, and the colour stays token-driven on the element.
+ */
+export function edgeStrokeFor(edgeKind: string): {
+    strokeDasharray?: string;
+    strokeLinecap?: 'round' | 'butt';
+} {
+    switch (edgeKind) {
+        case 'conditional':
+            return { strokeDasharray: '7 5' };
+        case 'reference':
+            // Round caps are what make `1 6` read as dots rather than ticks.
+            return { strokeDasharray: '1 6', strokeLinecap: 'round' };
+        default:
+            // `flow`, and anything unrecognised. `edgeKind` is a free string on
+            // the wire (`z.string().min(1).max(64)`), so an unknown value must
+            // render as the ordinary case rather than vanish — the same
+            // fallback the xyflow renderer makes, asserted there as "an unknown
+            // / missing variant falls back to flow (solid)".
+            return {};
+    }
 }
 
 /** The minimum of tldraw's `Box` this module needs. */
