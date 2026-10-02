@@ -96,32 +96,56 @@ describe('visual editor reachability', () => {
         expect(read(WORKSPACE)).not.toMatch(/inferEdgeKind\(/);
     });
 
-    it('AUTOMATION mode is CONVERTIBLE, though no longer creatable in one step', () => {
+    it('AUTOMATION mode is creatable in ONE step again, and still convertible (#3116)', () => {
         /*
-            A genuine reduction, stated rather than papered over.
+            ═══ THE ONE GENUINE REDUCTION, NOW CLOSED ═══
 
-            The xyflow canvas offered `handleNew("AUTOMATION")` — create a map
-            already in automation mode. The tldraw workspace declines to wire
-            `newAutomation` (its own comment at the command-group call site says
-            so), so the route is now: create a map, then switch its mode.
+            This read "no longer creatable in one step", and it was the only
+            honest capability LOSS in the whole cutover — the other three gaps
+            were retirements with production counts behind them. The xyflow
+            canvas offered `handleNew("AUTOMATION")`; the tldraw workspace
+            declined to wire `newAutomation`, so the route became create-then-
+            convert.
 
-            The capability is reachable, in two steps instead of one. The
-            command BUILDER still supports the action and its label still
-            resolves, so wiring it back is one prop — which is why this asserts
-            the builder keeps the arm rather than asserting the gap.
+            It is wired now. The command BUILDER always supported the action and
+            its label always resolved — this was one prop, exactly as the old
+            text predicted.
+
+            ═══ WHAT THE SCOPE TURNED OUT TO BE ═══
+
+            Worth recording, because I filed the issue claiming the create
+            endpoint ignored `canvasMode` and that a UI-only change would ship a
+            200 carrying the wrong mode. That was wrong: `CreateProcessMapSchema`
+            has accepted the field since VR-2, the usecase forwards it and the
+            repository defaults it. I had grepped the 38-line route FILE, found
+            nothing, and concluded about the route's PATH.
         */
         const commands = read(COMMANDS);
+        const bar = read('src/lib/processes/use-tldraw-document-bar.ts');
+        const workspace = read(WORKSPACE);
+
+        // The builder's arm, and the label it resolves.
         expect(commands).toMatch(/newAutomation\?:\s*\(\)\s*=>\s*void/);
         expect(commands).toMatch(/t\('cmdNewAutomationLabel'\)/);
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const en = require('../../messages/en.json');
-        expect(en.automation.canvas.cmdNewAutomationLabel).toBe(
-            'New automation workflow',
-        );
-        // And the two-step route exists: the mode switch goes both ways.
-        expect(read('src/lib/processes/use-tldraw-document-bar.ts')).toMatch(
-            /'AUTOMATION'\s*\?\s*'DOCUMENT'\s*:\s*'AUTOMATION'/,
-        );
+        expect(en.automation.canvas.cmdNewAutomationLabel).toBe('New automation workflow');
+
+        // The HOST supplies it — the half that was missing.
+        expect(workspace).toMatch(/newAutomation:\s*\(\)\s*=>\s*void bar\.handlers\.handleNew\('AUTOMATION'\)/);
+
+        /*
+            And the argument is NORMALISED. `CanvasDocumentBar` renders
+            `onClick={handleNew}`, so React passes a SyntheticEvent as the first
+            argument — an un-normalised read would put an event object in the
+            request body, where the schema's enum rejects it, and the bar's own
+            New button would 400 while the palette worked. Asserted here because
+            the hazard is created by giving this function a parameter at all.
+        */
+        expect(bar).toMatch(/canvasMode === 'AUTOMATION' \? 'AUTOMATION' : 'DOCUMENT'/);
+
+        // The two-step route survives: the mode switch still goes both ways.
+        expect(bar).toMatch(/'AUTOMATION'\s*\?\s*'DOCUMENT'\s*:\s*'AUTOMATION'/);
     });
 
     it('exposes a Run Mode toggle in the document bar', () => {
