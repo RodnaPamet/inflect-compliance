@@ -223,7 +223,7 @@ describe('Badge', () => {
         ['error', 'bg-bg-error', 'text-content-error'],
         ['info', 'bg-bg-info', 'text-content-info'],
         ['attention', 'bg-bg-attention', 'text-content-attention'],
-        ['brand', 'bg-brand-subtle', 'text-brand-muted'],
+        ['brand', 'bg-brand-subtle', 'text-content-brand'],
     ] as const)(
         'applies the %s variant token classes',
         (variant, bgClass, textClass) => {
