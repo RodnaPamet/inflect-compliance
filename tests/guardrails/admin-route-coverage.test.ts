@@ -95,6 +95,13 @@ const ADMIN_ONLY_ROUTES = [
     // register's blast radius, not the per-agent grant's.
     'admin/agents/tool-manifests/route.ts',
     'admin/agents/parameter-sets/route.ts',
+    // One human's signature on a proposed edit to a BOUNDED TEMPLATE (#3051
+    // step 5b). The same `admin.agent_registry` key as the collection above,
+    // deliberately and not by omission: a tenant that could propose a template
+    // edit but not sign one would have a queue nobody can clear, and what makes
+    // the second signature meaningful is that it is a different PERSON — which
+    // a unique index and a trigger enforce — not a different permission.
+    'admin/agents/parameter-sets/signatures/route.ts',
     'admin/agents/external-tools/route.ts',
     'admin/integrations/[connectionId]/mcp-consent/route.ts',
     // The agent risk assessment (Agentic 3) — read the instrument, answer one
