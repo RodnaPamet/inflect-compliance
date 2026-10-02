@@ -1,22 +1,29 @@
 /**
  * @jest-environment jsdom
  *
- * Which canvas a tenant gets.
+ * Which canvas a tenant gets — and there is only one.
  *
- * ── The one thing this must get right ────────────────────────────────
+ * ── Rewritten, not deleted (#3079) ──────────────────────────────────
  *
- * `usesTldraw` is resolved on the SERVER by `isProcessCanvasTldrawEnabled` and
- * arrives as a boolean, so the only logic left on the client is the branch. Two
- * properties matter and the second is the one worth a test on its own:
+ * This file used to assert a BRANCH: `usesTldraw` picked the tldraw workspace,
+ * its absence defaulted to xyflow, and that default mattered because an
+ * unreadable flag silently swapping a customer's canvas was the failure worth
+ * guarding. The flag is gone with the renderer it chose, so all three of those
+ * assertions now describe code that does not exist.
  *
- *   1. the flag picks the tldraw workspace;
- *   2. the DEFAULT is the engine that has been shipping. A tenant whose flag
- *      could not be read must get xyflow, because that is the only direction a
- *      default can fail in safely — an unreadable flag silently swapping a
- *      customer's canvas is the failure this asserts against.
+ * Deleting the file would have been the easy reading and the wrong one. The
+ * question it answers — "what does this client actually mount?" — is still
+ * live, and it is the question the ORIGINAL defect in this area was about: the
+ * canvas reachable from the processes page was for a long time not the one the
+ * tests exercised. So the branch assertions become unconditional ones.
  *
- * Both canvases are stubbed: each has its own suites, and mounting either here
- * would cost a real editor for a question about an `if`.
+ * What is deliberately NOT asserted any more is a default. There is no flag to
+ * be absent, and an assertion about the fallback for a value that cannot
+ * exist would pass forever without describing anything.
+ *
+ * The workspace is stubbed: it has its own suites, and mounting a real editor
+ * to answer "which component is rendered" would be a slow way to read one
+ * line of JSX.
  */
 import { render, screen } from '@testing-library/react';
 
@@ -40,10 +47,6 @@ jest.mock('next/navigation', () => ({
     }),
     useParams: () => ({ tenantSlug: 'acme' }),
     usePathname: () => '/t/acme/processes',
-}));
-
-jest.mock('@/components/processes/PersistedProcessCanvas', () => ({
-    PersistedProcessCanvas: () => <div data-testid="xyflow-canvas" />,
 }));
 
 jest.mock('@/components/processes/TldrawProcessWorkspace', () => ({
@@ -70,36 +73,38 @@ async function settle() {
     await new Promise((r) => setTimeout(r, 0));
 }
 
-describe('the canvas the flag selects', () => {
-    it('mounts the tldraw workspace when usesTldraw is true', async () => {
-        render(
-            <ProcessesClient tenantSlug="acme" initialProcesses={PROCESSES} usesTldraw />,
-        );
-        await settle();
-        expect(await screen.findByTestId('tldraw-workspace')).toBeInTheDocument();
-        expect(screen.queryByTestId('xyflow-canvas')).not.toBeInTheDocument();
-    });
-
-    it('mounts the xyflow canvas when usesTldraw is false', async () => {
-        render(
-            <ProcessesClient
-                tenantSlug="acme"
-                initialProcesses={PROCESSES}
-                usesTldraw={false}
-            />,
-        );
-        await settle();
-        expect(await screen.findByTestId('xyflow-canvas')).toBeInTheDocument();
-        expect(screen.queryByTestId('tldraw-workspace')).not.toBeInTheDocument();
-    });
-
-    it('DEFAULTS to xyflow when the prop is absent entirely', async () => {
-        // THE assertion. A flag that could not be read must leave the tenant on
-        // the engine that has been shipping — an absent prop silently swapping
-        // a customer's canvas is the failure worth a test of its own.
+describe('the canvas this client mounts', () => {
+    it('mounts the tldraw workspace, with no flag to ask', async () => {
         render(<ProcessesClient tenantSlug="acme" initialProcesses={PROCESSES} />);
         await settle();
-        expect(await screen.findByTestId('xyflow-canvas')).toBeInTheDocument();
-        expect(screen.queryByTestId('tldraw-workspace')).not.toBeInTheDocument();
+        expect(await screen.findByTestId('tldraw-workspace')).toBeInTheDocument();
+    });
+
+    it('mounts exactly ONE canvas, not two', async () => {
+        // The branch is gone, so the new failure mode is a leftover second
+        // mount rather than the wrong one chosen. A `?:` collapsed carelessly
+        // renders both arms, and both arms rendering looks like neither
+        // assertion failing.
+        render(<ProcessesClient tenantSlug="acme" initialProcesses={PROCESSES} />);
+        await settle();
+        expect(screen.getAllByTestId('tldraw-workspace')).toHaveLength(1);
+    });
+
+    it('names no deleted component anywhere in its module graph', async () => {
+        // Teeth against the lazier cutover: a `dynamic()` import of a module
+        // that no longer exists resolves to a REJECTED promise, and
+        // `next/dynamic` swallows it into a never-resolving boundary rather
+        // than throwing. The canvas would simply never appear, and a test
+        // that only asserted the tldraw stub IS present would still pass if a
+        // dead second import sat beside it.
+        const src = require('node:fs').readFileSync(
+            require('node:path').resolve(
+                __dirname,
+                '../../src/app/t/[tenantSlug]/(app)/processes/ProcessesClient.tsx',
+            ),
+            'utf8',
+        ) as string;
+        expect(src).not.toContain('PersistedProcessCanvas');
+        expect(src).not.toContain('usesTldraw');
     });
 });

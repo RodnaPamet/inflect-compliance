@@ -90,9 +90,25 @@ describe("Epic P6-PR-B — touch / mobile ergonomics", () => {
         });
     });
 
-    describe("PersistedProcessCanvas — emits the mobile-layout marker", () => {
+    describe("TldrawProcessCanvas — emits the mobile-layout marker", () => {
+        /*
+            Re-pointed from `PersistedProcessCanvas` (#3079), and ONLY the path
+            changed — both regexes below match the successor unmodified.
+
+            That is not luck. The tldraw canvas did not emit these attributes at
+            all until #3097, which is a gap this guard is what surfaced: the
+            `max-width: 767px` palette rule above keys on
+            `[data-process-canvas][data-mobile-layout]`, the tldraw host emitted
+            `data-tldraw-process-canvas` and no mobile attribute, so the rule
+            matched nothing and the palette kept a sidebar's width on a phone.
+
+            The port deliberately copied the xyflow emit shape verbatim —
+            `undefined` rather than `"false"` — which is why this re-point costs
+            nothing. Two hosts emitting different shapes for one state is how a
+            later selector change breaks only one of them.
+        */
         const src = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
+            "src/components/processes/TldrawProcessCanvas.tsx",
         );
 
         it("imports useMediaQuery", () => {

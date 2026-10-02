@@ -183,8 +183,24 @@ describe("Epic P1 — process map optimistic concurrency", () => {
         // here was green on a comment today, and the seam is what stops the
         // next edit making it so.
         const helperSrc = read("src/lib/processes/version-conflict-toast.ts");
-        const canvasSrc = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
+        /*
+            THREE files, where this used to read one (#3079).
+
+            The xyflow canvas held the whole concurrency path in a single
+            component: the toast hook, the `expectedVersion` on the payload,
+            the helper call and the reload counter. On tldraw those are
+            separated on purpose — the save module owns the request, the
+            container owns the token's lifetime, and the workspace owns what
+            a conflict does to the mounted editor.
+
+            Re-pointed rather than retired, because the PROPERTY is unchanged
+            and is the one this epic exists to protect: a stale write is
+            refused, and the user is told before anything is discarded.
+        */
+        const saveSrc = read("src/lib/processes/tldraw-save.ts");
+        const containerSrc = read("src/components/processes/TldrawProcessMap.tsx");
+        const workspaceSrc = read(
+            "src/components/processes/TldrawProcessWorkspace.tsx",
         );
 
         it("the helper exists at the canonical path + has the canonical signature", () => {
@@ -216,31 +232,42 @@ describe("Epic P1 — process map optimistic concurrency", () => {
             );
         });
 
-        it("the canvas imports the helper + the toast hook", () => {
-            expect(canvasSrc).toMatch(
-                /import\s*\{[\s\S]{0,200}useToast[\s\S]{0,200}\}\s*from\s*["']@\/components\/ui\/hooks["']/,
-            );
-            expect(canvasSrc).toMatch(
+        it("the save module imports the helper, and the container the toast hook", () => {
+            expect(saveSrc).toMatch(
                 /import\s*\{\s*surfaceVersionConflict\s*\}\s*from\s*["']@\/lib\/processes\/version-conflict-toast["']/,
             );
-        });
-
-        it("the canvas save payload includes expectedVersion from loadedMap.version", () => {
-            expect(canvasSrc).toMatch(/expectedVersion:\s*loadedMap\.version/);
-        });
-
-        it("the canvas calls the helper + bumps reloadCounter on Reload", () => {
-            expect(canvasSrc).toMatch(
-                /surfaceVersionConflict\(res,\s*toast,[\s\S]{0,200}setReloadCounter\(/,
+            expect(containerSrc).toMatch(
+                /import\s*\{[\s\S]{0,120}useToast[\s\S]{0,120}\}\s*from\s*["']@\/components\/ui\/hooks["']/,
             );
         });
 
-        it("the load effect depends on reloadCounter (so the Reload toast actually reloads)", () => {
-            // If `reloadCounter` isn't in the dep array, the toast
-            // bump is a no-op. Anchor the dep array directly.
-            expect(canvasSrc).toMatch(
-                /\}\,\s*\[activeId,\s*tenantSlug,[\s\S]{0,400}reloadCounter[\s\S]{0,200}\]\)/,
+        it("the save payload carries expectedVersion, and the container supplies it", () => {
+            // Spread-conditional on the module side rather than a plain key:
+            // the module's own comment explains that an undefined would
+            // serialise to an absent field anyway, and the conditional is
+            // there so the ABSENCE is deliberate rather than incidental.
+            expect(saveSrc).toMatch(/expectedVersion\s*!==\s*undefined\s*\?\s*\{\s*expectedVersion\s*\}/);
+            expect(containerSrc).toMatch(/expectedVersion:\s*current\.version/);
+        });
+
+        it("the save calls the helper and RETURNS on a conflict, discarding nothing", () => {
+            // The early return is the property: the helper raises a sticky
+            // toast whose Reload action is the caller's `onConflict`, so the
+            // local editor survives until the user asks for the server's
+            // version. A save that carried on past a 409 would overwrite.
+            expect(saveSrc).toMatch(
+                /if\s*\(await surfaceVersionConflict\(res,\s*toast,\s*onConflict\)\)\s*return/,
             );
+        });
+
+        it("the workspace's conflict handler REMOUNTS the editor, via a key", () => {
+            // Where the xyflow canvas bumped a counter that a load effect's
+            // dep array had to name — a wire that silently no-ops if the dep
+            // is dropped — this remounts through a React `key`. There is no
+            // dep array to forget, which is why the assertion is on the key
+            // rather than ported as-is.
+            expect(workspaceSrc).toMatch(/const handleConflict[\s\S]{0,80}setReloadKey\(/);
+            expect(workspaceSrc).toMatch(/key=\{`\$\{activeId[\s\S]{0,40}reloadKey\}`\}/);
         });
     });
 });

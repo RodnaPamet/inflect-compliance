@@ -129,71 +129,71 @@ describe("Epic P2-PR-A — control picker on edge", () => {
     });
 
     describe("Canvas — round-trips controls on load + save", () => {
-        const src = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
-        );
-        // P3.1 — the graph→PUT projection moved out of the canvas into
-        // src/lib/processes/serialize-graph.ts. It existed in FOUR
-        // hand-written copies (save / rename / duplicate / diff-snapshot)
-        // which had drifted apart; one function is the fix. The invariant
-        // this guard protects is unchanged — it has one home now.
-        const serializer = read("src/lib/processes/serialize-graph.ts");
-        const helperSrc = read("src/lib/processes/edge-controls.ts");
+        /*
+            ═══ RE-POINTED, AND THE GUARANTEE GOT STRONGER (#3079) ═══
 
-        it("declares the canonical edgeControlsForSave save helper", () => {
-            // Lives in `src/lib/processes/edge-controls.ts` rather
-            // than inline in PersistedProcessCanvas.tsx so the
-            // R32-PR10 file-size floor (≤1900 lines on the canvas)
-            // keeps holding as features land.
-            expect(helperSrc).toMatch(
-                /export function edgeControlsForSave\(e:\s*Edge\):[\s\S]{0,400}EdgeControlWire/,
-            );
+            On xyflow, an edge's controls lived in `edge.data.controls` — an
+            untyped bag — and `edgeControlsForSave(e)` projected it into the PUT
+            shape. The assertions here existed because that projection had been
+            three hand-written copies that drifted, and because the pre-P2 shape
+            sent `controls: []` from three call sites.
+
+            Here the controls are a VALIDATED BINDING PROP: `T.arrayOf(...)` on
+            `process-edge-binding.ts`, with a cap mirroring `.max(64)` on the
+            server's `ProcessEdgeInputSchema`. The store refuses a malformed
+            control at write time rather than a helper normalising one at save
+            time, so the class of bug the projection helper existed to prevent
+            is caught a layer earlier and louder.
+
+            The `controls: []` assertion is KEPT as a negative, because that
+            regression is still expressible: a serialiser that stopped reading
+            the binding prop would quietly send empty arrays and erase every
+            control on the map. That is the one failure here that would lose
+            DATA rather than a rendering detail, which is why it keeps its teeth.
+        */
+        const binding = read("src/components/processes/tldraw/process-edge-binding.ts");
+        const serializer = read("src/components/processes/tldraw/serializer.ts");
+        const adapter = read("src/lib/processes/use-tldraw-selection.ts");
+        const workspace = read("src/components/processes/TldrawProcessWorkspace.tsx");
+
+        it("controls are a VALIDATED prop on the binding, not an untyped bag", () => {
+            // Replaces "declares the canonical edgeControlsForSave save helper".
+            // The binding declares the shape and tldraw validates every write.
+            expect(binding).toMatch(/controls:\s*ProcessEdgeControlProp\[\]/);
+            expect(binding).toMatch(/controls:\s*T\.arrayOf\(/);
         });
 
-        it("canvas imports the helper module", () => {
-            expect(src).toMatch(
-                /import\s*\{\s*edgeControlsForSave\s*\}\s*from\s*["']@\/lib\/processes\/edge-controls["']/,
-            );
+        it("and the per-edge cap mirrors the server's own limit", () => {
+            // The detail worth keeping from the helper era: a client that
+            // allowed 65 controls would be refused by the server on save, which
+            // reads as a mysterious failed save rather than a full edge.
+            expect(binding).toMatch(/\.max\(64\)|MAX_[A-Z_]*CONTROLS[A-Z_]*\s*=\s*64/);
         });
 
-        it("the save serialiser routes through the helper, not the pre-P2 empty array", () => {
-            // The pre-P2 shape was `controls: []` at three call sites
-            // (handleSave + duplicate + autosave-snapshot). P3.1 collapsed
-            // those three copies into ONE shared projection, so the assertion
-            // moved with it — but `controls: []` must not reappear in either
-            // file.
-            expect(src).not.toMatch(/controls:\s*\[\],/);
+        it("the serialiser maps controls BOTH ways, and never sends an empty array", () => {
+            // The surviving teeth, and the only assertion here whose regression
+            // would destroy data: `controls: []` reaching the PUT erases every
+            // control on every edge of the map.
             expect(serializer).not.toMatch(/controls:\s*\[\],/);
-            expect(serializer).toMatch(/controls:\s*edgeControlsForSave\(e\),?/);
-            // …and the canvas must still USE it rather than growing a fourth copy.
-            expect(src).toMatch(/serializeGraphForSave\(nodes, edges\)/);
+            expect(serializer).toMatch(/controls:\s*\(e\.controls \?\? \[\]\)\.map\(/);
+            expect(serializer).toMatch(/controls:\s*b\.props\.controls \?\? \[\]/);
         });
 
-        it("load response shape includes the controls array", () => {
-            expect(src).toMatch(
-                /controls\?:\s*Array<\{[\s\S]{0,400}controlKey:\s*string;[\s\S]{0,400}controlId:\s*string \| null/,
+        it("the inspector write path accepts the controls patch and writes the binding", () => {
+            expect(adapter).toMatch(/controls\?:\s*unknown\[\]/);
+            expect(adapter).toMatch(
+                /if\s*\(patch\.controls\s*!==\s*undefined\)\s*props\.controls\s*=\s*patch\.controls/,
             );
-        });
-
-        it("rehydratedEdges projects controls onto data.controls (only when non-empty)", () => {
-            // Anchor on the conditional spread — empty arrays
-            // shouldn't bloat data.
-            expect(src).toMatch(
-                /Array\.isArray\(e\.controls\)\s*&&\s*e\.controls\.length\s*>\s*0[\s\S]{0,400}controls:\s*e\.controls\.map/,
-            );
-        });
-
-        it("handleEdgeUpdate accepts the controls patch field and writes data.controls", () => {
-            expect(src).toMatch(
-                /patch:\s*\{[\s\S]{0,800}controls\?:\s*Array<\{[\s\S]{0,300}controlKey:\s*string;/,
-            );
-            expect(src).toMatch(
-                /if\s*\(patch\.controls\s*!==\s*undefined\)[\s\S]{0,400}controls:\s*patch\.controls/,
-            );
+            // Written to the BINDING, not the line: the binding owns identity
+            // and is what the serialiser reads.
+            expect(adapter).toMatch(/editor\.updateBinding\(/);
         });
 
         it("inspector mount receives tenantSlug", () => {
-            expect(src).toMatch(
+            // Unchanged — the picker fetches the tenant's controls, so without
+            // the slug it renders an empty list and looks like the tenant has
+            // no controls.
+            expect(workspace).toMatch(
                 /<ProcessInspector[\s\S]{0,300}tenantSlug=\{tenantSlug\}/,
             );
         });

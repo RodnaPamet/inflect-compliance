@@ -43,133 +43,181 @@ const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8
 
 describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
     describe("Export helpers module", () => {
-        const src = read("src/lib/processes/canvas-export.ts");
+        /*
+            ═══ RE-POINTED, AND THE MECHANISM CHANGED UNDER IT (#3079) ═══
+
+            Every assertion below has a real counterpart on the tldraw path —
+            the capability is the same — but three of them described an
+            xyflow RECIPE that no longer exists, and those are rewritten rather
+            than re-pathed. The module being read explains why in its own
+            docblock: xyflow had to hand a DOM node to `html-to-image`, while
+            "tldraw does all three itself — `editor.toImage()` and
+            `editor.getSvgString()` take shapes and return finished bytes".
+
+            So the viewport walk, the `getNodesBounds`/`getViewportForBounds`
+            fit, and the `html-to-image` import are not regressions to flag.
+            They were the price of exporting a DOM subtree, and the successor
+            does not pay it. What the assertions have to keep pinning is the
+            PROPERTY each of them was protecting, which is where this rewrite
+            spends its effort.
+
+            Two assertions read `canvas-export-shared.ts` and are untouched:
+            #3061 moved `safeFilename` and `resolveBackground` there precisely
+            so this cutover would not need a second copy.
+        */
+        const src = read("src/lib/processes/tldraw-canvas-export.ts");
         const shared = read("src/lib/processes/canvas-export-shared.ts");
 
         it("exports both PNG + SVG helpers with the canonical signature", () => {
             expect(src).toMatch(
-                /export async function exportCanvasAsPng\(\s*opts:\s*CanvasExportOptions,?\s*\):\s*Promise<string>/,
+                /export async function exportTldrawCanvasAsPng\(/,
             );
             expect(src).toMatch(
-                /export async function exportCanvasAsSvg\(\s*opts:\s*CanvasExportOptions,?\s*\):\s*Promise<string>/,
+                /export async function exportTldrawCanvasAsSvg\(/,
             );
         });
 
-        it("declares the canonical options shape", () => {
+        it("declares the canonical options shape — an EDITOR, not a DOM node", () => {
+            // The shape change that follows from the mechanism change. xyflow
+            // needed `canvasEl: HTMLElement` plus `nodes: Node[]` because
+            // `html-to-image` rasterises an element and the bounds had to be
+            // computed separately. tldraw needs the editor and nothing else:
+            // it owns both the shapes and the geometry.
             expect(src).toMatch(
-                /interface CanvasExportOptions \{[\s\S]{0,800}canvasEl:\s*HTMLElement;[\s\S]{0,400}nodes:\s*Node\[\];[\s\S]{0,400}mapName:\s*string;/,
+                /interface TldrawCanvasExportOptions \{[\s\S]{0,400}editor:\s*Editor;[\s\S]{0,600}mapName:\s*string;/,
             );
         });
 
-        it("walks down to the xyflow viewport child for capture", () => {
-            // The xyflow viewport (.react-flow__viewport) is the
-            // node+edge subtree; capturing IT excludes the Controls
-            // overlay + Background siblings. A refactor that
-            // captures the wrapper itself would include the zoom
-            // strip — wrong for evidence artefacts.
-            expect(src).toMatch(
-                /canvasEl\.querySelector<HTMLElement>\(["']\.react-flow__viewport["']\)/,
+        it("exports the CURRENT PAGE's shapes, not the whole store", () => {
+            /*
+                The property the xyflow "walks down to the viewport child"
+                assertion was really protecting: capture the graph, and ONLY
+                the graph that is on screen.
+
+                There it meant excluding the Controls overlay and Background
+                siblings, which would have put a zoom strip into an evidence
+                artefact. Here the equivalent mistake is `store.allRecords()`,
+                which spans every page — the module's docblock calls the
+                `getCurrentPageShapes()` choice deliberate for that reason.
+                Same requirement, different thing to get wrong.
+            */
+            // Bound to the collector rather than read whole-file: the needle
+            // should name the one function that chooses the shape set, and a
+            // whole-file read is what the Class D ratchet counts as
+            // un-analysable — it cannot tell which construct the claim is about.
+            expect(functionBodyOf(src, "shapesToExport")).toMatch(
+                /editor\.getCurrentPageShapes\(\)/,
             );
+            expect(src).not.toMatch(/store\.allRecords\(\)/);
         });
 
-        it("computes a fit-to-content viewport via xyflow's helpers", () => {
-            // The export must NOT capture the user's current zoom/
-            // scroll position — the rendered artefact would be
-            // meaningless if they were zoomed in on one node.
-            expect(src).toMatch(
-                /getNodesBounds\(nodes\)/,
-            );
-            expect(src).toMatch(/getViewportForBounds\(/);
-        });
+        it("hands the shapes to tldraw's own exporters, adding no second rasteriser", () => {
+            /*
+                Replaces "imports html-to-image's toPng + toSvg" and "computes
+                a fit-to-content viewport via xyflow's helpers".
 
-        it("imports html-to-image's toPng + toSvg (canonical xyflow recipe)", () => {
-            expect(src).toMatch(
-                /import\s*\{\s*toPng,\s*toSvg\s*\}\s*from\s*["']html-to-image["']/,
+                The property both protected: the artefact must be the whole
+                graph at a sane scale, not the user's current zoom. tldraw's
+                `getSvgString(shapes, …)` / `toImage(shapes, …)` take the
+                shapes and do the fitting, so the assertion worth keeping is
+                that this module delegates rather than re-deriving a viewport —
+                and that `html-to-image` has NOT been reintroduced alongside,
+                which would mean two rasterisers disagreeing about bounds.
+            */
+            expect(functionBodyOf(src, "exportTldrawCanvasAsSvg")).toMatch(
+                /editor\.getSvgString\(shapes,/,
             );
+            // `toImage` sits in `rasterise`, the shared raster step both the PNG
+            // download and the clipboard copy go through — not in the PNG export
+            // itself. Binding to the function that actually calls it is the
+            // point of binding at all.
+            expect(functionBodyOf(src, "rasterise")).toMatch(/editor\.toImage\(shapes,/);
+            // This one stays whole-file on purpose: it is an assertion about the
+            // MODULE's imports, which is not a construct.
+            expect(src).not.toMatch(/from ["']html-to-image["']/);
         });
 
         it("sanitises the download filename + caps it at 60 chars", () => {
-            // Anchor the sanitiser shape — strip non-alphanumeric,
-            // collapse repeats, cap length. A regression that lets
-            // through path separators / quotes would surface as a
-            // browser download warning.
-            //
-            // Reads `canvas-export-shared.ts`: `safeFilename` moved there when
-            // the tldraw export path arrived, because a second copy would mean
-            // two answers to "what is a legal export filename". The assertion
-            // is unchanged — only the file it reads is.
+            // Unchanged. `safeFilename` moved to `canvas-export-shared.ts`
+            // when the tldraw path arrived (#3061), because a second copy
+            // would mean two answers to "what is a legal export filename".
             expect(shared).toMatch(/replace\(\/\[\^a-z0-9\]\+\/g/);
             expect(shared).toMatch(/\.slice\(0,\s*60\)/);
         });
 
-        it("and the xyflow path still USES the shared helpers", () => {
-            // The teeth for both relocated assertions. Without this edge the
-            // two checks above pass against a module nobody calls — this file
-            // could hardcode a colour and mint its own filenames while the
-            // shared module sat there, correct and unused.
+        it("and the tldraw path still USES the shared helpers", () => {
+            // The teeth for both relocated assertions, carried over verbatim
+            // in intent: without this edge the two checks above pass against a
+            // module nobody calls, and this file could mint its own filenames
+            // while the shared one sat there correct and unused. `no-unused-
+            // vars` is not configured here, so an unreferenced import would
+            // not catch it.
             //
-            // An unused import would NOT catch that on its own:
-            // `no-unused-vars` is not configured in eslint.config.mjs, and
-            // eslint exits 0 on a file whose import is unreferenced. Measured
-            // rather than assumed — so the usage has to be asserted here.
-            //
-            // Bound to ONE function rather than the whole file. That is the
-            // narrower claim (this export path resolves its colour), and it
-            // keeps each needle unambiguous — `resolveBackground(` occurs five
-            // times file-wide, which would be satisfied by any survivor.
-            expect(src).toMatch(/from "@\/lib\/processes\/canvas-export-shared"/);
-            const svgExport = functionBodyOf(src, "exportCanvasAsSvg");
+            // Bound to ONE function, for the reason the original gave: the
+            // needles occur several times file-wide and would otherwise be
+            // satisfied by any survivor.
+            expect(src).toMatch(/from '@\/lib\/processes\/canvas-export-shared'/);
+            const svgExport = functionBodyOf(src, "exportTldrawCanvasAsSvg");
             expect(svgExport).toMatch(/resolveBackground\(\)/);
             expect(svgExport).toMatch(/downloadDataUrl\(/);
             expect(svgExport).toMatch(/safeFilename\(/);
         });
 
         it("resolves the background colour from the active [data-theme]", () => {
-            // The export should match what the user sees — the
-            // canvas-frame token differs between light + dark.
-            // Anchor on the data-theme read so a refactor that
-            // hardcodes one colour breaks.
-            // Also in `canvas-export-shared.ts` now — see the note on the
-            // filename test. The export path's use of it is locked by the
-            // "still USES the shared helpers" test above.
+            // Also in `canvas-export-shared.ts` — see the filename note. The
+            // export path's USE of it is locked by the test above.
             expect(shared).toMatch(/document\.documentElement/);
-            expect(shared).toMatch(
-                /getAttribute\(["']data-theme["']\)/,
-            );
+            expect(shared).toMatch(/getAttribute\(["']data-theme["']\)/);
         });
     });
 
-    describe("CanvasExportMenu component", () => {
-        const src = read("src/components/processes/CanvasExportMenu.tsx");
+    describe("TldrawCanvasExportMenu component", () => {
+        /*
+            Re-pointed from `CanvasExportMenu` (#3079). The successor's own
+            docblock says "same five actions, same testids, same i18n keys,
+            same busy/toast behaviour" — and the testids are PREFIXED
+            (`tldraw-export-*` rather than `canvas-export-*`), so the claim is
+            true of the behaviour and not of the strings. Verified each below
+            rather than taken from that sentence.
+        */
+        const src = read("src/components/processes/TldrawCanvasExportMenu.tsx");
 
-        it("exports the component + accepts canvasEl + nodes + mapName", () => {
-            expect(src).toMatch(/export function CanvasExportMenu/);
-            expect(src).toMatch(/canvasEl:\s*HTMLElement \| null/);
-            expect(src).toMatch(/nodes:\s*Node\[\]/);
+        it("exports the component + accepts an editor + mapName", () => {
+            // `editor` where the xyflow menu took `canvasEl` + `nodes`: the
+            // same substitution the helper module made, for the same reason.
+            expect(src).toMatch(/export function TldrawCanvasExportMenu/);
+            expect(src).toMatch(/editor:\s*Editor \| null/);
             expect(src).toMatch(/mapName:\s*string/);
         });
 
-        it("imports both helpers from the canvas-export module", () => {
+        it("imports the export helpers from the tldraw export module", () => {
             expect(src).toMatch(
-                /import\s*\{[\s\S]{0,300}exportCanvasAsPng[\s\S]{0,200}exportCanvasAsSvg[\s\S]{0,200}\}\s*from\s*["']@\/lib\/processes\/canvas-export["']/,
+                /from\s*["']@\/lib\/processes\/tldraw-canvas-export["']/,
             );
         });
 
-        it("renders both menu items + the trigger with canonical testids", () => {
-            for (const id of [
-                "canvas-export-trigger",
-                "canvas-export-png",
-                "canvas-export-svg",
-            ]) {
-                expect(src).toMatch(new RegExp(`data-testid="${id}"`));
-            }
+        it("renders the items + the trigger with canonical testids", () => {
+            // PREFIXED, so this is not a free re-path: the ids are different
+            // strings for the same affordances.
+            // LITERAL needles, not `new RegExp(\`…${id}\`)`. An interpolated
+            // needle is invisible to the Class D analyser — it counts such an
+            // assertion as a blind spot, because an ambiguous needle can hide
+            // behind a template. Three lines beat a loop the ratchet cannot read.
+            expect(src).toMatch(/data-testid="tldraw-export-trigger"/);
+            expect(src).toMatch(/data-testid="tldraw-export-png"/);
+            expect(src).toMatch(/data-testid="tldraw-export-svg"/);
         });
 
-        it("disables the menu items + trigger while a render is in flight", () => {
-            // Double-clicks shouldn't queue two downloads. Anchor
-            // the busy flag + the disabled gate.
+        it("disables the menu items while a render is in flight", () => {
+            // Double-clicks must not queue two downloads. The busy flag is
+            // the same mechanism; the TRIGGER's gate differs — the xyflow one
+            // read `!canvasEl`, and this one has no DOM node to test, so the
+            // editor's absence is what stands in. Asserted where it lives
+            // rather than restated here: `tldraw-export-menu.test.tsx` mounts
+            // the component and checks the trigger's disabled states against
+            // a real editor, which is a stronger check than a regex.
             expect(src).toMatch(/\bbusy,\s*setBusy\b/);
-            expect(src).toMatch(/disabled=\{disabled \|\| busy \|\| !canvasEl\}/);
+            expect(src).toMatch(/disabled=\{busy\}/);
         });
 
         it("surfaces export errors via the canonical useToast hook", () => {
@@ -192,41 +240,48 @@ describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
         });
     });
 
-    describe("PersistedProcessCanvas — wires the export menu", () => {
-        const src = read(
-            "src/components/processes/PersistedProcessCanvas.tsx",
-        );
+    describe("TldrawProcessWorkspace — wires the export menu", () => {
+        /*
+            Re-pointed from `PersistedProcessCanvas` (#3079), and one assertion
+            is GONE rather than moved, which is the interesting part.
 
-        it("imports CanvasExportMenu + useRef", () => {
+            The xyflow host had to hold a `ref` to its own wrapper and pass
+            `canvasEl={canvasWrapperRef.current}` into the menu, because
+            `html-to-image` rasterises a DOM element. Two of the four tests
+            here existed to pin that ref and its attachment point — and
+            `ref.current` read during render is a classic stale-null, which is
+            why they were worth pinning.
+
+            tldraw hands over the editor instead, so there is no ref, no
+            attachment point, and no stale-null to guard. Asserting the absence
+            of a wrapper ref would be asserting that nobody reintroduced a
+            mechanism nothing needs; what is worth keeping is the conditional.
+        */
+        const src = read("src/components/processes/TldrawProcessWorkspace.tsx");
+
+        it("imports the export menu", () => {
             expect(src).toMatch(
-                /import\s*\{\s*CanvasExportMenu\s*\}\s*from\s*["']\.\/CanvasExportMenu["']/,
-            );
-            expect(src).toMatch(/\buseRef\b/);
-        });
-
-        it("declares the canvas wrapper ref", () => {
-            expect(src).toMatch(/canvasWrapperRef\s*=\s*useRef<HTMLDivElement>\(null\)/);
-        });
-
-        it("attaches the ref to the [data-process-canvas] wrapper", () => {
-            expect(src).toMatch(
-                /ref=\{canvasWrapperRef\}[\s\S]{0,200}data-process-canvas="true"/,
+                /import\s*\{\s*TldrawCanvasExportMenu\s*\}\s*from\s*["']@\/components\/processes\/TldrawCanvasExportMenu["']/,
             );
         });
 
         it("passes the menu into the bar's exportSlot when a map is active", () => {
-            // Conditional on `activeId && activeProcess` — the
-            // menu has nothing meaningful to export on the empty
-            // state. Anchor the conditional so a refactor that
-            // always-renders it (and crashes on null activeProcess)
-            // breaks.
+            // Conditional on `activeId && activeProcess` — the menu has
+            // nothing meaningful to export on the empty state, and
+            // `activeProcess.name` below would throw on null. Carried over
+            // unchanged, because the hazard is unchanged.
             expect(src).toMatch(
-                /exportSlot=\{[\s\S]{0,300}activeId\s*&&\s*activeProcess[\s\S]{0,400}<CanvasExportMenu/,
-            );
-            expect(src).toMatch(
-                /canvasEl=\{canvasWrapperRef\.current\}/,
+                /exportSlot=\{[\s\S]{0,120}activeId\s*&&\s*activeProcess[\s\S]{0,120}<TldrawCanvasExportMenu/,
             );
             expect(src).toMatch(/mapName=\{activeProcess\.name\}/);
+        });
+
+        it("hands over the EDITOR, not a DOM node", () => {
+            // The substitution that removed the ref. A regression back to a
+            // wrapper element would be a regression to the stale-null the two
+            // retired assertions guarded.
+            expect(src).toMatch(/<TldrawCanvasExportMenu[\s\S]{0,80}editor=\{editor\}/);
+            expect(src).not.toMatch(/canvasEl=/);
         });
     });
 });

@@ -39,122 +39,122 @@ import { codeOf, declarationOf } from '../helpers/source-blocks';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
-const CANVAS = read('src/components/processes/PersistedProcessCanvas.tsx');
-const SERIALIZER = read('src/lib/processes/serialize-graph.ts');
+const CANVAS = read('src/components/processes/TldrawProcessWorkspace.tsx');
+const SERIALIZER = read('src/components/processes/tldraw/serializer.ts');
 
+/*
+    ═══ RE-POINTED WHOLESALE (#3079) ═══
+
+    This file's subject was `PersistedProcessCanvas` — a 2500-line component
+    that held three hand-written copies of one projection plus every write path
+    inline. The defects it was written for were all "a second copy that has to
+    agree with the first": rename omitting `parentNodeKey` and dissolving every
+    group, rename omitting `expectedVersion` and clobbering a concurrent editor,
+    two writers hardcoding the same label fallback.
+
+    On this host there is no such component. The projection is
+    `serializeEditorCanvas(editor)` in `tldraw/editor-canvas.ts`, and the writers
+    are three separate modules that each call it. So the "no fourth copy"
+    property is still exactly the right thing to guard — there are now MORE
+    callers, which makes it more valuable, not less.
+
+    Two things deliberately NOT re-asserted here:
+
+      • `expectedVersion` + the 409 path. That moved to `tldraw-save.ts` and is
+        asserted by `p1-optimistic-concurrency.test.ts`, which re-points to the
+        same three files. Two guards reading one file is how a contract ends up
+        asserted where nobody looks when it moves.
+      • `handleProximityCommit`. Proximity auto-bind was DROPPED from scope by
+        the owner on #3078 — tldraw's own arrow targeting supersedes it — so
+        there is no handler to wire and nothing to guard.
+*/
 describe('one serialiser, used by every writer', () => {
-    it('the canvas builds no node payload of its own', () => {
-        // `nodeKey: n.id || \`node-…\`` is how the projection mints a key — the
-        // signature line of a hand-written copy. Deliberately narrow: the
-        // canvas legitimately declares `nodeKey: string` in the type of the
-        // LOAD response, which is a different direction of travel.
-        expect(CANVAS).not.toMatch(/nodeKey:\s*n\.id/);
-        expect(SERIALIZER).toMatch(/nodeKey:\s*n\.id/);
+    const SERIALIZER = read('src/components/processes/tldraw/editor-canvas.ts');
+    const ROWS = read('src/components/processes/tldraw/serializer.ts');
+    const WRITERS = [
+        'src/lib/processes/use-tldraw-document-bar.ts',
+        'src/lib/processes/use-tldraw-canvas-autosave.ts',
+    ] as const;
+
+    it('every writer routes through serializeEditorCanvas, none builds its own rows', () => {
+        // The core property, and it has MORE teeth here than it did: three
+        // modules now share the projection where one component used to hold
+        // three copies of it.
+        for (const w of WRITERS) {
+            expect(read(w)).toMatch(/serializeEditorCanvas\(editor\)/);
+        }
+        // And the signature of a hand-written copy: minting a nodeKey. Only the
+        // row builder may do that.
+        for (const w of WRITERS) {
+            expect(read(w)).not.toMatch(/nodeKey:/);
+        }
+        expect(ROWS).toMatch(/nodeKey:\s*s\.props\.nodeKey/);
     });
 
-    it('the shared module is the only place the label fallback is chosen', () => {
-        // The literal that used to be baked into rename + duplicate. It belongs
-        // to the taxonomy, and the serialiser must read it from there.
-        expect(CANVAS).not.toMatch(/["']Untitled step["']\s*[,;)]/);
-        expect(SERIALIZER).toMatch(/meta\.defaultLabel/);
-        expect(SERIALIZER).toMatch(/parentNodeKey: nodeParent\(n\)/);
+    it('the key comes off the SHAPE PROP, never off the shape id', () => {
+        /*
+            The tldraw-specific version of the same hazard, and the one both
+            shape modules warn about: a node that came from a row has a derived
+            id, but a node the user DREW has a random one and its key lives only
+            in its props. A projection reading the id would work until the first
+            drawn node, then mint a key like `shape:abc123`.
+        */
+        expect(ROWS).not.toMatch(/nodeKey:\s*s\.id/);
+        expect(ROWS).toMatch(/nodeKey:\s*s\.props\.nodeKey/);
     });
 
-    it('save, rename and duplicate all call serializeGraphForSave', () => {
-        const calls = CANVAS.match(/serializeGraphForSave\(nodes, edges\)/g) ?? [];
-        expect(calls.length).toBeGreaterThanOrEqual(3);
+    it('the diff snapshot uses the SAME projection as the save', () => {
+        // The fourth copy that nearly existed: the diff needs the live canvas
+        // as rows, and a bespoke projection for it would drift from what the
+        // save sends — making the diff describe a document the server never
+        // received.
+        expect(read('src/components/processes/TldrawProcessWorkspace.tsx')).toMatch(
+            /toDiffSnapshot\(serializeEditorCanvas\(editor\)\.rows\)/,
+        );
     });
 });
 
-describe('every full write carries the optimistic-concurrency guard', () => {
-    /** Body of a `const <name> = useCallback(async () => { … }, [deps]);`. */
-    function callbackBody(name: string): string {
-        const start = CANVAS.indexOf(`const ${name} = useCallback(`);
-        if (start === -1) throw new Error(`not found: ${name}`);
-        // Up to the next top-level `const <x> = useCallback(` or `const <x> = `.
-        const rest = CANVAS.slice(start + 10);
-        const next = rest.search(/\n    const \w+ = /);
-        return next === -1 ? rest : rest.slice(0, next);
-    }
+describe('every edit path marks dirty, through one classifier', () => {
+    /*
+        WHAT MOVED AND WHY THE SHAPE CHANGED.
 
-    it.each(['handleSave', 'handleRenameCommit'])(
-        '%s sends expectedVersion and handles the 409',
-        (name) => {
-            const body = callbackBody(name);
-            expect(body).toMatch(/expectedVersion: loadedMap\.version/);
-            expect(body).toMatch(/surfaceVersionConflict\(/);
-        },
-    );
-});
+        xyflow pushed per-item change ARRAYS through `onNodesChange` /
+        `onEdgesChange`, so the guard asserted each handler called its own
+        mapper — and asserted them paired, because a node handler using the
+        edge mapper would classify correctly-looking nonsense.
 
-describe('every edit path marks dirty and is undoable', () => {
-    // WHAT MOVED, AND WHY THIS ASSERTION CHANGED SHAPE (#2961).
-    //
-    // This used to slice the canvas between `const isSubstantiveNodeChange` and
-    // `const isSubstantiveEdgeChange` and assert the `replace` arm returned
-    // true. Both predicates now live in `lib/processes/canvas-changes-xyflow.ts`,
-    // so both `indexOf` anchors returned -1 and the slice was the empty string —
-    // which is why the assertion was a `toMatch` and not a `not.toMatch`. It
-    // FAILED rather than passing vacuously, which is the only reason the move
-    // was visible at all. A name-to-name slice is the shape CLAUDE.md warns
-    // about; it is not re-created below.
-    //
-    // The CLASSIFICATION itself is now behavioural, in
-    // `tests/unit/processes/canvas-changes.test.ts` — including the node/edge
-    // asymmetry on `replace`, with a mutation proof for each direction. What a
-    // unit test on the adapter CANNOT see is whether the host still calls it, so
-    // that is what this guard keeps: the wiring, per handler, paired.
-    // Two tests rather than one `it.each`, because the pattern has to be a
-    // regex LITERAL: a `new RegExp(mapper)` built from the table row would be
-    // un-analysable to the #2246 Class C ratchet, which CAPS skips rather than
-    // ignoring them. Bound to each handler's own declaration so the pairing is
-    // asserted — a whole-file match would pass if the node handler classified
-    // with the EDGE mapper.
-    //
-    // `declarationOf`, NOT `braceBlockAfter`. The first draft used the latter
-    // and it returned 29,118 characters — from `onNodesChange` straight through
-    // `onEdgesChange` and `onConnect`. Every assertion below still passed,
-    // because `history.push({ nodes, edges })` and `autosave.markDirty()` occur
-    // in those SIBLINGS too. Deleting the push from the node handler was a
-    // mutation that stayed green. `declarationOf` returns 589 characters and
-    // that same mutation reddens. The window, not the needle, was the defect.
-    it('onNodesChange classifies through the node mapper', () => {
-        const body = declarationOf(CANVAS, 'onNodesChange');
-        expect(body).toMatch(
-            /batchIsSubstantive\(\s*changes\.map\(classifyXyflowNodeChange\)/,
+        tldraw has no change arrays. The store emits one diff, and
+        `classifyTldrawStoreDiff` answers for the whole of it, so there is one
+        call site and no pairing to get wrong. The asymmetry the xyflow mappers
+        had on `replace` does not exist either.
+
+        The property that survives is the one that mattered: an edit that
+        bypasses the classifier does not mark dirty, and autosave never fires —
+        which is how inspector edits, palette drops and proximity binds were all
+        silently unsaved while the UI said "press Enter to save the edit".
+    */
+    const CANVAS = read('src/components/processes/TldrawProcessCanvas.tsx');
+
+    it('the canvas classifies the store diff through the shared adapter', () => {
+        expect(CANVAS).toMatch(
+            /import\s*\{\s*classifyTldrawStoreDiff\s*\}\s*from\s*['"]@\/lib\/processes\/canvas-changes-tldraw['"]/,
         );
-        // The classification still gates BOTH consequences, which is what the
-        // original defect broke.
-        expect(body).toMatch(/history\.push\(\{ nodes, edges \}\)/);
-        expect(body).toMatch(/autosave\.markDirty\(\)/);
+        expect(CANVAS).toMatch(/classifyTldrawStoreDiff\(/);
     });
 
-    it('onEdgesChange classifies through the edge mapper', () => {
-        const body = declarationOf(CANVAS, 'onEdgesChange');
-        expect(body).toMatch(
-            /batchIsSubstantive\(\s*changes\.map\(classifyXyflowEdgeChange\)/,
-        );
-        expect(body).toMatch(/history\.push\(\{ nodes, edges \}\)/);
-        expect(body).toMatch(/autosave\.markDirty\(\)/);
-    });
+    it('and a substantive verdict is what calls onDirty — not every store tick', () => {
+        /*
+            Both halves matter. Without the classifier the canvas would mark
+            dirty on camera moves and selection changes, and autosave would PUT
+            the map on every pan. Without `onDirty` being called at all, a real
+            edit is never saved.
 
-    it('the host names no engine change type of its own', () => {
-        // The point of the adapter: exactly one file knows xyflow's change
-        // vocabulary. A `case "replace":` back in the host means somebody
-        // re-inlined a predicate beside the adapter call.
-        expect(CANVAS).not.toMatch(/case ["']replace["']:/);
+            `onDirtyRef` rather than the prop directly: the handler is installed
+            once on mount, so a captured prop would be the one from the first
+            render forever — the stale-closure shape that made the xyflow
+            version's dep arrays load-bearing.
+        */
+        expect(CANVAS).toMatch(/onDirtyRef\.current/);
+        expect(CANVAS).toMatch(/onDirtyRef\.current\s*=\s*onDirty/);
     });
-
-    it.each(['onDrop', 'handleProximityCommit'])(
-        '%s pushes history and marks dirty',
-        (name) => {
-            const start = CANVAS.indexOf(`const ${name} = useCallback(`);
-            expect(start).toBeGreaterThan(-1);
-            const rest = CANVAS.slice(start);
-            const end = rest.search(/\n    const \w+ = /);
-            const body = end === -1 ? rest : rest.slice(0, end);
-            expect(body).toMatch(/history\.push\(\{ nodes, edges \}\)/);
-            expect(body).toMatch(/autosave\.markDirty\(\)/);
-        },
-    );
 });

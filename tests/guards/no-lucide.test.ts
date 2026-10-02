@@ -36,6 +36,10 @@ const SCAN_ROOT = path.join(ROOT, 'src');
 // Adding a NEW entry requires (a) a written rationale in the PR
 // description and (b) confirmation that no Nucleo equivalent
 // exists. Default answer: migrate to Nucleo.
+// #3079 removed the xyflow process-canvas entry below: this allowlist is a
+// migration TODO, and a file that no longer exists is not a TODO. The guard
+// fails on a stale entry for a good reason — a dangling exemption is one
+// nobody can see expire.
 const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/app/org/[orgSlug]/(app)/OrgThreatLevelWidget.tsx',
     'src/app/org/[orgSlug]/(app)/OrgMaturityWidget.tsx',
@@ -196,7 +200,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // control-on-edge overlay (R25-PR-D). Same precedent as
     // GraphExplorer — xyflow-based canvas pages use diagramming-
     // specific icons not yet covered by Nucleo.
-    'src/components/processes/ProcessEdge.tsx',
     'src/components/processes/node-taxonomy.ts',
     'src/components/ui/HeroMetric.tsx',
     'src/components/ui/icons/index.tsx',
