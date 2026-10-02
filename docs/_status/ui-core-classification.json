@@ -2,7 +2,7 @@
  "src/components/app-shell/shortcut-help-overlay.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Every visible string goes through next-intl (`t(\"title\")`, `t(\"availableNow\")`, `t(\"showShortcuts\")`). The only literals are keyboard nomenclature (Ctrl/Esc/Space/⌘/arrows) in `prettyKey`, which is modifier-key naming, not product copy. Imports are only `@/lib/hooks/use-keyboard-shortcut` and `@/components/ui/*` — both allowlisted. Sense-check: the three GRC-noun grep hits are false positives — `c"
+  "reason": "Every visible string goes through next-intl (`t(\"title\")`, `t(\"availableNow\")`, `t(\"showShortcuts\")`). The only literals are keyboard nomenclature (Ctrl/Esc/Space/⌘/arrows) in `prettyKey`, which is modifier-key naming, not product copy. Imports are only `@/lib/hooks/use-keyboard-shortcut` and `@/components/ui/*` — both allowlisted. Sense-check: the three GRC-noun grep hits are false positives — `case \"control\"` at :86 is the Ctrl modifier-key alias in `prettyKey`, and \"policy\" at :18 (header) and :149 (an inline comment above the `if (!s.description) continue` skip) is this file’s own \"label it or it’s internal\" shortcut rule, not a GRC policy."
  },
  "src/components/layout/AppShell.tsx": {
   "classification": "COUPLED",
@@ -12,12 +12,12 @@
  "src/components/layout/AppShellFrame.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The already-extracted shared frame, and clean on all five axes. Storage key routes through the seam: `collapseStorageKey ?? uiStorageKey('sidebar-collapsed')` (line 93) with `import { uiStorageKey } from '@/lib/ui-storage'` (line 54). No copy at all (every slot is a render prop), no GRC nouns, no brands, brand tokens absent, and the only other imports are `@/lib/cn` and `@/components/ui/hooks/use-"
+  "reason": "The already-extracted shared frame, and clean on all five axes. Storage key routes through the seam: `collapseStorageKey ?? uiStorageKey('sidebar-collapsed')` (line 93) with `import { uiStorageKey } from '@/lib/ui-storage'` (line 54). No copy at all (every slot is a render prop), no GRC nouns, no brands, brand tokens absent, and the only other imports are `@/lib/cn` and `@/components/ui/hooks/use-local-storage` (`use-local-storage` at :52, `cn` at :53) — the first inside the `src/components/ui` shared-UI root and the second on the detector's `NEUTRAL_LIB` allowlist, so neither is a domain module — plus framework modules only (`react`, `usePathname` from `next/navigation`)."
  },
  "src/components/layout/ClientProviders.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Clean on all five. No JSX text, no aria/title literals, no default copy params. No GRC vocabulary and no brand names. Reads `NEXT_PUBLIC_TEST_MODE` / `NODE_ENV` but writes no storage key. Imports are `@/components/ui/OnboardingTour`, `@/components/dev/swr-devtools`, `@/components/observability/WebVitalsReporter` — none from `src/app-layer` or a `src/lib/<domain>` module. Worth flagging separately:"
+  "reason": "Clean on all five. No JSX text, no aria/title literals, no default copy params. No GRC vocabulary and no brand names. Reads `NEXT_PUBLIC_TEST_MODE` / `NODE_ENV` but writes no storage key. Imports are `@/components/ui/OnboardingTour`, `@/components/dev/swr-devtools`, `@/components/observability/WebVitalsReporter` — none from `src/app-layer` or a `src/lib/<domain>` module. Worth flagging separately: two of those three sit OUTSIDE the four shared-UI roots — `@/components/dev/swr-devtools` and `@/components/observability/WebVitalsReporter` — so a consumer that vendors this file must vendor or stub two product components it was never told about, and the `domain-import` detector cannot see either because its regex covers only `@/app-layer` and `@/lib`. Tracked as #3098 §1; the classification is left GENERIC here because reclassifying it belongs with the widened detector."
  },
  "src/components/layout/DashboardLayout.tsx": {
   "classification": "MIXED",
@@ -47,7 +47,7 @@
  "src/components/layout/LocaleSwitcher.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The widget is generic (a ToggleGroup over `SUPPORTED_LOCALES`, with endonyms interpolated from constants rather than written as JSX literals precisely to stay off the i18n ratchet). Two couplings. The cookie finding is the material one: the writer bypasses the `uiCookieName` seam, which is exactly the drift `src/lib/ui-storage.ts` was created to end — its own header documents the prior `ThemeProvi"
+  "reason": "The widget is generic (a ToggleGroup over `SUPPORTED_LOCALES`, with endonyms interpolated from constants rather than written as JSX literals precisely to stay off the i18n ratchet). Two couplings. The cookie finding is the material one: the writer bypasses the `uiCookieName` seam, which is exactly the drift `src/lib/ui-storage.ts` was created to end — its own header documents the prior `ThemeProvider.persistTheme` as the pattern it mirrors, and `persistLocale` (:63) writes `document.cookie` (:66) from `LOCALE_COOKIE` in `@/lib/locale-constants` rather than through `uiCookieName('locale')`."
  },
  "src/components/layout/MobileNavDrawer.tsx": {
   "classification": "MIXED",
@@ -357,7 +357,7 @@
  "src/components/ui/card-list/card-list.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "A 95-line responsive grid container — `<ul role=\"list\">`, a loading context, nothing else. Code is entirely generic (no copy; `aria-label` is a pass-through prop with no default). The only coupling is one domain example in the file-header comment naming compliance framework packs among the surfaces this grid is for. I judged \"framework\" here as the GRC sense (framework packs = the compliance frame"
+  "reason": "A 95-line responsive grid container — `<ul role=\"list\">`, a loading context, nothing else. Code is entirely generic (no copy; `aria-label` is a pass-through prop with no default). The only coupling is one domain example in the file-header comment naming compliance framework packs among the surfaces this grid is for. I judged \"framework\" here as the GRC sense (framework packs = the compliance frameworks a tenant adopts, at :7) rather than the software sense, so it counts as domain vocabulary in prose — removable by generalising the example list."
  },
  "src/components/ui/card-list/index.ts": {
   "classification": "GENERIC",
@@ -547,7 +547,7 @@
  "src/components/ui/combobox/messages.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "A copy-resolution module: `getComboboxMessages(t)` routes all four combobox strings through next-intl, and `COMBOBOX_DEFAULT_MESSAGES` is the last-resort fallback for a translator that throws or returns empty. The English literals match rule 1 literally (copy-parameter defaults), so I report them — but flagging the other direction too: this is a DELIBERATE, documented design, not an oversight (the"
+  "reason": "A copy-resolution module: `getComboboxMessages(t)` routes all four combobox strings through next-intl, and `COMBOBOX_DEFAULT_MESSAGES` is the last-resort fallback for a translator that throws or returns empty. The English literals match rule 1 literally (copy-parameter defaults), so I report them — but flagging the other direction too: this is a DELIBERATE, documented design, not an oversight (the header at :15-16 states the values are reached only when a translator throws or returns empty, and `safeT` at :45-51 is that catch), so deleting them would leave the combobox blank rather than untranslated."
  },
  "src/components/ui/combobox/virtualized-options.tsx": {
   "classification": "GENERIC",
@@ -647,12 +647,12 @@
  "src/components/ui/date-picker/shared.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A React context, a locale-aware `formatDate`, and `validatePresets`. The English text here is all inside `throw new Error(...)` developer messages (`Preset ${preset.label} is before fromYear …`), which are not JSX text / aria / title / copy defaults, so I did not count them as `copy`. No brand, no storage key, no domain vocabulary. (Aside, outside the five: its `formatDate` duplicates `@/lib/forma"
+  "reason": "A React context, a locale-aware `formatDate`, and `validatePresets`. The English text here is all inside `throw new Error(...)` developer messages (`Preset ${preset.label} is before fromYear …`), which are not JSX text / aria / title / copy defaults, so I did not count them as `copy`. No brand, no storage key, no domain vocabulary. (Aside, outside the five: its `formatDate` at :24 duplicates `@/lib/format-date.ts`, which exports its own `formatDate` at :149 — a dedup opportunity, not a coupling, since neither is a domain module.)"
  },
  "src/components/ui/date-picker/trigger.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Forward-ref trigger button. `placeholder` is a prop with NO default string, so there is no copy default here; the only text it renders is `{children}` or `{placeholder}`. Edge styling rides `--ctrl-edge-*` custom properties, not `--brand-*`, and nothing uses a brand token as text. (Outside the five: :62 hardcodes `shadow-[0_0_0_3px_rgb(220_38_38_/_0.20)]` as a raw colour — a token nit, not a coupl"
+  "reason": "Forward-ref trigger button. `placeholder` is a prop with NO default string, so there is no copy default here; the only text it renders is `{children}` or `{placeholder}`. Edge styling rides `--ctrl-edge-*` custom properties, not `--brand-*`, and nothing uses a brand token as text. (Outside the five: :62 hardcodes `shadow-[0_0_0_3px_rgb(220_38_38_/_0.20)]` as a raw colour — a token nit, not a coupling: rule 4 covers a brand TOKEN used as TEXT, and this is the error halo on the `hasError` variant (the focus channel rides `--ctrl-edge-focus` at :54), so neither.)"
  },
  "src/components/ui/date-picker/types.ts": {
   "classification": "MIXED",
@@ -727,7 +727,7 @@
  "src/components/ui/filter/filter-list.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Structurally a fully generic active-filter pill strip (operator toggle, value dropdown, range pill, remove). No brand-as-text, no storage key, no domain import, no domain vocabulary — but it is the single largest pocket of untranslated English in the slice, and it is the only MIXED file here whose coupling is copy alone. The `console.error(\"Filter.List received an activeFilter without a correspond"
+  "reason": "Structurally a fully generic active-filter pill strip (operator toggle, value dropdown, range pill, remove). No brand-as-text, no storage key, no domain import, no domain vocabulary — but it is the single largest pocket of untranslated English in the slice, and it is the only MIXED file here whose coupling is copy alone. The `console.error` at :107-109 (\"Filter.List received an activeFilter without a corresponding filter\") is excluded from that count: it is a developer diagnostic, never rendered."
  },
  "src/components/ui/filter/filter-range-panel.tsx": {
   "classification": "GENERIC",
@@ -777,7 +777,7 @@
  "src/components/ui/filter/use-filter-presets.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/filters. Audited note: A view adapter over `@/lib/filters/filter-presets`, and I checked that module: `presetsStorageKey()` returns `uiStorageKey('filters', tenantSlug, page)`, so the storage key IS built through the seam and there is no `storage-key` finding. `src/lib/filters` is UI-preference persistence (it imports FROM `@/components/ui/filter/filter-state`), not a compliance domain module, so I did not count it as `"
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/filters. Audited note: A view adapter over `@/lib/filters/filter-presets`, and I checked that module: `presetsStorageKey()` returns `uiStorageKey('filters', tenantSlug, page)`, so the storage key IS built through the seam and there is no `storage-key` finding. `src/lib/filters` is UI-preference persistence (it imports FROM `@/components/ui/filter/filter-state` at filter-presets.ts:21), not a compliance domain module, so I did not count it as `domain-import` — the mechanical pass overrules that judgement and the entry stands MIXED, which is the audit/grep asymmetry working as designed."
  },
  "src/components/ui/form-description.tsx": {
   "classification": "GENERIC",
@@ -2732,7 +2732,7 @@
  "src/components/ui/modal.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Radix Dialog / Vaul Drawer modal with structured slots and a Confirm sugar. Every user-visible string goes through `useTranslations(\"common\")` — t(\"ui.dialog\"), t(\"close\"), t(\"ui.confirm\"), t(\"cancel\"). No storage keys, no brand-as-text, no domain imports (only @/lib/cn, @/lib/hooks/use-keyboard-inset, local ui modules). The word \"control\" appears at :192/:301/:312 in the UI-widget sense (the cont"
+  "reason": "Radix Dialog / Vaul Drawer modal with structured slots and a Confirm sugar. Every user-visible string goes through `useTranslations(\"common\")` — t(\"ui.dialog\"), t(\"close\"), t(\"ui.confirm\"), t(\"cancel\"). No storage keys, no brand-as-text, no domain imports (only @/lib/cn, @/lib/hooks/use-keyboard-inset, local ui modules). The word \"control\" appears at :192/:301/:312 in the UI-widget sense (the triggering element focus returns to, and \"focus control\" inside a quoted note on popovers) — all three in comments, none the GRC noun."
  },
  "src/components/ui/next-best-action-logic.ts": {
   "classification": "COUPLED",
@@ -2887,12 +2887,12 @@
  "src/components/ui/table/pagination-utils.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Pure pagination arithmetic (getPageCount/getPageRange/getPaginationState/clampPage) — all generic and React-free. The exception is `formatPageRange`, which builds display text from hardcoded English: a copy-parameter default of \"items\" and the literal connective \" of \" inside the template. Note for the follow-up: this function has ZERO callers in src (grep: only its own definition plus tests/unit/"
+  "reason": "Pure pagination arithmetic (getPageCount/getPageRange/getPaginationState/clampPage) — all generic and React-free. The exception is `formatPageRange`, which builds display text from hardcoded English: a copy-parameter default of \"items\" and the literal connective \" of \" inside the template. Note for the follow-up: this function has ZERO callers in src (grep: only its own definition at :129 plus `tests/unit/data-table.test.ts`), so the copy is unreachable from the product today and deleting the function would remove the coupling outright."
  },
  "src/components/ui/table/selection-toolbar.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Generic batch-action toolbar. All user-visible copy goes through next-intl (`t(\"table.selectedCount\")` etc.). The one coupling is the JSDoc usage block, which is written against the GRC Control entity. I judged `controls` (the prop at :153/:157/:299) and `aria-controls` as the UI-widget/attribute sense, NOT the GRC noun, and did not report them — but `BatchAction<Control>` at :29 IS the GRC noun ("
+  "reason": "Generic batch-action toolbar. All user-visible copy goes through next-intl (`t(\"table.selectedCount\")` etc.). The one coupling is the JSDoc usage block, which is written against the GRC Control entity. I judged `controls` (the prop at :153/:157/:299) and `aria-controls` as the UI-widget/attribute sense, NOT the GRC noun, and did not report them — but `BatchAction<Control>` at :29 IS the GRC noun (it is the usage example's type argument, continued by `exportControls` at :33), and that is the coupling reported: comment prose, removable by generalising the example."
  },
  "src/components/ui/table/sort-rows.ts": {
   "classification": "GENERIC",
@@ -2962,7 +2962,7 @@
  "src/components/ui/tooltip.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Radix Tooltip plus InfoTooltip and DynamicTooltipWrapper. Copy via `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"moreInformation\")}`, with an explicit comment at :238-239 on why the default cannot be a parameter literal. All content/title/shortcut come from callers. Judged NOT domain-props: the JSDoc example `title=\"Scheduled review\"` / `\"A periodic review keeps this record current"
+  "reason": "Radix Tooltip plus InfoTooltip and DynamicTooltipWrapper. Copy via `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"moreInformation\")}`, with an explicit comment at :238-239 on why the default cannot be a parameter literal. All content/title/shortcut come from callers. Judged NOT domain-props: the JSDoc example `title=\"Scheduled review\"` / `content=\"A periodic review keeps this record current.\"` at :17-18 is illustrative comment prose, not a prop default or a runtime string — nothing in the component carries it."
  },
  "src/components/ui/typography.tsx": {
   "classification": "GENERIC",

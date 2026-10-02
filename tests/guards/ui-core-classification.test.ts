@@ -91,6 +91,96 @@ describe('shared-UI coupling classification (#3047)', () => {
         expect(bad).toEqual([]);
     });
 
+    it('no reason is severed mid-thought — balanced delimiters, no dangling connective', () => {
+        // #3098 §2. The assertion above is a PRESENCE check, and a presence
+        // check cannot tell a complete sentence from a truncated one. Two
+        // reasons shipped cut off — one mid-identifier (`…use-`), one at a
+        // bare colon — and both passed it.
+        //
+        // Why NOT "ends in terminal punctuation": measured over all 613
+        // strings, that rule flags 319. Most are legitimate — the ~240 nucleo
+        // icons share the complete-but-unpunctuated reason "Pure presentational
+        // SVG icon: no copy, no storage key, no brand-as-text, no domain
+        // import". A rule that flags half the population is noise, and noise
+        // gets a blanket allowlist, which is a gate narrow enough to always
+        // pass.
+        //
+        // So the rule is INTRINSIC instead: a string cut at an arbitrary
+        // offset leaves evidence in its own grammar. An opened `code span`,
+        // paren or quote never closes, or the last character is a connective
+        // the author was mid-way through. Measured on the pre-fix tree it
+        // flagged 14 and NOTHING ELSE — zero false positives over 613.
+        //
+        // Known blind spot, MEASURED rather than assumed: truncating a
+        // complete reason at a word boundary, delimiters left balanced, was
+        // run against this assertion and PASSED. So a cut that lands cleanly
+        // is invisible here, and the population proves it is not theoretical
+        // — 13 of the 14 were exactly 400 characters, the truncator's
+        // fingerprint, and 27 reasons still are. Most of those read as cut
+        // off (`typography.tsx` ends "is inside that prose, no"). No issue
+        // tracks them as of 2026-10-02; completing them is prose authoring
+        // per file.
+        //
+        // A second axis — "no reason is exactly 400 characters" — would catch
+        // that whole class, and is deliberately NOT added: it needs a stored
+        // count of the 27 survivors, and this file's header forbids stored
+        // totals ("Every count below is derived from the map at run time.
+        // There is no number for two branches to bump"). Closing the blind
+        // spot means completing the 27, not seating a ceiling.
+        //
+        // So: this guard holds the line against a reason severed in a way
+        // that shows, and it does not claim the existing ones are whole.
+        const severed = (reason: string): string[] => {
+            const why: string[] = [];
+            if ((reason.match(/`/g) ?? []).length % 2) why.push('unbalanced backtick');
+            if ((reason.match(/"/g) ?? []).length % 2) why.push('unbalanced double quote');
+            let depth = 0;
+            for (const ch of reason) {
+                if (ch === '(') depth += 1;
+                else if (ch === ')') depth -= 1;
+                if (depth < 0) break;
+            }
+            if (depth !== 0) why.push('unbalanced parenthesis');
+            // A reason may legitimately end on a word or `.`/`!`/`?`/`)`/`"`/
+            // backtick-closed span. It may not end on a character that is
+            // grammatically mid-phrase.
+            if (/[:,;\-\/—–([=]$/.test(reason.trimEnd())) {
+                why.push(`dangling final character ${JSON.stringify(reason.trimEnd().slice(-1))}`);
+            }
+            return why;
+        };
+
+        // Positive control FIRST. Without it this passes when `severed` has
+        // rotted into a function that returns [] for everything, which is the
+        // shape a dead detector shares with a clean population. Each case is
+        // the real failure mode it is named for.
+        expect(severed('Imports are `@/lib/cn` and `@/components/ui/hooks/use-'))
+            .toEqual(['unbalanced backtick', 'dangling final character "-"']);
+        expect(severed('…module. Worth flagging separately:'))
+            .toEqual(['dangling final character ":"']);
+        expect(severed('(Outside the five: a token nit, not a coupl'))
+            .toEqual(['unbalanced parenthesis']);
+        expect(severed('The `console.error("Filter.List received an activeFilter')).toEqual([
+            'unbalanced backtick',
+            'unbalanced double quote',
+            'unbalanced parenthesis',
+        ]);
+        // And the negative control: the reason 240 icon entries share, which a
+        // terminal-punctuation rule would have flagged.
+        expect(
+            severed(
+                'Pure presentational SVG icon: no copy, no storage key, ' +
+                    'no brand-as-text, no domain import',
+            ),
+        ).toEqual([]);
+
+        const truncated = Object.entries(MAP)
+            .map(([p, e]) => [p, severed(e.reason)] as const)
+            .filter(([, why]) => why.length > 0)
+            .map(([p, why]) => `${p} -> ${why.join(', ')}`);
+        expect(truncated).toEqual([]);
+    });
+
     it('no file recorded GENERIC trips a MECHANICAL coupling', () => {
         // The half that must not rest on judgement. A GENERIC here is a claim
         // that a second product can vendor the file as-is; these three are
