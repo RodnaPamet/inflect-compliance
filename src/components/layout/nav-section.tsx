@@ -86,8 +86,8 @@ export const NAV_SECTION_HEADER =
  *     opacity profile.
  *
  * Why peak at `--border-subtle` (not `/40`)?
- *   - `--border-subtle` is already alpha-tuned per theme (METRO
- *     navy @ 50%, PwC warm gray @ 60%). The gradient fade at edges
+ *   - `--border-subtle` is already alpha-tuned per theme (dark
+ *     theme navy @ 50%, light theme warm gray @ 60%). The gradient fade at edges
  *     drops effective brightness to ~25-30% at peak — quieter than
  *     R12-PR3's flat ~20%, but the in-and-out fade is what makes
  *     it feel like breath rather than rule.

@@ -143,4 +143,32 @@ describe('UserMenu — rows arrive from the host', () => {
         fireEvent.click(screen.getByTestId('top-chrome-user-menu'));
         expect(screen.getByRole('menu')).toBeInTheDocument();
     });
+
+    it('hides the language row on request, with its separators', () => {
+        const hostRow = () => (
+            <button type="button" data-testid="host-row">
+                host row
+            </button>
+        );
+        const { unmount } = render(
+            <TooltipProvider>
+                <UserMenu {...base} open onOpenChange={jest.fn()} items={hostRow} />
+            </TooltipProvider>,
+        );
+        // POSITIVE CONTROL: the default is unchanged — the row is there, and
+        // so are the four hairlines it has always drawn with host rows.
+        expect(screen.getByTestId('user-menu-language-row')).toBeInTheDocument();
+        expect(screen.getAllByRole('separator')).toHaveLength(4);
+        unmount();
+
+        render(
+            <TooltipProvider>
+                <UserMenu {...base} open onOpenChange={jest.fn()} items={hostRow} showLanguage={false} />
+            </TooltipProvider>,
+        );
+        expect(screen.queryByTestId('user-menu-language-row')).toBeNull();
+        expect(screen.getByTestId('user-menu-theme-row')).toBeInTheDocument();
+        // Header, theme, host rows: two hairlines, not two stacked together.
+        expect(screen.getAllByRole('separator')).toHaveLength(2);
+    });
 });
