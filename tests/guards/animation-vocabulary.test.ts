@@ -99,7 +99,8 @@
  *   2. `globals.css` → `.animate-X { }` rules, and any `--animate-X`
  *      custom property in an `@theme` block.
  *   3. Tailwind v4's own built-ins, read from the INSTALLED
- *      `node_modules/tailwindcss/theme.css` rather than hard-coded, so
+ *      theme (via `require.resolve('tailwindcss/theme.css')`) rather than
+ *      hard-coded or spelled as a path, so
  *      an upgrade that adds or removes one cannot leave this guard
  *      asserting against a list the framework no longer has.
  *      Plus `animate-none`, which v4 emits as a static utility
@@ -199,8 +200,13 @@ describe('Animation vocabulary discipline (Roadmap-6 PR-1)', () => {
      * because `animate-none` is a static utility with no theme key.
      */
     const builtinAnimationNames = (): Set<string> => {
+        // Resolved, not spelled. `dependency-paths-are-resolved` rejects a
+        // built filesystem path into an installed package, and it is right
+        // to: `node_modules/tailwindcss/theme.css` is only correct under one
+        // hoisting layout, and would read as ABSENT (not as an error) under
+        // another — making every token resolve against an empty built-in set.
         const themeCss = fs.readFileSync(
-            path.join(ROOT, 'node_modules/tailwindcss/theme.css'),
+            require.resolve('tailwindcss/theme.css'),
             'utf-8',
         );
         const names = new Set<string>(['none']);
