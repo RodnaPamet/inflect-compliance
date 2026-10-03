@@ -26,6 +26,8 @@ import * as fs from "fs";
 import * as path from "path";
 
 const ROOT = path.resolve(__dirname, "../..");
+import { tallyFile, type Tally } from "../helpers/button-variant-census";
+
 const SCAN_DIRS = ["src/app", "src/components"];
 
 const EXEMPT_DIR_NAMES = new Set<string>([
@@ -76,7 +78,13 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // Heavy detail pages — page-header CTA + multiple modal CTAs
     // #102 item 1 dropped 2 (Map Requirement + Map) to the extracted
     // Mappings tab component below.
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx": 8,
+    // 2026-10-04 census 8 -> 1, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    // ENTRY REMOVED 2026-10-04: census is 1, which is DEFAULT_BUDGET. This map's
+    // own self-consistency test requires every entry to be >= 2, and it is right:
+    // a listed 1 is indistinguishable from not being listed.
+    // "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx": 1,
     // Three distinct primary regions, never on screen together: the
     // header "map requirement" toggle, the inline map-form submit, and
     // the per-framework-applicability justify modal's confirm (PR3 item 3).
@@ -118,8 +126,13 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // changes started prompting for a resolution note) + 2 for the
     // Evidence tab region (its "Add Evidence" trigger + form submit,
     // mirroring the Links tab's add/submit pair).
-    "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx": 6,
-    "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 3,
+    // 2026-10-04 census 6 -> 5, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    "src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx": 5,
+    // 2026-10-04 census 3 -> 4. Three ternary variant sites plus three literal
+    // primaries; one ternary branch was invisible to the old regex.
+    "src/app/t/[tenantSlug]/(app)/risks/ai/page.tsx": 4,
     // PR-L — KRI page: the create-form primary + the edit-modal save primary
     // (modal-action-order requires a modal's confirm action to be primary).
     "src/app/t/[tenantSlug]/(app)/risks/kri/page.tsx": 2,
@@ -127,8 +140,14 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // extracted into this shared view; the control-scoped + tenant-wide pages
     // are now thin wrappers with no primaries of their own.
     "src/components/test-plans/TestPlanDetailView.tsx": 3,
-    "src/app/t/[tenantSlug]/(app)/admin/members/page.tsx": 3,
-    "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx": 3,
+    // 2026-10-04 census 3 -> 2, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    "src/app/t/[tenantSlug]/(app)/admin/members/page.tsx": 2,
+    // 2026-10-04 census 3 -> 2, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx": 2,
 
     // Shared add-evidence form — the reveal trigger + the form submit
     // are two genuinely separate regions (the form only mounts once the
@@ -144,26 +163,62 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // 2-primary tier — page CTA + inline form (R5-PR7 pattern)
     "src/components/ui/HeroMetric.tsx": 2,
     "src/components/TestPlansPanel.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/tests/due/page.tsx": 2,
+    // 2026-10-04 REMOVED: census is 0. The guard skips a file with no primaries
+    // (`if (count === 0) continue`), so this entry could never bind.
+    // "src/app/t/[tenantSlug]/(app)/tests/due/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx": 2,
+    // 2026-10-04 census 2 -> 3. Two ternary `variant={…?…:…}` sites; the census
+    // counts every branch a ternary can render, the old lazy regex counted none.
+    "src/app/t/[tenantSlug]/(app)/reports/soa/SoAClient.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx": 2,
+    // 2026-10-04 census 2 -> 1, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    // ENTRY REMOVED 2026-10-04: census is 1, which is DEFAULT_BUDGET. This map's
+    // own self-consistency test requires every entry to be >= 2, and it is right:
+    // a listed 1 is indistinguishable from not being listed.
+    // "src/app/t/[tenantSlug]/(app)/findings/FindingsClient.tsx": 1,
+    // 2026-10-04 census 2 -> 1, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    // ENTRY REMOVED 2026-10-04: census is 1, which is DEFAULT_BUDGET. This map's
+    // own self-consistency test requires every entry to be >= 2, and it is right:
+    // a listed 1 is indistinguishable from not being listed.
+    // "src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx": 1,
     // Two real <Button variant="primary"> (share-modal submit + add-item
     // submit). The 3rd count is a scanner artifact: the error-state retry
     // <Button variant="secondary"> added for the load-error region anchors a
     // lazy <Button…variant="primary"> bridge that reaches the pre-existing
     // freeze IconAction primary — a legitimate new region, not a competing
     // primary button.
-    "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx": 3,
+    // 2026-10-04 census 3 -> 2, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    "src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx": 2,
-    "src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx": 2,
+    // 2026-10-04 census 2 -> 1, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    // ENTRY REMOVED 2026-10-04: census is 1, which is DEFAULT_BUDGET. This map's
+    // own self-consistency test requires every entry to be >= 2, and it is right:
+    // a listed 1 is indistinguishable from not being listed.
+    // "src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx": 1,
+    // 2026-10-04 census 2 -> 1, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    // ENTRY REMOVED 2026-10-04: census is 1, which is DEFAULT_BUDGET. This map's
+    // own self-consistency test requires every entry to be >= 2, and it is right:
+    // a listed 1 is indistinguishable from not being listed.
+    // "src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx": 1,
     // Modal-form P2 — page-header "Create Task" + bulk-action-toolbar
     // "Apply" submit. Two genuinely separate visual regions; the
     // bulk toolbar only mounts when rows are selected.
-    "src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx": 2,
+    // 2026-10-04 census 2 -> 3. THE WORKED EXAMPLE for why the counter changed:
+    // four Button sites, one secondary, one literal primary, two ternaries. The
+    // old regex scored 1 by bridging from the first `<Button` past the secondary
+    // to the first literal `variant="primary"`. Budget was 2, so it passed a file
+    // it undercounted by two.
+    "src/app/t/[tenantSlug]/(app)/tasks/TasksClient.tsx": 3,
     "src/app/t/[tenantSlug]/(app)/admin/scim/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx": 2,
     "src/app/t/[tenantSlug]/(app)/admin/risk-matrix/RiskMatrixAdminClient.tsx": 2,
@@ -174,7 +229,13 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // ratchet. Plus the templates-install Link in the same row (also
     // primary). Two header CTAs side-by-side is the controls list
     // page's canonical shape.
-    "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx": 2,
+    // 2026-10-04 census 2 -> 1, lowered to the measurement. The old
+    // lazy counter could not see this file's real count, so the gap was never
+    // visible; one-way down, per this map's own discipline.
+    // ENTRY REMOVED 2026-10-04: census is 1, which is DEFAULT_BUDGET. This map's
+    // own self-consistency test requires every entry to be >= 2, and it is right:
+    // a listed 1 is indistinguishable from not being listed.
+    // "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx": 1,
 
     // B8 — Frameworks list now carries an "Import framework" CTA in
     // the page header AND a primary "Import framework" jump inside
@@ -184,6 +245,44 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // explanation" follow-through. Modal only mounts when the user
     // clicks the Create-framework secondary trigger.
     "src/app/t/[tenantSlug]/(app)/frameworks/FrameworksClient.tsx": 2,
+    // ── 2026-10-04: NINE FILES THE OLD COUNTER NEVER SAW ────────────────────
+    //
+    // Every primary below is a `<Button>` with NO variant prop — `button.tsx`
+    // defaults to primary — or a ternary branch. The old regex required a
+    // literal `variant="primary"`, so for several of these it counted ZERO, and
+    // `if (count === 0) continue` SKIPPED THE FILE ENTIRELY. They were not
+    // passing the budget; they were never measured against it.
+    //
+    // None is over-emphasis. Each is the static-scanner-counts-every-branch
+    // pattern this map already documents for SharePointFilePicker and
+    // RuleBuilderModal: mutually-exclusive regions that are never on screen
+    // together.
+    //
+    // NOTE the four under `src/components/` are invisible to the PRODUCT-WIDE
+    // ceiling in `primary-secondary-ratio`, which scans `src/app` only. For
+    // those, this per-file budget is the ONLY control — and it was blind.
+    "src/components/ControlExceptionsPanel.tsx": 5,
+    // FOUR modal footers, each `<Button variant="secondary" onClick={onClose}>`
+    // paired with an unvariant submit, plus the panel's own CTA. Four dialogs in
+    // one file; `modal-action-order` requires each one's last action to be
+    // primary or destructive, so none of these is optional.
+    "src/components/risks/RiskTreatmentPlanCard.tsx": 5,
+    // THREE modal footers in the same shape, plus a ternary and the card CTA.
+    "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx": 3,
+    // Two modal footers + one ternary.
+    "src/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient.tsx": 2,
+    // Two unvariant Buttons, no ternaries, no literal `variant="primary"` — the
+    // old regex scored 0 here and the file was skipped.
+    "src/components/policies/PolicyAcknowledgementsPanel.tsx": 2,
+    // Same: two unvariant Buttons, previously invisible.
+    "src/app/t/[tenantSlug]/(app)/risks/[riskId]/BowTiePanel.tsx": 2,
+    // Two ternary variant sites, no literal primary — previously invisible.
+    "src/app/t/[tenantSlug]/(app)/admin/billing/BillingActions.tsx": 2,
+    // One literal primary + one ternary branch.
+    "src/app/t/[tenantSlug]/(app)/risks/hierarchy/page.tsx": 2,
+    // One literal primary + one ternary branch.
+    "src/components/processes/CanvasDocumentBar.tsx": 2,
+    // One literal primary + one ternary branch.
 };
 
 const DEFAULT_BUDGET = 1;
@@ -208,16 +307,38 @@ function walk(dir: string): string[] {
     return out;
 }
 
-function countPrimaries(content: string): number {
-    // Match <Button variant="primary"> or variant='primary'.
-    // Single-line and JSX-multi-line attribute splits both caught.
-    // `[\s\S]` instead of `.` so newlines match without needing the
-    // `s` (dotAll) regex flag — that flag requires the regex engine
-    // target to be ES2018+ which our tsconfig does not enable.
-    const matches = content.match(
-        /<Button\b[\s\S]*?\bvariant=["']primary["']/g,
-    );
-    return matches ? matches.length : 0;
+/**
+ * Per-file primary count, from the SAME census the product-wide ceiling uses
+ * (`tests/helpers/button-variant-census.ts`).
+ *
+ * This replaced a lazy regex on 2026-10-04:
+ *
+ *     /<Button\b[\s\S]*?\bvariant=["']primary["']/g
+ *
+ * which was wrong in both directions and is the exact counter #2379 already
+ * replaced in `primary-secondary-ratio`. It undercounts because its span runs
+ * from the FIRST `<Button` to the first literal `variant="primary"`, swallowing
+ * every Button between them into one match, and it cannot see a ternary at all.
+ * It also cannot see that a `<Button>` with NO variant prop IS a primary
+ * (`button.tsx` defaults to it).
+ *
+ * Consequence while it was live: this guard — the per-file BACKSTOP to the
+ * product-wide ceiling — passed files it undercounted, and its numbers were not
+ * comparable to the ceiling's. See the census module's header for the worked
+ * example.
+ *
+ * A ternary counts EVERY branch it can render, matching the ceiling: a budget
+ * is a ceiling on what the file CAN put on screen, not on one render of it.
+ */
+function countPrimaries(rel: string, content: string): number {
+    const acc: Tally = {
+        primary: 0,
+        secondary: 0,
+        unreadable: [],
+        unparsable: [],
+    };
+    tallyFile(rel, content, acc);
+    return acc.primary;
 }
 
 interface Violation {
@@ -232,9 +353,9 @@ describe("primary action budget", () => {
         for (const dir of SCAN_DIRS) {
             for (const file of walk(path.join(ROOT, dir))) {
                 const content = fs.readFileSync(file, "utf8");
-                const count = countPrimaries(content);
-                if (count === 0) continue;
                 const rel = path.relative(ROOT, file);
+                const count = countPrimaries(rel, content);
+                if (count === 0) continue;
                 const budget = PRIMARY_BUDGET[rel] ?? DEFAULT_BUDGET;
                 if (count > budget) {
                     violations.push({ file: rel, actual: count, budget });
