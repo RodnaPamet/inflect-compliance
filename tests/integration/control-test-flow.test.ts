@@ -171,11 +171,33 @@ describeFn('Control Test Flow — Integration', () => {
         const updatedPlan = await prisma.controlTestPlan.findUnique({ where: { id: plan.id } });
         expect(updatedPlan!.nextDueAt).toBeTruthy();
 
-        // Verify nextDueAt is approximately 1 month from now
-        const diff = updatedPlan!.nextDueAt!.getTime() - now.getTime();
-        const daysDiff = diff / (1000 * 60 * 60 * 24);
-        expect(daysDiff).toBeGreaterThanOrEqual(28);
-        expect(daysDiff).toBeLessThanOrEqual(31);
+        /*
+            The cadence is a CALENDAR relationship, so assert that — not an
+            elapsed-milliseconds range (#3135).
+
+            This read `28 <= days <= 31`, and the upper bound is wrong whenever
+            the interval spans a DST transition: `computeNextDueAt` uses
+            `setMonth(+1)`, which is wall-clock arithmetic, so 3 Oct → 3 Nov is
+            31 days AND ONE HOUR in absolute time — `31.0416666…`, measured
+            failing on 2026-10-03. The spring transition can break the lower
+            bound the same way.
+
+            The product was right and the assertion was measuring the wrong
+            quantity: a compliance cadence promises "next month", not "within
+            31 × 86 400 000 ms".
+
+            Month arithmetic is done mod 12 with the year carried, so a run in
+            December asserts January of the next year rather than month 12.
+        */
+        const due = updatedPlan!.nextDueAt!;
+        expect(due.getDate()).toBe(now.getDate());
+        expect(due.getMonth()).toBe((now.getMonth() + 1) % 12);
+        expect(due.getFullYear()).toBe(
+            now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear(),
+        );
+        // And still in the future, which the calendar assertions alone would
+        // not catch if the helper ever returned the PREVIOUS month.
+        expect(due.getTime()).toBeGreaterThan(now.getTime());
     });
 
     // ─── Evidence Linking ───

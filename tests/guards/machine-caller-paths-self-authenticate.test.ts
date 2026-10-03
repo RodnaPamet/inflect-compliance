@@ -31,7 +31,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { MACHINE_CALLER_PREFIXES, isPublicPath } from '@/lib/auth/guard';
-import { functionBodyOf } from '../helpers/source-blocks';
+import { declarationOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const APP = path.join(ROOT, 'src/app');
@@ -85,6 +85,12 @@ const CONTRACTS: ReadonlyArray<{
         handler: 'api/mcp/route.ts',
         gate: /authenticateMcpRequest\s*\(/,
         why: 'Bearer TenantApiKey with an mcp:read capability scope',
+    },
+    {
+        prefix: '/api/admin',
+        handler: 'api/admin/diagnostics/route.ts',
+        gate: /verifyPlatformApiKey\s*\(/,
+        why: 'PLATFORM_ADMIN_API_KEY, compared in constant time (#3132)',
     },
 ];
 
@@ -148,17 +154,50 @@ describe('the allowlist opens what it means to open, and nothing else', () => {
     });
 
     it('does NOT open the tenant API', () => {
-        // The failure mode a prefix list invites: '/api/' or '/api' would
-        // make every one of these pass while exposing everything.
+        /*
+            The failure mode a prefix list invites: '/api/' or '/api' would
+            make every one of these pass while exposing everything.
+
+            `/api/admin/tenants` WAS on this list and is deliberately off it as
+            of #3132. That line is worth explaining rather than quietly
+            deleting, because it named a genuinely sensitive route and the
+            deletion looks exactly like weakening the test.
+
+            What changed is which layer refuses the request, not whether it is
+            refused. Every method under `/api/admin` verifies
+            PLATFORM_ADMIN_API_KEY in constant time; before #3132 the edge
+            returned 401 first, so those gates were unreachable code and the
+            platform key could not be presented AT ALL — including to the
+            agent kill switch, whose only remote control it is. The test
+            immediately below now asserts the in-handler gate for every method
+            of every route under that prefix, which is a stronger claim than
+            this line made.
+
+            `/api/t/acme/admin/members` stays, and is the one that matters for
+            THIS test: it is the tenant API, it merely contains the word
+            `admin`, and no entry here may open it.
+        */
         for (const p of [
             '/api/t/acme/risks',
             '/api/t/acme/controls',
             '/api/t/acme/admin/members',
-            '/api/admin/tenants',
             '/api/evidence',
+            '/api/audit-log',
         ]) {
             expect(isPublicPath(p)).toBe(false);
         }
+    });
+
+    it('and `/api/admin` does not open a sibling that merely shares the stem', () => {
+        // Same rule as `/api/mcp` vs `/api/mcp-admin`, asserted for the new
+        // entry rather than assumed from the matcher.
+        expect(isPublicPath('/api/administrators')).toBe(false);
+        expect(isPublicPath('/api/admin-tools')).toBe(false);
+        expect(isPublicPath('/api/adminx')).toBe(false);
+        // …while the real sub-paths are open, which is the point of the entry.
+        expect(isPublicPath('/api/admin')).toBe(true);
+        expect(isPublicPath('/api/admin/diagnostics')).toBe(true);
+        expect(isPublicPath('/api/admin/agent-kill-switch')).toBe(true);
     });
 
     it('does not open sibling paths that merely share a stem', () => {
@@ -173,5 +212,87 @@ describe('the allowlist opens what it means to open, and nothing else', () => {
         // …while the real sub-paths stay open.
         expect(isPublicPath('/api/scim/v2/Users')).toBe(true);
         expect(isPublicPath('/api/integrations/webhooks/github')).toBe(true);
+    });
+});
+
+/**
+ * `/api/admin` — EVERY method of EVERY route, derived from the directory (#3132).
+ *
+ * The contract table above samples ONE handler per prefix, which is enough when
+ * a prefix has one route file. `/api/admin` has four, and matching here is
+ * path-scoped: the entry opens all of them, and any added later.
+ *
+ * So this walks the directory instead of naming files. A route added tomorrow
+ * without a gate fails this on the day it is added, rather than on the day
+ * somebody remembers to extend a list — which is the difference between a guard
+ * and a snapshot.
+ *
+ * Per METHOD, not per file. `agent-kill-switch` exports GET, POST and PATCH and
+ * mentions the gate once, in a shared `guard()` helper; a file-wide match would
+ * stay green if one handler stopped calling it. That is the mistake that put the
+ * cross-tenant CSP buffer on the internet (#2103), and this file's own header
+ * states it: an entry added for one method opens the others too.
+ */
+describe('/api/admin: every exported method gates itself on the platform key', () => {
+    const ADMIN_DIR = path.join(APP, 'api/admin');
+
+    /** Every `route.ts` under `/api/admin`, at any depth. */
+    const adminRoutes = (dir: string): string[] =>
+        fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) return adminRoutes(full);
+            return e.name === 'route.ts' ? [full] : [];
+        });
+
+    const FILES = adminRoutes(ADMIN_DIR);
+    const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+
+    /** `[file, method]` for every handler actually exported. */
+    const HANDLERS: Array<[string, string]> = FILES.flatMap((f) => {
+        const src = fs.readFileSync(f, 'utf8');
+        return METHODS.filter((m) =>
+            new RegExp(`export const ${m}\\s*=`).test(src),
+        ).map((m) => [path.relative(APP, f), m] as [string, string]);
+    });
+
+    it('the population is non-empty — an empty sweep proves nothing', () => {
+        // Both counts, because zero FILES and zero METHODS fail differently and
+        // a `.each` over an empty array passes silently.
+        expect(FILES.length).toBeGreaterThanOrEqual(4);
+        expect(HANDLERS.length).toBeGreaterThanOrEqual(6);
+    });
+
+    it.each(HANDLERS)('%s %s verifies the platform key', (file, method) => {
+        const src = fs.readFileSync(path.join(APP, file), 'utf8');
+        /*
+            `declarationOf`, not `functionBodyOf`. These routes are
+            `export const GET = withApiErrorHandling(async (req) => { … });` —
+            a const declaration bounded by its top-level semicolon — whereas
+            `functionBodyOf` matches only a `function NAME` declaration and
+            throws here. The csp-report test above uses the other helper
+            because that file is written the other way.
+
+            Both are END-BOUNDED, which is the property that matters: a slice
+            running to EOF stays green when the target handler is gutted,
+            provided any later handler in the file still mentions the gate.
+        */
+        const body = codeOnly(declarationOf(src, method));
+
+        // The extraction found a real body. Without this, an over-eager strip
+        // makes the assertion below vacuous rather than failing.
+        expect(body.length).toBeGreaterThan(20);
+
+        // Either the direct call or the file's own early-returning wrapper.
+        // `guard(` is accepted because `agent-kill-switch` routes all three
+        // methods through one, and inlining it three times would be worse code
+        // for the sake of a simpler regex.
+        expect(body).toMatch(/verifyPlatformApiKey\s*\(|guard\s*\(\s*req\s*\)/);
+    });
+
+    it('and the prefix is actually open at the edge, or none of the above matters', () => {
+        // The pairing that makes this suite mean something: the gates are
+        // reachable AND they exist. Either half alone is a 401 or a hole.
+        expect(isPublicPath('/api/admin/diagnostics')).toBe(true);
+        expect(MACHINE_CALLER_PREFIXES).toContain('/api/admin');
     });
 });
