@@ -178,22 +178,115 @@ describe('globals.css — legacy → semantic alias bridge', () => {
         expect(src).toMatch(/--brand:\s*var\(--brand-default\)/);
     });
 
-    it('.btn-* rules consume the shared palette (no raw slate/emerald/red numerics)', () => {
-        // Capture the .btn block and assert it no longer uses raw
-        // Tailwind color classes from the dark-only palette.
+    it('.btn-* CSS classes are retired (#3153 — the family applied to no element)', () => {
+        // REPLACES a test that graded the palette inside the `.btn` block
+        // ("`.btn-*` rules consume the shared palette"). That block no longer
+        // exists: `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`,
+        // `.btn-success`, `.btn-ghost`, `.btn-xs`, `.btn-sm`, `.btn-lg` and
+        // `.btn:focus-visible` were DELETED from globals.css in #3153 after
+        // re-measuring that `btn` occurs ZERO times as a whitespace-delimited
+        // token inside a `className`/`class` string anywhere in `src/` — the
+        // `.btn` → `<Button>` migration finished on 2026-05-08 and
+        // `tests/unit/legacy-ui-ratchet.test.ts` has had `BASELINES.btn: 0`
+        // ever since.
         //
-        // THE SECOND BOUND IS INERT AND ALWAYS WAS. `.btn-primary` occurs
-        // TWICE (the rule and its `:hover`), so `[1]` already stops at the
-        // hover rule — 147 characters — long before the `/* Inputs` comment
-        // this line names. Measured byte-identical under `cssCodeOf`, which is
-        // the only reason masking the read was safe here: the mask blanks that
-        // comment, so a slice that really did depend on it would have silently
-        // widened to EOF and taken the two negatives below with it.
-        const btnBlock = src.split(/\.btn-primary/)[1]?.split(/\/\* Inputs/)[0] ?? '';
-        expect(btnBlock).toMatch(/var\(--/);
-        // None of the old raw-class references should survive in the .btn block.
-        expect(btnBlock).not.toMatch(/bg-slate-/);
-        expect(btnBlock).not.toMatch(/bg-brand-600/);
+        // The old test could not survive the deletion and would not have
+        // failed usefully: it sliced `src.split(/\.btn-primary/)[1]`, so with
+        // the selector gone the slice is `''` and `expect('').toMatch(/var\(--/)`
+        // fails with a message about a missing CSS variable rather than about a
+        // retired rule family. Same shape as the `.badge` retirement below.
+        //
+        // Read through `cssCodeOf`, so #3153's long retirement comment in
+        // globals.css — which names every one of these selectors — cannot
+        // satisfy a negative.
+        expect(src).not.toMatch(/^\s*\.btn\b/m);
+        expect(src).not.toMatch(/^\s*\.btn\s*\{/m);
+        expect(src).not.toMatch(/^\s*\.btn-primary\s*[,{:]/m);
+        expect(src).not.toMatch(/^\s*\.btn-(secondary|danger|success|ghost|xs|sm|lg)\s*[,{:]/m);
+        // `.icon-btn` is a DIFFERENT, live family and must be untouched — if
+        // the negatives above ever start matching it, this positive fails
+        // first and says so.
+        expect(src).toMatch(/^\s*\.icon-btn\s*\{/m);
+
+        // THE OTHER HALF, and the reason this is one test rather than two: the
+        // `--btn-*` CUSTOM PROPERTIES are the live token layer, and deleting
+        // them on the strength of the shared `btn` prefix is the mistake the
+        // retirement note invites.
+        //
+        // EXACTLY EIGHT are defined, all in tokens.css, zero in globals.css —
+        // and all eight are read at runtime. Both reads are masked through
+        // `cssCodeOf` / `codeOf`, so a token or a consumer surviving only as
+        // prose cannot satisfy these. That matters here: #3153's brief claimed
+        // `control-variants.ts` reads `--btn-ambient-*` and
+        // `--btn-iridescent-gradient`, and it does NOT — those tokens were
+        // deleted on 2026-07-28
+        // (docs/implementation-notes/2026-07-28-retire-dead-button-tokens.md)
+        // and all that is left of them in that file is a docblock. Asserting
+        // them would have pinned a comment.
+        // COUNTS, not `toMatch`, and that is deliberate rather than a style
+        // choice. Every one of these tokens is defined TWICE — once in the
+        // METRO dark `:root` and once in the PwC light block — so a
+        // `toMatch(/--btn-still-top\s*:/)` would be a non-unique needle: delete
+        // one theme's definition and the other keeps the assertion green,
+        // which is the Class D defect
+        // (tests/guardrails/assertion-needle-uniqueness-ratchet.test.ts).
+        // "Defined in BOTH themes" is the actual claim, and only a count can
+        // make it.
+        const tokens = readCss('src/styles/tokens.css');
+        const buttonVariants = read('src/components/ui/button-variants.ts');
+        const definitions = (token: string): number =>
+            (tokens.match(new RegExp(`^\\s*${token}\\s*:`, 'gm')) ?? []).length;
+        const reads = (src: string, token: string): number =>
+            src.split(`var(${token})`).length - 1;
+
+        const STILL_TOKENS = [
+            '--btn-still-top',
+            '--btn-still-lift',
+            '--btn-still-bot',
+            '--btn-still-press',
+            '--btn-still-danger',
+            '--btn-still-danger-deep',
+            '--btn-still-danger-lift',
+        ];
+        for (const token of STILL_TOKENS) {
+            expect({ token, definitions: definitions(token) }).toEqual({
+                token,
+                definitions: 2,
+            });
+            expect({ token, readBy: reads(buttonVariants, token) > 0 }).toEqual({
+                token,
+                readBy: true,
+            });
+        }
+        // The eighth is defined in tokens.css and consumed on the dashboard,
+        // not by the Button cva — a different file, so a different assertion.
+        expect(definitions('--btn-gradient-primary')).toBe(2);
+        expect(
+            reads(
+                read('src/app/t/[tenantSlug]/(app)/dashboard/PostureHeroCard.tsx'),
+                '--btn-gradient-primary',
+            ),
+        ).toBeGreaterThan(0);
+
+        // And the inverse, so the eight stay a CLOSED set: nothing under
+        // src/components/ui reads a `--btn-*` token tokens.css does not
+        // define. This is the half that would have caught #3153's brief, which
+        // asserted `control-variants.ts` reads `--btn-ambient-*`.
+        const referenced = new Set(
+            fs
+                .readdirSync(path.join(ROOT, 'src/components/ui'))
+                .filter((f) => f.endsWith('-variants.ts'))
+                .flatMap(
+                    (f) =>
+                        read(`src/components/ui/${f}`).match(/var\(--btn-[a-z0-9-]+\)/g) ??
+                        [],
+                )
+                .map((m) => m.slice('var('.length, -1)),
+        );
+        expect(
+            [...referenced].filter((token) => definitions(token) === 0),
+        ).toEqual([]);
+        expect([...referenced].sort()).toEqual([...STILL_TOKENS].sort());
     });
 
     it('.badge-* CSS classes are retired (PR-2 — every site migrated to <StatusBadge>)', () => {
