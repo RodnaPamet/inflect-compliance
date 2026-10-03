@@ -30,10 +30,13 @@
  *                                them rather than hours later (#3002)
  *
  * `EXTERNAL_MAX_MODE` is `PROPOSE_ONLY` as of step 6 of #2861: every rung at or
- * below it is implemented end to end. `AUTOMATIC` stays ABOVE the ceiling and
- * `dispatchWrite` refuses it with `external_write_rung_unimplemented` — what it
- * waits on is a design decision (#3051: a pre-approved write must be able to
- * BOUND an argument, not only fix it), not code.
+ * below it is implemented end to end. `AUTOMATIC` is implemented too as of
+ * #3051 — `openAutomaticExternalWrite` is its arm — and stays ABOVE the
+ * ceiling anyway, which is now a DELIBERATE HOLD rather than code waiting on a
+ * design decision. The refusal an operator sees for it below has been reworded
+ * accordingly: telling them "nothing reads this rung" stopped being true, and a
+ * refusal whose stated reason the operator can disprove is the exact failure
+ * #2843 finding 31 is about.
  *
  * ## Where the authorization lives
  *
@@ -299,9 +302,17 @@ export async function getExternalWritePolicy(
     const refusals: Record<string, string | null> = {};
     for (const rung of LADDER) {
         refusals[rung] = isAboveClamp(rung, EXTERNAL_MAX_MODE)
-            ? `${rung} is above the ceiling this build honours (${EXTERNAL_MAX_MODE}). `
-              + 'Nothing reads this rung to decide whether to send yet, so selecting it '
-              + 'would name an authority that cannot be exercised.'
+            ? // REWORDED, and the old sentence is why. It read "nothing reads
+              // this rung to decide whether to send yet", which was true while
+              // `AUTOMATIC` was unimplemented and is false now that the arm
+              // exists. An operator who can disprove a refusal's stated reason
+              // concludes the gate is broken — #2843 finding 31 — so the
+              // sentence says what is actually true: the rung works, and this
+              // build is held below it on purpose.
+              `${rung} is above the ceiling this build honours (${EXTERNAL_MAX_MODE}). `
+              + 'The rung is implemented; this build is deliberately held below it, and '
+              + 'raising the ceiling is a reviewed code change rather than a setting. '
+              + 'Selecting it here would name an authority the dispatch would refuse.'
             : refusalForMove(state, rung, now);
     }
 
@@ -341,9 +352,9 @@ export async function setExternalWriteMode(
     // vaguer one.
     if (isAboveClamp(next, clamp)) {
         throw badRequest(
-            `${next} is above the ceiling this build honours (${clamp}). No external write `
-            + 'dispatch reads this rung yet, so selecting it would grant nothing and record '
-            + 'that something had been granted.',
+            `${next} is above the ceiling this build honours (${clamp}). The dispatch would `
+            + 'refuse the rung as well, so selecting it would grant nothing and record that '
+            + 'something had been granted.',
         );
     }
 

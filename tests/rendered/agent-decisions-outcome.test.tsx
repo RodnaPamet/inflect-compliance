@@ -3,7 +3,7 @@
  *
  * ── THE GAP THIS CLOSES ─────────────────────────────────────────────────────
  *
- * `AiHumanOutcome` is `PENDING | ACCEPTED | EDITED | REJECTED`.
+ * `AiHumanOutcome` is `PENDING | ACCEPTED | EDITED | REJECTED | AUTONOMOUS`.
  * `DecisionsClient` carried a four-entry variant map spelling the third one
  * `MODIFIED` — a value the column cannot hold — and `messages/en.json` spelled
  * it the same way. So an EDITED row, which `approveAgentProposal` has always
@@ -25,6 +25,15 @@
  * because a hand-written list of four is exactly what went wrong: it agreed
  * with itself and with nothing else. Adding a fifth member to `AiHumanOutcome`
  * now fails this test until the page and both locales learn it.
+ *
+ * ── AND IT DID, ON THE DIFF THAT ADDED `AUTONOMOUS` (#2861) ─────────────────
+ *
+ * The named-set assertion below went red on exactly that change and nothing
+ * else did: both `it.each` loops passed, because the locale keys and the
+ * variant entry had already been added. That is the denominator doing its job —
+ * the loops cannot tell you a member is MISSING from the population, only that
+ * every member they were handed renders, so the exact set is what turns "a
+ * smaller denominator" into a failure.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -129,7 +138,7 @@ describe('the decisions page renders every humanOutcome the column can hold', ()
         // loop over nothing passes. The exact set is named so a member being
         // silently dropped from the parse is a failure rather than a smaller
         // denominator.
-        expect(VALUES).toEqual(['PENDING', 'ACCEPTED', 'EDITED', 'REJECTED']);
+        expect(VALUES).toEqual(['PENDING', 'ACCEPTED', 'EDITED', 'REJECTED', 'AUTONOMOUS']);
     });
 
     it.each(VALUES)('%s renders its label, never the raw key path', (outcome) => {
@@ -161,6 +170,29 @@ describe('the decisions page renders every humanOutcome the column can hold', ()
         const pending = screen.getByText(MESSAGES.agents.decisions.outcome.PENDING);
         expect(pending.className).toContain('text-content-muted');
         pendingRender.unmount();
+    });
+
+    it('AUTONOMOUS gets the fourth tone, not a verdict tone and not the fallback', () => {
+        // It is NOT a review verdict — nobody reviewed it — so borrowing
+        // `success`/`error` would claim a review passed or failed, and
+        // `warning` is EDITED's, which means a person DID look. `neutral` is
+        // unavailable for a mechanical reason: it is what `?? 'neutral'` gives
+        // an UNKNOWN value, so using it would make "the map knows this" and
+        // "the map has never heard of this" render identically.
+        const { unmount } = renderOne('AUTONOMOUS');
+        const el = screen.getByText(MESSAGES.agents.decisions.outcome.AUTONOMOUS);
+        expect(el.className).toContain('text-content-info');
+        expect(el.className).not.toContain('text-content-muted');
+        unmount();
+
+        // The discriminating control: a value the map does NOT know falls back
+        // to the muted tone. Without this, the assertion above could not tell a
+        // recognised value from an unrecognised one.
+        const unknown = renderOne('NOT_A_REAL_OUTCOME');
+        expect(screen.getByText('decisions.outcome.NOT_A_REAL_OUTCOME').className).toContain(
+            'text-content-muted',
+        );
+        unknown.unmount();
     });
 
     it('ACCEPTED and REJECTED keep their own tones', () => {

@@ -156,6 +156,70 @@ describe('the artefact body', () => {
         expect(body.title).toContain('EU AI Act Art 12');
     });
 
+    describe('an AUTONOMOUS decision is not an Art 14 outcome (#2861)', () => {
+        const fact = (humanOutcome: string) => ({
+            id: `d-${humanOutcome}`,
+            feature: 'external-write-automatic',
+            provider: 'mcp-agent',
+            guardVerdict: null,
+            humanOutcome,
+        });
+
+        it('counts it in its own bucket, never as "reached a human-oversight outcome"', () => {
+            // `reviewed` was `facts.length - pending.length`, which was exact
+            // while every non-PENDING value was a review verdict. The external
+            // -write ladder's AUTOMATIC rung writes rows that reached NOBODY,
+            // and the subtraction counted each of them as supervised — on the
+            // artefact an assessor reads precisely to ask how much was.
+            const body = buildDecisionArtefact(
+                period,
+                [fact('ACCEPTED'), fact('AUTONOMOUS'), fact('AUTONOMOUS'), fact('PENDING')],
+                'a'.repeat(64),
+            );
+            expect(body.content).toContain('AI invocations recorded (EU AI Act Art 12 automatic record-keeping): 4');
+            expect(body.content).toContain('reached a human-oversight outcome (Art 14): 1');
+            expect(body.content).toContain('still pending review: 1');
+            expect(body.content).toContain(
+                'dispatched autonomously, with no human review by design: 2',
+            );
+        });
+
+        it('states the autonomous line even at zero — absence is a finding', () => {
+            // A line that disappears when the count is nil reads as a feature
+            // the product does not have, rather than as a period in which
+            // nothing was dispatched unattended.
+            const body = buildDecisionArtefact(period, [fact('ACCEPTED')], 'b'.repeat(64));
+            expect(body.content).toContain(
+                'dispatched autonomously, with no human review by design: 0',
+            );
+            expect(body.content).toContain('reached a human-oversight outcome (Art 14): 1');
+        });
+
+        it('says so when it meets an outcome it has no bucket for', () => {
+            // The three named counts must ADD UP. A sixth enum member would
+            // otherwise land in whichever bucket a subtraction favoured, which
+            // is the defect this section replaces — so the shortfall is printed
+            // as a defect in the artefact rather than silently absorbed.
+            const body = buildDecisionArtefact(
+                period,
+                [fact('PENDING'), fact('SOMETHING_NEW')],
+                'c'.repeat(64),
+            );
+            expect(body.content).toMatch(/NOT CLASSIFIED by this artefact \(1\)/);
+            // And the raw tally still names it, so the fact is recoverable.
+            expect(body.content).toMatch(/Human outcomes —.*SOMETHING_NEW/);
+        });
+
+        it('prints no such line when every outcome IS classified — the control', () => {
+            const body = buildDecisionArtefact(
+                period,
+                [fact('PENDING'), fact('EDITED'), fact('AUTONOMOUS')],
+                'd'.repeat(64),
+            );
+            expect(body.content).not.toMatch(/NOT CLASSIFIED/);
+        });
+    });
+
     it('replaces the counts with a dated notice on withdrawal', () => {
         const notice = buildWithdrawalNotice(
             period,

@@ -34,23 +34,42 @@ export interface DecisionRow {
  * about. The guard verdict beside it is inline text for the same reason the
  * run timeline's is: one badge per row, so the badge still means something.
  *
- * ── THE FOUR VALUES, SPELLED THE WAY THE DATABASE SPELLS THEM ───────────────
+ * ── THE FIVE VALUES, SPELLED THE WAY THE DATABASE SPELLS THEM ───────────────
  *
- * `AiHumanOutcome` is `PENDING | ACCEPTED | EDITED | REJECTED`, and this map
- * carried `MODIFIED` instead of `EDITED` — a value the column cannot hold, and
- * the one value it CAN hold that was missing. `approveAgentProposal` passes its
- * `'ACCEPTED' | 'EDITED'` status straight through, so an edited approval has
- * always been writable; it rendered with the neutral fallback variant and a
- * `t()` key that resolves to nothing, i.e. as the dotted key path. Nothing
- * caught it because the lookup is a template literal, which
- * `i18n-keys-resolve` states outright it cannot follow — "those keys are the
- * ones a rendered test has to cover instead", which is now what covers them.
+ * `AiHumanOutcome` is `PENDING | ACCEPTED | EDITED | REJECTED | AUTONOMOUS`,
+ * and this map carried `MODIFIED` instead of `EDITED` — a value the column
+ * cannot hold, and the one value it CAN hold that was missing.
+ * `approveAgentProposal` passes its `'ACCEPTED' | 'EDITED'` status straight
+ * through, so an edited approval has always been writable; it rendered with the
+ * neutral fallback variant and a `t()` key that resolves to nothing, i.e. as
+ * the dotted key path. Nothing caught it because the lookup is a template
+ * literal, which `i18n-keys-resolve` states outright it cannot follow — "those
+ * keys are the ones a rendered test has to cover instead", which is now what
+ * covers them.
+ *
+ * ── WHY `AUTONOMOUS` TAKES THE FOURTH TONE AND NOT ONE OF THE THREE ─────────
+ *
+ * `AUTONOMOUS` is the external-write ladder's `AUTOMATIC` rung (#2861): the
+ * write went out and no human was in the loop. It is NOT a review verdict, so
+ * it cannot borrow one of the verdict tones — `success` would claim a review
+ * passed, `error` would claim one failed, and `warning` is EDITED's, which means
+ * a person DID look and changed something. Conflating "a human edited it" with
+ * "no human saw it" is the same class of mistake as the MODIFIED spelling above.
+ *
+ * `neutral` is unavailable for a different reason: it is the `??` fallback an
+ * UNKNOWN value gets, so using it would make "the map knows this value" and
+ * "the map has never heard of this value" render identically — and the rendered
+ * test's tone assertions would lose their only way to tell the two apart.
+ *
+ * `info` is the remaining tone and the honest one: a fact about the row's
+ * provenance rather than a judgement on it. The LABEL carries the weight.
  */
-const OUTCOME_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = {
+const OUTCOME_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral' | 'info'> = {
     ACCEPTED: 'success',
     EDITED: 'warning',
     REJECTED: 'error',
     PENDING: 'neutral',
+    AUTONOMOUS: 'info',
 };
 
 export function DecisionsClient({

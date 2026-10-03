@@ -100,6 +100,16 @@ const AI_GUARD_EXEMPT: Readonly<Record<string, string>> = {
         'Sends only aggregate counts/percentages to the model — no tenant free ' +
         'text is assembled into the prompt (documented in the posture prompt-' +
         'builder). There is no injection surface to scan.',
+    'src/app-layer/usecases/external-write-automatic.ts':
+        'Imports `ai/decision-log` to WRITE the EU AI Act Art 12 record for an ' +
+        'unattended external write (#2861), and calls no model at all — there ' +
+        'is no prompt, so there is no ingestion to guard. The content it ' +
+        'records is already bounded twice over: the values come from an ' +
+        'approved `ExternalToolParameterSet` rather than from a model, and the ' +
+        'row stores a DIGEST plus a summary of field NAMES and sizes with no ' +
+        'value in it. The EGRESS direction is guarded where it exists — ' +
+        '`callTool` scans the outbound payload at the one seam that opens a ' +
+        'socket, and this file never reaches it.',
 };
 
 // ANY AI SUBSYSTEM, not three named ones.
