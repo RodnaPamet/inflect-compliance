@@ -381,8 +381,17 @@ export interface GrantedExternalTool {
      * keeps dispatching what a human accepted until somebody accepts the
      * change. Empty means the tenant has saved nothing and the model supplies
      * arguments itself, which is every external tool until somebody saves one.
+     *
+     * `openFields` is the RAW stored value, deliberately not parsed here. The
+     * tool boundary owns the parse because it owns the fail-closed decision:
+     * a set whose bounds do not parse must become undispatchable, and that is a
+     * statement about the advertised tool rather than about this query.
      */
-    parameterSets: ReadonlyArray<{ label: string; parameters: Record<string, unknown> }>;
+    parameterSets: ReadonlyArray<{
+        label: string;
+        parameters: Record<string, unknown>;
+        openFields: unknown;
+    }>;
 }
 
 /** Upper bound on tools considered per connection, mirroring the catalogue's. */
@@ -421,14 +430,15 @@ export async function resolveGrantedExternalTools(
             },
             select: { id: true, name: true, configJson: true, secretEncrypted: true, externalWriteMode: true },
         })),
-        // The approved sets for the granted tools. `parameters` only — the
-        // pending columns are deliberately NOT selected, so a proposal cannot
-        // reach a run even by accident.
+        // The approved sets for the granted tools — the values in force AND
+        // the bounds in force. The `pending*` columns are deliberately NOT
+        // selected, so a proposal (or a proposed bound) cannot reach a run even
+        // by accident.
         parameterSets: await db.externalToolParameterSet.findMany({
             where: { tenantId: ctx.tenantId, toolName: { in: [...grantedTools] } },
             orderBy: { label: 'asc' },
             take: 500,
-            select: { toolName: true, label: true, parameters: true },
+            select: { toolName: true, label: true, parameters: true, openFields: true },
         }),
         pins: await db.mcpToolManifestPin.findMany({
             where: { tenantId: ctx.tenantId, toolName: { in: [...grantedTools] } },
@@ -446,10 +456,17 @@ export async function resolveGrantedExternalTools(
     }));
 
     const pinByName = new Map(pins.map((p) => [p.toolName, p as ApprovedToolManifest]));
-    const setsByTool = new Map<string, { label: string; parameters: Record<string, unknown> }[]>();
+    const setsByTool = new Map<
+        string,
+        { label: string; parameters: Record<string, unknown>; openFields: unknown }[]
+    >();
     for (const row of parameterSets) {
         const list = setsByTool.get(row.toolName) ?? [];
-        list.push({ label: row.label, parameters: (row.parameters ?? {}) as Record<string, unknown> });
+        list.push({
+            label: row.label,
+            parameters: (row.parameters ?? {}) as Record<string, unknown>,
+            openFields: row.openFields ?? null,
+        });
         setsByTool.set(row.toolName, list);
     }
     const out: GrantedExternalTool[] = [];

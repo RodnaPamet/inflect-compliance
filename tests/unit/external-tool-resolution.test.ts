@@ -292,19 +292,47 @@ describe('when a tenant has saved parameters', () => {
      * The discriminator. A model that asked for one set and smuggled its own
      * query alongside must not get its query — and must not get a merge of the
      * two either.
+     *
+     * STRENGTHENED BY #3051 step 5b, and the property is the same one. `run`
+     * used to IGNORE the smuggled key and dispatch the approved row; it now
+     * REFUSES the call outright, because with open fields in play a supplied
+     * name has to be checked against what the chosen set actually opens, and
+     * "a name this set does not open" is the same condition whether the set
+     * opens none or some. Nothing the model supplied reaches the far end under
+     * either behaviour — the assertion below is that nothing reaches it AT ALL,
+     * which is strictly the stronger claim.
+     *
+     * Unreachable through the funnel either way: `argsSchema` is `.strict()`
+     * over the label plus only the names some set opens, so a smuggled `query`
+     * is a parse failure before `run` is entered. This test calls `run`
+     * directly, which is what makes it a test of the second line of defence.
      */
     it('never sends what the model supplied, only what was approved', async () => {
         callToolMock.mockResolvedValue({ content: [] });
         const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]), NO_POLICY_CARD);
 
-        await tool.run(ctx, {
-            parameterSet: 'prod alerts',
-            query: 'up{job="secrets"}',
-        } as never);
+        await expect(
+            tool.run(ctx, {
+                parameterSet: 'prod alerts',
+                query: 'up{job="secrets"}',
+            } as never),
+        ).rejects.toThrow(/external_open_field_unknown/);
 
-        const sent = callToolMock.mock.calls[0][2];
-        expect(sent).toEqual(PROD);
-        expect(sent.query).not.toContain('secrets');
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    /**
+     * The control for the test above: the SAME set, called the way the funnel
+     * calls it, still dispatches exactly the approved row. Without this, a
+     * change that made `run` refuse everything would pass the refusal test.
+     */
+    it('dispatches the approved row when nothing is smuggled', async () => {
+        callToolMock.mockResolvedValue({ content: [] });
+        const [tool] = await resolveExternalReadTools(ctx, new Set([QUALIFIED]), NO_POLICY_CARD);
+
+        await tool.run(ctx, { parameterSet: 'prod alerts' });
+
+        expect(callToolMock.mock.calls[0][2]).toEqual(PROD);
     });
 
     it('refuses free-form arguments at the schema', async () => {

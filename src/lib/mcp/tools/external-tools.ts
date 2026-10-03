@@ -43,6 +43,13 @@ import { resolveGrantedExternalTools } from '@/app-layer/usecases/external-mcp-t
 import type { RequestContext } from '@/app-layer/types';
 
 import { declaresWrite } from '@/lib/mcp/tool-write-classification';
+import {
+    jsonSchemaForConstraint,
+    parseOpenFields,
+    sameConstraint,
+    type OpenFields,
+} from '@/lib/integrations/open-fields';
+import { refusalForValue, type ValueConstraint } from '@/lib/integrations/parameter-constraints';
 import { getPriorStateRead } from '@/app-layer/usecases/external-prior-state-read';
 import { recordIntent } from '@/app-layer/usecases/external-write-journal';
 import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
@@ -121,7 +128,11 @@ function adapterFor(
         annotations?: Record<string, unknown>;
     },
     transport: { url: string; authorization?: string },
-    parameterSets: ReadonlyArray<{ label: string; parameters: Record<string, unknown> }> = [],
+    parameterSets: ReadonlyArray<{
+        label: string;
+        parameters: Record<string, unknown>;
+        openFields?: unknown;
+    }> = [],
     connection: { id: string; name: string; url: string; mode: ExternalWriteMode },
     policyCardVersion: number,
 ): McpReadTool<Record<string, unknown>> {
@@ -141,14 +152,82 @@ function adapterFor(
     // approved, the call still goes out under the server's pinned schema, and
     // every other term — grant, rung, `EXTERNAL_EGRESS`, the egress scan on the
     // way out — is unchanged.
+    //
+    // ── AND THE ONE WAY THE MODEL GETS A CHOICE BACK (#3051 step 5b) ────────
+    //
+    // A set may OPEN some fields: `{"workEmail": {"kind":"regex", …}}` says the
+    // model chooses that one argument, within a bound two humans approved, and
+    // every other argument is still the exact value they typed. The narrowing
+    // above is unchanged for a set that opens nothing, which is every set that
+    // existed before this.
+    //
+    // The advertised schema is a HINT; `run` is the gate. Several sets with
+    // different open fields share one advertised object — there is only one
+    // `inputSchema` per tool — so the advertised properties are the UNION, and
+    // only `run` can know which of them the chosen label actually permits.
     const hasSets = parameterSets.length > 0;
     const labels = parameterSets.map((p) => p.label);
+
+    // Parsed ONCE per assembly, not per call. A set whose stored bounds do not
+    // parse keeps its label (so the tool does not silently widen back to the
+    // server's own schema) and is refused by `run`.
+    const openBySet = new Map<string, OpenFields | 'unreadable'>();
+    for (const set of parameterSets) {
+        const parsed = parseOpenFields(set.openFields ?? null);
+        if (parsed.state === 'ok') openBySet.set(set.label, parsed.fields);
+        else if (parsed.state === 'unreadable') openBySet.set(set.label, 'unreadable');
+    }
+
+    // The union of advertised open fields. A name declared by several sets is
+    // advertised with its constraint only when every set that declares it
+    // agrees; otherwise the model is told the bound depends on the label, and
+    // `run` enforces whichever one applies.
+    const advertisedOpen = new Map<string, ValueConstraint | 'varies'>();
+    for (const fields of openBySet.values()) {
+        if (fields === 'unreadable') continue;
+        for (const [name, constraint] of Object.entries(fields)) {
+            const seen = advertisedOpen.get(name);
+            if (seen === undefined) advertisedOpen.set(name, constraint);
+            else if (seen !== 'varies' && !sameConstraint(seen, constraint)) {
+                advertisedOpen.set(name, 'varies');
+            }
+        }
+    }
+
+    const openProperties: Record<string, unknown> = {};
+    for (const [name, constraint] of advertisedOpen) {
+        const sets = parameterSets
+            .filter((p) => {
+                const f = openBySet.get(p.label);
+                return f !== undefined && f !== 'unreadable' && name in f;
+            })
+            .map((p) => p.label);
+        openProperties[name] =
+            constraint === 'varies'
+                ? {
+                      description:
+                          `Open field. Its approved bound depends on which parameter set is ` +
+                          `chosen (${sets.join(', ')}), so supply it only with one of those and ` +
+                          `expect a refusal if the value is outside that set's bound.`,
+                  }
+                : {
+                      ...jsonSchemaForConstraint(constraint),
+                      description:
+                          `Open field, supplied by you within the approved bound. Valid only ` +
+                          `with parameter set: ${sets.join(', ')}.`,
+                  };
+    }
 
     return {
         name: qualified,
         description: hasSets
             ? `${def.description}\n\nArguments are supplied by an approved parameter ` +
-              `set configured for this workspace. Choose one of: ${labels.join(', ')}.`
+              `set configured for this workspace. Choose one of: ${labels.join(', ')}.` +
+              (advertisedOpen.size > 0
+                  ? `\n\nSome sets leave a field open for you to choose within an approved ` +
+                    `bound: ${[...advertisedOpen.keys()].join(', ')}. Supply exactly the open ` +
+                    `fields of the set you chose — no more, no fewer.`
+                  : '')
             : def.description,
         inputSchema: hasSets
             ? {
@@ -159,6 +238,7 @@ function adapterFor(
                           enum: labels,
                           description: 'Which approved parameter set to run.',
                       },
+                      ...openProperties,
                   },
                   required: ['parameterSet'],
                   additionalProperties: false,
@@ -174,9 +254,24 @@ function adapterFor(
         // reintroduce, for exactly the tools a tenant has constrained most, the
         // mismatch this field exists to remove.
         annotations: def.annotations,
+        // `.strict()` is retained with open fields in play, and that is the
+        // whole point: the only keys the funnel will accept are the label plus
+        // names that SOME approved set opens. A model smuggling `query`
+        // alongside a label still fails to parse, exactly as before. Which of
+        // the accepted names THIS label permits — and that all of them are
+        // present — is `run`'s job, because a Zod object cannot vary by the
+        // value of one of its own fields.
         argsSchema: hasSets
             ? (z
-                  .object({ parameterSet: z.enum(labels as [string, ...string[]]) })
+                  .object({
+                      parameterSet: z.enum(labels as [string, ...string[]]),
+                      ...Object.fromEntries(
+                          [...advertisedOpen.keys()].map((name) => [
+                              name,
+                              z.unknown().optional(),
+                          ]),
+                      ),
+                  })
                   .strict() as unknown as typeof EXTERNAL_ARGS_SCHEMA)
             : EXTERNAL_ARGS_SCHEMA,
         resourceScope: { resource: 'external_tools', action: 'read' },
@@ -208,11 +303,13 @@ function adapterFor(
         run: async (ctx, args) => {
             // The arguments that actually go out. With saved sets this is the
             // APPROVED row, looked up by the label the model chose — never the
-            // model's own object, which by then carries only the label.
-            const outbound = hasSets
-                ? parameterSets.find((p) => p.label === (args as { parameterSet?: string })?.parameterSet)
-                      ?.parameters
-                : (args ?? {});
+            // model's own object, which by then carries only the label and
+            // whatever open fields that set declares.
+            const chosenLabel = (args as { parameterSet?: string })?.parameterSet;
+            const chosen = hasSets
+                ? parameterSets.find((p) => p.label === chosenLabel)
+                : undefined;
+            const outbound = hasSets ? chosen?.parameters : (args ?? {});
 
             if (hasSets && !outbound) {
                 // Unreachable through `argsSchema`, which is an enum over these
@@ -223,6 +320,66 @@ function adapterFor(
                     `external_parameter_set_unknown: no approved parameter set for ` +
                         `"${qualified}" matches the requested label.`,
                 );
+            }
+
+            // ── THE OPEN FIELDS, VALIDATED BEFORE ANYTHING IS SENT ──────────
+            //
+            // FAIL CLOSED on everything unexpected: bounds that will not parse,
+            // a supplied name this set does not open, a declared field left
+            // out, a value outside its bound, or a name that collides with an
+            // approved exact value. The merge is approved-values-then-open, and
+            // the collision check is what stops that order widening anything —
+            // a field opened under the name of an approved value would replace
+            // it, so it is refused at save time AND here.
+            const merged: Record<string, unknown> = { ...(outbound ?? {}) };
+            if (hasSets && chosen) {
+                const declared = openBySet.get(chosen.label);
+                if (declared === 'unreadable') {
+                    throw new Error(
+                        `external_parameter_set_malformed: the approved bounds on parameter ` +
+                            `set "${chosen.label}" for "${qualified}" cannot be read, so no ` +
+                            `value can be validated against them. Nothing was sent.`,
+                    );
+                }
+                const open: OpenFields = declared ?? {};
+                const supplied = Object.entries((args ?? {}) as Record<string, unknown>).filter(
+                    ([k]) => k !== 'parameterSet',
+                );
+
+                for (const [name] of supplied) {
+                    if (!(name in open)) {
+                        throw new Error(
+                            `external_open_field_unknown: parameter set "${chosen.label}" does ` +
+                                `not open "${name}". Nothing was sent.`,
+                        );
+                    }
+                }
+                for (const [name, constraint] of Object.entries(open)) {
+                    if (name in merged) {
+                        throw new Error(
+                            `external_open_field_shadows_value: "${name}" is both an approved ` +
+                                `exact value and an open field on parameter set ` +
+                                `"${chosen.label}". Nothing was sent.`,
+                        );
+                    }
+                    const entry = supplied.find(([k]) => k === name);
+                    if (entry === undefined) {
+                        throw new Error(
+                            `external_open_field_missing: parameter set "${chosen.label}" ` +
+                                `requires a value for "${name}". Nothing was sent.`,
+                        );
+                    }
+                    const refusal = refusalForValue(constraint, entry[1]);
+                    if (refusal) {
+                        // The refusal's own code and message. It names what the
+                        // bound admits, which is what a model needs to retry.
+                        throw new Error(
+                            `external_open_field_refused: "${name}" — ${refusal.code}: ` +
+                                `${refusal.detail} Nothing was sent.`,
+                        );
+                    }
+                    merged[name] = entry[1];
+                }
             }
 
             // ── IS THIS A WRITE? (#2861) ────────────────────────────────
@@ -238,7 +395,7 @@ function adapterFor(
                 // arguments before a socket is opened. Nothing is added here: a
                 // second check in a per-tool wrapper would be the copy that
                 // drifts.
-                return callTool(transport, def.name, outbound ?? {});
+                return callTool(transport, def.name, merged);
             }
 
             return dispatchWrite(ctx, {
@@ -246,7 +403,7 @@ function adapterFor(
                 advertisedName: def.name,
                 transport,
                 connection,
-                outbound: outbound ?? {},
+                outbound: merged,
                 policyCardVersion,
             });
         },

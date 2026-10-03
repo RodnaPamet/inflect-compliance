@@ -30,6 +30,8 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     ExternalToolParameterSet:
         "tests/integration/external-tool-parameters.test.ts",
+    ExternalToolParameterSetApproval:
+        "tests/integration/external-tool-parameter-approval.test.ts",
     IdentityAccountLink: "tests/integration/identity-account-link-rls.test.ts",
     IdentityDepartmentGroupRule:
         "tests/integration/identity-department-group-rule-rls.test.ts",

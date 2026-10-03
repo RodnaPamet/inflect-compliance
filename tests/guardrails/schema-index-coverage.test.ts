@@ -442,6 +442,26 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // a second B-tree over the same three columns in the same order.
     ExternalToolParameterSet:
         "@@unique([tenantId, toolName, label]) is tenant-leading and serves both the filter and the sort",
+    // #3051 step 5b — the four-eyes signatures on a bounded-template edit.
+    //
+    // TWO findManys, both in `external-tool-parameters.ts`. The listing reads
+    // (tenantId, parameterSetId IN […]) for the sets that have a pending edit;
+    // `readOne` reads (tenantId, parameterSetId, revision, pendingHash) for one
+    // set. Both are covered by the tenant-leading @@index([tenantId,
+    // parameterSetId, revision]) — the first on its two-column prefix, the
+    // second on all three plus a residual equality the planner filters.
+    //
+    // No curated composite, and `pendingHash` is deliberately not indexed: the
+    // row count per (set, revision) is bounded by the number of ADMINS who sign
+    // one edit — two, by the rule the table exists to enforce — so the residual
+    // filter runs over a handful of rows. An index on a 64-character digest to
+    // order a two-row set would be a wider B-tree written on every signature
+    // for nothing. Both reads are bounded by SIGNATURE_READ_LIMIT.
+    //
+    // The `createdAt asc` sort is for the operator's benefit (who signed first)
+    // and gets no index of its own for the same reason the rows are few.
+    ExternalToolParameterSetApproval:
+        "Both findManys filter (tenantId, parameterSetId[, revision]) — exactly the tenant-leading @@index([tenantId, parameterSetId, revision]) — over a set bounded by the number of humans who may sign one revision (two); bounded take ≤ 500.",
     // #2713 — the JML joiner's department→security-group entitlement map.
     //
     // ONE findMany, in `identity-joiner-run.ts`'s entitlement loader: filters by
