@@ -532,6 +532,20 @@ export function Combobox<
                 align="start"
                 side={side}
                 forceDropdown={forceDropdown}
+                // Open straight into the search box, on BOTH surfaces. The
+                // desktop popover's default first-focus happened to land there;
+                // below md the bottom sheet (vaul) moves no focus at all, so
+                // focus stayed on the trigger, typed characters went nowhere
+                // and the next Enter re-toggled the trigger. A phone with a
+                // paired keyboard, or an iPad at compact width, got a sheet it
+                // could not search. With no search box, the surface's default
+                // stands.
+                onOpenAutoFocus={(event) => {
+                    const input = searchInputRef.current;
+                    if (!input) return;
+                    event.preventDefault();
+                    input.focus();
+                }}
                 onWheel={(e) => {
                     // Allows scrolling to work when the popover's in a modal.
                     e.stopPropagation();
@@ -610,7 +624,17 @@ export function Combobox<
                                     )}
                                 </div>
                             )}
+                            {/* The listbox IS the scroller (asChild). With a
+                                div scrolling around it, axe reports
+                                `scrollable-region-focusable` (serious) on every
+                                open list long enough to scroll: no option is
+                                focusable, because focus stays in the search box
+                                and `aria-activedescendant` walks the options.
+                                axe exempts exactly that pattern when the
+                                scrolling element is the combobox's own
+                                `role="listbox"` popup, which it now is. */}
                             <ScrollContainer
+                                asChild
                                 className={cn(
                                     "max-h-[min(50vh,250px)]",
                                     onCreate &&
@@ -620,7 +644,7 @@ export function Combobox<
                             >
                                 <Command.List
                                     className={cn(
-                                        "flex w-full min-w-[100px] flex-col gap-1 p-1",
+                                        "flex min-w-[100px] flex-col gap-1 p-1",
                                     )}
                                 >
                                     {showLoading ? (

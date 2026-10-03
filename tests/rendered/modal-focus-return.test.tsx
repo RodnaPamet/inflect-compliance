@@ -15,7 +15,7 @@
  * content that manages focus itself.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
@@ -35,7 +35,13 @@ jest.mock('next/navigation', () => ({
 
 import { Modal } from '@/components/ui/modal';
 
-function Harness({ preventAutoFocus }: { preventAutoFocus?: boolean }) {
+function Harness({
+    preventAutoFocus,
+    surface = 'dialog',
+}: {
+    preventAutoFocus?: boolean;
+    surface?: 'dialog' | 'drawer';
+}) {
     const [open, setOpen] = React.useState(false);
     return (
         <>
@@ -45,7 +51,10 @@ function Harness({ preventAutoFocus }: { preventAutoFocus?: boolean }) {
             <Modal
                 showModal={open}
                 setShowModal={setOpen}
-                desktopOnly
+                // jsdom's matchMedia answers `matches: false`, which
+                // useMediaQuery reads as a phone: without desktopOnly this is
+                // the vaul Drawer branch.
+                desktopOnly={surface === 'dialog'}
                 size="md"
                 title="detail"
                 preventAutoFocus={preventAutoFocus}
@@ -53,6 +62,9 @@ function Harness({ preventAutoFocus }: { preventAutoFocus?: boolean }) {
                 <Modal.Header title="detail" />
                 <Modal.Body>
                     <input aria-label="name" />
+                    <button type="button" onClick={() => setOpen(false)}>
+                        cancel
+                    </button>
                 </Modal.Body>
             </Modal>
         </>
@@ -102,5 +114,56 @@ describe('<Modal /> — focus moves in and comes back', () => {
         const dialog = screen.getByRole('dialog');
         expect(dialog.contains(document.activeElement)).toBe(false);
         expect(opener).toHaveFocus();
+    });
+});
+
+/**
+ * THE PHONE SHEET HAD THE SAME HOLE, AND ONLY THE DIALOG GOT THE FIX.
+ *
+ * Below md the Modal is a vaul Drawer. vaul's Drawer.Content is a Radix
+ * Dialog.Content too, with the same null trigger ref, so closing a controlled
+ * sheet dropped focus on <body>: a paired-keyboard or switch user who cancels a
+ * confirm on a phone was thrown back to the top of the page. Measured in
+ * projectZ at 393 px on a confirm opened from a calendar booking.
+ */
+describe('<Modal /> as a phone drawer — focus comes back', () => {
+    it('renders the drawer surface (no floating close button)', async () => {
+        const user = userEvent.setup();
+        render(<Harness surface="drawer" />);
+        await user.click(screen.getByRole('button', { name: 'opener' }));
+
+        const dialog = screen.getByRole('dialog');
+        expect(dialog).toHaveAttribute('data-vaul-drawer');
+        expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+    });
+
+    it('returns focus to the opener on close', async () => {
+        const user = userEvent.setup();
+        render(<Harness surface="drawer" />);
+
+        const opener = screen.getByRole('button', { name: 'opener' });
+        await user.click(opener);
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'cancel' }));
+
+        await waitFor(() =>
+            expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+        );
+        expect(opener).toHaveFocus();
+    });
+
+    it('preventAutoFocus opts out of the return as well', async () => {
+        const user = userEvent.setup();
+        render(<Harness surface="drawer" preventAutoFocus />);
+
+        const opener = screen.getByRole('button', { name: 'opener' });
+        await user.click(opener);
+        await user.click(screen.getByRole('button', { name: 'cancel' }));
+
+        await waitFor(() =>
+            expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+        );
+        expect(opener).not.toHaveFocus();
     });
 });

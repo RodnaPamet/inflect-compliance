@@ -34,13 +34,20 @@ interface RootProps {
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     children?: React.ReactNode;
+    autoFocus?: boolean;
 }
 
-function Root({ open, onOpenChange, children }: RootProps) {
+// vaul's Root takes `autoFocus` (default false) and its Content reads it
+// from context; see Content below.
+const AutoFocusContext = React.createContext(false);
+
+function Root({ open, onOpenChange, children, autoFocus = false }: RootProps) {
     return (
-        <Dialog.Root open={open} onOpenChange={onOpenChange}>
-            {children}
-        </Dialog.Root>
+        <AutoFocusContext.Provider value={autoFocus}>
+            <Dialog.Root open={open} onOpenChange={onOpenChange}>
+                {children}
+            </Dialog.Root>
+        </AutoFocusContext.Provider>
     );
 }
 
@@ -55,14 +62,28 @@ function PassThroughDiv(
 // stub mirrors that so tests that assert "Escape blocked when
 // preventDefaultClose is set" still pass: Radix Dialog.Content's
 // `onEscapeKeyDown` defaults to closing; we preventDefault.
+//
+// Open auto-focus is mirrored too, because it is what a focus test is about:
+// vaul 1.x calls the caller's `onOpenAutoFocus` and THEN prevents Radix's
+// default unless the Root got `autoFocus`, so a drawer moves no focus on open
+// unless the caller does it. A stub that let Radix focus the first tabbable
+// would pass a "focus lands in the sheet" test that real vaul fails.
 const Content = React.forwardRef<
     HTMLDivElement,
     React.ComponentProps<typeof Dialog.Content>
 >(function VaulContent(props, ref) {
+    const autoFocus = React.useContext(AutoFocusContext);
     return (
         <Dialog.Content
+            // Real vaul tags its surface this way; a test can then tell the
+            // drawer branch from the desktop Dialog one.
+            data-vaul-drawer=""
             ref={ref}
             {...props}
+            onOpenAutoFocus={(e) => {
+                props.onOpenAutoFocus?.(e);
+                if (!autoFocus) e.preventDefault();
+            }}
             onEscapeKeyDown={(e) => {
                 e.preventDefault();
                 props.onEscapeKeyDown?.(e);

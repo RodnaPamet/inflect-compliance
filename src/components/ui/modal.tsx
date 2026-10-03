@@ -149,7 +149,9 @@ export interface ModalProps extends VariantProps<typeof modalContentVariants> {
     /** Render a floating close button on desktop. Default: true. */
     showCloseButton?: boolean;
     /**
-     * Opt out of Radix's open/close auto-focus on the desktop Dialog surface.
+     * Opt out of Radix's open/close auto-focus. On the desktop Dialog that is
+     * both halves; on the phone drawer, which vaul already keeps from moving
+     * focus in, it is the return to the opener on close.
      *
      * The default — Radix's own behaviour — is what a dialog owes a keyboard
      * user: focus moves into the dialog on open and returns to the trigger on
@@ -190,8 +192,65 @@ function ModalRoot({
     const keyboard = useKeyboardInset();
 
     // The control the dialog was opened from, so focus can go back to it. See
-    // the onCloseAutoFocus handler for why Radix cannot do this for us.
+    // restoreOpener for why Radix cannot do this for us.
     const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+    // ─── Focus, both halves, on BOTH surfaces ───────────────────────────
+    //
+    // This primitive used to pass `(e) => e.preventDefault()` to both
+    // auto-focus events unconditionally, which broke the two halves of a
+    // dialog's focus contract at once: focus never entered the dialog (so a
+    // keyboard user's next Tab continued through the page behind the overlay,
+    // and a screen reader announced nothing), and it never came back on close
+    // (so dismissing a dialog dropped the user at the top of the document).
+    //
+    // The historical reason given was "so cmdk / filter popovers keep focus
+    // control". Neither needs it: the command palette mounts its own Radix
+    // Dialog and handles onOpenAutoFocus itself, and <Popover> takes
+    // onOpenAutoFocus / onCloseAutoFocus as props. The tooltip flicker it also
+    // guarded against is handled at the source — <Tooltip> gates its
+    // focus-open on `:focus-visible`, so programmatic focus does not pop a
+    // tooltip.
+    //
+    // Both handlers go on the desktop Dialog.Content AND the phone
+    // Drawer.Content. Vaul's Drawer.Content is a Radix Dialog.Content
+    // underneath, so it fires the same two events, and it has the same
+    // missing trigger, so it lost focus to <body> on close exactly as the
+    // Dialog did before it got this handler.
+    const recordOpener = (event: Event) => {
+        // Radix's FocusScope reads the outgoing `document.activeElement` and
+        // THEN dispatches this event, so focus has not moved yet: this is
+        // still the control the user opened the dialog from. Recorded here
+        // because the close handler below has to put it back by hand.
+        restoreFocusRef.current =
+            document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null;
+        // On the drawer, vaul then prevents the open half itself unless its
+        // Root gets `autoFocus`; that is vaul's call and left alone here.
+        if (preventAutoFocus) event.preventDefault();
+    };
+    const restoreOpener = (event: Event) => {
+        // Not simply "let Radix do it". Radix's own onCloseAutoFocus
+        // preventDefaults unconditionally and focuses `context.triggerRef` —
+        // i.e. <Dialog.Trigger> / <Drawer.Trigger>, which a CONTROLLED modal
+        // never renders. That ref is null for all 76 of this primitive's call
+        // sites, so focus lands on <body>, and FocusScope's own correct restore
+        // is suppressed by the same preventDefault. Merely removing our
+        // handler therefore fixes the open half and leaves the close half
+        // exactly as broken.
+        //
+        // So claim the event (our handler runs first, and
+        // composeEventHandlers skips Radix's once the default is prevented)
+        // and do the restore ourselves.
+        event.preventDefault();
+        if (preventAutoFocus) return;
+        const target = restoreFocusRef.current;
+        // An intercepting-route modal's trigger can be gone by now; focusing a
+        // detached node is a silent no-op, so check rather than pretend it
+        // worked.
+        if (target?.isConnected) target.focus();
+    };
 
     const closeModal = ({ dragged }: { dragged?: boolean } = {}) => {
         if (preventDefaultClose && !dragged) return;
@@ -230,6 +289,10 @@ function ModalRoot({
                         className="fixed inset-0 z-50 bg-bg-overlay backdrop-blur"
                     />
                     <Drawer.Content
+                        // Back to the opener on close, as on desktop: see
+                        // recordOpener / restoreOpener above.
+                        onOpenAutoFocus={recordOpener}
+                        onCloseAutoFocus={restoreOpener}
                         onPointerDownOutside={(e) => {
                             if (
                                 e.target instanceof Element &&
@@ -286,60 +349,10 @@ function ModalRoot({
                     className="data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out fixed inset-0 z-40 bg-bg-overlay backdrop-blur-md"
                 />
                 <Dialog.Content
-                    // ─── Focus, both halves ─────────────────────────────
-                    //
-                    // This primitive used to pass `(e) => e.preventDefault()`
-                    // to BOTH of these unconditionally, which broke the two
-                    // halves of a dialog's focus contract at once: focus never
-                    // entered the dialog (so a keyboard user's next Tab
-                    // continued through the page behind the overlay, and a
-                    // screen reader announced nothing), and it never came back
-                    // on close (so dismissing a dialog dropped the user at the
-                    // top of the document).
-                    //
-                    // The historical reason given was "so cmdk / filter
-                    // popovers keep focus control". Neither needs it: the
-                    // command palette mounts its own Radix Dialog and handles
-                    // onOpenAutoFocus itself, and <Popover> takes
-                    // onOpenAutoFocus / onCloseAutoFocus as props. The tooltip
-                    // flicker it also guarded against is handled at the source
-                    // — <Tooltip> gates its focus-open on `:focus-visible`, so
-                    // programmatic focus does not pop a tooltip.
-                    onOpenAutoFocus={(event) => {
-                        // Radix's FocusScope reads the outgoing
-                        // `document.activeElement` and THEN dispatches this
-                        // event, so focus has not moved yet: this is still the
-                        // control the user opened the dialog from. Recorded
-                        // here because the close handler below has to put it
-                        // back by hand.
-                        restoreFocusRef.current =
-                            document.activeElement instanceof HTMLElement
-                                ? document.activeElement
-                                : null;
-                        if (preventAutoFocus) event.preventDefault();
-                    }}
-                    onCloseAutoFocus={(event) => {
-                        // Not simply "let Radix do it". Radix's own
-                        // onCloseAutoFocus preventDefaults unconditionally and
-                        // focuses `context.triggerRef` — i.e. <Dialog.Trigger>,
-                        // which a CONTROLLED modal never renders. That ref is
-                        // null for all 76 of this primitive's call sites, so
-                        // focus lands on <body>, and FocusScope's own correct
-                        // restore is suppressed by the same preventDefault.
-                        // Merely removing our handler therefore fixes the open
-                        // half and leaves the close half exactly as broken.
-                        //
-                        // So claim the event (our handler runs first, and
-                        // composeEventHandlers skips Radix's once the default
-                        // is prevented) and do the restore ourselves.
-                        event.preventDefault();
-                        if (preventAutoFocus) return;
-                        const target = restoreFocusRef.current;
-                        // An intercepting-route modal's trigger can be gone by
-                        // now; focusing a detached node is a silent no-op, so
-                        // check rather than pretend it worked.
-                        if (target?.isConnected) target.focus();
-                    }}
+                    // Focus in on open, back to the opener on close: see
+                    // recordOpener / restoreOpener above.
+                    onOpenAutoFocus={recordOpener}
+                    onCloseAutoFocus={restoreOpener}
                     onPointerDownOutside={(e) => {
                         if (
                             e.target instanceof Element &&
