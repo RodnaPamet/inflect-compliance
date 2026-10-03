@@ -1,26 +1,34 @@
 /**
- * SEND THE WRITES A HUMAN APPROVED (#2861), and refuse the ones that drifted.
+ * SEND THE EXTERNAL WRITES THAT ARE DUE (#2861), and refuse the ones whose
+ * basis stopped holding.
  *
- * `approveAgentProposal` opens an `ExternalWriteJournal` row `PENDING` and sends
- * nothing. This pass is what sends it. The work-list is exactly "PENDING journal
- * rows", which is the sweep `@@index([tenantId, outcome])` was built for.
+ * Two things open the rows this pass sweeps, and the difference decides almost
+ * everything below. `openApprovedExternalWrite` opens one when a human approves
+ * a `PROPOSE_ONLY` proposal; `openAutomaticExternalWrite` opens one when the
+ * `AUTOMATIC` rung dispatches with no human at all. Both land `PENDING` and send
+ * nothing. This pass is the ONLY sender in the build, and the work-list is
+ * exactly "PENDING journal rows", which is the sweep `@@index([tenantId,
+ * outcome])` was built for.
  *
  * ## The order is the design, again
  *
  *   1. Is the connection still permitted to be written to? No → FAILED.
- *   2. Is there still a prior-state pairing? No → FAILED.
- *   3. Re-read the prior state. Does it match what the approver saw? No → FAILED.
- *   4. Only then, send.
+ *   2. Is the ROW's own rung still permitted by the connection's current one?
+ *      No → FAILED. (A narrowing from AUTOMATIC to PROPOSE_ONLY is invisible to
+ *      step 1 and is precisely about the rows opened without a human.)
+ *   3. Is there still a prior-state pairing? No → FAILED.
+ *   4. The DRIFT CHECK, which asks a different question per rung — below.
+ *   5. Only then, send.
  *
- * Steps 1-3 send nothing, and each records WHY on the row a human can read.
+ * Steps 1-4 send nothing, and each records WHY on the row a human can read.
  *
- * ## Why drift is a refusal and not a warning
+ * ## Why drift is a refusal and not a warning — AND WHY IT IS TWO CHECKS
  *
- * A human approved a specific change to a specific state — "this mailbox says
- * alice, make it bob". If the far end now says carol, the thing they approved is
- * not the thing that would happen. Sending anyway would silently convert a
- * reviewed change into an unreviewed one, which is the whole failure the
- * PROPOSE_ONLY rung exists to prevent. The refusal names the drift and the write
+ * At `PROPOSE_ONLY` a human approved a specific change to a specific state —
+ * "this mailbox says alice, make it bob". If the far end now says carol, the
+ * thing they approved is not the thing that would happen. Sending anyway would
+ * silently convert a reviewed change into an unreviewed one, which is the whole
+ * failure that rung exists to prevent. The refusal names the drift and the write
  * goes back to a human, which is the only party that can say whether it still
  * applies.
  *
@@ -28,6 +36,21 @@
  * readings of an unchanged record routinely differ in key order, and a refusal
  * that fired on key order would make the rung unusable while looking like a
  * safety feature.
+ *
+ * At `AUTOMATIC` that check has no referent: nobody read the record, so "the
+ * record moved" is not a change to anything anyone approved, and refusing on it
+ * would refuse whenever the far end is merely busy. What WAS approved is the
+ * template and its bounds — "any member of population P may have field F set to
+ * any value matching C" — so the check re-asks those: the set still exists under
+ * this row's label, its bounds still parse, every open value still satisfies its
+ * constraint, and the target is still in the population RE-RESOLVED NOW. That
+ * last one is the load-bearing half, because a population is data and the row
+ * this write is about may have left it since the arm ran. See
+ * `automaticBoundRefusalAtSend`, which holds the argument in full.
+ *
+ * The prior state is still read and journalled BEFORE anything leaves at both
+ * rungs — owner decision 2 is a precondition of dispatching, not a property of
+ * one rung — and the stored copy is never overwritten here.
  *
  * ## FAILED versus INDETERMINATE, and why it is not a detail
  *
@@ -51,8 +74,22 @@ import { runInTenantContext } from '@/lib/db-context';
 
 import { settleWrite } from './external-write-journal';
 import { getPriorStateRead } from './external-prior-state-read';
+import {
+    automaticBoundRefusalAtSend,
+    rowRungNarrowedRefusal,
+} from './external-write-automatic';
 
-/** Bound per pass, so one tenant's backlog cannot monopolise a worker. */
+/**
+ * Bound per pass, so one tenant's backlog cannot monopolise a worker.
+ *
+ * A PAGE SIZE, and it refuses nothing: the next pass picks up the rest, so a
+ * tenant with ten thousand queued rows still sends all ten thousand. Stated
+ * because `AUTOMATIC_WRITES_PER_CONNECTION_PER_WINDOW` is also 50 and the two
+ * are different mechanisms — that one is per CONNECTION, per rolling hour, and
+ * it REFUSES the call with its own code rather than deferring it. Neither bound
+ * does the other's job: this one cannot stop a runaway population feed, and
+ * that one cannot stop a worker from being monopolised.
+ */
 const DISPATCH_BATCH_LIMIT = 50;
 
 export interface ExternalWriteDispatchResult {
@@ -171,6 +208,21 @@ export async function runExternalWriteDispatch(input: {
             continue;
         }
 
+        // ── AND A NARROWING THE PAIR ABOVE CANNOT SEE ───────────────────────
+        //
+        // `DISABLED`/`DRY_RUN` was the whole test while every row here was
+        // opened at `PROPOSE_ONLY` — nothing wider existed. It is not enough
+        // once `AUTOMATIC` rows exist: a connection narrowed from `AUTOMATIC`
+        // to `PROPOSE_ONLY` is an operator saying "writes through here need a
+        // human now", and the rows already opened WITHOUT one are exactly what
+        // that instruction is about. They pass the pair above, because
+        // `PROPOSE_ONLY` is neither value.
+        const narrowed = rowRungNarrowedRefusal(row.mode, rung);
+        if (narrowed) {
+            await refuse(narrowed);
+            continue;
+        }
+
         const url = ((connection.configJson ?? {}) as { url?: unknown }).url;
         if (typeof url !== 'string' || !url.trim()) {
             await refuse('The connection has no URL configured.');
@@ -213,23 +265,55 @@ export async function runExternalWriteDispatch(input: {
 
         const args = JSON.parse(row.argumentsJson) as Record<string, unknown>;
 
-        let current: unknown;
-        try {
-            current = await callTool(transport, read.toolName, args);
-        } catch {
-            // The READ failed. Nothing was sent, so this is a clean FAILED —
-            // decision 2 makes unreadable prior state a refusal, not a warning.
-            await refuse('The prior-state read could not be run, so the write was not sent.');
-            continue;
-        }
+        // ── THE DRIFT CHECK IS MODE-AWARE, BECAUSE DRIFT MEANS TWO THINGS ───
+        //
+        // See the file header's "two rungs, two questions" section. At
+        // `PROPOSE_ONLY` the authority was a person reading ONE record, so the
+        // check is "has that record moved". At `AUTOMATIC` the authority was a
+        // TEMPLATE AND ITS BOUNDS, so the check is "do those bounds still admit
+        // this call" — re-resolved now, because a target population is data.
+        //
+        // The branch is on the ROW's recorded mode, never on the connection's
+        // current one: the question is what stood in for the human WHEN THIS
+        // WRITE WAS AUTHORISED. Whether the connection may still be written to
+        // at all is the separate check above, plus `rowRungNarrowedRefusal`.
+        if (coerceStoredMode(row.mode) === 'AUTOMATIC') {
+            const boundRefusal = await automaticBoundRefusalAtSend(ctx, {
+                toolName: row.toolName,
+                parameterSetLabel: row.parameterSetLabel,
+                argumentsJson: row.argumentsJson,
+            });
+            if (boundRefusal) {
+                await refuse(boundRefusal);
+                continue;
+            }
+            // The prior state is NOT re-read here. It was read and journalled
+            // before the row was opened — owner decision 2's precondition, at
+            // every rung — and the row's copy is the evidence of the state the
+            // decision was made against. Re-reading to compare would refuse
+            // whenever the far end is merely busy, which makes the unattended
+            // rung unusable for the unattended workload it exists for, while
+            // protecting nothing any human signed. Overwriting the stored copy
+            // would be worse: it would destroy that evidence.
+        } else {
+            let current: unknown;
+            try {
+                current = await callTool(transport, read.toolName, args);
+            } catch {
+                // The READ failed. Nothing was sent, so this is a clean FAILED —
+                // decision 2 makes unreadable prior state a refusal, not a warning.
+                await refuse('The prior-state read could not be run, so the write was not sent.');
+                continue;
+            }
 
-        if (canonical(current) !== canonical(JSON.parse(row.priorStateJson))) {
-            await refuse(
-                'The record changed after this write was approved, so what a human reviewed is '
-                    + 'no longer what would happen. Nothing was sent; re-propose it against the '
-                    + 'current state.',
-            );
-            continue;
+            if (canonical(current) !== canonical(JSON.parse(row.priorStateJson))) {
+                await refuse(
+                    'The record changed after this write was approved, so what a human reviewed is '
+                        + 'no longer what would happen. Nothing was sent; re-propose it against the '
+                        + 'current state.',
+                );
+                continue;
+            }
         }
 
         try {

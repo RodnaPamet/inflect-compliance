@@ -62,6 +62,16 @@ export interface ExternalWriteAttempt {
      * this function at all — which is why there is no optional overload.
      */
     readonly priorStateJson: string;
+    /**
+     * The `ExternalToolParameterSet.label` this call ran, where one was in force.
+     *
+     * Optional because the rungs below `AUTOMATIC` permit a set-less call, and
+     * every row written before the column existed has none. The `AUTOMATIC` arm
+     * REFUSES a set-less call rather than writing null here — see
+     * `external-write-automatic.ts`, which is also what reads this back: the
+     * send-time bound re-check needs the label to find the set again.
+     */
+    readonly parameterSetLabel?: string | null;
     readonly agentId?: string | null;
     readonly runId?: string | null;
 }
@@ -233,6 +243,7 @@ function fields(a: ExternalWriteAttempt) {
         mode: a.mode,
         argumentsJson: a.argumentsJson,
         priorStateJson: a.priorStateJson,
+        parameterSetLabel: a.parameterSetLabel ?? null,
         agentId: a.agentId ?? null,
         runId: a.runId ?? null,
     };

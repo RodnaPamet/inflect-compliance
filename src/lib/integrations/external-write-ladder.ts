@@ -96,12 +96,33 @@ export const MODE_MIN_DAYS = 7;
  *                 and `external-write-dispatch` then re-reads prior state,
  *                 refuses on drift, and sends it (#3002)
  *
- * `AUTOMATIC` stays ABOVE the ceiling, and that is the point of leaving the
- * constant here rather than deleting it. `dispatchWrite` refuses that rung with
- * `external_write_rung_unimplemented`, and what it waits on is a DESIGN decision
- * rather than code: a pre-approved write must be able to BOUND an argument, not
- * only fix it, and `ExternalToolParameterSet` holds exact values only. See
- * #3051.
+ * ── `AUTOMATIC` IS NOW IMPLEMENTED AND STILL ABOVE THE CEILING ─────────────
+ *
+ * It used to be refused for want of a DESIGN decision: a pre-approved write
+ * must be able to BOUND an argument, not only fix it, and
+ * `ExternalToolParameterSet` held exact values only. #3051 settled that —
+ * step 5b typed the VALUE fields and step 5c bounded the TARGET by a
+ * code-defined population — and the arm is built: `dispatchWrite` opens a
+ * journal row at `AUTOMATIC` through `openAutomaticExternalWrite`, stamps the
+ * Art 12 decision `AUTONOMOUS`, and the dispatch pass sends it.
+ *
+ * SO THE CEILING IS NO LONGER "the rung is unimplemented". It is a deliberate
+ * hold at the last rung before unattended writes, and raising it is a decision
+ * somebody makes rather than a formality the code is waiting on. Two things
+ * enforce it now, where before there was one:
+ *
+ *   · `setExternalWriteMode` refuses to STORE a rung above it — the boundary
+ *     that was already here;
+ *   · `automaticClampRefusal` refuses to DISPATCH at `AUTOMATIC` while this
+ *     constant is below it, consulted by the arm AND by the dispatch pass. That
+ *     half was missing: `dispatchWrite` never read this constant at all, so a
+ *     row already holding the rung when the ceiling was lowered — by a
+ *     rollback, or by an incident narrowing the build rather than every tenant
+ *     — would have been sent.
+ *
+ * And `tests/guards/external-write-clamp-is-propose-only.test.ts` pins the
+ * literal, so raising it cannot land unreviewed. That guard is SUPPOSED to fail
+ * on the diff that raises it.
  *
  * ── WHAT THIS MAKES LIVE FOR THE FIRST TIME ────────────────────────────────
  *

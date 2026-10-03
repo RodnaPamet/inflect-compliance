@@ -1,0 +1,49 @@
+-- #2861 — THE JOURNAL ROW NAMES THE TEMPLATE THAT AUTHORISED IT.
+--
+-- `ExternalWriteJournal` already records the values that went out
+-- (`argumentsJson`) and the state they replaced (`priorStateJson`). What it
+-- could not say is WHICH APPROVED TEMPLATE permitted the call.
+--
+-- That is a gap only the `AUTOMATIC` rung turns into a defect. At
+-- `PROPOSE_ONLY` the thing that must still hold when the write is finally sent
+-- is "the record a human reviewed has not moved", and `priorStateJson` is that
+-- comparison's other half. At `AUTOMATIC` nobody reviewed a record; what stood
+-- in for the human is the BOUND — the parameter set's open-field constraints
+-- and its target population — so the dispatch must re-read that set at send
+-- time and ask whether it still admits the values on this row. It needs the
+-- label to find it, through `ExternalToolParameterSet`'s existing
+-- `@@unique([tenantId, toolName, label])`.
+--
+-- ─── Nullable, no backfill, no default ──────────────────────────────
+--
+-- NULL is the honest value for every existing row: calls made before this
+-- column existed, and calls made with no parameter set in force at all, which
+-- is still permitted at `DRY_RUN` and `PROPOSE_ONLY`. Inventing a label for
+-- them would be inventing an authority nobody granted. The `AUTOMATIC` arm
+-- refuses a call with no set rather than accepting a NULL here, so the column
+-- being nullable costs that rung nothing.
+--
+-- ─── Not encrypted, deliberately ───────────────────────────────────
+--
+-- `ENCRYPTED_FIELDS` lists `ExternalWriteJournal: ['detail', 'argumentsJson',
+-- 'priorStateJson']` — the far end's rejection text and the two payloads, i.e.
+-- the untrusted and the personal content. A label is operator-authored
+-- metadata chosen from a short list a human typed, in the same class as
+-- `toolName`, `connectionName` and `advertisedToolName`, none of which are
+-- encrypted either. Adding it to the manifest would also make the one column
+-- the dispatch needs for a lookup unreadable outside a tenant DEK context for
+-- no gain.
+--
+-- ─── No index ──────────────────────────────────────────────────────
+--
+-- Nothing filters or sorts on it. The column is READ off a row the dispatch has
+-- already fetched by `(tenantId, outcome)`, and the lookup it feeds is against
+-- `ExternalToolParameterSet`'s unique index, not this table's. An index nothing
+-- reads is write amplification on every external write — the reasoning
+-- `20260905140000_agent_proposal_output_guard` records for the `guardVerdict`
+-- index it declined to add.
+--
+-- RLS is inherited: `ExternalWriteJournal` already carries the canonical policy
+-- triple under FORCE ROW LEVEL SECURITY from the migration that created it, and
+-- adding a column to an RLS-protected table declares nothing new.
+ALTER TABLE "ExternalWriteJournal" ADD COLUMN "parameterSetLabel" TEXT;

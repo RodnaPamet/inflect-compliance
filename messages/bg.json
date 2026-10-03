@@ -8460,7 +8460,8 @@
         "PENDING": "чака преглед",
         "ACCEPTED": "прието",
         "EDITED": "редактирано",
-        "REJECTED": "отхвърлено"
+        "REJECTED": "отхвърлено",
+        "AUTONOMOUS": "без човешки преглед"
       }
     },
     "externalTools": {

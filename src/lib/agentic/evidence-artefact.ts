@@ -362,13 +362,51 @@ export function buildDecisionArtefact(
     digest: string,
 ): ArtefactBody {
     const pending = facts.filter((f) => f.humanOutcome === 'PENDING');
-    const reviewed = facts.length - pending.length;
+    // ── THREE BUCKETS, BECAUSE THERE ARE THREE ANSWERS (#2861) ──────────────
+    //
+    // `reviewed` was `facts.length - pending.length`, i.e. "everything that is
+    // not PENDING reached a human". That subtraction was exact while every
+    // non-PENDING value was a review verdict, and it became a FALSE CLAIM the
+    // moment `AiHumanOutcome.AUTONOMOUS` existed: the external-write ladder's
+    // `AUTOMATIC` rung writes rows that reached nobody, and the subtraction
+    // would have counted each of them as an Art 14 outcome — on the artefact an
+    // assessor reads precisely to ask how much was human-supervised.
+    //
+    // Named rather than subtracted now, so a future member of the enum lands in
+    // neither bucket and shows up as the arithmetic not adding to the total,
+    // instead of silently inflating whichever side the subtraction favours.
+    const autonomous = facts.filter((f) => f.humanOutcome === 'AUTONOMOUS');
+    // A POSITIVE LIST, not `!== 'PENDING' && !== 'AUTONOMOUS'`. The negation was
+    // written first and it has the same flaw as the subtraction it replaced,
+    // one step smaller: it ABSORBS every future enum member into "a human
+    // reviewed this", so `unaccounted` below could never be non-zero and the
+    // whole unclassified branch was unreachable. The two spellings differ only
+    // in which way they fail when `AiHumanOutcome` grows — a negation counts the
+    // unknown value as supervision, a list leaves it visibly uncounted, and
+    // uncounted is the half an assessor can act on.
+    const REVIEW_VERDICTS = ['ACCEPTED', 'EDITED', 'REJECTED'];
+    const reviewed = facts.filter((f) => REVIEW_VERDICTS.includes(f.humanOutcome));
+    const unaccounted = facts.length - pending.length - autonomous.length - reviewed.length;
 
     const lines = [
         `Period: ${period.label} (${period.start.toISOString()} .. ${period.end.toISOString()}, end exclusive)`,
         `AI invocations recorded (EU AI Act Art 12 automatic record-keeping): ${facts.length}`,
-        `  reached a human-oversight outcome (Art 14): ${reviewed}`,
+        `  reached a human-oversight outcome (Art 14): ${reviewed.length}`,
         `  still pending review: ${pending.length}`,
+        // STATED EVEN WHEN ZERO. "No unattended decisions this period" is a
+        // finding; a line that disappears when the count is nil reads as a
+        // feature the product does not have.
+        `  dispatched autonomously, with no human review by design: ${autonomous.length}`,
+        // Printed only when it is non-zero, and non-zero means this function
+        // has met a `humanOutcome` it has no bucket for — which is a defect in
+        // THIS file, so it says so rather than quietly rounding.
+        ...(unaccounted === 0
+            ? []
+            : [
+                  `  NOT CLASSIFIED by this artefact (${unaccounted}) — the decision log holds an `
+                  + 'outcome this report does not know how to count. Treat the three counts above '
+                  + 'as incomplete and see "Human outcomes" below for the raw tally.',
+              ]),
         '',
         `Features — ${tally(facts.map((f) => f.feature))}`,
         `Providers — ${tally(facts.map((f) => f.provider))}`,

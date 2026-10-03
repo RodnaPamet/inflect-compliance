@@ -8460,7 +8460,8 @@
         "PENDING": "awaiting review",
         "ACCEPTED": "accepted",
         "EDITED": "edited",
-        "REJECTED": "rejected"
+        "REJECTED": "rejected",
+        "AUTONOMOUS": "no human review"
       }
     },
     "externalTools": {

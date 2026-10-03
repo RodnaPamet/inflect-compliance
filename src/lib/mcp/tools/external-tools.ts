@@ -54,6 +54,7 @@ import { refusalForValue } from '@/lib/integrations/parameter-constraints';
 import { resolveTargetPopulation } from '@/app-layer/usecases/external-tool-target-populations';
 import { getPriorStateRead } from '@/app-layer/usecases/external-prior-state-read';
 import { recordIntent } from '@/app-layer/usecases/external-write-journal';
+import { openAutomaticExternalWrite } from '@/app-layer/usecases/external-write-automatic';
 import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
 import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import type { ExternalWriteMode } from '@/lib/integrations/external-write-ladder';
@@ -535,6 +536,10 @@ function adapterFor(
                 connection,
                 outbound: merged,
                 policyCardVersion,
+                // WHICH approved template authorised this, not just what came
+                // out of it. Null when the tool has no saved sets, which the
+                // rungs below AUTOMATIC permit and the AUTOMATIC arm refuses.
+                parameterSetLabel: chosen?.label ?? null,
             });
         },
     };
@@ -572,6 +577,8 @@ async function dispatchWrite(
         connection: { id: string; name: string; url: string; mode: ExternalWriteMode };
         policyCardVersion: number;
         outbound: Record<string, unknown>;
+        /** The approved template in force, or null when the tool has no sets. */
+        parameterSetLabel: string | null;
     },
 ): Promise<unknown> {
     const pairing = await getPriorStateRead(ctx, call.qualified);
@@ -671,12 +678,62 @@ async function dispatchWrite(
         };
     }
 
-    // AUTOMATIC is unreachable today: `EXTERNAL_MAX_MODE` is
-    // `DRY_RUN`, so no tenant can store a wider rung, and the admin route refuses
-    // one. The refusal is here anyway rather than as a comment — a rung that
-    // arrives later must be refused until somebody decides what it means, which
-    // is the identity ladder's lesson about inheriting permission by falling
-    // through.
+    if (call.connection.mode === 'AUTOMATIC') {
+        // ── THE UNATTENDED ARM (#2861 / #3051) ──────────────────────────────
+        //
+        // Nothing is sent from here either, and that is deliberate rather than
+        // incomplete. The arm opens an `ExternalWriteJournal` row at
+        // `mode: 'AUTOMATIC'`, stamps the Art 12 decision `AUTONOMOUS` beside
+        // it, and the `external-write-dispatch` job — the only sender in this
+        // build — picks the row up off the `outcome: 'PENDING'` work-list it
+        // already sweeps. Sending inline would be the NOVELTY: the job would
+        // find the same row and send it again.
+        //
+        // The clamp, the set requirement, the rolling-window cap and the Art 12
+        // write all live in the usecase, because this file may not touch Prisma
+        // — `mcp-server-coverage` holds every tool file to going through one,
+        // which is the cross-tenant-leak lock rather than a matter of taste.
+        //
+        // What has ALREADY been enforced by the time execution reaches here,
+        // and is therefore not repeated: every open VALUE field against its
+        // approved constraint, the TARGET against its population resolved from
+        // live data, and the prior-state read (above) which is owner decision
+        // 2's precondition and is journalled by the arm.
+        const { journalId } = await openAutomaticExternalWrite(ctx, {
+            connectionId: call.connection.id,
+            connectionName: call.connection.name,
+            endpointUrl: call.connection.url,
+            toolName: call.qualified,
+            advertisedToolName: call.advertisedName,
+            parameterSetLabel: call.parameterSetLabel,
+            argumentsJson: JSON.stringify(call.outbound),
+            priorStateJson: JSON.stringify(priorState),
+        });
+
+        // Told to the MODEL in the same shape the other two rungs use, and it
+        // must not read as a completed change: the row is queued for the
+        // dispatch pass, so the far end has not been touched yet and the run's
+        // own conclusion is what a reader takes away.
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text:
+                        `QUEUED FOR UNATTENDED DISPATCH — nothing has been sent yet. This `
+                        + `connection is at AUTOMATIC, so no human approval is required and the `
+                        + `change will be sent by the external-write dispatch pass. Journal `
+                        + `reference ${journalId}. Do not report this as a completed change; the `
+                        + `journal row records the outcome.`,
+                },
+            ],
+            isError: false,
+        };
+    }
+
+    // A rung this build does not implement. Reached only by a rung added to
+    // `LADDER` above `AUTOMATIC` without a branch here — a rung that arrives
+    // later must be refused until somebody decides what it means, which is the
+    // identity ladder's lesson about inheriting permission by falling through.
     throw new Error(
         `external_write_rung_unimplemented: this build dispatches no external write at ` +
             `${call.connection.mode}. Nothing was sent.`,

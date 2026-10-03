@@ -1,0 +1,54 @@
+-- #2861 — THE ART 12 RECORD FOR A WRITE NO HUMAN REVIEWED.
+--
+-- The `AUTOMATIC` rung of the external-write ladder dispatches a write with no
+-- human in the loop. `AiDecisionLog` is the EU AI Act Art 12 record for every
+-- AI-feature invocation and `humanOutcome` is its Art 14 column, so the row
+-- for an unattended external write has to be able to SAY that nobody reviewed
+-- it. Until now the only vocabulary was PENDING / ACCEPTED / EDITED / REJECTED,
+-- and PENDING is wrong in the one way that matters: it promises a review that
+-- is never coming, and `buildDecisionArtefact` reports it as a growing "still
+-- pending review" backlog nobody can drain.
+--
+-- The alternative — write an `AgentProposal` for the unattended write too —
+-- was rejected for the same reason stated the other way round: a proposal with
+-- no possible approver is a lie, and a PENDING decision-log row is that same
+-- lie one table over.
+--
+-- ─── Why this is the ADDITIVE half of the enum hazard ───────────────
+--
+-- `ALTER TYPE … RENAME` mid-rolling-deploy makes still-running old containers
+-- fail with SQLSTATE 42704. ADDING a value only affects readers that ENCOUNTER
+-- it, and only new code writes AUTONOMOUS — the same argument
+-- `20260905140000_agent_proposal_output_guard` wrote down when it added
+-- `SuggestionItemStatus.QUARANTINED` to a SHARED enum, and this follows it.
+--
+-- `AiHumanOutcome` is shared too: `AiDecisionLog.humanOutcome` and
+-- `AgentProposalApproval.outcome` both use it. The second never writes this
+-- value — a human signature is ACCEPTED/EDITED/REJECTED by construction — so
+-- the widening is inert there, which is exactly the shape QUARANTINED has on
+-- `RiskSuggestionItem`.
+--
+-- `IF NOT EXISTS`, so a `migrate resolve --rolled-back` re-run survives. An
+-- enum addition commits in a way that does not roll back with Prisma's
+-- surrounding transaction, and the bare form then fails on the re-run and puts
+-- the container straight back into the restart loop — outage #2745. This file
+-- carries NO other DDL for the same reason: a partial failure then lands on a
+-- migration BOUNDARY, where `--applied` and `--rolled-back` mean what they say.
+--
+-- The value is not USED in this transaction. PostgreSQL forbids that; it does
+-- not forbid the ADD.
+--
+-- ─── The one-way trigger needs no change, and here is the proof ─────
+--
+-- `ai_decision_log_immutable_trg` is `BEFORE UPDATE ON "AiDecisionLog"` — UPDATE
+-- only. A row INSERTed with `humanOutcome = 'AUTONOMOUS'` never reaches it, so
+-- "created terminal" is already representable and no DDL is owed here.
+--
+-- What the trigger then enforces on such a row is the correct thing rather than
+-- a lucky one: its second check refuses any change to `humanOutcome` when
+-- `OLD."humanOutcome" <> 'PENDING'`, so a row born AUTONOMOUS can never be
+-- restamped as though a human had reviewed it. The application agrees from the
+-- other side — both stamps filter `humanOutcome: 'PENDING'`, and the TS
+-- argument type `AiDecisionOutcome` excludes AUTONOMOUS so the value is not
+-- even expressible at the stamp.
+ALTER TYPE "AiHumanOutcome" ADD VALUE IF NOT EXISTS 'AUTONOMOUS';

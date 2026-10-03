@@ -1695,11 +1695,35 @@ enum AiGuardMode {
 
 /// AI decision human-oversight outcome (EU AI Act Art 14). PENDING until a
 /// human acts on the suggestion; then a one-way transition to a terminal state.
+///
+/// ── AUTONOMOUS IS NOT A VERDICT, AND THAT IS WHY IT IS A MEMBER ───────────
+///
+/// The first four values are a review's result. `AUTONOMOUS` says there was no
+/// review: the external-write ladder's `AUTOMATIC` rung dispatches a write with
+/// no human in the loop, and #2861's record for it has to say so.
+///
+/// It is stamped AT INSERT and is terminal from birth. The alternative
+/// considered and rejected was to leave such a row `PENDING` and queue an
+/// `AgentProposal` beside it: a proposal nobody can approve is a lie, and a
+/// `PENDING` decision-log row is the same lie one table over —
+/// `buildDecisionArtefact` would report a permanently growing "still pending
+/// review" backlog that no reviewer can ever drain.
+///
+/// Consequences a reader should not have to rediscover:
+///   · `AiDecisionOutcome` (the TS argument type of the Art 14 stamp)
+///     deliberately EXCLUDES it. The stamp moves a row that was PENDING; this
+///     value was never PENDING and must not be reachable by a later claim that
+///     a human acted.
+///   · `buildDecisionArtefact` counts it separately from "reached a
+///     human-oversight outcome", because it reached none.
+///   · Declared LAST so a plain `ALTER TYPE … ADD VALUE` (which appends) agrees
+///     with this order — see `enum-member-order-matches-migrations`.
 enum AiHumanOutcome {
   PENDING
   ACCEPTED
   EDITED
   REJECTED
+  AUTONOMOUS
 }
 
 /// Per-tenant AI-residency posture (AI sovereignty / DS-1). EXTERNAL (default)

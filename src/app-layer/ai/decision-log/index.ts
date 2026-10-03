@@ -50,7 +50,27 @@ export function summaryCapFor(feature: string): number {
     return feature.startsWith('agentic-run') ? AGENTIC_SUMMARY_MAX : SUMMARY_MAX;
 }
 
+/**
+ * What a HUMAN's review can conclude — the argument type of the Art 14 stamp.
+ *
+ * `AUTONOMOUS` is deliberately absent, although `AiHumanOutcome` holds it. The
+ * stamp's whole contract is to move a row that was PENDING because a person
+ * acted on it; an `AUTONOMOUS` row was never PENDING and no person ever acted.
+ * Admitting the value here would make "nobody reviewed this" something a later
+ * caller could assert about a row that HAD been queued for review, which is the
+ * one direction the record must not be able to travel.
+ */
 export type AiDecisionOutcome = 'ACCEPTED' | 'EDITED' | 'REJECTED';
+
+/**
+ * The one outcome that is TRUE AT INSERT, so it is written rather than stamped.
+ *
+ * Typed as this single literal rather than as `AiHumanOutcome`, for the reason
+ * above read in the other direction: a write-time field accepting ACCEPTED
+ * would let a caller record a human verdict for a review that never happened.
+ * The default stays PENDING, so every existing caller is unaffected.
+ */
+export type AiDecisionAutonomousStamp = 'AUTONOMOUS';
 
 /**
  * SHA-256 digest of the sanitised provider input. This is what proves "the same
@@ -78,6 +98,21 @@ export interface LogAiDecisionInput {
     aiSystemId?: string | null;
     /** The generating session id — the feedback join key. */
     sessionRef?: string | null;
+    /**
+     * Stamp the row terminal AT INSERT, for a decision no human will review.
+     *
+     * The only caller is the external-write ladder's `AUTOMATIC` arm (#2861),
+     * which dispatches with nobody in the loop. Omit it and the row lands
+     * `PENDING`, which is the right default for every other feature — those
+     * decisions DO reach a reviewer.
+     *
+     * Leaving such a row PENDING instead was the first design and it is wrong
+     * in a way that compounds: nothing can ever stamp it, so
+     * `buildDecisionArtefact` reports a "still pending review" count that only
+     * grows, and an assessor reads a backlog where there is in fact a rung
+     * somebody deliberately granted.
+     */
+    humanOutcome?: AiDecisionAutonomousStamp;
 }
 
 /**
@@ -109,6 +144,10 @@ export async function logAiDecision(
             tokensOut: input.tokensOut ?? null,
             guardVerdict: input.guardVerdict ?? null,
             sessionRef: input.sessionRef ?? null,
+            // Omitted rather than written as 'PENDING' when absent, so the
+            // column's own `@default(PENDING)` stays the single statement of
+            // what an unreviewed-but-reviewable row is.
+            ...(input.humanOutcome ? { humanOutcome: input.humanOutcome } : {}),
             userId: ctx.userId,
         },
         select: { id: true },

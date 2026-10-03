@@ -1989,6 +1989,27 @@ model ExternalWriteJournal {
   /// without recreating the type, and `coerceStoredMode` already reads a string.
   mode String
 
+  /// WHICH APPROVED TEMPLATE AUTHORISED THIS CALL (#2861 AUTOMATIC arm).
+  ///
+  /// The `ExternalToolParameterSet.label` chosen for the call, so the row names
+  /// the authority it ran under and not only the values that came out of it.
+  ///
+  /// It exists because of the `AUTOMATIC` rung specifically. At `PROPOSE_ONLY`
+  /// the thing that must still hold when the write is finally sent is "the
+  /// record a human reviewed has not moved", and `priorStateJson` carries that.
+  /// At `AUTOMATIC` nobody reviewed a record; what stood in for the human is the
+  /// BOUND — the set's open-field constraints and its target population — so the
+  /// dispatch has to re-read that set at send time, and it needs the label to
+  /// find it. `@@unique([tenantId, toolName, label])` is that lookup.
+  ///
+  /// NULLABLE, and not encrypted. Null for every row written before this column
+  /// and for a call made with no set in force, which is still permitted below
+  /// `AUTOMATIC`; the arm itself REFUSES that case. Not encrypted because a label
+  /// is operator-authored metadata, like `toolName` and `connectionName` beside
+  /// it — the untrusted and personal content on this model is `argumentsJson`,
+  /// `priorStateJson` and `detail`, which are the three in `ENCRYPTED_FIELDS`.
+  parameterSetLabel String?
+
   /// What was sent. Scanned for egress before it left, so this is the post-scan
   /// payload — what the far end actually received.
   ///
