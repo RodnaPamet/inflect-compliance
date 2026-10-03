@@ -119,6 +119,31 @@ export const MACHINE_CALLER_PREFIXES = [
     // Web-vitals beacon, same reasoning: `navigator.sendBeacon` from a page
     // that may not yet have a session.
     '/api/telemetry/vitals',
+    /*
+        Platform-operator routes, gated on PLATFORM_ADMIN_API_KEY (#3132).
+
+        The same defect this list was created for, missed when it was written:
+        all four routes verify the platform key correctly, in code that never
+        ran, because an operator's `curl` carries no NextAuth cookie and the
+        edge refused it at `middleware.ts`'s `!token` branch. A correct key and
+        a wrong key returned byte-identical 401s, which is what kept it hidden.
+
+        The kill switch is the reason this matters rather than being tidy:
+        `/api/admin/agent-kill-switch` exists to stop every agent at once, and
+        its only remote control was unreachable.
+
+        SAFE ONLY BECAUSE EVERY METHOD GATES ITSELF, and that is checked rather
+        than assumed — matching here is path-scoped, so this entry opens all
+        four files and any added later. `machine-caller-paths-self-authenticate`
+        derives the population from the directory and asserts a gate inside
+        EVERY exported handler, which is the lesson `/api/security/csp-report`
+        taught at the cost of serving a cross-tenant buffer to the internet
+        (#2103).
+
+        A sibling stem like `/api/administrators` is NOT opened: the matcher
+        above is exact-or-subpath, never a bare `startsWith`.
+    */
+    '/api/admin',
 ];
 
 /**
