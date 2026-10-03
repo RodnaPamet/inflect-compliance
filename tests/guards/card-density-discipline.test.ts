@@ -167,7 +167,16 @@ describe("<Card> primitive contract", () => {
       .replace(/^\s*\/\/.*$/gm, "");
     expect(code).toMatch(/comfortable\s*:\s*["']p-6["']/);
     expect(code).toMatch(/compact\s*:\s*["']p-4["']/);
-    expect(code).toMatch(/none\s*:\s*["']["']/);
+    // #3151 — this line used to read `/none\s*:\s*["']["']/`, i.e. it
+    // PINNED `none: ""`. That empty string was the bug: it emits no
+    // utility, so `.glass-card`'s own `@apply p-4 md:p-5` had nothing
+    // in `@layer utilities` to lose to and every
+    // `cardVariants({ density: 'none' })` caller rendered 16px / 20px.
+    // The assertion was therefore holding the defect in place. It now
+    // requires a REAL padding utility; the behaviour-level contract
+    // (every rung contributes a class) lives in
+    // `tests/guards/card-padding-cascade.test.ts`.
+    expect(code).toMatch(/none\s*:\s*["']p-\d+["']/);
     // Reject any `p-5`, `p-7`, `p-8` token co-occurring with the
     // density variants object in executable code.
     expect(code).not.toMatch(/density[^}]*p-5/);
