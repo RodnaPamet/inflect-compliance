@@ -65,7 +65,7 @@ export type NavGlyph = LucideIcon | ComponentType<SVGProps<SVGSVGElement>>;
  * wants a 44×44 CSS-px minimum for TOUCH; NavItem renders in the mobile
  * drawer, so the base stays `min-h-[44px]`. On desktop (`md:`) the nav is
  * pointer-driven, where 44px reads as oversized — `md:min-h-[34px]` tightens
- * the sidebar rows (Board / Asset / Risk / …) without sacrificing the mobile
+ * the sidebar's repeated nav rows without sacrificing the mobile
  * touch target.
  */
 export const NAV_ITEM_HEIGHT_MIN = 'min-h-[44px] md:min-h-[34px]';
