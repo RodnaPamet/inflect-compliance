@@ -4,7 +4,7 @@
  * Epic 58 — shared Calendar primitive.
  *
  * A thin wrapper around `react-day-picker` v9 that applies the
- * Inflect token palette, a consistent navigation header, and
+ * shared token palette, a consistent navigation header, and
  * sensible defaults (single-mode by default, outside days shown
  * only for single-month layouts). The component is UI-pure — it
  * never owns selection state; consumers control via `selected` +

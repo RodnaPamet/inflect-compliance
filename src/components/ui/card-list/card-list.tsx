@@ -4,9 +4,9 @@
  * Epic 66 — `<CardList>` container.
  *
  * Responsive grid wrapper for card-based overview / summary
- * surfaces (tenant health, framework packs, member directories,
- * portfolio rollups). Pairs with `<CardList.Card>` + the slot
- * subcomponents in `card-list-card.tsx`.
+ * surfaces (health summaries, catalogue packs, member
+ * directories, portfolio rollups). Pairs with `<CardList.Card>` +
+ * the slot subcomponents in `card-list-card.tsx`.
  *
  * Layout contract:
  *   - 1 column on mobile (<sm)

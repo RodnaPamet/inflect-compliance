@@ -1,4 +1,4 @@
-// FilterOperator — first-party (formerly re-exported from the Dub utility shim).
+// FilterOperator — first-party (formerly re-exported from an upstream utility shim).
 type FilterOperator = 'IS' | 'IS_NOT' | 'IS_ONE_OF' | 'IS_NOT_ONE_OF';
 import { LucideIcon } from "lucide-react";
 import { ComponentType, ReactNode, SVGProps } from "react";
@@ -35,7 +35,7 @@ export type Filter = {
   /** How `clearAllFilters` and "Reset" treat this filter. Default: `clearable`. */
   resetBehavior?: FilterResetBehavior;
   options: FilterOption[] | null;
-  /** When set to `range`, `FilterSelect` renders min/max controls instead of option list. */
+  /** When set to `range`, `FilterSelect` renders min/max inputs instead of option list. */
   type?: "default" | "range";
   /** Format a bound in storage units (e.g. cents) for display. */
   formatRangeBound?: (n: number) => string;

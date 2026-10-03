@@ -82,7 +82,20 @@ const getHandler = requirePermission<PolicyParams>(
                 // Stated so a surface can say WHY the rungs above are unavailable,
                 // rather than only greying them out. "Disabled with no reason" is
                 // how an operator concludes the feature is broken.
-                dispatchImplemented: false,
+                //
+                // DERIVED, and it was a hand-typed `dispatchImplemented: false`
+                // until 2026-10-02 — one line below the comment above warning
+                // that exactly this drifts the moment the clamp is raised. It
+                // did: steps 1-3 of #2861 shipped the dispatch and step 6 raised
+                // the ceiling to PROPOSE_ONLY, and this field went on telling
+                // operators "no external write is dispatched by this build yet"
+                // while the build dispatched them. A literal cannot be kept true
+                // by review; a derivation cannot be false.
+                //
+                // What the notice actually means is "the ceiling is below the
+                // top rung", which is the question the surface asks — so that is
+                // what it is named and how it is computed.
+                ceilingBelowTopRung: EXTERNAL_MAX_MODE !== LADDER[LADDER.length - 1],
                 minDays: MODE_MIN_DAYS,
                 minEvidence: MODE_MIN_EVIDENCE,
             },
