@@ -73,7 +73,6 @@ function makePayload(over: {
     mode?: Mode;
     refusals?: Partial<Record<Mode, string | null>>;
     maxMode?: Mode;
-    dispatchImplemented?: boolean;
     modeSince?: string | null;
 } = {}): Record<string, unknown> {
     const mode = over.mode ?? 'DISABLED';
@@ -93,7 +92,13 @@ function makePayload(over: {
         },
         honoured: {
             maxMode: over.maxMode ?? 'DRY_RUN',
-            dispatchImplemented: over.dispatchImplemented ?? false,
+            // DERIVED from maxMode exactly as the route derives it, rather than
+            // being its own knob. The knob it replaces was a hand-typed
+            // `dispatchImplemented` that let a test build a payload the server
+            // cannot produce — a capped ladder whose ceiling IS the top rung, or
+            // an uncapped one below it. A fixture that can express an impossible
+            // state is a fixture that can make a broken surface look correct.
+            ceilingBelowTopRung: (over.maxMode ?? 'DRY_RUN') !== 'AUTOMATIC',
             minDays: 7,
             minEvidence: { DRY_RUN: 1, PROPOSE_ONLY: 1 },
         },
@@ -141,7 +146,7 @@ describe('the ceiling this build honours', () => {
             refusals: { PROPOSE_ONLY: 'PROPOSE_ONLY is above the ceiling this build honours (DRY_RUN).' },
         });
         render(<ExternalWriteLadderClient connectionId="conn_1" />);
-        expect(screen.getByText(/capped at Dry run/)).toBeInTheDocument();
+        expect(screen.getByText(/only as far as Dry run/)).toBeInTheDocument();
         expect(screen.queryByTestId('external-write-ladder-refusal')).not.toBeInTheDocument();
     });
 
@@ -214,7 +219,7 @@ describe('a refused PUT', () => {
 
 describe('the top of the ladder', () => {
     it('offers no widen control at AUTOMATIC', () => {
-        payload = makePayload({ mode: 'AUTOMATIC', maxMode: 'AUTOMATIC', dispatchImplemented: true });
+        payload = makePayload({ mode: 'AUTOMATIC', maxMode: 'AUTOMATIC' });
         render(<ExternalWriteLadderClient connectionId="conn_1" />);
         expect(screen.getByText(/widest rung/)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /^Widen to/ })).not.toBeInTheDocument();
