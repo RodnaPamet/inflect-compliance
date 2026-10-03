@@ -53,7 +53,7 @@ import { useIsBelowMd } from "./use-is-below-md";
  * Helper to create a typed column array with proper inference.
  *
  * Usage:
- *   const columns = createColumns<Control>([
+ *   const columns = createColumns<Item>([
  *     { accessorKey: "code", header: "Code" },
  *     { accessorKey: "name", header: "Name" },
  *     { id: "actions", header: "", cell: ({ row }) => <ActionsMenu row={row} /> },

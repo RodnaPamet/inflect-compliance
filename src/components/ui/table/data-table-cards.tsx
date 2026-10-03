@@ -102,12 +102,16 @@ export function DataTableCards<T extends TableRowData>({
         >
             {rows.map((row) => {
                 const clickable = !!onRowClick;
-                return (
+                const card = (
                     <div
                         key={row.id}
                         data-row-id={row.id}
                         // A clickable card IS a button; a read-only one is a
-                        // list item.
+                        // list item. A button is NOT an allowed child of a
+                        // `list`, so the clickable case gets a `listitem`
+                        // wrapper below rather than a different role here —
+                        // the role AT announces for an actionable card is the
+                        // part that must not change.
                         {...(clickable
                             ? cardActivation(row, onRowClick!)
                             : { role: "listitem" as const })}
@@ -175,6 +179,21 @@ export function DataTableCards<T extends TableRowData>({
                             );
                         })}
                     </div>
+                );
+                // `role="list"` requires its children to be `listitem`
+                // (axe `aria-required-children`, impact CRITICAL — #3129,
+                // measured on two real phone-width pages). A read-only card
+                // already is one. A clickable card is a `role="button"`, so it
+                // is wrapped in one instead of being re-roled: the wrapper
+                // carries no classes and no handlers, so the card keeps every
+                // class, the whole hit area, the hover affordance, the focus
+                // ring and the `buttonLikeKeys` keyboard contract it had.
+                return clickable ? (
+                    <div key={row.id} role="listitem">
+                        {card}
+                    </div>
+                ) : (
+                    card
                 );
             })}
         </div>
