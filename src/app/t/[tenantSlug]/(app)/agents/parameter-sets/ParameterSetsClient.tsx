@@ -65,11 +65,13 @@ import { Card } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
+import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -524,10 +526,21 @@ export function ParameterSetsClient({
     const openFieldsBlock = (openFields: unknown, testId: string) => {
         const entries = openFieldEntries(openFields);
         if (entries.length === 0) {
+            // TITLE and CONSEQUENCE as two lines, not one sentence. The locked
+            // empty-state voice (`empty-state-tone`) is a declarative phrase
+            // with no tail, and the tail here is the half that matters — that
+            // exact values mean the agent chooses nothing — so it moves into
+            // its own `…Desc` key rather than being dropped to satisfy the
+            // ratchet.
             return (
-                <p className="text-xs text-content-subtle" data-testid={`${testId}-none`}>
-                    {t('parameterSets.noOpenFields')}
-                </p>
+                <div className="space-y-tight" data-testid={`${testId}-none`}>
+                    <p className="text-xs text-content-subtle">
+                        {t('parameterSets.noOpenFields')}
+                    </p>
+                    <p className="text-xs text-content-subtle">
+                        {t('parameterSets.noOpenFieldsDesc')}
+                    </p>
+                </div>
             );
         }
         return (
@@ -618,9 +631,15 @@ export function ParameterSetsClient({
                         the difference between a control that explains itself and
                         one that argues after the fact. */}
                     <Card className="space-y-default p-4" data-testid="parameter-set-create">
-                        <h2 className="text-sm font-medium text-content-emphasis">
+                        {/* `level={3}` is the type scale (text-sm, the panel
+                            rung); `as="h2"` is the OUTLINE — PageHeader above
+                            already owns the page's <h1>, so this card title is
+                            the document's second level whatever size it wears.
+                            The two are separate axes and the primitive keeps
+                            them separable. */}
+                        <Heading level={3} as="h2">
                             {t('parameterSets.createTitle')}
-                        </h2>
+                        </Heading>
                         <p className="max-w-3xl text-sm text-content-muted">
                             {t('parameterSets.createIntro')}
                         </p>
@@ -679,7 +698,7 @@ export function ParameterSetsClient({
                         )}
 
                         <Button
-                            variant="primary"
+                            variant="secondary"
                             type="submit"
                             disabled={busy === 'create' || !newToolName || !newLabel}
                             onClick={() => void createBaseline()}
@@ -761,14 +780,22 @@ export function ParameterSetsClient({
                                                     `parameter-set-open-fields-${set.label}`,
                                                 )}
                                                 {targetBlock(set.targetPopulation)}
-                                                <p
-                                                    className="text-xs text-content-subtle"
-                                                    title={set.parametersHash}
-                                                >
-                                                    {t('parameterSets.digest', {
-                                                        hash: shortHash(set.parametersHash),
-                                                    })}
-                                                </p>
+                                                {/* The FULL digest, which the line
+                                                    itself only shows the head of.
+                                                    A <Tooltip> rather than a native
+                                                    `title=` per
+                                                    docs/tooltip-and-copy-strategy.md:
+                                                    this is one element per row, not
+                                                    a density visualisation, so the
+                                                    exemption the ratchet allows does
+                                                    not apply. */}
+                                                <Tooltip content={set.parametersHash}>
+                                                    <p className="w-fit text-xs text-content-subtle">
+                                                        {t('parameterSets.digest', {
+                                                            hash: shortHash(set.parametersHash),
+                                                        })}
+                                                    </p>
+                                                </Tooltip>
                                             </div>
 
                                             {error && (
@@ -875,14 +902,13 @@ export function ParameterSetsClient({
                                                         className="space-y-tight"
                                                         data-testid={`parameter-set-signatures-${set.label}`}
                                                     >
-                                                        <p
-                                                            className="text-xs font-medium text-content-emphasis"
-                                                            title={pending.hash}
-                                                        >
-                                                            {t('parameterSets.pendingDigest', {
-                                                                hash: shortHash(pending.hash),
-                                                            })}
-                                                        </p>
+                                                        <Tooltip content={pending.hash}>
+                                                            <p className="w-fit text-xs font-medium text-content-emphasis">
+                                                                {t('parameterSets.pendingDigest', {
+                                                                    hash: shortHash(pending.hash),
+                                                                })}
+                                                            </p>
+                                                        </Tooltip>
                                                         <p className="text-xs text-content-muted">
                                                             {t('parameterSets.signatureCount', {
                                                                 count: set.signatures.length,
@@ -904,11 +930,24 @@ export function ParameterSetsClient({
                                                                             {sig.approverUserId}
                                                                         </code>
                                                                         <span>{formatDate(sig.createdAt)}</span>
-                                                                        <span title={sig.pendingHash}>
-                                                                            {t('parameterSets.signatureAgainst', {
-                                                                                hash: shortHash(sig.pendingHash),
-                                                                            })}
-                                                                        </span>
+                                                                        {/* LOAD-BEARING, not decoration.
+                                                                            A signature does not carry
+                                                                            forward to replaced content, so
+                                                                            an operator shown a signature
+                                                                            count without the digest it was
+                                                                            taken against can be misled —
+                                                                            the same failure
+                                                                            `expectedPendingHash` exists to
+                                                                            prevent one layer up. The line
+                                                                            shows the head; the tooltip
+                                                                            keeps the whole of it. */}
+                                                                        <Tooltip content={sig.pendingHash}>
+                                                                            <span>
+                                                                                {t('parameterSets.signatureAgainst', {
+                                                                                    hash: shortHash(sig.pendingHash),
+                                                                                })}
+                                                                            </span>
+                                                                        </Tooltip>
                                                                     </li>
                                                                 ))}
                                                             </ul>
@@ -926,8 +965,25 @@ export function ParameterSetsClient({
                                                         >
                                                             {t('parameterSets.sign')}
                                                         </Button>
+                                                        {/* APPROVE is the gravity of this
+                                                            region — the four-eyes commit the
+                                                            whole surface exists to make
+                                                            reachable — and it is `secondary`
+                                                            anyway, not because the emphasis is
+                                                            unearned but because
+                                                            `primary-secondary-ratio`'s shared
+                                                            ceiling (175) is FULL: main measures
+                                                            exactly 175, so keeping one primary
+                                                            here reads 176. Raising the ceiling
+                                                            to fit a new page is the one thing
+                                                            that ratchet exists to refuse, so
+                                                            this page ships with no primary at
+                                                            all and the hierarchy is carried by
+                                                            order and by the digest in the
+                                                            label. If a slot is ever freed, THIS
+                                                            is the button that should take it. */}
                                                         <Button
-                                                            variant="primary"
+                                                            variant="secondary"
                                                             disabled={busy === set.id}
                                                             onClick={() => void act(set, 'approve')}
                                                         >
@@ -1035,7 +1091,7 @@ export function ParameterSetsClient({
                                                             {t('parameterSets.cancel')}
                                                         </Button>
                                                         <Button
-                                                            variant="primary"
+                                                            variant="secondary"
                                                             type="submit"
                                                             disabled={busy === set.id}
                                                             onClick={() => void submitPropose(set)}

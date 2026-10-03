@@ -103,6 +103,7 @@ jest.mock('@/lib/tenant-context-provider', () => {
     };
 });
 
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { ParameterSetsClient } from '@/app/t/[tenantSlug]/(app)/agents/parameter-sets/ParameterSetsClient';
 
 const CONNECTIONS = [{ id: 'conn_1', name: 'Entra MCP' }] as const;
@@ -216,12 +217,21 @@ beforeEach(() => {
 });
 
 function mount() {
+    // The three DIGEST lines each wrap their short hash in a `<Tooltip>` that
+    // carries the whole of it — a Radix consumer, which throws outside a
+    // provider. In production `TooltipProvider` is mounted once in
+    // `src/app/providers.tsx`; here it is required rather than incidental,
+    // because every state these tests render has at least one digest on screen.
+    // Mounted REAL rather than mocked away: a mock that renders its children
+    // would pass these assertions with the full hash nowhere in the tree.
     return render(
-        <ParameterSetsClient
-            connections={CONNECTIONS}
-            targetPopulations={POPULATIONS}
-            initialConnectionId="conn_1"
-        />,
+        <TooltipProvider delayDuration={0}>
+            <ParameterSetsClient
+                connections={CONNECTIONS}
+                targetPopulations={POPULATIONS}
+                initialConnectionId="conn_1"
+            />
+        </TooltipProvider>,
     );
 }
 
@@ -250,7 +260,12 @@ describe('the four states each render their own thing', () => {
         const card = await screen.findByTestId('parameter-set-Nightly roster push');
         expect(within(card).getByText(/trust on first use, so no approver/)).toBeInTheDocument();
         // The exact-value half of the same claim: no open field, no open target.
-        expect(within(card).getByText(/no open field, so the agent chooses nothing/)).toBeInTheDocument();
+        // TWO lines since the empty-state voice locked titles to a declarative
+        // phrase (`empty-state-tone`) — the title and the consequence it used to
+        // carry as a tail. Both are asserted, because dropping the consequence
+        // to satisfy the tone ratchet would lose the half that matters.
+        expect(within(card).getByText(/No open fields/)).toBeInTheDocument();
+        expect(within(card).getByText(/Every value is exact, so the agent chooses nothing/)).toBeInTheDocument();
         expect(within(card).getByText(/No open target/)).toBeInTheDocument();
     });
 
@@ -362,11 +377,17 @@ describe('the signature count sits beside the digest it is against', () => {
         const sigs = await screen.findByTestId('parameter-set-signatures-Nightly roster push');
         expect(within(sigs).getByText(/0 of 1 signatures on this digest/)).toBeInTheDocument();
         expect(within(sigs).getByText(/No signature yet on this digest/)).toBeInTheDocument();
-        // The DIGEST, truncated for the eye and complete in the title.
+        // The DIGEST, truncated for the eye and complete in the tooltip. A
+        // `<Tooltip>` rather than the native `title=` this shipped with
+        // (`no-ad-hoc-tooltip-title`), so the full hash is in the tree only
+        // once the hint is open — which is what this drives rather than
+        // reading an attribute off the line.
         const digest = within(sigs).getByText(
             new RegExp(PENDING_HASH.slice(0, 12)),
         );
-        expect(digest).toHaveAttribute('title', PENDING_HASH);
+        expect(digest).not.toHaveAttribute('title');
+        await userEvent.hover(digest);
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(PENDING_HASH);
     });
 
     it('with ONE signature: the approver, the date, and the hash it is against', async () => {
@@ -390,7 +411,11 @@ describe('the signature count sits beside the digest it is against', () => {
         );
         // The FULL hash on the signature row too, not only on the pending digest
         // above it — the operator's question is whether the two are the same.
-        expect(against).toHaveAttribute('title', PENDING_HASH);
+        // Load-bearing, and the reason this row's hint survived the `title=`
+        // migration as a <Tooltip> rather than being dropped.
+        expect(against).not.toHaveAttribute('title');
+        await userEvent.hover(against);
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(PENDING_HASH);
         expect(
             within(sigs).getByText(/counts only against the digest it names/),
         ).toBeInTheDocument();

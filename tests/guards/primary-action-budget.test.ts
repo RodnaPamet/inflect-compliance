@@ -52,20 +52,15 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * as a separate visual zone.
  */
 const PRIMARY_BUDGET: Record<string, number> = {
-    // #3124 saved parameters — THREE regions, and no two of them are ever the
-    // same decision:
-    //   · the BASELINE form's "Save baseline" — the page's own create action;
-    //   · the PROPOSE form's submit, an inline form whose footer is the
-    //     canonical secondary-Cancel + primary-submit pair (R5-PR7);
-    //   · the PENDING card's "Approve <digest>", which is the gravity of a row
-    //     that has an edit waiting — the one act the four-eyes trigger exists
-    //     for. Sign sits beside it as `secondary` precisely so this one reads
-    //     as the commit.
-    // The propose form and the pending card are mutually exclusive on a row (a
-    // row with a pending edit offers no propose control), and the baseline form
-    // is a separate region above the register. The static scanner counts all
-    // three.
-    "src/app/t/[tenantSlug]/(app)/agents/parameter-sets/ParameterSetsClient.tsx": 3,
+    // #3124 saved parameters had an entry of 3 here — the baseline form's
+    // create, the propose form's submit and the pending card's approve, one per
+    // region. All three were demoted to `secondary` on the follow-up, because
+    // the PRODUCT-WIDE ceiling in `primary-secondary-ratio` measures exactly
+    // 175 on main and has no slot to give: three regions' worth of earned
+    // emphasis is still three over. The file now renders ZERO primaries, so it
+    // falls under the implicit default of 1 and needs no entry — listed nowhere
+    // rather than listed at 3, which would be a standing licence to put the
+    // loud buttons back without paying for them.
     // Initiatives list: "New initiative" (page) + "Create initiative"
     // (modal confirm) — two distinct regions, both legit primaries.
     "src/app/org/[orgSlug]/(app)/initiatives/InitiativesClient.tsx": 2,
