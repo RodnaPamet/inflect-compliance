@@ -66,12 +66,44 @@ body {
 ::-webkit-scrollbar-track { background: var(--bg-page); }
 ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
 
-/* Glass card effect — uses semantic glass tokens so light/dark theme toggle flips both. */
-.glass-card {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
+/* Glass card effect — uses semantic glass tokens so light/dark theme toggle flips both.
+ *
+ * `@layer components` is LOAD-BEARING, and it is the whole fix for #3119.
+ * Tailwind v4's `@import "tailwindcss"` declares `@layer theme, base,
+ * components, utilities;` and emits every utility inside `@layer utilities`.
+ * An UNLAYERED rule beats a layered one at equal specificity regardless of
+ * source order — so while these two rules sat outside every layer, a
+ * `className` utility on a `.glass-card` element was silently dropped. Measured
+ * before the fix, in headless Chromium against the real postcss build:
+ *
+ *   `glass-card p-4 … pr-9`  →  padding-right 16px (not 36px)   ← #3119
+ *   `glass-card p-6`         →  padding 16px / 20px (not 24px)
+ *   `glass-card p-12`        →  padding 16px / 20px (not 48px)
+ *
+ * `cardVariants` maps `elevation="raised"` (the DEFAULT) to `glass-card`, so
+ * that hit every `<Card>`: all four `density` rungs resolved to this rule's
+ * p-4/md:p-5 instead of their own padding, and every `<Card className="bg-…"
+ * / "border-…">` call site lost its background/border to this rule's
+ * (measured at four of them — risks/dashboard's `border-border-error`,
+ * tests/runs' `border-l-4`, OnboardingBanner's `bg-gradient-to-r` and
+ * kpi-filter-card's selected `bg-bg-elevated`; all four now match a
+ * no-`.glass-card` control exactly).
+ * Inside `components` the utilities layer wins, which is the point of a
+ * component recipe: the recipe is the default, `className` overrides it.
+ *
+ * Both `.glass-card` rules live here together. Splitting them would leave the
+ * same class half-layered — padding overridable, background/border not.
+ * DO NOT move either rule back out of the layer. (`.surface-popup-texture`
+ * below is deliberately left unlayered; no element carries both classes.)
+ */
+@layer components {
+  .glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    @apply p-4 md:p-5;
+  }
 }
 
 /*
@@ -103,9 +135,6 @@ body {
   box-shadow:
     inset 0 1px 0 0 color-mix(in srgb, var(--bg-default), white 20%),
     var(--shadow-lg);
-}
-.glass-card {
-  @apply p-4 md:p-5;
 }
 
 /* ──────────────────────────────────────────────────────────────────
