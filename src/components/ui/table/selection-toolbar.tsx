@@ -26,16 +26,16 @@ import { DynamicTooltipWrapper, Tooltip } from "../tooltip";
  * Describes a single batch action that can be plugged into the SelectionToolbar.
  *
  * Usage:
- *   const actions: BatchAction<Control>[] = [
+ *   const actions: BatchAction<Item>[] = [
  *     {
  *       label: "Export",
  *       icon: <Download className="size-3.5" />,
- *       onClick: (rows) => exportControls(rows.map(r => r.original)),
+ *       onClick: (rows) => exportItems(rows.map(r => r.original)),
  *     },
  *     {
  *       label: "Archive",
  *       icon: <Archive className="size-3.5" />,
- *       onClick: (rows) => archiveControls(rows.map(r => r.original.id)),
+ *       onClick: (rows) => archiveItems(rows.map(r => r.original.id)),
  *       variant: "danger",
  *     },
  *   ];
