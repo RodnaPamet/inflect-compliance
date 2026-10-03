@@ -137,7 +137,6 @@ describe('middleware reachability — tenant API with an `iflk_` API key (#2224)
     it.each([
         ['a flat authenticated API route', '/api/evidence'],
         ['the flat audit-log read', '/api/audit-log'],
-        ['a flat admin route', '/api/admin/tenants'],
         ['an org-scoped route', '/api/org/acme/portfolio'],
     ])('%s is still 401 with a key and no cookie', async (_label, path) => {
         const res = await middleware(
@@ -145,6 +144,48 @@ describe('middleware reachability — tenant API with an `iflk_` API key (#2224)
             {} as any,
         );
         expect(res.status).toBe(401);
+    });
+
+    it('a flat admin route is passed THROUGH now, and refused one layer down (#3132)', async () => {
+        /*
+            `/api/admin/tenants` was in the list above, asserting the edge
+            refuses an `iflk_` tenant API key. The edge no longer refuses it —
+            `/api/admin` is a machine-caller prefix as of #3132, because the
+            platform key could not otherwise be presented at all and the agent
+            kill switch had no reachable remote control.
+
+            THE PROPERTY THAT MATTERED IS UNCHANGED: a tenant API key still
+            cannot use a platform-operator route. It is refused by
+            `verifyPlatformApiKey` inside the handler, which compares against
+            PLATFORM_ADMIN_API_KEY — an `iflk_` key is not that value and never
+            will be. What moved is which layer says no, and the status it says
+            it with.
+
+            Asserted as a pass-through rather than deleted, so the change is on
+            the record. `machine-caller-paths-self-authenticate` carries the
+            other half: every exported method under `/api/admin` verifies the
+            platform key, derived from the directory so a new route cannot slip
+            in ungated.
+        */
+        const res = await middleware(
+            req('GET', '/api/admin/tenants', { authorization: `Bearer ${KEY}` }),
+            {} as any,
+        );
+        expect(res.status).not.toBe(401);
+
+        /*
+            And the entry is not over-broad. The control is the ORG-scoped
+            route, not a tenant one: a valid `iflk_` key is SUPPOSED to open
+            `/api/t/**` — that is what `tryApiKeyAuth` exists for — so asserting
+            401 there would be asserting the key does not work. `/api/org/**` is
+            the path this suite already pins as refused with a key, which makes
+            it the right control for "the new prefix opened only what it named".
+        */
+        const org = await middleware(
+            req('GET', '/api/org/acme/portfolio', { authorization: `Bearer ${KEY}` }),
+            {} as any,
+        );
+        expect(org.status).toBe(401);
     });
 
     it.each([
