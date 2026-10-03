@@ -26,6 +26,11 @@ const mockTx = {
     integrationConnection: { findMany: jest.fn() },
     mcpToolManifestPin: { findMany: jest.fn() },
     externalToolParameterSet: { findMany: jest.fn() },
+    // #3051 step 5c — the target-population resolvers read these through the
+    // same mocked `runInTenantContext`, so the dispatch refusals can be exercised
+    // against a population whose contents this test controls.
+    employee: { findMany: jest.fn() },
+    identityAccountLink: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockTx)),
@@ -90,6 +95,7 @@ type SetRow = {
     label: string;
     parameters: Record<string, unknown>;
     openFields: unknown;
+    targetPopulation?: string | null;
 };
 const sets = (...rows: Array<Omit<SetRow, 'toolName'>>) => {
     mockTx.externalToolParameterSet.findMany.mockResolvedValue(
@@ -115,6 +121,8 @@ beforeEach(() => {
     ]);
     mockTx.mcpToolManifestPin.findMany.mockResolvedValue([pinFor(ALERTS)]);
     mockTx.externalToolParameterSet.findMany.mockResolvedValue([]);
+    mockTx.employee.findMany.mockResolvedValue([]);
+    mockTx.identityAccountLink.findMany.mockResolvedValue([]);
     listToolsMock.mockResolvedValue([ALERTS]);
     callToolMock.mockResolvedValue({ content: [] });
 });
@@ -305,6 +313,339 @@ describe('run — fails closed on bad configuration', () => {
         await expect(
             tool.run(ctx, { parameterSet: 'prod', workEmail: 'other@company.test' }),
         ).rejects.toThrow(/external_open_field_shadows_value/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// #3051 step 5c — THE TARGET FIELD AT THE TOOL BOUNDARY
+//
+// The target is the argument that says WHICH ROW the call is about, and its
+// bound is a named population of our own data rather than a pattern. That makes
+// the interesting assertions different in kind from the value-field ones above:
+//
+//   · the population is resolved AT DISPATCH, per call, so a row leaving it
+//     between two calls stops being addressable immediately;
+//   · the advertised schema does NOT enumerate the members;
+//   · FIVE distinct refusals, because they are fixed by different people — an
+//     unknown key is a deploy, an empty population is a stale feed, a failed
+//     read is a broken database, and only the last is the model's mistake;
+//   · nothing is sent on any of them.
+//
+// Each refusal is paired with the value that must still be ACCEPTED.
+// ═════════════════════════════════════════════════════════════════════
+
+const TARGET = { kind: 'target' } as const;
+const POP = 'terminated_employee_work_emails';
+
+/** The population returns exactly these work emails. */
+const population = (...emails: string[]) => {
+    mockTx.employee.findMany.mockResolvedValue(emails.map((workEmail) => ({ workEmail })));
+};
+
+describe('5c — the target is resolved at DISPATCH, not at assembly', () => {
+    beforeEach(() => {
+        sets({
+            label: 'prod',
+            parameters: { reason: 'offboarding' },
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+    });
+
+    it('dispatches a value the population currently returns', async () => {
+        population('gone@company.test', 'other@company.test');
+        const tool = await theTool();
+        await tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' });
+        expect(callToolMock.mock.calls[0][2]).toEqual({
+            reason: 'offboarding',
+            employeeEmail: 'gone@company.test',
+        });
+    });
+
+    it('refuses the SAME value once the data stops returning it', async () => {
+        // THE REASON THE RESOLUTION IS NOT CACHED AT ASSEMBLY. One tool object,
+        // two calls, and the only thing that changed is the data. A set resolved
+        // when the invocation was built would still be sending this.
+        population('gone@company.test');
+        const tool = await theTool();
+        await tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' });
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 1 });
+
+        population('someone.else@company.test');
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' }),
+        ).rejects.toThrow(/external_target_not_in_population/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 1 });
+    });
+
+    it('reads the population ONCE PER CALL, so the read is on the dispatch path', async () => {
+        population('gone@company.test');
+        const tool = await theTool();
+        const readsAfterAssembly = mockTx.employee.findMany.mock.calls.length;
+        expect(readsAfterAssembly).toBe(0);
+        await tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' });
+        expect(mockTx.employee.findMany.mock.calls.length).toBe(1);
+    });
+
+    it('resolves the population TENANT-SCOPED and bounded', async () => {
+        population('gone@company.test');
+        const tool = await theTool();
+        await tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' });
+        const query = mockTx.employee.findMany.mock.calls[0][0];
+        // The tenant filter and the status predicate are what make this a
+        // population rather than a table, and the `take` is what keeps it a
+        // BOUND. A query missing any of the three would still pass every
+        // membership assertion above.
+        expect(query.where).toMatchObject({ tenantId: 'tnt_1', status: 'TERMINATED' });
+        expect(typeof query.take).toBe('number');
+        expect(query.take).toBeGreaterThan(0);
+    });
+});
+
+describe('5c — the advertised schema describes the bound without listing it', () => {
+    it('offers the target as a bounded string, naming the population', async () => {
+        population('gone@company.test', 'other@company.test');
+        sets({
+            label: 'prod',
+            parameters: { reason: 'offboarding' },
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        const props = (tool.inputSchema as { properties: Record<string, Record<string, unknown>> })
+            .properties;
+        expect(Object.keys(props).sort()).toEqual(['employeeEmail', 'parameterSet']);
+        expect(props.employeeEmail).toMatchObject({ type: 'string', maxLength: MAX_VALUE_LENGTH });
+        expect(props.employeeEmail).not.toHaveProperty('enum');
+        expect(String(props.employeeEmail.description)).toContain(POP);
+        // NO MEMBER OF THE POPULATION APPEARS ANYWHERE IN THE TOOL. A snapshot
+        // in the listing would be a stale bound the model trusts, and it would
+        // put tenant identifiers where nothing asked for them.
+        const whole = JSON.stringify({ s: tool.inputSchema, d: tool.description });
+        expect(whole).not.toContain('gone@company.test');
+        expect(whole).not.toContain('other@company.test');
+    });
+
+    it('says the bound VARIES when two sets target different populations', async () => {
+        sets(
+            {
+                label: 'prod',
+                parameters: {},
+                openFields: { employeeEmail: TARGET },
+                targetPopulation: POP,
+            },
+            {
+                label: 'staging',
+                parameters: {},
+                openFields: { employeeEmail: TARGET },
+                targetPopulation: 'terminated_employee_hris_record_ids',
+            },
+        );
+        const tool = await theTool();
+        const props = (tool.inputSchema as { properties: Record<string, Record<string, unknown>> })
+            .properties;
+        expect(String(props.employeeEmail.description)).toMatch(/depends on which parameter set/);
+    });
+
+    it('advertises the shared population when the two sets AGREE — the control', async () => {
+        sets(
+            {
+                label: 'prod',
+                parameters: {},
+                openFields: { employeeEmail: TARGET },
+                targetPopulation: POP,
+            },
+            {
+                label: 'staging',
+                parameters: {},
+                openFields: { employeeEmail: TARGET },
+                targetPopulation: POP,
+            },
+        );
+        const tool = await theTool();
+        const props = (tool.inputSchema as { properties: Record<string, Record<string, unknown>> })
+            .properties;
+        expect(String(props.employeeEmail.description)).toContain(POP);
+        expect(String(props.employeeEmail.description)).not.toMatch(/depends on which/);
+    });
+});
+
+describe('5c — five refusals, each distinguishable, and nothing sent on any', () => {
+    it('refuses an UNKNOWN population key — a removed or renamed registry entry', async () => {
+        sets({
+            label: 'prod',
+            parameters: {},
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: 'a_population_this_build_does_not_define',
+        });
+        const tool = await theTool();
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'anything@company.test' }),
+        ).rejects.toThrow(/external_target_population_unknown/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    it('refuses an EMPTY population, and says so rather than blaming the value', async () => {
+        // An empty population means the template is inert — a stale feed, a sync
+        // that has not run — which is an operator's problem. Reporting it as "your
+        // value is not in the set" would send the one person who can fix it
+        // looking at the agent instead.
+        population();
+        sets({
+            label: 'prod',
+            parameters: {},
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' }),
+        ).rejects.toThrow(/external_target_population_empty/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    it('refuses an UNRESOLVABLE population — "could not look" is not "nothing matched"', async () => {
+        mockTx.employee.findMany.mockRejectedValue(new Error('connection terminated'));
+        sets({
+            label: 'prod',
+            parameters: {},
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' }),
+        ).rejects.toThrow(/external_target_population_unresolvable/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    it('refuses a population PAST THE CAP, because membership cannot be decided', async () => {
+        // At the cap, "not in the population" and "past the cap" are
+        // indistinguishable, so answering with the truncated set would answer the
+        // question with the wrong one of those.
+        mockTx.employee.findMany.mockImplementation(async (q: { take: number }) =>
+            Array.from({ length: q.take }, (_, i) => ({ workEmail: `p${i}@company.test` })),
+        );
+        sets({
+            label: 'prod',
+            parameters: {},
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'p0@company.test' }),
+        ).rejects.toThrow(/external_target_population_too_large/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    it('refuses a non-string target, and a value outside the population', async () => {
+        population('gone@company.test');
+        sets({
+            label: 'prod',
+            parameters: {},
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 7 }),
+        ).rejects.toThrow(/external_target_not_a_string/);
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'still.here@company.test' }),
+        ).rejects.toThrow(/external_target_not_in_population/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+        // The control: the member IS accepted, so the four refusals above are
+        // about their rules and not about an unconditional block.
+        await tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' });
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 1 });
+    });
+
+    it('names the population SIZE and never a member', async () => {
+        population('a@company.test', 'b@company.test');
+        sets({
+            label: 'prod',
+            parameters: {},
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        const err = await tool
+            .run(ctx, { parameterSet: 'prod', employeeEmail: 'c@company.test' })
+            .catch((e: Error) => e);
+        const message = (err as Error).message;
+        expect(message).toContain('2 member(s)');
+        // A count tells an operator whether the bound is doing work. A LIST would
+        // hand the model every identifier it was not allowed to have.
+        expect(message).not.toContain('a@company.test');
+        expect(message).not.toContain('b@company.test');
+    });
+});
+
+describe('5c — an incoherent row cannot dispatch at all', () => {
+    it('refuses a target marker with NO population', async () => {
+        // Unreachable through the usecase and through the database CHECK. Checked
+        // here because this is the state in which the agent would choose a row
+        // bounded by nothing, and the fail-closed reader is what guarantees a row
+        // written by any other path cannot dispatch.
+        population('gone@company.test');
+        sets({
+            label: 'prod',
+            parameters: {},
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: null,
+        });
+        const tool = await theTool();
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' }),
+        ).rejects.toThrow(/external_parameter_set_malformed/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    it('refuses a population with NO target marker', async () => {
+        sets({
+            label: 'prod',
+            parameters: { userId: '7' },
+            openFields: { workEmail: EMAIL },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', workEmail: 'a@company.test' }),
+        ).rejects.toThrow(/external_parameter_set_malformed/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    it('refuses a target that shadows an approved exact value', async () => {
+        // The widest version of the shadow bug: the open target would REPLACE
+        // the row a human named with whatever the agent chose.
+        population('gone@company.test');
+        sets({
+            label: 'prod',
+            parameters: { employeeEmail: 'named.by.a.human@company.test' },
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        await expect(
+            tool.run(ctx, { parameterSet: 'prod', employeeEmail: 'gone@company.test' }),
+        ).rejects.toThrow(/external_open_field_shadows_value/);
+        expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
+    });
+
+    it('still refuses a target left out entirely', async () => {
+        population('gone@company.test');
+        sets({
+            label: 'prod',
+            parameters: {},
+            openFields: { employeeEmail: TARGET },
+            targetPopulation: POP,
+        });
+        const tool = await theTool();
+        await expect(tool.run(ctx, { parameterSet: 'prod' })).rejects.toThrow(
+            /external_open_field_missing/,
+        );
         expect({ sent: callToolMock.mock.calls.length }).toEqual({ sent: 0 });
     });
 });
