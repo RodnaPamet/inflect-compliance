@@ -79,8 +79,8 @@ export {
 // Sibling of `useCursorPagination` — same `hasMore` + `loadMore`
 // vocabulary, but slices an in-memory row list to a configurable
 // threshold instead of fetching the next server cursor. Used by
-// tenant tables that already have the full row set in memory and
-// just want progressive disclosure for performance + scannability.
+// tables that already have the full row set in memory and just
+// want progressive disclosure for performance + scannability.
 export {
     useThresholdLoadMore,
     DEFAULT_LOAD_MORE_THRESHOLD,
@@ -124,7 +124,7 @@ export { useIsBelowMd } from "./use-is-below-md";
 export { useCreateQueryParam } from './use-create-query-param';
 export { useSsrFallback } from './use-ssr-fallback';
 
-// ─── Debounced field autosave (Controls P3.5) ─────────────────────────
+// ─── Debounced field autosave (P3.5) ──────────────────────────────────
 export {
     useAutosaveFields,
     type AutosaveState,

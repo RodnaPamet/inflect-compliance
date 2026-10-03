@@ -5,19 +5,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /**
  * Debounced field autosave with an explicit four-state status.
  *
- * `ControlEditPanel` and `TaskEditPanel` each carried the same ~65-line
- * machine — `fieldsRef`, `saveTimer`, `commitFields`, `scheduleCommit`,
- * `commitNow`, `update(partial, immediate)`, the four-state `saveState` and
- * its aria-live status line — with
+ * Two edit panels each carried the same ~65-line machine — `fieldsRef`,
+ * `saveTimer`, `commitFields`, `scheduleCommit`, `commitNow`,
+ * `update(partial, immediate)`, the four-state `saveState` and its
+ * aria-live status line — with
  * `setTimeout(() => void commitFields(), 800)` byte-identical in both.
  *
  * Two things made that expensive beyond the duplication:
  *
- *   1. `tests/guards/controls-quickview-interaction.test.ts` asserted that
- *      exact `setTimeout` regex against EACH file separately, so extracting
- *      it broke both assertions. The ratchet was holding the copy-paste in
- *      place — the roadmap's central complaint, in miniature. Those two
- *      assertions are now behavioural tests of this hook.
+ *   1. A source-text guard asserted that exact `setTimeout` regex against
+ *      EACH file separately, so extracting it broke both assertions. The
+ *      ratchet was holding the copy-paste in place — the roadmap's central
+ *      complaint, in miniature. Those two assertions are now behavioural
+ *      tests of this hook.
  *   2. The panels seeded form state on mount only, which forced the caller
  *      to remount them with `key={...}` to show a different row. Owning the
  *      values here means a `seed` change re-seeds, and the remount hack goes.
@@ -36,10 +36,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * **`commitNow` clears the pending timer first.** Blur-after-typing would
  * otherwise send the same body twice.
  *
- * **`canCommit` is a callback, not a boolean.** `TaskEditPanel` gates commits
- * on an async GET having landed, tracked in a ref precisely so it does not
- * re-render. A boolean option would be captured stale; this is read fresh at
- * commit time.
+ * **`canCommit` is a callback, not a boolean.** One of those panels gates
+ * commits on an async GET having landed, tracked in a ref precisely so it
+ * does not re-render. A boolean option would be captured stale; this is
+ * read fresh at commit time.
  *
  * **`validate` runs before the status moves to `saving`.** A field that fails
  * a client-side rule was never sent, so showing "Saving…" first would be a

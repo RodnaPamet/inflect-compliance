@@ -18,7 +18,7 @@
  *      brand-subtle bg + before:opacity-100 + font-medium).
  *
  *   3. **With badge** (badge=5). The StatusBadge renders with the
- *      five-token NAV_ITEM_BADGE recipe applied.
+ *      four-token NAV_ITEM_BADGE recipe applied.
  *
  * No axe-core test — `<NavItem>` is rendered inside a `<nav>` /
  * sidebar at the AppShell level, which is the right axe boundary
@@ -232,16 +232,19 @@ describe('<NavItem>', () => {
                 />,
             );
             // The badge's outermost element carries every NAV_ITEM_BADGE
-            // token. Five tokens to lock.
+            // token. This asserts the recipe REACHES the DOM, nothing about
+            // whether each token resolves to CSS — `animate-in fade-in
+            // duration-300` stood here and all three compiled to nothing
+            // (`tailwindcss-animate` is not a dependency of this repo). That
+            // question belongs to tests/guards/nav-item-badge-discipline.ts,
+            // which resolves the token against the declared animations.
             const badge = container.querySelector('.tabular-nums');
             expect(badge).not.toBeNull();
             const cls = badge!.className;
             expect(cls).toContain('ml-auto');
             expect(cls).toContain('tabular-nums');
             expect(cls).toContain('flex-shrink-0');
-            expect(cls).toContain('animate-in');
-            expect(cls).toContain('fade-in');
-            expect(cls).toMatch(/\bduration-\d+\b/);
+            expect(cls).toContain('animate-fade-in');
             // The badge content is the count.
             expect(badge!.textContent).toBe('5');
         });

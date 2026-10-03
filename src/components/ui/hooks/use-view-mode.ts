@@ -5,18 +5,20 @@
  * `localStorage` via the existing `useLocalStorage` primitive.
  * Pages that adopt the toggle do:
  *
- *   const [view, setView] = useViewMode('controls', 'table');
+ *   const [view, setView] = useViewMode('bookings', 'table');
  *   …
  *   <FilterToolbar
  *     actions={<ViewToggle view={view} onChange={setView} />}
  *   />
  *   {view === 'table' ? <DataTable … /> : <CardList … />}
  *
- * Storage key shape — `inflect:view-mode:<page>` — so the
- * preference is per-page (different list pages can each persist
- * their own choice independently). The prefix matches every other
- * client-state key in the app (column visibility, command-palette
- * recents, etc.) so a user clearing site data stays consistent.
+ * Storage key shape — `<app prefix>:view-mode:<page>`, built through
+ * `uiStorageKey` — so the preference is per-page (different list
+ * pages can each persist their own choice independently). The prefix
+ * is whatever the host app's `uiStorageKey` seam supplies, which is
+ * also what every other client-state key uses (column visibility,
+ * command-palette recents, etc.), so a user clearing site data stays
+ * consistent.
  *
  * SSR-safe via the underlying `useLocalStorage` (returns the
  * `initial` value on first render, hydrates inside a `useEffect`).

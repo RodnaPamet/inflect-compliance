@@ -830,14 +830,14 @@
   "reason": "Timer/cancellation contract tests that are otherwise domain-free (most messages are 'x'/'y'/'Item N'); three fixtures use a GRC entity as the toast message. Trivially renameable."
  },
  "src/components/ui/hooks/index.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure re-export barrel; every export is a generic hook. One section heading names the GRC Controls feature as the provenance of a hook that is itself domain-free. One-word comment fix."
+  "reason": "Pure re-export barrel; every export is a generic hook. The section heading that named the GRC Controls feature as a hook's provenance now reads `(P3.5)`, and the threshold-load-more note no longer calls its callers tenant tables (#3133). Nothing mechanical fires and no prose coupling is left, so the barrel is vendorable as-is."
  },
  "src/components/ui/hooks/use-autosave-fields.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The debounce/status machine is entirely generic (Record<string,string> fields, caller-supplied save/validate/canCommit, no copy of its own — networkErrorMessage is a required param with no default). The coupling is the provenance story in the docblock."
+  "reason": "The debounce/status machine is entirely generic (Record<string,string> fields, caller-supplied save/validate/canCommit, no copy of its own — networkErrorMessage is a required param with no default). The coupling was the provenance story in the docblock; #3133 reworded it to \"two edit panels\" and \"a source-text guard\", naming no product component and no repo test path."
  },
  "src/components/ui/hooks/use-celebration.ts": {
   "classification": "GENERIC",
@@ -852,17 +852,17 @@
  "src/components/ui/hooks/use-copy-to-clipboard.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Clipboard write with execCommand fallback. The only strings are internal `throw new Error(...)` messages, which are not JSX text / aria / title / a copy default. I judged \"audit logging\" (line 16) in the log-record sense, not the GRC audit-engagement noun; \"MFA enrollment pages\" (line 105) is generic auth."
+  "reason": "Clipboard write with execCommand fallback. The only strings are internal `throw new Error(...)` messages, which are not JSX text / aria / title / a copy default. The \"audit logging\" example an earlier pass judged to be the log-record sense is gone — #3133 reworded it, so nobody has to make that call again; \"MFA enrollment pages\" (line 105) is generic auth."
  },
  "src/components/ui/hooks/use-create-query-param.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The mechanism is generic: read `?create=1`, call an opaque callback, strip the param via router.replace. Both parameters (onOpen, basePath) are caller-supplied. The coupling is an enumeration of the seven compliance list pages in the docblock plus the tenant route shape in the examples."
+  "reason": "The mechanism is generic: read `?create=1`, call an opaque callback, strip the param via router.replace. Both parameters (onOpen, basePath) are caller-supplied. #3133 replaced the enumeration of seven compliance list pages with \"one per list page\" and the tenant route examples with `/items`, so the docblock names no domain."
  },
  "src/components/ui/hooks/use-cursor-pagination.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic `{rows, nextCursor}` accumulator over a caller-built URL. Error values are bounded tokens ('load_failed', 'load_failed_<status>'), not English copy. \"Caller controls cursor encoding\" (line 38) is the verb, not the GRC noun; \"Epic O-4 portfolio drill-down tables\" names no compliance entity."
+  "reason": "Generic `{rows, nextCursor}` accumulator over a caller-built URL. Error values are bounded tokens ('load_failed', 'load_failed_<status>'), not English copy. #3133 reworded \"Caller controls cursor encoding\" to \"The caller owns cursor encoding\", retiring the one word that needed a reader's judgement; \"Epic O-4 portfolio drill-down tables\" names no compliance entity."
  },
  "src/components/ui/hooks/use-enter-submit.ts": {
   "classification": "GENERIC",
@@ -905,9 +905,9 @@
   "reason": "device/width/height + isMobile/isTablet/isDesktop from matchMedia. Comments name Radix/Vaul/popover.tsx only."
  },
  "src/components/ui/hooks/use-optimistic-update.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The overlay/rollback machinery is genuinely generic over T with no domain types in the signature. The coupling is a worked JSDoc example written entirely in risk vocabulary. Note \"Framework-agnostic\" (line 9) is the JS-library sense, not the compliance-framework noun — I did not count it."
+  "reason": "The overlay/rollback machinery is genuinely generic over T with no domain types in the signature. The coupling was a worked JSDoc example written entirely in risk vocabulary; #3133 rewrote it over `useItem` / `/api/items`. \"Framework-agnostic\" (line 9) stays, and it is the JS-library sense rather than the compliance-framework noun."
  },
  "src/components/ui/hooks/use-resize-observer.ts": {
   "classification": "GENERIC",
@@ -950,9 +950,9 @@
   "reason": "Four-variant sonner wrapper with locked durations. Every message is a required caller argument; the English strings ('Item created', 'Save failed') are JSDoc usage examples with no default value behind them, and none is domain vocabulary."
  },
  "src/components/ui/hooks/use-view-mode.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The storage key is built CORRECTLY through uiStorageKey (line 32), so there is no storage-key finding. The coupling is two comment lines: the brand spelled out as the literal key shape, and a GRC page name as the example argument."
+  "reason": "The storage key is built CORRECTLY through uiStorageKey, so there is no storage-key finding. The coupling was two comment lines and #3133 cleared both: the brand spelled out as the literal key shape now reads `<app prefix>:view-mode:<page>` and names the seam that supplies it, and the GRC page name in the example argument is now `bookings`."
  },
  "src/components/ui/icon-action.tsx": {
   "classification": "MIXED",
@@ -1117,7 +1117,7 @@
  "src/components/ui/icons/index.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "A barrel of relative re-exports plus the `Icon` type alias — generic in shape. It carries removable coupling: a comment naming the brand Dub, and the re-export block that lifts six brand-named modules and the upstream pricing-plan map into the shared public API. Deleting those lines when the coupled files go leaves a clean barrel."
+  "reason": "A barrel of relative re-exports plus the `Icon` type alias — generic in shape. #3133 deleted the comment naming the brand Dub. What remains is the re-export block that lifts six brand-named modules and the upstream pricing-plan map into the shared public API, so this stays MIXED on a re-export rather than on prose; deleting those lines when the coupled files go leaves a clean barrel."
  },
  "src/components/ui/icons/instagram.tsx": {
   "classification": "GENERIC",

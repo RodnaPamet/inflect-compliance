@@ -13,8 +13,8 @@
  *
  * Consumers should treat the returned object as the single source of
  * truth for UI state — don't gate on the returned promise. Instrumenting
- * copies (e.g., audit logging when an API key is revealed and copied)
- * should happen via the `onSuccess` option passed to `copy()`.
+ * copies (e.g., recording that a secret was revealed and copied) should
+ * happen via the `onSuccess` option passed to `copy()`.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";

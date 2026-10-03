@@ -99,6 +99,16 @@ const CEILINGS: Record<CouplingKind, { max: number; allowance: number }> = {
     // files in the roots had one. `layout/ClientProviders.tsx` was reclassified
     // GENERIC -> MIXED in that change, because a file tripping a mechanical
     // coupling cannot be GENERIC.
+    //
+    // #3046 batch 3 (#3133) left this at 36, and that is STRUCTURAL rather than
+    // a coincidence worth re-checking next time. It reclassified five files
+    // MIXED -> GENERIC and took the import-closed subset 427 -> 442, yet
+    // `counts()` below reads `couplingIndex()`, which derives from SOURCE only
+    // and never opens the classification map — so no reclassification, of any
+    // size, can move any of these three numbers. Batch 2's note above records
+    // the converse (the count fell while the GENERIC set barely moved); both
+    // directions are independent, and expecting them to travel together has now
+    // been wrong twice.
     'domain-import': { max: 36, allowance: 1 },
     // Re-seated 16 -> 10 by #3096, which replaced the brand fill token with
     // `text-content-brand` in the six files where it painted real rendered
