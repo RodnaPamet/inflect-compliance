@@ -64,6 +64,10 @@ export const cardVariants = cva("", {
       // `glass-card p-0 text-center py-12` → 48/0/48/0). A caller that
       // passes a uniform `p-N` keeps it, because tailwind-merge drops
       // the earlier `p-0` outright.
+      //
+      // Only `raised` was ever affected. The five `<Card density="none">`
+      // JSX sites all pass `elevation="inset"`, whose recipe carries no
+      // padding of its own, and they measured 0px both before and after.
       none: "p-0",
     },
   },

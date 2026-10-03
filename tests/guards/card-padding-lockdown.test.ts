@@ -76,7 +76,15 @@ describe('Card padding lockdown (Roadmap-5 PR-2)', () => {
         expect(src).toMatch(/density:\s*\{[\s\S]*?comfortable:\s*"p-6"/);
         expect(src).toMatch(/compact:\s*"p-4"/);
         expect(src).toMatch(/spacious:\s*"p-12"/);
-        expect(src).toMatch(/none:\s*""/);
+        // #3151 — this read `/none:\s*""/`, the SECOND guard to pin the
+        // empty string (the other was card-density-discipline). This
+        // file's own docstring above says `none (p-0) — children own
+        // padding`, so the assertion had been contradicting the
+        // documented intent since Roadmap-5 PR-2: `""` emits no utility,
+        // and `.glass-card`'s `@apply p-4 md:p-5` therefore stood,
+        // giving those children 16px / 20px of padding they did not ask
+        // for. A real padding utility is now required.
+        expect(src).toMatch(/none:\s*"p-\d+"/);
     });
 
     it('no consumer pairs cardVariants with a uniform p-N className override', () => {
