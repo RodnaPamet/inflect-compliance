@@ -137,6 +137,13 @@ function PopoverRoot({
             // keyboard opens directly over it. See use-keyboard-inset.ts.
             style={keyboardAvoidanceStyle(keyboard)}
             className="surface-popup-texture fixed bottom-0 left-0 right-0 z-50 mt-24 rounded-t-[10px]"
+            // The caller's focus handlers apply to the sheet too. They used to
+            // reach only the desktop popover, so a Combobox that puts focus in
+            // its search box on open did so on desktop and left it on the
+            // trigger below md. vaul calls this before preventing its own
+            // open auto-focus, so a handler that focuses something keeps it.
+            onOpenAutoFocus={onOpenAutoFocus}
+            onCloseAutoFocus={onCloseAutoFocus}
             onEscapeKeyDown={onEscapeKeyDown}
             onPointerDownOutside={(e) => {
               // Prevent dismissal when clicking inside a toast
