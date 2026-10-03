@@ -1,28 +1,39 @@
 /**
  * Epic 62 — `useCelebration` hook.
  *
- * Returns a stable `celebrate()` callback that fires a confetti
- * preset (and an optional toast) for a milestone, with per-tab
- * sessionStorage deduplication so a user who, say, refreshes the
- * dashboard three times doesn't get bombed three times.
+ * Returns a stable `celebrate()` callback that fires a confetti preset (and an
+ * optional toast), with per-tab deduplication so a user who, say, refreshes a
+ * page three times doesn't get bombed three times.
  *
- * Two call shapes:
+ * ONE call shape — the caller supplies the preset, the dedupe key and the copy:
  *
  *   ```ts
- *   const { celebrate } = useCelebration();
+ *   const { celebrate } = useCelebration(dedupe);
  *
- *   // 1. By milestone key — pulls preset + toast from the registry
- *   //    in `src/lib/celebrations.ts`. Auto-deduped.
- *   celebrate('framework-100');
- *
- *   // 2. Ad-hoc — caller supplies preset + (optional) dedupe key.
- *   //    No toast unless `message` is provided.
  *   celebrate({ preset: 'burst', key: 'sandbox-demo', message: 'Nice!' });
  *   ```
  *
+ * There used to be a second, keyed shape — `celebrate('some-milestone')` —
+ * which looked the preset and the copy up in a registry of four product
+ * milestones. The hook's input type was therefore a closed union of this
+ * product's milestones, which no other product could extend or call. Every
+ * production call site already passed an object, so dropping the keyed path
+ * changed no call site; the registry stays where it belongs, in the app, and
+ * builds the object it used to be looked up by.
+ *
+ * ## Dedupe is INJECTED, deliberately
+ *
+ * `hasCelebrated` / `markCelebrated` come in as arguments rather than living
+ * here, because the storage key they build is brand-prefixed — it names the
+ * product. Moving the pair into this file would have carried that key into
+ * shared UI and left the file coupled on judgement even once it was clean
+ * mechanically. Plain functions in, no context provider: one argument is
+ * cheaper than a provider, and a provider is not earned by three call sites.
+ *
  * SSR safety: every browser-touching code path is guarded with
- * `typeof window === 'undefined'`. The returned `celebrate` is a
- * no-op on the server and inside test environments without a window.
+ * `typeof window === 'undefined'`. The returned `celebrate` is a no-op on the
+ * server and inside test environments without a window. The injected dedupe
+ * functions are expected to be SSR-safe too.
  *
  * `prefers-reduced-motion`: every preset passes
  * `disableForReducedMotion: true` to canvas-confetti, which silently
@@ -33,30 +44,47 @@
 import { useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 
-import {
-    MILESTONES,
-    type CelebrationPreset,
-    type CelebrateAdHocInput,
-    type CelebrateInput,
-    type MilestoneDefinition,
-    hasCelebrated,
-    markCelebrated,
-} from '@/lib/celebrations';
-
-// Re-exported here so the existing barrel keeps these public from
-// the hooks namespace. Source of truth lives in `@/lib/celebrations`.
-export type { CelebrateAdHocInput, CelebrateInput };
-
 // ─── Types ──────────────────────────────────────────────────────────
 
+/**
+ * Visual style of the celebration — one of the choreographies defined below.
+ *
+ *   - `burst`     — a single centred burst. Default for "you finished
+ *                   a thing" moments.
+ *   - `rain`      — gentle particles falling across the top edge for a
+ *                   couple of seconds. Best for an ongoing-good-state
+ *                   moment (everything current).
+ *   - `fireworks` — three offset bursts in succession, evoking a small
+ *                   show. Reserve for the high-stakes ones.
+ */
+export type CelebrationPreset = 'burst' | 'rain' | 'fireworks';
+
+/** Everything `celebrate()` needs, supplied by the caller. */
+export interface CelebrateInput {
+    preset: CelebrationPreset;
+    /** Optional dedupe key. Omit to allow re-firing. */
+    key?: string;
+    /** Optional toast title. Skipped when omitted. */
+    message?: string;
+    /** Optional toast description shown under `message`. */
+    description?: string;
+}
+
+/**
+ * The per-tab "already celebrated?" pair. Injected because the key it builds
+ * belongs to the host product, not to this package — see the header.
+ */
+export interface CelebrationDedupe {
+    /** True when this key has already celebrated in this tab. SSR-safe. */
+    hasCelebrated: (key: string) => boolean;
+    /** Record this key as celebrated in this tab. Idempotent. SSR-safe. */
+    markCelebrated: (key: string) => void;
+}
+
 export interface UseCelebrationResult {
-    /**
-     * Trigger a celebration. Pass a registered milestone key for the
-     * default behaviour, or an ad-hoc `{ preset, ... }` object for
-     * one-off effects (sandbox / demo).
-     */
+    /** Trigger a celebration. */
     celebrate: (input: CelebrateInput) => void;
-    /** Pass-through to the registry's read-only dedupe check. */
+    /** Pass-through to the injected read-only dedupe check. */
     hasCelebrated: (key: string) => boolean;
 }
 
@@ -131,7 +159,7 @@ const PRESET_RUNNERS: Record<CelebrationPreset, (c: ConfettiFn) => void> = {
 //
 // canvas-confetti pulls in a small canvas runtime; loading lazily on
 // the first celebration keeps it out of the main bundle for users who
-// never hit a milestone.
+// never trigger one.
 
 let cachedConfetti: ConfettiFn | null = null;
 
@@ -151,60 +179,44 @@ export function __setConfettiForTest(stub: ConfettiFn | null): void {
 
 // ─── Hook ───────────────────────────────────────────────────────────
 
-export function useCelebration(): UseCelebrationResult {
+export function useCelebration(dedupe: CelebrationDedupe): UseCelebrationResult {
     // Hold the latest cancellation-aware ref so unmounting between
     // the firing of the celebration and the toast settle doesn't
     // trip a setState-on-unmounted warning. Toast itself is fire-
     // and-forget; we just want a stable identity for the callback.
     const aliveRef = useRef(true);
 
-    const celebrate = useCallback((input: CelebrateInput) => {
-        if (typeof window === 'undefined') return;
+    // Destructured so the callback depends on the two FUNCTIONS, not on the
+    // container object. A caller writing `useCelebration({ hasCelebrated,
+    // markCelebrated })` builds a fresh object every render; depending on it
+    // would change `celebrate`'s identity every render and re-run every
+    // consumer `useEffect` that lists it.
+    const { hasCelebrated, markCelebrated } = dedupe;
 
-        // Resolve the call shape into (preset, dedupeKey, message,
-        // description). Milestone-key path looks up the registry;
-        // ad-hoc path uses caller-supplied values.
-        const resolved: {
-            preset: CelebrationPreset;
-            dedupeKey?: string;
-            message?: string;
-            description?: string;
-        } = (() => {
-            if (typeof input === 'string') {
-                const def: MilestoneDefinition = MILESTONES[input];
-                return {
-                    preset: def.preset,
-                    dedupeKey: def.key,
-                    message: def.message,
-                    description: def.description,
-                };
+    const celebrate = useCallback(
+        (input: CelebrateInput) => {
+            if (typeof window === 'undefined') return;
+
+            // Dedupe — only when a key was provided.
+            if (input.key && hasCelebrated(input.key)) return;
+            if (input.key) markCelebrated(input.key);
+
+            // Fire confetti async (lazy import). Toast can fire
+            // immediately so the message lands without waiting on the
+            // chunk load.
+            if (input.message) {
+                toast.success(input.message, {
+                    description: input.description,
+                });
             }
-            return {
-                preset: input.preset,
-                dedupeKey: input.key,
-                message: input.message,
-                description: input.description,
-            };
-        })();
 
-        // Dedupe — only when a key was provided.
-        if (resolved.dedupeKey && hasCelebrated(resolved.dedupeKey)) return;
-        if (resolved.dedupeKey) markCelebrated(resolved.dedupeKey);
-
-        // Fire confetti async (lazy import). Toast can fire
-        // immediately so the message lands without waiting on the
-        // chunk load.
-        if (resolved.message) {
-            toast.success(resolved.message, {
-                description: resolved.description,
+            void loadConfetti().then((confetti) => {
+                if (!aliveRef.current) return;
+                PRESET_RUNNERS[input.preset](confetti);
             });
-        }
-
-        void loadConfetti().then((confetti) => {
-            if (!aliveRef.current) return;
-            PRESET_RUNNERS[resolved.preset](confetti);
-        });
-    }, []);
+        },
+        [hasCelebrated, markCelebrated],
+    );
 
     return { celebrate, hasCelebrated };
 }

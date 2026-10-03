@@ -36,11 +36,17 @@
  * historical drift, so the rule becomes "the smallest number that keeps
  * ordinary PRs quiet" — and that is not one number for all three:
  *
- *   `domain-import` (41) and `brand-as-text` (10) get 1. An incidental fix
- *     while doing something else should not force an edit to this file.
- *   `storage-key` (1) gets 0. At an allowance of 1 the only remaining file
- *     could be fixed and the ceiling would stay silently at 1 — a ratchet with
- *     nothing left to ratchet. For a count this small, exactness is the point.
+ *   `domain-import` and `brand-as-text` get 1. An incidental fix while doing
+ *     something else should not force an edit to this file. Read both ceilings
+ *     from `CEILINGS` below and never from this paragraph — it quoted
+ *     `domain-import` as 41 while the constant said 46, which is a count
+ *     stored beside its own source, the rot `doc-classification.json`'s
+ *     deleted `counts` header records.
+ *   `storage-key` gets 0, and there the VALUE is the argument rather than a
+ *     citation: its ceiling is 1, so at an allowance of 1 the only remaining
+ *     file could be fixed and the ceiling would stay silently at 1 — a ratchet
+ *     with nothing left to ratchet. For a count this small, exactness is the
+ *     point.
  *
  * The helper's doc also demands a REPLAY: restore an inflated ceiling and
  * confirm the sentinel fails, because a sentinel that never fired is
@@ -58,27 +64,42 @@ import {
 const ROOT = path.resolve(__dirname, '../..');
 
 /**
- * Measured on main, 2026-10-02. Lower these when you remove a coupling; the
+ * Measured on main, 2026-10-03. Lower these when you remove a coupling; the
  * sentinel below will tell you when you have to.
  */
 const CEILINGS: Record<CouplingKind, { max: number; allowance: number }> = {
-    // RAISED 41 -> 46 by #3098 §1, and a rise here is normally a regression, so
-    // the reason matters: nothing acquired a coupling. The DETECTOR got its
-    // sight back. Its regex matched only `@/app-layer` and `@/lib`, so an import
-    // of `@/components/<anything outside the roots>` was invisible — a shared
-    // file could reach the rest of the product and still be recorded GENERIC,
-    // which is the one claim a vendoring consumer actually relies on.
+    // Re-seated 46 -> 36 by #3046 batch 2, in two steps, measured by running
+    // this guard after each:
     //
-    // Eight files in the roots import a non-shared `@/components` target; three
-    // already tripped this kind via `@/lib`, so the live count moves by five.
-    // Seven of the eight were already MIXED or COUPLED for other reasons. The
-    // eighth, `layout/ClientProviders.tsx`, was GENERIC and is reclassified
-    // MIXED in the same change — a file tripping a mechanical coupling cannot
-    // be GENERIC, and that assertion is what forced the pairing.
+    //   46 -> 37  `NEUTRAL_LIB` in `tests/helpers/shared-ui-couplings.ts` gained
+    //             `format-date`, `kpi-trend`, `number-format` and
+    //             `locale-constants` — four leaf utilities, each with ZERO `@/`
+    //             imports of its own, so none can pull a domain module in
+    //             behind the allowance. Nine files stopped tripping the kind.
+    //             (The same change DELETED `utils`, `format`, `dates` and
+    //             `a11y`, which named modules that do not exist and so could
+    //             never have allowed anything; that half moves no count.)
+    //   37 -> 36  `ui/hooks/use-celebration.ts`'s single `@/lib/celebrations`
+    //             import inverted — the preset/input TYPES moved into the hook
+    //             and the dedupe pair is injected, so the hooks barrel stops
+    //             depending on a product registry.
     //
-    // 46 is therefore the first HONEST reading of this number, not a worse one.
-    // It should fall as those imports become props or slots.
-    'domain-import': { max: 46, allowance: 1 },
+    // The nine files the widening freed were NOT all reclassified: a file stops
+    // tripping a MECHANICAL coupling without becoming neutral, and five of the
+    // nine keep a judgement coupling (`date-picker`/`date-range-picker`'s
+    // untranslated English, `LocaleSwitcher`'s cookie-seam bypass, `KpiCard`'s
+    // domain JSDoc, `charts/funnel-chart`'s brand-painted SVG text). So this
+    // count falling is not the same event as the GENERIC set growing.
+    //
+    // 36 should keep falling as `@/lib/<domain>` and non-shared `@/components`
+    // imports become props or slots. The predecessor reading, 46, was itself a
+    // RISE (41 -> 46, #3098 §1) and not a regression: the detector's regex had
+    // matched only `@/app-layer` and `@/lib`, so an import of
+    // `@/components/<anything outside the roots>` was invisible, and eight
+    // files in the roots had one. `layout/ClientProviders.tsx` was reclassified
+    // GENERIC -> MIXED in that change, because a file tripping a mechanical
+    // coupling cannot be GENERIC.
+    'domain-import': { max: 36, allowance: 1 },
     // Re-seated 16 -> 10 by #3096, which replaced the brand fill token with
     // `text-content-brand` in the six files where it painted real rendered
     // TEXT and so owed WCAG 1.4.3's 4.5:1 (badge, checklist-gear-button,

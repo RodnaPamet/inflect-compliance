@@ -22,7 +22,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
-import { scopedMilestone } from '@/lib/celebrations';
+import { celebrationDedupe, scopedMilestone } from '@/lib/celebrations';
 import { Package, MessageSquare } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { SharePointExportButton } from './SharePointExportButton';
@@ -410,7 +410,7 @@ export default function PackDetailPage() {
     //
     // The effect must sit BEFORE the early returns above so React's
     // hook order stays stable across loading → loaded transitions.
-    const { celebrate } = useCelebration();
+    const { celebrate } = useCelebration(celebrationDedupe);
     const packStatus: string | undefined = pack?.status;
     const packComplete = packStatus === 'FROZEN' || packStatus === 'EXPORTED';
     const packName: string | undefined = pack?.name;

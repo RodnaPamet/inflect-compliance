@@ -48,6 +48,7 @@ import * as path from 'node:path';
 import {
     mechanicalCouplings,
     sharedUiPopulation,
+    NEUTRAL_LIB,
 } from '../helpers/shared-ui-couplings';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -233,6 +234,35 @@ describe('shared-UI coupling classification (#3047)', () => {
             .filter(([, c]) => c.length > 0)
             .map(([p, c]) => `${p} -> ${c.join(', ')}`);
         expect(wrong).toEqual([]);
+    });
+
+    it('every NEUTRAL_LIB entry names a module that EXISTS', () => {
+        // #3046 batch 2. The allowlist shipped with four entries — `utils`,
+        // `format`, `dates` and `a11y` — naming `@/lib/<name>` modules that are
+        // not a file or a directory under `src/lib`, and that nothing in the
+        // repo imports. They were not merely unused: the first argument for
+        // adding `format-date` was "the same kind as the `cn`/`dates`/`format`/
+        // `a11y` entries already there", so the reasoning for a REAL widening
+        // was drawn from entries that were names for nothing.
+        //
+        // An unused entry for a real module is fine and expected — nothing in
+        // the roots imports `theme-constants` or `design` today. What this
+        // forbids is an entry that could never allow anything, because such an
+        // entry can only mislead the next reader; it cannot even be measured
+        // for neutrality.
+        const resolve = (name: string): boolean =>
+            ['.ts', '.tsx'].some((e) =>
+                fs.existsSync(path.join(ROOT, 'src/lib', name + e)),
+            ) || fs.existsSync(path.join(ROOT, 'src/lib', name));
+
+        // Positive control first: a name invented for this assertion must fail
+        // it, or the check below passes against a resolver that resolves
+        // everything — the shape a dead detector shares with a clean list.
+        expect(resolve('definitely-not-a-module-in-src-lib')).toBe(false);
+        expect(resolve('cn')).toBe(true); // a file
+        expect(resolve('hooks')).toBe(true); // a directory
+
+        expect([...NEUTRAL_LIB].filter((n) => !resolve(n)).sort()).toEqual([]);
     });
 
     it('the mechanical detectors fire — positive controls', () => {

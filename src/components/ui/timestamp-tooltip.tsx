@@ -8,9 +8,9 @@
  * `<span title={iso}>{format(date)}</span>` pattern across the app
  * so list/table cells stay consistent.
  *
- *   <TimestampTooltip date={ev.updatedAt} />
- *   <TimestampTooltip date={task.dueAt} prefix="Due" />
- *   <TimestampTooltip date={control.createdAt} prefix="Created" />
+ *   <TimestampTooltip date={row.updatedAt} />
+ *   <TimestampTooltip date={row.dueAt} prefix="Due" />
+ *   <TimestampTooltip date={row.createdAt} prefix="Created" />
  *
  * Visible text — relative ("2 hours ago", "in 3 days", "less than a
  * minute ago"). `prefix` prepends a label like "Updated" /

@@ -1,12 +1,16 @@
 # The shared UI package — design
 
-> **Status: living design** — nothing is extracted. No file has moved, no import has changed and no
-> package exists. This document is the design record for #3046, and its central measured finding is
-> that the extractable set is **not** every file `docs/_status/ui-core-classification.json`
-> records as `GENERIC` (462 today): it is **426**, because `GENERIC` is a per-file neutrality
-> verdict and a package needs a closed module graph. It was 408 of 454 when this doc was written
-> — see [Update 2026-10-02](#update-2026-10-02--batch-1-of-the-blocker-neutralisation) for what
-> moved and which figures below are superseded. Everything true today is under
+> **Status: living design** — nothing is extracted. No file has moved and no package exists. One
+> import HAS changed, inside `src/`: batch 2 inverted `ui/hooks/use-celebration.ts` →
+> `@/lib/celebrations` (see [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation)),
+> so the "no import has changed" this banner used to claim is no longer true. This document is the
+> design record for #3046, and its central measured finding is that the extractable set is **not**
+> every file `docs/_status/ui-core-classification.json` records as `GENERIC` (467 today): it is
+> **427**, because `GENERIC` is a per-file neutrality verdict and a package needs a closed module
+> graph. It was 408 of 454 when this doc was written and 426 of 462 after batch 1 — see
+> [Update 2026-10-02](#update-2026-10-02--batch-1-of-the-blocker-neutralisation) and
+> [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation) for what moved and
+> which figures below are superseded. Everything true today is under
 > [Current state](#current-state--what-was-measured-and-how). The step order is under
 > [Roadmap](#roadmap--the-sequence-and-what-verifies-each-step).
 
@@ -121,6 +125,13 @@ Measured: inverting that single edge and reclassifying the six takes the closed 
 consumer's most-leaned-on list. It is also the first blocker whose removal WOULD lower the #3048
 `domain-import` ceiling, 46 → 45.
 
+> **Batch 2 did the inversion and NOT the six reclassifications, so the +16 did not land — the
+> closed set moved by one.** Read the conjunction in the sentence above literally: "inverting that
+> single edge **and** reclassifying the six". Batch 2's ruling covered the edge and
+> `use-celebration.ts`; the other five barrel files are prose-only `MIXED` and their prose was not
+> in scope. `ui/hooks/index.ts` still blocks six files. The +16 remains available and is now a
+> prose-only batch of five files, which is the cheap half.
+
 **442 is deliberately larger than the 434 ceiling in the table above, and the two are not in
 conflict.** 434 is the fixed point of *reclassifying* every direct blocker; it is a ceiling only on
 promotion. Inverting `@/lib/celebrations` deletes an EDGE instead, which is the operation
@@ -156,7 +167,102 @@ and for **five of those six it is the ONLY coupled specifier** (`TrendCard`, `ch
 honest reading of 46 is **41**. Resolving it means adding `format-date` to
 `NEUTRAL_LIB` in `tests/helpers/shared-ui-couplings.ts`, which WIDENS an allowlist the helper's
 own docstring argues for keeping narrow, so it is a decision rather than a tidy-up and is recorded
-here rather than taken.
+here rather than taken. **(TAKEN by batch 2 — and the predicted 41 was wrong, because the
+widening was four names rather than one. See the next section.)**
+
+---
+
+## Update 2026-10-03 — batch 2 of the blocker neutralisation
+
+Batch 2 took the two decisions batch 1 recorded and declined to take: it **widened `NEUTRAL_LIB`**
+and **inverted the `@/lib/celebrations` import**. Both of the figures batch 1 predicted for them
+turned out wrong, in opposite directions, and that is the useful part of this section.
+
+**Re-measured, with the same derivation as batch 1**, reproduced against batch 1's tip
+(`33dc60f71`, merged with `origin/main`) before anything changed: 462 GENERIC / 59 occurrences /
+53 pairs / 32 sources / 31 targets / 426 closed — matching the batch-1 table exactly. Instrument
+control: the resolver left **0** relative-or-alias specifiers unresolved (3,024 bare package
+specifiers skipped by design), so the one failure mode that would report the `GENERIC` set
+perfectly closed — a resolver that resolves nothing — is ruled out.
+
+| | before batch 1 | after batch 1 | after batch 2 |
+|---|---|---|---|
+| GENERIC / MIXED / COUPLED | 453 / 141 / 19 | 462 / 132 / 19 | **467 / 127 / 19** |
+| direct GENERIC→(MIXED\|COUPLED) edges (occurrences) | 81 | 59 | **57** |
+| …deduplicated source→target pairs | 73 | 53 | **51** |
+| distinct GENERIC sources / distinct blocker targets | 42 / 40 | 32 / 31 | **31 / 31** |
+| import-closed subset (the 4 neutral extras) | 408 | 426 | **427** |
+| …if the four newly-neutral `@/lib` leaves are also allowed | — | 426 | **432** |
+| `domain-import` ceiling | 46 | 46 | **36** |
+| population | 613 | 613 | 613 |
+
+**The ratchet fell by ten, in two measured steps.** `domain-import` 46 → 37 from the widening
+(nine files stopped tripping the kind), then 37 → 36 from the inversion. Batch 1 predicted 41 and
+45. Both predictions were sound *about a one-name widening* — `format-date` alone frees five files
+— and both were wrong here, because the widening added four names: `format-date`, `kpi-trend`,
+`number-format` and `locale-constants`. The nine freed are `layout/LocaleSwitcher`, `ui/KpiCard`,
+`ui/TrendCard`, `ui/charts/funnel-chart`, `ui/charts/layout`, `ui/dashboard-widgets/types`,
+`ui/date-picker/date-picker`, `ui/date-picker/date-range-picker` and `ui/timestamp-tooltip`.
+
+The same change **deleted** four entries — `utils`, `format`, `dates` and `a11y` — which named
+`@/lib` modules that do not exist as a file or a directory and that nothing in the repo imports.
+Deleting them moves no count by construction (an allowance for a name nothing can match can never
+have allowed anything), and it was done anyway because the *argument* for adding `format-date` had
+been "the same kind as the `cn`/`dates`/`format`/`a11y` entries already there" — reasoning drawn
+from entries that are not real. `tests/guards/ui-core-classification.test.ts` now asserts that
+every `NEUTRAL_LIB` entry resolves, with a positive control, so the class cannot recur.
+
+**Nine files stopped tripping the kind; only four of them were reclassified.** A file stops
+tripping a MECHANICAL detector without becoming neutral, and batch 2 applied one rule — GENERIC
+only if it trips nothing mechanically **and** its recorded reason names no non-mechanical coupling.
+Five of the nine keep a judgement coupling and stay `MIXED`: the two date pickers (untranslated
+English that reaches the screen), `LocaleSwitcher` (writes `document.cookie` from `LOCALE_COOKIE`
+instead of through the `uiCookieName` seam), `KpiCard` (domain examples in its `@example` and its
+polarity JSDoc) and `charts/funnel-chart` — see the detector gap below. So **the ratchet falling is
+not the same event as the GENERIC set growing**, in the opposite direction to batch 1's finding
+that the GENERIC set can grow while the ratchet does not move.
+
+**The closed set moved by ONE, not by the +16 batch 1 measured.** Batch 1's figure was explicit
+that it counted "inverting that single edge **and reclassifying the six**" barrel files; batch 2
+inverted the edge and reclassified `use-celebration.ts` only, because the other five are prose-only
+`MIXED` and no ruling asked for their prose. `ui/hooks/index.ts` therefore still blocks six files,
+and `use-celebration.ts` is the single file that entered the closure. **The +16 is still available
+and is now a prose-only batch** — the hardest part of it is done.
+
+**A `NEUTRAL_LIB` entry is NOT a package dependency, and conflating the two lists would overstate
+this batch by five files.** §2's dependency rule allows four non-root files alongside the package
+(`src/lib/cn.ts`, `src/lib/ui-storage.ts`, `src/lib/auth/session-expiry.ts`,
+`src/components/theme/ThemeProvider.tsx`). The four newly-neutral modules are not among them, so
+`charts/layout.ts` and `timestamp-tooltip.tsx` are `GENERIC` and still **outside** the closure, on
+an edge to `@/lib/format-date`. Admitting those four leaves as package dependencies as well takes
+the closed set 427 → **432**, bringing in `charts/layout`, `charts/utils`, `charts/x-axis`,
+`charts/y-axis` and `timestamp-tooltip`. That is a §2 decision about what ships, measured here and
+deliberately **not** taken: all four are leaves (zero `@/` imports each), so the cost is four small
+files, but the dependency rule is the package's boundary and widening it is not a side effect of
+widening a detector's allowlist.
+
+**Correction to the paragraph below: `design` is NOT one of the names that resolve to nothing.**
+§2's "Reconciling with `NEUTRAL_LIB`" said five of the nine entries named nothing, listing `design`
+among them. `src/lib/design/` exists — it holds `status-tone.ts` and has five importers in
+`src/app` plus two tests. Four named nothing, not five, and all four are now deleted. `design` and
+`theme-constants` are the two real-but-dormant allowances: both resolve, neither is imported by any
+file inside `SHARED_UI_ROOTS`.
+
+**A detector gap found by applying the rule, and left open on purpose.**
+`ui/charts/funnel-chart.tsx` is mechanically clean after the widening, but its map entry names a
+live accessibility coupling: the hovered between-stage conversion annotation is an SVG `<Text>`
+painted `fill-[var(--brand-default)]` (`:308`), i.e. real rendered text at 4.03:1 against WCAG
+1.4.3's 4.5:1. `BRAND_AS_TEXT` matches `text-brand-*` / `text-[var(--brand-*)]` and deliberately
+**not** `fill-`, on the reasoning that fill is non-text and owes only 1.4.11's 3:1 — which is right
+for a chart area and wrong for `<Text>`. So the file is not in the `brand-as-text` 10 and never
+was. Widening the detector to `fill-` on SVG text elements would RAISE that ceiling, which is a
+decision with a number in it; fixing the one token is a visual change. Neither is in scope here, and
+the entry stays `MIXED` so the file is not published clean.
+
+**What batch 2 did NOT re-derive**, so the older figures stand unverified: everything batch 1 listed
+(the playerz overlap, the token contract, §5.3's test rewrite, §5.7's coverage denominator, §7's
+lines-moved row) plus the per-root split table and the 434 promotion ceiling, which was not
+recomputed against the new classification.
 
 ---
 
@@ -394,14 +500,28 @@ What `@inflect/ui` may import:
 4. **Nothing else.** In particular: no `@/app-layer`, no `@/lib/<domain>`, and — stated explicitly
    because the existing detector cannot see it — **no `@/components/<anything outside the package>`**.
 
-**Reconciling with `NEUTRAL_LIB`.** The allowlist in `tests/helpers/shared-ui-couplings.ts` is
-`{cn, ui-storage, hooks, utils, format, dates, a11y, design, theme-constants}`. Against the tree,
-only **four** of those nine resolve to a file: `src/lib/cn.ts`, `src/lib/ui-storage.ts`,
-`src/lib/hooks/` and `src/lib/theme-constants.ts`. The other five (`utils`, `format`, `dates`,
-`a11y`, `design`) name nothing — they are forward-looking slots, and the helper's own docstring says
-why it is an allowlist rather than a denylist, so unused entries are the expected steady state and
-not drift. The package's dependency rule is therefore **narrower** than `NEUTRAL_LIB`: the four that
-exist go in, the five that do not stay reserved, and `theme-constants` is reserved for step 4 along
+**Reconciling with `NEUTRAL_LIB`.** Read the allowlist from
+`tests/helpers/shared-ui-couplings.ts`, never from here — this paragraph quoted it as
+`{cn, ui-storage, hooks, utils, format, dates, a11y, design, theme-constants}` and batch 2 changed
+it (four dead names deleted, four measured-neutral leaves added). Two corrections to what it said
+about that list, both measured:
+
+- It claimed **five** of the nine named nothing, listing `design` among them. `src/lib/design/`
+  exists (`status-tone.ts`, five importers in `src/app`). **Four** named nothing — `utils`,
+  `format`, `dates`, `a11y` — and all four are deleted as of batch 2.
+- "Unused entries are the expected steady state and not drift" conflates two cases. An unused
+  allowance for a real module (`design`, `theme-constants` — neither is imported from inside
+  `SHARED_UI_ROOTS`) is a dormant judgement. An allowance for a name that resolves to nothing is
+  not dormant, it is false, and it cannot even be measured for neutrality. A guard now asserts
+  every entry resolves.
+
+**The package's dependency rule stays NARROWER than `NEUTRAL_LIB`, and that gap is now
+load-bearing rather than incidental.** The four non-root files admitted alongside the package are
+listed above; `format-date`, `kpi-trend`, `number-format` and `locale-constants` are neutral for
+the DETECTOR and are not on that list, which is why `charts/layout.ts` and `timestamp-tooltip.tsx`
+are `GENERIC` and still outside the closed set. Admitting them would take it 427 → 432 —
+measured in [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation), and
+left as a decision for whoever owns this boundary. `theme-constants` is reserved for step 4 along
 with `ThemeToggle` (§1).
 
 **The gap this boundary exposes in the existing guard.** `mechanicalCouplings` matches

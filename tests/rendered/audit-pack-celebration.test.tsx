@@ -26,7 +26,7 @@ import {
     useCelebration,
     __setConfettiForTest,
 } from '@/components/ui/hooks/use-celebration';
-import { scopedMilestone } from '@/lib/celebrations';
+import { celebrationDedupe, scopedMilestone } from '@/lib/celebrations';
 
 interface ConfettiCall {
     options: import('canvas-confetti').Options | undefined;
@@ -59,7 +59,7 @@ function PackHarness({
     packStatus: string | undefined;
     packName?: string;
 }) {
-    const { celebrate } = useCelebration();
+    const { celebrate } = useCelebration(celebrationDedupe);
     const packComplete =
         packStatus === 'FROZEN' || packStatus === 'EXPORTED';
     React.useEffect(() => {
