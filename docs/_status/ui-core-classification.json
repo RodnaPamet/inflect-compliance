@@ -117,7 +117,7 @@
  "src/components/layout/notifications-bell.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Shape is generic (a bell, a badge, a popover list over a REST/SSE feed) and most copy IS translated — `t('notifications')`, `t('markAllRead')`, `t('sessionExpired')`, `t('loading')`, `t('allClear')`, `t('caughtUp')`, `t('unreadAria', { count })`. No storage key; badge uses status tones (`bg-bg-error-emphasis`), not brand. The couplings are two untranslated strings that both reach the screen, which is what keeps it out of GENERIC: the fetch error `Failed to load notifications` (:195 thrown, :201 the catch fallback) renders raw in the error branch at :476, and `formatRelativeTime` returns the English `now` plus bare `m`/`h`/`d` suffixes (:114-119) into the row timestamp at :495 — neither goes through `panels.bell`. Correcting that sentence: those are the two COPY couplings, not the file's only ones. The import axis fires too — `@/lib/format-date` (:45) and `@/lib/auth/session-expiry` (:46) are both outside `NEUTRAL_LIB`, so `mechanicalCouplings` returns `domain-import` (the same two modules it records on `TrendCard.tsx` and `session-expired-notice.tsx`); it went unrecorded here only because that pass upgrades a GENERIC entry and this one was already MIXED."
+  "reason": "Shape is generic (a bell, a badge, a popover list over a REST/SSE feed) and most copy IS translated — `t('notifications')`, `t('markAllRead')`, `t('sessionExpired')`, `t('loading')`, `t('allClear')`, `t('caughtUp')`, `t('unreadAria', { count })`. No storage key; badge uses status tones (`bg-bg-error-emphasis`), not brand. The couplings are two untranslated strings that both reach the screen, which is what keeps it out of GENERIC: the fetch error `Failed to load notifications` (:195 thrown, :201 the catch fallback) renders raw in the error branch at :476, and `formatRelativeTime` returns the English `now` plus bare `m`/`h`/`d` suffixes (:114-119) into the row timestamp at :495 — neither goes through `panels.bell`. Correcting that sentence: those are the two COPY couplings, not the file's only ones. The import axis fires too, and as of #3046 batch 2 on ONE module rather than two: `@/lib/auth/session-expiry` (:46) is outside `NEUTRAL_LIB`, so `mechanicalCouplings` still returns `domain-import` — the same module it records on `session-expired-notice.tsx`. `@/lib/format-date` (:45) was the second until that change measured it neutral and allowlisted it, so this file keeps the kind on `session-expiry` alone (the pairing with `TrendCard.tsx`, whose only hit WAS `format-date`, no longer holds). It went unrecorded here in the first place only because that pass upgrades a GENERIC entry and this one was already MIXED."
  },
  "src/components/layout/org-workspace-switcher.tsx": {
   "classification": "MIXED",
@@ -270,9 +270,9 @@
   "reason": "Stateless tree row — label/secondary/meta/depth/expanded/selected/focusable plus two callbacks. Nothing domain in the API, no copy, imports @/lib/cn only. One real brand-as-text finding in the selected state."
  },
  "src/components/ui/TrendCard.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/format-date. Audited note: Compact trend tile over the chart platform. All copy via `useTranslations(\"common.chart\")` — `t(\"trendAria\", { label })`; the label/value/format/points/colorClassName all come from the caller. Imports @/lib/format-date (generic util) and local chart/number modules. Judged NOT domain-props: the JSDoc example is `label=\"Coverage\"` and the prose says \"not just the executive dashboard\" — \"coverage\" is"
+  "reason": "Compact trend tile over the chart platform. All copy via `useTranslations(\"common.chart\")` \u2014 `t(\"trendAria\", { label })`; the label, value, format, points and colorClassName all come from the caller. Imports are `@/components/ui/charts`, `@/components/ui/animated-number` and `@/lib/format-date` \u2014 the last a leaf date-formatting util with zero `@/` imports of its own, on the detector's `NEUTRAL_LIB` allowlist as of #3046 batch 2. Judged NOT domain-props: the JSDoc example is `label=\"Coverage\"` and the prose says \"not just the executive dashboard\", so \"coverage\" is a word the caller supplies, not a noun the component knows. Promoted MIXED->GENERIC by #3046 batch 2 with NO source edit \u2014 this entry's only recorded finding was the mechanical `domain-import` upgrade it is now clear of."
  },
  "src/components/ui/TruncationBanner.tsx": {
   "classification": "MIXED",
@@ -460,9 +460,9 @@
   "reason": "Hover/keyboard hooks and two token-backed tooltip surface components; the code is entirely generic (all labels and values are caller-supplied ReactNode, no English literals). Coupling is confined to the head-matter prose."
  },
  "src/components/ui/charts/layout.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure, deterministic margin/padding/domain/scale/tick-density helpers — the most reusable module in the slice. Only coupling is the brand name in the head comment. (`@/lib/format-date` is a generic util, not a domain module.)"
+  "reason": "Pure, deterministic margin/padding/domain/scale/tick-density helpers \u2014 the most reusable module in the slice. Its one recorded coupling was the brand name in the head comment (\"Every chart surface in Inflect\"), rewritten to \"in the app\" by #3046 batch 2. `@/lib/format-date` is a leaf date-formatting util and joined the `NEUTRAL_LIB` allowlist in the same change, so the mechanical `domain-import` this entry also carried is gone. Promoting it is NECESSARY but not sufficient for the three GENERIC files that fell out of the import closure behind this blocker (`charts/utils.ts`, `charts/x-axis.tsx`, `charts/y-axis.tsx`): measured after the promotion, all three are still out, and so is this file — the blocking edge moved from this entry's classification to `@/lib/format-date`, which is neutral for the DETECTOR but is not one of the four non-root files `docs/shared-ui-package-design.md` §2 admits alongside the package. Admitting it takes the closed set 427 -> 432 and is a §2 decision, recorded there."
  },
  "src/components/ui/charts/line-chart.tsx": {
   "classification": "MIXED",
@@ -605,9 +605,9 @@
   "reason": "45-line re-export barrel. Its doc comment names only chart shapes (kpi/donut/area) and component names — no brand, no compliance vocabulary, no copy."
  },
  "src/components/ui/dashboard-widgets/types.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/kpi-trend. Audited note: Type-only module for the renderer's discriminated payload (KpiConfig/DonutConfig/TimeSeriesConfig/ChartTargetConfig). Deliberately decoupled from the backend widget enum, and its head matter says so. No compliance vocabulary, no copy, no brand. Its three imports resolve to src/components/ui/* and src/lib/kpi-trend, which I judged a generic KPI-math util rather than a domain module (see notes)."
+  "reason": "Type-only module for the renderer's discriminated payload (KpiConfig/DonutConfig/TimeSeriesConfig/ChartTargetConfig). Deliberately decoupled from the backend widget enum, and its head matter says so. No compliance vocabulary, no copy, no brand. Its three imports resolve to `src/components/ui/*` and `@/lib/kpi-trend`, a flat KPI-arithmetic util with zero `@/` imports of its own \u2014 on the `NEUTRAL_LIB` allowlist as of #3046 batch 2. Promoted MIXED->GENERIC by that change with NO source edit \u2014 this entry's only recorded finding was the mechanical `domain-import` upgrade it is now clear of."
  },
  "src/components/ui/date-picker/calendar.tsx": {
   "classification": "GENERIC",
@@ -840,9 +840,9 @@
   "reason": "The debounce/status machine is entirely generic (Record<string,string> fields, caller-supplied save/validate/canCommit, no copy of its own — networkErrorMessage is a required param with no default). The coupling is the provenance story in the docblock."
  },
  "src/components/ui/hooks/use-celebration.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The confetti presets, lazy loader, reduced-motion handling and DI test seam are fully generic. The coupling is the milestone registry binding: the hook's public input type is a closed union of four compliance milestones, so a second product cannot call the keyed path at all. Removable by injecting the registry (the ad-hoc `{ preset, key, message }` path is already generic)."
+  "reason": "GENERIC as of #3046 batch 2, which INVERTED the coupling rather than reclassifying around it. The confetti presets, lazy loader, reduced-motion handling and DI test seam were always generic; the coupling was the milestone registry binding \u2014 the public input type was a closed union of four compliance milestones, so a second product could not call the keyed path at all. Three changes removed it: the keyed path is gone (all three production call sites already passed objects, only tests passed a key), `CelebrationPreset` / `CelebrateInput` are now declared HERE and `@/lib/celebrations` imports them back as types, and the `hasCelebrated`/`markCelebrated` pair is INJECTED rather than imported \u2014 deliberately, because `celebrationDedupeKey` is brand-prefixed (`inflect.celebrate:<key>`) and moving it in would have carried this product's storage namespace into shared UI and left the file coupled on judgement while mechanically clean. The file now imports nothing from `@/lib` or `@/app-layer`."
  },
  "src/components/ui/hooks/use-column-visibility.ts": {
   "classification": "GENERIC",
@@ -2950,9 +2950,9 @@
   "reason": "CVA textarea mirroring the Input contract, with aria-describedby wiring for description/error. Both rendered strings are caller-supplied props. No domain vocabulary, no brand tokens, no storage keys; imports @/lib/cn only."
  },
  "src/components/ui/timestamp-tooltip.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic relative-time + exact-tooltip primitive with a real hydration-safety contract. `empty = '—'` is a glyph, not English copy, so not reported. @/lib/format-date and @/lib/hooks/use-hydrated-now are generic utils, not domain modules. Only coupling is two JSDoc examples — the weakest finding in my slice, reported for completeness."
+  "reason": "Generic relative-time + exact-tooltip primitive with a real hydration-safety contract. `empty = '\u2014'` is a glyph, not English copy, so not reported. `@/lib/format-date` and `@/lib/hooks/use-hydrated-now` are generic utils, not domain modules \u2014 the first is on the `NEUTRAL_LIB` allowlist as of #3046 batch 2, which cleared the mechanical `domain-import` this entry carried. Its judgement coupling was two domain nouns in the JSDoc usage examples (`ev.updatedAt` for evidence, `control.createdAt`); all three example lines now read `row.*`, so the primitive names no entity."
  },
  "src/components/ui/toggle-group.tsx": {
   "classification": "GENERIC",

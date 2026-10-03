@@ -9,7 +9,7 @@ import { FrameworkExplorer } from '@/components/frameworks/FrameworkExplorer';
 import { FrameworkBuilder } from '@/components/ui/FrameworkBuilder';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { useCelebration } from '@/components/ui/hooks';
-import { MILESTONES, scopedMilestone } from '@/lib/celebrations';
+import { celebrationDedupe, MILESTONES, scopedMilestone } from '@/lib/celebrations';
 import type { FrameworkTreePayload } from '@/lib/framework-tree/types';
 import { Heading, Caption } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
@@ -105,7 +105,7 @@ export default function FrameworkDetailPage() {
     // each framework's first reach earns its own moment in the same
     // session (otherwise a single global `framework-100` key would
     // mean only the first framework ever celebrates).
-    const { celebrate } = useCelebration();
+    const { celebrate } = useCelebration(celebrationDedupe);
     useEffect(() => {
         if (coverage?.coveragePercent !== 100) return;
         const baseDescription = MILESTONES['framework-100'].description ?? '';

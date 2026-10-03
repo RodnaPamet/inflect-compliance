@@ -92,7 +92,8 @@ export {
 export {
     useCelebration,
     type CelebrateInput,
-    type CelebrateAdHocInput,
+    type CelebrationDedupe,
+    type CelebrationPreset,
     type UseCelebrationResult,
 } from "./use-celebration";
 

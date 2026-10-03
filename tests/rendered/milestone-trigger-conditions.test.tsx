@@ -37,7 +37,7 @@ import {
     useCelebration,
     __setConfettiForTest,
 } from '@/components/ui/hooks/use-celebration';
-import { MILESTONES } from '@/lib/celebrations';
+import { celebrationDedupe, MILESTONES } from '@/lib/celebrations';
 import {
     isAllEvidenceCurrent,
     type EvidenceFreshnessRow,
@@ -82,7 +82,7 @@ function FrameworkHarness({
     frameworkName?: string;
     coveragePercent: number | null;
 }) {
-    const { celebrate } = useCelebration();
+    const { celebrate } = useCelebration(celebrationDedupe);
     React.useEffect(() => {
         if (coveragePercent !== 100) return;
         const def = MILESTONES['framework-100'];
@@ -242,7 +242,7 @@ function EvidenceHarness({
     retentionFilter?: 'active' | 'expiring' | 'archived';
     hydratedNow?: Date | null;
 }) {
-    const { celebrate } = useCelebration();
+    const { celebrate } = useCelebration(celebrationDedupe);
     React.useEffect(() => {
         if (!hydratedNow) return;
         if (retentionFilter !== 'active') return;

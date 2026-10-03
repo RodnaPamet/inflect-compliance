@@ -7,36 +7,44 @@
  * Adding a milestone:
  *   1. Add a literal to `MilestoneKey`.
  *   2. Add the matching record to `MILESTONES`.
- *   3. (Optionally) wire a trigger from the page that detects it via
- *      `useCelebration()` from `@/components/ui/hooks`.
+ *   3. (Optionally) wire a trigger from the page that detects it. The page
+ *      holds `useCelebration(celebrationDedupe)` from
+ *      `@/components/ui/hooks` + this module, and hands `celebrate()` the
+ *      definition — `scopedMilestone(key, scope)` for a per-resource
+ *      milestone, or the `MILESTONES[key]` record itself for a tenant-wide
+ *      one. The hook takes an object, never a key: it is shared UI and
+ *      cannot know this registry.
  *
  * Why a single registry instead of inline configs at each call site:
  *   - Product / docs can audit "what triggers a celebration" in one
  *     place without grepping for confetti calls.
- *   - The `MilestoneKey` literal union prevents typos at the call
- *     site (e.g. `celebrate('framework_100')` won't compile).
+ *   - The `MilestoneKey` literal union prevents typos where a milestone is
+ *     NAMED — `MILESTONES['framework_100']` and
+ *     `scopedMilestone('framework_100', …)` both fail to compile. It no
+ *     longer guards `celebrate()` itself, which takes a built object, so a
+ *     trigger that hand-rolls `{ preset, key, message }` instead of going
+ *     through this module is unchecked. Build the object here.
  *   - The `sessionStorage` dedupe key is derived from the milestone
  *     key, so two pages firing the same milestone in the same tab
  *     share dedupe state without coordinating.
  */
 
-// ─── Presets ────────────────────────────────────────────────────────
-
-/**
- * Visual style of the celebration. Each preset is a distinct
- * canvas-confetti choreography defined in
- * `src/components/ui/hooks/use-celebration.ts`.
- *
- *   - `burst`     — a single centred burst. Default for "you finished
- *                   a thing" milestones.
- *   - `rain`      — gentle particles falling across the top edge for a
- *                   couple of seconds. Best for "ongoing-good-state"
- *                   milestones (everything current).
- *   - `fireworks` — three offset bursts in succession, evoking a small
- *                   show. Reserve for high-stakes accomplishments
- *                   (audit pack frozen and shared).
- */
-export type CelebrationPreset = 'burst' | 'rain' | 'fireworks';
+// ─── Shared-UI contract ─────────────────────────────────────────────
+//
+// `CelebrationPreset` and `CelebrateInput` are the HOOK's types and are
+// defined with it, in `src/components/ui/hooks/use-celebration.ts`. They used
+// to live here and be imported upward, which made a product module the owner
+// of a shared-UI contract and made the hook import `@/lib` to read its own
+// parameter type — an import no second product could satisfy. The dependency
+// now runs one way: shared UI declares the shape, this layer fills it in.
+//
+// `import type` is erased at compile time, so this costs the server bundle
+// nothing and cannot form a runtime cycle.
+import type {
+    CelebrateInput,
+    CelebrationDedupe,
+    CelebrationPreset,
+} from '@/components/ui/hooks/use-celebration';
 
 // ─── Milestone keys ─────────────────────────────────────────────────
 
@@ -155,23 +163,19 @@ export function clearCelebrated(key: string): void {
     }
 }
 
-// ─── Hook-input types (consumed by `useCelebration`) ───────────────
-//
-// Lifted out of the hook file so the pure-data builder
-// (`scopedMilestone` below) can return them without pulling React
-// imports back into this layer.
-
-export interface CelebrateAdHocInput {
-    preset: CelebrationPreset;
-    /** Optional sessionStorage dedupe key. Omit to allow re-firing. */
-    key?: string;
-    /** Optional toast title. Skipped when omitted. */
-    message?: string;
-    /** Optional toast description shown under `message`. */
-    description?: string;
-}
-
-export type CelebrateInput = MilestoneKey | CelebrateAdHocInput;
+/**
+ * The dedupe pair, packaged for `useCelebration(dedupe)`.
+ *
+ * The hook takes these as arguments rather than importing them, because
+ * `celebrationDedupeKey` is brand-prefixed — a shared-UI file holding it would
+ * carry this product's storage namespace into the package. One exported object
+ * keeps the three call sites to a single argument and gives the
+ * `CelebrationDedupe` contract exactly one place to be satisfied.
+ */
+export const celebrationDedupe: CelebrationDedupe = {
+    hasCelebrated,
+    markCelebrated,
+};
 
 // ─── Per-resource milestone builder ────────────────────────────────
 
@@ -194,15 +198,15 @@ export type CelebrateInput = MilestoneKey | CelebrateAdHocInput;
  * route param) so refreshes keep dedupe state consistent.
  *
  * For milestones that are intrinsically tenant-wide (no scope makes
- * sense — `evidence-all-current`, `first-control-mapped`), call
- * `celebrate('milestone-key')` directly instead of going through
+ * sense — `evidence-all-current`, `first-control-mapped`), pass the
+ * `MILESTONES[key]` record's fields to `celebrate()` instead of going through
  * this builder.
  */
 export function scopedMilestone(
     key: MilestoneKey,
     scope: string,
     options: { descriptionOverride?: string } = {},
-): CelebrateAdHocInput {
+): CelebrateInput {
     const def = MILESTONES[key];
     return {
         preset: def.preset,

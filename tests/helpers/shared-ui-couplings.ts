@@ -36,10 +36,39 @@ export type CouplingKind = 'storage-key' | 'brand-as-text' | 'domain-import';
  * set grows, and a denylist that misses a new one reports clean. The first
  * draft of this was a denylist and it missed `@/lib/evidence-upload-limits`
  * and `@/lib/framework-tree`.
+ *
+ * ─── Widened by four, and the rule did not soften ────────────────────
+ *
+ * `format-date`, `kpi-trend`, `number-format` and `locale-constants` are the
+ * same KIND as `cn`: leaf utilities — date formatting, trend arithmetic, number
+ * formatting, the locale table — that carry no product vocabulary. Each was
+ * MEASURED, not assumed: all four have ZERO `@/` imports of their own, so none
+ * can pull a domain module in behind its allowance.
+ *
+ * The docstring's argument against allowlists still stands for a new DOMAIN
+ * module. The list grew because four names were measured neutral, not because
+ * the bar moved; `@/lib/framework-tree` and `@/lib/evidence-upload-limits` are
+ * exactly as coupled as they were.
+ *
+ * ─── Four entries were DELETED, and they were worse than unused ──────
+ *
+ * `utils`, `format`, `dates` and `a11y` named modules that DO NOT EXIST as a
+ * file or a directory under `src/lib`, and no file in the repo imports any of
+ * them. They were names for nothing. That matters beyond the entry count: the
+ * first argument for adding `format-date` was "the same kind as the
+ * `cn`/`dates`/`format`/`a11y` entries already there", which is an argument
+ * from entries that are not real. Deleting them stops the next reader
+ * inheriting it.
+ *
+ * `theme-constants` is KEPT, and is a different case. The module exists
+ * (`src/lib/theme-constants.ts`) and has four importers, none of them inside
+ * `SHARED_UI_ROOTS` — so the allowance is dormant, not false. An unused
+ * allowance for a real module is a judgement waiting to be used; a name for
+ * nothing is a judgement nobody ever made.
  */
-const NEUTRAL_LIB = new Set([
-    'cn', 'ui-storage', 'hooks', 'utils', 'format', 'dates', 'a11y', 'design',
-    'theme-constants',
+export const NEUTRAL_LIB = new Set([
+    'cn', 'ui-storage', 'hooks', 'design', 'theme-constants',
+    'format-date', 'kpi-trend', 'number-format', 'locale-constants',
 ]);
 
 const RAW_STORAGE_HOOK = /use(?:Local|Session)Storage(?:<[^>]*>)?\(\s*[`'"]/;

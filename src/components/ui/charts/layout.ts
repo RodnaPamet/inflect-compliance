@@ -1,7 +1,7 @@
 /**
  * Epic 59 — shared chart layout helpers.
  *
- * Every chart surface in Inflect (`TimeSeriesChart`, `FunnelChart`,
+ * Every chart surface in the app (`TimeSeriesChart`, `FunnelChart`,
  * `mini-area-chart`, future sparkline + KPI visuals) lands on the
  * same set of layout decisions: how much margin to reserve, how to
  * pad the y-domain, how many ticks the x/y axis should carry at a

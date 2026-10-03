@@ -63,7 +63,7 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { useCelebration } from '@/components/ui/hooks';
-import { MILESTONES } from '@/lib/celebrations';
+import { celebrationDedupe, MILESTONES } from '@/lib/celebrations';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
     buildEvidenceFilters,
@@ -414,7 +414,7 @@ function EvidencePageInner({ initialEvidence, initialControls, initialMetrics, t
     // Mirrors `fetchParams`' default so the notices and empty-states below
     // describe the bucket the server actually queried.
     const retentionFilter = (state.tab?.[0] || 'active') as RetentionFilter;
-    const { celebrate } = useCelebration();
+    const { celebrate } = useCelebration(celebrationDedupe);
     const viewMode: 'list' | 'gallery' =
         filters.view === 'gallery' ? 'gallery' : 'list';
     const [showUpload, setShowUpload] = useState(false);

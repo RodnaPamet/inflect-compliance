@@ -35,10 +35,11 @@ import {
     useCelebration,
     __setConfettiForTest,
 } from '@/components/ui/hooks/use-celebration';
+import { type CelebrateInput } from '@/components/ui/hooks/use-celebration';
 import {
+    celebrationDedupe,
     MILESTONES,
     scopedMilestone,
-    type CelebrateInput,
 } from '@/lib/celebrations';
 import {
     isAllEvidenceCurrent,
@@ -74,7 +75,7 @@ async function flush(ms = 1300) {
 type Trigger = () => CelebrateInput | null;
 
 function MilestoneHarness({ trigger }: { trigger: Trigger }) {
-    const { celebrate } = useCelebration();
+    const { celebrate } = useCelebration(celebrationDedupe);
     const input = trigger();
     // Stable key for the dependency array — celebrate wraps the
     // input by value, but `JSON.stringify` of `input` is enough to
