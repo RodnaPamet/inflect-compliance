@@ -5,11 +5,12 @@
 > `@/lib/celebrations` (see [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation)),
 > so the "no import has changed" this banner used to claim is no longer true. This document is the
 > design record for #3046, and its central measured finding is that the extractable set is **not**
-> every file `docs/_status/ui-core-classification.json` records as `GENERIC` (467 today): it is
-> **427**, because `GENERIC` is a per-file neutrality verdict and a package needs a closed module
-> graph. It was 408 of 454 when this doc was written and 426 of 462 after batch 1 — see
-> [Update 2026-10-02](#update-2026-10-02--batch-1-of-the-blocker-neutralisation) and
-> [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation) for what moved and
+> every file `docs/_status/ui-core-classification.json` records as `GENERIC` (472 today): it is
+> **442**, because `GENERIC` is a per-file neutrality verdict and a package needs a closed module
+> graph. It was 408 of 454 when this doc was written, 426 of 462 after batch 1 and 427 of 467 after
+> batch 2 — see [Update 2026-10-02](#update-2026-10-02--batch-1-of-the-blocker-neutralisation),
+> [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation) and
+> [Update 2026-10-03](#update-2026-10-03--batch-3-of-the-blocker-neutralisation) for what moved and
 > which figures below are superseded. Everything true today is under
 > [Current state](#current-state--what-was-measured-and-how). The step order is under
 > [Roadmap](#roadmap--the-sequence-and-what-verifies-each-step).
@@ -229,6 +230,10 @@ inverted the edge and reclassified `use-celebration.ts` only, because the other 
 and `use-celebration.ts` is the single file that entered the closure. **The +16 is still available
 and is now a prose-only batch** — the hardest part of it is done.
 
+> **Batch 3 took it, and the closure is now 442.** `ui/hooks/index.ts` blocks nothing; the paragraph
+> above is true as of batch 2 only. See
+> [Update 2026-10-03 — batch 3](#update-2026-10-03--batch-3-of-the-blocker-neutralisation).
+
 **A `NEUTRAL_LIB` entry is NOT a package dependency, and conflating the two lists would overstate
 this batch by five files.** §2's dependency rule allows four non-root files alongside the package
 (`src/lib/cn.ts`, `src/lib/ui-storage.ts`, `src/lib/auth/session-expiry.ts`,
@@ -263,6 +268,67 @@ the entry stays `MIXED` so the file is not published clean.
 (the playerz overlap, the token contract, §5.3's test rewrite, §5.7's coverage denominator, §7's
 lines-moved row) plus the per-root split table and the 434 promotion ceiling, which was not
 recomputed against the new classification.
+
+---
+
+## Update 2026-10-03 — batch 3 of the blocker neutralisation
+
+Batch 3 is the prose-only batch batch 2 left behind, and **the +16 landed exactly as batch 1
+predicted it**. That is the headline, because the two previous batches each found a prediction wrong.
+
+| | after batch 1 | after batch 2 | after batch 3 |
+|---|---|---|---|
+| GENERIC / MIXED / COUPLED | 462 / 132 / 19 | 467 / 127 / 19 | **472 / 122 / 19** |
+| direct GENERIC→blocker occurrences / pairs / sources / targets | — | 61 / 55 / 33 / 33 | **54 / 48 / 26 / 32** |
+| import-closed subset (the 4 neutral extras) | 426 | 427 | **442** |
+| `domain-import` ceiling | 46 | 36 | **36** |
+| population | 613 | 613 | 613 |
+
+(The occurrence/pair/source/target row is this batch's own resolver, which counts a GENERIC file's
+edge to ANY non-admissible target — including the four `@/lib` leaves outside the package's
+dependency rule. Batch 2's 57/51/31/31 counted only targets that have a map entry, so the two rows
+are different questions and the batch-2 figures are not restated here as if they were comparable.)
+
+**426 → 442 is +16, split 1 + 15 across two batches.** Batch 1's figure was for "inverting that
+single edge **and** reclassifying the six" barrel files. Batch 2 inverted the edge and reclassified
+one file (`use-celebration.ts`), which was +1. Batch 3 reclassified the remaining five and the
+closure gained **exactly the fifteen files** batch 1 named: the five hooks themselves plus `modal`,
+`popover`, `sheet`, `confirm-dialog`, `copy-button`, `animated-size-container`, `ActionCluster`,
+`table/edit-columns-button`, `table/infinite-scroll-sentinel` and
+`app-shell/shortcut-help-overlay` — five of them on the consumer's most-leaned-on list.
+
+**`table/use-columns-dropdown` was on batch 1's blocked list and did NOT enter, and the reason is
+useful.** It is `GENERIC`, and so are both of its imports; but `table/columns-dropdown.tsx` imports
+`../checklist-gear-button`, which is the `MIXED` entry this doc already flags as stale (#3102 removed
+its one brand-as-text token). So the file sitting behind a stale map entry has a measurable price
+now: it blocks 2 `GENERIC` sources, where batch 1 recorded its marginal gain as 0.
+
+**The five files were reclassified by batch 2's rule, not from batch 1's list** — GENERIC only if the
+file trips nothing mechanically AND its recorded reason names no non-mechanical coupling. All five
+already tripped nothing (measured: `[]` for each), so the whole of the work was prose, and each
+entry's reason now records which words moved.
+
+**`ui/icons/index.tsx` was NOT reclassified, and the distinction is the point of the rule.** Its
+prose coupling — the comment naming the brand Dub — is gone with this batch. Its reason named a
+SECOND coupling that prose cannot reach: the barrel re-exports six brand-named modules and the
+upstream pricing-plan map into the shared public API. So it stays `MIXED` and the seven files it
+blocks stay blocked. A word fix is not a file fix.
+
+**The `domain-import` ceiling did not move, and it structurally could not.** `counts()` in
+`tests/guards/shared-ui-coupling-ratchet.test.ts` reads `couplingIndex()`, which derives from source
+text and never opens the classification map — so no reclassification can move it, whatever its size.
+Re-seating was therefore not available; what was done instead is a both-directions mutation proof
+that 36 is live and has teeth: lowering the constant to 35 fails `domain-import does not grow`
+("rose to 36, ceiling 35"), and inflating it to 38 fails the slack sentinel, which independently
+reports the live count as 36. 37 passes, because `allowance` is 1 — that is the allowance working,
+not slack going unobserved.
+
+**One claim in this doc's own batch-1 section was measured WRONG.** It said `hooks/index.ts` is "a
+one-word comment fix". Two comment regions needed changing: the `(Controls P3.5)` section heading
+*and* the threshold-load-more note calling its callers "tenant tables".
+
+**What batch 3 did NOT re-derive:** everything batches 1 and 2 left, plus the per-root split, the 434
+promotion ceiling, and §7's cost table — all still computed against older classifications.
 
 ---
 

@@ -64,19 +64,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * (last-write-wins) and `isPending` stays true until all commits
  * resolve. If the first commit fails AFTER the second succeeds, the
  * overlay rolls back to the `value` prop — which is probably not what
- * you want. Callers that care about this should disable the control
+ * you want. Callers that care about this should disable the input
  * while `isPending` is true.
  *
  * ## Usage
  *
  * ```tsx
- * const { data: risk, refetch } = useRisk(id);
- * const { value, isPending, update } = useOptimisticUpdate(risk);
+ * const { data: item, refetch } = useItem(id);
+ * const { value, isPending, update } = useOptimisticUpdate(item);
  *
- * async function markRemediated() {
- *   await update({ ...value, status: 'remediated' }, async () => {
- *     await fetch(`/api/risks/${id}`, { method: 'PATCH', body: ... });
- *     await refetch(); // produces a new `risk` reference → overlay clears
+ * async function markDone() {
+ *   await update({ ...value, status: 'done' }, async () => {
+ *     await fetch(`/api/items/${id}`, { method: 'PATCH', body: ... });
+ *     await refetch(); // produces a new `item` reference → overlay clears
  *   });
  * }
  * ```

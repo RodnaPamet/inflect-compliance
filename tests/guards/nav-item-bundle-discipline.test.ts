@@ -208,10 +208,15 @@ describe('Roadmap-12 PR-10 — NavItem bundle discipline (capstone)', () => {
             expect(recipe).toContain('flex-shrink-0');
         });
 
-        it('contains the entrance breath (animate-in + fade-in + duration-N)', () => {
-            expect(recipe).toContain('animate-in');
-            expect(recipe).toContain('fade-in');
-            expect(recipe).toMatch(/\bduration-\d+\b/);
+        it('contains the entrance breath (animate-fade-in)', () => {
+            // Was `animate-in` + `fade-in` + `duration-N`, all three of which
+            // compiled to nothing — `tailwindcss-animate` has never been a
+            // dependency here. `nav-item-badge-discipline.test.ts` owns the
+            // resolver that asserts the token names an animation this repo can
+            // actually emit; this file locks the literal value, the way the
+            // canonical-geometry block below does, so the two do not become two
+            // copies of one detector.
+            expect(recipe).toContain('animate-fade-in');
         });
     });
 

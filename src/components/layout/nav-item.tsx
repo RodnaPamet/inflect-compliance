@@ -571,21 +571,44 @@ export const NAV_ITEM_ACTIVE =
  *       "Unread notifications (47)" with a narrow sidebar, flex
  *       would steal width from the badge too.
  *
- *   (4) `animate-in fade-in`
- *       Tailwindcss-animate's enter animation primitive — opacity
- *       0 → 100 on initial mount. The conditional `{badge != null
- *       && ...}` mounts/unmounts the badge naturally: when a count
- *       first appears (null → 3), the badge fades in. When it
- *       changes value (3 → 4), the element stays mounted and the
- *       animation does NOT re-fire. The entrance is the breath;
- *       updates are silent. Same motion language as the band:
- *       opacity only, no transform / scale / translate.
+ *   (4) `animate-fade-in`
+ *       Opacity 0 → 100 on initial mount. The conditional
+ *       `{badge != null && ...}` mounts/unmounts the badge
+ *       naturally: when a count first appears (null → 3), the badge
+ *       fades in. When it changes value (3 → 4), the element stays
+ *       mounted and the animation does NOT re-fire. The entrance is
+ *       the breath; updates are silent. Same motion language as the
+ *       band: opacity only, no transform / scale / translate.
  *
- *   (5) `duration-300`
- *       The breath has a measured tempo. 300ms is one rung slower
- *       than the band's 200ms — the badge arrives just after the
- *       row finishes settling, which reads as deliberate
- *       choreography rather than competing motion.
+ *       ── IT DID NOT FADE, AND THE TEMPO IS NOW 150ms ───────────
+ *
+ *       This read `animate-in fade-in duration-300` and all three
+ *       were inert. `animate-in` and `fade-in` are
+ *       `tailwindcss-animate` classes, and that plugin has never
+ *       been a dependency of this repo — `git log -S` over
+ *       `package.json` across every ref finds no commit that added
+ *       or removed it, and `postcss.config.js` loads only
+ *       `@tailwindcss/postcss` + `autoprefixer`. Compiling
+ *       `src/app/globals.css` the way postcss.config.js does emits
+ *       no `.animate-in` and no `.fade-in` rule, so the badge has
+ *       never faded on initial mount, here or in the repo this file
+ *       is vendored into. `duration-300` was the plugin's way of
+ *       setting `animation-duration`; plain Tailwind emits
+ *       `transition-duration` for it, which an animation does not
+ *       read — so it was shaping nothing either.
+ *
+ *       The replacement is `animate-fade-in`, which is a real
+ *       `theme.extend.animation` key (`fade-in 0.15s ease-out`,
+ *       opacity-only) and one of the six classes `globals.css`
+ *       names as this repo's canonical motion set. Preferring an
+ *       existing key over declaring a new 300ms one is deliberate:
+ *       a theme key is part of the token contract a vendoring
+ *       consumer already mirrors, and widening that contract to
+ *       preserve a tempo nobody has ever seen would be paying for
+ *       the wrong thing. The documented 300ms intent is therefore
+ *       NOT preserved — the breath is 150ms, the same as the
+ *       overlay backdrop. Anything that wants 300ms back should add
+ *       the key and say so here.
  *
  * The badge variant + size + tone are chosen by the JSX, not by
  * this recipe: `variant="info"` (blue, neutral signal — never a
@@ -594,7 +617,7 @@ export const NAV_ITEM_ACTIVE =
  * crowd the 14px label or the 18px icon).
  */
 export const NAV_ITEM_BADGE =
-    'ml-auto tabular-nums flex-shrink-0 animate-in fade-in duration-300';
+    'ml-auto tabular-nums flex-shrink-0 animate-fade-in';
 
 /**
  * R15-PR5 — asymmetric per-row drift.
