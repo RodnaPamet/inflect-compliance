@@ -83,7 +83,7 @@ interface PolicyPayload {
     refusals: Record<string, string | null>;
     honoured: {
         maxMode: ExternalWriteMode;
-        dispatchImplemented: boolean;
+        ceilingBelowTopRung: boolean;
         minDays: number;
         minEvidence: Partial<Record<ExternalWriteMode, number>>;
     };
@@ -187,11 +187,18 @@ export function ExternalWriteLadderClient({ connectionId }: { connectionId: stri
                         <span className="text-sm text-content-emphasis">{data.connectionName}</span>
                     </div>
 
-                    {/* WHAT THE RUNTIME WILL ACTUALLY HONOUR. Rendered whenever the
-                        dispatch is absent, because that is a standing fact about
-                        the build rather than a transient refusal — and without it
-                        an operator reads the two greyed rungs as a bug. */}
-                    {!data.honoured.dispatchImplemented && (
+                    {/* WHAT THE RUNTIME WILL ACTUALLY HONOUR. Rendered whenever
+                        the ceiling sits below the ladder's top rung, because that
+                        is a standing fact about the build rather than a transient
+                        refusal — and without it an operator reads the greyed rungs
+                        as a bug.
+
+                        The server DERIVES this from the clamp. It used to send a
+                        hand-typed `dispatchImplemented: false`, which stayed
+                        `false` after the dispatch shipped — so this notice told
+                        operators no external write was dispatched while the build
+                        was dispatching them. */}
+                    {data.honoured.ceilingBelowTopRung && (
                         <InlineNotice variant="info">
                             {t('externalWriteLadder.ceilingNotice', {
                                 mode: t(`externalWriteLadder.mode.${data.honoured.maxMode}`),
