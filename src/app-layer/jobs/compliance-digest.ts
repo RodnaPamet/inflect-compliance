@@ -71,12 +71,34 @@ export async function runComplianceDigest(options: DigestOptions = {}): Promise<
         const startedAt = new Date().toISOString();
         const startMs = performance.now();
 
+        /*
+            REMOVED TENANCIES ARE NOT SCANNED (#3164).
+
+            This branch had no filter, so the job swept every row. A removed
+            tenancy is not inert: in production seven of them still held ~11
+            ACTIVE ADMIN memberships each — precisely what the recipient query
+            below selects — so the digest found people to mail about something
+            that no longer exists.
+
+            It leaves no trace in `NotificationOutbox`, because this job calls
+            `sendEmail` directly instead of enqueuing. An empty outbox therefore
+            says nothing about this path, which is the reasoning that nearly let
+            it off.
+
+            `deletedAt` is the line every other surface draws — the org listing,
+            `resolveTenantContext`, the JWT membership query — and the one this
+            job was not asking about.
+
+            The explicit-id branch is narrowed too, so a manual re-run cannot do
+            by hand what the schedule no longer does.
+        */
         const tenants = options.tenantId
             ? await prisma.tenant.findMany({
-                where: { id: options.tenantId },
+                where: { id: options.tenantId, deletedAt: null },
                 select: { id: true, name: true, slug: true },
             })
             : await prisma.tenant.findMany({
+                where: { deletedAt: null },
                 select: { id: true, name: true, slug: true },
             });
 
