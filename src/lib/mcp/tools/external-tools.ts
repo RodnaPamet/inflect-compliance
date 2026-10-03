@@ -47,9 +47,11 @@ import {
     jsonSchemaForConstraint,
     parseOpenFields,
     sameConstraint,
+    type OpenFieldBound,
     type OpenFields,
 } from '@/lib/integrations/open-fields';
-import { refusalForValue, type ValueConstraint } from '@/lib/integrations/parameter-constraints';
+import { refusalForValue } from '@/lib/integrations/parameter-constraints';
+import { resolveTargetPopulation } from '@/app-layer/usecases/external-tool-target-populations';
 import { getPriorStateRead } from '@/app-layer/usecases/external-prior-state-read';
 import { recordIntent } from '@/app-layer/usecases/external-write-journal';
 import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
@@ -84,6 +86,86 @@ const MAX_TOOLS_PER_CONNECTION = 250;
  * whatever shape they arrive in.
  */
 const EXTERNAL_ARGS_SCHEMA = z.record(z.string(), z.unknown());
+
+/**
+ * The TARGET refusal, as five distinct outcomes (#3051 step 5c).
+ *
+ * Returns only when the supplied value is in the population as the data stands
+ * right now; every other path throws, before `callTool` and before
+ * `dispatchWrite`, so nothing is sent on any of them.
+ *
+ * The five are kept apart because they are fixed by different people:
+ *
+ *   · `unknown_key` — the registry no longer defines this population, i.e. a
+ *     deploy removed or renamed it. The template is undispatchable until it is
+ *     re-proposed through four eyes, which is the safe direction and the reason
+ *     removing an entry does not need a data migration.
+ *   · `unresolvable` — the read itself failed. "We could not look" is not
+ *     "nothing matched", and reporting it as a value refusal would send a model
+ *     round a retry loop against a broken database.
+ *   · `too_large` — past the row cap, so membership cannot be decided at all.
+ *   · `empty` — the population resolved and holds nothing. The template is
+ *     inert, which is an operator's problem (a stale feed, a sync that has not
+ *     run) and not the model's.
+ *   · not a member — the ordinary refusal. It reports the population SIZE and
+ *     never its contents: a count tells an operator whether the bound is doing
+ *     work, where a list would hand a model every identifier it was not allowed
+ *     to have.
+ */
+async function refuseUnlessInPopulation(
+    ctx: RequestContext,
+    label: string,
+    field: string,
+    population: string,
+    value: unknown,
+): Promise<void> {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new Error(
+            `external_target_not_a_string: "${field}" names the row this call is about, so it ` +
+                `takes a non-empty string identifier. Nothing was sent.`,
+        );
+    }
+
+    const resolved = await resolveTargetPopulation(ctx, population);
+    switch (resolved.state) {
+        case 'unknown_key':
+            throw new Error(
+                `external_target_population_unknown: parameter set "${label}" is bounded by ` +
+                    `target population "${population}", which this build does not define. The ` +
+                    `population may have been removed or renamed; the template must be ` +
+                    `re-proposed and re-approved before it can be used. Nothing was sent.`,
+            );
+        case 'unresolvable':
+            throw new Error(
+                `external_target_population_unresolvable: the target population ` +
+                    `"${population}" for parameter set "${label}" could not be read ` +
+                    `(${resolved.detail}), so no value can be checked against it. This is NOT ` +
+                    `"the value is not in the population". Nothing was sent.`,
+            );
+        case 'too_large':
+            throw new Error(
+                `external_target_population_too_large: the target population "${population}" ` +
+                    `returns more than ${resolved.cap} rows, so it cannot act as a bound and ` +
+                    `membership cannot be decided. Nothing was sent.`,
+            );
+        case 'empty':
+            throw new Error(
+                `external_target_population_empty: the target population "${population}" for ` +
+                    `parameter set "${label}" currently contains no rows, so there is no row ` +
+                    `this call may be about. Nothing was sent.`,
+            );
+        case 'ok':
+            if (!resolved.values.has(value)) {
+                throw new Error(
+                    `external_target_not_in_population: "${field}" must name a row in the ` +
+                        `approved target population "${population}", which currently has ` +
+                        `${resolved.values.size} member(s), and the value supplied is not one ` +
+                        `of them. Nothing was sent.`,
+                );
+            }
+            return;
+    }
+}
 
 /**
  * Build the external read tools this invocation may load.
@@ -132,6 +214,7 @@ function adapterFor(
         label: string;
         parameters: Record<string, unknown>;
         openFields?: unknown;
+        targetPopulation?: string | null;
     }> = [],
     connection: { id: string; name: string; url: string; mode: ExternalWriteMode },
     policyCardVersion: number,
@@ -165,6 +248,16 @@ function adapterFor(
     // different open fields share one advertised object — there is only one
     // `inputSchema` per tool — so the advertised properties are the UNION, and
     // only `run` can know which of them the chosen label actually permits.
+    //
+    // ── AND THE TARGET, WHICH IS A DIFFERENT KIND OF CHOICE (step 5c) ───────
+    //
+    // One open field may be marked `{"kind":"target"}`: it names WHICH ROW the
+    // call is about, and its bound is not a pattern but a named population of
+    // our own data (`ExternalToolParameterSet.targetPopulation`). That bound is
+    // resolved inside `run`, per call, and is deliberately NOT advertised as an
+    // enum — see `jsonSchemaForConstraint`. A snapshot in the tool listing would
+    // be a stale bound the model trusts, and the listing is assembled once per
+    // run.
     const hasSets = parameterSets.length > 0;
     const labels = parameterSets.map((p) => p.label);
 
@@ -173,7 +266,7 @@ function adapterFor(
     // server's own schema) and is refused by `run`.
     const openBySet = new Map<string, OpenFields | 'unreadable'>();
     for (const set of parameterSets) {
-        const parsed = parseOpenFields(set.openFields ?? null);
+        const parsed = parseOpenFields(set.openFields ?? null, set.targetPopulation ?? null);
         if (parsed.state === 'ok') openBySet.set(set.label, parsed.fields);
         else if (parsed.state === 'unreadable') openBySet.set(set.label, 'unreadable');
     }
@@ -182,7 +275,7 @@ function adapterFor(
     // advertised with its constraint only when every set that declares it
     // agrees; otherwise the model is told the bound depends on the label, and
     // `run` enforces whichever one applies.
-    const advertisedOpen = new Map<string, ValueConstraint | 'varies'>();
+    const advertisedOpen = new Map<string, OpenFieldBound | 'varies'>();
     for (const fields of openBySet.values()) {
         if (fields === 'unreadable') continue;
         for (const [name, constraint] of Object.entries(fields)) {
@@ -213,8 +306,20 @@ function adapterFor(
                 : {
                       ...jsonSchemaForConstraint(constraint),
                       description:
-                          `Open field, supplied by you within the approved bound. Valid only ` +
-                          `with parameter set: ${sets.join(', ')}.`,
+                          constraint.kind === 'target'
+                              ? // THE TARGET IS DESCRIBED, NOT ENUMERATED. The
+                                // members are resolved from live data at dispatch
+                                // (see `jsonSchemaForConstraint`), so the model is
+                                // told what the bound IS rather than handed a
+                                // snapshot of it, and learns membership by being
+                                // refused.
+                                `The row this call is about. Bounded by the approved population ` +
+                                `"${constraint.population}", resolved from this workspace's own ` +
+                                `data at the moment of the call — a value outside it is refused ` +
+                                `and nothing is sent. Valid only with parameter set: ` +
+                                `${sets.join(', ')}.`
+                              : `Open field, supplied by you within the approved bound. Valid ` +
+                                `only with parameter set: ${sets.join(', ')}.`,
                   };
     }
 
@@ -368,6 +473,31 @@ function adapterFor(
                             `external_open_field_missing: parameter set "${chosen.label}" ` +
                                 `requires a value for "${name}". Nothing was sent.`,
                         );
+                    }
+                    if (constraint.kind === 'target') {
+                        // ── THE TARGET, RESOLVED FROM DATA AT DISPATCH ───────
+                        //
+                        // AT DISPATCH and never at approval, because the bound is
+                        // DATA and data moves. A set resolved when this
+                        // invocation was assembled would be a snapshot presented
+                        // as a live bound: the first row to leave the population
+                        // would still be addressable for the rest of the run,
+                        // which is the whole thing a data-bound target exists to
+                        // prevent.
+                        //
+                        // Every non-`ok` resolution refuses, each with its own
+                        // sentence — see `resolveTargetPopulation` for why
+                        // "unknown key", "empty", "too large" and "could not be
+                        // read" must not collapse into one message.
+                        await refuseUnlessInPopulation(
+                            ctx,
+                            chosen.label,
+                            name,
+                            constraint.population,
+                            entry[1],
+                        );
+                        merged[name] = entry[1];
+                        continue;
                     }
                     const refusal = refusalForValue(constraint, entry[1]);
                     if (refusal) {
