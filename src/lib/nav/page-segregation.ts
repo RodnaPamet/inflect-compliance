@@ -219,6 +219,11 @@ export const SUBPAGES: readonly string[] = [
     // so the completeness scan classified them and nobody added an entry.
     '/agents/decisions',
     '/agents/external-tools',
+    // #3124 — reached from the external-tools page for one connection, never
+    // from the nav. The sibling of `/admin/external-write-policy` above: a
+    // parameter set is scoped to a TOOL ON A CONNECTION, and the catalogue is
+    // where an operator already has that connection selected.
+    '/agents/parameter-sets',
     '/agents/proposals',
     '/agents/quarantine',
     '/agents/receipts',

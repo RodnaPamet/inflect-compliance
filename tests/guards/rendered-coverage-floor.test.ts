@@ -287,7 +287,19 @@ const ROOT = path.resolve(__dirname, '../..');
 //
 // 340 is the live count, not 343 with three points of headroom. The floor
 // resumes its upward-only ratchet from here on the next addition.
-const RENDERED_TEST_FLOOR = 340;
+//
+// 340 -> 344 (2026-10-03, #3124): `parameter-sets-surface.test.tsx` — the
+// operator surface for an external tool's saved arguments and the four-eyes
+// approval a change to one needs. The API shipped in #2906 and had no caller of
+// any kind until this page.
+//   The raise takes the MEASURED `ls tests/rendered/*.test.tsx | wc -l` = 344
+// rather than 341, for the reason the notes above give twice: three suites had
+// already accumulated under the floor before this branch, and the sentinel
+// exists precisely to stop that slack being spendable. Measuring rather than
+// incrementing also makes the number ORDER-SAFE against the concurrent branches
+// open today — each measures 343 + 1 on its own tree and writes 344, so the
+// edits are byte-identical and merge rather than conflict.
+const RENDERED_TEST_FLOOR = 344;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

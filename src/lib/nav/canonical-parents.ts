@@ -47,6 +47,11 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // reached from the register exactly as their siblings are.
     '/agents/decisions': { href: '/agents', label: 'Agents' },
     '/agents/external-tools': { href: '/agents', label: 'Agents' },
+    // #3124 — the parent is the page the inbound link LIVES on, exactly as for
+    // the external-write ladder below. An operator reaches saved parameters from
+    // the tool catalogue for a specific connection, so that is where Back
+    // belongs.
+    '/agents/parameter-sets': { href: '/agents/external-tools', label: 'External tools' },
     '/agents/proposals': { href: '/agents', label: 'Agents' },
     '/agents/reports': { href: '/agents', label: 'Agents' },
     '/agents/runs': { href: '/agents', label: 'Agents' },
