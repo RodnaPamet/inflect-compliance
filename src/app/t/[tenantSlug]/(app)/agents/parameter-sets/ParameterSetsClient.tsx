@@ -51,7 +51,7 @@
  * The ONE thing judged locally is whether the JSON in a textarea parses, because
  * a body has to be an object before it can be sent at all.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 
 // Both leaf modules with no server imports, so a client may hold them —
@@ -63,6 +63,7 @@ import type { ValueConstraintKind } from '@/lib/integrations/parameter-constrain
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
+import { CopyText } from '@/components/ui/copy-text';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Heading } from '@/components/ui/typography';
@@ -71,7 +72,6 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -573,6 +573,52 @@ export function ParameterSetsClient({
         </p>
     );
 
+    /**
+     * A DIGEST LINE — the head on screen, the whole of it REACHABLE.
+     *
+     * `<CopyText>`, not a `<Tooltip>` wrapping a `<p>`. #3150 shipped the
+     * latter to satisfy `no-ad-hoc-tooltip-title`, and it bought nothing: a
+     * `<p>` is hoverable and NOT focusable, so Radix's focus-open never fires
+     * on it and the full digest stayed exactly as reachable as the native
+     * `title=` it replaced — mouse and screen reader only. A keyboard user
+     * could not get at it at all.
+     *
+     * `CopyText` renders a real `<button>`, so three things change at once:
+     * Tab reaches it (and opens the hint), Enter/Space puts the WHOLE hash on
+     * the clipboard, and the full hash is the control's accessible NAME rather
+     * than a description that exists only while a hover hint is open. The
+     * visible text stays the 12-char head — a prefix of that name, so the
+     * label a speech-input user says is the label they can see.
+     *
+     * This is what `docs/tooltip-and-copy-strategy.md` prescribes for the
+     * shape: "Inline value that IS the display (id, code, hash, key) →
+     * <CopyText value={…}>{displayed}</CopyText>". `ToolManifestPins`'s
+     * manifest-digest cells are the existing precedent in this subtree.
+     *
+     * Worth it because the digest is load-bearing rather than decoration: a
+     * signature does not carry forward to replaced content — the row stores
+     * the hash it was taken against and the promotion counts only matching
+     * ones — so a count read without the digest beside it is a number an
+     * operator can be misled by. That is the same failure
+     * `expectedPendingHash` exists to prevent one layer up, and a hint only
+     * a mouse can open is not a fix for it.
+     *
+     * No `<Button>` is involved, which matters: `primary-secondary-ratio`'s
+     * shared ceiling is FULL at 175 = measured, so a primary added anywhere
+     * reddens CI. `CopyText` emits a bare `<button>` the ratchet does not
+     * count, and this page still ships with no primary at all.
+     */
+    const digestLine = (hash: string, className: string, children: ReactNode) => (
+        <CopyText
+            value={hash}
+            label={t('parameterSets.copyDigest', { hash })}
+            successMessage={t('parameterSets.digestCopied')}
+            className={className}
+        >
+            {children}
+        </CopyText>
+    );
+
     const toolOptions = (tools ?? []).map((x) => ({ value: x.toolName, label: x.advertisedName }));
     const connectionOptions = connections.map((c) => ({ value: c.id, label: c.name }));
     // "No target" FIRST, and as a real option rather than an empty selection —
@@ -781,21 +827,17 @@ export function ParameterSetsClient({
                                                 )}
                                                 {targetBlock(set.targetPopulation)}
                                                 {/* The FULL digest, which the line
-                                                    itself only shows the head of.
-                                                    A <Tooltip> rather than a native
-                                                    `title=` per
-                                                    docs/tooltip-and-copy-strategy.md:
-                                                    this is one element per row, not
-                                                    a density visualisation, so the
-                                                    exemption the ratchet allows does
-                                                    not apply. */}
-                                                <Tooltip content={set.parametersHash}>
-                                                    <p className="w-fit text-xs text-content-subtle">
-                                                        {t('parameterSets.digest', {
-                                                            hash: shortHash(set.parametersHash),
-                                                        })}
-                                                    </p>
-                                                </Tooltip>
+                                                    itself only shows the head of —
+                                                    see `digestLine` for why this is
+                                                    a focusable copy control and not
+                                                    a hover hint. */}
+                                                {digestLine(
+                                                    set.parametersHash,
+                                                    'text-content-subtle',
+                                                    t('parameterSets.digest', {
+                                                        hash: shortHash(set.parametersHash),
+                                                    }),
+                                                )}
                                             </div>
 
                                             {error && (
@@ -902,13 +944,13 @@ export function ParameterSetsClient({
                                                         className="space-y-tight"
                                                         data-testid={`parameter-set-signatures-${set.label}`}
                                                     >
-                                                        <Tooltip content={pending.hash}>
-                                                            <p className="w-fit text-xs font-medium text-content-emphasis">
-                                                                {t('parameterSets.pendingDigest', {
-                                                                    hash: shortHash(pending.hash),
-                                                                })}
-                                                            </p>
-                                                        </Tooltip>
+                                                        {digestLine(
+                                                            pending.hash,
+                                                            'font-medium text-content-emphasis',
+                                                            t('parameterSets.pendingDigest', {
+                                                                hash: shortHash(pending.hash),
+                                                            }),
+                                                        )}
                                                         <p className="text-xs text-content-muted">
                                                             {t('parameterSets.signatureCount', {
                                                                 count: set.signatures.length,
@@ -930,24 +972,21 @@ export function ParameterSetsClient({
                                                                             {sig.approverUserId}
                                                                         </code>
                                                                         <span>{formatDate(sig.createdAt)}</span>
-                                                                        {/* LOAD-BEARING, not decoration.
-                                                                            A signature does not carry
-                                                                            forward to replaced content, so
-                                                                            an operator shown a signature
-                                                                            count without the digest it was
-                                                                            taken against can be misled —
-                                                                            the same failure
-                                                                            `expectedPendingHash` exists to
-                                                                            prevent one layer up. The line
-                                                                            shows the head; the tooltip
-                                                                            keeps the whole of it. */}
-                                                                        <Tooltip content={sig.pendingHash}>
-                                                                            <span>
-                                                                                {t('parameterSets.signatureAgainst', {
-                                                                                    hash: shortHash(sig.pendingHash),
-                                                                                })}
-                                                                            </span>
-                                                                        </Tooltip>
+                                                                        {/* LOAD-BEARING, not decoration —
+                                                                            `digestLine` carries the whole
+                                                                            argument. The operator's question
+                                                                            on this row is whether THIS hash
+                                                                            and the pending one above it are
+                                                                            the same, and comparing two
+                                                                            64-char hashes is work for the
+                                                                            clipboard rather than the eye. */}
+                                                                        {digestLine(
+                                                                            sig.pendingHash,
+                                                                            'text-content-muted',
+                                                                            t('parameterSets.signatureAgainst', {
+                                                                                hash: shortHash(sig.pendingHash),
+                                                                            }),
+                                                                        )}
                                                                     </li>
                                                                 ))}
                                                             </ul>

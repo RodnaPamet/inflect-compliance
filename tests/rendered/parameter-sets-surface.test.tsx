@@ -27,6 +27,12 @@
  *   7. A refused sign or approve renders the SERVER's sentence — the four-eyes
  *      refusals are mapped from the database by `fourEyesRefusal` in the
  *      usecase, so re-wording them here would be a second place to drift.
+ *   8. Every DIGEST is reachable from the keyboard (#3154). The line shows a
+ *      12-char head; the whole hash is the control's accessible name and goes
+ *      to the clipboard on Enter. This belongs here for the same reason as the
+ *      rest: #3150's hints passed every ratchet — including the one that
+ *      forced them — while being hover-only, because `<Tooltip>` over a `<p>`
+ *      is a source shape a scan approves and a focus a keyboard cannot make.
  */
 /** @jest-environment jsdom */
 
@@ -102,6 +108,15 @@ jest.mock('@/lib/tenant-context-provider', () => {
         useMoneyFormatter: () => money,
     };
 });
+
+// The digest controls are `<CopyText>`, which toasts through `useToast` →
+// sonner. Mocked rather than left live so the success path is an assertable
+// call instead of a queued render into a `<Toaster>` this harness never mounts.
+const toastMock = { success: jest.fn(), error: jest.fn() };
+jest.mock('sonner', () => ({
+    toast: toastMock,
+    Toaster: () => null,
+}));
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ParameterSetsClient } from '@/app/t/[tenantSlug]/(app)/agents/parameter-sets/ParameterSetsClient';
@@ -199,6 +214,8 @@ beforeEach(() => {
     mutationResponse = { ok: true, body: {} };
     calls = [];
     installFetch();
+    toastMock.success.mockClear();
+    toastMock.error.mockClear();
 
     // jsdom's `matchMedia` answers `false` for every query, so `useMediaQuery`
     // resolves to MOBILE and `Popover` swaps in the Vaul drawer — which is not
@@ -216,14 +233,53 @@ beforeEach(() => {
     })) as unknown as typeof window.matchMedia;
 });
 
+const realClipboard = Object.getOwnPropertyDescriptor(window.navigator, 'clipboard');
+
+afterEach(() => {
+    if (realClipboard) {
+        Object.defineProperty(window.navigator, 'clipboard', realClipboard);
+    } else {
+        // @ts-expect-error: jsdom-only cleanup of an ad-hoc descriptor
+        delete window.navigator.clipboard;
+    }
+});
+
+/**
+ * Stub `navigator.clipboard.writeText` and return a `userEvent` bound to it.
+ *
+ * jsdom ships no Clipboard API, and `useCopyToClipboard` then falls through to
+ * `document.execCommand('copy')`, which jsdom does not implement either — so
+ * an unstubbed copy FAILS and the assertion would be about the stub's absence
+ * rather than about the control.
+ *
+ * ORDER IS LOAD-BEARING: `userEvent.setup()` installs its OWN clipboard stub
+ * (`attachClipboardStubToView`), so a descriptor written before the session is
+ * created is silently replaced and the mock records nothing. The same note
+ * sits on `setupUserWithClipboard` in `copy-primitives.test.tsx`; it cost a
+ * round here before it was read.
+ */
+function clipboardUser() {
+    const user = userEvent.setup();
+    const writeText = jest.fn(async () => {});
+    Object.defineProperty(window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText },
+    });
+    return { user, writeText };
+}
+
 function mount() {
-    // The three DIGEST lines each wrap their short hash in a `<Tooltip>` that
-    // carries the whole of it — a Radix consumer, which throws outside a
-    // provider. In production `TooltipProvider` is mounted once in
-    // `src/app/providers.tsx`; here it is required rather than incidental,
-    // because every state these tests render has at least one digest on screen.
-    // Mounted REAL rather than mocked away: a mock that renders its children
-    // would pass these assertions with the full hash nowhere in the tree.
+    // `TooltipProvider` is mounted because this tree still reaches Radix
+    // Tooltip through the `@/components/ui/tooltip` alias (Button, StatusBadge
+    // and the Combobox chrome all do), and a Radix consumer throws outside a
+    // provider. In production it is mounted once in `src/app/providers.tsx`.
+    //
+    // It is NOT what makes the digests' full hash observable. The three digest
+    // controls are `<CopyText>`, which reaches its own Tooltip by the relative
+    // `./tooltip` — a path the jsdom project's `moduleNameMapper` redirects to
+    // `tests/rendered/tooltip-mock.tsx`, a pass-through. So the digest
+    // assertions below read `aria-label` and the clipboard, neither of which
+    // depends on a hint opening.
     return render(
         <TooltipProvider delayDuration={0}>
             <ParameterSetsClient
@@ -377,17 +433,28 @@ describe('the signature count sits beside the digest it is against', () => {
         const sigs = await screen.findByTestId('parameter-set-signatures-Nightly roster push');
         expect(within(sigs).getByText(/0 of 1 signatures on this digest/)).toBeInTheDocument();
         expect(within(sigs).getByText(/No signature yet on this digest/)).toBeInTheDocument();
-        // The DIGEST, truncated for the eye and complete in the tooltip. A
-        // `<Tooltip>` rather than the native `title=` this shipped with
-        // (`no-ad-hoc-tooltip-title`), so the full hash is in the tree only
-        // once the hint is open — which is what this drives rather than
-        // reading an attribute off the line.
-        const digest = within(sigs).getByText(
-            new RegExp(PENDING_HASH.slice(0, 12)),
-        );
+        // The DIGEST: the head for the eye, the WHOLE of it in the control's
+        // accessible NAME. Queried `byRole('button')` on purpose — #3150
+        // shipped this as a `<Tooltip>` wrapping a `<p>`, which satisfies
+        // `no-ad-hoc-tooltip-title` and is not focusable, so the full hash was
+        // mouse-and-screen-reader-only. A `<p>` answers no button query, so
+        // this line is the one that would redden on a regression to one.
+        //
+        // The NAME rather than an opened tooltip, and that is a deliberate
+        // trade rather than a weaker claim. `copy-text.tsx` reaches its
+        // Tooltip by the relative `./tooltip`, which the jsdom project's
+        // `moduleNameMapper` points at a pass-through stub — so no hover here
+        // can produce a `role="tooltip"` node, and the old assertion that did
+        // was only reachable because the page imported the primitive by its
+        // `@/` alias. `aria-label` is the stronger property anyway: it carries
+        // the full hash whether or not any hint is open.
+        const digest = within(sigs).getByRole('button', {
+            name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
+        });
         expect(digest).not.toHaveAttribute('title');
-        await userEvent.hover(digest);
-        expect(await screen.findByRole('tooltip')).toHaveTextContent(PENDING_HASH);
+        expect(digest).toHaveTextContent(PENDING_HASH.slice(0, 12));
+        // What is READ is the head; what is NAMED is the whole thing.
+        expect(digest.textContent ?? '').not.toContain(PENDING_HASH);
     });
 
     it('with ONE signature: the approver, the date, and the hash it is against', async () => {
@@ -406,19 +473,105 @@ describe('the signature count sits beside the digest it is against', () => {
         const sigs = await screen.findByTestId('parameter-set-signatures-Nightly roster push');
         expect(within(sigs).getByText(/1 of 1 signatures on this digest/)).toBeInTheDocument();
         expect(within(sigs).getByText('user_signer')).toBeInTheDocument();
-        const against = within(sigs).getByText(
-            new RegExp(`against ${PENDING_HASH.slice(0, 12)}`),
-        );
         // The FULL hash on the signature row too, not only on the pending digest
-        // above it — the operator's question is whether the two are the same.
-        // Load-bearing, and the reason this row's hint survived the `title=`
-        // migration as a <Tooltip> rather than being dropped.
-        expect(against).not.toHaveAttribute('title');
-        await userEvent.hover(against);
-        expect(await screen.findByRole('tooltip')).toHaveTextContent(PENDING_HASH);
+        // above it — the operator's question is whether the two are the same, so
+        // BOTH name it in full and both are focusable copy controls. Exactly
+        // two inside this region: the pending-digest line and this one.
+        const carriers = within(sigs).getAllByRole('button', {
+            name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
+        });
+        expect(carriers).toHaveLength(2);
+        const against = carriers.filter((el) => /against/.test(el.textContent ?? ''));
+        expect(against).toHaveLength(1);
+        expect(against[0]).not.toHaveAttribute('title');
+        expect(against[0]).toHaveTextContent(PENDING_HASH.slice(0, 12));
+        expect(against[0].textContent ?? '').not.toContain(PENDING_HASH);
         expect(
             within(sigs).getByText(/counts only against the digest it names/),
         ).toBeInTheDocument();
+    });
+});
+
+/**
+ * #3154 — the digest is reachable from the KEYBOARD, not only from a mouse.
+ *
+ * Why rendered and not a guard: a source scan can see `<CopyText>`, but it
+ * cannot see whether what gets rendered takes focus. The defect was exactly
+ * that distinction — #3150's three hints were `<Tooltip>`s over a `<p>` and a
+ * `<span>`, which are hoverable and NOT focusable, so Radix's focus-open could
+ * never fire and the full digest was no more reachable than the native `title=`
+ * it replaced. Every ratchet was green, including the one that forced the swap.
+ *
+ * So these drive the keyboard rather than reading an attribute, and the
+ * population is counted rather than sampled: converting one site and leaving
+ * two is the regression most likely to be shipped by someone reading only the
+ * issue's title.
+ */
+describe('every digest is reachable from the keyboard, not only the mouse', () => {
+    const ONE_SIGNATURE = [
+        {
+            approverUserId: 'user_signer',
+            revision: 2,
+            pendingHash: PENDING_HASH,
+            requiredApprovals: 1,
+            createdAt: '2026-09-21T00:00:00.000Z',
+        },
+    ];
+
+    it('all THREE digests on a signed pending row are focusable copy controls', async () => {
+        listBody = [withPending(ONE_SIGNATURE)];
+        mount();
+        await screen.findByTestId('parameter-set-signatures-Nightly roster push');
+
+        // THE POPULATION, not a sample: the in-force digest, the pending
+        // digest, and the one signature row. A conversion that left any site
+        // as a hover-only <p> reads fewer than three here, and a `toHaveLength`
+        // cannot be satisfied by an empty query the way a loop over hits can.
+        const copies = screen.getAllByRole('button', {
+            name: /^Copy the full digest [0-9a-f]{64}$/,
+        });
+        expect(copies).toHaveLength(3);
+        for (const el of copies) {
+            expect(el.tagName).toBe('BUTTON');
+            expect(el).not.toBeDisabled();
+            // Nothing takes it back out of the tab order.
+            expect(el).not.toHaveAttribute('tabindex', '-1');
+        }
+
+        // Both DISTINCT hashes are named in full, and by the right counts —
+        // one in-force, two against the pending edit. A helper that passed the
+        // same hash to every site would read 0/3 or 3/0 here.
+        const names = copies.map((el) => el.getAttribute('aria-label') ?? '');
+        expect(names.filter((n) => n.includes(IN_FORCE_HASH))).toHaveLength(1);
+        expect(names.filter((n) => n.includes(PENDING_HASH))).toHaveLength(2);
+    });
+
+    it('focus + Enter puts the WHOLE digest on the clipboard, and says so', async () => {
+        const { user, writeText } = clipboardUser();
+        listBody = [withPending()];
+        mount();
+        const sigs = await screen.findByTestId('parameter-set-signatures-Nightly roster push');
+        const digest = within(sigs).getByRole('button', {
+            name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
+        });
+
+        // KEYBOARD, deliberately. A `click()` would pass on a control no Tab
+        // can reach, which is what the <p> was; `focus()` landing at all is
+        // the thing a non-focusable element cannot do, so the assertion right
+        // after it is the discriminator.
+        digest.focus();
+        expect(digest).toHaveFocus();
+        await user.keyboard('{Enter}');
+        expect(writeText).toHaveBeenCalledWith(PENDING_HASH);
+
+        // And what was copied is NOT what was read: the line shows the head.
+        expect(digest).toHaveTextContent(PENDING_HASH.slice(0, 12));
+        expect(digest.textContent ?? '').not.toContain(PENDING_HASH);
+        await waitFor(() =>
+            expect(toastMock.success).toHaveBeenCalledWith('Digest copied', {
+                duration: 3000,
+            }),
+        );
     });
 });
 

@@ -8521,6 +8521,8 @@
       "noOpenFieldsDesc": "Every value is exact, so the agent chooses nothing.",
       "noTarget": "No open target",
       "digest": "Digest {hash}",
+      "copyDigest": "Copy the full digest {hash}",
+      "digestCopied": "Digest copied",
       "propose": "Propose a change",
       "proposeTitle": "Propose a change",
       "proposeSubmit": "Propose",
