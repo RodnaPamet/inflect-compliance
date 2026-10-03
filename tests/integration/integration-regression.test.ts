@@ -10,11 +10,15 @@
  *   6. Webhook security — invalid signatures rejected
  *   7. Evidence deduplication — same check doesn't flood evidence
  */
+// `computeNextDueAt` moved to the shared cadence module (#3136); the
+// duplicate in automation-runner is deleted. This file only asserts DAILY,
+// which is +1 day under either semantics.
+import { computeNextDueAt } from '@/app-layer/utils/cadence';
 import { registry } from '@/app-layer/integrations/registry';
 import { GitHubProvider } from '@/app-layer/integrations/providers/github';
 import {
     getFrequencyIntervalMs,
-    computeNextDueAt,
+    
 } from '@/app-layer/jobs/automation-runner';
 import {
     computeHmacSha256,

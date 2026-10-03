@@ -46,6 +46,7 @@
  *
  * @module jobs/automation-runner
  */
+import { computeNextDueAt } from '../utils/cadence';
 import { Prisma, EvidenceType } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
@@ -128,11 +129,22 @@ export function isRealObservation(status: string | null | undefined): boolean {
     return status === 'PASSED' || status === 'FAILED';
 }
 
-export function computeNextDueAt(frequency: string | null, fromDate: Date): Date | null {
-    const interval = getFrequencyIntervalMs(frequency);
-    if (!interval) return null;
-    return new Date(fromDate.getTime() + interval);
-}
+/*
+    `computeNextDueAt` used to live HERE, built on the millisecond table above —
+    MONTHLY as 30 days flat, ANNUALLY as 365. It wrote `nextDueAt` on the same
+    rows as `utils/cadence`'s calendar version, from an identical-looking call
+    site, so two controls on one declared frequency could fall due on different
+    dates depending on which path rolled them (#3136). For a compliance product
+    the cadence is the obligation, so that was a correctness bug.
+
+    Deleted; the shared implementation is imported above and is now the only one.
+
+    `getFrequencyIntervalMs` and its table STAY, because their other consumer
+    asks a different question: the de-duplication lookback below
+    (`now - interval`) is "has this already run in roughly the last month?",
+    where a fixed span is right and a calendar boundary would make the window
+    jump at month ends for no reason.
+*/
 
 // ─── Due Control Selection ───────────────────────────────────────────
 
