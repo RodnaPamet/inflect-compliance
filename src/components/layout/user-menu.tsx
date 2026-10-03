@@ -32,7 +32,7 @@
  * viewport and never overflows.
  */
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactElement, type ReactNode } from 'react';
 
 
 import { useTranslations } from 'next-intl';
@@ -106,6 +106,56 @@ export interface UserMenuProps {
      * broken or fork the menu.
      */
     showLanguage?: boolean;
+    /**
+     * The element that opens the menu. Omit it — as every call site in this
+     * repo does — and the menu renders its own avatar button, unchanged.
+     *
+     * WHY AN ELEMENT RATHER THAN A RENDER PROP, because `items` above is a
+     * render prop and two idioms in one file would need excusing. The rule
+     * `items` states is the deciding one: a render prop exists when the
+     * consumer needs state only the menu owns. `items` needs `close`. A
+     * trigger needs nothing — `<Popover>` hands its children to an `asChild`
+     * Trigger, whose Slot merges the open handler, `aria-expanded`,
+     * `aria-controls` and `data-state` onto whatever element arrives. The
+     * consumer reads `open` off `data-state` in CSS and never sees the menu's
+     * state at all, so a render prop would be a callback with nothing to pass.
+     *
+     * FOCUS RETURNS BY ITSELF, and that is the point of routing the caller's
+     * element through the Trigger rather than accepting a click handler. Radix
+     * returns focus to its Trigger on close; because the caller's element IS
+     * the Trigger, that is the caller's element. `MobileNavDrawer` needed an
+     * explicit `openerRef` in T07 for exactly the opposite reason — its opener
+     * is the top bar's hamburger, which is NOT its Trigger, so Radix had
+     * nothing to focus and the drawer had to capture the opener by hand. A
+     * trigger slot has no such gap, so it gets no such machinery.
+     *
+     * TYPED `ReactElement`, not `ReactNode`: the Slot contract is exactly one
+     * element that accepts props and a ref (`form-field.tsx` types its cloned
+     * child the same way). A string or an array breaks it at runtime, so the
+     * type refuses them. A fragment still typechecks and still breaks — that
+     * one is unreachable from the type system.
+     *
+     * TWO THINGS THE CALLER OWNS, neither inheritable from here:
+     *
+     *   • The accessible name. The default avatar carries
+     *     `aria-label={tNav('accountMenuFor', { name })}` because an avatar is
+     *     a picture with no text. A caller's trigger is named by its own label
+     *     and must stay so — this component cannot name someone else's button.
+     *   • WCAG 2.5.5. `AVATAR_BUTTON_CLASS` carries the
+     *     `pointer-coarse:min-h-11` floor T08 added, and a supplied trigger
+     *     does not go through it. Nothing here can check that: the element is
+     *     constructed in the consumer's tree, and jsdom has no layout, so even
+     *     the consumer's own guard has to assert the RECIPE the way
+     *     `top-bar-touch-and-slots` does rather than a measured box. The floor
+     *     is the caller's to carry and the caller's to guard.
+     *
+     * `<Popover>`'s Trigger also contributes a display utility to the merged
+     * class list — `sm:inline-flex` on the dropdown path, `sm:hidden` on the
+     * drawer path — which the avatar has always received too. A trigger whose
+     * own layout is a `display` utility should expect that one to win inside
+     * the breakpoint, where media-query order beats string order.
+     */
+    trigger?: ReactElement;
 }
 
 // ─── Recipe ────────────────────────────────────────────────────────
@@ -142,6 +192,7 @@ export function UserMenu({
     open: controlledOpen,
     onOpenChange,
     showLanguage = true,
+    trigger,
 }: UserMenuProps) {
     const t = useTranslations('common');
     const tNav = useTranslations('nav');
@@ -238,20 +289,22 @@ export function UserMenu({
                 </Popover.Menu>
             }
         >
-            <button
-                type="button"
-                className={AVATAR_BUTTON_CLASS}
-                aria-label={tNav('accountMenuFor', { name: effectiveName })}
-                aria-expanded={open}
-                aria-haspopup="menu"
-                data-testid="top-chrome-user-menu"
-            >
-                <InitialsAvatar
-                    value={effectiveName}
-                    size="nav"
-                    imageUrl={displayImage}
-                />
-            </button>
+            {trigger ?? (
+                <button
+                    type="button"
+                    className={AVATAR_BUTTON_CLASS}
+                    aria-label={tNav('accountMenuFor', { name: effectiveName })}
+                    aria-expanded={open}
+                    aria-haspopup="menu"
+                    data-testid="top-chrome-user-menu"
+                >
+                    <InitialsAvatar
+                        value={effectiveName}
+                        size="nav"
+                        imageUrl={displayImage}
+                    />
+                </button>
+            )}
         </Popover>
     );
 }

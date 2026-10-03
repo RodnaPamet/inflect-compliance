@@ -228,7 +228,19 @@ export function initSentry(): void {
 
 /** Check if Sentry has been initialized with a valid DSN. */
 export function isSentryInitialized(): boolean {
-    return _initialized;
+    /*
+        The SDK's client, not the module flag, for the reason `flushSentry`
+        gives at length: `_initialized` is per-BUNDLE, and a route asking "is
+        Sentry working" from its own bundle always saw false — which is what
+        this endpoint reported in production while Sentry was in fact running.
+
+        `_initialized` still guards `initSentry`'s idempotence and
+        `shutdownSentry`, which both execute in the bundle that owns them. It is
+        the right answer to "have I run init here" and the wrong answer to "is
+        this process reporting errors", and only the second is what a caller of
+        this function is asking.
+    */
+    return Sentry.getClient() !== undefined;
 }
 
 /**
@@ -271,7 +283,24 @@ export async function shutdownSentry(timeoutMs = 2_000): Promise<void> {
  * as success: "could not confirm" and "delivered" must not look alike.
  */
 export async function flushSentry(timeoutMs = 2_000): Promise<boolean> {
-    if (!_initialized) return false;
+    /*
+        Gated on the SDK's own CLIENT, not on `_initialized`.
+
+        `_initialized` is module-level state, and Next.js bundles
+        `instrumentation.ts` separately from route handlers — so the copy of
+        this module a ROUTE imports is a different instance from the one
+        instrumentation initialised, with the flag still false. The Sentry
+        client itself lives on a global carrier and does cross that boundary.
+
+        Measured in production: `/api/admin/diagnostics?probe=sentry` reported
+        `sentryInitialized: false` and `flushed: false` while the container logs
+        showed instrumentation had run and `Sentry.init()` had succeeded with no
+        DSN error. The event was captured against the real client and then the
+        flush was refused by a flag that could never have been true in that
+        bundle — a verification tool reporting failure for the one reason it
+        was built to rule out.
+    */
+    if (!Sentry.getClient()) return false;
     return Sentry.flush(timeoutMs);
 }
 
