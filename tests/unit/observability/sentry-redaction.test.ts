@@ -59,6 +59,14 @@ const closeCalls: number[] = [];
 /** Behaviour of the next `Sentry.close` call. */
 const closeBehaviour: { mode: 'resolve' | 'hang' } = { mode: 'resolve' };
 
+/*
+    The SDK CLIENT, modelled because `isSentryInitialized` reads it rather than
+    this module's own flag — a route's bundle has its own copy of that flag and
+    always saw false, which is what `/api/admin/diagnostics` reported in
+    production while Sentry was running. `init` sets the client and `close`
+    clears it, as the real SDK does.
+*/
+let mockClient: object | undefined;
 jest.mock('@sentry/nextjs', () => ({
     init: (cfg: {
         beforeSend: BeforeSend;
@@ -68,9 +76,12 @@ jest.mock('@sentry/nextjs', () => ({
         dataCollection?: Record<string, unknown>;
     }) => {
         initCalls.push(cfg);
+        mockClient = {};
     },
+    getClient: () => mockClient,
     close: (timeoutMs: number): Promise<boolean> => {
         closeCalls.push(timeoutMs);
+        mockClient = undefined;
         if (closeBehaviour.mode === 'hang') return new Promise<boolean>(() => { /* never settles */ });
         return Promise.resolve(true);
     },
@@ -332,19 +343,28 @@ describe('shutdownSentry — draining an initialised client', () => {
     });
 
     it('still drains after a DSN-LESS init, because that init sets the flag', async () => {
-        // The DSN-less init marks the module initialised without configuring a
-        // transport, so shutdown takes the drain path against an SDK that
-        // no-ops. Worth pinning both halves: `close` IS reached (the early
-        // return is keyed on `_initialized`, not on the DSN), and the flag is
-        // cleared so a second SIGTERM is a no-op.
+        /*
+            The DSN-less init marks the module initialised without configuring a
+            transport, so shutdown takes the drain path against an SDK that
+            no-ops. `close` IS reached — the early return is keyed on
+            `_initialized`, not on the DSN — and a second SIGTERM is a no-op.
+
+            `isSentryInitialized()` is NO LONGER the way to observe that: it
+            reads the SDK client now, which a DSN-less init never creates, so it
+            was false before this ran and asserting it afterwards proved
+            nothing. The flag's effect is observed where it actually shows — the
+            second `shutdownSentry` not reaching `close` again.
+        */
         delete mutableEnv.SENTRY_DSN;
         initSentry();
         expect(initCalls).toHaveLength(0);
 
         await shutdownSentry(1_500);
-
         expect(closeCalls).toStrictEqual([1_500]);
-        expect(isSentryInitialized()).toBe(false);
+
+        // The flag was set and is now cleared: a second drain is refused.
+        await shutdownSentry(1_500);
+        expect(closeCalls).toStrictEqual([1_500]);
     });
 
     it('resolves at the budget when the transport never drains', async () => {

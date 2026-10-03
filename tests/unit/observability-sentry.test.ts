@@ -28,15 +28,29 @@ const mockSetUser = jest.fn();
 
 const mockFlush = jest.fn(async () => true);
 const mockClose = jest.fn(async () => true);
+/*
+    The SDK's CLIENT is now what `isSentryInitialized` and `flushSentry` read,
+    so the mock has to model it. `init` sets it and `close` clears it, which is
+    what the real SDK does — a mock that left it constant would make both
+    functions untestable in the direction that matters.
+*/
+let mockClient: object | undefined;
 jest.mock('@sentry/nextjs', () => ({
-    init: mockInit,
+    init: (...a: unknown[]) => {
+        mockClient = {};
+        return mockInit(...(a as []));
+    },
     captureException: mockCaptureException,
     withScope: mockWithScope,
     setTag: mockSetTag,
     setContext: mockSetContext,
     setUser: mockSetUser,
+    getClient: () => mockClient,
     flush: (...a: unknown[]) => mockFlush(...(a as [])),
-    close: (...a: unknown[]) => mockClose(...(a as [])),
+    close: (...a: unknown[]) => {
+        mockClient = undefined;
+        return mockClose(...(a as []));
+    },
 }));
 
 import {
@@ -56,10 +70,49 @@ beforeEach(() => {
 });
 
 describe('initSentry', () => {
-    it('does not call Sentry.init when SENTRY_DSN is not set', () => {
+    it('does not call Sentry.init when SENTRY_DSN is not set, and reports NOT initialised', () => {
+        /*
+            This asserted `isSentryInitialized() === true` with the comment
+            "marked initialized even without DSN" — true of the old module flag
+            and misleading as a health signal: it answered "has init run here",
+            and every caller is asking "is this process reporting errors".
+
+            With no DSN the answer to the second question is no, so this now
+            reports false. The diagnostics endpoint pairs it with
+            `sentryConfigured`, which is the one that distinguishes "no DSN set"
+            from "DSN set but the client failed to come up".
+        */
         initSentry();
         expect(mockInit).not.toHaveBeenCalled();
-        expect(isSentryInitialized()).toBe(true); // marked initialized even without DSN
+        expect(isSentryInitialized()).toBe(false);
+    });
+
+    it('and reports initialised once a client exists', () => {
+        process.env.SENTRY_DSN = 'https://abc@sentry.io/123';
+        initSentry();
+        expect(isSentryInitialized()).toBe(true);
+    });
+
+    it('reads the SDK client, NOT this module\'s own flag (#3127 follow-up)', () => {
+        /*
+            THE assertion, and the production symptom it comes from.
+
+            `_initialized` is module-level, and Next.js bundles
+            `instrumentation.ts` separately from route handlers — so a route
+            importing this module gets a different instance with the flag still
+            false. `/api/admin/diagnostics` reported `sentryInitialized: false`
+            and `flushed: false` in production while the container logs showed
+            instrumentation had run and `Sentry.init()` had succeeded.
+
+            Simulated here by clearing the client WITHOUT going through
+            `shutdownSentry`: the module flag stays true, the client is gone,
+            and the honest answer is false. The old implementation returned true.
+        */
+        process.env.SENTRY_DSN = 'https://abc@sentry.io/123';
+        initSentry();
+        expect(isSentryInitialized()).toBe(true);
+        mockClient = undefined;
+        expect(isSentryInitialized()).toBe(false);
     });
 
     it('calls Sentry.init when SENTRY_DSN is set', () => {
@@ -294,10 +347,28 @@ describe('flushSentry', () => {
         await expect(flushSentry()).resolves.toBe(false);
     });
 
-    it('and false when Sentry was never initialised, without calling flush', async () => {
+    it('and false when there is NO CLIENT, without calling flush', async () => {
+        // Was "never initialised", meaning the module flag. The client is the
+        // thing that can actually accept a flush, and it is what crosses the
+        // bundle boundary — see the init test above.
         _resetForTesting();
+        mockClient = undefined;
         await expect(flushSentry()).resolves.toBe(false);
         expect(mockFlush).not.toHaveBeenCalled();
+    });
+
+    it('but DOES flush when a client exists and the module flag does not', async () => {
+        /*
+            The production case, inverted: a route's bundle has
+            `_initialized === false` while the process has a live client. The
+            old guard refused to flush and reported `flushed: false` — a
+            verification tool failing for the one reason it existed to rule out.
+        */
+        process.env.SENTRY_DSN = 'https://abc@sentry.io/123';
+        initSentry();
+        _resetForTesting(); // clears the module flag, leaves the client
+        await expect(flushSentry(1_000)).resolves.toBe(true);
+        expect(mockFlush).toHaveBeenCalledWith(1_000);
     });
 });
 
