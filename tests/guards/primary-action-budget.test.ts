@@ -52,6 +52,15 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * as a separate visual zone.
  */
 const PRIMARY_BUDGET: Record<string, number> = {
+    // #3124 saved parameters had an entry of 3 here — the baseline form's
+    // create, the propose form's submit and the pending card's approve, one per
+    // region. All three were demoted to `secondary` on the follow-up, because
+    // the PRODUCT-WIDE ceiling in `primary-secondary-ratio` measures exactly
+    // 175 on main and has no slot to give: three regions' worth of earned
+    // emphasis is still three over. The file now renders ZERO primaries, so it
+    // falls under the implicit default of 1 and needs no entry — listed nowhere
+    // rather than listed at 3, which would be a standing licence to put the
+    // loud buttons back without paying for them.
     // Initiatives list: "New initiative" (page) + "Create initiative"
     // (modal confirm) — two distinct regions, both legit primaries.
     "src/app/org/[orgSlug]/(app)/initiatives/InitiativesClient.tsx": 2,
