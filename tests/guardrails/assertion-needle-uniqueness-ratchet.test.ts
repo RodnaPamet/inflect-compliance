@@ -537,29 +537,29 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1175;
 //   Re-seated DOWNWARD in the same diff, which is what the sentinel below
 //   demands of an improvement: 167 is the live count, not 168 with a point of
 //   headroom a future regression could spend on a green build.
-// RAISED 167 -> 168 on 2026-10-04 (#3164), and recorded as an UNIDENTIFIED
-// rise rather than a formality, because I could not name the needle.
+// HELD at 167 through #3164, which first appeared to require a rise.
 //
-//   What is known: adding the missing `deletedAt` filter to
-//   `compliance-digest.ts` moves this count by exactly one, measured by
-//   checking out each half of that diff separately — the SOURCE change does it,
-//   the test change does not. The only identifiers the fix pushes to five
-//   occurrences in that file are `where` (4 -> 5, and the added `where:` clauses
-//   ARE the fix) and, before I reworded the docblock, `tenants`.
+//   That diff adds two `where: { deletedAt: null }` clauses to
+//   `compliance-digest.ts`, which pushed one needle in
+//   `tests/unit/compliance-digest.test.ts` from four satisfying positions to
+//   six: `expect(content).toContain(': null')`, under a test named "null deltas
+//   when no prior snapshot". The four it was written for are the delta
+//   ternaries' fallback arms; the two it acquired are query filters that have
+//   nothing to do with deltas.
 //
-//   What is NOT known: which assertion counts it. The failure lists 17 sites at
-//   exactly five and the list is not truncated (cap 40); none of them reads
-//   `compliance-digest.ts`, and no guard names that file. ~21 guards read the
-//   jobs directory by glob, and I did not narrow it further.
+//   The needle was the defect, not the count. At six positions it would have
+//   stayed green with every delta fallback deleted, so long as one
+//   `deletedAt: null` survived anywhere in the file — a text search wearing an
+//   assertion's clothes. Narrowed to `/^\s+: null,$/m`, which matches a line
+//   whose entire content is the ternary arm and cannot be satisfied by a
+//   `: null` sitting inside an object literal. Verified by mutation: replacing
+//   the arms with `: 0` reddens that test.
 //
-//   Why raised rather than narrowed: the precedent above prefers fixing the
-//   needle, and that is still the better fix — but the needle belongs to
-//   another guard, the change that tips it is a one-line correctness fix for a
-//   job mailing removed tenancies, and holding that fix hostage to a search
-//   through 21 files is the wrong trade. Left deliberately as a loose end: the
-//   next person to touch this line should be able to find the site by
-//   bisecting the glob readers against a reverted `where:` clause.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 168;
+//   Found by bisection, which is what the sentinel above asks for: a temporary
+//   probe over this file's own `report()` on both the branch and a tree with
+//   only `compliance-digest.ts` reverted, diffed by needle. 29 sites either
+//   side; exactly one count moved.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

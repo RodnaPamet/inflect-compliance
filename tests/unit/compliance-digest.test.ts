@@ -230,7 +230,21 @@ describe('Compliance Digest — Trend Deltas', () => {
     });
 
     test('null deltas when no prior snapshot', () => {
-        expect(content).toContain(': null');
+        /*
+            The needle names the TERNARY ARM, not the characters ": null".
+
+            `toContain(': null')` matched four delta fallbacks and, once
+            `compliance-digest` grew `where: { deletedAt: null }` filters
+            (#3164), two query clauses as well — six positions for an assertion
+            about one construct, which tipped the Class D 5+ ratchet. A needle
+            at that multiplicity is a text search wearing an assertion's
+            clothes: it would have stayed green with every delta fallback
+            deleted, as long as one `deletedAt: null` survived.
+
+            Anchored to a line whose whole content is the arm, so a `: null`
+            appearing mid-line inside an object literal cannot satisfy it.
+        */
+        expect(content).toMatch(/^\s+: null,$/m);
     });
 
     test('supports configurable trend window (trendDays)', () => {
