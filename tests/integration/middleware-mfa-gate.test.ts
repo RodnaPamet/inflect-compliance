@@ -107,14 +107,37 @@ describe('MFA gate — class 2: flat authenticated API paths', () => {
         await expect(res.json()).resolves.toEqual({ error: 'MFA verification required' });
     });
 
-    it('refuses a flat admin API even for an OWNER who clears the role gate', async () => {
-        // Role is OWNER so section 3 passes; the MFA branch is what refuses.
-        // A READER would be refused earlier with a different reason, which
-        // would make this assertion prove nothing about MFA.
+    it('no longer MFA-gates a flat admin API, because it is not session-auth (#3132)', async () => {
+        /*
+            This asserted 403 "MFA verification required" for an mfaPending
+            OWNER on `/api/admin/diagnostics`. It no longer applies, and the
+            reason is a change of KIND rather than a weakening.
+
+            `/api/admin` became a machine-caller prefix in #3132: `isPublicPath`
+            returns at step 1, before `getToken` runs, so there is no session to
+            hold a second factor against. These routes are not
+            session-authenticated at all — they verify PLATFORM_ADMIN_API_KEY,
+            which is an operator credential, not a user's.
+
+            A browser session therefore still cannot read this endpoint: it
+            carries no platform key, so the handler returns 401. MFA has nothing
+            to add to that — a second factor on a credential nobody's browser
+            holds is not a gate, and the previous 403 was protecting a route
+            that no session could reach anyway once the key check ran.
+
+            What this test now pins is that the MFA branch is BYPASSED here, so
+            a later change that quietly re-routed `/api/admin` through session
+            auth would fail it.
+        */
         mockGetToken.mockResolvedValue(pendingToken('OWNER'));
         const res = await middleware(req('GET', '/api/admin/diagnostics'), {} as any);
-        expect(res.status).toBe(403);
-        await expect(res.json()).resolves.toEqual({ error: 'MFA verification required' });
+        expect(res.status).not.toBe(403);
+
+        // The tenant API in the same breath, so this cannot be read as "the
+        // MFA gate stopped working". It still refuses an mfaPending principal.
+        const tenant = await middleware(req('GET', '/api/t/acme/risks'), {} as any);
+        expect(tenant.status).toBe(403);
+        await expect(tenant.json()).resolves.toEqual({ error: 'MFA verification required' });
     });
 
     it('redirects a non-tenant PAGE using the token tenant, not the URL', async () => {
