@@ -366,3 +366,103 @@ describe('the prop groups the bar actually receives', () => {
         });
     });
 });
+
+/**
+ * Creating a map, in either canvas mode (#3116).
+ *
+ * The one genuine capability loss in the cutover: the xyflow bar could create a
+ * map already in AUTOMATION mode, and this one hardcoded DOCUMENT, so the route
+ * became create-then-convert.
+ *
+ * Every assertion here reads the REQUEST BODY rather than checking that the call
+ * resolved. The failure this guards against is a perfectly successful create
+ * carrying the wrong mode — `res.ok` is true in exactly that case, so a test
+ * written against the result would pass while the feature did nothing.
+ */
+describe('creating a map in either canvas mode', () => {
+    const bodyOf = (fetchImpl: jest.Mock, call = 0) =>
+        JSON.parse((fetchImpl.mock.calls[call]![1] as { body: string }).body) as {
+            name: string;
+            canvasMode: string;
+        };
+
+    it('defaults to DOCUMENT, so every existing call site is unchanged', async () => {
+        const { hook, fetchImpl } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.handleNew();
+        });
+        expect(bodyOf(fetchImpl as unknown as jest.Mock).canvasMode).toBe('DOCUMENT');
+        expect(bodyOf(fetchImpl as unknown as jest.Mock).name).toMatch(/^Untitled process /);
+    });
+
+    it("and creates an AUTOMATION map when asked, named a 'workflow'", async () => {
+        const { hook, fetchImpl } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.handleNew('AUTOMATION');
+        });
+        const body = bodyOf(fetchImpl as unknown as jest.Mock);
+        expect(body.canvasMode).toBe('AUTOMATION');
+        // A workflow is a rule graph and a process is a map; they read as
+        // different artefacts in the list, so they are named differently.
+        expect(body.name).toMatch(/^Untitled workflow /);
+    });
+
+    it('NORMALISES an event argument to DOCUMENT — the onClick hazard', async () => {
+        /*
+            `CanvasDocumentBar` renders `onClick={handleNew}`, so React hands
+            this a SyntheticEvent as its first argument. That was harmless while
+            the function took no parameter, and became a live defect the moment
+            it took one: an un-normalised read puts an event object into the
+            request body, `CreateProcessMapSchema`'s enum rejects it, and the
+            bar's own New button 400s while the command palette works.
+
+            A plain object stands in for the event — what matters is that it is
+            not the string `'AUTOMATION'`, which is the only value that flips.
+        */
+        const { hook, fetchImpl } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.handleNew({
+                preventDefault() {},
+                type: 'click',
+            } as never);
+        });
+        expect(bodyOf(fetchImpl as unknown as jest.Mock).canvasMode).toBe('DOCUMENT');
+    });
+
+    it('and anything else unrecognised also lands on DOCUMENT, not through', async () => {
+        // The safe direction: a document map created by accident is renameable;
+        // an automation map created by accident offers a rule editor over a
+        // process nobody modelled as one.
+        const { hook, fetchImpl } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.handleNew('automation' as never);
+        });
+        expect(bodyOf(fetchImpl as unknown as jest.Mock).canvasMode).toBe('DOCUMENT');
+    });
+
+    it('carries the created mode into the summary list', async () => {
+        /*
+            Without this the new map reads as DOCUMENT downstream — every
+            consumer does `activeProcess.canvasMode ?? 'DOCUMENT'` — so a freshly
+            created AUTOMATION map would open on the document bar until the next
+            list refresh. The stubbed response omits the field deliberately,
+            which is the case that exposes it.
+        */
+        const { hook, onProcessesChange } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.handleNew('AUTOMATION');
+        });
+        const added = (onProcessesChange.mock.calls.at(-1)![0] as Array<{ canvasMode?: string }>).at(
+            -1,
+        );
+        expect(added!.canvasMode).toBe('AUTOMATION');
+    });
+
+    it('and selects the new map, whichever mode it is', async () => {
+        const { hook, onActiveIdChange } = setup();
+        await act(async () => {
+            await hook.result.current.handlers.handleNew('AUTOMATION');
+        });
+        expect(onActiveIdChange).toHaveBeenCalledWith('map-2');
+    });
+});
