@@ -4,9 +4,10 @@
  * The app had server-side request metrics (OTel `http.request.duration`) but
  * NO client-perceived page-load timing — so "the pages feel slow" couldn't be
  * measured per route or per phase. This records browser-reported Core Web
- * Vitals (LCP / INP / CLS / FCP / TTFB) AND Next.js's custom navigation
- * metrics (hydration, route-change-to-render, render) so we can see WHICH
- * page and WHICH phase is slow before optimizing.
+ * Vitals (LCP / INP / CLS / FCP / TTFB) so we can see WHICH page is slow
+ * before optimizing. The three Next.js custom navigation metrics are also
+ * allowlisted but CANNOT ARRIVE in this App-Router app — see the note on
+ * KNOWN_VITALS, which is load-bearing for anyone sizing a navigation change.
  *
  * Two sinks, both best-effort:
  *   - a structured `web_vital` log line (always — visible without a collector);
@@ -26,8 +27,36 @@ const METER_NAME = 'inflect-web-vitals';
 
 /**
  * Allowlist — bounds metric-name label cardinality AND rejects junk posted to
- * the public `/api/telemetry/vitals` endpoint. Core Web Vitals + the Next.js
- * custom navigation metrics that `useReportWebVitals` emits.
+ * the public `/api/telemetry/vitals` endpoint.
+ *
+ * THE THREE `Next.js-*` NAMES BELOW CANNOT ARRIVE IN THIS APP, and the
+ * sentence they replace ("the Next.js custom navigation metrics that
+ * `useReportWebVitals` emits") was wrong. Established on Next 16.3.6 by
+ * reading the installed package, not its docs:
+ *
+ *   - `next/web-vitals`'s `useReportWebVitals` subscribes to SIX callbacks and
+ *     only six — CLS, FID, LCP, INP, FCP, TTFB. It never registers a listener
+ *     for custom performance measures.
+ *   - The three `Next.js-*` measures are produced by the PAGES router client
+ *     bootstrap (`next/dist/client/index.js`), which marks a route change and
+ *     measures against that mark. Nothing under the app-router entry does.
+ *   - Nothing in the installed `next/dist` reads `webVitalsCallbacks` at all.
+ *   - This app has no `pages/` directory. It is App Router only.
+ *
+ * They are KEPT in the allowlist deliberately: an unmatched entry costs
+ * nothing, removing them would redden the unit test that asserts them, and a
+ * Pages route or a Next upgrade could make them live again. What is NOT safe
+ * is reading their presence as evidence that in-app navigation latency is
+ * being measured — it is not. #3099 needed exactly that number to size the
+ * sidebar prefetch trade (see the comment next to `prefetch` in
+ * src/components/layout/nav-item.tsx) and found no instrument producing it.
+ *
+ * So the in-app navigation signal here is currently INP alone, which finalises
+ * on the next paint after the interaction — for a route with a `loading.tsx`
+ * that paint is the skeleton, not the destination's content — and which is
+ * attributed to whichever pathname is current when it finalises. It cannot
+ * separate a prefetch hit from a miss. Measuring navigation latency needs a
+ * new metric; it is not already here.
  */
 const KNOWN_VITALS: ReadonlySet<string> = new Set([
     // Core Web Vitals (web-vitals lib, bundled by Next)
@@ -36,7 +65,8 @@ const KNOWN_VITALS: ReadonlySet<string> = new Set([
     'CLS', // Cumulative Layout Shift   — visual stability (unitless)
     'FCP', // First Contentful Paint    — load
     'TTFB', // Time to First Byte       — server/network
-    // Next.js custom metrics — the in-app navigation signal
+    // Next.js custom metrics. INERT under App Router on Next 16.3.6 — see the
+    // docblock above. Kept so a Pages route or a Next upgrade is not a 400.
     'Next.js-hydration',
     'Next.js-route-change-to-render',
     'Next.js-render',

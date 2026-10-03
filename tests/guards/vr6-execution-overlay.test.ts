@@ -29,33 +29,58 @@ describe('VR-6 — execution overlay', () => {
         expect(src).toMatch(/refreshInterval/);
     });
 
-    it('the per-node overlay paint is UNPORTED, on the record', () => {
+    it('the per-node overlay paint is PORTED (#3115)', () => {
         /*
-            A retirement on the same terms as VR-5's (see
-            `vr5-chain-edges.test.ts` for the full reasoning).
+            ═══ A RETIREMENT, REVERSED BY THE OWNER ═══
 
-            `useNodeOverlayStatus` and `overlayClass` were read by
-            `ProcessTypedNode.tsx`, the xyflow node renderer.
-            `lib/processes/canvas-execution-overlay.tsx` is now referenced by
-            nothing but itself, and `ProcessNodeShapeUtil` paints no overlay.
+            This asserted the ABSENCE of the per-node paint, on the same terms as
+            VR-5's retirement: the overlay shows per-node RUN state, which needs
+            an AUTOMATION map, and production has 0 of them.
 
-            The overlay shows per-node RUN state, which needs an AUTOMATION map
-            to run. Production has **0** of them, so there is nothing to
-            overlay.
+            The owner decided to port all three retired capabilities after VR-5's
+            port went in (#3112). Recorded rather than quietly swapped: the
+            production count is an argument about PRIORITY, and a guard asserting
+            an absence had turned it into an argument about CORRECTNESS.
 
-            The original assertion's most interesting half is kept and INVERTED
-            below: it insisted the node must not call the tenant SWR poll
-            per-node, because one request per node is how a 500-node map
-            melts. That constraint is the part worth carrying forward to
-            whoever ports this — so it is asserted of the successor now, where
-            it holds trivially, rather than lost with the file that motivated
-            it.
+            ═══ WHAT THE PORT ACTUALLY WAS ═══
+
+            Wiring, not building. Every piece survived the cutover in
+            `lib/processes/canvas-execution-overlay.tsx` — the pure reducer, the
+            pure status→class map, the provider and the context read — and the
+            live-executions route was already serving. Two wires were missing:
+            the workspace did not mount the provider, and the node util did not
+            read the context.
+
+            ═══ THE CONSTRAINT THAT OUTLIVED THE FEATURE ═══
+
+            The original assertion's most interesting half was that the node must
+            NOT subscribe per-node, because one request per node is how a
+            500-node map melts. That is kept below, now asserted of a renderer
+            that really does paint an overlay — where it is a live constraint
+            rather than a trivially-true one.
         */
-        const util = read(
-            'src/components/processes/tldraw/ProcessNodeShapeUtil.tsx',
-        );
-        expect(util).not.toMatch(/useNodeOverlayStatus/);
-        // The constraint that outlives the feature: never a per-node poll.
+        const util = read('src/components/processes/tldraw/ProcessNodeShapeUtil.tsx');
+        const workspace = read('src/components/processes/TldrawProcessWorkspace.tsx');
+
+        // The node reads the CONTEXT…
+        expect(util).toMatch(/useNodeOverlayStatus\(/);
+        expect(util).toMatch(/overlayClassFor\(/);
+        // …and the workspace provides it, gated so the poll cannot run on a
+        // document map. `enabled={isRunMode}` and not `enabled` bare: an
+        // unconditional mount polls every 3s on every map in production.
+        expect(workspace).toMatch(/<CanvasOverlayProvider enabled=\{isRunMode\}>/);
+
+        // THE CONSTRAINT THAT SURVIVES: never a per-node subscription.
         expect(util).not.toMatch(/useCanvasExecutionOverlay/);
+        expect(util).not.toMatch(/useTenantSWR/);
+        expect(util).not.toMatch(/refreshInterval/);
+
+        /*
+            And the id is NARROWED, not cast. `dataJson` is the opaque
+            passthrough (#2960), so a row whose `ruleId` is a number would be a
+            render-time crash on the canvas if this read it as a string.
+        */
+        expect(util).toMatch(/export function ruleIdFromDataJson/);
+        expect(util).toMatch(/typeof id === 'string'/);
     });
 });

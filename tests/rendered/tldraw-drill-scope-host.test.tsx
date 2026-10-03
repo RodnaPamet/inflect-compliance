@@ -24,6 +24,8 @@ import type { Editor } from 'tldraw';
 
 import { TldrawProcessCanvas } from '@/components/processes/TldrawProcessCanvas';
 import {
+    collapsedHiddenKeys,
+    isCollapsedFromDataJson,
     drillEdgesFrom,
     drillNodesFrom,
     drillTrail,
@@ -40,9 +42,12 @@ const node = (
     nodeType: string,
     parentNodeKey: string | null,
     posX = 0,
+    // #3117 — a fold lives at `dataJson.collapsed`, so the fixture needs to be
+    // able to set it. Defaults to null, which is every node on every map today.
+    dataJson: unknown = null,
 ) => ({
     nodeKey, nodeType, label: `label-${nodeKey}`, subtitle: null,
-    posX, posY: 0, parentNodeKey, dataJson: null,
+    posX, posY: 0, parentNodeKey, dataJson,
 });
 
 /** A group `grp` with two children, one node outside it, and an annotation. */
@@ -190,5 +195,169 @@ describe('the breadcrumb trail', () => {
     it('is just the root at depth zero', async () => {
         const editor = await mount();
         expect(drillTrail(editor, [])).toHaveLength(1);
+    });
+});
+
+/**
+ * Collapsible groups (#3117) — the fold as a SECOND reason to hide.
+ *
+ * Collapse and drill-down both hide nodes, and expressing the first through the
+ * second does not work: `visibleNodeKeys` returns null at root meaning "no
+ * filtering", and a fold's main case IS at root. Returning a set there instead
+ * would switch the predicate out of its null fast path — and that path is what
+ * keeps stickies, frames and drawings on screen, because the non-process arm
+ * hides them whenever a drill scope exists.
+ *
+ * So folding one group at root would have hidden every annotation on the map.
+ * That is the assertion this suite exists for.
+ */
+describe('isCollapsedFromDataJson', () => {
+    it('is true only for the boolean true', () => {
+        expect(isCollapsedFromDataJson({ collapsed: true })).toBe(true);
+    });
+
+    it('and false for every lookalike a bad client could write', () => {
+        // `"true"` is the one that matters: a string would fold a group that
+        // this product never folded.
+        for (const v of [
+            null, undefined, 42, 'true', [], {}, { collapsed: 'true' },
+            { collapsed: 1 }, { collapsed: false }, { collapsed: null },
+        ]) {
+            expect(isCollapsedFromDataJson(v)).toBe(false);
+        }
+    });
+
+    it('ignores siblings, because the payload is a passthrough', () => {
+        expect(isCollapsedFromDataJson({ size: 'lg', ruleId: 'r1', collapsed: true })).toBe(true);
+    });
+});
+
+describe('collapsedHiddenKeys', () => {
+    const FOLDED: GraphRows = {
+        ...ROWS,
+        nodes: [
+            node('grp', 'group', null, 0, { collapsed: true }),
+            node('in1', 'processStep', 'grp', 100),
+            node('in2', 'processStep', 'grp', 200),
+            node('out', 'processStep', null, 400),
+            node('note', 'annotation', null, 600),
+        ],
+    };
+
+    it('is EMPTY when nothing is folded — the universal case today', async () => {
+        const editor = await mount();
+        expect(collapsedHiddenKeys(editor).size).toBe(0);
+    });
+
+    it('hides a folded group\'s children', async () => {
+        const editor = await mount(FOLDED);
+        const hidden = collapsedHiddenKeys(editor);
+        expect(hidden.has('in1')).toBe(true);
+        expect(hidden.has('in2')).toBe(true);
+    });
+
+    it('but NOT the group itself — it is what you click to unfold', async () => {
+        // Hiding it would make the fold irreversible on the canvas.
+        const editor = await mount(FOLDED);
+        expect(collapsedHiddenKeys(editor).has('grp')).toBe(false);
+    });
+
+    it('and nothing outside it', async () => {
+        const editor = await mount(FOLDED);
+        const hidden = collapsedHiddenKeys(editor);
+        expect(hidden.has('out')).toBe(false);
+        expect(hidden.has('note')).toBe(false);
+    });
+
+    it('reaches a grandchild — the fold is TRANSITIVE', async () => {
+        // A node inside a group inside a folded group is folded away too.
+        const editor = await mount({
+            nodes: [
+                node('outer', 'group', null, 0, { collapsed: true }),
+                node('inner', 'group', 'outer', 100),
+                node('deep', 'processStep', 'inner', 200),
+            ],
+            edges: [],
+        });
+        const hidden = collapsedHiddenKeys(editor);
+        expect(hidden.has('inner')).toBe(true);
+        expect(hidden.has('deep')).toBe(true);
+        expect(hidden.has('outer')).toBe(false);
+    });
+
+    it('and a parentNodeKey CYCLE terminates rather than hanging the canvas', async () => {
+        // `parentNodeKey` is a free string on the wire, so a client could write
+        // a cycle. The walk is bounded by the node count; it stops without
+        // claiming an ancestor it never reached.
+        const editor = await mount({
+            nodes: [
+                node('a', 'group', 'b', 0),
+                node('b', 'group', 'a', 100),
+            ],
+            edges: [],
+        });
+        expect(() => collapsedHiddenKeys(editor)).not.toThrow();
+        expect(collapsedHiddenKeys(editor).size).toBe(0);
+    });
+});
+
+describe('a fold composes with the drill scope without borrowing it', () => {
+    const FOLDED: GraphRows = {
+        ...ROWS,
+        nodes: [
+            node('grp', 'group', null, 0, { collapsed: true }),
+            node('in1', 'processStep', 'grp', 100),
+            node('in2', 'processStep', 'grp', 200),
+            node('out', 'processStep', null, 400),
+            node('note', 'annotation', null, 600),
+        ],
+    };
+    const vis = (editor: Editor, scope: Set<string> | null, hidden: Set<string>) =>
+        shapeVisibilityForScope(scope, edgeEndpointIndex(editor), hidden);
+    const nodeShape = (key: string) => ({
+        id: shapeIdForNodeKey(key) as string,
+        type: 'process-node',
+        props: { nodeKey: key },
+    });
+
+    it('AT ROOT a fold hides the children and leaves the annotation alone', async () => {
+        /*
+            THE assertion. At root the scope is null, so the fold is the only
+            reason anything is hidden — and the annotation must survive, because
+            folding one group says nothing about the map as a whole.
+        */
+        const editor = await mount(FOLDED);
+        const v = vis(editor, null, collapsedHiddenKeys(editor));
+        expect(v(nodeShape('in1'))).toBe('hidden');
+        expect(v(nodeShape('grp'))).toBe('inherit');
+        expect(v(nodeShape('out'))).toBe('inherit');
+        // A sticky note is not a process node and not an edge line.
+        expect(v({ id: 'shape:sticky-1', type: 'geo', props: {} })).toBe('inherit');
+    });
+
+    it('and at root with NOTHING folded everything inherits — the fast path', async () => {
+        const editor = await mount();
+        const v = vis(editor, null, new Set());
+        expect(v(nodeShape('in1'))).toBe('inherit');
+        expect(v({ id: 'shape:sticky-1', type: 'geo', props: {} })).toBe('inherit');
+    });
+
+    it('an edge into a folded node is hidden, like a line into empty space', async () => {
+        const editor = await mount(FOLDED);
+        const v = vis(editor, null, collapsedHiddenKeys(editor));
+        // `inside` joins two folded children; `crossing` joins a folded child to
+        // a visible node — both are lines to nowhere.
+        expect(v({ id: shapeIdForEdgeKey('inside') as string })).toBe('hidden');
+        expect(v({ id: shapeIdForEdgeKey('crossing') as string })).toBe('hidden');
+    });
+
+    it('DRILLED IN, both reasons apply and the annotation goes back to hidden', async () => {
+        // Inside a group the annotation layer is out of scope, which is the
+        // pre-existing drill behaviour and must not change.
+        const editor = await mount(FOLDED);
+        const v = vis(editor, visibleNodeKeys(editor, 'grp'), collapsedHiddenKeys(editor));
+        expect(v({ id: 'shape:sticky-1', type: 'geo', props: {} })).toBe('hidden');
+        // In scope for the drill, still folded away.
+        expect(v(nodeShape('in1'))).toBe('hidden');
     });
 });

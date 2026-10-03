@@ -76,7 +76,8 @@ import {
 } from '@/components/processes/tldraw/auto-layout-host';
 import { buildCanvasCommandGroups } from '@/lib/processes/canvas-command-groups';
 import { useTldrawCanvasCounts } from '@/lib/processes/use-tldraw-canvas-counts';
-import { RunModeProvider } from '@/lib/processes/run-mode-context';
+import { CanvasOverlayProvider } from '@/lib/processes/canvas-execution-overlay';
+import { RunModeProvider, useRunMode } from '@/lib/processes/run-mode-context';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
 import { useTldrawDocumentBar } from '@/lib/processes/use-tldraw-document-bar';
 import { useTldrawSelection } from '@/lib/processes/use-tldraw-selection';
@@ -134,9 +135,45 @@ export function TldrawProcessWorkspace(props: TldrawProcessWorkspaceProps) {
     // being off — consumers would throw rather than read false.
     return (
         <RunModeProvider>
-            <Inner {...props} />
+            <OverlayBridge>
+                <Inner {...props} />
+            </OverlayBridge>
         </RunModeProvider>
     );
+}
+
+/**
+ * VR-6 — bridges Run Mode → the live-execution overlay (#3115).
+ *
+ * A separate component for the reason the deleted xyflow canvas had the same
+ * one: the flag can only be read BELOW `RunModeProvider`, and reading it in
+ * `Inner` instead would put a canvas-wide concern in the middle of a component
+ * that is already 400 lines of layout.
+ *
+ * ALWAYS MOUNTED, GATED BY `enabled`. The poll is what the flag controls, not
+ * the provider's existence: `CanvasOverlayProvider` passes a null SWR key when
+ * disabled, so nothing is fetched on a document map — which is every map in
+ * production today — while every node below still reads a (empty) map rather
+ * than hitting a missing context.
+ *
+ * ── THIS COUPLES THE WORKSPACE TO TENANT CONTEXT ──
+ *
+ * Worth stating plainly, because it is a real change and it bit on arrival.
+ * `useTenantSWR` resolves the tenant API URL through `useTenantContext`
+ * EAGERLY — before the null key is consulted — so this component throws
+ * "useTenantContext must be used within a TenantProvider" when mounted without
+ * one, even with run mode off and nothing being fetched.
+ *
+ * That is satisfied in the app: `ProcessesClient` renders under
+ * `src/app/t/[tenantSlug]/layout.tsx`, which mounts `TenantProvider`. But the
+ * workspace previously needed no context at all — it takes `tenantSlug` as a
+ * PROP and builds its own URLs — so a test that mounted it bare must now
+ * provide one. The xyflow canvas carried the identical requirement through the
+ * identical bridge; what changed is which component is on top.
+ */
+function OverlayBridge({ children }: { children: React.ReactNode }) {
+    const { isRunMode } = useRunMode();
+    return <CanvasOverlayProvider enabled={isRunMode}>{children}</CanvasOverlayProvider>;
 }
 
 function Inner({
@@ -347,12 +384,23 @@ function Inner({
                 undo: bar.handlers.handleUndo,
                 redo: bar.handlers.handleRedo,
                 duplicate: bar.handlers.handleDuplicate,
-                // No `newAutomation` or `newFromTemplate`: this bar's
-                // `handleNew` takes no argument and hardcodes
-                // `canvasMode: 'DOCUMENT'`, and `ProcessTemplateModal` is not
-                // mounted here. The builder omits a command whose action is
-                // absent rather than offering one that opens nothing.
                 newDocument: () => void bar.handlers.handleNew(),
+                /*
+                    One-step AUTOMATION creation (#3116). The builder's arm for
+                    this already existed and was dark for want of an action —
+                    `handleNew` hardcoded DOCUMENT, so the only route to an
+                    automation map was create-then-convert.
+
+                    Called through an arrow rather than passed bare: the handler
+                    normalises anything that is not exactly `'AUTOMATION'` to
+                    DOCUMENT, so a bare reference reaching an onClick would
+                    silently create the wrong kind. Explicit here, normalised
+                    there — both, because either alone is one edit from wrong.
+                */
+                newAutomation: () => void bar.handlers.handleNew('AUTOMATION'),
+                // Still no `newFromTemplate`: `ProcessTemplateModal` is not
+                // mounted here, and the builder omits a command whose action is
+                // absent rather than offering one that opens nothing.
                 arrange: (direction, scope) => {
                     if (editor) runAutoLayout(editor, direction, scope);
                 },

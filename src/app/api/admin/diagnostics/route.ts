@@ -31,13 +31,35 @@
  *
  * SAFETY: Never exposes secrets, DSNs, or sensitive configuration values —
  * `sentryConfigured` is a boolean, never the DSN.
+ *
+ * ═══ `?probe=sentry` — DID AN EVENT ACTUALLY ARRIVE? ═══
+ *
+ * The two booleans above answer "is a DSN set" and "did init run". Neither
+ * answers the question that matters after wiring a DSN: does an event reach
+ * Sentry's servers. A wrong project id, a revoked key, or blocked egress all
+ * leave both booleans TRUE and nothing in the issue stream.
+ *
+ * So this emits ONE synthetic error on request and reports its event id, which
+ * an operator can look up directly rather than guessing which recent error was
+ * theirs. Deliberately a query parameter on an existing platform-key-gated
+ * route rather than a new endpoint: it adds no unauthenticated surface, and the
+ * capability belongs with the booleans it completes.
+ *
+ * It FLUSHES before responding. Sentry buffers, so without that this would
+ * return an event id for something still sitting in a queue — a check that
+ * reports success in precisely the case it exists to detect. `flushSentry` and
+ * not `shutdownSentry`: the latter closes the client and would leave the server
+ * running with reporting silently dead.
+ *
+ * The synthetic error is tagged `SENTRY_PROBE` and says so in its message, so
+ * nobody triages it as a real incident.
  */
 import { NextResponse } from 'next/server';
 
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
 import { isTelemetryInitialized } from '@/lib/observability/instrumentation';
-import { isSentryInitialized } from '@/lib/observability/sentry';
+import { captureError, flushSentry, isSentryInitialized } from '@/lib/observability/sentry';
 import { jsonResponse } from '@/lib/api-response';
 
 const startedAt = new Date();
@@ -57,6 +79,28 @@ export const GET = withApiErrorHandling(async (req) => {
         throw err;
     }
 
+    /*
+        The probe runs BEFORE the payload is built, so a failure to flush is
+        reported as part of this response rather than after it. `status: 500` is
+        passed because `captureError` drops anything below 500 to keep 4xx noise
+        out — without it the probe is silently a no-op, which is the same false
+        pass the flush guards against from the other end.
+    */
+    let sentryProbe: { eventId: string | null; flushed: boolean } | undefined;
+    if (new URL(req.url).searchParams.get('probe') === 'sentry') {
+        const eventId = captureError(
+            new Error('SENTRY_PROBE — synthetic event from /api/admin/diagnostics, not an incident'),
+            {
+                route: '/api/admin/diagnostics',
+                method: 'GET',
+                status: 500,
+                errorCode: 'SENTRY_PROBE',
+            },
+        );
+        // `flushed: false` means "could not confirm", never "delivered".
+        sentryProbe = { eventId: eventId ?? null, flushed: await flushSentry(5_000) };
+    }
+
     const uptimeSeconds = Math.round((Date.now() - startedAt.getTime()) / 1000);
 
     return jsonResponse({
@@ -73,6 +117,9 @@ export const GET = withApiErrorHandling(async (req) => {
             sentryConfigured: !!process.env.SENTRY_DSN,
             sentryInitialized: isSentryInitialized(),
             logLevel: process.env.LOG_LEVEL || 'info',
+            // Present only when asked for, so the ordinary payload is unchanged
+            // and nothing emits an event just by reading diagnostics.
+            ...(sentryProbe ? { sentryProbe } : {}),
         },
         runtime: {
             nodeVersion: process.version,

@@ -6,19 +6,34 @@
  * be a migration for a mechanism with no reader and no writer". This file is that
  * reader and writer.
  *
- * ## What this does NOT do
+ * ## WHAT READS THE RUNG — IT USED TO BE NOTHING, AND THE ORDER WAS THE POINT
  *
- * It changes no agent behaviour. Nothing in the funnel consults the rung yet, so
- * a connection at `DRY_RUN` and a connection at `DISABLED` are treated
- * identically by every tool call today. That is deliberate and it is the whole
- * argument of #2933's note: the control arrives BEFORE the authority it governs,
- * because #2241's lesson is what a rung costs when it arrives after. The write
- * path cannot be born ungated — it has to ask, and the default answer is
- * `DISABLED`.
+ * This file shipped with a note saying it changed no agent behaviour: "nothing
+ * in the funnel consults the rung yet, so a connection at `DRY_RUN` and a
+ * connection at `DISABLED` are treated identically by every tool call today".
+ * That was true, and deliberate — #2933's argument is that the control arrives
+ * BEFORE the authority it governs, because #2241's lesson is what a rung costs
+ * when it arrives after. The write path cannot be born ungated: it has to ask,
+ * and the default answer is `DISABLED`.
  *
- * `EXTERNAL_MAX_MODE` is `DRY_RUN` for the same reason: the two rungs above it
- * name authorities this build cannot exercise, and publishing a rung the product
- * then ignores is exactly what #2241 removed.
+ * It is no longer true. Kept in the past tense rather than deleted, because the
+ * ORDER is the argument and a reader should be able to see it was honoured.
+ * Three readers exist now:
+ *
+ *   `resolveExternalReadTools`   `DISABLED` drops the connection before a
+ *                                credential is decrypted or a socket opened (#2976)
+ *   `dispatchWrite`              `DRY_RUN` journals what WOULD change and sends
+ *                                nothing; `PROPOSE_ONLY` queues an
+ *                                `AgentProposal` for a human (#2983, #2999)
+ *   `openApprovedExternalWrite`  re-reads the rung at the instant a human
+ *                                approves, so a withdrawal refuses in front of
+ *                                them rather than hours later (#3002)
+ *
+ * `EXTERNAL_MAX_MODE` is `PROPOSE_ONLY` as of step 6 of #2861: every rung at or
+ * below it is implemented end to end. `AUTOMATIC` stays ABOVE the ceiling and
+ * `dispatchWrite` refuses it with `external_write_rung_unimplemented` — what it
+ * waits on is a design decision (#3051: a pre-approved write must be able to
+ * BOUND an argument, not only fix it), not code.
  *
  * ## Where the authorization lives
  *
@@ -29,6 +44,8 @@
  * and an `assertCanAdmin` denial writes no `AUTHZ_DENIED` row where a
  * `requirePermission` denial does.
  */
+import type { Prisma } from '@prisma/client';
+
 import { badRequest, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
@@ -87,42 +104,157 @@ export interface ExternalWritePolicy extends ExternalWriteState {
  * is what the ladder's dwell COUNTS as evidence"). The index was built for
  * exactly this query and had no caller.
  *
- * ── WHY PROPOSE_ONLY RETURNS undefined RATHER THAN 0 ────────────────────────
+ * ── PROPOSE_ONLY USED TO RETURN undefined ON A PREMISE STEP 6 FALSIFIED ─────
  *
- * `MODE_MIN_EVIDENCE` asks that rung for APPROVED PROPOSALS, and no external
- * write can be proposed yet — `dispatchWrite` refuses the rung outright with
- * `external_write_rung_unimplemented`. There is nothing to count, which is a
- * different fact from having counted and found none. `refusalForMove`
- * distinguishes the two deliberately, and a 0 here would claim we looked.
- * `undefined` makes the ladder say the true thing instead.
+ * The premise, stated here verbatim until this fix: "`MODE_MIN_EVIDENCE` asks
+ * that rung for APPROVED PROPOSALS, and no external write can be proposed yet —
+ * `dispatchWrite` refuses the rung outright with
+ * `external_write_rung_unimplemented`. There is nothing to count."
+ *
+ * Step 6 of #2861 raised `EXTERNAL_MAX_MODE` from `DRY_RUN` to `PROPOSE_ONLY`.
+ * A connection can hold that rung, `dispatchWrite` QUEUES an `AgentProposal` of
+ * kind `EXTERNAL_WRITE` there rather than refusing, and `approveAgentProposal`
+ * applies one. Proposals exist; approvals exist; there is something to count.
+ *
+ * Nothing was unsafe in the interval, and that is also why the falsification
+ * was invisible: the only move that asks this rung for evidence is
+ * `PROPOSE_ONLY → AUTOMATIC`, `AUTOMATIC` is above the ceiling, and
+ * `getExternalWritePolicy` consults `isAboveClamp` BEFORE `refusalForMove` — so
+ * no caller has ever read this number. Exactly the shape the section above
+ * describes for the `DRY_RUN` gate, which is the argument for fixing it now
+ * rather than in the diff that raises the ceiling again.
+ *
+ * ── THE JOIN, WHICH IS THE WHOLE QUESTION ───────────────────────────────────
+ *
+ * The count is PER CONNECTION and per window, and `AgentProposal` HAS NO
+ * `connectionId`. The connection id lives inside `payloadJson` — a `String` in
+ * `ENCRYPTED_FIELDS`, encrypted at rest, so it cannot be filtered in SQL at
+ * all. Counting proposals directly would mean reading every accepted
+ * `EXTERNAL_WRITE` proposal in the window, decrypting each payload and matching
+ * in JS: an unbounded read growing with queue history, to recover a fact stored
+ * one table over in an indexed column.
+ *
+ * So the join goes through the row the APPROVAL WRITES.
+ * `approveAgentProposal` calls `openApprovedExternalWrite` only after the full
+ * `requiredApprovals` count of DISTINCT humans has signed, and that opens an
+ * `ExternalWriteJournal` row carrying `connectionId` and the rung it was
+ * approved under. The biconditional is exact:
+ *
+ *   a journal row at `mode = 'PROPOSE_ONLY'`
+ *     ⟺ an `EXTERNAL_WRITE` proposal against that connection met its approval
+ *       requirement and a human committed to the write
+ *
+ * — because `recordIntent` throws on any mode but `DRY_RUN`, `beginWrite`
+ * refuses `DRY_RUN` and `DISABLED`, `openApprovedExternalWrite` is
+ * `beginWrite`'s only external-write caller, and the `external-write-dispatch`
+ * pass only ever SETTLES rows it did not create. The journal row is the better
+ * evidence of the two anyway: it is written BY the approval, under the rung
+ * re-checked at that instant, and it is what `AgentProposal.createdEntityId`
+ * then points at.
+ *
+ * Every dispatched outcome counts — see `DISPATCHED_OUTCOMES`. What this rung
+ * is asked to prove is that HUMANS REVIEWED external writes, which is the
+ * ladder's own wording, and the far end's answer is a different fact. A write a
+ * human approved and the far end then refused is still a review that happened;
+ * narrowing to `APPLIED` would let an unreliable third party hold a tenant at
+ * `PROPOSE_ONLY` for a reason with nothing to do with human review.
+ *
+ * ── undefined STILL MEANS "COULD NOT COUNT", AND NEVER ZERO ─────────────────
+ *
+ * The two are not collapsed, and `refusalForMove` still carries a separate
+ * sentence for each. A rung absent from `EVIDENCE_PREDICATE` has no query
+ * written for it, so nothing was looked at, and `undefined` says precisely
+ * that. `AUTOMATIC` is the live case: top rung, nothing is widened off it,
+ * `MODE_MIN_EVIDENCE` lists no requirement — there is no question, so a 0 would
+ * claim an answer. (`DISABLED` never arrives here at all; the call site skips
+ * it, because a rung that produces nothing by construction has nothing to
+ * count.)
  */
+
+/**
+ * The outcomes a row OPENED BY `beginWrite` can hold — i.e. a write something
+ * was obliged to send.
+ *
+ * `RECORDED_ONLY` is the one value absent, and the absence is the pin: it is the
+ * terminal outcome `recordIntent` stamps, and `recordIntent` refuses every mode
+ * but `DRY_RUN`. So it cannot narrow the `PROPOSE_ONLY` population today — like
+ * the `DRY_RUN` pair below it pins the claim rather than trusting one writer to
+ * remain the only one.
+ *
+ * A positive list rather than `{ not: 'RECORDED_ONLY' }`, because the two
+ * differ in which way they fail when `ExternalWriteOutcome` gains a value: a
+ * negation silently COUNTS the unknown outcome as evidence and widens
+ * authority, a list silently EXCLUDES it and keeps the gate shut until somebody
+ * decides what it means. Shut is the safe half.
+ */
+const DISPATCHED_OUTCOMES = ['PENDING', 'APPLIED', 'FAILED', 'INDETERMINATE'] as const;
+
+/**
+ * What counts as EVIDENCE for each rung that has a requirement.
+ *
+ * A table rather than a chain of `if`s so the answerable rungs are ENUMERABLE:
+ * `EVIDENCE_COUNTABLE_RUNGS` below reads its keys, and a unit test holds those
+ * against `MODE_MIN_EVIDENCE`'s. A rung that demands evidence and has no entry
+ * here is a gate that can NEVER be satisfied — "could not count" for ever, the
+ * ladder permanently shut on a true-but-useless sentence — which is #2993's
+ * failure wearing a different costume. No type can catch it, because
+ * `MODE_MIN_EVIDENCE` is a value and not a type.
+ *
+ * Each predicate names its `mode` as a LITERAL rather than reusing the caller's
+ * parameter, so an entry is a claim a reader can check against the enum's
+ * contract instead of a filter assembled at runtime for a rung nobody wrote a
+ * meaning for.
+ */
+const EVIDENCE_PREDICATE: Partial<
+    Record<ExternalWriteMode, Prisma.ExternalWriteJournalWhereInput>
+> = {
+    // `mode` AND `outcome`, not `outcome` alone: the pair is what the index
+    // leads on and what the enum's contract names.
+    DRY_RUN: { mode: 'DRY_RUN', outcome: 'RECORDED_ONLY' },
+    // An approved proposal, reached through the row the approval opens — see
+    // the header's biconditional.
+    PROPOSE_ONLY: { mode: 'PROPOSE_ONLY', outcome: { in: [...DISPATCHED_OUTCOMES] } },
+};
+
+/**
+ * The rungs `countEvidenceForRung` can answer for. DERIVED, so there is one
+ * source and the published list cannot drift from the queries.
+ *
+ * Exported for the invariant test described on `EVIDENCE_PREDICATE`, not for
+ * runtime use — nothing branches on it.
+ */
+export const EVIDENCE_COUNTABLE_RUNGS: readonly ExternalWriteMode[] = Object.keys(
+    EVIDENCE_PREDICATE,
+) as ExternalWriteMode[];
+
 async function countEvidenceForRung(
     ctx: RequestContext,
     connectionId: string,
     mode: ExternalWriteMode,
     since: Date,
 ): Promise<number | undefined> {
-    if (mode === 'DRY_RUN') {
-        return runInTenantContext(ctx, (db) =>
-            db.externalWriteJournal.count({
-                where: {
-                    tenantId: ctx.tenantId,
-                    connectionId,
-                    // `mode` AND `outcome`, not `outcome` alone: the pair is what
-                    // the index leads on and what the enum's contract names.
-                    // `recordIntent` refuses every other mode, so this cannot
-                    // narrow the population today — it pins the claim rather than
-                    // trusting one writer to remain the only one.
-                    mode: 'DRY_RUN',
-                    outcome: 'RECORDED_ONLY',
-                    attemptedAt: { gte: since },
-                },
-            }),
-        );
-    }
-    // PROPOSE_ONLY — see the header. Nothing can produce what this rung is asked
-    // for, so the honest answer is "could not count", never zero.
-    return undefined;
+    // Plain indexing, and NO `hasOwnProperty` guard — unlike `coerceStoredMode`,
+    // which needs one because it indexes a hand-written table with an arbitrary
+    // `string` and would hand back an inherited `Object.prototype` member. Here
+    // `mode` is the narrowed rung union, already through `coerceStoredMode`, so
+    // `__proto__` and `constructor` are unrepresentable. Stated rather than left
+    // looking like an oversight.
+    const predicate = EVIDENCE_PREDICATE[mode];
+
+    // No query written for this rung means nothing was looked at. `undefined`,
+    // never 0 — the header's last section is about this line.
+    if (!predicate) return undefined;
+
+    return runInTenantContext(ctx, (db) =>
+        db.externalWriteJournal.count({
+            where: {
+                tenantId: ctx.tenantId,
+                connectionId,
+                attemptedAt: { gte: since },
+                ...predicate,
+            },
+        }),
+    );
 }
 
 /** Load one MCP-server connection's rung, coerced at the read boundary. */

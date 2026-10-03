@@ -37,6 +37,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { Editor } from 'tldraw';
 
 import { TldrawProcessWorkspace } from '@/components/processes/TldrawProcessWorkspace';
+import { TenantProvider } from '@/lib/tenant-context-provider';
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
 import type { GraphRows } from '@/components/processes/tldraw/serializer';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
@@ -155,13 +156,15 @@ async function mount() {
             // shortcut simply does not fire. `src/app/providers.tsx` mounts it
             // in the real app, so this is the production arrangement.
             <KeyboardShortcutProvider>
-                <TldrawProcessWorkspace
-                    tenantSlug="acme"
-                    processes={PROCESSES}
-                    activeId="map-1"
-                    onActiveIdChange={() => {}}
-                    onProcessesChange={() => {}}
-                />
+                <TenantProvider value={TENANT_CTX}>
+                    <TldrawProcessWorkspace
+                        tenantSlug="acme"
+                        processes={PROCESSES}
+                        activeId="map-1"
+                        onActiveIdChange={() => {}}
+                        onProcessesChange={() => {}}
+                    />
+                </TenantProvider>
             </KeyboardShortcutProvider>,
         );
     });
@@ -169,6 +172,30 @@ async function mount() {
 
 const crumbs = () =>
     screen.queryAllByTestId('canvas-drill-crumb').map((b) => b.textContent);
+
+
+/*
+    `TenantProvider` is required as of #3115, and it is a product fact rather
+    than scaffolding: the workspace mounts `OverlayBridge`, whose `useTenantSWR`
+    resolves the tenant API URL through `useTenantContext` EAGERLY — before the
+    null key is consulted — so it throws without a provider even with Run Mode
+    off and nothing being fetched.
+
+    Satisfied in the app: `ProcessesClient` renders under
+    `src/app/t/[tenantSlug]/layout.tsx`, which mounts this. The workspace
+    previously needed no context at all — it takes `tenantSlug` as a PROP and
+    builds its own URLs — which is why this arrived with the overlay and not
+    before. A per-file literal rather than a shared helper, following the
+    pattern every other rendered test here uses.
+*/
+const TENANT_CTX = {
+    userId: 'user-1',
+    tenantId: 'tenant-1',
+    tenantSlug: 'acme',
+    tenantName: 'Acme',
+    role: 'OWNER' as const,
+    permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+} as never;
 
 describe('at root there is no trail', () => {
     it('renders no crumbs, and the canvas is scoped to nothing', async () => {
