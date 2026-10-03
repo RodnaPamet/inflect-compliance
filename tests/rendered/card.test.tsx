@@ -39,6 +39,13 @@ describe('Card', () => {
     );
     const el = screen.getByTestId('card');
     expect(el).toHaveClass('glass-card');
+    // #3151 — the `p-0` is load-bearing, not cosmetic. `.glass-card`
+    // carries its own `@apply p-4 md:p-5` in `@layer components`; only a
+    // PRESENT utility in `@layer utilities` can outrank it, so emitting
+    // nothing at all (what this rung used to do) rendered 16px / 20px.
+    // The two negatives below pass in BOTH worlds — they were the whole
+    // of this test's coverage and could not see the bug.
+    expect(el).toHaveClass('p-0');
     expect(el).not.toHaveClass('p-4');
     expect(el).not.toHaveClass('p-6');
   });
