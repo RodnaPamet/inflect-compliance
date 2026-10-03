@@ -8,9 +8,10 @@
  *   4. Idempotency / duplicate-run protection
  *   5. Runner result contract
  */
+import { computeNextDueAt } from '@/app-layer/utils/cadence';
 import {
     getFrequencyIntervalMs,
-    computeNextDueAt,
+    
 } from '@/app-layer/jobs/automation-runner';
 import { registry } from '@/app-layer/integrations/registry';
 import type {
@@ -102,32 +103,55 @@ describe('Automation Runner', () => {
 
     // ── Next Due Date ──
 
-    describe('computeNextDueAt', () => {
+    /*
+        The runner now uses the SHARED cadence (#3136). Its own
+        fixed-millisecond `computeNextDueAt` is deleted, so these expectations
+        move from 30/90/365-day spans to calendar months.
+
+        Asserted on CALENDAR COMPONENTS, not `toEqual` against an instant. The
+        old form was a latent DST bug of the same shape as #3135: this base date
+        is 27 March 2026, Europe's clocks go forward on 29 March, so "the same
+        local time one month later" is NOT the same UTC offset — comparing
+        instants would fail by an hour for a correct result.
+    */
+    describe('computeNextDueAt (shared cadence)', () => {
         const baseDate = new Date('2026-03-27T00:00:00Z');
+        const parts = (d: Date) => [d.getFullYear(), d.getMonth(), d.getDate()];
 
-        it('advances DAILY by 24 hours', () => {
-            const next = computeNextDueAt('DAILY', baseDate);
-            expect(next).toEqual(new Date('2026-03-28T00:00:00Z'));
+        it('advances DAILY by one day', () => {
+            expect(parts(computeNextDueAt('DAILY', baseDate)!)).toEqual(
+                parts(new Date(2026, 2, 28)),
+            );
         });
 
-        it('advances WEEKLY by 7 days', () => {
-            const next = computeNextDueAt('WEEKLY', baseDate);
-            expect(next).toEqual(new Date('2026-04-03T00:00:00Z'));
+        it('advances WEEKLY by seven days', () => {
+            expect(parts(computeNextDueAt('WEEKLY', baseDate)!)).toEqual(
+                parts(new Date(2026, 3, 3)),
+            );
         });
 
-        it('advances MONTHLY by 30 days', () => {
-            const next = computeNextDueAt('MONTHLY', baseDate);
-            expect(next).toEqual(new Date('2026-04-26T00:00:00Z'));
+        it('advances MONTHLY by a CALENDAR month, not 30 days', () => {
+            // Was 26 April under the fixed-interval version. The difference is
+            // the whole point of #3136.
+            expect(parts(computeNextDueAt('MONTHLY', baseDate)!)).toEqual(
+                parts(new Date(2026, 3, 27)),
+            );
         });
 
-        it('advances QUARTERLY by 90 days', () => {
-            const next = computeNextDueAt('QUARTERLY', baseDate);
-            expect(next).toEqual(new Date('2026-06-25T00:00:00Z'));
+        it('advances QUARTERLY by three calendar months, not 90 days', () => {
+            // Was 25 June.
+            expect(parts(computeNextDueAt('QUARTERLY', baseDate)!)).toEqual(
+                parts(new Date(2026, 5, 27)),
+            );
         });
 
-        it('advances ANNUALLY by 365 days', () => {
-            const next = computeNextDueAt('ANNUALLY', baseDate);
-            expect(next).toEqual(new Date('2027-03-27T00:00:00Z'));
+        it('advances ANNUALLY to the same date next year, not 365 days', () => {
+            // Identical here by coincidence — no leap day falls in this span —
+            // which is exactly why the leap-year case is asserted in the
+            // cadence unit test rather than relying on this one.
+            expect(parts(computeNextDueAt('ANNUALLY', baseDate)!)).toEqual(
+                parts(new Date(2027, 2, 27)),
+            );
         });
 
         it('returns null for AD_HOC', () => {
