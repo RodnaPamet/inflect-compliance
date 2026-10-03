@@ -4,7 +4,7 @@
  * B6 — `useZodForm` is the canonical client-side form hook for
  * Zod-validated modal forms. Replaces the per-entity hand-rolled
  * `useNew<Entity>Form` shape that the modal-form roadmap shipped
- * across vendors / tasks / policies / assets / audits.
+ * once per entity.
  *
  * Contract surfaced to the consumer:
  *
@@ -26,12 +26,11 @@
  *
  * Design decisions:
  *
- *   - Zod is the contract. The frontend schemas in
- *     `src/lib/schemas/` are the FRONTEND-safe subset of the
- *     server's `src/app-layer/schemas/`. We deliberately don't
- *     reuse the server schemas wholesale because they sometimes
+ *   - Zod is the contract. The caller passes a FRONTEND-safe
+ *     schema. A host application's server-side schemas are
+ *     deliberately not reused wholesale, because they sometimes
  *     reach into types the frontend bundle shouldn't pull in
- *     (Prisma-emitted enums via `@prisma/client`, etc.).
+ *     (ORM-emitted enums, etc.).
  *
  *   - Validation is lazy + per-field. `safeParse` runs on every
  *     `setField`; field errors are scoped via `.format()` so a

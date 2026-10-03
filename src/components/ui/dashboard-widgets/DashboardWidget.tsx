@@ -16,7 +16,7 @@
  *   │                                       ⤡│ ← optional resize handle
  *   └─────────────────────────────────────────┘
  *
- * Visual: existing `glass-card` shell + Inflect design tokens
+ * Visual: existing `glass-card` shell + the shared design tokens
  * (`text-content-emphasis`, `text-content-muted`, `border-border-subtle`).
  * No new visual language — the wrapper is a layout primitive that
  * inherits everything from the broader page chrome.

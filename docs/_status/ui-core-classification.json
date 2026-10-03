@@ -340,9 +340,9 @@
   "reason": "CVA recipe only. Brand tokens appear solely as gradient stops, borders and shadows; the one text usage is `hover:text-content-brand` (L168) — the AA-safe token, with a comment explaining the 4:1 problem it avoids. No copy, no domain, no storage."
  },
  "src/components/ui/button.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The core button primitive — no rendered copy, no storage, and every brand token is used as background/border/shadow (L181 focus halo, L310 kbd background), which the rules explicitly permit. One domain example survives in a comment."
+  "reason": "The core button primitive — no rendered copy, no storage, and every brand token is used as background/border/shadow (L181 focus halo, L310 kbd background), which the rules explicitly permit. The one domain example in a comment was removed under #3046: the label-centering note's `+ Asset` — itself the antipattern `no-plus-prefix-labels` forbids in a real label — now reads `+ New`. Nothing else was ever coupled, so this is GENERIC. Highest-value unblock in the set: 7 GENERIC files import it directly and promoting it adds 4 files to the import-closed subset (empty-state, error-state, table-empty-state and itself)."
  },
  "src/components/ui/card-header.tsx": {
   "classification": "MIXED",
@@ -355,9 +355,9 @@
   "reason": "Generic card primitives (Card / CardHeader / CardContent) with a good a11y story. Two couplings. The solid one is an English copy-parameter default that reaches the DOM as an aria-label — rule 1's exact shape, and the only string in the file not supplied by the caller; this file never calls useTranslations. The second is weaker and I flag it as a judgement call: the JSDoc kv example is a compliance-shaped one — `{ label: 'Owner', value: 'ciso@acme.com' }` and a Coverage row (:24-25), echoed in the `kv` doc at :285-286 — but it is prose only, and the placeholder tenant \"Acme Corp\" (:18) is no named brand. The other three axes are clean: no storage key, nothing imported from `src/app-layer` or a domain `src/lib`, and every `--brand-default` rides a ring, border or background (:153, :164-165, :206), never text."
  },
  "src/components/ui/card-list/card-list.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A 95-line responsive grid container — `<ul role=\"list\">`, a loading context, nothing else. Code is entirely generic (no copy; `aria-label` is a pass-through prop with no default). The only coupling is one domain example in the file-header comment naming compliance framework packs among the surfaces this grid is for. I judged \"framework\" here as the GRC sense (framework packs = the compliance frameworks a tenant adopts, at :7) rather than the software sense, so it counts as domain vocabulary in prose — removable by generalising the example list."
+  "reason": "A 95-line responsive grid container — `<ul role=\"list\">`, a loading context, nothing else. Code is entirely generic (no copy; `aria-label` is a pass-through prop with no default). Its one coupling was a domain example in the file-header comment naming compliance framework packs among the surfaces this grid is for; the earlier audit read \"framework\" there in the GRC sense (the frameworks a tenant adopts, at :7) rather than the software sense, so it counted as domain vocabulary in prose. #3046 generalised the example list to \"health summaries, catalogue packs\", which removes the reading either way."
  },
  "src/components/ui/card-list/index.ts": {
   "classification": "GENERIC",
@@ -490,9 +490,9 @@
   "reason": "27-line context provider holding a single hovered-Date state. Nothing but React."
  },
  "src/components/ui/charts/types.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Type-only module (plus five tiny ChartState constructors) and the single most vendorable contract surface here — but like examples.ts it claims domain-freedom while its JSDoc carries compliance examples. Removable with a comment edit; no type or field is itself domain-shaped."
+  "reason": "Type-only module (plus five tiny ChartState constructors) and the single most vendorable contract surface here. It used to claim domain-freedom while its JSDoc carried compliance examples; #3046 removed all three — the brand name at :117, the noun enumeration at :120 (which stated the no-domain rule by listing the very nouns it excludes, the same self-defeating shape `use-local-storage`'s docstring has), and the `\"controls\"` display-unit example at :229. No type or field was ever domain-shaped, so GENERIC."
  },
  "src/components/ui/charts/use-heat-scale.ts": {
   "classification": "MIXED",
@@ -535,9 +535,9 @@
   "reason": "Shared gear-popover checklist (click-to-order, drag-reorder, cmdk nav). Copy is clean — the one owned string is t('table.resetToDefaults') and `title` is a prop. One brand token is used as text."
  },
  "src/components/ui/checklist-order.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure order/visibility transforms (toggle, reconcile, reorder, slot-merge) — no React, no storage access, no rendered copy. The only coupling is the brand prefix spelled literally in a defensive comment."
+  "reason": "Pure order/visibility transforms (toggle, reconcile, reorder, slot-merge) — no React, no storage access, no rendered copy. The brand prefix spelled literally in `reconcileOrder`'s defensive comment was its only coupling and #3046 removed it: the comment now names the caller's column-visibility storage key without the prefix, which stays accurate precisely because the key is the caller's, not this module's."
  },
  "src/components/ui/combobox/index.tsx": {
   "classification": "MIXED",
@@ -585,9 +585,9 @@
   "reason": "Generic react-grid-layout wrapper: its public contract is {id, position, size, enabled} plus a renderWidget callback and a layout diff, with a below-md stacked fallback. No copy, no storage, no domain imports. Coupling is comment-only and removable."
  },
  "src/components/ui/dashboard-widgets/DashboardWidget.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic card shell: optional title/subtitle/actions slots, a presentational resize handle, and an inline SVG icon. Every string is caller-supplied — `aria-label={title ?? undefined}` has no English fallback. Coupling is comment-only."
+  "reason": "Generic card shell: optional title/subtitle/actions slots, a presentational resize handle, and an inline SVG icon. Every string is caller-supplied — `aria-label={title ?? undefined}` has no English fallback. Its coupling was comment-only — the brand name at :19 — and #3046 removed it. Deliberately left: the `id` prop's JSDoc still cites the real `#org-*` E2E selector ids, which carry no domain vocabulary and would become inaccurate documentation if generalised."
  },
  "src/components/ui/dashboard-widgets/TargetLine.tsx": {
   "classification": "GENERIC",
@@ -610,9 +610,9 @@
   "reason": "Upgraded GENERIC->MIXED by the mechanical pass (domain-import): @/lib/kpi-trend. Audited note: Type-only module for the renderer's discriminated payload (KpiConfig/DonutConfig/TimeSeriesConfig/ChartTargetConfig). Deliberately decoupled from the backend widget enum, and its head matter says so. No compliance vocabulary, no copy, no brand. Its three imports resolve to src/components/ui/* and src/lib/kpi-trend, which I judged a generic KPI-math util rather than a domain module (see notes)."
  },
  "src/components/ui/date-picker/calendar.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A thin, well-behaved react-day-picker wrapper: all four nav aria-labels go through `useTranslations('common.calendar')` (prevYear/prevMonth/nextMonth/nextYear), and the brand tokens it uses are `bg-brand-emphasis` / `bg-brand-subtle` — background on the selected day and range middle, which is correct for non-text. One doc-comment brand mention is the only coupling."
+  "reason": "A thin, well-behaved react-day-picker wrapper: all four nav aria-labels go through `useTranslations('common.calendar')` (prevYear/prevMonth/nextMonth/nextYear), and the brand tokens it uses are `bg-brand-emphasis` / `bg-brand-subtle` — background on the selected day and range middle, which is correct for non-text. The one doc-comment brand mention at :7 was its only coupling and #3046 removed it."
  },
  "src/components/ui/date-picker/date-picker.tsx": {
   "classification": "MIXED",
@@ -765,9 +765,9 @@
   "reason": "Barrel only — re-exports plus the `Filter = { Select, List }` namespace object. No strings rendered, no domain vocabulary; the comment's \"Edit filter cards\" names a UI control, not a compliance concept."
  },
  "src/components/ui/filter/types.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The filter type system — generic prop shapes plus the pure `normalizeActiveFilter` / `parseRangeToken` / `encodeRangeToken`. Coupling is a single stale brand reference in a comment, so this is a one-line fix. The `(e.g. picker: \"ACME Inc. — admin@acme.com\", pill: \"ACME Inc.\")` JSDoc at :80 is a placeholder company, not one of the named brands, so not reported."
+  "reason": "The filter type system — generic prop shapes plus the pure `normalizeActiveFilter` / `parseRangeToken` / `encodeRangeToken`. The single stale brand reference at :1 was the recorded coupling and #3046 removed it. #3046 also changed \"min/max controls\" to \"min/max inputs\" at :38, which the earlier audit had judged clean as the widget sense and is: a downstream line scan cannot tell it from the GRC noun, and the fix cost nothing. The `(e.g. picker: \"ACME Inc. — admin@acme.com\", pill: \"ACME Inc.\")` JSDoc at :80 is a placeholder company, not one of the named brands, so not reported."
  },
  "src/components/ui/filter/use-filter-card-visibility.tsx": {
   "classification": "MIXED",
@@ -935,9 +935,9 @@
   "reason": "Compares `Record<string,string>` filter sets (union of keys, '' == missing) to decide whether an SSR payload may seed SWR. Comments say \"list page\" / \"six copies\" but name no compliance entity; all inputs are untyped records."
  },
  "src/components/ui/hooks/use-threshold-load-more.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic in shape — slices ReadonlyArray<TRow> to a window, no I/O, no copy, no types beyond TRow. The coupling is the motivating list of compliance pages in the docblock."
+  "reason": "Generic in shape — slices ReadonlyArray<TRow> to a window, no I/O, no copy, no types beyond TRow. #3046 removed the motivating list of compliance pages from the docblock, and with it the `LIST_BACKFILL_CAP` citation of a domain module the file does not import — the same prose shape `EntityDetailLayout` is held at MIXED for — plus the two stray \"tenant\"/\"org-level\" references in the same paragraph. Its only import is `react`."
  },
  "src/components/ui/hooks/use-toast-with-undo.ts": {
   "classification": "GENERIC",
@@ -3055,9 +3055,9 @@
   "reason": "Two generic guards (beforeunload, capture-phase click confirm). `confirmMessage` is a required parameter with NO default, so there is no copy coupling. The coupling is the two call sites named as the extraction's motivation."
  },
  "src/lib/hooks/use-zod-form.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Fully generic Zod-driven form hook (values/setField/touchField/fieldError/canSubmit/submit/reset) parameterised on TSchema. The one literal string, 'Submission failed' at :155, is an internal error fallback not routed through next-intl — worth flagging but not one of the five as written. Coupling is the entity list and the app-layer reference in the docblock."
+  "reason": "Fully generic Zod-driven form hook (values/setField/touchField/fieldError/canSubmit/submit/reset) parameterised on TSchema. #3046 removed both recorded couplings from the docblock — the entity list at :6-7 and the `src/app-layer/schemas/` citation at :29-31, which named the boundary `docs/shared-ui-policy.md` clause 5 forbids crossing even though the file never imported across it. The one literal string, 'Submission failed' at :155, is an internal error fallback not routed through next-intl: flagged by the original audit, still present, and still not one of the five as written."
  },
  "src/lib/hooks/useUrlFilters.ts": {
   "classification": "GENERIC",

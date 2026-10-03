@@ -1,22 +1,19 @@
 'use client';
 
 /**
- * PR-1 — Threshold-based "Load more" accumulator for tenant tables.
+ * PR-1 — Threshold-based "Load more" accumulator for long tables.
  *
- * The org-level tables already use `useCursorPagination` for a
- * server-cursor "Load more …" UX. Tenant tables historically render
- * the full result set in one go — fine when row counts are small,
- * but the dashboard's heaviest list pages (controls, risks,
- * evidence, tasks) can balloon past a few hundred rows on busy
- * tenants. That dragged DOM size + scroll cost the user no
+ * Some tables use a server-cursor "Load more …" UX. Others
+ * historically render the full result set in one go — fine when row
+ * counts are small, but the heaviest list pages can balloon past a
+ * few hundred rows. That dragged DOM size + scroll cost the user no
  * particular discoverability win.
  *
  * This hook closes the gap WITHOUT requiring every list page to
- * migrate to a paginated API surface (most tenant pages already
- * have the full row set in memory via the existing
- * `LIST_BACKFILL_CAP` cap). It slices the input rows to a
- * threshold-sized window and exposes a `loadMore` action that
- * grows the window in fixed increments.
+ * migrate to a paginated API surface (a caller that already holds
+ * the full row set in memory needs no new fetch). It slices the
+ * input rows to a threshold-sized window and exposes a `loadMore`
+ * action that grows the window in fixed increments.
  *
  *   • If `rows.length <= threshold`, every row is visible from
  *     the start. `hasMore` is `false`, `loadMore` is a no-op.
@@ -31,7 +28,7 @@
  *     filter change (filter relaxes back), the window stays at
  *     the user's loaded size — no surprise re-collapse.
  *
- * The hook is purely client-side. The matching org-level cursor
+ * The hook is purely client-side. The matching server-cursor
  * pattern lives at `useCursorPagination`; both speak the same UX
  * vocabulary (`hasMore` + `loadMore` + `loading`/`error` on the
  * cursor variant; this variant has no async I/O so no `loading`

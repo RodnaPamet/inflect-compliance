@@ -114,10 +114,10 @@ export type ChartTooltipContext<T extends Datum = any> = {
 //
 // The types above are the visx-tied surface the `TimeSeriesChart`
 // primitive consumes directly. The contracts below are the
-// consumer-facing shapes every chart surface in Inflect should speak
+// consumer-facing shapes every chart surface in the app should speak
 // — sparklines, bar charts, progress widgets, KPI cards, and any
 // future reporting component. They carry zero domain semantics
-// (evidence / risk / control / audit stay out of `charts/`) and no
+// (the host product's nouns stay out of `charts/`) and no
 // visx dependency, so non-chart consumers (tooltip content, export
 // serialisers, API clients) can import them without pulling a d3
 // transitive.
@@ -226,7 +226,7 @@ export interface TooltipPayload<T extends Datum = Datum> {
  * A single progress measurement the `ProgressCard` / dashboard KPI
  * widgets render. `current` + `target` are the two values the bar
  * fills from; `unit` is the optional trailing display unit (e.g.
- * "%", "controls", "days"). When `target` is omitted, consumers
+ * "%", "items", "days"). When `target` is omitted, consumers
  * default to 100 — the common percent-coverage case.
  */
 export interface ProgressMetric {
