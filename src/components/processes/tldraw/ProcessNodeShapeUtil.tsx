@@ -45,8 +45,17 @@
  * case: for an annotation, draw to the step it annotates; for a group, draw to
  * a node inside it.
  */
-import { HTMLContainer, Rectangle2d, ShapeUtil } from 'tldraw';
+import {
+    HTMLContainer,
+    Rectangle2d,
+    ShapeUtil,
+    stopEventPropagation,
+    useMaybeEditor,
+} from 'tldraw';
 
+import { ChevronRight } from '@/components/ui/icons/nucleo/chevron-right';
+
+import { isCollapsedFromDataJson } from './drill-scope-host';
 import {
     overlayClassFor,
     useNodeOverlayStatus,
@@ -223,6 +232,78 @@ export class ProcessNodeShapeUtil extends ShapeUtil<ProcessNodeShape> {
 }
 
 /**
+ * The fold toggle on a group node (#3117).
+ *
+ * ═══ WHY A CHEVRON AND NOT A GESTURE ═══
+ *
+ * Double-clicking a group already means DRILL IN on this canvas. The xyflow
+ * group node hit the same clash and resolved it the same way — its comment says
+ * the chevron is "the only collapse affordance to avoid a gesture clash" — so
+ * this carries that decision over rather than rediscovering it.
+ *
+ * ═══ useMaybeEditor, NOT useEditor ═══
+ *
+ * `useEditor()` throws without editor context, and `process-shape-render`
+ * deliberately renders this util with no editor: its docblock says constructing
+ * a real editor to render one box would test tldraw rather than this util.
+ * `useMaybeEditor()` returns null there, so the control renders inert and that
+ * file's 40 assertions keep working.
+ *
+ * It also makes the DISABLED state real rather than cosmetic — with no editor
+ * there is nothing to write to, and saying so in the DOM beats a button that
+ * silently no-ops.
+ *
+ * ═══ stopEventPropagation ═══
+ *
+ * Without it tldraw treats the pointer-down as a canvas gesture and starts
+ * dragging the shape, so the click either drags or never lands. This is the
+ * first interactive control inside a shape here, so there was no precedent.
+ *
+ * ═══ MERGED into dataJson, never replacing it ═══
+ *
+ * `dataJson` is the opaque passthrough (#2960) and already carries `size`,
+ * `linkedEntityId` and `ruleId`. A whole-value write would drop every sibling
+ * key — the same reason `useTldrawSelection` merges rather than assigns.
+ */
+function GroupFoldToggle({ shape }: { shape: ProcessNodeShape }) {
+    const editor = useMaybeEditor();
+    const collapsed = isCollapsedFromDataJson(shape.props.dataJson);
+
+    return (
+        <button
+            type="button"
+            // The accessible NAME is the group's own label and the STATE is
+            // `aria-expanded`, so this needs no new copy — a shape util has no
+            // translator, which is why the node reads per-kind text from
+            // `NODE_TAXONOMY` constants rather than a message catalogue.
+            aria-label={shape.props.label || undefined}
+            aria-expanded={!collapsed}
+            disabled={editor === null}
+            data-testid={`group-fold-${shape.props.nodeKey || shape.id}`}
+            data-collapsed={collapsed ? 'true' : 'false'}
+            onPointerDown={stopEventPropagation}
+            onClick={() => {
+                if (!editor) return;
+                const prev = (shape.props.dataJson ?? null) as Record<string, unknown> | null;
+                editor.markHistoryStoppingPoint();
+                editor.updateShape({
+                    id: shape.id,
+                    type: PROCESS_NODE_SHAPE_TYPE,
+                    props: { dataJson: { ...(prev ?? {}), collapsed: !collapsed } },
+                } as never);
+            }}
+            className="shrink-0 rounded-[3px] p-0.5 text-content-muted hover:bg-canvas-surface disabled:opacity-50"
+            style={{ pointerEvents: 'all' }}
+        >
+            <ChevronRight
+                className={`h-3.5 w-3.5 transition-transform ${collapsed ? '' : 'rotate-90'}`}
+                aria-hidden="true"
+            />
+        </button>
+    );
+}
+
+/**
  * A process node's chassis and contents.
  *
  * Split out of `ProcessNodeShapeUtil.component` so the overlay hook has a real
@@ -277,6 +358,8 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
             data-overlay-status={overlayStatus}
         >
             <div className="flex items-center gap-tight">
+                {/* Groups only — a step has nothing to fold. */}
+                {meta.category === 'group' ? <GroupFoldToggle shape={shape} /> : null}
                 <Icon
                     className={`h-4 w-4 shrink-0 ${NODE_ACCENT_ICON_TONE[meta.accent]}`}
                     // Decorative: the label below is the accessible name.

@@ -1272,15 +1272,137 @@ model ExternalToolParameterSet {
   pendingByUserId   String?
   pendingAt         DateTime?
 
+  /// ── THE OPEN FIELDS OF A BOUNDED TEMPLATE (#3051 step 5b) ──────────────
+  ///
+  /// Field name -> ONE `ValueConstraint` from
+  /// `src/lib/integrations/parameter-constraints.ts` (`regex | enum | integer
+  /// | length`). `{"workEmail": {"kind":"regex","pattern":"^[a-z.]{1,64}@company\\.test$"}}`
+  /// says: the agent chooses this one argument, within that bound, and every
+  /// other argument is the exact value a human approved.
+  ///
+  /// NULL — and no default — so an existing row IS a template with zero open
+  /// fields. Today's model becomes the degenerate case: no backfill, no flag
+  /// day, and `hasSets` keeps its meaning at the tool boundary.
+  ///
+  /// Only reachable through the REVIEWED path. A trigger
+  /// (`external_tool_parameter_set_open_fields_four_eyes`) refuses an INSERT
+  /// that already carries open fields and any UPDATE that changes this column
+  /// other than by promoting `pendingOpenFields` with the signatures to back
+  /// it — because a BASELINE row is trust-on-first-use with no reviewed
+  /// moment, and a predicate nobody reviewed is the one thing step 5b exists
+  /// to prevent.
+  openFields Json?
+
+  /// The open fields of an edit awaiting approval. Moves with the `pending*`
+  /// quartet and is NEVER read by a dispatch.
+  ///
+  /// A FIFTH fact that may legitimately be absent while the quartet is
+  /// present: `pendingOpenFields IS NULL` on a pending edit means "after this
+  /// edit the template has zero open fields", i.e. a NARROWING. So it is not
+  /// folded into `pending_is_whole`; a separate CHECK refuses it being set
+  /// with no pending edit beside it, which is the half that would be
+  /// uninterpretable.
+  pendingOpenFields Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant                             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  approvals ExternalToolParameterSetApproval[]
 
   /// One set per (tenant, tool, label). Tenant-leading so it doubles as the
   /// tenant-scoped lookup index — every query this table serves is `tenantId`,
   /// or `tenantId + toolName`, or all three.
   @@unique([tenantId, toolName, label])
+
+  /// Composite parent key, so a four-eyes signature can never be attached to
+  /// another tenant's parameter set. Same shape `AgentProposal` carries for
+  /// its approvals, and the migration creates the index with `IF NOT EXISTS`
+  /// for the reason that one gives: the key belongs to the TABLE, not to one
+  /// migration.
+  @@unique([id, tenantId])
+}
+
+/// ═════════════════════════════════════════════════════════════════════
+/// ONE HUMAN'S SIGNATURE ON ONE TEMPLATE EDIT (#3051 step 5b).
+///
+/// Four-eyes is not a facility anything can call. `AgentProposalApproval`
+/// shows the pattern — a table, a unique index that IS the rule, and a
+/// trigger — but its machinery does not transfer: its trigger's body joins
+/// `AgentProposal` to `RegisteredAgent`, neither of which a parameter set has.
+/// So this is the pattern applied again, with two deliberate differences.
+///
+/// ── DIFFERENCE 1: `revision` IS IN THE UNIQUE KEY ────────────────────
+///
+/// Without it the same admin could never approve a SECOND edit, having signed
+/// the first. A proposal is approved once and never again; a parameter set
+/// moves repeatedly, and `revision` is which move this signature is for — the
+/// revision the pending edit will BECOME, i.e. the row's `revision` + 1.
+///
+/// ── DIFFERENCE 2: `pendingHash` IS IN THE UNIQUE KEY TOO ─────────────
+///
+/// A signature has to name WHAT it signed, for the same reason
+/// `approveParameterChange` makes an approver pass `expectedPendingHash`.
+/// Without it: admin A signs the pending edit, the proposer replaces the
+/// pending edit with different content, admin B signs — and the promotion
+/// commits content only one human ever read, with two signatures against it.
+///
+/// It is in the KEY, not merely a column, so that an admin who has already
+/// signed can sign AGAIN once the content changes. With the hash outside the
+/// key, a two-admin tenant whose edit was revised would be unable to promote
+/// it at all — and a control shaped like an outage is a control people remove.
+/// Counting is filtered by the hash either way, so the four-eyes property does
+/// not rest on the index alone.
+/// ═════════════════════════════════════════════════════════════════════
+model ExternalToolParameterSetApproval {
+  id             String @id @default(cuid())
+  tenantId       String
+  parameterSetId String
+
+  /// The human who signed. A plain String with NO foreign key, matching
+  /// `AgentProposalApproval.approverUserId`: the signature must survive the
+  /// signer's account being deleted, and a `RESTRICT` FK would block that
+  /// deletion while a `SET NULL` one would erase the accountability the row
+  /// exists for.
+  approverUserId String
+
+  /// Which revision this signature is for — the one the pending edit will
+  /// become. Not the revision in force when it was signed.
+  revision Int
+
+  /// The digest of the pending edit this signature is against. See
+  /// DIFFERENCE 2 above.
+  pendingHash String
+
+  /// The requirement in force when this signature was recorded. Denormalised
+  /// for the reason `AgentProposalApproval` gives: a signature that cannot say
+  /// what it was signing up to is not self-describing evidence.
+  ///
+  /// NOT what the promotion trigger gates on. The trigger recomputes the
+  /// requirement from the row itself, because a number the application wrote
+  /// is a number the application can lower.
+  requiredApprovals Int
+
+  createdAt DateTime @default(now())
+
+  /// No `updatedAt`. The row is append-only — `app_user` holds neither UPDATE
+  /// nor DELETE — and a column promising to record an update on a table that
+  /// refuses them is a promise the table does not make.
+
+  tenant       Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parameterSet ExternalToolParameterSet @relation(fields: [parameterSetId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// ONE signature per human per (revision, content). The four-eyes constraint
+  /// itself: counting signatures and then writing one is a read-then-write, and
+  /// there is no application-layer arrangement of that check that closes the
+  /// window — there is a unique index that never opens one.
+  @@unique([tenantId, parameterSetId, revision, approverUserId, pendingHash])
+
+  /// The read the promotion trigger and the operator listing both make:
+  /// (tenantId, parameterSetId) and then the revision. Tenant-leading, and it
+  /// also makes `parameterSetId` the second column of a tenant composite,
+  /// which is what Layer B of `schema-index-coverage` asks of an FK.
+  @@index([tenantId, parameterSetId, revision])
 }
 
 // ═════════════════════════════════════════════════════════════════════

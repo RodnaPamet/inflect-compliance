@@ -252,6 +252,30 @@ export async function shutdownSentry(timeoutMs = 2_000): Promise<void> {
 }
 
 /**
+ * Flush buffered events WITHOUT shutting the client down.
+ *
+ * ═══ WHY THIS IS NOT `shutdownSentry` ═══
+ *
+ * `shutdownSentry` calls `Sentry.close()` and sets `_initialized = false`, so
+ * calling it to flush would permanently disable error reporting in that
+ * process — the server would keep running and report nothing, with no error
+ * anywhere to say so. That is a far worse outcome than the unflushed event this
+ * exists to prevent, which is why the two are separate functions rather than
+ * one with a flag.
+ *
+ * Needed because Sentry BUFFERS. An event captured and never flushed leaves a
+ * probe reporting an event id for something that never left the process — a
+ * verification that reports success in exactly the case it was built to detect.
+ *
+ * Returns false on timeout, which the caller should surface rather than treat
+ * as success: "could not confirm" and "delivered" must not look alike.
+ */
+export async function flushSentry(timeoutMs = 2_000): Promise<boolean> {
+    if (!_initialized) return false;
+    return Sentry.flush(timeoutMs);
+}
+
+/**
  * Capture an error in Sentry with request context correlation.
  *
  * Only captures errors with status >= 500 (server errors).
@@ -271,12 +295,25 @@ export function captureError(
         userId?: string;
         errorCode?: string;
     },
-): void {
+): string | undefined {
     // Skip 4xx — these are expected/handled
-    if (extra?.status && extra.status < 500) return;
+    if (extra?.status && extra.status < 500) return undefined;
 
     // Auto-enrich from ALS context if extra not provided
     const ctx = getRequestContext();
+
+    /*
+        The event id, returned so a caller can CORRELATE — the delivery probe
+        reports it so an operator can find that exact event in Sentry instead of
+        guessing which of several recent errors was theirs.
+
+        Assigned inside the scope callback rather than returned from it:
+        `withScope` returns the callback's value in current Sentry versions, but
+        relying on that couples this to a detail of a library we pin with a
+        caret. The two existing callers ignore the return entirely, so widening
+        `void` to `string | undefined` cannot affect them.
+    */
+    let eventId: string | undefined;
 
     Sentry.withScope((scope) => {
         // Tags for filtering in Sentry dashboard
@@ -304,12 +341,12 @@ export function captureError(
             });
         }
 
-        if (error instanceof Error) {
-            Sentry.captureException(error);
-        } else {
-            Sentry.captureException(new Error(String(error)));
-        }
+        eventId =
+            error instanceof Error
+                ? Sentry.captureException(error)
+                : Sentry.captureException(new Error(String(error)));
     });
+    return eventId;
 }
 
 /**

@@ -192,6 +192,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // a set is keyed by (tenant, tool, label) and not by agent, so it governs
     // every agent granted that tool.
     't/[tenantSlug]/admin/agents/parameter-sets/route.ts',
+    // #3051 step 5b — ONE human's signature on a proposed edit to a bounded
+    // template, which is a third privileged act beside propose and approve and
+    // so gets its own path rather than a discriminator in a shared body. It
+    // promotes nothing: the database refuses the promotion until two
+    // signatures from humans other than the proposer are on file.
+    't/[tenantSlug]/admin/agents/parameter-sets/signatures/route.ts',
     // An external server's catalogue and the approval that makes one of its
     // tools grantable. Under /admin/agents rather than /admin/integrations
     // because accepting a tool DESCRIPTION is agent governance, not credential

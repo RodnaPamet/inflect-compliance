@@ -193,13 +193,66 @@ describe('the palette is mounted and fed', () => {
         expect(hostRef!.current).toBeInstanceOf(HTMLElement);
     });
 
-    it('offers no command whose action this host cannot perform', async () => {
-        // `handleNew` here takes no argument and hardcodes DOCUMENT, and no
-        // template modal is mounted.
+    it('offers new-automation now that the host can perform it (#3116)', async () => {
+        /*
+            This asserted `new-automation` was UNDEFINED, because `handleNew`
+            took no argument and hardcoded DOCUMENT. That was the cutover's one
+            genuine capability loss, and it is wired now.
+
+            `new-from-template` stays absent, and that is the teeth for this
+            assertion rather than a leftover: the builder omits a command whose
+            action is missing, so if it started offering everything
+            unconditionally this line would catch it. `ProcessTemplateModal` is
+            still not mounted here.
+        */
         await mount();
-        expect(command('new-automation')).toBeUndefined();
-        expect(command('new-from-template')).toBeUndefined();
+        expect(command('new-automation')).toBeDefined();
         expect(command('new')).toBeDefined();
+        expect(command('new-from-template')).toBeUndefined();
+    });
+
+    it('and selecting it POSTs an AUTOMATION map, not a document one', async () => {
+        /*
+            The end of the wire, through the real builder, the real host and the
+            real handler. Asserted on the REQUEST BODY: the failure shape being
+            guarded is a perfectly successful create carrying DOCUMENT, which no
+            assertion on the result could distinguish from success.
+
+            `fetch` is spied for this test only — the rest of this file never
+            reaches the network, and a file-wide stub would hide that.
+        */
+        const calls: Array<{ url: string; body: unknown }> = [];
+        const spy = jest
+            .spyOn(globalThis, 'fetch')
+            .mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+                calls.push({
+                    url: String(url),
+                    body: JSON.parse((init?.body as string | undefined) ?? '{}'),
+                });
+                return {
+                    ok: true,
+                    status: 201,
+                    json: async () => ({
+                        id: 'map-new',
+                        name: 'Untitled workflow 2',
+                        status: 'DRAFT',
+                        version: 1,
+                        canvasMode: 'AUTOMATION',
+                    }),
+                } as never;
+            });
+        try {
+            await mount();
+            await act(async () => {
+                command('new-automation')!.onSelect();
+            });
+            const post = calls.find((c) => c.url.includes('/processes'));
+            expect(post).toBeDefined();
+            expect((post!.body as { canvasMode: string }).canvasMode).toBe('AUTOMATION');
+            expect((post!.body as { name: string }).name).toMatch(/^Untitled workflow /);
+        } finally {
+            spy.mockRestore();
+        }
     });
 });
 

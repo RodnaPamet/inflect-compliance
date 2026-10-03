@@ -137,54 +137,95 @@ describe("PR-B polish — clipboard copy + collapsible groups", () => {
             Collapsible group nodes lived entirely in `ProcessTypedNode.tsx` —
             `GroupNodeChrome`, a chevron toggle, `COLLAPSED_GROUP_W/H`, and a
             handler that shrank the node and flipped its descendants' `hidden`
-            flags. None of it ported to the tldraw node shape.
+            flags. None of it ported to the tldraw node shape — until #3117.
 
-            Retired rather than deleted, for the reason `vr5-chain-edges` gives
-            at length: this epic's sibling guards exist BECAUSE features here
-            have been dead code before, and silence is how that recurs.
+            ═══ A RETIREMENT, REVERSED BY THE OWNER (2026-10-02) ═══
 
-            ═══ THREE MEASUREMENTS, AND THE THIRD IS THE ONE THAT MATTERS ═══
+            This asserted the ABSENCE on three measurements, and the honest part
+            is that all three were TRUE and two of them still are:
 
             1. It was NEVER PERSISTED. The xyflow renderer's own comment says
-               "the save serialiser intentionally drops `collapsed`" — so this
-               was session-only view state by design, not data. Nothing stored
-               is being hidden by its absence.
+               "the save serialiser intentionally drops `collapsed`" — session
+               view state by design. Still true of xyflow, and it is why #3117
+               was larger than a port: the persistence half had to be built, not
+               moved.
 
-            2. Production has **0 group nodes** (5 ProcessNode rows, none of
-               type `group`). Collapse had nothing to collapse.
+            2. Production has **0 group nodes**. Still true.
 
-            3. The NEED it served is ported, differently and arguably better.
-               #3085 and #3088 shipped drill-down: double-clicking a group
-               scopes the canvas to that group's children and a breadcrumb
-               shows the trail. Collapsing hid a group's contents in place;
-               drilling in shows only them. Both answer "this sub-process is
-               cluttering the map", and the tldraw host answers it.
+            3. The need was arguably served by drill-down (#3085, #3088).
 
-            ═══ WHAT WOULD HAVE TO CHANGE ═══
+            The owner decided to port it anyway, after VR-5 (#3112) and VR-6
+            (#3123). Measurement 3 is the one that bent: collapse and drill-down
+            are NOT the same gesture, which this text already said — drilling in
+            leaves the top-level view, collapse hides a group in place — and the
+            old note named the first group node as when that stops being
+            theoretical. An owner decision got there first.
 
-            A user wanting a group's contents hidden WITHOUT leaving the
-            top-level view — collapse and drill-down are not the same gesture,
-            and the first group node in production is when the difference stops
-            being theoretical. At that point reach for `getShapeVisibility`,
-            which already filters by scope for the drill-down.
+            ═══ IT TOOK THE ROUTE THIS NOTE PREDICTED ═══
+
+            "At that point reach for `getShapeVisibility`, which already filters
+            by scope for the drill-down." That is exactly what happened, with one
+            thing the prediction missed: collapse cannot be expressed THROUGH the
+            drill scope. `visibleNodeKeys` returns null at root meaning "no
+            filtering", and a fold's main case is at root; returning a set there
+            would have switched the predicate out of its null fast path, which is
+            what keeps stickies and frames visible. So folding one group at root
+            would have hidden every annotation on the map. Two independent
+            reasons to hide need two inputs — `collapsedHiddenKeys` carries the
+            second, and `drill-scope-host.ts` says so at length.
         */
         const nodeUtil = () =>
             read("src/components/processes/tldraw/ProcessNodeShapeUtil.tsx");
 
-        it("is absent from the tldraw node shape, and the successor gesture is present", () => {
-            // The absence, asserted so it cannot drift into "somebody probably
-            // did it".
-            expect(nodeUtil()).not.toMatch(/GroupNodeChrome/);
-            expect(nodeUtil()).not.toMatch(/data\.collapsed/);
-            // And the replacement capability, so this is a substitution on the
-            // record rather than a hole. Drill-down is a canvas-level scope
-            // filter, not node chrome, which is why it lives elsewhere.
+        it("is PORTED to the tldraw node shape, and drill-down still coexists", () => {
+            const util = nodeUtil();
+            const host = read("src/components/processes/tldraw/drill-scope-host.ts");
             const canvas = read("src/components/processes/TldrawProcessCanvas.tsx");
+
+            // The affordance, and the state it reads. Not `GroupNodeChrome` —
+            // that was xyflow's component, and the collapsed group's shrunken
+            // footprint is deliberately NOT ported: the tldraw node renders at a
+            // fixed size it does not read from the row (#2961), so a smaller
+            // folded box would be a second renderer decision with nowhere to
+            // persist its geometry.
+            // Bounded with the paren (#2728): an unbounded declaration needle
+            // also matches `GroupFoldToggleWrapper`, so it names a declaration
+            // without saying where it ends.
+            expect(util).toMatch(/function GroupFoldToggle\(/);
+            expect(util).toMatch(/isCollapsedFromDataJson\(/);
+            // `dataJson.collapsed`, NOT xyflow's `data.collapsed` — a different
+            // path on a different engine, and the old needle would have passed
+            // against the new code while naming nothing.
+            expect(host).toMatch(/collapsed\?:\s*unknown/);
+            expect(host).toMatch(/export function collapsedHiddenKeys/);
+
+            /*
+                ═══ A SOURCE ASSERTION, BECAUSE THE BEHAVIOUR IS UNREACHABLE ═══
+
+                `stopEventPropagation` on pointer-down is what lets the click
+                reach the button at all: without it tldraw claims the gesture and
+                drags the shape instead. It is pinned HERE rather than in a
+                rendered test because jsdom cannot show it — `fireEvent.click`
+                dispatches straight at the element and never goes through
+                tldraw's pointer handling, so removing the guard leaves every
+                rendered assertion green. Measured, not assumed: that mutation
+                survived 17 of 17.
+
+                So this is the honest coverage available, and the limitation is
+                recorded rather than papered over with a test that would pass
+                either way.
+            */
+            expect(util).toMatch(/onPointerDown=\{stopEventPropagation\}/);
+
+            // And the fold MERGES into dataJson. The payload already carries
+            // `size`, `linkedEntityId` and `ruleId`; a whole-value write drops
+            // them. Asserted behaviourally too, through the chevron itself —
+            // driving it through a merging test helper left this mutation green.
+            expect(util).toMatch(/dataJson: \{ \.\.\.\(prev \?\? \{\}\), collapsed: !collapsed \}/);
+
+            // Drill-down is unchanged and still coexists: two gestures, two
+            // mechanisms, one visibility predicate.
             expect(canvas).toMatch(/getShapeVisibility=\{getShapeVisibility\}/);
-            // The prop DECLARATION, not the bare word: `onEnterGroup` occurs
-            // eight times in that file (prop, destructure, ref, effect, the
-            // handler), so the bare needle is a text search written as an
-            // assertion — which is exactly what Class D counts.
             expect(canvas).toMatch(/onEnterGroup\?:\s*\(nodeKey: string\) => void/);
         });
     });

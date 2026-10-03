@@ -35,7 +35,22 @@ jest.mock('@/lib/auth/platform-admin', () => {
     };
 });
 jest.mock('@/lib/observability/instrumentation', () => ({ isTelemetryInitialized: () => true }));
-jest.mock('@/lib/observability/sentry', () => ({ isSentryInitialized: () => false }));
+/*
+    The probe's two collaborators are captured, not just stubbed: what the tests
+    below assert is the ARGUMENTS the route passes — `status: 500` in particular,
+    because `captureError` drops anything below 500 and the probe would be a
+    silent no-op without it.
+*/
+const captureError = jest.fn<string | undefined, [unknown, Record<string, unknown>?]>(
+    () => 'evt-abc123',
+);
+const flushSentry = jest.fn<Promise<boolean>, [number?]>(async () => true);
+jest.mock('@/lib/observability/sentry', () => ({
+    isSentryInitialized: () => false,
+    captureError: (...a: unknown[]) =>
+        captureError(...(a as [unknown, Record<string, unknown>?])),
+    flushSentry: (...a: unknown[]) => flushSentry(...(a as [number?])),
+}));
 
 import { NextRequest } from 'next/server';
 
@@ -125,5 +140,101 @@ describe('the payload still exposes no secrets', () => {
             if (prev === undefined) delete process.env.SENTRY_DSN;
             else process.env.SENTRY_DSN = prev;
         }
+    });
+});
+
+/**
+ * `?probe=sentry` — proving an event actually reaches Sentry.
+ *
+ * `sentryConfigured` and `sentryInitialized` answer "is a DSN set" and "did init
+ * run". Neither answers the question that matters after wiring a DSN: does an
+ * event arrive. A wrong project id, a revoked key or blocked egress leave both
+ * booleans true and the issue stream empty.
+ */
+describe('the Sentry delivery probe', () => {
+    beforeEach(() => {
+        captureError.mockClear();
+        flushSentry.mockClear();
+        captureError.mockReturnValue('evt-abc123');
+        flushSentry.mockResolvedValue(true);
+        verifyPlatformApiKey.mockReset();
+    });
+
+    const call = (url: string) => GET(new NextRequest(url) as never, undefined as never);
+
+    it('emits NOTHING on an ordinary read — diagnostics is not a side effect', async () => {
+        // The teeth for the whole feature. If merely reading diagnostics
+        // captured an event, every uptime check would file an issue.
+        const res = await call('https://x.test/api/admin/diagnostics');
+        const body = await res.json();
+        expect(captureError).not.toHaveBeenCalled();
+        expect(body.observability.sentryProbe).toBeUndefined();
+    });
+
+    it('captures one synthetic event and reports its id', async () => {
+        const res = await call('https://x.test/api/admin/diagnostics?probe=sentry');
+        const body = await res.json();
+        expect(captureError).toHaveBeenCalledTimes(1);
+        expect(body.observability.sentryProbe).toEqual({ eventId: 'evt-abc123', flushed: true });
+    });
+
+    it('passes a 5xx status, or captureError would silently drop it', async () => {
+        /*
+            `captureError` returns early for `status < 500` to keep 4xx noise
+            out of Sentry. A probe that omitted the status, or sent a 4xx, would
+            capture nothing and still report an event id of null — reading as
+            "Sentry took it" when nothing was sent.
+        */
+        await call('https://x.test/api/admin/diagnostics?probe=sentry');
+        const extra = captureError.mock.calls[0]![1]!;
+        expect(extra.status as number).toBeGreaterThanOrEqual(500);
+        expect(extra.errorCode).toBe('SENTRY_PROBE');
+    });
+
+    it('and the event says it is synthetic, so nobody triages it', async () => {
+        await call('https://x.test/api/admin/diagnostics?probe=sentry');
+        const err = captureError.mock.calls[0]![0] as Error;
+        expect(err).toBeInstanceOf(Error);
+        expect(err.message).toContain('SENTRY_PROBE');
+        expect(err.message).toMatch(/not an incident/i);
+    });
+
+    it('FLUSHES before responding, because Sentry buffers', async () => {
+        // Without this the response carries an event id for something still
+        // queued in the process — a check that passes in exactly the case it
+        // exists to detect.
+        await call('https://x.test/api/admin/diagnostics?probe=sentry');
+        expect(flushSentry).toHaveBeenCalledTimes(1);
+        expect(flushSentry.mock.calls[0]![0]).toBeGreaterThan(0);
+    });
+
+    it('reports a failed flush as flushed:false, not as success', async () => {
+        // "Could not confirm" and "delivered" must not look alike.
+        flushSentry.mockResolvedValue(false);
+        const res = await call('https://x.test/api/admin/diagnostics?probe=sentry');
+        const body = await res.json();
+        expect(body.observability.sentryProbe.flushed).toBe(false);
+    });
+
+    it('is behind the platform key — an unverified caller emits NO event', async () => {
+        /*
+            The one that would matter most if it were wrong. An endpoint that
+            emits a Sentry event before checking the key is an unauthenticated
+            way to fill someone's error budget.
+        */
+        verifyPlatformApiKey.mockImplementation(() => {
+            throw new PlatformAdminError(401, 'bad key');
+        });
+        const res = await call('https://x.test/api/admin/diagnostics?probe=sentry');
+        expect(res.status).toBe(401);
+        expect(captureError).not.toHaveBeenCalled();
+        expect(flushSentry).not.toHaveBeenCalled();
+    });
+
+    it('and any other probe value is ignored rather than guessed at', async () => {
+        const res = await call('https://x.test/api/admin/diagnostics?probe=otel');
+        const body = await res.json();
+        expect(captureError).not.toHaveBeenCalled();
+        expect(body.observability.sentryProbe).toBeUndefined();
     });
 });
