@@ -305,7 +305,17 @@ function FunnelChartInner({
                   fontSize={10}
                   className={cn(
                     "fill-content-muted font-mono tabular-nums select-none",
-                    isHoveredStage && "fill-[var(--brand-default)]",
+                    // `fill-` IS the text channel on an SVG <Text> — there is no
+                    // `color` doing the work — so this 10px delta label owes WCAG
+                    // 1.4.3's 4.5:1, not 1.4.11's 3:1. `--brand-default` is 4.03:1
+                    // on --bg-page and 4.18:1 on --bg-default in light theme, so
+                    // it fails as TEXT while being perfectly fine on the shapes
+                    // elsewhere in this file. `--content-brand` exists for exactly
+                    // this (T01, #3026) and clears the floor on every surface this
+                    // chart renders on: 5.07 / 5.25 / 5.53 light. In dark theme it
+                    // resolves to the SAME #FFCD11, so this is a light-theme-only
+                    // change. #3139.
+                    isHoveredStage && "fill-content-brand",
                   )}
                 >
                   {deltaPct >= 100
