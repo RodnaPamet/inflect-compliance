@@ -386,7 +386,36 @@ function tallyFile(rel: string, content: string, into: Tally): void {
 // purpose. Ratcheting it in the same change that re-instrumented the
 // counter would lock in a number produced by a measurement fix rather
 // than by a demotion, and the two would be indistinguishable later.
-const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
+//
+// 2026-10-04 — 0.9 -> 1.55, finally doing what the instruction four
+// paragraphs up says to do. Measured on main at the time of the change:
+// primary 175, secondary 280, ratio 1.6000, over 404 scanned files.
+//
+// WHY NOW, when #2379 declined. #2379's objection was specific and it has
+// expired: ratcheting *in the recalibration PR itself* would have locked a
+// number the instrument produced rather than one a demotion earned. The
+// move since then — 1.51 -> 1.60 — came from real demotions, including the
+// three this guard's own sibling forced on #3124's parameter-sets page.
+// That is a win, and the paragraph above says to lock a win in the PR that
+// earns it. Nobody did, for three weeks.
+//
+// WHY 1.55 AND NOT 1.60. 1.60 is the measurement, and the sibling ceiling's
+// convention since 2026-07-15 is "= measured, no headroom". Taking that here
+// too would leave BOTH constants with zero slack, so one genuinely-earned
+// primary would trip two guards and the author would have to touch two
+// shared lines in one PR. 1.55 leaves one primary's worth of room: at 280
+// secondaries the floor permits 180 primaries, against a ceiling of 175.
+//
+// What that buys, concretely. The floor used to permit 311 primaries — 136
+// above the ceiling — so it could never fire and was decoration. It now sits
+// 5 slots from binding, and it bites on a case the COUNT ceiling cannot see:
+// a PR that DEMOTES secondaries (or deletes a page full of them) worsens the
+// ratio while leaving the primary count untouched. The count ceiling is blind
+// to that; this floor is not.
+//
+// It is still one-way: raise it when a demotion earns it, never lower it to
+// make a PR pass.
+const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // Modal-form P2 (2026-05-24) — bumped 113 → 115 to absorb the
 // three new modal-launch primary CTAs ("Create Policy" / "Create
 // Task" / "Create Vendor" on the respective list pages). Each
@@ -557,7 +586,9 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // slots of headroom: the ceiling is at 173 = measured, no headroom, and
 // the direction of travel is unchanged and still one-way down. The next
 // genuinely-earned primary bumps this by hand with a written reason,
-// exactly like every entry above.
+// exactly like every entry above. (That sentence has since been read as
+// AVAILABILITY — see the 2026-10-04 note at the constant for what a bump
+// actually costs.)
 // 2026-09-11 — AGENTIC UI 2/4 (#2447): 173 -> 174, ONE genuinely-earned primary.
 //
 // The amend dialog's save. Not a style preference and not a new page-defining
@@ -593,6 +624,34 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // inbound link renders through `buttonVariants({ variant: 'secondary' })`, and
 // the confirm dialog's action comes from `ConfirmDialog` rather than a Button
 // this file declares. So this is +1, not +2.
+// 2026-10-04 — THE CEILING IS NOT A QUEUE, AND A BUMP IS NOT FREE.
+//
+// 175 stays. What changes is the wording, because the old sentence further up
+// ("the next genuinely-earned primary bumps this by hand with a written
+// reason") reads as availability, and it was read that way: #3124 designed
+// three earned primaries for the parameter-sets page — the baseline form's
+// create, the propose form's submit, the pending card's approve, one per
+// region — and all three were demoted to secondary on the follow-up, because
+// main measures exactly 175 and had no slot to give. That page now renders
+// ZERO primaries and its own comment records which one it should have been
+// (`Approve <digest>`, the four-eyes commit).
+//
+// So, explicitly: a written reason is NECESSARY AND NOT SUFFICIENT. This line
+// moves only in a PR that also pays for it, by demoting an equivalent primary
+// elsewhere, re-measured at merge time so the total is unchanged. There is no
+// headroom to spend and there has not been since 2026-07-15.
+//
+// Where the payment can come from, measured 2026-10-04: 117 of 404 files hold
+// at least one primary — 87 hold exactly one (a page's sole CTA, not
+// available), 18 hold two, and twelve hold three or more, 52 primaries
+// between them. Those twelve are the only realistic source.
+//
+// If that trade is ever judged wrong — if the product genuinely needs more
+// loud actions than 175 — that is a deliberate raise with a ratio behind it,
+// not an increment. Note the guard's own docstring names 3:1-4:1 as the
+// target, which at 280 secondaries would cap primaries at 93; the product is
+// at 175. The aspiration and the enforced number have been different for a
+// long time, and this comment is not the place that gets reconciled.
 const MAX_PRIMARY_COUNT = 175;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));
@@ -619,7 +678,7 @@ describe("primary:secondary ratio direction", () => {
         const ratio = tally.secondary / Math.max(tally.primary, 1);
         if (ratio < MIN_SECONDARY_TO_PRIMARY_RATIO) {
             throw new Error(
-                `Secondary:primary ratio is ${ratio.toFixed(2)} (secondary=${tally.secondary}, primary=${tally.primary}). Premium-product baseline is ≥ 1.0 (3:1 - 4:1 is the target). To pass, demote a primary somewhere to secondary, OR — if the new primary is genuinely earned — demote two equivalent primaries to compensate.`,
+                `Secondary:primary ratio is ${ratio.toFixed(2)} (secondary=${tally.secondary}, primary=${tally.primary}), below the enforced floor of ${MIN_SECONDARY_TO_PRIMARY_RATIO}. NOTE this fires on a fall in SECONDARIES as well as a rise in primaries — deleting or demoting secondary buttons worsens the ratio while leaving the primary count untouched, which the count ceiling cannot see. To pass: add back the secondary emphasis you removed, or demote a primary somewhere to secondary. The long-term target in this file's docstring is 3:1-4:1, which is well above the current floor.`,
             );
         }
         expect(ratio).toBeGreaterThanOrEqual(MIN_SECONDARY_TO_PRIMARY_RATIO);
