@@ -120,9 +120,9 @@ export default async function RbacPage({
                         </thead>
                         <tbody>
                             {permissionRows.map(({ resource, action }) => (
-                                <tr key={`${resource}.${action}`}>
-                                    <td className="text-xs font-medium text-content-default sticky left-0 bg-bg-default/50">{resource}</td>
-                                    <td className="text-xs text-content-muted sticky left-[120px] bg-bg-default/50">{action}</td>
+                                <tr key={`${resource}.${action}`} className="group/row">
+                                    <td className="text-xs font-medium text-content-default sticky left-0 bg-bg-default/50 group-hover/row:bg-bg-muted">{resource}</td>
+                                    <td className="text-xs text-content-muted sticky left-[120px] bg-bg-default/50 group-hover/row:bg-bg-muted">{action}</td>
                                     {roles.map((role) => {
                                         const resourcePerms = permissionMatrix[role][resource as keyof PermissionSet];
                                         const granted = (resourcePerms as Record<string, boolean>)[action];

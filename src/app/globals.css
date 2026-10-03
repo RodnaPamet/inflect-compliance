@@ -66,6 +66,25 @@ body {
 ::-webkit-scrollbar-track { background: var(--bg-page); }
 ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
 
+/* ──────────────────────────────────────────────────────────────────
+ * EVERY class-keyed recipe below this line lives inside a `@layer`.
+ *
+ * In Tailwind v4 an UNLAYERED rule beats a layered one at equal
+ * specificity regardless of source order, and v4 emits every generated
+ * utility inside `@layer utilities`. So an unlayered `.foo { … }` in
+ * this file silently swallows every `className` utility that touches the
+ * same property — the class is present either way and only the computed
+ * value differs, which is why nobody noticed for the lifetime of the
+ * file. #3143 fixed `.glass-card`; #3153 fixed the remaining eight
+ * recipes and added the guard that closes the class of defect:
+ * `tests/guards/globals-css-recipes-are-layered.test.ts` fails if a
+ * class-keyed rule lands outside a layer without a written exemption.
+ *
+ * Cascade layers are compared BEFORE specificity, which is why the
+ * descendant rules (`.data-table td`, 0,1,1) also stop beating a plain
+ * utility (0,1,0) once both are layered.
+ * ────────────────────────────────────────────────────────────────── */
+
 /* Glass card effect — uses semantic glass tokens so light/dark theme toggle flips both.
  *
  * `@layer components` is LOAD-BEARING, and it is the whole fix for #3119.
@@ -93,8 +112,16 @@ body {
  *
  * Both `.glass-card` rules live here together. Splitting them would leave the
  * same class half-layered — padding overridable, background/border not.
- * DO NOT move either rule back out of the layer. (`.surface-popup-texture`
- * below is deliberately left unlayered; no element carries both classes.)
+ * DO NOT move either rule back out of the layer.
+ *
+ * #3153 — this comment used to end with a parenthetical reading
+ * "`.surface-popup-texture` below is deliberately left unlayered; no element
+ * carries both classes". That reasoning answered the wrong question and the
+ * rule has been layered. Whether two RECIPES co-occur is irrelevant to this
+ * defect: the thing that gets swallowed is a `className` UTILITY, and
+ * `.surface-popup-texture` swallowed them just as happily — measured in the
+ * same headless-Chromium harness, `surface-popup-texture shadow-none` kept the
+ * recipe's two-layer box-shadow instead of dropping it.
  */
 @layer components {
   .glass-card {
@@ -114,27 +141,38 @@ body {
  * touch of brand) and a top inner-highlight hairline (glass edge) over the
  * drop shadow. Resolves per-theme via the --bg-default / --brand-default /
  * --border-default tokens, so one class serves METRO dark + PwC light.
+ *
+ * Layered in #3153. The rule sets background / border / box-shadow, so it was
+ * eating any `bg-*`, `border-*` or `shadow-*` a call site passed. Measured: of
+ * the 8 `className` sites (modal ×2, popover ×2, sheet, undo-toast,
+ * ProcessTemplateModal, TemplateLibraryModal) NONE passes one of those three
+ * today, so layering it changes nothing on screen right now — it closes the
+ * hole rather than fixing a live symptom. `src/components/ui/modal.tsx` has a
+ * comment saying this class "owns background + border"; that is still true as
+ * the DEFAULT, and a `bg-*` on the call site now wins, which is the point.
  */
-.surface-popup-texture {
-  /* Focal glow drawn toward the top — the eye enters a pop-up from its
-   * leading edge, so the brand pool sits at `top center`, not dead
-   * centre, and the warm wash reaches further down the surface (78%)
-   * before the vignette. Calibrated to the OS-vibrancy range: at the
-   * original 4%/6% the wash was sub-perceptual on both themes (the
-   * "no texture landed" report). */
-  background:
-    radial-gradient(
-      ellipse 120% 80% at 50% 0%,
-      color-mix(in srgb, var(--bg-default), var(--brand-default) 10%) 0%,
-      color-mix(in srgb, var(--bg-default), var(--brand-default) 4%) 42%,
-      var(--bg-default) 78%,
-      color-mix(in srgb, var(--bg-default), black 9%) 100%
-    );
-  border: 1px solid
-    color-mix(in srgb, var(--border-default), var(--brand-default) 22%);
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in srgb, var(--bg-default), white 20%),
-    var(--shadow-lg);
+@layer components {
+  .surface-popup-texture {
+    /* Focal glow drawn toward the top — the eye enters a pop-up from its
+     * leading edge, so the brand pool sits at `top center`, not dead
+     * centre, and the warm wash reaches further down the surface (78%)
+     * before the vignette. Calibrated to the OS-vibrancy range: at the
+     * original 4%/6% the wash was sub-perceptual on both themes (the
+     * "no texture landed" report). */
+    background:
+      radial-gradient(
+        ellipse 120% 80% at 50% 0%,
+        color-mix(in srgb, var(--bg-default), var(--brand-default) 10%) 0%,
+        color-mix(in srgb, var(--bg-default), var(--brand-default) 4%) 42%,
+        var(--bg-default) 78%,
+        color-mix(in srgb, var(--bg-default), black 9%) 100%
+      );
+    border: 1px solid
+      color-mix(in srgb, var(--border-default), var(--brand-default) 22%);
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in srgb, var(--bg-default), white 20%),
+      var(--shadow-lg);
+  }
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -151,95 +189,89 @@ body {
  * ────────────────────────────────────────────────────────────────── */
 
 /* ──────────────────────────────────────────────────────────────────
- * Buttons (legacy class layer).
+ * Buttons (legacy class layer) — retired (#3153, 2026-10-03).
  *
- * Token-driven pill buttons that mirror `buttonVariants` in
- * `src/components/ui/button-variants.ts`. A light/dark theme swap
- * flips both surfaces. New code should prefer the `<Button variant="…">`
- * CVA component — it adds loading, keyboard-shortcut hints, and
- * size-specific icon slots.
+ * `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-success`,
+ * `.btn-ghost`, `.btn-xs`, `.btn-sm`, `.btn-lg` and `.btn:focus-visible`
+ * were DELETED rather than layered, because they applied to no element in
+ * the product. The measurement, re-run at the time of deletion:
  *
- * Button tokens:
- *   height:  ~34px (default), ~28px (xs), ~32px (sm), ~42px (lg)
- *   radius:  rounded-full (pill)
- *   font:    text-xs 12px (default), text-[11px] (xs), text-sm 14px (lg)
- *   icon:    14px default, 12px xs, 16px lg
- *   border:  always visible (transparent when not needed)
+ *   - `btn` as a whitespace-delimited token inside a `className`/`class`
+ *     string: 0 occurrences across all 2,813 `src/**` .ts/.tsx files.
+ *     Every one of the 382 `btn` substring hits in `src/` is an
+ *     `id="…-btn"` / `data-testid` attribute, prose in a comment, or a
+ *     `--btn-*` custom property.
+ *   - `tests/unit/legacy-ui-ratchet.test.ts` has `BASELINES.btn: 0` and
+ *     asserts `actual <= 0` — the `.btn` → `<Button>` migration finished
+ *     on 2026-05-08 (#8bcf699) and the ratchet has been locked at the
+ *     floor since.
+ *   - Outside `src/`: no HTML/Handlebars/MJML template exists in the repo,
+ *     `src/lib/email` and `src/lib/pdf` emit no `class=` attribute, and
+ *     `tests/e2e` selects buttons by `#…-btn` id, never by a `.btn` class.
+ *     `public/swagger-ui/swagger-ui.css` has its own `.btn` rules, but
+ *     `/api/docs` is a route handler returning standalone HTML that never
+ *     loads this stylesheet.
+ *
+ * The live replacement is `<Button variant="…">`
+ * (`src/components/ui/button.tsx` + `button-variants.ts`).
+ *
+ * The `--btn-*` CUSTOM PROPERTIES are untouched and still load-bearing. There
+ * are EXACTLY EIGHT, they all live in `src/styles/tokens.css` (zero in this
+ * file), and all eight have a runtime consumer:
+ *   - `--btn-still-top` / `-lift` / `-bot` / `-press` / `-danger` /
+ *     `-danger-deep` / `-danger-lift`  →  `components/ui/button-variants.ts`
+ *   - `--btn-gradient-primary`         →  `dashboard/PostureHeroCard.tsx`
+ *     (`bg-[image:var(--btn-gradient-primary)]`)
+ * Only rules keyed on a `.btn*` SELECTOR were dead.
+ * `tests/unit/theme-provider.test.ts` asserts both halves — the selectors are
+ * gone, the eight tokens remain and each is read — and asserts the set is
+ * closed, so nothing can read a `--btn-*` token tokens.css does not define.
+ *
+ * `--btn-ambient-*` and `--btn-iridescent-gradient` are NOT in that set, and
+ * #3153's brief said `control-variants.ts` reads them. It does not: they were
+ * deleted on 2026-07-28 (see
+ * docs/implementation-notes/2026-07-28-retire-dead-button-tokens.md) and all
+ * that survives in `control-variants.ts` is a docblock naming them. Its
+ * runtime reads are `--ctrl-edge-rest` / `-hover` / `-focus`.
  * ────────────────────────────────────────────────────────────────── */
-.btn {
-  @apply inline-flex items-center justify-center gap-1.5
-    px-3.5 py-1.5 rounded-full
-    text-xs font-medium
-    border border-transparent
-    transition-all duration-150
-    disabled:opacity-50 disabled:pointer-events-none
-    whitespace-nowrap;
-}
-.btn-primary {
-  background: var(--brand-emphasis);
-  border-color: var(--brand-emphasis);
-  color: var(--content-inverted);
-  box-shadow: var(--shadow-sm);
-}
-.btn-primary:hover {
-  background: var(--brand-default);
-  border-color: var(--brand-default);
-}
-.btn-secondary {
-  background: var(--bg-default);
-  border-color: var(--border-subtle);
-  color: var(--content-emphasis);
-}
-.btn-secondary:hover {
-  background: var(--bg-muted);
-  border-color: var(--border-default);
-}
-.btn-danger {
-  background: var(--bg-error);
-  border-color: var(--border-error);
-  color: var(--content-error);
-}
-.btn-danger:hover {
-  background: var(--bg-error);
-  color: var(--content-emphasis);
-}
-.btn-success {
-  background: var(--bg-success);
-  border-color: var(--border-success);
-  color: var(--content-success);
-}
-.btn-success:hover {
-  background: var(--bg-success);
-  color: var(--content-emphasis);
-}
-.btn-ghost {
-  @apply border-transparent;
-  color: var(--content-default);
-}
-.btn-ghost:hover {
-  background: var(--bg-muted);
-  color: var(--content-emphasis);
-}
-.btn-xs { @apply px-2.5 py-1 text-[11px] gap-1; }
-.btn-sm { @apply px-3 py-1.5 text-xs; }
-.btn-lg { @apply px-5 py-2.5 text-sm gap-2; }
 
-/* Inputs — tokenised so forms track the active theme. */
-.input {
-  @apply w-full rounded-lg px-3 py-2 text-sm transition-all duration-200
-    placeholder-content-subtle
-    focus:outline-none focus:ring-2 focus:ring-ring focus:border-border-emphasis;
-  background: var(--bg-default);
-  border: 1px solid var(--border-default);
-  color: var(--content-emphasis);
-}
-.input-label {
-  @apply block text-sm font-medium mb-1;
-  color: var(--content-default);
-}
+/* Inputs — tokenised so forms track the active theme.
+ *
+ * Layered in #3153, and this is the one that mattered: 96 `className` sites
+ * carry the `input` token, and 13 of them pass a utility that clashes with a
+ * property this recipe sets AT A DIFFERENT VALUE, so 13 elements change
+ * appearance. (The other 83 are value-identical or don't clash: 51 pass only
+ * `w-full`, which this rule already sets to 100%; 9 pass `text-sm`, which it
+ * already sets; 23 pass nothing that touches these properties.) The changed
+ * sites are listed in the #3153 report — the loudest is
+ * `RichTextEditor.tsx`'s markdown pane, which asked for
+ * `rounded-none border-0 border-t bg-transparent focus:ring-0` and got none of
+ * it.
+ *
+ * `select.input` / `textarea.input` are 0,1,1 and so beat a 0,1,0 utility on
+ * specificity alone — but layers are compared BEFORE specificity, so they are
+ * layered here too and a utility now wins. That is what makes
+ * `risks/ai/page.tsx`'s two `resize-none` textareas finally lose their resize
+ * grip. Splitting them out would leave `.input` half-layered, the exact shape
+ * #3143's comment warns about.
+ */
+@layer components {
+  .input {
+    @apply w-full rounded-lg px-3 py-2 text-sm transition-all duration-200
+      placeholder-content-subtle
+      focus:outline-none focus:ring-2 focus:ring-ring focus:border-border-emphasis;
+    background: var(--bg-default);
+    border: 1px solid var(--border-default);
+    color: var(--content-emphasis);
+  }
+  .input-label {
+    @apply block text-sm font-medium mb-1;
+    color: var(--content-default);
+  }
 
-select.input { @apply appearance-none cursor-pointer; }
-textarea.input { @apply resize-y min-h-[80px]; }
+  select.input { @apply appearance-none cursor-pointer; }
+  textarea.input { @apply resize-y min-h-[80px]; }
+}
 
 /* Tables — LEGACY: only used by detail-page sub-tables and SoA.
  * For list pages, use <DataTable> from @/components/ui/table.
@@ -252,21 +284,73 @@ textarea.input { @apply resize-y min-h-[80px]; }
  * tone as every other list page in the product. The CSS class is
  * still legacy — see the comment above; new list pages MUST use
  * `<DataTable>`. */
-.data-table { @apply w-full text-sm text-left; }
-.data-table th {
-  @apply px-4 py-2.5 text-xs font-semibold uppercase tracking-wider leading-6;
-  color: var(--content-muted);
-  background: var(--bg-muted);
+/* Layered in #3153. The four rules move together on purpose — the whole
+ * family or none of it, because `.data-table td` (0,1,1) and
+ * `.data-table tr:hover td` (0,1,2) were ALSO beating cell utilities, and
+ * layers are compared before specificity.
+ *
+ * This is the layering with the widest visible footprint: ~17 cell-level JSX
+ * sites across admin/rbac, admin/roles (×2 tables), reports/soa and
+ * TraceabilityPanel (×3) finally get the `text-xs` / `px-2` / `py-8` /
+ * `bg-bg-default/90` they were passing.
+ *
+ * ONE of those changes would have been a LOSS, and it is FIXED at the call
+ * site rather than shipped: the sticky first column in admin/rbac and
+ * admin/roles carries `bg-bg-default/50`, which now beats
+ * `.data-table tr:hover td`, so those three cells would have stopped showing
+ * the row-hover tint. They now carry `group-hover/row:bg-bg-muted` with
+ * `group/row` on the `<tr>` — this repo's own idiom (see
+ * `ui/table/virtual-table-body.tsx` and `ui/table-title-cell.tsx`).
+ *
+ * `hover:bg-bg-muted` on the `<td>` would NOT have been equivalent: it fires
+ * only while the pointer is over that one cell, where `tr:hover td` tints on
+ * ROW hover. The named group reproduces the row scope.
+ *
+ * Net effect at those cells: they now get BOTH the `bg-bg-default/50` they
+ * were always asking for (and silently losing) at rest, AND the row-hover
+ * tint. Migrating these three raw tables to `<DataTable>`, which the comment
+ * above already asks for, remains the real fix. */
+@layer components {
+  .data-table { @apply w-full text-sm text-left; }
+  .data-table th {
+    @apply px-4 py-2.5 text-xs font-semibold uppercase tracking-wider leading-6;
+    color: var(--content-muted);
+    background: var(--bg-muted);
+  }
+  .data-table td {
+    @apply px-4 py-2.5 text-sm leading-6 border-b;
+    border-color: var(--border-subtle);
+  }
+  .data-table tr:hover td { background: var(--bg-muted); }
 }
-.data-table td {
-  @apply px-4 py-2.5 text-sm leading-6 border-b;
-  border-color: var(--border-subtle);
-}
-.data-table tr:hover td { background: var(--bg-muted); }
 
 /* Animations */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+
+/* `.animate-fadeIn` goes in `utilities`, NOT `components` — and that is a
+ * deliberate split from every other recipe in this file (#3153).
+ *
+ * It is not a component recipe. It declares exactly one property,
+ * `animation`, under Tailwind's own `animate-*` utility namespace, and its
+ * three documented siblings in the canonical motion set
+ * (`animate-fade-in`, `animate-slide-up-fade`, `animate-scale-in`) are
+ * Tailwind-GENERATED utilities that live in `@layer utilities`. This one is
+ * hand-written only because it predates them.
+ *
+ * Consequences, both wanted:
+ *   - Because `animation` is the only property it sets, the only utilities it
+ *     can ever compete with are other animation-setting ones (`animate-*`,
+ *     `animate-none`). It cannot swallow a padding or a colour, which is why
+ *     none of its 121 `className` sites changes appearance.
+ *   - Inside `utilities` it is still emitted AFTER `@import "tailwindcss"`,
+ *     so on a tie it still wins by source order — `animate-fadeIn
+ *     animate-none` resolves to `fadeIn` both before and after this change
+ *     (verified in headless Chromium). Putting it in `components` instead
+ *     would have REVERSED that for 121 elements, which is a behaviour change
+ *     dressed up as a cascade fix. */
+@layer utilities {
+  .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+}
 /* Roadmap-6 PR-1 — `slideIn` retired (translateX-based detail-pane
  * reveal). Master-detail panes now use `animate-fadeIn` for the
  * subtle 8px upward enter. The remaining canonical motion set:
@@ -283,23 +367,32 @@ textarea.input { @apply resize-y min-h-[80px]; }
    hover/active/focus are part of the state-language ratchet
    (Polish PR-8) and motion-language ratchet (Polish PR-9). */
 
-/* Page header — sticky on mobile, wraps actions */
-.page-header {
-  @apply flex flex-wrap items-center justify-between gap-3
-    sticky top-0 z-20
-    -mx-4 md:-mx-6 px-4 md:px-6
-    py-3 backdrop-blur-sm;
-  background: color-mix(in srgb, var(--bg-page) 80%, transparent);
+/* Page header — sticky on mobile, wraps actions.
+ *
+ * Layered in #3153, but note: this rule has ZERO `className` consumers. The
+ * same measurement that condemned `.btn` reads 0 for `page-header` too — the
+ * only `page-header` strings in `src/` are `data-testid="page-header-*"`
+ * attributes and prose, and the live primitive is
+ * `src/components/layout/PageHeader.tsx`, which does not use this class.
+ * It was LAYERED rather than deleted because #3153's brief authorised deleting
+ * one dead family (`.btn`, which has a ratchet asserting 0 as independent
+ * corroboration) and this one has no such second witness. Deleting it is a
+ * one-line follow-up for whoever confirms the finding. */
+@layer components {
+  .page-header {
+    @apply flex flex-wrap items-center justify-between gap-3
+      sticky top-0 z-20
+      -mx-4 md:-mx-6 px-4 md:px-6
+      py-3 backdrop-blur-sm;
+    background: color-mix(in srgb, var(--bg-page) 80%, transparent);
+  }
 }
 
 /* Focus-visible — accessible keyboard focus rings. Sidebar nav
    focus migrated to inline focus-visible:ring-2 in SidebarNav.tsx
-   (Elevation PR-3). The .btn rule remains for the legacy CSS-class
-   button consumers still being migrated to <Button>. */
-.btn:focus-visible {
-  outline: 2px solid var(--brand-default);
-  outline-offset: 2px;
-}
+   (Elevation PR-3). The `.btn:focus-visible` rule that used to sit here went
+   with the rest of the dead `.btn` family in #3153; `.icon-btn:focus-visible`
+   below is the live one. */
 
 /* Icon color tokens */
 :root {
@@ -308,47 +401,64 @@ textarea.input { @apply resize-y min-h-[80px]; }
   --icon-brand:  var(--brand-muted);
 }
 
-/* Icon-only button utility — enforces touch target + accessible focus */
-.icon-btn {
-  @apply inline-flex items-center justify-center rounded-lg
-    min-w-[36px] min-h-[36px]
-    transition-colors duration-150
-    disabled:opacity-40 disabled:pointer-events-none;
-  color: var(--content-muted);
-}
-.icon-btn:hover {
-  color: var(--content-emphasis);
-  background: var(--bg-muted);
-}
-.icon-btn:focus-visible {
-  outline: 2px solid var(--brand-default);
-  outline-offset: 2px;
-}
-.icon-btn-danger {
-  color: var(--content-error);
-}
-.icon-btn-danger:hover {
-  color: var(--content-error);
-  background: var(--bg-error);
-}
-.icon-btn-sm {
-  @apply min-w-[28px] min-h-[28px];
-}
-
-/* Safe-area support for notched devices */
-@supports (padding: env(safe-area-inset-bottom)) {
-  .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
+/* Icon-only button utility — enforces touch target + accessible focus.
+ *
+ * Layered in #3153 as one family (base + `:hover` + `:focus-visible` +
+ * modifiers), so no half of the state language is overridable while the other
+ * is not. Measured: 4 `className` sites, 1 of which changes —
+ * `OrgSidebarNav.tsx:256` passes `mx-auto flex` and was resolving to this
+ * rule's `inline-flex`, which is why `mx-auto` was doing nothing and the
+ * collapsed-sidebar toggle sat left-aligned instead of centred.
+ * `.icon-btn-danger` has 0 call sites but stays, because it is a modifier of a
+ * live family rather than a dead family of its own. */
+@layer components {
+  .icon-btn {
+    @apply inline-flex items-center justify-center rounded-lg
+      min-w-[36px] min-h-[36px]
+      transition-colors duration-150
+      disabled:opacity-40 disabled:pointer-events-none;
+    color: var(--content-muted);
+  }
+  .icon-btn:hover {
+    color: var(--content-emphasis);
+    background: var(--bg-muted);
+  }
+  .icon-btn:focus-visible {
+    outline: 2px solid var(--brand-default);
+    outline-offset: 2px;
+  }
+  .icon-btn-danger {
+    color: var(--content-error);
+  }
+  .icon-btn-danger:hover {
+    color: var(--content-error);
+    background: var(--bg-error);
+  }
+  .icon-btn-sm {
+    @apply min-w-[28px] min-h-[28px];
   }
 }
 
-/* SoA Print styles — moved from inline <style> for CSP compliance */
+/* Safe-area support for notched devices.
+ * Layered in #3153. Like `.page-header` this measures 0 `className`
+ * consumers — the only occurrence of `safe-area-bottom` in the repo is this
+ * definition — so layering it is inert and it is kept for the same reason. */
+@layer components {
+  @supports (padding: env(safe-area-inset-bottom)) {
+    .safe-area-bottom {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}
+
+/* SoA Print styles — moved from inline <style> for CSP compliance.
+ *
+ * Split in two by #3153: the element- and attribute-keyed rules stay
+ * unlayered (they are not class recipes — nothing composes a `className` with
+ * `body` or `[data-list-page-shell]`), and the four class-keyed print helpers
+ * sit in the layered block below. */
 @media print {
   body { background: white !important; color: black !important; }
-  .no-print { display: none !important; }
-  .print-page { page-break-after: always; }
-  .print-table { page-break-inside: auto; }
-  .print-table tr { page-break-inside: avoid; }
   /* List-page-shell escape: when printing a viewport-clamped list
      page, undo the internal-scroll layout so the printer sees the
      full table, not just the visible rows. The data attribute is
@@ -362,8 +472,29 @@ textarea.input { @apply resize-y min-h-[80px]; }
   }
   @page { margin: 15mm 12mm; size: A4 landscape; }
 }
-@media screen {
-  .soa-print-body { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+/* The class-keyed print helpers, layered (#3153).
+ *
+ * `.no-print` carries `display: none !important`, and for IMPORTANT
+ * declarations the cascade compares layers in REVERSE order: a layered
+ * `!important` beats an unlayered one, and an EARLIER layer beats a later one.
+ * So moving this rule into `components` makes its `!important` strictly
+ * stronger, not weaker. Measured before moving it: the only declaration that
+ * competes at its three call sites is a NORMAL `display: flex`
+ * (`SoAPrintView.tsx:39`), which loses to any `!important` in every layer
+ * configuration, and `src/` contains no `!`-suffixed display utility. The
+ * three page-break helpers carry no `!important` and no call site passes a
+ * `break-*` utility, so they are plain moves. */
+@layer components {
+  @media print {
+    .no-print { display: none !important; }
+    .print-page { page-break-after: always; }
+    .print-table { page-break-inside: auto; }
+    .print-table tr { page-break-inside: avoid; }
+  }
+  @media screen {
+    .soa-print-body { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+  }
 }
 
 /* ─── Roadmap-27 PR-B — Process canvas edge hover ──────────────────
@@ -371,7 +502,12 @@ textarea.input { @apply resize-y min-h-[80px]; }
  * canvas so the traceability GraphExplorer is untouched. `filter`
  * (not stroke-width) is used because xyflow sets stroke width inline
  * per edge variant; a stylesheet width would lose to the inline
- * style. brightness() lifts every variant uniformly. */
+ * style. brightness() lifts every variant uniformly.
+ *
+ * Not layered, and out of the #3153 guard's scope by construction: the key
+ * compound is an ATTRIBUTE selector, not a class, so no `className` on the
+ * element composes against it — the classes further right
+ * (`.react-flow__edge`) are emitted by xyflow, not written at a call site. */
 [data-process-canvas="true"] .react-flow__edge {
   cursor: pointer;
 }
@@ -427,7 +563,35 @@ textarea.input { @apply resize-y min-h-[80px]; }
   /* ── App-wide touch targets (mobile PR-1, WCAG 2.5.5 / Apple HIG) ──
    * Native inputs/selects using the `.input` utility get a 44px floor.
    * The React <Input>/<Button> primitives handle this themselves via
-   * `pointer-coarse:min-h-11` in their cva. */
+   * `pointer-coarse:min-h-11` in their cva.
+   *
+   * THIS ONE STAYS UNLAYERED, and it is the single exemption in
+   * `tests/guards/globals-css-recipes-are-layered.test.ts` (#3153).
+   * Three reasons, in order of weight:
+   *
+   *   1. It is a FLOOR, not a default. #3143's argument for layering is
+   *      "the recipe is the default, `className` overrides it" — an
+   *      argument about defaults. A WCAG 2.5.5 / Apple HIG minimum touch
+   *      target is the one declaration on `.input` that must NOT lose to a
+   *      drive-by utility; layered, a `min-h-8` would silently shrink a
+   *      finger target below 44px on every touch device.
+   *   2. It would be the only layered rule in this `@media (pointer:
+   *      coarse)` block. Its neighbours are the `[role="checkbox"]` /
+   *      `[role="radio"]` / `[role="switch"]` hit-target expansions — the
+   *      same accessibility decision, expressed with attribute selectors
+   *      and therefore outside the guard's class-keyed scope anyway.
+   *      Layering this one would scatter one decision across two layers.
+   *   3. Measured, so the choice is purely about which FUTURE change may
+   *      win: zero of the 96 `.input` call sites pass a `min-h-*` or
+   *      `max-h-*` utility today, so layering it would change nothing on
+   *      screen. (Two sites pass `h-24` / `h-20`; `height` and
+   *      `min-height` do not compete, and 96px / 80px both clear 44px.)
+   *
+   * The counter-argument, recorded because it is not weak: the repo's own
+   * canonical spelling of this floor — `pointer-coarse:min-h-11` in the
+   * `<Input>` cva — IS an overridable utility, so the CSS class is the odd
+   * one out. If that consistency ever wins, delete the exemption entry in
+   * the guard in the same diff. */
   .input {
     min-height: 44px;
   }
@@ -499,158 +663,169 @@ textarea.input { @apply resize-y min-h-[80px]; }
  * readable body measure, a labelled "PAGE BREAK" divider on screen
  * (real page break in print), and the auto Table of Contents box.
  * Theme-aware (no `prose-invert`) so headers never wash out.
+ *
+ * Layered in #3153, screen block and print block together. The ~37
+ * descendant rules are layered too: they are 0,1,1+ and so were beating
+ * cell/child utilities on specificity, and layers are compared first. This
+ * one has a single `className` call site which passes nothing that clashes,
+ * and its descendants target markdown-rendered children that carry no
+ * utilities at all — so the whole move is inert today. It is here because
+ * the next person to pass `max-w-none` or a `bg-*` to a policy body should
+ * get it.
  * ───────────────────────────────────────────────────────────────── */
-.policy-content {
-  max-width: 46rem;
-  margin: 0 auto;
-  padding: clamp(1.5rem, 4vw, 3rem) clamp(1.25rem, 5vw, 3.5rem);
-  background: var(--bg-canvas, var(--bg-default));
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  color: var(--content-default);
-  font-size: 0.95rem;
-  line-height: 1.75;
-}
-.policy-content > :first-child { margin-top: 0; }
-.policy-content h1 {
-  margin: 0.25rem 0 1.5rem;
-  text-align: center;
-  font-size: clamp(1.6rem, 3.5vw, 2.1rem);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--content-emphasis, var(--content-default));
-}
-.policy-content h2 {
-  margin: 2.25rem 0 0.85rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 1.3rem;
-  font-weight: 700;
-  line-height: 1.3;
-  color: var(--content-emphasis, var(--content-default));
-}
-.policy-content h3 {
-  margin: 1.6rem 0 0.5rem;
-  font-size: 1.08rem;
-  font-weight: 600;
-  color: var(--content-emphasis, var(--content-default));
-}
-.policy-content p { margin: 0 0 1rem; }
-.policy-content ul,
-.policy-content ol { margin: 0 0 1rem; padding-left: 1.6rem; }
-.policy-content ul { list-style: disc; }
-.policy-content ol { list-style: decimal; }
-.policy-content li { margin: 0.35rem 0; }
-.policy-content li::marker { color: var(--content-muted); }
-.policy-content blockquote {
-  margin: 1rem 0;
-  padding: 0.5rem 1rem;
-  border-left: 3px solid var(--border-default);
-  color: var(--content-muted);
-  font-style: italic;
-}
-.policy-content a {
-  color: var(--content-link, var(--brand-default));
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.policy-content strong { font-weight: 700; }
-.policy-content em { font-style: italic; }
-.policy-content table {
-  width: 100%;
-  margin: 1rem 0;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-.policy-content th,
-.policy-content td {
-  border: 1px solid var(--border-subtle);
-  padding: 0.4rem 0.6rem;
-  text-align: left;
-}
-.policy-content th { background: var(--bg-subtle); font-weight: 600; }
-.policy-content hr {
-  position: relative;
-  height: 0;
-  border: 0;
-  border-top: 1px dashed var(--border-default);
-  margin: 2rem 0;
-}
-.policy-content hr::after {
-  content: "PAGE BREAK";
-  position: absolute;
-  top: -0.65em;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 0.1rem 0.5rem;
-  background: var(--bg-default);
-  border: 1px solid var(--border-default);
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--content-subtle);
-  white-space: nowrap;
-}
-.policy-content .policy-toc {
-  margin: 1.5rem 0;
-  padding: 1rem 1.25rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--bg-subtle);
-}
-.policy-content .policy-toc-title {
-  margin: 0 0 0.5rem;
-  font-weight: 600;
-  color: var(--content-emphasis, var(--content-default));
-}
-.policy-content .policy-toc ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.policy-content .policy-toc li {
-  margin: 0.25rem 0;
-}
-.policy-content .policy-toc li.policy-toc-l2 { padding-left: 1rem; }
-.policy-content .policy-toc li.policy-toc-l3 { padding-left: 2rem; }
-.policy-content .policy-toc a {
-  color: var(--content-default);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.policy-content .policy-toc a:hover {
-  color: var(--brand-default);
-}
-
-@media print {
-  /* The on-screen "page" chrome dissolves into the real printed page. */
+@layer components {
   .policy-content {
-    max-width: none;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: clamp(1.5rem, 4vw, 3rem) clamp(1.25rem, 5vw, 3.5rem);
+    background: var(--bg-canvas, var(--bg-default));
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    color: var(--content-default);
+    font-size: 0.95rem;
+    line-height: 1.75;
+  }
+  .policy-content > :first-child { margin-top: 0; }
+  .policy-content h1 {
+    margin: 0.25rem 0 1.5rem;
+    text-align: center;
+    font-size: clamp(1.6rem, 3.5vw, 2.1rem);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--content-emphasis, var(--content-default));
+  }
+  .policy-content h2 {
+    margin: 2.25rem 0 0.85rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 1.3rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--content-emphasis, var(--content-default));
+  }
+  .policy-content h3 {
+    margin: 1.6rem 0 0.5rem;
+    font-size: 1.08rem;
+    font-weight: 600;
+    color: var(--content-emphasis, var(--content-default));
+  }
+  .policy-content p { margin: 0 0 1rem; }
+  .policy-content ul,
+  .policy-content ol { margin: 0 0 1rem; padding-left: 1.6rem; }
+  .policy-content ul { list-style: disc; }
+  .policy-content ol { list-style: decimal; }
+  .policy-content li { margin: 0.35rem 0; }
+  .policy-content li::marker { color: var(--content-muted); }
+  .policy-content blockquote {
+    margin: 1rem 0;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid var(--border-default);
+    color: var(--content-muted);
+    font-style: italic;
+  }
+  .policy-content a {
+    color: var(--content-link, var(--brand-default));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .policy-content strong { font-weight: 700; }
+  .policy-content em { font-style: italic; }
+  .policy-content table {
+    width: 100%;
+    margin: 1rem 0;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .policy-content th,
+  .policy-content td {
+    border: 1px solid var(--border-subtle);
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+  }
+  .policy-content th { background: var(--bg-subtle); font-weight: 600; }
+  .policy-content hr {
+    position: relative;
+    height: 0;
+    border: 0;
+    border-top: 1px dashed var(--border-default);
+    margin: 2rem 0;
+  }
+  .policy-content hr::after {
+    content: "PAGE BREAK";
+    position: absolute;
+    top: -0.65em;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.1rem 0.5rem;
+    background: var(--bg-default);
+    border: 1px solid var(--border-default);
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--content-subtle);
+    white-space: nowrap;
+  }
+  .policy-content .policy-toc {
+    margin: 1.5rem 0;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--bg-subtle);
+  }
+  .policy-content .policy-toc-title {
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+    color: var(--content-emphasis, var(--content-default));
+  }
+  .policy-content .policy-toc ul {
+    list-style: none;
     margin: 0;
     padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: #000;
-    font-size: 11pt;
-    line-height: 1.6;
   }
-  .policy-content h1,
-  .policy-content h2,
-  .policy-content h3 { color: #000; }
-  .policy-content h2 { border-bottom-color: #ccc; }
-  .policy-content .policy-toc {
-    border-color: #ccc;
-    background: transparent;
+  .policy-content .policy-toc li {
+    margin: 0.25rem 0;
   }
-  .policy-content .policy-toc a { color: #000; }
-  .policy-content hr {
-    border: 0;
-    margin: 0;
-    break-after: page;
-    page-break-after: always;
+  .policy-content .policy-toc li.policy-toc-l2 { padding-left: 1rem; }
+  .policy-content .policy-toc li.policy-toc-l3 { padding-left: 2rem; }
+  .policy-content .policy-toc a {
+    color: var(--content-default);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
-  .policy-content hr::after { display: none; }
+  .policy-content .policy-toc a:hover {
+    color: var(--brand-default);
+  }
+
+  @media print {
+    /* The on-screen "page" chrome dissolves into the real printed page. */
+    .policy-content {
+      max-width: none;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: #000;
+      font-size: 11pt;
+      line-height: 1.6;
+    }
+    .policy-content h1,
+    .policy-content h2,
+    .policy-content h3 { color: #000; }
+    .policy-content h2 { border-bottom-color: #ccc; }
+    .policy-content .policy-toc {
+      border-color: #ccc;
+      background: transparent;
+    }
+    .policy-content .policy-toc a { color: #000; }
+    .policy-content hr {
+      border: 0;
+      margin: 0;
+      break-after: page;
+      page-break-after: always;
+    }
+    .policy-content hr::after { display: none; }
+  }
 }
