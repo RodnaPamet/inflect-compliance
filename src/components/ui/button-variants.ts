@@ -160,7 +160,28 @@ export const buttonVariants = cva(
           // lift — one rung up the brand ramp.
           "hover:bg-[var(--brand-muted)]",
           "hover:bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,var(--brand-muted),var(--brand-default))]",
-          "active:bg-[image:linear-gradient(to_bottom,var(--brand-emphasis),var(--brand-emphasis))]",
+          // NO PRESS FILL FLIP. Removed 2026-10-04 on the owner's report that
+          // buttons "again on-click returned to being animated".
+          //
+          // This class and its destructive twin were written as TEMPLATE
+          // LITERALS until #3084/#3101, so Tailwind — which finds classes by
+          // scanning source text and never evaluates a function — emitted NO
+          // rule for either. Pressing a primary or destructive button changed
+          // nothing visible, for as long as the recipe was generated. #3101
+          // spelled the tile classes out so the real bug it was fixing (a
+          // destructive button with NO fill at all: white label on white
+          // ground in the light theme) could be fixed, and that made these two
+          // live for the first time. The fill then flipped to a flat colour on
+          // every click.
+          //
+          // Verified by extracting `:active` rules from the real postcss build
+          // on both sides of #3101: exactly these two appeared, 17 -> 19.
+          //
+          // What press feedback REMAINS, deliberately: the seat shadow
+          // (`active:shadow-[var(--btn-still-press)]`, below) and the
+          // reciprocal edge (`active:border-…`). Both were already emitted
+          // before #3101, so neither is part of what the owner saw change.
+          // The motion kill-switches in the cva base are untouched.
           "active:shadow-[var(--btn-still-press)]",
           "text-content-inverted",
           "hover:border-[var(--brand-secondary-default)]",
@@ -208,7 +229,10 @@ export const buttonVariants = cva(
           // lift — one rung up the danger ramp.
           "hover:bg-[var(--btn-still-danger-lift)]",
           "hover:bg-[image:linear-gradient(to_bottom,var(--btn-still-top),transparent_46%),linear-gradient(to_bottom,var(--btn-still-danger-lift),var(--btn-still-danger))]",
-          "active:bg-[image:linear-gradient(to_bottom,var(--btn-still-danger-deep),var(--btn-still-danger-deep))]",
+          // No press fill flip — see the primary variant. Same mechanism,
+          // same removal. `--btn-still-danger-deep` keeps its two other
+          // consumers (the rest gradient's tail and the border), so the token
+          // is not orphaned by this.
           "active:shadow-[var(--btn-still-press)]",
           "text-white",
         ],
