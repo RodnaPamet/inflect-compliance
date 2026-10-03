@@ -1304,6 +1304,51 @@ model ExternalToolParameterSet {
   /// uninterpretable.
   pendingOpenFields Json?
 
+  /// ── THE TARGET POPULATION (#3051 step 5c) ──────────────────────────────
+  ///
+  /// The KEY of an entry in `TARGET_POPULATIONS`
+  /// (`src/app-layer/usecases/external-tool-target-populations.ts`) — a
+  /// code-defined, tenant-scoped, row-capped set of identifying values.
+  /// `"terminated_employee_work_emails"` says: the one open field marked
+  /// `{"kind":"target"}` may carry only a value that population currently
+  /// returns for THIS tenant, resolved at dispatch and never at approval.
+  ///
+  /// NULL = no open target, which is every row today and every row step 5b
+  /// could produce. No backfill, no default.
+  ///
+  /// WHY A NAMED POPULATION AND NOT A PATTERN. Owner decision 1 on #3051:
+  /// approving `^[0-9]+$` on an employee number approves EVERY employee, and a
+  /// reviewer reading that pattern is unlikely to see it. Owner ruling
+  /// 2026-10-02 settled the follow-on: the population is a CODE-DEFINED
+  /// registry entry rather than an operator-authored query, because a stored
+  /// predicate has exactly the property that made the pattern unreviewable.
+  /// Widening the target set is therefore a code change somebody reviews, and
+  /// the accepted cost is that a new population needs a deploy.
+  ///
+  /// WHY A COLUMN WHEN THE MARKER IS IN `openFields`. Each fact is stored once:
+  /// which ARGUMENT is the target lives in the JSON (so it inherits the whole
+  /// open-field machinery at the tool boundary), and which POPULATION bounds it
+  /// lives here (so a deploy that removes or narrows a registry entry can FIND
+  /// the templates naming it, which a scan over JSONB is not). A CHECK makes
+  /// the two agree in both directions, and `parseOpenFields` fails closed if
+  /// they ever do not.
+  ///
+  /// Moves only through four eyes, exactly as `openFields` does — the same
+  /// promotion trigger gates both columns, so a target cannot be opened,
+  /// swapped or widened by a direct UPDATE or on a BASELINE insert.
+  ///
+  /// Unindexed deliberately: nothing queries by it yet, the table is bounded at
+  /// a few hundred rows per tenant, and every read it serves already carries
+  /// `tenantId`. The column exists to be greppable by a human and readable by
+  /// one row's dispatch, not to lead a query.
+  targetPopulation String?
+
+  /// The target population of an edit awaiting approval. Same shape as
+  /// `pendingOpenFields`: moves with the `pending*` quartet, NEVER read by a
+  /// dispatch, and legitimately NULL beside a real proposal — which there means
+  /// "after this edit the template has no open target", i.e. a NARROWING.
+  pendingTargetPopulation String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
