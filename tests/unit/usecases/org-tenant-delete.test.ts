@@ -19,8 +19,10 @@ const findFirst = jest.fn();
 const update = jest.fn();
 const membershipUpdateMany = jest.fn();
 const membershipDeleteMany = jest.fn();
+const userUpdateMany = jest.fn().mockResolvedValue({ count: 3 });
 /** Call order across the two statements — the trigger exemption depends on it. */
 const calls: string[] = [];
+const txnBatchSizes: number[] = [];
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -35,9 +37,22 @@ jest.mock('@/lib/prisma', () => ({
             // rather than an absence the mock could not have expressed.
             deleteMany: (...a: unknown[]) => membershipDeleteMany(...a),
         },
+        // #3166 — session invalidation. Mocked so the bump is assertable;
+        // without it the call would throw and the test would fail for the
+        // wrong reason.
+        user: {
+            updateMany: (...a: unknown[]) => userUpdateMany(...a),
+        },
         // Sequential batch transaction: Prisma runs the array in order, and
         // `deleteTenantUnderOrg` depends on that order (see its comment).
-        $transaction: (ops: unknown[]) => Promise.all(ops),
+        $transaction: (ops: unknown[]) => {
+            // The BATCH SIZE, not just the order. Order alone cannot tell
+            // "inside the transaction" from "immediately after it" — both
+            // produce the same call sequence — so the count is what makes
+            // the atomicity assertion mean anything (#3166).
+            txnBatchSizes.push(ops.length);
+            return Promise.all(ops);
+        },
         // recordTenantDeleted resolves plan via a BillingAccount lookup
         // (SAAS mode only). Mock it so the call is safe under any mode.
         billingAccount: {
@@ -99,6 +114,7 @@ describe('deleteTenantUnderOrg', () => {
         membershipUpdateMany.mockReset();
         membershipDeleteMany.mockReset();
         calls.length = 0;
+        txnBatchSizes.length = 0;
         update.mockImplementation(() => {
             calls.push('tenant.update');
             return Promise.resolve({});
@@ -113,6 +129,13 @@ describe('deleteTenantUnderOrg', () => {
         // that crashes the harness proves the harness, not the assertion.
         membershipDeleteMany.mockImplementation(() => {
             calls.push('tenantMembership.deleteMany');
+            return Promise.resolve({ count: 3 });
+        });
+        // #3166 — same treatment: records its position so the ORDER assertion
+        // can see it, and returns a BatchPayload like the real delegate.
+        userUpdateMany.mockReset();
+        userUpdateMany.mockImplementation(() => {
+            calls.push('user.updateMany');
             return Promise.resolve({ count: 3 });
         });
     });
@@ -183,6 +206,66 @@ describe('deleteTenantUnderOrg', () => {
         expect(membershipUpdateMany.mock.calls[0][0].data.status).toBe('DEACTIVATED');
     });
 
+    /*
+        ── Session invalidation on removal (#3166) ─────────────────────
+
+        `deletedAt` and a DEACTIVATED membership are both server-side facts, and
+        the workspace switcher reads neither: memberships are baked into the JWT
+        at sign-in, where `auth.ts` filters `tenant: { deletedAt: null }` once
+        and never again. Without a `sessionVersion` bump a removed tenant stays
+        in every signed-in member's switcher until they happen to sign out.
+
+        Observed in production before this: three tenants removed on 2026-09-09
+        were still listed on 2026-10-04.
+    */
+    it('bumps sessionVersion for the members who still carry the tenant', async () => {
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        expect(userUpdateMany).toHaveBeenCalledTimes(1);
+        const arg = userUpdateMany.mock.calls[0][0] as {
+            data: { sessionVersion: { increment: number } };
+        };
+        expect(arg.data.sessionVersion.increment).toBe(1);
+    });
+
+    it('and scopes the bump to THIS tenant, not every user', async () => {
+        /*
+            The assertion that matters most here. `updateMany` with a loose
+            filter would sign out the entire installation on one tenant
+            removal — worse than the stale switcher it fixes, and it would
+            read as an outage rather than a bug.
+        */
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        const where = (userUpdateMany.mock.calls[0][0] as {
+            where: { tenantMemberships?: { some?: { tenantId?: string } } };
+        }).where;
+        expect(where.tenantMemberships?.some?.tenantId).toBe('t-1');
+    });
+
+    it('inside the SAME transaction as the soft-delete, not after it', async () => {
+        /*
+            A session outliving a committed removal is the gap being closed, so
+            the bump has to be part of the atom.
+
+            Asserted on the BATCH SIZE. The call ORDER cannot express this —
+            a statement moved to just after the transaction produces exactly the
+            same sequence — so an order-only assertion would carry this name
+            while being unable to fail for the reason it names.
+        */
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        expect(txnBatchSizes).toEqual([3]);
+        expect(calls).toEqual([
+            'tenant.update',
+            'tenantMembership.updateMany',
+            'user.updateMany',
+        ]);
+    });
+
     it('soft-deletes BEFORE revoking, which is what clears the last-OWNER trigger', async () => {
         // `tenant_membership_last_owner_guard` raises P0001 on deactivating a
         // tenant's last ACTIVE OWNER, and migration 20260922200000 exempts
@@ -193,6 +276,22 @@ describe('deleteTenantUnderOrg', () => {
 
         await deleteTenantUnderOrg(ctx, 't-1');
 
-        expect(calls).toEqual(['tenant.update', 'tenantMembership.updateMany']);
+        /*
+            The session bump joins the end of the sequence (#3166). It is listed
+            here rather than loosening this to a `toContain`, because the FIRST
+            two positions are the load-bearing part — the trigger exemption
+            above depends on `deletedAt` already being written — and an
+            order-insensitive assertion would stop saying so.
+
+            Third is the right place for it: nothing about invalidating a
+            session constrains the trigger, so it has no reason to precede
+            either statement, and putting it last keeps the pair adjacent and
+            readable as the unit they are.
+        */
+        expect(calls).toEqual([
+            'tenant.update',
+            'tenantMembership.updateMany',
+            'user.updateMany',
+        ]);
     });
 });

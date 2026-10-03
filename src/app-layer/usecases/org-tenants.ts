@@ -276,6 +276,37 @@ export async function deleteTenantUnderOrg(
             where: { tenantId: tenant.id, status: { in: ['ACTIVE', 'INVITED'] } },
             data: { status: 'DEACTIVATED', deactivatedAt: revokedAt },
         }),
+        /*
+            THIRD: invalidate every affected session (#3166).
+
+            Without this the removal is invisible to anyone already signed in.
+            Tenant memberships are baked into the JWT at sign-in — `auth.ts`
+            filters `tenant: { deletedAt: null }` when it MINTS the token, and
+            never again — so a member keeps seeing the removed tenant in their
+            workspace switcher until they happen to sign out. Observed in
+            production: three tenants removed on 2026-09-09 were still listed
+            in the switcher on 2026-10-04.
+
+            `sessionVersion` is compared per request in `auth.ts`, so bumping it
+            forces the next request to re-mint from the database, where both
+            filters above now apply.
+
+            A relation filter rather than a pre-query for the ids: it keeps this
+            a single statement inside the SAME transaction, so a session cannot
+            survive a removal that committed. Scoped to users who hold a
+            membership in THIS tenant — `updateMany` with no filter would log
+            out the entire installation.
+
+            NOT `revokeAllTenantSessions`: that helper requires a tenant-scoped
+            context with `canAdmin`, and this runs in an ORG context where the
+            caller is an org admin who may hold no membership in the tenant at
+            all. Reaching for it would mean fabricating a context to satisfy a
+            permission check that has already been made at the route.
+        */
+        prisma.user.updateMany({
+            where: { tenantMemberships: { some: { tenantId: tenant.id } } },
+            data: { sessionVersion: { increment: 1 } },
+        }),
     ]);
 
     // Resolve plan for the KPI label. Self-hosted is always ENTERPRISE —
