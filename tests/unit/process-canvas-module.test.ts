@@ -38,6 +38,9 @@ import {
     setProcessCanvasEnabled,
 } from '@/app-layer/usecases/process-canvas-module';
 import { makeRequestContext } from '../helpers/make-context';
+// The REAL validator, deliberately un-mocked — it is the contract the payload
+// above has to satisfy, and mocking it would reproduce the gap (#3170).
+import { validateAuditDetailsJson } from '@/app-layer/schemas/json-columns.schemas';
 
 const ctx = makeRequestContext('OWNER');
 
@@ -98,17 +101,34 @@ describe('turning the module on and off', () => {
 
         const payload = logEvent.mock.calls[0]![2] as unknown as {
             action: string;
-            detailsJson: { category: string; operation: string };
+            detailsJson: {
+                category: string;
+                operation: string;
+                fromStatus?: string;
+                toStatus?: string;
+            };
             metadata: { from: boolean; to: boolean };
         };
         expect(payload.action).toBe('PROCESS_CANVAS_MODULE_CHANGED');
         expect(payload.metadata).toEqual({ from: false, to: true });
         expect(payload.detailsJson.operation).toBe('enable');
-        // `configuration`, not `access` — the identity ladder next door chose
-        // `access` because it grants the product authority over a customer's
-        // directory. This grants nobody anything; it changes what the product
-        // offers.
-        expect(payload.detailsJson.category).toBe('configuration');
+        /*
+            `status_change`, not `access` — the reasoning in the line this
+            replaces still holds and is worth keeping: the identity ladder next
+            door chose `access` because it grants the product authority over a
+            customer's directory, and this grants nobody anything, it changes
+            what the product offers.
+
+            It chose `configuration` on that reasoning, which was sound about
+            MEANING and never checked against the VOCABULARY —
+            `AuditDetailsJsonSchema` has no such category, so every write threw
+            a 400 and the module could not be enabled at all (#3170). The
+            schema's own from/to fields say the same thing, in a value readers
+            already understand.
+        */
+        expect(payload.detailsJson.category).toBe('status_change');
+        expect(payload.detailsJson.fromStatus).toBe('off');
+        expect(payload.detailsJson.toStatus).toBe('on');
     });
 
     it('disabling audits the other direction', async () => {
@@ -142,5 +162,50 @@ describe('turning the module on and off', () => {
         db.tenantSecuritySettings.findUnique.mockResolvedValue({ processCanvasEnabled: false });
         await setProcessCanvasEnabled(ctx, true);
         expect(db.tenantSecuritySettings.upsert).toHaveBeenCalledTimes(1);
+    });
+});
+
+/**
+ * The audit payload must satisfy the REAL schema (#3170).
+ *
+ * Every test above asserts on a MOCKED `logEvent`, so the payload was never
+ * validated — and `category: 'configuration'` sat there passing them all while
+ * `validateAuditDetailsJson` rejected it in production, 400'ing the request and
+ * rolling the upsert back with it. The module could not be turned on at any
+ * point in its life, and nine assertions were green over it.
+ *
+ * Mocking the audit layer is right for the tests above: they are about WHAT is
+ * recorded, not about the writer. The gap is that nothing then checked the
+ * recorded shape against the contract it has to satisfy. This closes it without
+ * un-mocking anything.
+ */
+describe('the audit payload satisfies AuditDetailsJsonSchema', () => {
+    it('enabling produces a payload the real validator accepts', async () => {
+        db.tenantSecuritySettings.findUnique.mockResolvedValue({ processCanvasEnabled: false });
+
+        await setProcessCanvasEnabled(ctx, true);
+
+        const payload = logEvent.mock.calls[0]![2] as unknown as { detailsJson: unknown };
+        expect(() => validateAuditDetailsJson(payload.detailsJson)).not.toThrow();
+    });
+
+    it('and so does disabling', async () => {
+        db.tenantSecuritySettings.findUnique.mockResolvedValue({ processCanvasEnabled: true });
+
+        await setProcessCanvasEnabled(ctx, false);
+
+        const payload = logEvent.mock.calls[0]![2] as unknown as { detailsJson: unknown };
+        expect(() => validateAuditDetailsJson(payload.detailsJson)).not.toThrow();
+    });
+
+    it('and the validator really does reject the old value — the control', () => {
+        /*
+            Teeth. Without this, a validator that accepted anything would make
+            both assertions above pass while proving nothing — which is the
+            exact failure mode that let the original defect through.
+        */
+        expect(() =>
+            validateAuditDetailsJson({ category: 'configuration', operation: 'enable' }),
+        ).toThrow(/Invalid detailsJson structure/);
     });
 });
