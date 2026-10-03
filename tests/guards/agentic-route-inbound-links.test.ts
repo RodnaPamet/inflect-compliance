@@ -92,6 +92,14 @@ const AGENTIC_ROUTES: readonly string[] = [
     // The EU AI Act record, readable. Linked from the Views menu's Assurance
     // group beside the other read-only surfaces.
     '/agents/decisions',
+    // #3124 — a tool's SAVED ARGUMENTS and the approval a change to one needs.
+    // Linked from the external-tool catalogue page rather than the Views menu,
+    // because a set is scoped to a tool on a connection and the catalogue is
+    // where that connection is already selected — the placement the
+    // external-write ladder already uses. The route it drives shipped in #2906
+    // and had no caller of any kind until this page, which is the state this
+    // guard exists to refuse.
+    '/agents/parameter-sets',
     // The external-tool catalogue: approve a definition, grant it to an agent.
     // Linked from the Views menu's OPERATE group, because both are acts
     // somebody performs rather than a record they audit. Gated on

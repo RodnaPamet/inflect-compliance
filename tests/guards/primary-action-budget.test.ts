@@ -52,6 +52,20 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * as a separate visual zone.
  */
 const PRIMARY_BUDGET: Record<string, number> = {
+    // #3124 saved parameters — THREE regions, and no two of them are ever the
+    // same decision:
+    //   · the BASELINE form's "Save baseline" — the page's own create action;
+    //   · the PROPOSE form's submit, an inline form whose footer is the
+    //     canonical secondary-Cancel + primary-submit pair (R5-PR7);
+    //   · the PENDING card's "Approve <digest>", which is the gravity of a row
+    //     that has an edit waiting — the one act the four-eyes trigger exists
+    //     for. Sign sits beside it as `secondary` precisely so this one reads
+    //     as the commit.
+    // The propose form and the pending card are mutually exclusive on a row (a
+    // row with a pending edit offers no propose control), and the baseline form
+    // is a separate region above the register. The static scanner counts all
+    // three.
+    "src/app/t/[tenantSlug]/(app)/agents/parameter-sets/ParameterSetsClient.tsx": 3,
     // Initiatives list: "New initiative" (page) + "Create initiative"
     // (modal confirm) — two distinct regions, both legit primaries.
     "src/app/org/[orgSlug]/(app)/initiatives/InitiativesClient.tsx": 2,

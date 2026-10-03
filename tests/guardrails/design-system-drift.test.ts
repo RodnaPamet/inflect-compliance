@@ -185,6 +185,18 @@ const MIGRATED_PAGES = [
     'agents/proposals/AgentProposalsClient.tsx',
     'agents/runs/page.tsx',
     'agents/runs/AgentRunsClient.tsx',
+    // #3124 — saved parameters for an external tool, and the four-eyes approval
+    // a change to one needs. PROMOTED ON LANDING rather than parked in the
+    // unmigrated tally, which is the ratchet's own stated path forward and the
+    // honest answer here: the two files are design-system-native from birth
+    // (semantic content-*/bg-*/border-* tokens only; PageHeader + Card +
+    // Combobox + FormField + Input + Textarea + Button + StatusBadge +
+    // InlineNotice + EmptyState primitives, no raw palette greys, no legacy
+    // btn/badge/glass-card), so the three assertions above hold by construction.
+    // Listing them also keeps the shared unmigrated ceiling where it is, which
+    // matters while several branches are open against it.
+    'agents/parameter-sets/page.tsx',
+    'agents/parameter-sets/ParameterSetsClient.tsx',
     // ── The seven redirect shims (#2427/#2428/#2437) ───────────────────────
     //
     // Listed as MIGRATED rather than counted as unmigrated, and that is not a

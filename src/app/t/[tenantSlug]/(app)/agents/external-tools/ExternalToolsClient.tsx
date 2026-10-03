@@ -330,6 +330,40 @@ export function ExternalToolsClient({
                                 {t('externalTools.writePolicyLink')}
                             </Link>
                         )}
+                        {/* THE INBOUND LINK to this connection's saved
+                            parameters (#3124), and load-bearing for the same
+                            reason the one above it is.
+
+                            The parameter-set API shipped in #2906 with four
+                            verbs, five usecases and a database trigger
+                            enforcing four eyes, and nothing in the product
+                            called it — so a baseline could only be created,
+                            and a template edit only signed, by a hand-made
+                            request. That is the third time this subsystem
+                            shipped a control reachable only by curl.
+
+                            The connection travels in the query string so the
+                            page opens on the server the operator is already
+                            looking at. The href is composed from a LITERAL
+                            path rather than one interpolated whole, which is
+                            also what `agentic-route-inbound-links` can see:
+                            its needle for a static route is the path followed
+                            by a quote, and a path spliced into a template
+                            ahead of `?connectionId=` matches nothing.
+
+                            Rendered for every reader of this page, not gated
+                            further: the destination carries its own
+                            `admin.agent_registry` assertion, which is the same
+                            key this page already required to render at all. */}
+                        {connectionId && (
+                            <Link
+                                href={`${tenantHref('/agents/parameter-sets')}?connectionId=${encodeURIComponent(connectionId)}`}
+                                id="external-tools-parameter-sets-link"
+                                className={buttonVariants({ variant: 'secondary' })}
+                            >
+                                {t('externalTools.parameterSetsLink')}
+                            </Link>
+                        )}
                     </div>
 
                     {/* Says where the other half of the ordering lives, because
