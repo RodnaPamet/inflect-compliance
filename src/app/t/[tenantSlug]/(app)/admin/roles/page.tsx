@@ -169,8 +169,8 @@ function PermissionGrid({
                     {(Object.keys(PERMISSION_SCHEMA) as (keyof PermissionSet)[]).map((resource) => {
                         const resourceActions = PERMISSION_SCHEMA[resource];
                         return (
-                            <tr key={resource}>
-                                <td className="sticky left-0 bg-bg-default/50 text-xs font-medium text-content-default">
+                            <tr key={resource} className="group/row">
+                                <td className="sticky left-0 bg-bg-default/50 text-xs font-medium text-content-default group-hover/row:bg-bg-muted">
                                     {RESOURCE_LABELS[resource]}
                                 </td>
                                 {allActions.map((action) => {

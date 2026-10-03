@@ -294,13 +294,22 @@ body {
  * TraceabilityPanel (×3) finally get the `text-xs` / `px-2` / `py-8` /
  * `bg-bg-default/90` they were passing.
  *
- * ONE of those changes is a LOSS, and it is deliberate rather than
- * overlooked: the sticky first column in admin/rbac and admin/roles carries
- * `bg-bg-default/50`, which now beats `.data-table tr:hover td`, so those four
- * cells stop showing the row-hover tint. Fixing it belongs at the call site
- * (a `hover:bg-bg-muted` on those `<td>`s) or by migrating those three raw
- * tables to `<DataTable>`, which the comment above already asks for — not by
- * leaving half this family unlayered. */
+ * ONE of those changes would have been a LOSS, and it is FIXED at the call
+ * site rather than shipped: the sticky first column in admin/rbac and
+ * admin/roles carries `bg-bg-default/50`, which now beats
+ * `.data-table tr:hover td`, so those three cells would have stopped showing
+ * the row-hover tint. They now carry `group-hover/row:bg-bg-muted` with
+ * `group/row` on the `<tr>` — this repo's own idiom (see
+ * `ui/table/virtual-table-body.tsx` and `ui/table-title-cell.tsx`).
+ *
+ * `hover:bg-bg-muted` on the `<td>` would NOT have been equivalent: it fires
+ * only while the pointer is over that one cell, where `tr:hover td` tints on
+ * ROW hover. The named group reproduces the row scope.
+ *
+ * Net effect at those cells: they now get BOTH the `bg-bg-default/50` they
+ * were always asking for (and silently losing) at rest, AND the row-hover
+ * tint. Migrating these three raw tables to `<DataTable>`, which the comment
+ * above already asks for, remains the real fix. */
 @layer components {
   .data-table { @apply w-full text-sm text-left; }
   .data-table th {
