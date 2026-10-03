@@ -174,7 +174,6 @@ describe('Animation vocabulary discipline (Roadmap-6 PR-1)', () => {
 
     /** `theme.extend.animation` keys from the repo's own Tailwind config. */
     const configAnimationNames = (): Set<string> => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const cfg = require(path.join(ROOT, 'tailwind.config.js'));
         return new Set(
             Object.keys(cfg?.theme?.extend?.animation ?? {}),
