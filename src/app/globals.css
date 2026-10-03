@@ -367,26 +367,29 @@ body {
    hover/active/focus are part of the state-language ratchet
    (Polish PR-8) and motion-language ratchet (Polish PR-9). */
 
-/* Page header — sticky on mobile, wraps actions.
+/* Page header — the `.page-header` recipe was DELETED in #3162.
  *
- * Layered in #3153, but note: this rule has ZERO `className` consumers. The
- * same measurement that condemned `.btn` reads 0 for `page-header` too — the
- * only `page-header` strings in `src/` are `data-testid="page-header-*"`
- * attributes and prose, and the live primitive is
- * `src/components/layout/PageHeader.tsx`, which does not use this class.
- * It was LAYERED rather than deleted because #3153's brief authorised deleting
- * one dead family (`.btn`, which has a ratchet asserting 0 as independent
- * corroboration) and this one has no such second witness. Deleting it is a
- * one-line follow-up for whoever confirms the finding. */
-@layer components {
-  .page-header {
-    @apply flex flex-wrap items-center justify-between gap-3
-      sticky top-0 z-20
-      -mx-4 md:-mx-6 px-4 md:px-6
-      py-3 backdrop-blur-sm;
-    background: color-mix(in srgb, var(--bg-page) 80%, transparent);
-  }
-}
+ * #3153 LAYERED it instead: that PR was authorised to delete exactly one dead
+ * family (`.btn`, which had `tests/unit/legacy-ui-ratchet.test.ts` asserting 0
+ * as independent corroboration), and this one had no witness beyond a grep —
+ * the instrument that had already got it wrong once, listing `.page-header` as
+ * "live, 3 occurrences" when all three were `data-testid="page-header-*"`.
+ *
+ * #3162 supplied a second witness that does not use grep. Compiled through
+ * the real `@tailwindcss/postcss` chain the rule emitted exactly ONE selector
+ * — the bare `.page-header`, no compound or descendant form — so "an element
+ * matches it" is the same question as "an element carries the token", which a
+ * DOM probe can answer completely. The 34 jsdom suites that render a layout /
+ * app-shell / nav component then ran with every class-name assignment
+ * intercepted (`setAttribute('class')`, the `className` setter,
+ * `classList.add/toggle/replace`, `innerHTML`) and every tree scanned at
+ * teardown: 0 of 1,005,821 class tokens and 0 of 127,511 elements carried it,
+ * against 266 matches for the live recipes and a synthetic control element
+ * found in all 319 tests.
+ *
+ * The live primitive is `src/components/layout/PageHeader.tsx`, which
+ * composes utilities and never used this class.
+ * `tests/guards/deleted-css-recipes-stay-deleted.test.ts` keeps it deleted. */
 
 /* Focus-visible — accessible keyboard focus rings. Sidebar nav
    focus migrated to inline focus-visible:ring-2 in SidebarNav.tsx
@@ -439,17 +442,20 @@ body {
   }
 }
 
-/* Safe-area support for notched devices.
- * Layered in #3153. Like `.page-header` this measures 0 `className`
- * consumers — the only occurrence of `safe-area-bottom` in the repo is this
- * definition — so layering it is inert and it is kept for the same reason. */
-@layer components {
-  @supports (padding: env(safe-area-inset-bottom)) {
-    .safe-area-bottom {
-      padding-bottom: env(safe-area-inset-bottom);
-    }
-  }
-}
+/* Safe-area support for notched devices — the `.safe-area-bottom` recipe was
+ * DELETED in #3162, on the same two witnesses as `.page-header` above and
+ * with the same result. Its case was the easier of the two: the only
+ * occurrence of the name anywhere in the repo was its own definition.
+ *
+ * The repo's live spelling for an inset is an arbitrary utility, not a class —
+ * `pt-[env(safe-area-inset-top)]` and
+ * `pl-[max(1rem,env(safe-area-inset-left))]` in
+ * `src/components/layout/nav-bar.tsx` — so a bottom inset is
+ * `pb-[env(safe-area-inset-bottom)]` on the element that needs it. The only
+ * things pinned to the VIEWPORT's bottom edge today are the mobile drawer
+ * branch of `popover.tsx` and the mobile sheet branch of `modal.tsx` (plus
+ * Vaul's own `Sheet`), each of which manages its own padding — so nothing
+ * lost an inset here. */
 
 /* SoA Print styles — moved from inline <style> for CSP compliance.
  *
