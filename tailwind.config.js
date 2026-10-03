@@ -197,6 +197,26 @@ module.exports = {
 
             // ── Animations required by Dub-ported components ──
             keyframes: {
+                // Radix accordion open/close. Radix sets
+                // `--radix-accordion-content-height` on the Content element
+                // from a measured scrollHeight, which is why the open frame
+                // can name a concrete height instead of `auto` — `height`
+                // from `0` to `auto` is not animatable and would snap.
+                //
+                // These existed as CLASS NAMES in accordion.tsx with no
+                // definition anywhere, so both utilities resolved to nothing
+                // and the panel snapped open. See the enumerator in
+                // `tests/guards/animation-vocabulary.test.ts`, which now
+                // fails on any `animate-*` token that resolves to no
+                // animation at all.
+                'accordion-down': {
+                    from: { height: '0' },
+                    to: { height: 'var(--radix-accordion-content-height)' },
+                },
+                'accordion-up': {
+                    from: { height: 'var(--radix-accordion-content-height)' },
+                    to: { height: '0' },
+                },
                 'slide-up-fade': {
                     '0%': { opacity: '0', transform: 'translateY(6px)' },
                     '100%': { opacity: '1', transform: 'translateY(0)' },
@@ -471,6 +491,13 @@ module.exports = {
                 },
             },
             animation: {
+                // 0.2s ease-out matches `slide-up-fade` — the same tempo the
+                // rest of this file uses for a panel arriving. Declared here
+                // rather than as an `ease-[...]` class so the
+                // animation-language lock (no arbitrary easings in markup)
+                // stays satisfied.
+                'accordion-down': 'accordion-down 0.2s ease-out',
+                'accordion-up': 'accordion-up 0.2s ease-out',
                 'slide-up-fade': 'slide-up-fade 0.2s ease-out',
                 'slide-down-fade': 'slide-down-fade 0.2s ease-out',
                 'scale-in': 'scale-in 0.15s ease-out',
