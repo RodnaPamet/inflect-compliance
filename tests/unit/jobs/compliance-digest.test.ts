@@ -199,6 +199,89 @@ describeFn('runComplianceDigest (real DB)', () => {
         expect(sent[0].subject).toContain('Snap');
     });
 
+    it('does NOT mail a soft-deleted tenant, even with active ADMIN members (#3164)', async () => {
+        /*
+            Reproduces production. Removing a tenant soft-deletes it, but seven
+            removed tenants were found still holding ~11 ACTIVE ADMIN
+            memberships each — exactly what `getDigestRecipients` selects — so
+            the job mailed people about tenants that no longer exist.
+
+            Active members on a deleted tenant is the whole point of the
+            fixture: filtering on membership status alone would not have caught
+            this, which is why the filter belongs on `deletedAt`.
+
+            Note this job calls `sendEmail` DIRECTLY rather than enqueuing, so
+            `NotificationOutbox` carries no trace of it. Checking the outbox for
+            evidence of the defect finds none and proves nothing — the stub
+            mailer is the only place it is visible.
+        */
+        // `itemsScanned` is a RUN-WIDE total across every live tenant, not a
+        // figure about this fixture — the first test in this file already says so
+        // with `toBeGreaterThanOrEqual`. A bare `.toBe(0)` therefore asserts
+        // "the database contains nothing else", which held on a scratch DB and
+        // failed on CI's schema at 23. The scoped form is the DELTA: adding a
+        // removed tenant with a snapshot must not move the total at all, and
+        // would move it by one if the `deletedAt` filter were missing.
+        const baseline = (await runComplianceDigest({})).result.itemsScanned;
+
+        await prisma.tenant.create({
+            data: { id: T1, name: 'Removed', slug: T1, deletedAt: new Date('2026-09-09') },
+        });
+        const email = `${SUITE}-ghost-admin@example.test`;
+        const u = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
+        await prisma.tenantMembership.create({
+            data: { tenantId: T1, userId: u.id, role: 'ADMIN', status: 'ACTIVE' },
+        });
+        await makeSnapshot(T1, new Date('2026-06-01'));
+
+        const { result } = await runComplianceDigest({});
+
+        expect(result.success).toBe(true);
+        expect(stub.sentMessages.filter((m) => m.to === email)).toHaveLength(0);
+        // Not merely unsent — never scanned, so the work is skipped too.
+        expect(result.itemsScanned).toBe(baseline);
+    });
+
+    it('and an explicit tenantId cannot re-run a removed tenant by hand', async () => {
+        // The narrower branch. A manual invocation naming a removed tenant
+        // would otherwise do exactly what the schedule no longer does.
+        await prisma.tenant.create({
+            data: { id: T1, name: 'Removed', slug: T1, deletedAt: new Date('2026-09-09') },
+        });
+        await makeSnapshot(T1, new Date('2026-06-01'));
+
+        const { result } = await runComplianceDigest({
+            tenantId: T1,
+            recipientOverrides: ['override@example.test'],
+        });
+
+        expect(result.itemsScanned).toBe(0);
+        expect(stub.sentMessages.some((m) => m.to === 'override@example.test')).toBe(false);
+    });
+
+    it('while a LIVE tenant with the same shape still receives one', async () => {
+        // Teeth for both: a filter that refused everything would pass the two
+        // assertions above while breaking the feature.
+        // Baseline for the same reason as above — and here the delta carries the
+        // teeth that matter: a filter rejecting EVERY tenant would satisfy the
+        // two assertions in the tests before this one while breaking the job,
+        // and it shows up as a delta of 0 where 1 is required.
+        const baseline = (await runComplianceDigest({})).result.itemsScanned;
+
+        await prisma.tenant.create({ data: { id: T2, name: 'Live', slug: T2 } });
+        const email = `${SUITE}-live-admin@example.test`;
+        const u = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
+        await prisma.tenantMembership.create({
+            data: { tenantId: T2, userId: u.id, role: 'ADMIN', status: 'ACTIVE' },
+        });
+        await makeSnapshot(T2, new Date('2026-06-01'));
+
+        const { result } = await runComplianceDigest({});
+
+        expect(result.itemsScanned).toBe(baseline + 1);
+        expect(stub.sentMessages.filter((m) => m.to === email)).toHaveLength(1);
+    });
+
     it('honours recipientOverrides + a single tenantId filter', async () => {
         await prisma.tenant.create({ data: { id: T1, name: 'Snap', slug: T1 } });
         await makeSnapshot(T1, new Date('2026-06-01'));

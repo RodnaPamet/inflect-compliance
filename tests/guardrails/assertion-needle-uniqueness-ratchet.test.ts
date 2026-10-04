@@ -537,6 +537,28 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1175;
 //   Re-seated DOWNWARD in the same diff, which is what the sentinel below
 //   demands of an improvement: 167 is the live count, not 168 with a point of
 //   headroom a future regression could spend on a green build.
+// HELD at 167 through #3164, which first appeared to require a rise.
+//
+//   That diff adds two `where: { deletedAt: null }` clauses to
+//   `compliance-digest.ts`, which pushed one needle in
+//   `tests/unit/compliance-digest.test.ts` from four satisfying positions to
+//   six: `expect(content).toContain(': null')`, under a test named "null deltas
+//   when no prior snapshot". The four it was written for are the delta
+//   ternaries' fallback arms; the two it acquired are query filters that have
+//   nothing to do with deltas.
+//
+//   The needle was the defect, not the count. At six positions it would have
+//   stayed green with every delta fallback deleted, so long as one
+//   `deletedAt: null` survived anywhere in the file — a text search wearing an
+//   assertion's clothes. Narrowed to `/^\s+: null,$/m`, which matches a line
+//   whose entire content is the ternary arm and cannot be satisfied by a
+//   `: null` sitting inside an object literal. Verified by mutation: replacing
+//   the arms with `: 0` reddens that test.
+//
+//   Found by bisection, which is what the sentinel above asks for: a temporary
+//   probe over this file's own `report()` on both the branch and a tree with
+//   only `compliance-digest.ts` reverted, diffed by needle. 29 sites either
+//   side; exactly one count moved.
 const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
 
 /**
