@@ -278,4 +278,68 @@ describe('processAccessReviewOverdueEscalation', () => {
         const expected = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
         expect(cutoff.getTime()).toBe(expected.getTime());
     });
+
+    /*
+        #3178 — the candidate query must require a live tenant.
+
+        `deletedAt: null` in that query is `AccessReview.deletedAt`. A tenant
+        soft-delete does not cascade to its reviews, so an open overdue review in
+        a removed workspace satisfied every other predicate — and without a
+        `tenantId`, which is how the schedule runs this, the query spans every
+        tenant.
+
+        `resolveAdmins` then fans out to `TenantMembership` rows with
+        `status: 'ACTIVE'` and `role: { in: ['OWNER', 'ADMIN'] }`, and those rows
+        survive a tenant's removal: 88 of production's 105 ACTIVE memberships
+        belong to the seven tenants removed in September. The result is
+        overdue-review mail about a workspace gone from every surface the reader
+        could use to check.
+
+        ASSERTED ON THE QUERY, not on an outcome. The db is a mock, so the only
+        thing that can distinguish "filtered" from "not filtered" is what was
+        asked for — a mock returns whatever the fixture says regardless of the
+        predicate, so an outcome-based assertion here would pass either way.
+        Same reasoning as #3176's `deletedAt` call-site assertion.
+    */
+    describe('tenant liveness', () => {
+        it('asks only for reviews whose tenant still exists', async () => {
+            const db = makeDb({ candidates: [], admins: new Map() });
+
+            await processAccessReviewOverdueEscalation(db as any, { now });
+
+            expect(db.accessReview.findMany).toHaveBeenCalledTimes(1);
+            const where = (db.accessReview.findMany.mock.calls[0][0] as {
+                where: Record<string, unknown>;
+            }).where;
+            expect(where.tenant).toEqual({ deletedAt: null });
+        });
+
+        it('keeps the review-level filter too — they are different predicates', async () => {
+            // Confusing `AccessReview.deletedAt` with `Tenant.deletedAt` is the
+            // defect itself, so both have to be present. Dropping the first
+            // resurrects deleted reviews; dropping the second is #3178.
+            const db = makeDb({ candidates: [], admins: new Map() });
+
+            await processAccessReviewOverdueEscalation(db as any, { now });
+
+            const where = (db.accessReview.findMany.mock.calls[0][0] as {
+                where: Record<string, unknown>;
+            }).where;
+            expect(where.deletedAt).toBeNull();
+            expect(where.tenant).toEqual({ deletedAt: null });
+        });
+
+        it('an explicit tenantId is narrowed by liveness, not exempted from it', async () => {
+            // A manual invocation naming a removed tenant must not do by hand
+            // what the schedule no longer does (cf. #3169's explicit-id branch).
+            const db = makeDb({ candidates: [], admins: new Map() });
+
+            await processAccessReviewOverdueEscalation(db as any, { now, tenantId: 't-removed' });
+
+            const where = (db.accessReview.findMany.mock.calls[0][0] as {
+                where: Record<string, unknown>;
+            }).where;
+            expect(where).toMatchObject({ tenantId: 't-removed', tenant: { deletedAt: null } });
+        });
+    });
 });

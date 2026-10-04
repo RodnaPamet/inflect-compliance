@@ -91,6 +91,34 @@ export async function runEvidenceRetentionNotifications(
         retentionUntil: { not: null, lte: futureDate, gt: new Date() },
         isArchived: false,
         deletedAt: null,
+        /*
+            THE TENANT MUST STILL EXIST (#3178).
+
+            `deletedAt: null` above is `Evidence.deletedAt` — the entity. A tenant
+            soft-delete does NOT cascade to its rows, so every predicate here was
+            satisfiable by evidence sitting in a workspace that had been removed,
+            and with no `options.tenantId` this sweep visits every tenant there is.
+
+            What followed was not read-only. `tenantOwnerUserId` resolves an OWNER
+            from `TenantMembership`, and a tenant's memberships SURVIVE its removal
+            — 88 of production's 105 ACTIVE memberships belong to the seven tenants
+            removed in September. The resolved owner then gets a real Task minted
+            through the canonical `createTask`: a TSK key, an audit row, an
+            automation event and an assignee notification. So a removed workspace
+            gained work items and somebody was told about them.
+
+            A RELATION FILTER HERE RATHER THAN A PRE-RESOLVED ID LIST, because this
+            sweep does not group by tenant — it scans evidence and discovers tenants
+            on the way. `digest-dispatcher` took the other shape for the opposite
+            reason (#3176). Either is correct; the choke point is what matters, and
+            this is it: nothing downstream runs without a row from this query.
+
+            The `options.tenantId` branch below is narrowed by the same predicate
+            rather than exempted, so a manual invocation naming a removed tenant
+            cannot do by hand what the schedule no longer does — the same reasoning
+            as #3169's explicit-id branch.
+        */
+        tenant: { deletedAt: null },
     };
     if (options.tenantId) where.tenantId = options.tenantId;
 
@@ -273,6 +301,9 @@ export async function runEvidenceRetentionNotifications(
         deletedAt: null,
         isArchived: false,
         expiredAt: { not: null, lt: new Date() },
+        // Same predicate, same reason as the expiring query above (#3178). Both
+        // are choke points and a filter on one of them is not a filter.
+        tenant: { deletedAt: null },
     };
     if (options.tenantId) expiredWhere.tenantId = options.tenantId;
     const expiredRaw = await prisma.evidence.findMany({
