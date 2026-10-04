@@ -59,7 +59,14 @@ beforeEach(() => {
             treatmentMilestone: { findMany: jest.fn().mockResolvedValue([]) },
             user: { findMany: jest.fn().mockResolvedValue([]) },
             tenantMembership: { findMany: jest.fn().mockResolvedValue([]) },
-            tenant: { findUnique: jest.fn().mockResolvedValue({ slug: 'test' }) },
+            tenant: {
+                // `resolveLiveTenants` asks for liveness + slug in one query;
+                // echo each requested id back as live.
+                findMany: jest.fn((args: { where: { id: { in: string[] } } }) =>
+                    Promise.resolve(args.where.id.in.map((id) => ({ id, slug: 'test' }))),
+                ),
+                findUnique: jest.fn().mockResolvedValue({ slug: 'test' }),
+            },
             notificationOutbox: { create: jest.fn().mockResolvedValue({ id: 'x' }) },
             tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue(null) },
         },
@@ -83,7 +90,14 @@ beforeEach(() => {
             treatmentMilestone: { findMany: jest.fn().mockResolvedValue([]) },
             user: { findMany: jest.fn().mockResolvedValue([]) },
             tenantMembership: { findMany: jest.fn().mockResolvedValue([]) },
-            tenant: { findUnique: jest.fn().mockResolvedValue({ slug: 'test' }) },
+            tenant: {
+                // `resolveLiveTenants` asks for liveness + slug in one query;
+                // echo each requested id back as live.
+                findMany: jest.fn((args: { where: { id: { in: string[] } } }) =>
+                    Promise.resolve(args.where.id.in.map((id) => ({ id, slug: 'test' }))),
+                ),
+                findUnique: jest.fn().mockResolvedValue({ slug: 'test' }),
+            },
             notificationOutbox: { create: jest.fn().mockResolvedValue({ id: 'x' }) },
             tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue(null) },
         },

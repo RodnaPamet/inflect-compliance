@@ -29,7 +29,17 @@ const mockOutboxCreate = jest.fn();
 // fails the assertions loudly rather than throwing "not a function".
 const mockUserFindMany = jest.fn().mockResolvedValue([]);
 const mockMembershipFindMany = jest.fn().mockResolvedValue([]);
-const mockTenantFindUnique = jest.fn().mockResolvedValue({ slug: 'acme' });
+// `resolveLiveTenants` asks for liveness and slug in one query. The default
+// echoes every requested id back as LIVE, which is what the pre-existing tests
+// assume; the removed-tenant tests below override it.
+const mockTenantFindMany = jest.fn(
+    (args: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(args.where.id.in.map(id => ({ id, slug: 'acme' }))),
+);
+// Deliberately left wired and unused, like `mockUserFindMany` above: a return to
+// the per-tenant `findUnique` slug lookup resolves `undefined`, so the
+// `/t/acme/` link assertions fail loudly instead of throwing "not a function".
+const mockTenantFindUnique = jest.fn().mockResolvedValue(null);
 const mockSettingsFindUnique = jest.fn();
 
 jest.mock('@/lib/observability/logger', () => ({
@@ -40,7 +50,11 @@ jest.mock('@/lib/prisma', () => ({
     prisma: {
         user: { findMany: (...args: unknown[]) => mockUserFindMany(...args) },
         tenantMembership: { findMany: (...args: unknown[]) => mockMembershipFindMany(...args) },
-        tenant: { findUnique: (...args: unknown[]) => mockTenantFindUnique(...args) },
+        tenant: {
+            findMany: (...args: unknown[]) =>
+                mockTenantFindMany(...(args as [{ where: { id: { in: string[] } } }])),
+            findUnique: (...args: unknown[]) => mockTenantFindUnique(...args),
+        },
         notificationOutbox: { create: (...args: unknown[]) => mockOutboxCreate(...args) },
         tenantNotificationSettings: {
             findUnique: (...args: unknown[]) => mockSettingsFindUnique(...args),
@@ -75,7 +89,9 @@ function makeDueItem(overrides: Partial<DueItem> = {}): DueItem {
 beforeEach(() => {
     jest.clearAllMocks();
     mockOutboxCreate.mockResolvedValue({ id: 'outbox-1' });
-    mockTenantFindUnique.mockResolvedValue({ slug: 'acme' });
+    mockTenantFindMany.mockImplementation((args: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(args.where.id.in.map(id => ({ id, slug: 'acme' }))),
+    );
 
     // Default: notifications enabled (no settings row = enabled by default)
     mockSettingsFindUnique.mockResolvedValue(null);
@@ -343,5 +359,165 @@ describe('Structural: digest-dispatcher uses notification settings', () => {
         );
         const eligibleChecks = (source.match(/eligibleTenants\.has\(tenantId\)/g) || []).length;
         expect(eligibleChecks).toBeGreaterThanOrEqual(2); // owned + unowned loops
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 6. #3165 — the unowned fallback is its own digest, not folded into
+//    an admin's personal one
+// ═════════════════════════════════════════════════════════════════════
+
+describe('Digest dispatch: unowned items are a separate digest', () => {
+    /**
+     * Both membership reads go through the same mock, so answer by shape:
+     * `resolveTenantAdmins` is the one that filters on `role`.
+     */
+    function wireAdminWhoAlsoOwns() {
+        mockMembershipFindMany.mockImplementation(
+            (args: { where: { role?: unknown } }) =>
+                args.where.role !== undefined
+                    ? Promise.resolve([
+                          { user: { id: 'admin-1', email: 'admin@acme.com', name: 'Admin' } },
+                      ])
+                    : Promise.resolve([
+                          {
+                              tenantId: 'tenant-on',
+                              user: { id: 'admin-1', email: 'admin@acme.com', name: 'Admin' },
+                          },
+                      ]),
+        );
+    }
+
+    /**
+     * THE REGRESSION. Both sends used the key `…:{email}:digest:{date}`, so for
+     * an admin who also owns something the second `create` hit the unique
+     * constraint, was swallowed as P2002, and the unowned list vanished —
+     * counted as `skipped`, which reads identically to "already sent today".
+     *
+     * The admin here owns ctrl-1 and the tenant has an unowned ctrl-2. Two
+     * distinct outbox rows must exist, and this fails with one before the fix.
+     */
+    test('an admin who also owns items receives BOTH digests, on distinct keys', async () => {
+        wireAdminWhoAlsoOwns();
+        const created: Array<{ dedupeKey: string; subject: string }> = [];
+        mockOutboxCreate.mockImplementation((args: { data: { dedupeKey: string; subject: string } }) => {
+            if (created.some(c => c.dedupeKey === args.data.dedupeKey)) {
+                // What the real unique constraint does.
+                return Promise.reject(Object.assign(new Error('Unique constraint'), { code: 'P2002' }));
+            }
+            created.push({ dedupeKey: args.data.dedupeKey, subject: args.data.subject });
+            return Promise.resolve({ id: `outbox-${created.length}` });
+        });
+
+        const result = await dispatchDigest({
+            category: 'DEADLINE_DIGEST',
+            items: [
+                makeDueItem({ tenantId: 'tenant-on', entityId: 'ctrl-1', ownerUserId: 'admin-1' }),
+                makeDueItem({ tenantId: 'tenant-on', entityId: 'ctrl-2', ownerUserId: undefined }),
+            ],
+        });
+
+        expect(result.enqueued).toBe(2);
+        expect(result.skipped).toBe(0);
+        expect(created).toHaveLength(2);
+
+        const scopes = created.map(c => c.dedupeKey.split(':')[3]).sort();
+        expect(scopes).toEqual(['digest', 'unowned']);
+    });
+
+    test('the unowned digest says the items have no owner; the personal one does not', async () => {
+        wireAdminWhoAlsoOwns();
+        const created: Array<{ dedupeKey: string; subject: string; bodyText: string }> = [];
+        mockOutboxCreate.mockImplementation((args: { data: typeof created[number] }) => {
+            created.push(args.data);
+            return Promise.resolve({ id: `outbox-${created.length}` });
+        });
+
+        await dispatchDigest({
+            category: 'DEADLINE_DIGEST',
+            items: [
+                makeDueItem({ tenantId: 'tenant-on', entityId: 'ctrl-1', ownerUserId: 'admin-1' }),
+                makeDueItem({ tenantId: 'tenant-on', entityId: 'ctrl-2', ownerUserId: undefined }),
+            ],
+        });
+
+        const unowned = created.find(c => c.dedupeKey.includes(':unowned:'))!;
+        const personal = created.find(c => c.dedupeKey.includes(':digest:'))!;
+
+        expect(unowned.subject).toContain('need an owner');
+        expect(unowned.bodyText).toContain('no owner assigned');
+        expect(unowned.bodyText).not.toContain('You have');
+
+        expect(personal.subject).toContain('Compliance Deadline Digest');
+        expect(personal.bodyText).toContain('You have');
+        expect(personal.bodyText).not.toContain('no owner assigned');
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 7. A removed tenant is not mailed at all
+// ═════════════════════════════════════════════════════════════════════
+
+describe('Digest dispatch: soft-deleted tenants', () => {
+    test('items for a removed tenant are counted separately and never enqueued', async () => {
+        // `deletedAt: null` in the query means a removed tenant simply is not
+        // returned — the mock models that by omitting it.
+        mockTenantFindMany.mockImplementation((args: { where: { id: { in: string[] } } }) =>
+            Promise.resolve(
+                args.where.id.in
+                    .filter(id => id !== 'tenant-removed')
+                    .map(id => ({ id, slug: 'acme' })),
+            ),
+        );
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 'tenant-on', user: { id: 'user-1', email: 'alice@acme.com', name: 'Alice' } },
+        ]);
+
+        const result = await dispatchDigest({
+            category: 'DEADLINE_DIGEST',
+            items: [
+                makeDueItem({ tenantId: 'tenant-removed', entityId: 'c1' }),
+                makeDueItem({ tenantId: 'tenant-removed', entityId: 'c2' }),
+                makeDueItem({ tenantId: 'tenant-on', entityId: 'c3', ownerUserId: 'user-1' }),
+            ],
+        });
+
+        expect(result.removedTenantItems).toBe(2);
+        expect(result.suppressed).toBe(0); // NOT conflated with notifications-disabled
+        expect(result.enqueued).toBe(1);
+        expect(result.tenants['tenant-removed']).toEqual({ enqueued: 0, skipped: 0, removed: true });
+
+        // Nothing addressed to the removed tenant reached the outbox.
+        const tenantIds = mockOutboxCreate.mock.calls.map(c => c[0].data.tenantId);
+        expect(tenantIds).toEqual(['tenant-on']);
+    });
+
+    /**
+     * The mock models liveness by OMITTING the tenant from its result, so it
+     * cannot tell whether the query actually asked for `deletedAt: null` — drop
+     * the predicate and every assertion above still passes. This asserts the
+     * predicate itself, at the call site, which is the only thing a mocked
+     * client can say about it.
+     */
+    test('the liveness query filters on deletedAt, not just on id', async () => {
+        await dispatchDigest({
+            category: 'DEADLINE_DIGEST',
+            items: [makeDueItem({ tenantId: 'tenant-on', ownerUserId: undefined })],
+        });
+
+        expect(mockTenantFindMany).toHaveBeenCalledWith({
+            where: { id: { in: ['tenant-on'] }, deletedAt: null },
+            select: { id: true, slug: true },
+        });
+    });
+
+    test('a removed tenant is not even asked whether notifications are enabled', async () => {
+        mockTenantFindMany.mockResolvedValue([]); // every tenant removed
+        await dispatchDigest({
+            category: 'DEADLINE_DIGEST',
+            items: [makeDueItem({ tenantId: 'tenant-removed' })],
+        });
+        expect(mockSettingsFindUnique).not.toHaveBeenCalled();
+        expect(mockMembershipFindMany).not.toHaveBeenCalled();
     });
 });
