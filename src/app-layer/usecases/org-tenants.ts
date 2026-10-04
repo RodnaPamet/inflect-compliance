@@ -33,6 +33,7 @@ import { forbidden } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import { getBillingMode, type Plan } from '@/lib/billing/entitlements';
 import { recordTenantDeleted } from '@/lib/observability/business-metrics';
+import { appendAuditEntryWithin } from '@/lib/audit/audit-writer';
 
 export interface CreateTenantUnderOrgInput {
     name: string;
@@ -242,72 +243,142 @@ export async function deleteTenantUnderOrg(
     // notice. The reverse order fails safe by comparison (access revoked,
     // tenant still listed), but neither half alone is the operation.
     //
-    // THE ORDER INSIDE THE ARRAY IS LOAD-BEARING, and not for style.
-    // `$transaction([...])` runs its entries sequentially, and the
+    // THE ORDER IS LOAD-BEARING, and not for style. The
     // `tenant_membership_last_owner_guard` trigger raises P0001 on any UPDATE
     // that deactivates a tenant's last ACTIVE OWNER — which is precisely what
     // the second statement does. Migration `20260922200000_last_owner_guard_
     // allows_purge` exempts a tenant whose `deletedAt IS NOT NULL`, so the
-    // soft-delete MUST be the statement that has already run when the
-    // membership UPDATE fires. Swap these two and every tenant deletion
-    // aborts on the trigger — and a unit test with a mocked client stays
-    // green, because a mock has no triggers.
+    // soft-delete MUST already have run when the membership UPDATE fires. Swap
+    // those two and every tenant deletion aborts on the trigger — and a unit
+    // test with a mocked client stays green, because a mock has no triggers.
+    //
+    // THE INTERACTIVE FORM, not `$transaction([...])` (#3173). The array form
+    // can only hold prebuilt Prisma promises, and the audit append below is a
+    // function that needs the open transaction handed to it. Sequencing is
+    // unchanged: an array runs its entries in order, and so do these awaits.
     const revokedAt = new Date();
-    const [, revoked] = await prisma.$transaction([
-        prisma.tenant.update({
+    const revoked = await prisma.$transaction(async (tx) => {
+        await tx.tenant.update({
             where: { id: tenant.id },
             data: { deletedAt: revokedAt },
-        }),
-        // REVOKED, NOT ERASED. This usecase's docstring promises the data is
-        // "retained for compliance and a possible restore", and "who had
-        // access to this tenant, and until when?" is a question an auditor
-        // asks about a tenant that has been removed. A `deleteMany` here
-        // would answer it with silence.
-        //
-        // ONLY THE ROWS THAT STILL GRANT ACCESS. `deactivatedAt` is evidence
-        // of when access actually ended, so a row already carrying one must
-        // keep it — overwriting a months-old revocation with today's date
-        // would forge the record. `REMOVED` is excluded for the same reason:
-        // it is a terminal state `resolveTenantContext` already refuses, and
-        // rewriting it to DEACTIVATED loses which of the two happened.
-        // ACTIVE and INVITED are what `src/lib/tenant-context.ts` lets
-        // through, so they are exactly the live grants.
-        prisma.tenantMembership.updateMany({
+        });
+
+    // REVOKED, NOT ERASED. This usecase's docstring promises the data is
+    // "retained for compliance and a possible restore", and "who had
+    // access to this tenant, and until when?" is a question an auditor
+    // asks about a tenant that has been removed. A `deleteMany` here
+    // would answer it with silence.
+    //
+    // ONLY THE ROWS THAT STILL GRANT ACCESS. `deactivatedAt` is evidence
+    // of when access actually ended, so a row already carrying one must
+    // keep it — overwriting a months-old revocation with today's date
+    // would forge the record. `REMOVED` is excluded for the same reason:
+    // it is a terminal state `resolveTenantContext` already refuses, and
+    // rewriting it to DEACTIVATED loses which of the two happened.
+    // ACTIVE and INVITED are what `src/lib/tenant-context.ts` lets
+    // through, so they are exactly the live grants.
+        const revokedMemberships = await tx.tenantMembership.updateMany({
             where: { tenantId: tenant.id, status: { in: ['ACTIVE', 'INVITED'] } },
             data: { status: 'DEACTIVATED', deactivatedAt: revokedAt },
-        }),
-        /*
-            THIRD: invalidate every affected session (#3166).
+        });
 
-            Without this the removal is invisible to anyone already signed in.
-            Tenant memberships are baked into the JWT at sign-in — `auth.ts`
-            filters `tenant: { deletedAt: null }` when it MINTS the token, and
-            never again — so a member keeps seeing the removed tenant in their
-            workspace switcher until they happen to sign out. Observed in
-            production: three tenants removed on 2026-09-09 were still listed
-            in the switcher on 2026-10-04.
+    /*
+        THIRD: invalidate every affected session (#3166).
 
-            `sessionVersion` is compared per request in `auth.ts`, so bumping it
-            forces the next request to re-mint from the database, where both
-            filters above now apply.
+        Without this the removal is invisible to anyone already signed in.
+        Tenant memberships are baked into the JWT at sign-in — `auth.ts`
+        filters `tenant: { deletedAt: null }` when it MINTS the token, and
+        never again — so a member keeps seeing the removed tenant in their
+        workspace switcher until they happen to sign out. Observed in
+        production: three tenants removed on 2026-09-09 were still listed
+        in the switcher on 2026-10-04.
 
-            A relation filter rather than a pre-query for the ids: it keeps this
-            a single statement inside the SAME transaction, so a session cannot
-            survive a removal that committed. Scoped to users who hold a
-            membership in THIS tenant — `updateMany` with no filter would log
-            out the entire installation.
+        `sessionVersion` is compared per request in `auth.ts`, so bumping it
+        forces the next request to re-mint from the database, where both
+        filters above now apply.
 
-            NOT `revokeAllTenantSessions`: that helper requires a tenant-scoped
-            context with `canAdmin`, and this runs in an ORG context where the
-            caller is an org admin who may hold no membership in the tenant at
-            all. Reaching for it would mean fabricating a context to satisfy a
-            permission check that has already been made at the route.
-        */
-        prisma.user.updateMany({
+        A relation filter rather than a pre-query for the ids: it keeps this
+        a single statement inside the SAME transaction, so a session cannot
+        survive a removal that committed. Scoped to users who hold a
+        membership in THIS tenant — `updateMany` with no filter would log
+        out the entire installation.
+
+        NOT `revokeAllTenantSessions`: that helper requires a tenant-scoped
+        context with `canAdmin`, and this runs in an ORG context where the
+        caller is an org admin who may hold no membership in the tenant at
+        all. Reaching for it would mean fabricating a context to satisfy a
+        permission check that has already been made at the route.
+    */
+        await tx.user.updateMany({
             where: { tenantMemberships: { some: { tenantId: tenant.id } } },
             data: { sessionVersion: { increment: 1 } },
-        }),
-    ]);
+        });
+
+        /*
+            FOURTH: the audit entry, and it is the reason this is one
+            transaction rather than a batch (#3173).
+
+            Removing a tenant takes an entire customer's workspace off every
+            surface in the product, and until now it was recorded NOWHERE.
+            Measured on production 2026-10-04: nine tenants carry a `deletedAt`
+            and neither audit chain has a single row for any of them —
+            `AuditLog` 3,714 rows, `OrgAuditLog` 82, `AuditOutbox` 0. The only
+            trace was a `logger.info` line in container stdout, which the next
+            deploy discarded. In a compliance product, "who removed this tenant
+            and when" is the shape of question the trail exists to answer.
+
+            The absence was not an oversight in one place. `OrgAuditAction` has
+            no member for tenant creation or deletion at all, while a REFUSED
+            attempt has been audited since #2147 (`ORG_AUTHZ_DENIED`): the
+            denial was recorded and the act was not.
+
+            WHY THE PER-TENANT CHAIN RATHER THAN THE ORG CHAIN. `AuditLog.
+            tenantId` is satisfiable here — the tenant row survives a
+            soft-delete, so the FK holds — and that chain already records the
+            tenant's birth (`TENANT_SEEDED`). Ending it with a removal makes the
+            tenant's own history readable start to finish. The org chain cannot
+            do this atomically in any case: `appendOrgAuditEntry` opens its own
+            `$transaction` for a per-org advisory lock, so it cannot join this
+            one, and an after-the-fact best-effort append is exactly the
+            half-state this comment opens by refusing. An org-level entry is
+            still worth adding and is a separate change, because it needs a
+            Prisma enum member and a migration.
+
+            `appendAuditEntryWithin` is the sanctioned seam: its
+            `AuditAppendClient` is documented as satisfied by an interactive
+            `PrismaTx` precisely so a caller can append inside a transaction it
+            already owns, and `dsar-erasure` already does. It takes the
+            per-tenant advisory lock, so that lock is now held for the remainder
+            of this transaction — three indexed statements against one tenant,
+            which is cheap beside a deletion nothing records.
+
+            LAST, so it fails closed. If the append cannot be written the whole
+            removal rolls back, and no workspace disappears unrecorded. The
+            reverse — a row claiming a deletion that then rolled back — would
+            put a false entry on a hash chain, which is worse than none.
+        */
+        await appendAuditEntryWithin(tx, {
+            tenantId: tenant.id,
+            userId: ctx.userId,
+            actorType: 'USER',
+            entity: 'Tenant',
+            entityId: tenant.id,
+            action: 'TENANT_REMOVED',
+            details: `Tenant "${tenant.name}" (${tenant.slug}) removed from organization`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                operation: 'soft_delete',
+                entityName: tenant.name,
+                summary: `Tenant ${tenant.slug} removed from the organization`,
+                // The number the operator asks about next, and the one the
+                // `logger.info` line below has always carried.
+                revokedMemberships: revokedMemberships.count,
+            },
+            requestId: ctx.requestId,
+        });
+
+        return revokedMemberships;
+    });
 
     // Resolve plan for the KPI label. Self-hosted is always ENTERPRISE —
     // skip the BillingAccount lookup entirely in that mode.

@@ -20,9 +20,30 @@ const update = jest.fn();
 const membershipUpdateMany = jest.fn();
 const membershipDeleteMany = jest.fn();
 const userUpdateMany = jest.fn().mockResolvedValue({ count: 3 });
-/** Call order across the two statements — the trigger exemption depends on it. */
+/** Call order across the statements — the trigger exemption depends on it. */
 const calls: string[] = [];
-const txnBatchSizes: number[] = [];
+/**
+ * One entry per `$transaction` call, listing the writes that ran INSIDE it.
+ *
+ * Replaces `txnBatchSizes`, which counted the entries of a `$transaction([...])`
+ * array. #3173 moved the usecase to the interactive form — the array can only
+ * hold prebuilt Prisma promises, and the audit append is a function needing the
+ * open transaction — so there is no array left to measure. The property being
+ * asserted is unchanged and so is the reason for asserting it this way: call
+ * ORDER cannot distinguish "inside the transaction" from "immediately after
+ * it", because both produce the same sequence. Grouping can.
+ */
+const transactions: string[][] = [];
+let openTx: string[] | null = null;
+const record = (label: string) => {
+    calls.push(label);
+    if (openTx) openTx.push(label);
+    else transactions.push([`OUTSIDE-ANY-TRANSACTION:${label}`]);
+};
+const appendAuditEntryWithin = jest.fn(async (..._a: unknown[]) => {
+    record('appendAuditEntryWithin');
+    return { id: 'audit-1', entryHash: 'h', previousHash: null };
+});
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -43,15 +64,35 @@ jest.mock('@/lib/prisma', () => ({
         user: {
             updateMany: (...a: unknown[]) => userUpdateMany(...a),
         },
-        // Sequential batch transaction: Prisma runs the array in order, and
-        // `deleteTenantUnderOrg` depends on that order (see its comment).
-        $transaction: (ops: unknown[]) => {
-            // The BATCH SIZE, not just the order. Order alone cannot tell
-            // "inside the transaction" from "immediately after it" — both
-            // produce the same call sequence — so the count is what makes
-            // the atomicity assertion mean anything (#3166).
-            txnBatchSizes.push(ops.length);
-            return Promise.all(ops);
+        // Interactive transaction (#3173). The callback receives a client that
+        // records every write against the transaction it ran in, so atomicity
+        // is asserted by GROUPING rather than by a count or a sequence.
+        //
+        // The array form is still handled: a mutation that reverts the usecase
+        // to `$transaction([...])` must fail on an assertion that names the
+        // defect, not on the mock throwing because it got the wrong type.
+        $transaction: (arg: unknown) => {
+            const writes: string[] = [];
+            const outer = openTx;
+            openTx = writes;
+            const finish = () => { openTx = outer; transactions.push(writes); };
+            if (typeof arg === 'function') {
+                const tx = {
+                    tenant: { update: (...a: unknown[]) => update(...a) },
+                    tenantMembership: {
+                        updateMany: (...a: unknown[]) => membershipUpdateMany(...a),
+                        deleteMany: (...a: unknown[]) => membershipDeleteMany(...a),
+                    },
+                    user: { updateMany: (...a: unknown[]) => userUpdateMany(...a) },
+                    // `appendAuditEntryWithin` issues raw SQL; present so a
+                    // direct call on the tx cannot fail for a missing method.
+                    $executeRawUnsafe: jest.fn().mockResolvedValue(0),
+                    $queryRawUnsafe: jest.fn().mockResolvedValue([]),
+                };
+                return Promise.resolve((arg as (c: unknown) => Promise<unknown>)(tx))
+                    .finally(finish);
+            }
+            return Promise.all(arg as unknown[]).finally(finish);
         },
         // recordTenantDeleted resolves plan via a BillingAccount lookup
         // (SAAS mode only). Mock it so the call is safe under any mode.
@@ -69,6 +110,12 @@ jest.mock('@/app-layer/usecases/org-provisioning', () => ({
 }));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+// The real writer issues raw SQL against a live chain. Mocked here so the unit
+// test can assert WHAT the usecase appends and WHERE — the writer's own
+// behaviour is covered where it lives.
+jest.mock('@/lib/audit/audit-writer', () => ({
+    appendAuditEntryWithin: (...a: unknown[]) => appendAuditEntryWithin(...a),
 }));
 
 import { deleteTenantUnderOrg } from '@/app-layer/usecases/org-tenants';
@@ -97,6 +144,49 @@ const readerCtx = {
     permissions: { canManageTenants: false },
 } as unknown as OrgContext;
 
+/**
+ * ONE reset, called from every `beforeEach` in this file.
+ *
+ * It was nested inside the first `describe`, so the #3173 block added at the
+ * bottom — a sibling, not a child — inherited none of it and its mocks
+ * accumulated across tests: a "called once" assertion saw two, then five. A
+ * reset that only some blocks get is worse than none, because the blocks that
+ * miss it fail for a reason that has nothing to do with what they assert.
+ */
+function installMocks() {
+    findFirst.mockReset();
+    update.mockReset();
+    membershipUpdateMany.mockReset();
+    membershipDeleteMany.mockReset();
+    calls.length = 0;
+    transactions.length = 0;
+    openTx = null;
+    appendAuditEntryWithin.mockClear();
+    update.mockImplementation(() => {
+        record('tenant.update');
+        return Promise.resolve({});
+    });
+    membershipUpdateMany.mockImplementation(() => {
+        record('tenantMembership.updateMany');
+        return Promise.resolve({ count: 3 });
+    });
+    // Returns a BatchPayload like the real delegate, so swapping the
+    // usecase to `deleteMany` fails on the assertion that names the
+    // defect rather than on the mock returning undefined. A mutation
+    // that crashes the harness proves the harness, not the assertion.
+    membershipDeleteMany.mockImplementation(() => {
+        record('tenantMembership.deleteMany');
+        return Promise.resolve({ count: 3 });
+    });
+    // #3166 — same treatment: records its position so the ORDER assertion
+    // can see it, and returns a BatchPayload like the real delegate.
+    userUpdateMany.mockReset();
+    userUpdateMany.mockImplementation(() => {
+        record('user.updateMany');
+        return Promise.resolve({ count: 3 });
+    });
+}
+
 describe('deleteTenantUnderOrg', () => {
     it('refuses a caller without canManageTenants — the check the route no longer owns', async () => {
         // Added with #2147: before it, this usecase had NO permission check and
@@ -108,37 +198,7 @@ describe('deleteTenantUnderOrg', () => {
         ).rejects.toMatchObject({ name: 'ForbiddenError' });
     });
 
-    beforeEach(() => {
-        findFirst.mockReset();
-        update.mockReset();
-        membershipUpdateMany.mockReset();
-        membershipDeleteMany.mockReset();
-        calls.length = 0;
-        txnBatchSizes.length = 0;
-        update.mockImplementation(() => {
-            calls.push('tenant.update');
-            return Promise.resolve({});
-        });
-        membershipUpdateMany.mockImplementation(() => {
-            calls.push('tenantMembership.updateMany');
-            return Promise.resolve({ count: 3 });
-        });
-        // Returns a BatchPayload like the real delegate, so swapping the
-        // usecase to `deleteMany` fails on the assertion that names the
-        // defect rather than on the mock returning undefined. A mutation
-        // that crashes the harness proves the harness, not the assertion.
-        membershipDeleteMany.mockImplementation(() => {
-            calls.push('tenantMembership.deleteMany');
-            return Promise.resolve({ count: 3 });
-        });
-        // #3166 — same treatment: records its position so the ORDER assertion
-        // can see it, and returns a BatchPayload like the real delegate.
-        userUpdateMany.mockReset();
-        userUpdateMany.mockImplementation(() => {
-            calls.push('user.updateMany');
-            return Promise.resolve({ count: 3 });
-        });
-    });
+    beforeEach(installMocks);
 
     it('soft-deletes a tenant belonging to the org (sets deletedAt, no hard delete)', async () => {
         findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
@@ -248,22 +308,27 @@ describe('deleteTenantUnderOrg', () => {
     it('inside the SAME transaction as the soft-delete, not after it', async () => {
         /*
             A session outliving a committed removal is the gap being closed, so
-            the bump has to be part of the atom.
+            the bump has to be part of the atom — and from #3173 so is the audit
+            entry, which is the whole reason a removal is now recorded at all.
 
-            Asserted on the BATCH SIZE. The call ORDER cannot express this —
-            a statement moved to just after the transaction produces exactly the
-            same sequence — so an order-only assertion would carry this name
-            while being unable to fail for the reason it names.
+            Asserted on the GROUPING: one transaction, and every write named
+            inside it. The call ORDER cannot express this — a statement moved to
+            just after the transaction produces exactly the same sequence — so
+            an order-only assertion would carry this name while being unable to
+            fail for the reason it names. This replaces the `txnBatchSizes`
+            count, which could only measure a `$transaction([...])` array.
         */
         findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'pwc-nis2' });
         await deleteTenantUnderOrg(ctx, 't-1');
 
-        expect(txnBatchSizes).toEqual([3]);
-        expect(calls).toEqual([
+        expect(transactions).toEqual([[
             'tenant.update',
             'tenantMembership.updateMany',
             'user.updateMany',
-        ]);
+            'appendAuditEntryWithin',
+        ]]);
+        // Nothing reached the client with no transaction open.
+        expect(transactions.flat().filter(w => w.startsWith('OUTSIDE'))).toEqual([]);
     });
 
     it('soft-deletes BEFORE revoking, which is what clears the last-OWNER trigger', async () => {
@@ -292,6 +357,101 @@ describe('deleteTenantUnderOrg', () => {
             'tenant.update',
             'tenantMembership.updateMany',
             'user.updateMany',
+            'appendAuditEntryWithin',
         ]);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// #3173 — a removal that nothing recorded
+// ═════════════════════════════════════════════════════════════════════
+
+describe('the removal is written to the audit trail', () => {
+    beforeEach(() => {
+        installMocks();
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'PwC NIS2' });
+    });
+
+    /**
+     * Measured on production 2026-10-04: nine tenants carry a `deletedAt` and
+     * neither chain holds a row for any of them — `AuditLog` 3,714 rows,
+     * `OrgAuditLog` 82, `AuditOutbox` 0. A REFUSED removal has been audited
+     * since #2147; the act itself was not.
+     */
+    it('appends a TENANT_REMOVED entry on the tenant own chain', async () => {
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        expect(appendAuditEntryWithin).toHaveBeenCalledTimes(1);
+        const [, input] = appendAuditEntryWithin.mock.calls[0] as unknown as [
+            unknown,
+            {
+                tenantId: string; entity: string; entityId: string; action: string;
+                userId: string | null; actorType: string; requestId: string;
+                detailsJson: Record<string, unknown>;
+            },
+        ];
+        expect(input).toMatchObject({
+            tenantId: 't-1',
+            entity: 'Tenant',
+            entityId: 't-1',
+            action: 'TENANT_REMOVED',
+            // The org admin who did it — the field whose absence made the
+            // production deletions unattributable.
+            userId: 'u-1',
+            actorType: 'USER',
+            requestId: 'req-1',
+        });
+    });
+
+    it('the payload is a structured entity_lifecycle event, not a text blob', async () => {
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        const [, input] = appendAuditEntryWithin.mock.calls[0] as unknown as [
+            unknown, { detailsJson: Record<string, unknown>; details: string },
+        ];
+        expect(input.detailsJson).toMatchObject({
+            category: 'entity_lifecycle',
+            operation: 'soft_delete',
+            entityName: 'PwC NIS2',
+        });
+        expect(input.details).toContain('pwc-nis2');
+    });
+
+    /**
+     * The count the operator asks about next, and the one the `logger.info`
+     * line has always carried. It can only be right if the append runs AFTER
+     * the membership update inside the same transaction — read before it, this
+     * would be whatever the mock's default is.
+     */
+    it('carries the number of memberships it revoked', async () => {
+        membershipUpdateMany.mockImplementation(() => {
+            record('tenantMembership.updateMany');
+            return Promise.resolve({ count: 11 });
+        });
+
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        const [, input] = appendAuditEntryWithin.mock.calls[0] as unknown as [
+            unknown, { detailsJson: { revokedMemberships: number } },
+        ];
+        expect(input.detailsJson.revokedMemberships).toBe(11);
+    });
+
+    /**
+     * LAST, so it fails closed: if the entry cannot be written, no workspace
+     * disappears unrecorded. A row claiming a deletion that then rolled back
+     * would be worse than none, because it would be on a hash chain.
+     */
+    it('a failing append aborts the whole removal', async () => {
+        appendAuditEntryWithin.mockRejectedValueOnce(new Error('chain unavailable') as never);
+
+        await expect(deleteTenantUnderOrg(ctx, 't-1')).rejects.toThrow('chain unavailable');
+    });
+
+    it('and a refused caller never reaches the append at all', async () => {
+        // The control: an audit entry for a removal that did not happen would
+        // be a false record, which is the one thing worse than a missing one.
+        await expect(deleteTenantUnderOrg(readerCtx, 't-1')).rejects.toThrow();
+        expect(appendAuditEntryWithin).not.toHaveBeenCalled();
     });
 });
