@@ -47,9 +47,26 @@ function recipientResolvers(): string[] {
         const src = readFileSync(f, 'utf8');
         return (
             /tenantMembership\.(findMany|findFirst)/.test(src)
-            // Reaching a PERSON is what makes liveness matter. A membership read
-            // that never resolves a user is a count or a permission check.
-            && /user:\s*\{\s*select|user:\s*\{$/m.test(src)
+            /*
+                Reaching a PERSON is what makes liveness matter. A membership read
+                that never resolves a user is a count or a permission check.
+
+                ONE GROUP, NO ANCHOR. This was
+                `/user:\s*\{\s*select|user:\s*\{$/m`, which CodeQL flagged as a
+                high-severity "missing regular expression anchor": `|` binds looser
+                than `$`, so the anchor applied to the second branch alone. It was
+                right to flag it and the branch was worse than misleading — it was
+                REDUNDANT, because `\s*` already matches newlines, so
+                `user:\s*\{\s*select` covers the multi-line form by itself.
+                Verified against both spellings and against all candidate files:
+                the two patterns select an identical population.
+
+                `user:\s*true` is the `include: { user: true }` form. No site under
+                these directories uses it today — two elsewhere in the repo do — so
+                it is covered now rather than after a job appears that the detector
+                silently cannot see.
+            */
+            && /user:\s*(\{\s*select|true)/.test(src)
         );
     });
 }
