@@ -31,13 +31,23 @@ jest.mock('@/lib/observability/job-runner', () => ({
 const mockOutboxCreate = jest.fn();
 const mockUserFindMany = jest.fn().mockResolvedValue([]);
 const mockMembershipFindMany = jest.fn().mockResolvedValue([]);
+// `resolveLiveTenants` asks for liveness and slug in one query; echo every
+// requested id back as LIVE so the existing dispatch assertions hold.
+const mockTenantFindMany = jest.fn(
+    (args: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(args.where.id.in.map(id => ({ id, slug: 'acme' }))),
+);
 const mockTenantFindUnique = jest.fn().mockResolvedValue({ slug: 'acme' });
 
 jest.mock('@/lib/prisma', () => ({
     prisma: {
         user: { findMany: (...args: unknown[]) => mockUserFindMany(...args) },
         tenantMembership: { findMany: (...args: unknown[]) => mockMembershipFindMany(...args) },
-        tenant: { findUnique: (...args: unknown[]) => mockTenantFindUnique(...args) },
+        tenant: {
+            findMany: (...args: unknown[]) =>
+                mockTenantFindMany(...(args as [{ where: { id: { in: string[] } } }])),
+            findUnique: (...args: unknown[]) => mockTenantFindUnique(...args),
+        },
         notificationOutbox: { create: (...args: unknown[]) => mockOutboxCreate(...args) },
         tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue(null) },
         control: { findMany: jest.fn().mockResolvedValue([]) },
@@ -87,6 +97,7 @@ describe('Digest Templates', () => {
     describe('buildDeadlineDigestEmail', () => {
         test('renders subject with item count', () => {
             const result = buildDeadlineDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem(), makeDueItem({ entityId: 'ctrl-2', name: 'Access Control' })],
@@ -98,6 +109,7 @@ describe('Digest Templates', () => {
 
         test('includes urgency marker when overdue items exist', () => {
             const result = buildDeadlineDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ urgency: 'OVERDUE' })],
@@ -108,6 +120,7 @@ describe('Digest Templates', () => {
 
         test('no urgency marker when only upcoming items', () => {
             const result = buildDeadlineDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ urgency: 'UPCOMING', reason: 'due in 20 days' })],
@@ -118,6 +131,7 @@ describe('Digest Templates', () => {
 
         test('bodyText contains recipient name', () => {
             const result = buildDeadlineDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Bob',
                 tenantSlug: 'acme',
                 items: [makeDueItem()],
@@ -128,6 +142,7 @@ describe('Digest Templates', () => {
 
         test('bodyHtml contains tenant-scoped links', () => {
             const result = buildDeadlineDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Alice',
                 tenantSlug: 'acme-corp',
                 items: [makeDueItem()],
@@ -138,6 +153,7 @@ describe('Digest Templates', () => {
 
         test('bodyHtml escapes HTML in item names', () => {
             const result = buildDeadlineDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ name: '<script>alert("xss")</script>' })],
@@ -151,6 +167,7 @@ describe('Digest Templates', () => {
     describe('buildEvidenceExpiryDigestEmail', () => {
         test('renders subject with item count', () => {
             const result = buildEvidenceExpiryDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ entityType: 'EVIDENCE' })],
@@ -162,6 +179,7 @@ describe('Digest Templates', () => {
 
         test('includes warning for expired items', () => {
             const result = buildEvidenceExpiryDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [makeDueItem({ entityType: 'EVIDENCE', urgency: 'OVERDUE' })],
@@ -174,6 +192,7 @@ describe('Digest Templates', () => {
     describe('buildVendorRenewalDigestEmail', () => {
         test('renders subject with vendor count', () => {
             const result = buildVendorRenewalDigestEmail({
+                audience: 'OWNER',
                 recipientName: 'Alice',
                 tenantSlug: 'acme',
                 items: [
@@ -449,5 +468,139 @@ describe('Notification dispatch executor registration', () => {
         for (const schedule of SCHEDULED_JOBS) {
             expect(executorRegistry.has(schedule.name)).toBe(true);
         }
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// #3165 — the copy must say WHY the reader was chosen
+// ═════════════════════════════════════════════════════════════════════
+
+describe('Digest templates: audience', () => {
+    const items = [
+        makeDueItem({ urgency: 'OVERDUE' }),
+        makeDueItem({ entityId: 'ctrl-2', name: 'Access Control', urgency: 'OVERDUE' }),
+    ];
+
+    describe('TENANT_ADMIN — the unowned fallback', () => {
+        test('leads with the missing owner and never claims the items are the reader\'s', () => {
+            const r = buildDeadlineDigestEmail({
+                audience: 'TENANT_ADMIN',
+                recipientName: 'Admin',
+                tenantSlug: 'acme',
+                items,
+            });
+
+            expect(r.subject).toContain('need an owner');
+            expect(r.bodyText).toContain('no owner assigned');
+            expect(r.bodyHtml).toContain('no owner assigned');
+
+            // The exact sentence the owner's report was about.
+            expect(r.bodyText).not.toContain('You have');
+            expect(r.bodyHtml).not.toContain('your attention');
+            expect(r.subject).not.toContain('Compliance Deadline Digest');
+            expect(r.bodyHtml).not.toContain('>🔴 Compliance Deadline Digest<');
+        });
+
+        test('says why the reader is on it, so the fix is discoverable', () => {
+            const r = buildDeadlineDigestEmail({
+                audience: 'TENANT_ADMIN',
+                recipientName: 'Admin',
+                tenantSlug: 'acme',
+                items,
+            });
+            expect(r.bodyText).toContain('as an admin of this workspace');
+            expect(r.bodyText).toContain('Assigning an owner');
+        });
+
+        test('keeps the urgency marker and the item table', () => {
+            const r = buildDeadlineDigestEmail({
+                audience: 'TENANT_ADMIN',
+                recipientName: 'Admin',
+                tenantSlug: 'acme',
+                items,
+            });
+            expect(r.subject).toContain('🔴');
+            expect(r.bodyHtml).toContain('Access Control');
+            expect(r.bodyHtml).toContain('/t/acme/');
+        });
+
+        test.each([
+            ['evidence', buildEvidenceExpiryDigestEmail, 'evidence item(s)'],
+            ['vendor', buildVendorRenewalDigestEmail, 'vendor(s)'],
+        ] as const)('%s digest uses its own noun rather than "item(s)"', (_n, build, noun) => {
+            const r = build({
+                audience: 'TENANT_ADMIN',
+                recipientName: 'Admin',
+                tenantSlug: 'acme',
+                items,
+            });
+            expect(r.subject).toContain(`2 ${noun} need an owner`);
+            expect(r.bodyText).toContain('no owner assigned');
+            expect(r.bodyText).not.toContain('You have');
+        });
+    });
+
+    describe('OWNER — unchanged', () => {
+        /**
+         * Pinned to the literal strings, not to `toContain('Digest')`. The point
+         * of routing both audiences through one helper is that the OWNER path
+         * comes out byte-identical; a needle loose enough to pass either way
+         * would not notice if it did not.
+         */
+        test('subject and opening line are exactly what they were', () => {
+            const r = buildDeadlineDigestEmail({
+                audience: 'OWNER',
+                recipientName: 'Alice',
+                tenantSlug: 'acme',
+                items,
+            });
+            expect(r.subject).toBe('🔴 Compliance Deadline Digest: 2 item(s) need attention');
+            expect(r.bodyText).toContain('You have 2 item(s) that need attention:');
+            expect(r.bodyHtml).toContain(
+                'You have <strong>2 item(s)</strong> that need your attention:',
+            );
+            expect(r.bodyHtml).toContain('>🔴 Compliance Deadline Digest</h2>');
+        });
+
+        test('evidence and vendor subjects are unchanged too', () => {
+            expect(
+                buildEvidenceExpiryDigestEmail({
+                    audience: 'OWNER', recipientName: 'A', tenantSlug: 'acme', items,
+                }).subject,
+            ).toBe('⚠️ Evidence Expiry Alert: 2 item(s) expiring');
+            expect(
+                buildVendorRenewalDigestEmail({
+                    audience: 'OWNER', recipientName: 'A', tenantSlug: 'acme', items,
+                }).subject,
+            ).toBe('🔴 Vendor Renewal Alert: 2 vendor(s) need attention');
+        });
+    });
+});
+
+describe('buildDigestDedupeKey: audience scope', () => {
+    const day = new Date('2026-10-04T09:00:00Z');
+
+    /**
+     * The default has to stay byte-identical, or the first run after deploy
+     * writes a second copy of every digest already sent today.
+     */
+    test('default scope reproduces the previous key format exactly', () => {
+        expect(buildDigestDedupeKey('t1', 'DEADLINE_DIGEST', 'a@b.com', day)).toBe(
+            't1:DEADLINE_DIGEST:a@b.com:digest:2026-10-04',
+        );
+    });
+
+    test('the unowned scope is a different key for the same recipient and day', () => {
+        const own = buildDigestDedupeKey('t1', 'DEADLINE_DIGEST', 'a@b.com', day, 'digest');
+        const unowned = buildDigestDedupeKey('t1', 'DEADLINE_DIGEST', 'a@b.com', day, 'unowned');
+        expect(unowned).toBe('t1:DEADLINE_DIGEST:a@b.com:unowned:2026-10-04');
+        expect(unowned).not.toBe(own);
+    });
+
+    test('still one per recipient per category per day within a scope', () => {
+        const later = new Date('2026-10-04T23:59:00Z');
+        expect(buildDigestDedupeKey('t1', 'DEADLINE_DIGEST', 'a@b.com', later, 'unowned')).toBe(
+            buildDigestDedupeKey('t1', 'DEADLINE_DIGEST', 'a@b.com', day, 'unowned'),
+        );
     });
 });

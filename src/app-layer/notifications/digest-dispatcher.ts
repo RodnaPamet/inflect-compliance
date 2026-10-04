@@ -29,6 +29,7 @@ import {
     buildDeadlineDigestEmail,
     buildEvidenceExpiryDigestEmail,
     buildVendorRenewalDigestEmail,
+    type DigestAudience,
 } from './digest-templates';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -55,8 +56,15 @@ export interface DispatchDigestResult {
     totalItems: number;
     /** Number of items suppressed due to tenant notifications disabled */
     suppressed: number;
+    /**
+     * Items belonging to a soft-deleted tenant. Deliberately NOT folded into
+     * `suppressed`: one means an admin turned notifications off, the other means
+     * the workspace is gone, and an operator reading one number could not tell
+     * which had happened.
+     */
+    removedTenantItems: number;
     /** Per-tenant breakdown */
-    tenants: Record<string, { enqueued: number; skipped: number; suppressed?: boolean }>;
+    tenants: Record<string, { enqueued: number; skipped: number; suppressed?: boolean; removed?: boolean }>;
 }
 
 export interface RecipientInfo {
@@ -177,33 +185,73 @@ async function resolveTenantAdmins(
 }
 
 /**
- * Resolve tenant slug for building links.
+ * Resolve the LIVE tenants among a set of ids, with the slug each link needs.
+ *
+ * Two jobs in one query, because they answer the same question. This replaces a
+ * per-tenant `findUnique` for the slug and adds the `deletedAt` predicate that
+ * was missing entirely: nothing on this path asked whether the tenant still
+ * exists. `calendar-deadlines` filters `deletedAt` on the ENTITIES it scans
+ * (`AuditCycle`, `VendorDocument`), and a tenant soft-delete does not cascade to
+ * them, so a removed tenant with one overdue audit cycle would have mailed its
+ * admins — and in this product a tenant's memberships survive its deletion.
+ *
+ * NOT OBSERVED IN PRODUCTION, and the honest version of that: all 920
+ * `NotificationOutbox` rows belong to the one live tenant, and none was created
+ * after any tenant's `deletedAt`. The nine removed tenants simply have no
+ * scannable overdue entities. This closes the hole rather than a fire.
  */
-async function resolveTenantSlug(tenantId: string): Promise<string> {
-    const tenant = await prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { slug: true },
+async function resolveLiveTenants(tenantIds: Iterable<string>): Promise<Map<string, string>> {
+    const ids = [...tenantIds];
+    if (ids.length === 0) return new Map();
+    const rows = await prisma.tenant.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        select: { id: true, slug: true },
     });
-    return tenant?.slug ?? tenantId;
+    return new Map(rows.map(t => [t.id, t.slug]));
 }
 
 // ─── Dedupe Key Builder ─────────────────────────────────────────────
 
 /**
+ * The scope segment of a dedupe key — which of a recipient's two possible
+ * digests this is.
+ *
+ * `'digest'` is the recipient's OWN items; `'unowned'` is the tenant-wide
+ * fallback for items with no owner. They need separate keys because an admin
+ * can legitimately receive both on the same day, and the key is unique.
+ *
+ * THIS SEPARATION IS A BUG FIX, not just room for the new copy. Both sends used
+ * `:digest:` and therefore produced the SAME key for an admin who also owns
+ * items. The second `create` lost to the unique constraint, caught as P2002,
+ * and returned null — so the unowned list was dropped and counted as `skipped`,
+ * indistinguishable in the result and the logs from "already sent today". The
+ * effect was that the admins most engaged with the tenant — the ones who own
+ * anything at all — were exactly the ones who never saw the unowned items,
+ * silently, while an admin who owned nothing got the full list labelled as
+ * their personal work.
+ */
+export type DigestScope = 'digest' | 'unowned';
+
+/**
  * Build a dedupe key for digest emails.
- * Format: {tenantId}:{category}:{email}:digest:{YYYY-MM-DD}
+ * Format: {tenantId}:{category}:{email}:{scope}:{YYYY-MM-DD}
  *
  * The key is scoped to the date, so the same digest is sent at most
- * once per day per recipient per category.
+ * once per day per recipient per category per scope.
+ *
+ * `scope` defaults to `'digest'`, which reproduces the previous key byte for
+ * byte — so keys already written today still dedupe against the owned path and
+ * this change cannot cause a double-send on deploy day.
  */
 export function buildDigestDedupeKey(
     tenantId: string,
     category: DigestCategory,
     email: string,
     date: Date = new Date(),
+    scope: DigestScope = 'digest',
 ): string {
     const day = date.toISOString().slice(0, 10); // YYYY-MM-DD
-    return `${tenantId}:${category}:${email}:digest:${day}`;
+    return `${tenantId}:${category}:${email}:${scope}:${day}`;
 }
 
 // ─── Template Selector ──────────────────────────────────────────────
@@ -213,14 +261,15 @@ function buildDigestEmail(
     recipientName: string,
     tenantSlug: string,
     items: DueItem[],
+    audience: DigestAudience,
 ): { subject: string; bodyText: string; bodyHtml: string } {
     switch (category) {
         case 'DEADLINE_DIGEST':
-            return buildDeadlineDigestEmail({ recipientName, tenantSlug, items });
+            return buildDeadlineDigestEmail({ recipientName, tenantSlug, items, audience });
         case 'EVIDENCE_EXPIRY_DIGEST':
-            return buildEvidenceExpiryDigestEmail({ recipientName, tenantSlug, items });
+            return buildEvidenceExpiryDigestEmail({ recipientName, tenantSlug, items, audience });
         case 'VENDOR_RENEWAL_DIGEST':
-            return buildVendorRenewalDigestEmail({ recipientName, tenantSlug, items });
+            return buildVendorRenewalDigestEmail({ recipientName, tenantSlug, items, audience });
         default: {
             const _exhaustive: never = category;
             throw new Error(`Unknown digest category: ${_exhaustive}`);
@@ -286,6 +335,7 @@ export async function dispatchDigest(
             skipped: 0,
             unroutable: 0,
             suppressed: 0,
+            removedTenantItems: 0,
             totalItems: 0,
             tenants: {},
         };
@@ -296,28 +346,38 @@ export async function dispatchDigest(
     let skipped = 0;
     let unroutable = 0;
     let suppressed = 0;
-    const tenants: Record<string, { enqueued: number; skipped: number; suppressed?: boolean }> = {};
-
-    // Collect (tenant, user) pairs for batch resolution. Iterating `entries`
-    // rather than `values` keeps the tenant, which is what lets the lookup
-    // below require an ACTIVE membership IN THAT TENANT.
-    const ownerPairs: Array<{ tenantId: string; userId: string }> = [];
-    for (const [tenantId, tenantMap] of byOwner) {
-        for (const userId of tenantMap.keys()) {
-            ownerPairs.push({ tenantId, userId });
-        }
-    }
-    const recipients = await resolveRecipients(ownerPairs);
+    const tenants: DispatchDigestResult['tenants'] = {};
 
     // Collect all unique tenant IDs
     const allTenantIds = new Set<string>();
     for (const item of items) allTenantIds.add(item.tenantId);
+
+    // ── Removed tenants ─────────────────────────────────────────────
+    // FIRST, before any other read, because every later question is only worth
+    // asking about a workspace that still exists. A removed tenant's items are
+    // not "suppressed" in the notifications-disabled sense either — that is an
+    // admin's setting, this is a gone workspace — so they are counted apart.
+    const slugs = await resolveLiveTenants(allTenantIds);
+    let removedTenantItems = 0;
+    for (const tenantId of allTenantIds) {
+        if (slugs.has(tenantId)) continue;
+        const tenantItemCount = items.filter(i => i.tenantId === tenantId).length;
+        removedTenantItems += tenantItemCount;
+        tenants[tenantId] = { enqueued: 0, skipped: 0, removed: true };
+        logger.warn('digest skipped — tenant is removed', {
+            component: 'digest-dispatcher',
+            category,
+            tenantId,
+            itemCount: tenantItemCount,
+        });
+    }
 
     // ── Tenant notification eligibility check ───────────────────────
     // Enforce the same isNotificationsEnabled rule used by enqueue.ts.
     // Disabled tenants are skipped entirely — no digest email is sent.
     const eligibleTenants = new Set<string>();
     for (const tenantId of allTenantIds) {
+        if (!slugs.has(tenantId)) continue; // removed above
         const enabled = await isNotificationsEnabled(prisma, tenantId);
         if (enabled) {
             eligibleTenants.add(tenantId);
@@ -335,11 +395,22 @@ export async function dispatchDigest(
         }
     }
 
-    // Resolve tenant slugs in batch (only eligible tenants)
-    const slugs = new Map<string, string>();
-    for (const tenantId of eligibleTenants) {
-        slugs.set(tenantId, await resolveTenantSlug(tenantId));
+    // Collect (tenant, user) pairs for batch resolution. Iterating `entries`
+    // rather than `values` keeps the tenant, which is what lets the lookup
+    // require an ACTIVE membership IN THAT TENANT.
+    //
+    // AFTER the two filters above, not before: resolving the owners of a removed
+    // or muted tenant is a read whose answer can only be thrown away, and it
+    // made `resolveRecipients` log a "recipients dropped" warning about users
+    // nobody was going to mail.
+    const ownerPairs: Array<{ tenantId: string; userId: string }> = [];
+    for (const [tenantId, tenantMap] of byOwner) {
+        if (!eligibleTenants.has(tenantId)) continue;
+        for (const userId of tenantMap.keys()) {
+            ownerPairs.push({ tenantId, userId });
+        }
     }
+    const recipients = await resolveRecipients(ownerPairs);
 
     // Process owned items (grouped by user)
     for (const [tenantId, tenantMap] of byOwner) {
@@ -367,7 +438,7 @@ export async function dispatchDigest(
             }
 
             const result = await enqueueDigest(
-                tenantId, category, recipient, tenantSlug, userItems, now,
+                tenantId, category, recipient, tenantSlug, userItems, now, 'OWNER',
             );
             if (result) {
                 enqueued++;
@@ -397,10 +468,11 @@ export async function dispatchDigest(
             continue;
         }
 
-        // Send unowned items to all admins
+        // One consolidated unowned digest per admin, addressed as what it is.
+        // Not folded into the admin's personal digest: see `DigestScope`.
         for (const admin of admins) {
             const result = await enqueueDigest(
-                tenantId, category, admin, tenantSlug, unownedItems, now,
+                tenantId, category, admin, tenantSlug, unownedItems, now, 'TENANT_ADMIN',
             );
             if (result) {
                 enqueued++;
@@ -419,10 +491,14 @@ export async function dispatchDigest(
         enqueued,
         skipped,
         suppressed,
+        removedTenantItems,
         unroutable,
     });
 
-    return { enqueued, skipped, unroutable, suppressed, totalItems: items.length, tenants };
+    return {
+        enqueued, skipped, unroutable, suppressed, removedTenantItems,
+        totalItems: items.length, tenants,
+    };
 }
 
 // ─── Outbox Enqueue ─────────────────────────────────────────────────
@@ -438,10 +514,15 @@ async function enqueueDigest(
     tenantSlug: string,
     items: DueItem[],
     now: Date,
+    audience: DigestAudience,
 ): Promise<{ id: string; dedupeKey: string } | null> {
-    const dedupeKey = buildDigestDedupeKey(tenantId, category, recipient.email, now);
+    // The scope is DERIVED from the audience rather than passed separately, so
+    // the copy and the key can never disagree — a TENANT_ADMIN mail that landed
+    // on the `:digest:` key would still collide with the reader's own digest.
+    const scope: DigestScope = audience === 'TENANT_ADMIN' ? 'unowned' : 'digest';
+    const dedupeKey = buildDigestDedupeKey(tenantId, category, recipient.email, now, scope);
     const { subject, bodyText, bodyHtml } = buildDigestEmail(
-        category, recipient.name, tenantSlug, items,
+        category, recipient.name, tenantSlug, items, audience,
     );
 
     try {
