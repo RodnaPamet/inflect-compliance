@@ -278,4 +278,83 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
             await cleanup(tenantId);
         }
     });
+
+    /*
+        #3178 — a removed tenant is not swept.
+
+        `deletedAt: null` in the job's `where` is `Evidence.deletedAt`. A tenant
+        soft-delete does NOT cascade to its rows, so this fixture — expiring
+        evidence with a resolvable OWNER, inside a removed tenant — satisfied
+        every predicate the job had. And the consequence was not read-only: the
+        OWNER comes from a `TenantMembership` row, and those survive a tenant's
+        removal (88 of production's 105 ACTIVE memberships belong to tenants
+        removed in September), after which `createTask` mints a real Task with a
+        TSK key, an audit row, an automation event and an assignee notification.
+
+        The fixture is deliberately one a correct filter is the ONLY thing that
+        stops: filtering on membership status, on evidence state, or on the owner
+        existing would all let this through.
+    */
+    it('does NOT sweep a removed tenant, even with expiring evidence and a live OWNER', async () => {
+        const tenantId = await freshTenant();
+        try {
+            const ownerId = await makeUser('ghost-owner');
+            await prisma.tenantMembership.create({
+                data: { tenantId, userId: ownerId, role: 'OWNER', status: 'ACTIVE' },
+            });
+            await prisma.evidence.create({
+                data: {
+                    tenantId, type: 'FILE', title: 'expiring-in-a-removed-tenant',
+                    retentionUntil: soon(3), isArchived: false, ownerUserId: ownerId,
+                },
+            });
+            await prisma.tenant.update({
+                where: { id: tenantId },
+                data: { deletedAt: new Date('2026-09-09') },
+            });
+
+            // Scoped by tenantId, so `scanned` is about THIS fixture and not the
+            // database's other contents — the mistake #3169 made with a run-wide
+            // counter. The explicit-id branch is narrowed by liveness too, which
+            // is what this also proves.
+            const res = await runEvidenceRetentionNotifications({ tenantId, days: 30 });
+
+            expect(res.scanned).toBe(0);
+            expect(res.tasksCreated).toBe(0);
+            // Not merely uncounted — nothing was created.
+            expect(await prisma.task.count({ where: { tenantId } })).toBe(0);
+            expect(await prisma.notificationOutbox.count({ where: { tenantId } })).toBe(0);
+        } finally {
+            await cleanup(tenantId);
+        }
+    });
+
+    /*
+        The teeth. A predicate that rejected EVERY tenant would pass the test
+        above while disabling the job, and the two tests are indistinguishable
+        without this one.
+    */
+    it('while a LIVE tenant with the identical fixture is swept', async () => {
+        const tenantId = await freshTenant();
+        try {
+            const ownerId = await makeUser('live-owner');
+            await prisma.tenantMembership.create({
+                data: { tenantId, userId: ownerId, role: 'OWNER', status: 'ACTIVE' },
+            });
+            await prisma.evidence.create({
+                data: {
+                    tenantId, type: 'FILE', title: 'expiring-in-a-live-tenant',
+                    retentionUntil: soon(3), isArchived: false, ownerUserId: ownerId,
+                },
+            });
+
+            const res = await runEvidenceRetentionNotifications({ tenantId, days: 30 });
+
+            expect(res.scanned).toBe(1);
+            expect(res.tasksCreated).toBe(1);
+            expect(await prisma.task.count({ where: { tenantId } })).toBe(1);
+        } finally {
+            await cleanup(tenantId);
+        }
+    });
 });

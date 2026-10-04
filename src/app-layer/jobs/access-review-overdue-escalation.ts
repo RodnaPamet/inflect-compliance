@@ -151,6 +151,29 @@ export async function processAccessReviewOverdueEscalation(
             status: { in: ['OPEN', 'IN_REVIEW'] },
             deletedAt: null,
             dueAt: { not: null, lt: cutoff },
+            /*
+                THE TENANT MUST STILL EXIST (#3178).
+
+                `deletedAt: null` above is `AccessReview.deletedAt`. A tenant
+                soft-delete does not cascade to its reviews, so an open overdue
+                review in a removed workspace satisfied every other predicate —
+                and without `tenantId`, which is how the schedule runs this, the
+                query spans every tenant.
+
+                `resolveAdmins` then fans out to `TenantMembership` rows with
+                `status: 'ACTIVE'` and `role: { in: ['OWNER', 'ADMIN'] }`, and
+                those rows survive a tenant's removal: 88 of production's 105
+                ACTIVE memberships belong to tenants removed in September. The
+                result would be overdue-review mail about a workspace that is
+                gone from every surface the reader could use to check.
+
+                FILTERED HERE, not in `resolveAdmins`. This is the choke point —
+                `resolveAdmins` only ever sees tenant ids that came from these
+                rows, so one predicate covers the fan-out, while a filter placed
+                there would leave the review scan itself unbounded and would have
+                to be repeated by the next consumer of `reviews`.
+            */
+            tenant: { deletedAt: null },
             ...(tenantId ? { tenantId } : {}),
         },
         select: {

@@ -134,7 +134,28 @@ describe('Audit S7 — Access Review Campaigns', () => {
         it('queries OPEN/IN_REVIEW campaigns past the cutoff', () => {
             expect(src).toMatch(/status:\s*\{\s*in:\s*\[['"]OPEN['"],\s*['"]IN_REVIEW['"]/);
             expect(src).toMatch(/dueAt:\s*\{[\s\S]{0,80}lt:\s*cutoff/);
-            expect(src).toMatch(/deletedAt:\s*null/);
+            /*
+                ANCHORED TO ITS OWN LINE, naming the AccessReview-level filter.
+
+                This was `/deletedAt:\s*null/`, which had exactly one match until
+                #3178 added `tenant: { deletedAt: null }` to the same query — a
+                DIFFERENT predicate on a different model. Two matches made it a
+                tautology in the direction it cares about: the review-level filter
+                could be deleted and the tenant filter alone would satisfy it,
+                which is precisely the Class D failure
+                `assertion-needle-uniqueness-ratchet` exists to catch, and it
+                caught this.
+
+                Narrowed rather than ratcheting the line up, per that file's own
+                precedent. The review filter sits at the top level of the `where`
+                and so begins its line; the tenant filter is nested on one line as
+                `tenant: { deletedAt: null },`, where `deletedAt` is not at the
+                start. The anchor is what separates them.
+            */
+            expect(src).toMatch(/^\s+deletedAt:\s*null,$/m);
+            // And the tenant predicate is its own assertion rather than an
+            // accident of the one above — #3178's whole point.
+            expect(src).toMatch(/tenant:\s*\{\s*deletedAt:\s*null\s*\}/);
         });
 
         it('routes through enqueueEmail with the escalation type', () => {
