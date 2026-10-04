@@ -102,6 +102,27 @@ export async function setProcessCanvasEnabled(
     );
 
     await runInTenantContext(ctx, (db) =>
+        /*
+            `status_change`, and the category is load-bearing (#3170).
+
+            This said `category: 'configuration'`, which
+            `AuditDetailsJsonSchema` does not define — its enum is
+            entity_lifecycle | data_lifecycle | status_change | relationship |
+            access | custom. `validateAuditDetailsJson` therefore threw
+            `badRequest('Invalid detailsJson structure')`, the PUT 400'd, and the
+            upsert rolled back with it: the module could NEVER be turned on. The
+            UI's "That change was not saved" was telling the exact truth.
+
+            `status_change` rather than widening the enum: this is an off → on
+            transition, the schema already carries `fromStatus` / `toStatus` for
+            exactly that, and a new category would make every reader of
+            `AuditDetailsJson` learn a value describing one call site.
+
+            This explanation sits ABOVE the call rather than inside the object:
+            `audit-structured-events` scans a fixed window after `logEvent(` for
+            `detailsJson`, and a comment of this length in between put the field
+            outside it. The guard is right and the comment was in the wrong place.
+        */
         logEvent(db, ctx, {
             action: 'PROCESS_CANVAS_MODULE_CHANGED',
             entityType: 'Tenant',
@@ -115,8 +136,10 @@ export async function setProcessCanvasEnabled(
             // unchanged whether it is on or off. It changes what the product
             // offers, which is a configuration fact.
             detailsJson: {
-                category: 'configuration',
+                category: 'status_change',
                 operation: next ? 'enable' : 'disable',
+                fromStatus: current ? 'on' : 'off',
+                toStatus: next ? 'on' : 'off',
                 summary: `Process canvas module ${next ? 'enabled' : 'disabled'}`,
             },
             metadata: { from: current, to: next },
