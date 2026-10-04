@@ -86,32 +86,75 @@ export async function setProcessCanvasEnabled(
     ctx: RequestContext,
     next: boolean,
 ): Promise<{ enabled: boolean; changed: boolean }> {
-    const current = await isProcessCanvasEnabled(ctx);
+    /*
+        ONE TRANSACTION, and the explanation this replaces was WRONG (#3175).
 
-    // A no-op write is not an event. Auditing "changed from off to off" would
-    // put rows in front of a reviewer that record nothing happening, and the
-    // rows that DO record something get harder to find for it.
-    if (current === next) return { enabled: current, changed: false };
+        #3172 said, in this file: "the PUT 400'd, and the upsert rolled back with
+        it: the module could NEVER be turned on. The UI's 'That change was not
+        saved' was telling the exact truth."
 
-    await runInTenantContext(ctx, (db) =>
-        db.tenantSecuritySettings.upsert({
+        It did not roll back, and the UI was telling the owner the opposite of
+        what had happened. `runInTenantContext` IS a `$transaction`
+        (`src/lib/db-context.ts`), so TWO calls were TWO transactions and the
+        first committed before the second was attempted. Production settles it:
+        `TenantSecuritySettings.updatedAt` on the live tenant is
+        2026-10-03 23:00:30 — the minute of the 400 — the module has been on ever
+        since, and six `ProcessMap` saves followed within two hours. I shipped a
+        docblock asserting the safe reading of a bug I had only half diagnosed,
+        which is the kind of comment that stops the next reader looking.
+
+        #3172 removed one cause of the audit write failing. It could not remove
+        the shape: ANY failure there still flipped the module and reported
+        failure. Not hypothetical — `appendAuditEntry` takes a per-tenant
+        `pg_advisory_xact_lock` inside its transaction, so concurrent appends for
+        one tenant serialise and the last can fail to START, which is the reason
+        `AuditOutbox` exists at all.
+
+        So the flag and the row recording it now commit together or not at all.
+        The advisory lock is held across the upsert too: one row by primary key,
+        which is cheap beside a product that misreports its own state.
+    */
+    const outcome = await runInTenantContext(ctx, async (db) => {
+        /*
+            READ INSIDE THE TRANSACTION, not via `isProcessCanvasEnabled`.
+
+            That helper opens its own `runInTenantContext`, so calling it here
+            would nest a transaction inside a transaction — but the reason to
+            inline is not mechanical. `current` becomes the audit row's
+            `fromStatus`, and a value read in an earlier transaction can be stale
+            by the time the row claims it: two admins toggling at once would both
+            read the same baseline and write two rows describing transitions from
+            a state only one of them actually left. The row has to be able to say
+            what the database held when it was written.
+
+            The query is a deliberate duplicate of the helper's, which stays as
+            the public read used by the surfaces and the route guard.
+        */
+        const row = await db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { processCanvasEnabled: true },
+        });
+        const current = row?.processCanvasEnabled === true;
+
+        // A no-op write is not an event. Auditing "changed from off to off" would
+        // put rows in front of a reviewer that record nothing happening, and the
+        // rows that DO record something get harder to find for it.
+        if (current === next) return { enabled: current, changed: false, previous: current };
+
+        await db.tenantSecuritySettings.upsert({
             where: { tenantId: ctx.tenantId },
             create: { tenantId: ctx.tenantId, processCanvasEnabled: next },
             update: { processCanvasEnabled: next },
-        }),
-    );
+        });
 
-    await runInTenantContext(ctx, (db) =>
         /*
             `status_change`, and the category is load-bearing (#3170).
 
-            This said `category: 'configuration'`, which
-            `AuditDetailsJsonSchema` does not define — its enum is
-            entity_lifecycle | data_lifecycle | status_change | relationship |
-            access | custom. `validateAuditDetailsJson` therefore threw
-            `badRequest('Invalid detailsJson structure')`, the PUT 400'd, and the
-            upsert rolled back with it: the module could NEVER be turned on. The
-            UI's "That change was not saved" was telling the exact truth.
+            This said `category: 'configuration'`, which `AuditDetailsJsonSchema`
+            does not define — its enum is entity_lifecycle | data_lifecycle |
+            status_change | relationship | access | custom. So
+            `validateAuditDetailsJson` threw `badRequest('Invalid detailsJson
+            structure')` and the PUT 400'd on every attempt to enable the module.
 
             `status_change` rather than widening the enum: this is an off → on
             transition, the schema already carries `fromStatus` / `toStatus` for
@@ -123,18 +166,18 @@ export async function setProcessCanvasEnabled(
             `detailsJson`, and a comment of this length in between put the field
             outside it. The guard is right and the comment was in the wrong place.
         */
-        logEvent(db, ctx, {
+        await logEvent(db, ctx, {
             action: 'PROCESS_CANVAS_MODULE_CHANGED',
             entityType: 'Tenant',
             entityId: ctx.tenantId,
             details: `Process canvas module: ${current ? 'on' : 'off'} → ${next ? 'on' : 'off'}`,
-            // `configuration`, NOT `access` — and the distinction is worth
-            // stating because the identity ladder next door chose the other one.
-            // That ladder grants the product authority to write to a customer's
+            // `status_change`, NOT `access` — and the distinction is worth stating
+            // because the identity ladder next door chose the other one. That
+            // ladder grants the product authority to write to a customer's
             // directory, so an access-review reader is its audience. This grants
             // nobody any authority: every permission check on the surface is
             // unchanged whether it is on or off. It changes what the product
-            // offers, which is a configuration fact.
+            // offers, which is a change of state rather than of access.
             detailsJson: {
                 category: 'status_change',
                 operation: next ? 'enable' : 'disable',
@@ -143,15 +186,22 @@ export async function setProcessCanvasEnabled(
                 summary: `Process canvas module ${next ? 'enabled' : 'disabled'}`,
             },
             metadata: { from: current, to: next },
-        }),
-    );
+        });
 
-    logger.info('process canvas module changed', {
-        component: 'process-canvas-module',
-        tenantId: ctx.tenantId,
-        from: current,
-        to: next,
+        return { enabled: next, changed: true, previous: current };
     });
 
-    return { enabled: next, changed: true };
+    // AFTER the commit, not inside it. A log line emitted from within the
+    // transaction claims a change that a later rollback would undo — the same
+    // mistake as the 400 above, in the other direction.
+    if (outcome.changed) {
+        logger.info('process canvas module changed', {
+            component: 'process-canvas-module',
+            tenantId: ctx.tenantId,
+            from: outcome.previous,
+            to: outcome.enabled,
+        });
+    }
+
+    return { enabled: outcome.enabled, changed: outcome.changed };
 }
