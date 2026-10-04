@@ -215,6 +215,15 @@ describeFn('runComplianceDigest (real DB)', () => {
             evidence of the defect finds none and proves nothing — the stub
             mailer is the only place it is visible.
         */
+        // `itemsScanned` is a RUN-WIDE total across every live tenant, not a
+        // figure about this fixture — the first test in this file already says so
+        // with `toBeGreaterThanOrEqual`. A bare `.toBe(0)` therefore asserts
+        // "the database contains nothing else", which held on a scratch DB and
+        // failed on CI's schema at 23. The scoped form is the DELTA: adding a
+        // removed tenant with a snapshot must not move the total at all, and
+        // would move it by one if the `deletedAt` filter were missing.
+        const baseline = (await runComplianceDigest({})).result.itemsScanned;
+
         await prisma.tenant.create({
             data: { id: T1, name: 'Removed', slug: T1, deletedAt: new Date('2026-09-09') },
         });
@@ -230,7 +239,7 @@ describeFn('runComplianceDigest (real DB)', () => {
         expect(result.success).toBe(true);
         expect(stub.sentMessages.filter((m) => m.to === email)).toHaveLength(0);
         // Not merely unsent — never scanned, so the work is skipped too.
-        expect(result.itemsScanned).toBe(0);
+        expect(result.itemsScanned).toBe(baseline);
     });
 
     it('and an explicit tenantId cannot re-run a removed tenant by hand', async () => {
@@ -253,6 +262,12 @@ describeFn('runComplianceDigest (real DB)', () => {
     it('while a LIVE tenant with the same shape still receives one', async () => {
         // Teeth for both: a filter that refused everything would pass the two
         // assertions above while breaking the feature.
+        // Baseline for the same reason as above — and here the delta carries the
+        // teeth that matter: a filter rejecting EVERY tenant would satisfy the
+        // two assertions in the tests before this one while breaking the job,
+        // and it shows up as a delta of 0 where 1 is required.
+        const baseline = (await runComplianceDigest({})).result.itemsScanned;
+
         await prisma.tenant.create({ data: { id: T2, name: 'Live', slug: T2 } });
         const email = `${SUITE}-live-admin@example.test`;
         const u = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
@@ -263,7 +278,7 @@ describeFn('runComplianceDigest (real DB)', () => {
 
         const { result } = await runComplianceDigest({});
 
-        expect(result.itemsScanned).toBe(1);
+        expect(result.itemsScanned).toBe(baseline + 1);
         expect(stub.sentMessages.filter((m) => m.to === email)).toHaveLength(1);
     });
 
