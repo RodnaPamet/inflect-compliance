@@ -188,8 +188,25 @@ const GLOBAL_STYLESHEETS = repoFiles({ under: 'src', extensions: ['.css'] }).fil
  * does exactly that — so counting them would make the guard fire on its own
  * kind of evidence.
  */
+// Two separate tests rather than one alternation. Behaviour is identical --
+// 2818 candidates, 2812 kept by both forms, zero disagreements, and the six
+// discriminating shapes (`__tests__/x.ts`, `x.test.ts`, `x.spec.tsx`, `x.ts`,
+// `x.test.ts.bak`, a leading `__tests__/`) classify the same -- but the single
+// regex was flagged by CodeQL as a high-severity "missing regular expression
+// anchor": in `/(^|\/)__tests__\/|\.(test|spec)\.tsx?$/` the top-level `|`
+// splits the pattern in two, so the `$` binds ONLY to the second branch. That
+// happens to be exactly what is wanted here -- a `__tests__/` segment may
+// appear anywhere in a path, a test SUFFIX must end the string -- which is why
+// it behaves correctly. But a reader cannot tell intent from accident at a
+// glance, and that ambiguity is the same shape that bit #3101: an alternation
+// whose anchor silently covers one branch.
+const IN_TESTS_DIR = /(^|\/)__tests__\//;
+const IS_TEST_FILE = /\.(test|spec)\.tsx?$/;
 const SRC_SOURCES = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] }).filter(
-    (abs) => !/(^|\/)__tests__\/|\.(test|spec)\.tsx?$/.test(repoRelative(abs)),
+    (abs) => {
+        const rel = repoRelative(abs);
+        return !IN_TESTS_DIR.test(rel) && !IS_TEST_FILE.test(rel);
+    },
 );
 
 let cssRuleCount = 0;
