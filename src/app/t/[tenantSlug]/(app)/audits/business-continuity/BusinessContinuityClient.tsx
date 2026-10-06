@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
 import { Plus } from '@/components/ui/icons/nucleo/plus';
 import { LifeRing } from '@/components/ui/icons/nucleo/life-ring';
@@ -91,6 +92,7 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
         [tx, tGroup],
     );
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const tenantHref = useTenantHref();
     const searchParams = useSearchParams();
     const { state, hasActive } = useFilters();
@@ -212,8 +214,8 @@ function BusinessContinuityInner({ initialRows, tenantSlug, canWrite }: Props) {
     const getBiaRowId = useCallback((r: BiaRow) => r.id, []);
     const handleBiaRowClick = useCallback(
         (row: { original: BiaRow }) =>
-            router.push(tenantHref(`/audits/business-continuity/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/audits/business-continuity/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
 
     return (

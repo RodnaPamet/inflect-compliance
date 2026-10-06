@@ -11,6 +11,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { DataTable, createColumns, useColumnsDropdown, sortRowsByDisplay, type SortAccessors } from '@/components/ui/table';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { useRouter } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { UserCombobox } from '@/components/ui/user-combobox';
@@ -264,6 +265,7 @@ function TestsRollupContent() {
     const tenantHref = useTenantHref();
     const { tenantSlug, permissions } = useTenantContext();
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const { state, search, hasActive, clearAll } = useFilters();
 
     // PR-Q — canonical useTenantSWR reads (Epic 69). `mutate` refetches after
@@ -970,7 +972,7 @@ function TestsRollupContent() {
                         resourceName={(p) => p ? t('checksList.entityPlural') : t('checksList.entitySingular')}
                         data-testid="tests-checks-table"
                         onRowClick={(row) =>
-                            row.original.control && router.push(tenantHref(`/controls/${row.original.control.id}`))
+                            row.original.control && guardedPush(tenantHref(`/controls/${row.original.control.id}`))
                         }
                     />
                 ) : (
@@ -1015,7 +1017,7 @@ function TestsRollupContent() {
                     // Row hover band + brand left-band (and double-click →
                     // open the plan), matching every other list table.
                     onRowClick={(row) =>
-                        router.push(
+                        guardedPush(
                             tenantHref(`/tests/plans/${row.original.id}`),
                         )
                     }

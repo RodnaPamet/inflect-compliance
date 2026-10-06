@@ -3,6 +3,7 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { NewPolicyModal } from './NewPolicyModal';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
@@ -166,6 +167,7 @@ function PoliciesPageInner({
         [tenantSlug],
     );
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     // Null on SSR + first client render so the "Overdue" badge doesn't
     // flip between server- and client-side `new Date()` values.
     const hydratedNow = useHydratedNow();
@@ -639,8 +641,8 @@ function PoliciesPageInner({
     const getPolicyRowId = useCallback((p: PolicyRow) => p.id, []);
     const handleRowClick = useCallback(
         (row: { original: PolicyRow }) =>
-            router.push(tenantHref(`/policies/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/policies/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
     const handleRowPrefetch = useCallback(
         (row: { original: PolicyRow }) =>

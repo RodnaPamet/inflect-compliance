@@ -54,7 +54,7 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
       data={projects}
       columns={columns}
       getRowId={(p) => p.id}
-      onRowClick={(row) => router.push(`/projects/${row.original.id}`)}
+      onRowClick={(row) => guardedPush(`/projects/${row.original.id}`)}
       emptyState="No projects found"
       resourceName={(plural) => plural ? 'projects' : 'project'}
       data-testid="projects-table"
@@ -165,9 +165,18 @@ export function ProjectsTable({ projects }: { projects: Project[] }) {
 ```
 
 ### Row Click Navigation
+
+`useGuardedPush()`, never `router.push` — enforced by
+`local/no-router-push-in-row-click`. Under hydration load the client router
+gets its 200 and silently drops the transition, leaving the row dead until the
+user clicks again (#3099); the hook notices, re-issues the push once, and emits
+the counter that measures how often it happens.
+
 ```tsx
+const guardedPush = useGuardedPush(); // @/lib/nav/use-guarded-push
+
 <DataTable
-  onRowClick={(row) => router.push(`/items/${row.original.id}`)}
+  onRowClick={(row) => guardedPush(`/items/${row.original.id}`)}
 />
 ```
 

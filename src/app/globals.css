@@ -9,6 +9,39 @@
 
 @import '../styles/tokens.css';
 
+/* Tailwind's source set, declared for the shared-UI package (#3046, §4/§5.4).
+ *
+ * READ THE MEASUREMENT BEFORE TRUSTING THIS LINE. The design doc predicted that
+ * Tailwind would silently fail to generate the package's classes, because the
+ * `content` glob in `tailwind.config.js` is rooted at `./src` and does not reach
+ * the packages directory. That prediction is FALSE at Tailwind 4.3.3 here, and
+ * the control that proves it is why this comment exists rather than a claim:
+ * compiling this file through the real postcss chain emits an arbitrary-value
+ * utility written only inside `packages/ui/src/` with this line present AND with
+ * it removed — byte-identical output, 248,903 bytes either way. The reason is
+ * that v4's automatic source detection scans the whole repository from the cwd,
+ * not the legacy config's glob; probes planted in `scripts/` and `infra/` were
+ * picked up too, and neither is matched by `content`.
+ *
+ * So this is NOT the fix for a present defect, and anyone debugging missing
+ * styles should not stop here satisfied. It is kept because it makes the
+ * dependency explicit and because the auto-detection that currently covers the
+ * path has exclusions this does not depend on: it skips `node_modules`, so a
+ * future consumption of `@inflect/ui` as a real dependency rather than a
+ * workspace path needs the directive, and it skips anything `.gitignore`
+ * excludes.
+ *
+ * A missing `@source` path is NOT an error either — that was the second thing
+ * measured and the second prediction to fail. Compiling with
+ * `packages/ui/src/` moved away exits 0 with an empty stderr and output 92 bytes
+ * shorter (exactly the probe's two utilities), so the directive is silently
+ * ignored rather than enforced. It still lands in the same commit as the
+ * directory, but for cohesion, not because either half breaks alone.
+ *
+ * Placed AFTER the tokens `@import` so no `@import` rule ever follows a
+ * non-`@import` at-rule in this file. */
+@source "../../packages/ui/src";
+
 /* ──────────────────────────────────────────────────────────────────
  * Legacy Inflect color aliases.
  *

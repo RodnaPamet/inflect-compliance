@@ -7,6 +7,7 @@
 /* eslint-disable react-hooks/exhaustive-deps -- Various useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers/derived arrays recreated each render). The proper structural fix is wrapping parent-level callbacks in useCallback. Tracked as follow-up; existing per-line eslint-disable-next-line markers preserved. */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
 import { Plus, Trash } from '@/components/ui/icons/nucleo';
 import { ViewsMenu } from '@/components/ui/views-menu';
@@ -222,6 +223,7 @@ function TasksPageInner({
     const toast = useToast();
     const triggerUndoToast = useToastWithUndo();
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const prefetchData = usePrefetchTenant();
 
     // Hydration marker — signals to E2E tests that React event handlers are attached
@@ -1056,8 +1058,8 @@ function TasksPageInner({
     const getTaskRowId = useCallback((task: TaskListItem) => task.id, []);
     const handleTaskRowClick = useCallback(
         (row: { original: TaskListItem }) =>
-            router.push(tenantHref(`/tasks/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/tasks/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
     const handleTaskRowPrefetch = useCallback(
         (row: { original: TaskListItem }) => {

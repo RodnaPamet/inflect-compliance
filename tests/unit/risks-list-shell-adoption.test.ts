@@ -166,9 +166,14 @@ describe('Risks list — Epic 44.4 column + matrix wiring', () => {
         // DataTable model between a row's two clicks and kills double-click
         // navigation. Assert the behaviour (push to the tenant-scoped
         // /risks/ detail route) against the named handler.
+        // `guardedPush`, not `router.push`, since #3099: the hook is
+        // `router.push` plus a one-shot retry for the transition the client
+        // router silently drops during hydration, so the destination asserted
+        // here is unchanged and the navigation is strictly more reliable. The
+        // span bounds are untouched, so the Class C ratchet does not move.
         expect(clientSrc).toMatch(/onRowClick=\{handleRiskRowClick\}/);
         expect(clientSrc).toMatch(
-            /handleRiskRowClick\s*=\s*useCallback\([\s\S]{0,160}router\.push\(\s*tenantHref\(`\/risks\//,
+            /handleRiskRowClick\s*=\s*useCallback\([\s\S]{0,160}guardedPush\(\s*tenantHref\(`\/risks\//,
         );
     });
 
