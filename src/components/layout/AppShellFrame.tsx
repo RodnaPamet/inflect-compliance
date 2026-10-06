@@ -58,8 +58,18 @@ export interface AppShellFrameProps {
     sidebar: (props: { collapsed: boolean; onToggleCollapse: () => void }) => ReactNode;
     /** The phone drawer. Receives its own open state and closer. */
     mobileNav: (props: { open: boolean; onClose: () => void }) => ReactNode;
-    /** Top bar. Receives the opener for its hamburger. */
-    topChrome: (props: { onMobileMenuClick: () => void }) => ReactNode;
+    /**
+     * Top bar. Receives the opener for its hamburger, and whether the drawer
+     * is open.
+     *
+     * `mobileNavOpen` is for a SECOND opener the host mounts from this slot
+     * (a bottom tab bar's "More" tab, say). A disclosure button has to say
+     * whether what it opens is open (`aria-expanded`), and the open state
+     * lives here, so without it that button could only ever claim "closed".
+     * Read-only on purpose: the drawer still closes itself, through
+     * `mobileNav`'s `onClose`.
+     */
+    topChrome: (props: { onMobileMenuClick: () => void; mobileNavOpen: boolean }) => ReactNode;
     /**
      * Wraps the whole main region — top bar AND content — so a consumer
      * can supply context that must span both. Identity-stable callers
@@ -117,7 +127,7 @@ export function AppShellFrame({
             {/* Wrapped rather than prop-drilled: the chrome composes
                 several bars and giving each a no-print prop would be a
                 wider change than the print rule needs. */}
-            <div className="no-print">{topChrome({ onMobileMenuClick: openDrawer })}</div>
+            <div className="no-print">{topChrome({ onMobileMenuClick: openDrawer, mobileNavOpen: drawerOpen })}</div>
 
             {/* Inner content container.
                 Mobile: padding + max-width + centering.

@@ -32,7 +32,7 @@
  */
 
 import Link from 'next/link';
-import type { ComponentType, CSSProperties, SVGProps } from 'react';
+import type { ComponentType, CSSProperties, ElementType, SVGProps } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -130,8 +130,19 @@ export const NAV_ITEM_ICON_SIZE = 'h-4 w-4';
 export const NAV_ITEM_ICON_CLASS = `${NAV_ITEM_ICON_SIZE} flex-shrink-0`;
 
 export interface NavItemProps {
-    /** Tenant-prefixed href. */
-    href: string;
+    /**
+     * Tenant-prefixed href.
+     *
+     * OMIT IT for an action row: the row then renders a `<button>` that runs
+     * `onClick` (sign out, open a dialog) in the same recipe as its link
+     * neighbours. A drawer's last rows are often verbs, not places, and a
+     * verb dressed as a link is wrong twice over: a screen reader announces
+     * "link" for something that goes nowhere, and a host that needs the row
+     * has to re-type this file's geometry beside it, which
+     * `nav-item-import-discipline` exists to stop. An action row is never
+     * `active` (it is not a place) and has nothing to prefetch.
+     */
+    href?: string;
     /**
      * Glyph component, rendered at 18×18.
      *
@@ -159,7 +170,10 @@ export interface NavItemProps {
      * than guessed. Applied as the chip's aria-label + title.
      */
     badgeLabel?: string;
-    /** Optional click handler — used by the mobile drawer to close itself. */
+    /**
+     * Optional click handler — used by the mobile drawer to close itself.
+     * On an action row (no `href`) it is the row's whole job.
+     */
     onClick?: () => void;
     /**
      * How far `<Link>` prefetches this route. Defaults to `true`, the full-RSC
@@ -674,7 +688,8 @@ export function NavItem({
     onClick,
     prefetch = true,
 }: NavItemProps) {
-    const slug = href.split('/').pop() ?? '';
+    // An action row has no route to name it, so its label does.
+    const slug = href !== undefined ? (href.split('/').pop() ?? '') : label;
     const { shimmerDelayMs, breathDelayMs } = hashSlugToDriftDelays(slug);
     const driftStyle = {
         // CSS custom properties consumed by the per-track
@@ -692,9 +707,48 @@ export function NavItem({
     // provider is mounted, so the expanded path is the default.
     const collapsed = useSidebarCollapsed();
 
+    const content = (
+        <>
+            <Icon className={NAV_ITEM_ICON_CLASS} aria-hidden="true" />
+            {/* R15-PR8 — magnetic letter spacing. The label
+                breathes its tracking open on hover-of-the-row.
+                `tracking-normal` is the resting state (0em);
+                `group-hover:tracking-wide` opens to 0.025em —
+                small enough that the row's geometry stays
+                stable (the label still fits in the same width
+                bucket; `truncate` semantics unchanged), large
+                enough that the eye reads the letters subtly
+                "leaning into" the cursor. 200ms ease-out
+                transition keeps the open synchronised with the
+                band's reveal tempo. The shape is opacity + tone
+                language inside the row's content — no transform,
+                no scale, no translate. */}
+            {!collapsed && (
+                <span className="truncate tracking-normal transition-[letter-spacing] duration-200 ease-out group-hover:tracking-wide">
+                    {label}
+                </span>
+            )}
+            {!collapsed && badge != null && (
+                <StatusBadge
+                    variant="info"
+                    size="sm"
+                    className={NAV_ITEM_BADGE}
+                    aria-label={badgeLabel}
+                    title={badgeLabel}
+                >
+                    {badge}
+                </StatusBadge>
+            )}
+        </>
+    );
+
+    // ONE element whichever row it is, so the row recipe below is written once.
+    // A link row is `<Link>`; an action row (no `href`) is a `<button>` that
+    // runs `onClick`, `w-full text-left` because a button shrinks to its
+    // content where a block-level link fills the rail.
+    const Row = (href !== undefined ? Link : 'button') as ElementType;
     const link = (
-        <Link
-            href={href}
+        <Row
             // By default (the `prefetch` prop) a FULL-RSC prefetch, not the
             // loading-boundary slice Next prefetches by default for
             // `force-dynamic` routes. Verified against the installed Next
@@ -767,48 +821,22 @@ export function NavItem({
             // route), read it per route off the `web_vital` log line, THEN
             // weigh first-click latency against those 59-63 concurrent
             // requests. The console warnings alone are still not the argument.
-            prefetch={prefetch}
+            {...(href !== undefined
+                ? { href, prefetch }
+                : { type: 'button' })}
             onClick={onClick}
             className={cn(
                 NAV_ITEM_BASE,
                 active ? NAV_ITEM_ACTIVE : NAV_ITEM_DEFAULT,
                 collapsed && 'justify-center',
+                href === undefined && 'w-full text-left',
             )}
             data-testid={`nav-${slug}`}
             style={driftStyle}
             aria-label={collapsed ? label : undefined}
         >
-            <Icon className={NAV_ITEM_ICON_CLASS} aria-hidden="true" />
-            {/* R15-PR8 — magnetic letter spacing. The label
-                breathes its tracking open on hover-of-the-row.
-                `tracking-normal` is the resting state (0em);
-                `group-hover:tracking-wide` opens to 0.025em —
-                small enough that the row's geometry stays
-                stable (the label still fits in the same width
-                bucket; `truncate` semantics unchanged), large
-                enough that the eye reads the letters subtly
-                "leaning into" the cursor. 200ms ease-out
-                transition keeps the open synchronised with the
-                band's reveal tempo. The shape is opacity + tone
-                language inside the row's content — no transform,
-                no scale, no translate. */}
-            {!collapsed && (
-                <span className="truncate tracking-normal transition-[letter-spacing] duration-200 ease-out group-hover:tracking-wide">
-                    {label}
-                </span>
-            )}
-            {!collapsed && badge != null && (
-                <StatusBadge
-                    variant="info"
-                    size="sm"
-                    className={NAV_ITEM_BADGE}
-                    aria-label={badgeLabel}
-                    title={badgeLabel}
-                >
-                    {badge}
-                </StatusBadge>
-            )}
-        </Link>
+            {content}
+        </Row>
     );
 
     return collapsed ? (
