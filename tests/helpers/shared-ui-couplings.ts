@@ -21,12 +21,59 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { codeOf } from './source-blocks';
 
-export const SHARED_UI_ROOTS = [
+/**
+ * The four shared-UI roots as they are addressed inside the application.
+ */
+const APP_ROOTS = [
     'src/components/ui',
     'src/components/layout',
     'src/components/app-shell',
     'src/lib/hooks',
 ] as const;
+
+/**
+ * Where #3046 is moving those four. `packages/ui/src/components/ui` is the
+ * destination of `src/components/ui`, and so on for all four — §1 of
+ * `docs/shared-ui-package-design.md` mirrors the source layout under the
+ * package precisely so a move reads as a rename.
+ *
+ * ─── Why the package half is DERIVED and not typed out again ──────────
+ *
+ * Two guards carry a >600 floor on this population
+ * (`ui-core-classification.test.ts` and `shared-ui-coupling-ratchet.test.ts`),
+ * though only ONE of them can fire on a shrink: in the classification guard the
+ * `toBeGreaterThan(600)` sits immediately after
+ * `expect({missing, stale}).toEqual(...)` in the same `it`, so a root removal
+ * fails on 569 stale map entries and the floor line never executes. Stricter,
+ * not weaker — but the count of independent floor detectors is one, measured by
+ * removing a root and reading which assertion reddened in each guard. The live
+ * count is 613, and the margin is therefore 13 files. The floor exists to catch a denominator that
+ * shrinks while the assertion stays green, which is exactly what a file move
+ * out of these roots would do — so §5.1 requires the roots to learn the
+ * destination BEFORE anything moves, in its own commit, verified by the count
+ * being UNCHANGED.
+ *
+ * "Unchanged" is the whole verification, and it is also the problem: these four
+ * destinations do not exist yet, `walk()` returns `[]` for a path that does not
+ * exist, and so a root MISSPELLED here is INERT — it reads 613 too. A typo
+ * would be discovered at step 2, by the move it was added to protect, as a
+ * population that fell by the size of the batch. Deriving the package half from
+ * the app half makes that class of typo unrepresentable rather than merely
+ * documented: there is one spelling of each root in this file, not two.
+ *
+ * The derivation is not a substitute for proving the new roots are LIVE. That
+ * was a positive control, run once when this landed: a `.ts` file planted under
+ * `packages/ui/src/components/ui/` took the population to 614, and removing it
+ * returned it to 613. Nothing in a green run can distinguish a correct new root
+ * from a dead one while the destinations are empty, so the proof had to be a
+ * planted file.
+ */
+const PACKAGE_PREFIX = 'packages/ui/';
+
+export const SHARED_UI_ROOTS: readonly string[] = [
+    ...APP_ROOTS,
+    ...APP_ROOTS.map((root) => `${PACKAGE_PREFIX}${root}`),
+];
 
 export type CouplingKind = 'storage-key' | 'brand-as-text' | 'domain-import';
 
