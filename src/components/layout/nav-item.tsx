@@ -32,7 +32,7 @@
  */
 
 import Link from 'next/link';
-import type { ComponentType, CSSProperties, SVGProps } from 'react';
+import type { ComponentType, CSSProperties, ElementType, SVGProps } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -742,115 +742,102 @@ export function NavItem({
         </>
     );
 
-    const link =
-        href !== undefined ? (
-            <Link
-                href={href}
-                // By default (the `prefetch` prop) a FULL-RSC prefetch, not the
-                // loading-boundary slice Next prefetches by default for
-                // `force-dynamic` routes. Verified against the installed Next
-                // 16.3.6 rather than its docs: `getFetchStrategyFromPrefetchIntent`
-                // maps the `true` intent to the Full strategy and the `auto` intent
-                // to PPR, on the branch that reads `__NEXT_CACHE_COMPONENTS` — off
-                // here, because next.config.js sets no `cacheComponents`. The
-                // sidebar is always in the viewport, so every hot route prefetches
-                // its RSC into the client router cache on mount; combined with the
-                // 30 s `staleTimes.dynamic` (next.config.js) the click then renders
-                // from cache instead of paying the ~276 ms server round-trip — the
-                // "instant nav" lever. Background prefetch render cost is bounded
-                // by the 30 s `cachedSsrPayload` SSR cache.
-                //
-                // KNOWN COST, deliberately accepted. FOURTEEN nav routes is the
-                // CEILING, not the typical load: eleven are ungated and three
-                // (`/agents`, `/processes`, `/reports`) are permission- or
-                // module-gated in `useNavSections` (SidebarNav.tsx), so a given
-                // user mounts 11-14 of them. Viewport prefetch is also
-                // PRODUCTION-ONLY — Next's visibility handler returns early off
-                // production — so neither this cost nor its benefit is observable
-                // under `next dev`. Measuring either needs a production build or
-                // CI.
-                //
-                // THE COST SIDE IS MEASURED (#3099). A CI trace of an E2E row
-                // click shows 59-63 requests in flight about 670 ms after
-                // `domcontentloaded`, and a cold `router.push` issued inside that
-                // window got its 200 and never committed.
-                //
-                // DO NOT re-cite "~1,400 unused preloads" as this file's cost, as
-                // earlier revisions of this comment did. That figure comes from
-                // #1814 and is a COMBINED total over TWO sources: this prefetch
-                // AND `DataTable`'s then-undwelled row hover. The DataTable half
-                // was fixed and KEPT (its 120 ms dwell), so the share attributable
-                // to the sidebar alone has never been measured.
-                //
-                // Moving it to hover/focus was tried on 2026-08-09 (#1814) and
-                // REVERTED the same week (#1827): it trades first-click latency
-                // for load-time bandwidth, and nobody had measured the nav latency
-                // either side.
-                //
-                // THAT NUMBER STILL DOES NOT EXIST. #3099 went looking for it and
-                // this is what the repo actually holds on the benefit side: one
-                // prod measurement from 2026-06-30, TTFB ~276 ms per tenant
-                // navigation, in
-                // docs/implementation-notes/2026-06-30-instant-nav-router-cache.md.
-                // Read what that buys carefully — 276 ms is what the ROUTER CACHE
-                // saves on RE-navigation, and `staleTimes.dynamic` delivers that
-                // with or without this prefetch. What the prefetch alone adds is
-                // extending the saving to the FIRST click on each route per 30 s
-                // window. So its benefit is bounded by ~276 ms x first clicks, not
-                // x all navigations — and even that bound is inferred, never
-                // observed. The same doc's own follow-up asked for the re-measure
-                // and it was never done either.
-                //
-                // AND THE INSTRUMENT THAT LOOKS LIKE IT WOULD MEASURE THIS IS
-                // INERT. `src/lib/observability/web-vitals.ts` allowlists
-                // `Next.js-route-change-to-render` and its reporter calls that the
-                // in-app navigation signal — but on Next 16.3.6
-                // `useReportWebVitals` subscribes to the six Core Web Vitals only,
-                // and the three `Next.js-*` measures are emitted from the PAGES
-                // router bootstrap. This app is App Router only, so they can never
-                // arrive. The note in web-vitals.ts carries the detail.
-                //
-                // So the blocker on this trade is not a judgement call, it is a
-                // missing instrument, and that is why this comment still asks for
-                // a measurement rather than making the change. Land a real
-                // navigation-latency metric first (a mark on this row's click
-                // through to the destination's first paint, or INP segmented by
-                // route), read it per route off the `web_vital` log line, THEN
-                // weigh first-click latency against those 59-63 concurrent
-                // requests. The console warnings alone are still not the argument.
-                prefetch={prefetch}
-                onClick={onClick}
-                className={cn(
-                    NAV_ITEM_BASE,
-                    active ? NAV_ITEM_ACTIVE : NAV_ITEM_DEFAULT,
-                    collapsed && 'justify-center',
-                )}
-                data-testid={`nav-${slug}`}
-                style={driftStyle}
-                aria-label={collapsed ? label : undefined}
-            >
-                {content}
-            </Link>
-        ) : (
-            // The action row: the same recipe and content. `w-full text-left`
-            // because a <button> shrinks to its content where a block-level link
-            // fills the rail.
-            <button
-                type="button"
-                onClick={onClick}
-                className={cn(
-                    NAV_ITEM_BASE,
-                    active ? NAV_ITEM_ACTIVE : NAV_ITEM_DEFAULT,
-                    collapsed && 'justify-center',
-                    'w-full text-left',
-                )}
-                data-testid={`nav-${slug}`}
-                style={driftStyle}
-                aria-label={collapsed ? label : undefined}
-            >
-                {content}
-            </button>
-        );
+    // ONE element whichever row it is, so the row recipe below is written once.
+    // A link row is `<Link>`; an action row (no `href`) is a `<button>` that
+    // runs `onClick`, `w-full text-left` because a button shrinks to its
+    // content where a block-level link fills the rail.
+    const Row = (href !== undefined ? Link : 'button') as ElementType;
+    const link = (
+        <Row
+            // By default (the `prefetch` prop) a FULL-RSC prefetch, not the
+            // loading-boundary slice Next prefetches by default for
+            // `force-dynamic` routes. Verified against the installed Next
+            // 16.3.6 rather than its docs: `getFetchStrategyFromPrefetchIntent`
+            // maps the `true` intent to the Full strategy and the `auto` intent
+            // to PPR, on the branch that reads `__NEXT_CACHE_COMPONENTS` — off
+            // here, because next.config.js sets no `cacheComponents`. The
+            // sidebar is always in the viewport, so every hot route prefetches
+            // its RSC into the client router cache on mount; combined with the
+            // 30 s `staleTimes.dynamic` (next.config.js) the click then renders
+            // from cache instead of paying the ~276 ms server round-trip — the
+            // "instant nav" lever. Background prefetch render cost is bounded
+            // by the 30 s `cachedSsrPayload` SSR cache.
+            //
+            // KNOWN COST, deliberately accepted. FOURTEEN nav routes is the
+            // CEILING, not the typical load: eleven are ungated and three
+            // (`/agents`, `/processes`, `/reports`) are permission- or
+            // module-gated in `useNavSections` (SidebarNav.tsx), so a given
+            // user mounts 11-14 of them. Viewport prefetch is also
+            // PRODUCTION-ONLY — Next's visibility handler returns early off
+            // production — so neither this cost nor its benefit is observable
+            // under `next dev`. Measuring either needs a production build or
+            // CI.
+            //
+            // THE COST SIDE IS MEASURED (#3099). A CI trace of an E2E row
+            // click shows 59-63 requests in flight about 670 ms after
+            // `domcontentloaded`, and a cold `router.push` issued inside that
+            // window got its 200 and never committed.
+            //
+            // DO NOT re-cite "~1,400 unused preloads" as this file's cost, as
+            // earlier revisions of this comment did. That figure comes from
+            // #1814 and is a COMBINED total over TWO sources: this prefetch
+            // AND `DataTable`'s then-undwelled row hover. The DataTable half
+            // was fixed and KEPT (its 120 ms dwell), so the share attributable
+            // to the sidebar alone has never been measured.
+            //
+            // Moving it to hover/focus was tried on 2026-08-09 (#1814) and
+            // REVERTED the same week (#1827): it trades first-click latency
+            // for load-time bandwidth, and nobody had measured the nav latency
+            // either side.
+            //
+            // THAT NUMBER STILL DOES NOT EXIST. #3099 went looking for it and
+            // this is what the repo actually holds on the benefit side: one
+            // prod measurement from 2026-06-30, TTFB ~276 ms per tenant
+            // navigation, in
+            // docs/implementation-notes/2026-06-30-instant-nav-router-cache.md.
+            // Read what that buys carefully — 276 ms is what the ROUTER CACHE
+            // saves on RE-navigation, and `staleTimes.dynamic` delivers that
+            // with or without this prefetch. What the prefetch alone adds is
+            // extending the saving to the FIRST click on each route per 30 s
+            // window. So its benefit is bounded by ~276 ms x first clicks, not
+            // x all navigations — and even that bound is inferred, never
+            // observed. The same doc's own follow-up asked for the re-measure
+            // and it was never done either.
+            //
+            // AND THE INSTRUMENT THAT LOOKS LIKE IT WOULD MEASURE THIS IS
+            // INERT. `src/lib/observability/web-vitals.ts` allowlists
+            // `Next.js-route-change-to-render` and its reporter calls that the
+            // in-app navigation signal — but on Next 16.3.6
+            // `useReportWebVitals` subscribes to the six Core Web Vitals only,
+            // and the three `Next.js-*` measures are emitted from the PAGES
+            // router bootstrap. This app is App Router only, so they can never
+            // arrive. The note in web-vitals.ts carries the detail.
+            //
+            // So the blocker on this trade is not a judgement call, it is a
+            // missing instrument, and that is why this comment still asks for
+            // a measurement rather than making the change. Land a real
+            // navigation-latency metric first (a mark on this row's click
+            // through to the destination's first paint, or INP segmented by
+            // route), read it per route off the `web_vital` log line, THEN
+            // weigh first-click latency against those 59-63 concurrent
+            // requests. The console warnings alone are still not the argument.
+            {...(href !== undefined
+                ? { href, prefetch }
+                : { type: 'button' })}
+            onClick={onClick}
+            className={cn(
+                NAV_ITEM_BASE,
+                active ? NAV_ITEM_ACTIVE : NAV_ITEM_DEFAULT,
+                collapsed && 'justify-center',
+                href === undefined && 'w-full text-left',
+            )}
+            data-testid={`nav-${slug}`}
+            style={driftStyle}
+            aria-label={collapsed ? label : undefined}
+        >
+            {content}
+        </Row>
+    );
 
     return collapsed ? (
         <Tooltip content={label} side="right">
