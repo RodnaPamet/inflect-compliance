@@ -307,10 +307,31 @@ function trackedFiles(): string[] {
 
 const fsReader: Reader = (rel) => {
     const abs = path.join(REPO_ROOT, rel);
-    // stat first, read second, immediately: the pair is what proves the reader
-    // actually read the file rather than returning an empty buffer.
-    const declaredSize = fs.statSync(abs).size;
-    return { bytes: fs.readFileSync(abs), declaredSize };
+    // ONE file descriptor, fstat + read through it.
+    //
+    // The size has to come from the filesystem INDEPENDENTLY of the buffer
+    // length, because `bytes.length !== declaredSize` is this suite's short-read
+    // detector: deriving the size from the bytes would make that check
+    // tautological and a reader returning a truncated buffer would pass.
+    //
+    // The obvious spelling — `statSync(abs).size` then `readFileSync(abs)` —
+    // does that, but it resolves the path TWICE, and CodeQL correctly flags it
+    // as a file-system race ("the file may have changed since it was checked",
+    // high severity, which failed this PR's CodeQL check). Benign for a guard
+    // reading its own repo, but the race-free form costs nothing: `fstatSync`
+    // and `readSync` on the same fd describe the same file OBJECT, so there is
+    // no window between them and nothing to re-resolve.
+    const fd = fs.openSync(abs, 'r');
+    try {
+        const declaredSize = fs.fstatSync(fd).size;
+        const buf = Buffer.allocUnsafe(declaredSize);
+        const got = fs.readSync(fd, buf, 0, declaredSize, 0);
+        // A short read is REPORTED, not padded over: hand back exactly what
+        // arrived so the detector above sees the shortfall.
+        return { bytes: got === declaredSize ? buf : buf.subarray(0, got), declaredSize };
+    } finally {
+        fs.closeSync(fd);
+    }
 };
 
 interface Partition {
