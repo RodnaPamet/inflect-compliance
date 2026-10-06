@@ -230,7 +230,9 @@ describe('Roadmap-14 PR-12 — Mobile parity (unify dual chrome)', () => {
             expect(frameSrc).toMatch(
                 /const\s+openDrawer\s*=\s*useCallback\(\s*\(\)\s*=>\s*setDrawerOpen\(true\)/,
             );
-            expect(frameSrc).toMatch(/topChrome\(\{\s*onMobileMenuClick:\s*openDrawer\s*\}\)/);
+            // `\b`, not `\s*\}`: the slot also receives `mobileNavOpen`
+            // since projectZ #362, so the opener is no longer its only key.
+            expect(frameSrc).toMatch(/topChrome\(\{\s*onMobileMenuClick:\s*openDrawer\b/);
             // link 2 — the shell threads the slot's argument into TopChrome.
             expect(APP_SHELL_SRC).toMatch(/onMobileMenuClick=\{onMobileMenuClick\}/);
             expect(APP_SHELL_SRC).toMatch(
