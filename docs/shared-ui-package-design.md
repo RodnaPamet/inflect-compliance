@@ -5,12 +5,14 @@
 > `@/lib/celebrations` (see [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation)),
 > so the "no import has changed" this banner used to claim is no longer true. This document is the
 > design record for #3046, and its central measured finding is that the extractable set is **not**
-> every file `docs/_status/ui-core-classification.json` records as `GENERIC` (472 today): it is
-> **442**, because `GENERIC` is a per-file neutrality verdict and a package needs a closed module
-> graph. It was 408 of 454 when this doc was written, 426 of 462 after batch 1 and 427 of 467 after
-> batch 2 — see [Update 2026-10-02](#update-2026-10-02--batch-1-of-the-blocker-neutralisation),
-> [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation) and
-> [Update 2026-10-03](#update-2026-10-03--batch-3-of-the-blocker-neutralisation) for what moved and
+> every file `docs/_status/ui-core-classification.json` records as `GENERIC` (479 today): it is
+> **457**, because `GENERIC` is a per-file neutrality verdict and a package needs a closed module
+> graph. It was 408 of 454 when this doc was written, 426 of 462 after batch 1, 427 of 467 after
+> batch 2 and 442 of 472 after batch 3 — see
+> [Update 2026-10-02](#update-2026-10-02--batch-1-of-the-blocker-neutralisation),
+> [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation),
+> [Update 2026-10-03](#update-2026-10-03--batch-3-of-the-blocker-neutralisation) and
+> [Update 2026-10-06](#update-2026-10-06--batch-4-of-the-blocker-neutralisation) for what moved and
 > which figures below are superseded. Everything true today is under
 > [Current state](#current-state--what-was-measured-and-how). The step order is under
 > [Roadmap](#roadmap--the-sequence-and-what-verifies-each-step).
@@ -332,6 +334,138 @@ promotion ceiling, and §7's cost table — all still computed against older cla
 
 ---
 
+## Update 2026-10-06 — batch 4 of the blocker neutralisation
+
+Batch 4 moves **both** axes, which no previous batch did: the closed set goes **442 → 457** and the
+`domain-import` ceiling **36 → 34**. Batch 3's finding that the two are structurally independent is
+the reason it takes two separate mechanisms to move them, not one.
+
+| | after batch 2 | after batch 3 | after batch 4 |
+|---|---|---|---|
+| GENERIC / MIXED / COUPLED | 467 / 127 / 19 | 472 / 122 / 19 | **479 / 115 / 19** |
+| import-closed subset (the 4 neutral extras) | 427 | 442 | **457** |
+| …with NOTHING allowed alongside | — | 376 | **380** |
+| `GENERIC` files outside the closure | — | 30 | **22** |
+| distinct direct blockers | — | 32 | **25** |
+| ceiling if every direct blocker were promoted | 434 | — | **471** |
+| `domain-import` ceiling | 36 | 36 | **34** |
+| `brand-as-text` / `storage-key` ceilings | 10 / 1 | 10 / 1 | 10 / 1 |
+| population | 613 | 613 | 613 |
+
+**The ranked remainder was re-derived, not inherited.** A resolver over `sharedUiPopulation()`, the
+classification map and the real import edges (read through `codeOf`, `@/` and relative specifiers
+resolved against disk) reproduced main's published figures exactly before anything changed — 613
+population, 472 / 122 / 19, closed set **442**, with **0 unresolved** relative-or-alias specifiers as
+the instrument control and 540 bare package specifiers skipped by design. A resolver that silently
+resolved nothing would report the `GENERIC` set as perfectly closed, so that zero is the control the
+442 rests on. Marginal gain was then measured per blocker under the STRICT model (promote it, require
+it to be import-closed itself, re-run to a fixed point) — the same model §1 defines.
+
+**The batch is the top of that ranking, filtered by one rule: promote only where the recorded
+coupling is prose, provably stale, or dead code.** Seven files, with their measured marginal gains:
+
+| file | gain | what it took |
+|---|---|---|
+| `date-picker/types.ts` | +4 | prose — "the Dub-originated presets renderer" → "the upstream presets renderer this picker was adapted from" |
+| `checklist-gear-button.tsx` | +4 | **nothing** — the entry was stale |
+| `table/pagination-utils.ts` | +3 | deleted `formatPageRange` |
+| `dashboard-widgets/DashboardGrid.tsx` | +1 | prose — "the Inflect-flavoured contract", `OrgDashboardWidgetDto` |
+| `filter/filter-definitions.ts` | +1 | prose — three JSDoc examples re-typed off `Control` |
+| `filter/filter-context.tsx` | +1 | prose — one identifier in a usage example |
+| `filter/use-filter-card-visibility.tsx` | +1 | prose — the 48-line docblock |
+
+The individual gains sum to 15 and the realised figure is **+15** — but they were re-run as a
+combination rather than added, and the check that proves it is worth copying. Un-promoting each of
+the seven from the FINISHED tree costs 4, **5**, 3, 1, **2**, 1, 1 = **17**, which is two more than
+the batch delivered. The two extra are not an interaction effect: **two of the seven are downstream
+of two others inside the same batch** — `filter/use-filter-card-visibility.tsx` reaches
+`checklist-gear-button.tsx` through `filter/edit-filters-button.tsx`, and `filter/filter-context.tsx`
+imports `filter/filter-definitions.ts` — so each is counted once as itself and once as the upstream
+file's follower. Removing all seven together returns the closed set to exactly **442**, which closes
+the loop. The lesson for the next batch: a per-file gain measured on the pre-batch tree and a
+per-file cost measured on the post-batch tree are different quantities, and only the combination
+re-run and the round trip back to the base are safe to publish. The double-count was caught by an
+assertion deliberately written to be impossible — "lost by one removal but not by all seven" — which
+is where a chained member shows up.
+
+**`checklist-gear-button.tsx` is the finding, and it cost nothing to fix.** Its only recorded
+coupling was "One brand token is used as text" — **stale since #3102**, which replaced it with
+`text-content-brand`. The three `--brand-*` tokens left are a background, a border-plus-background
+and a ring: non-text, outside `BRAND_AS_TEXT` by design. This doc already flagged the entry as stale
+and batch 3 already measured its price (2 blocked sources, where batch 1 had recorded its gain as 0).
+Batch 4 paid none of it — **the whole of the fix was correcting the record**, and the closed set grew
+by 4. A wrong entry is not a cosmetic defect; it is 4 files of package.
+
+**`formatPageRange` was deleted rather than translated, and the entry had said so.** It built display
+text from hardcoded English (an `"items"` default, a bare `" of "` connective) inside an otherwise
+pure, React-free arithmetic module, and had ZERO callers in `src/`. The sentence it formatted is
+composed in JSX by `pagination-controls.tsx:102-112` from `common.table.{viewing,of,items}` through
+next-intl — so it was a second, UNTRANSLATED implementation of a string the product already renders
+correctly. Translating it would have given the arithmetic module a `useTranslations` dependency and a
+catalogue key for output no screen consumes. Two consequences recorded rather than left:
+`tests/guardrails/date-display-consistency.test.ts` had `pagination-utils.ts` on its
+`ALLOWED_LOCALE_FILES` exemption for the three `toLocaleString()` calls that went with the function,
+so that entry is deleted too (the list is only consulted, never checked for staleness — an entry
+outliving its cause keeps a future reintroduction invisible); and the four unit cases removed with
+the function were the ONLY assertions anywhere on that string's shape, so the live i18n path is now
+uncovered. Covering it needs a rendered test over `<PaginationControls>`, which is a different file's
+gap and is not absorbed silently into this diff.
+
+**The ceiling moved by widening `NEUTRAL_LIB`, and the AUDIT had already ruled that way.**
+`resize-image` and `text-utils` join the allowlist on batch 2's measured rule — both resolve, and
+both have ZERO import statements of ANY kind, so neither can pull a domain module in behind its
+allowance. (The counting pattern was run as a discriminating pair rather than on the candidates
+alone: `cn.ts` 2, `format-date.ts` 1, `resize-image.ts` 0, `text-utils.ts` 0.) What separates these
+two from a judgement call is that #3047 had already decided them in the opposite direction to the
+detector: `filter/filter-list.tsx`, the only importer of `@/lib/text-utils`, is recorded "no domain
+import … coupling is copy alone", and `file-upload.tsx`, the only importer of `@/lib/resize-image`,
+records three couplings that do not include its import. Both modules are this repo's first-party
+replacements for the `Dub utils` shim, which is what #3046 exists to undo — so a shared component
+importing one is the decoupled state, not a residual coupling. Both files stay `MIXED` on their
+copy; only the mechanical reading changed. **34 is not a floor.** The cheapest remaining real
+inversion is measured and recorded rather than taken: `ui/TruncationBanner.tsx` imports
+`@/lib/list-backfill-cap` for exactly one thing, the default of its existing `cap?: number` prop, so
+making `cap` required inverts the edge with no new mechanism — at a price of 10 call sites under
+`src/app/t/[tenantSlug]`, which is why it is a batch of its own.
+
+**`@/components/theme` was considered and NOT allowlisted.** `layout/user-menu.tsx` imports
+`ThemeToggle` from it, and the temptation is that §2 already admits
+`src/components/theme/ThemeProvider.tsx` as one of the four non-root files alongside the package. But
+the directory holds two files and the admitted list holds one: carving out the namespace would assert
+`ThemeToggle` neutral, which no pass has looked at, and §1 reserves it for step 4. The asymmetry the
+`SHARED_COMPONENT_DIRS` docstring argues for therefore holds.
+
+**The 471 ceiling did not move, and that is the useful shape of this batch.** Promoting *every*
+remaining direct blocker reached 471 before batch 4 and reaches 471 after it. Batch 4 did not raise
+the roof; it converted 15 of the 29 files between 442 and 471 from "available if somebody does the
+work" into realised members. The gap left is 14.
+
+**`format-date` is still the single largest lever, and still not ours to pull.** §2's
+"admitting the four `@/lib` leaves takes the closed set 427 → 432" is re-measured as **457 → 462**,
+still **+5** — and the re-measurement corrects the framing: only ONE of the four does anything.
+`format-date` alone accounts for the whole +5; `kpi-trend`, `number-format` and `locale-constants`
+admit nothing further as leaves (`kpi-trend` is +1 only in the strict model, where it counts itself).
+This is a boundary decision about what the package's payload contains, not a decoupling, and three
+batches have now declined to take it. It is the biggest number on the board at +5 against the next
+candidate's +2, which is the argument for putting it to whoever owns the boundary rather than
+settling it in a refactor batch.
+
+**What batch 4 left on the ranking, with prices.** `card-list-card.tsx` **+2** — its
+`selectionLabel = 'Select card'` default reaches the DOM as an `aria-label`, so the fix is a required
+prop (zero product call sites pass it today, and one rendered test does). `nav-bar.tsx` **+1** — held
+for #3100, which is rewriting it; its reason is one of the four on
+`ui-core-classification.test.ts`'s `AWAITING_NAV_PR` list. `date-picker/presets-catalogue.ts` **+1**
+— NOT prose: `DEFAULT_DATE_RANGE_PRESETS` carries the English labels the Presets panel renders
+verbatim, so it is real i18n work. Everything else on the list gains **0**, `icons/index.tsx`
+included, which blocks 7 files and still cannot be reached by a word fix (its second coupling is a
+re-export block, as batch 3 recorded).
+
+**What batch 4 did NOT re-derive:** everything batches 1–3 left — the per-root split, §7's cost
+table, the consumer-manifest overlap figures, and the token measurements — all still computed against
+older classifications.
+
+---
+
 ## Current state — what was measured, and how
 
 ### The population
@@ -564,13 +698,14 @@ What `@inflect/ui` may import:
    `d3-array`, `@visx/{axis,event,group,shape,text,tooltip}`, and
    `@radix-ui/react-{accordion,checkbox,dialog,label,popover,switch,tooltip,visually-hidden}`.
 4. **Nothing else.** In particular: no `@/app-layer`, no `@/lib/<domain>`, and — stated explicitly
-   because the existing detector cannot see it — **no `@/components/<anything outside the package>`**.
+   because the detector could not see it until #3098 widened the alternation —
+   **no `@/components/<anything outside the package>`**.
 
 **Reconciling with `NEUTRAL_LIB`.** Read the allowlist from
 `tests/helpers/shared-ui-couplings.ts`, never from here — this paragraph quoted it as
-`{cn, ui-storage, hooks, utils, format, dates, a11y, design, theme-constants}` and batch 2 changed
-it (four dead names deleted, four measured-neutral leaves added). Two corrections to what it said
-about that list, both measured:
+`{cn, ui-storage, hooks, utils, format, dates, a11y, design, theme-constants}`, batch 2 changed it
+(four dead names deleted, four measured-neutral leaves added) and batch 4 added two more. Two
+corrections to what it said about that list, both measured:
 
 - It claimed **five** of the nine named nothing, listing `design` among them. `src/lib/design/`
   exists (`status-tone.ts`, five importers in `src/app`). **Four** named nothing — `utils`,
@@ -583,16 +718,21 @@ about that list, both measured:
 
 **The package's dependency rule stays NARROWER than `NEUTRAL_LIB`, and that gap is now
 load-bearing rather than incidental.** The four non-root files admitted alongside the package are
-listed above; `format-date`, `kpi-trend`, `number-format` and `locale-constants` are neutral for
-the DETECTOR and are not on that list, which is why `charts/layout.ts` and `timestamp-tooltip.tsx`
-are `GENERIC` and still outside the closed set. Admitting them would take it 427 → 432 —
-measured in [Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation), and
-left as a decision for whoever owns this boundary. `theme-constants` is reserved for step 4 along
-with `ThemeToggle` (§1).
+listed above; `format-date`, `kpi-trend`, `number-format`, `locale-constants` and (since batch 4)
+`resize-image` and `text-utils` are neutral for the DETECTOR and are not on that list, which is why
+`charts/layout.ts` and `timestamp-tooltip.tsx` are `GENERIC` and still outside the closed set.
+Admitting them would take it **457 → 462** — first measured as 427 → 432 in
+[Update 2026-10-03](#update-2026-10-03--batch-2-of-the-blocker-neutralisation), re-measured in
+[Update 2026-10-06](#update-2026-10-06--batch-4-of-the-blocker-neutralisation), still **+5**, and
+left as a decision for whoever owns this boundary. Read that update before quoting the +5 as a
+figure for "the four leaves": `format-date` alone accounts for all of it, and the other three admit
+nothing further. `theme-constants` is reserved for step 4 along with `ThemeToggle` (§1) — and batch 4
+declined to allowlist `@/components/theme` for the same reason.
 
-**The gap this boundary exposes in the existing guard.** `mechanicalCouplings` matches
-`/from\s+['"]@\/(app-layer|lib)\/([\w.-]+)/` — the alternation is `app-layer|lib` and nothing else,
-so **an import of `@/components/<x>` is invisible to the `domain-import` detector**.
+**The gap this boundary exposed in the existing guard — CLOSED by #3098, kept for the mechanism.**
+As written here, `mechanicalCouplings` matched
+`/from\s+['"]@\/(app-layer|lib)\/([\w.-]+)/` — the alternation was `app-layer|lib` and nothing else,
+so **an import of `@/components/<x>` was invisible to the `domain-import` detector**.
 `src/components/layout/ClientProviders.tsx` is recorded `GENERIC` and imports
 `@/components/dev/swr-devtools` and `@/components/observability/WebVitalsReporter`. Those are two
 product components inside a file claimed neutral, and no guard in the repo reports it. It is the
@@ -824,7 +964,7 @@ indistinguishable from discarding the PR's change. #3084 is the named one: it is
 | 4 | **Extend the roots to the consumer's other four files** — `src/components/theme/{ThemeProvider,ThemeToggle}.tsx`, `src/lib/theme-constants.ts`, `src/components/filters/FilterToolbar.tsx`, `src/components/nav/BackAffordance.tsx`. Classify them first (they are unaudited by construction, §1), then move the neutral ones. | The classification guard covering a population that grew by 5-ish, with every new file triaged. This is the step that lets playerz stop hash-syncing *anything*. |
 | 5 | **playerz retargets `SYNCED_DIRS`** and regenerates its 494 rows with its own `paths.mjs --write`. | Its manifest guard green; its `check-portable.mjs` green; a `status.mjs` run showing 0 drift. |
 | 6 | **Then, and only then, decide whether `@inflect/ui` is published.** By that point the boundary is compiler-enforced and the consumer is one config line from being a package consumer, so the licensing question (§3) can be answered on its merits instead of as a prerequisite. | — |
-| 7 | **Ratchet the MIXED set down and the package grows for free** under the existing #3048 ceilings. No new mechanism. | `domain-import` 41 → lower; each decrement re-runs the closure and may add files to the package. |
+| 7 | **Ratchet the MIXED set down and the package grows** — but NOT "for free under the existing #3048 ceilings", which is measured wrong. `counts()` derives from source and never opens the classification map, so a reclassification cannot move a ceiling and a ceiling decrement need not admit a file. Batches 2-4 ran the experiment in both directions: batch 3 took the closed set 427 → 442 with the ceiling fixed at 36, and batch 4's ceiling move (36 → 34) admitted nothing by itself. Two mechanisms, tracked separately. | `domain-import` **34** → lower, by inverting an import or measuring a leaf neutral; the closed set by promoting a blocker. Re-run the ranking each time — the gains are not inheritable. |
 
 Nothing above needs the 454 to become extractable. The sequence is ordered so that the cheapest
 408 files land first and the expensive 46 are a consequence of work #3048 is already doing.

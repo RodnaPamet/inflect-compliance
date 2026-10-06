@@ -6,7 +6,7 @@
  * Filter.Select/Filter.List components and the URL state system.
  *
  * Usage:
- *   const controlFilters = createFilterDefs<Control>({
+ *   const itemFilters = createFilterDefs<Item>({
  *     status: {
  *       label: "Status",
  *       icon: CircleDot,
@@ -20,7 +20,7 @@
  *       icon: Tag,
  *       multiple: true,
  *       options: [
- *         { value: "Technical", label: "Technical" },
+ *         { value: "red", label: "Red" },
  *       ],
  *     },
  *   });
@@ -180,7 +180,7 @@ export function optionsFromEnum(
  * Create options from a string array.
  *
  * Usage:
- *   optionsFromArray(["Technical", "Operational", "Compliance"])
+ *   optionsFromArray(["Red", "Green", "Blue"])
  */
 export function optionsFromArray(values: string[]): FilterOption[] {
   return values.map((value) => ({ value, label: value }));
@@ -198,9 +198,9 @@ export function optionsFromArray(values: string[]): FilterOption[] {
  * kept for legacy call sites that rely on its loose `Record<string, …>` shape.
  *
  * Usage:
- *   const defs = createTypedFilterDefs<Control>()({
+ *   const defs = createTypedFilterDefs<Item>()({
  *     status:   { label: "Status",   icon: CircleDot, options: STATUS_OPTIONS },
- *     severity: { label: "Severity", icon: Flag,      options: SEV_OPTIONS    },
+ *     colour:   { label: "Colour",   icon: Palette,   options: COLOUR_OPTIONS },
  *   });
  *   defs.getFilter("status");   // OK (typed)
  *   defs.getFilter("nonesuch"); // compile-time error
