@@ -36,6 +36,28 @@
  * resolves the real module while every relative importer still lands here.
  * Do NOT change this import to a relative path — that is the recursion.
  *
+ * ## Why every delegate can fall back to a pass-through
+ *
+ * `@/components/ui/tooltip` is SHARED ANCESTRY: twelve jsdom suites replace
+ * that barrel with their own `jest.mock(…)` factory — because Radix's provider
+ * spins timers that never settle under fake timers — and every one of those
+ * factories is PARTIAL. Measured: all 12 omit `DynamicTooltipWrapper`, and
+ * `org-sidebar-nucleo-icons` + `reports-client` also omit `TooltipProvider`
+ * and `InfoTooltip`. Inside such a suite this file resolves THEIR module, so
+ * delegating blindly renders `undefined` and React throws `Element type is
+ * invalid … Check the render method of ForwardRef(DynamicTooltipWrapper)`.
+ * That is not hypothetical: it failed 8 tests in
+ * `auditor-revoke-safeguards.test.tsx` before this fallback existed.
+ *
+ * So each delegate degrades to a pass-through when the name it needs is absent
+ * — which is exactly what a suite that mocked the barrel away asked for.
+ *
+ * The fallback cannot hide a real removal from `src/components/ui/tooltip.tsx`:
+ * the named imports below are type-checked, so a deleted export fails `tsc`,
+ * and `tests/rendered/tooltip.test.tsx` imports all four by name through the
+ * `@/` alias and exercises them. The fallback therefore only ever fires at
+ * RUNTIME, under a suite-local `jest.mock`.
+ *
  * ## Why delayDuration={0}
  *
  * Radix opens on FOCUS with no delay regardless (`onOpen`, not
@@ -53,56 +75,75 @@
  */
 
 import * as React from 'react';
-import {
-    DynamicTooltipWrapper as RealDynamicTooltipWrapper,
-    InfoTooltip as RealInfoTooltip,
-    Tooltip as RealTooltip,
-    TooltipProvider as RealTooltipProvider,
-} from '@/components/ui/tooltip';
+import * as tooltipModule from '@/components/ui/tooltip';
+
+/**
+ * The module as it is at RUNTIME, which a suite-local `jest.mock` may have
+ * left incomplete. `Partial` is the honest type for that — see "Why every
+ * delegate can fall back" above. Read through this, never through a direct
+ * named binding, so a missing export is a value to branch on rather than an
+ * `undefined` React element type.
+ */
+const mod: Partial<typeof tooltipModule> = tooltipModule;
+
+/** What a mocked-away tooltip should render: its trigger, and nothing else. */
+function PassThrough({ children }: { children?: React.ReactNode }) {
+    return <>{children}</>;
+}
 
 /**
  * The provider the suite under test did not mount. Rendered per tooltip
  * rather than once, because there is no mount point a module mock can reach.
  */
 function AutoProvider({ children }: { children: React.ReactNode }) {
+    const Provider = mod.TooltipProvider;
+    if (!Provider) return <>{children}</>;
     return (
-        <RealTooltipProvider delayDuration={0} skipDelayDuration={0}>
+        <Provider delayDuration={0} skipDelayDuration={0}>
             {children}
-        </RealTooltipProvider>
+        </Provider>
     );
 }
 
-export const TooltipProvider = RealTooltipProvider;
+export const TooltipProvider = mod.TooltipProvider ?? PassThrough;
 
 export const Tooltip = React.forwardRef<
     HTMLButtonElement,
-    React.ComponentPropsWithoutRef<typeof RealTooltip>
+    React.ComponentPropsWithoutRef<typeof tooltipModule.Tooltip>
 >(function Tooltip(props, ref) {
+    const Real = mod.Tooltip;
+    if (!Real) return <>{props.children}</>;
     return (
         <AutoProvider>
-            <RealTooltip ref={ref} {...props} />
+            <Real ref={ref} {...props} />
         </AutoProvider>
     );
 });
 
 export const InfoTooltip = React.forwardRef<
     HTMLButtonElement,
-    React.ComponentPropsWithoutRef<typeof RealInfoTooltip>
+    React.ComponentPropsWithoutRef<typeof tooltipModule.InfoTooltip>
 >(function InfoTooltip(props, ref) {
+    const Real = mod.InfoTooltip;
+    // No children to pass through: a mocked-away InfoTooltip renders nothing,
+    // which is what the two suites that omit it already spell as `() => null`.
+    if (!Real) return null;
     return (
         <AutoProvider>
-            <RealInfoTooltip ref={ref} {...props} />
+            <Real ref={ref} {...props} />
         </AutoProvider>
     );
 });
 
 export const DynamicTooltipWrapper = React.forwardRef<
     HTMLButtonElement,
-    React.ComponentPropsWithoutRef<typeof RealDynamicTooltipWrapper>
+    React.ComponentPropsWithoutRef<typeof tooltipModule.DynamicTooltipWrapper>
 >(function DynamicTooltipWrapper(props, ref) {
+    const Real = mod.DynamicTooltipWrapper;
+    if (!Real) return <>{props.children}</>;
     return (
         <AutoProvider>
-            <RealDynamicTooltipWrapper ref={ref} {...props} />
+            <Real ref={ref} {...props} />
         </AutoProvider>
     );
 });
