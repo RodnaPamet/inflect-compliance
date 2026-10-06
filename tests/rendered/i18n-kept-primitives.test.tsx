@@ -282,15 +282,25 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
     });
 
     it('FormField: the hint button name, for a text and a non-text label', () => {
-        // The info button here is tests/rendered/tooltip-mock.tsx (form-field
-        // imports `./tooltip`), which renders the aria-label FormField computes.
+        // The info button is the REAL `InfoTooltip`: form-field imports
+        // `./tooltip`, which jest maps to `tests/rendered/tooltip-mock.tsx` —
+        // a DELEGATE since #3163, so what renders is the primitive itself with
+        // a `TooltipProvider` supplied around it, carrying the aria-label
+        // FormField computes.
+        //
+        // `getByRole('button')` rather than the `info-tooltip-trigger` testid
+        // the old stub emitted: the real primitive has no testid, and the role
+        // query is strictly stronger anyway — it asserts the trigger is an
+        // accessible BUTTON (a testid on a <div> would have passed) and, by
+        // throwing on more than one match, that it is the only button in a
+        // field whose <Input /> renders none.
         const { unmount } = render(
             <FormField label="E-mail" hint="-">
                 <Input />
             </FormField>,
         );
         expectLocalised(
-            screen.getByTestId('info-tooltip-trigger').getAttribute('aria-label'),
+            screen.getByRole('button').getAttribute('aria-label'),
             'More info about E-mail',
         );
         unmount();
@@ -300,7 +310,7 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
             </FormField>,
         );
         expectLocalised(
-            screen.getByTestId('info-tooltip-trigger').getAttribute('aria-label'),
+            screen.getByRole('button').getAttribute('aria-label'),
             'More information',
         );
     });
