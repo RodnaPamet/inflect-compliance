@@ -71,9 +71,16 @@ const getHandler = requirePermission<PolicyParams>(
             // WHAT THE RUNTIME WILL ACTUALLY HONOUR, which is not the same as what
             // the ladder can express — and the difference is invisible without it.
             //
-            // `maxMode` is `DRY_RUN` because no dispatch reads this rung yet. The
-            // identity route learned the cost of hand-typing this value instead of
-            // importing it: a literal here and an imported clamp in the usecase
+            // `maxMode` is whatever `EXTERNAL_MAX_MODE` says and this comment no
+            // longer quotes a value, because the one it used to quote — `DRY_RUN`,
+            // "because no dispatch reads this rung yet" — had been wrong through
+            // two raises (`PROPOSE_ONLY` 2026-10-01, `AUTOMATIC` 2026-10-06) while
+            // sitting on the file that publishes the ceiling. A comment stating a
+            // ceiling is a second copy of it with no ratchet, which is the same
+            // defect as the hand-typed literal the next sentence is about.
+            //
+            // The identity route learned the cost of hand-typing this value instead
+            // of importing it: a literal here and an imported clamp in the usecase
             // drift the moment one is raised, and the failure is silent in the
             // dangerous direction — the gate stops refusing while the surface goes
             // on reporting the old ceiling. One constant, imported by both.

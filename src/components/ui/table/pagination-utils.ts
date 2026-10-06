@@ -123,14 +123,26 @@ export function clampPage(page: number, pageCount: number): number {
   return Math.max(1, Math.min(page, pageCount));
 }
 
-/**
- * Format the "Viewing X–Y of Z items" string.
+/*
+ * `formatPageRange(range, resourceName?)` was DELETED by #3046 batch 4, and the
+ * reason is worth keeping where the next person would reach for it.
+ *
+ * It built display text out of hardcoded English — a `"items"` default for the
+ * resource name and a bare `" of "` connective inside the template — which made
+ * this otherwise pure, React-free arithmetic module the one file in the
+ * `table/` slice that a second product could not vendor as-is. It had ZERO
+ * callers in `src/`: `pagination-controls.tsx:102-112` composes the same
+ * sentence in JSX from three next-intl keys instead — `t("table.viewing")`,
+ * `t("table.of")` and a `resourceName?.(plural) ?? t("table.items")` tail, with
+ * the same `toLocaleString()` thousands separators. So the function was a
+ * second, UNTRANSLATED implementation of a string the product already renders
+ * correctly, and nothing had ever pointed at it.
+ *
+ * Deleting it was therefore strictly better than translating it: a next-intl
+ * call here would have given the module a `useTranslations` dependency and a
+ * message-catalogue key to satisfy, for an output no screen consumes. If a
+ * caller ever needs that string, build it where the translator already is.
+ *
+ * `PaginationRange` is KEPT — it is `PaginationState.range` and has live
+ * consumers.
  */
-export function formatPageRange(
-  range: PaginationRange,
-  resourceName?: (plural: boolean) => string,
-): string {
-  if (range.total <= 0) return "";
-  const label = resourceName?.(range.total !== 1) ?? "items";
-  return `${range.from.toLocaleString()}–${range.to.toLocaleString()} of ${range.total.toLocaleString()} ${label}`;
-}

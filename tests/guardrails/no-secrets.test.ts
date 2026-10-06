@@ -31,6 +31,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { BINARY_EXTENSIONS } from '../helpers/binary-extensions';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const PATTERN_FILE = path.join(REPO_ROOT, '.secret-patterns');
 const ALLOWLIST_MARKER = 'pragma: allowlist secret';
@@ -167,15 +169,9 @@ function listTrackedFiles(): string[] {
     return out.split('\0').filter(Boolean);
 }
 
-const BINARY_EXTENSIONS = new Set([
-    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.tiff',
-    '.pdf', '.zip', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.7z',
-    '.woff', '.woff2', '.ttf', '.otf', '.eot',
-    '.mp3', '.mp4', '.webm', '.mov', '.wav',
-    '.so', '.dll', '.dylib', '.exe', '.wasm',
-    '.psd', '.sketch', '.fig',
-]);
-
+// BINARY_EXTENSIONS moved to tests/helpers/binary-extensions.ts when
+// tests/guardrails/no-control-bytes-in-source.test.ts came to need the same
+// set; two copies could narrow one sweep without anything failing.
 function isBinaryFile(absPath: string): boolean {
     const ext = path.extname(absPath).toLowerCase();
     if (BINARY_EXTENSIONS.has(ext)) return true;

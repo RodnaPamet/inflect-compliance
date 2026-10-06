@@ -144,9 +144,25 @@ describe('<FormField /> — `hint` prop (Epic 56)', () => {
                 <Input type="email" />
             </FormField>,
         );
+        // RE-ANCHORED by #3163, deliberately and not silently. The old
+        // subject was `queryByTestId('info-tooltip-trigger')` — a testid that
+        // existed only on the pass-through tooltip stub. Now that
+        // `tests/rendered/tooltip-mock.tsx` DELEGATES to the real primitive,
+        // nothing emits that testid, so the old query returned null whether or
+        // not a hint trigger was on screen: a negative assertion that could no
+        // longer express its own failure.
+        //
+        // Anchored on the role + name the trigger really has, which the next
+        // test asserts POSITIVELY with the same query shape — the two are a
+        // discriminating pair. The textbox line is a population floor: without
+        // it "no hint button" would also pass if the field rendered nothing.
+        expect(screen.getByRole('textbox', { name: 'Email' })).toBeInTheDocument();
         expect(
-            screen.queryByTestId('info-tooltip-trigger'),
+            screen.queryByRole('button', { name: /More info/i }),
         ).not.toBeInTheDocument();
+        // The whole button population, so a trigger renamed in some future
+        // refactor cannot slip past the name filter above either.
+        expect(screen.queryAllByRole('button')).toHaveLength(0);
     });
 
     it('renders an InfoTooltip trigger next to the label when hint is present', () => {

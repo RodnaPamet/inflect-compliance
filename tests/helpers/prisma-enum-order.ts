@@ -420,7 +420,7 @@ export function parseDeclaredEnums(): DeclaredEnum[] {
 }
 
 const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
-    a.length === b.length && [...a].sort().join(' ') === [...b].sort().join(' ');
+    a.length === b.length && [...a].sort().join('\0') === [...b].sort().join('\0');
 
 let cached: EnumOrderReport | null = null;
 

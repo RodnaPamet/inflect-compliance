@@ -29,14 +29,21 @@
  *                                approves, so a withdrawal refuses in front of
  *                                them rather than hours later (#3002)
  *
- * `EXTERNAL_MAX_MODE` is `PROPOSE_ONLY` as of step 6 of #2861: every rung at or
- * below it is implemented end to end. `AUTOMATIC` is implemented too as of
- * #3051 — `openAutomaticExternalWrite` is its arm — and stays ABOVE the
- * ceiling anyway, which is now a DELIBERATE HOLD rather than code waiting on a
- * design decision. The refusal an operator sees for it below has been reworded
- * accordingly: telling them "nothing reads this rung" stopped being true, and a
- * refusal whose stated reason the operator can disprove is the exact failure
- * #2843 finding 31 is about.
+ * `EXTERNAL_MAX_MODE` is `AUTOMATIC` as of 2026-10-06, closing #2861: every rung
+ * on the ladder is implemented end to end, `openAutomaticExternalWrite` being
+ * the top one's arm (#3147). So no rung is above the ceiling any more, and the
+ * `isAboveClamp` branch below is reached only when a caller passes a NARROWER
+ * clamp than the build's own — a rollback, or an incident narrowing the build
+ * rather than every tenant one at a time. Its wording is kept for that case
+ * (and was reworded once already, when "nothing reads this rung" stopped being
+ * true: a refusal whose stated reason the operator can disprove is the exact
+ * failure #2843 finding 31 is about).
+ *
+ * The consequence that matters here is on the OTHER branch. With nothing above
+ * the ceiling, `refusalForMove` now answers for every rung, so the dwell and the
+ * evidence requirement decide `PROPOSE_ONLY → AUTOMATIC` — seven days plus one
+ * approved proposal — and `countEvidenceForRung` below is read by an operator for
+ * the first time rather than being computed and discarded.
  *
  * ## Where the authorization lives
  *
@@ -121,11 +128,16 @@ export interface ExternalWritePolicy extends ExternalWriteState {
  *
  * Nothing was unsafe in the interval, and that is also why the falsification
  * was invisible: the only move that asks this rung for evidence is
- * `PROPOSE_ONLY → AUTOMATIC`, `AUTOMATIC` is above the ceiling, and
+ * `PROPOSE_ONLY → AUTOMATIC`, `AUTOMATIC` was above the ceiling, and
  * `getExternalWritePolicy` consults `isAboveClamp` BEFORE `refusalForMove` — so
- * no caller has ever read this number. Exactly the shape the section above
- * describes for the `DRY_RUN` gate, which is the argument for fixing it now
+ * no caller had ever read this number. Exactly the shape the section above
+ * describes for the `DRY_RUN` gate, which was the argument for fixing it then
  * rather than in the diff that raises the ceiling again.
+ *
+ * THAT DIFF HAS NOW LANDED (2026-10-06, #2861): the ceiling is `AUTOMATIC`,
+ * nothing is above it, and this count is what refuses an operator's climb to the
+ * top rung. The fix arriving one PR early is why the raise did not have to
+ * decide whether a 0 meant "no approvals" or "no query" under time pressure.
  *
  * ── THE JOIN, WHICH IS THE WHOLE QUESTION ───────────────────────────────────
  *
@@ -302,7 +314,17 @@ export async function getExternalWritePolicy(
     const refusals: Record<string, string | null> = {};
     for (const rung of LADDER) {
         refusals[rung] = isAboveClamp(rung, EXTERNAL_MAX_MODE)
-            ? // REWORDED, and the old sentence is why. It read "nothing reads
+            ? // UNREACHABLE WHILE THE CEILING IS AT THE TOP RUNG, and kept
+              // deliberately. Since 2026-10-06 `EXTERNAL_MAX_MODE` is
+              // `AUTOMATIC`, so this comparison is false for every rung and the
+              // `refusalForMove` arm answers for all four. The branch is not
+              // dead code in the sense that matters — lowering the ceiling is a
+              // reviewed one-word diff away (a rollback, an incident), and it is
+              // this sentence an operator then reads. Deleting it would mean
+              // whoever lowers the ceiling has to re-invent the wording while
+              // the incident is live.
+              //
+              // REWORDED, and the old sentence is why. It read "nothing reads
               // this rung to decide whether to send yet", which was true while
               // `AUTOMATIC` was unimplemented and is false now that the arm
               // exists. An operator who can disprove a refusal's stated reason

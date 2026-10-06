@@ -33,6 +33,13 @@
  *      rest: #3150's hints passed every ratchet — including the one that
  *      forced them — while being hover-only, because `<Tooltip>` over a `<p>`
  *      is a source shape a scan approves and a focus a keyboard cannot make.
+ *   9. Focus OPENS the hint and the hint names the whole 64-char digest
+ *      (#3163). Shipped since #3159 and unprovable until the jsdom tooltip
+ *      module mock started delegating to the real primitive — `<CopyText>`
+ *      imports it as `./tooltip`, a spelling `jest.config.js` redirected to a
+ *      pass-through. That test also carries the nwsapi `:focus-visible`
+ *      canary; its docblock says what to read when a dependabot bump reddens
+ *      it.
  */
 /** @jest-environment jsdom */
 
@@ -269,17 +276,18 @@ function clipboardUser() {
 }
 
 function mount() {
-    // `TooltipProvider` is mounted because this tree still reaches Radix
-    // Tooltip through the `@/components/ui/tooltip` alias (Button, StatusBadge
-    // and the Combobox chrome all do), and a Radix consumer throws outside a
-    // provider. In production it is mounted once in `src/app/providers.tsx`.
+    // `TooltipProvider` is mounted because this tree reaches Radix Tooltip
+    // through the `@/components/ui/tooltip` alias (Button, StatusBadge and the
+    // Combobox chrome all do), and a Radix consumer throws outside a provider.
+    // In production it is mounted once in `src/app/providers.tsx`.
     //
-    // It is NOT what makes the digests' full hash observable. The three digest
-    // controls are `<CopyText>`, which reaches its own Tooltip by the relative
-    // `./tooltip` — a path the jsdom project's `moduleNameMapper` redirects to
-    // `tests/rendered/tooltip-mock.tsx`, a pass-through. So the digest
-    // assertions below read `aria-label` and the clipboard, neither of which
-    // depends on a hint opening.
+    // The three digest controls are `<CopyText>`, which reaches its Tooltip by
+    // the relative `./tooltip` — the path the jsdom project's
+    // `moduleNameMapper` redirects to `tests/rendered/tooltip-mock.tsx`. Since
+    // #3163 that file DELEGATES to the real primitive and supplies its own
+    // provider, so a digest's hint really opens here; before #3163 it was a
+    // pass-through and no focus or hover in this file could produce a
+    // `role="tooltip"` node at all.
     return render(
         <TooltipProvider delayDuration={0}>
             <ParameterSetsClient
@@ -440,14 +448,12 @@ describe('the signature count sits beside the digest it is against', () => {
         // mouse-and-screen-reader-only. A `<p>` answers no button query, so
         // this line is the one that would redden on a regression to one.
         //
-        // The NAME rather than an opened tooltip, and that is a deliberate
-        // trade rather than a weaker claim. `copy-text.tsx` reaches its
-        // Tooltip by the relative `./tooltip`, which the jsdom project's
-        // `moduleNameMapper` points at a pass-through stub — so no hover here
-        // can produce a `role="tooltip"` node, and the old assertion that did
-        // was only reachable because the page imported the primitive by its
-        // `@/` alias. `aria-label` is the stronger property anyway: it carries
-        // the full hash whether or not any hint is open.
+        // The NAME, not an opened hint — `aria-label` carries the full hash
+        // whether or not any hint is open, which is the stronger property and
+        // the one a screen reader announces on arrival. The hint itself is
+        // asserted separately, under "focus OPENS the hint" below; until #3163
+        // it could not be, because `copy-text.tsx` reaches its Tooltip by the
+        // relative `./tooltip` and that path resolved to a pass-through stub.
         const digest = within(sigs).getByRole('button', {
             name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
         });
@@ -572,6 +578,77 @@ describe('every digest is reachable from the keyboard, not only the mouse', () =
                 duration: 3000,
             }),
         );
+    });
+
+    /**
+     * #3163 — THE HINT ITSELF, which this file could not reach until the
+     * tooltip module mock began delegating.
+     *
+     * `<CopyText>` imports the primitive as `./tooltip`, and `jest.config.js`
+     * maps that spelling to `tests/rendered/tooltip-mock.tsx`. While that file
+     * rendered `<>{children}</>`, no focus and no hover anywhere on this page
+     * could produce a `role="tooltip"` node — so "Tab opens the hint showing
+     * the whole hash" shipped resting on `tooltip.test.tsx` covering the
+     * primitive in the abstract plus Radix's documented behaviour, and on
+     * nothing measured on the page that ships it. That is the defect #3163
+     * records. This test is what closes it.
+     *
+     * WHY `.focus()` AND the explicit `:focus-visible` assertion: `tooltip.tsx`
+     * gates Radix's focus-open on `e.currentTarget.matches(':focus-visible')`,
+     * preventing the event otherwise, so that one selector decides whether the
+     * hint opens at all. jsdom evaluates it through nwsapi, and the installed
+     * version is pinned at **2.2.24** — inside the known-safe window
+     * **>=2.2.16 <2.2.25**. 2.2.25 rewrote `:focus-visible`, and that rewrite
+     * is what broke this gate in this repo and in its sibling with no warning.
+     *
+     * So: if this test goes red right after a dependabot bump of **nwsapi**,
+     * the bump is the cause, not the change under review. Check the installed
+     * version first — `node -p "require('nwsapi/package.json').version"` — and
+     * read `tooltip.tsx`'s `onFocus` before touching anything here. The
+     * assertion on `matches(':focus-visible')` is in the test precisely so the
+     * failure names the mechanism instead of only the symptom.
+     */
+    it('focus OPENS the hint, and the hint carries the WHOLE 64-char digest', async () => {
+        listBody = [withPending()];
+        mount();
+        const sigs = await screen.findByTestId('parameter-set-signatures-Nightly roster push');
+        const digest = within(sigs).getByRole('button', {
+            name: new RegExp(`^Copy the full digest ${PENDING_HASH}$`),
+        });
+
+        // NEGATIVE half of the pair, before anything is touched: nothing with
+        // `role="tooltip"` is mounted. Without this the assertions below could
+        // be reading a node that was always on the page.
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        expect(digest).not.toHaveAttribute('aria-describedby');
+
+        digest.focus();
+        expect(digest).toHaveFocus();
+        // The gate itself, asserted rather than assumed — see the nwsapi
+        // window in the docblock. `true` here is what lets Radix open.
+        expect(digest.matches(':focus-visible')).toBe(true);
+
+        // Exactly ONE hint is open: the population, so a second tooltip left
+        // open elsewhere cannot be what satisfies the text assertion.
+        const hints = await screen.findAllByRole('tooltip');
+        expect(hints).toHaveLength(1);
+        // …and it is THIS control's hint. Radix points the trigger's
+        // `aria-describedby` at the node it gives `role="tooltip"`, so this is
+        // the link a screen reader follows and the discriminator between "a
+        // tooltip opened" and "this digest's tooltip opened".
+        expect(hints[0].id).toBe(digest.getAttribute('aria-describedby'));
+
+        // THE PAYOFF: the whole hash, not the 12-char head that is on screen.
+        expect(PENDING_HASH).toHaveLength(64);
+        expect(hints[0]).toHaveTextContent(PENDING_HASH);
+        expect(digest.textContent ?? '').not.toContain(PENDING_HASH);
+
+        // Blur closes it — the other half of the pair, and the proof the hint
+        // is an opened surface rather than permanently mounted markup.
+        digest.blur();
+        await waitFor(() => {
+            expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+        });
     });
 });
 
