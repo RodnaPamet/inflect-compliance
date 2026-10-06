@@ -60,7 +60,6 @@ jest.mock('@/lib/observability/client-telemetry', () => ({
     beaconClientMetric: jest.fn(),
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { beaconClientMetric } = require('@/lib/observability/client-telemetry') as {
     beaconClientMetric: jest.Mock;
 };

@@ -104,9 +104,14 @@ describe('Policies list — Epic 45.1 shell + column wiring', () => {
         // The handler is a STABLE useCallback now, not an inline arrow —
         // an inline `onRowClick` is recreated per render and breaks
         // double-click-to-open. Assert the wiring + the destination.
+        // `guardedPush`, not `router.push`, since #3099: the hook is
+        // `router.push` plus a one-shot retry for the transition the client
+        // router silently drops during hydration, so the navigation this
+        // asserts is unchanged in destination and strictly more reliable. The
+        // span bounds are untouched, so the Class C ratchet does not move.
         expect(clientSrc).toMatch(/onRowClick:\s*handleRowClick/);
         expect(clientSrc).toMatch(
-            /const handleRowClick = useCallback\([\s\S]{0,200}router\.push\([\s\S]{0,120}\/policies\//,
+            /const handleRowClick = useCallback\([\s\S]{0,200}guardedPush\([\s\S]{0,120}\/policies\//,
         );
     });
 

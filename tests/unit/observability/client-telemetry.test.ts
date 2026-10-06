@@ -21,7 +21,10 @@ import {
     NAV_PUSH_RETRY_METRIC,
 } from '@/lib/observability/client-telemetry';
 
-const sendBeacon = jest.fn(() => true);
+// Parameters DECLARED, not inferred. `jest.fn(() => true)` types its own
+// `mock.calls` as a zero-length tuple, so `calls[0][1]` is a type error and the
+// body assertion below cannot be written at all — tsc caught exactly that.
+const sendBeacon = jest.fn((_url: string, _body?: BodyInit | null) => true);
 
 /**
  * Read the beaconed Blob back as text.
@@ -100,16 +103,20 @@ describe('beaconClientMetric', () => {
             configurable: true,
             writable: true,
         });
-        const fetchMock = jest.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+        const fetchMock = jest.fn((_url: string, _init?: RequestInit) =>
+            Promise.resolve(new Response(null, { status: 204 })),
+        );
         const original = global.fetch;
         global.fetch = fetchMock as unknown as typeof fetch;
         try {
             beaconClientMetric({ name: 'LCP', value: 2, route: '/' });
             expect(fetchMock).toHaveBeenCalledTimes(1);
-            const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+            const [url, init] = fetchMock.mock.calls[0];
             expect(url).toBe('/api/telemetry/vitals');
-            expect(init.method).toBe('POST');
-            expect(init.keepalive).toBe(true);
+            // `init?.` — an absent init fails these rather than throwing, so
+            // the assertion still has teeth if the fallback stops passing one.
+            expect(init?.method).toBe('POST');
+            expect(init?.keepalive).toBe(true);
         } finally {
             global.fetch = original;
         }

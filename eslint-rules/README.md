@@ -162,6 +162,56 @@ afterAll(async () => {
 });
 ```
 
+### `no-router-push-in-row-click`
+
+Flags a `router.push` / `router.replace` anywhere inside the handler assigned to
+a row-ACTIVATION prop (`onRowClick`, `onRowDoubleClick`) — written inline, passed
+by name and resolved through scope, wrapped in `useCallback`, or chosen by a
+ternary. The remedy is `useGuardedPush()` from `@/lib/nav/use-guarded-push`.
+
+**Why.** Under hydration load a cold row click issues its RSC request, gets a
+200, loads the destination's page chunk 149-339 ms later — so the payload
+decoded — and the client router then silently does nothing (#3099, upstream
+[vercel/next.js#99651](https://github.com/vercel/next.js/issues/99651), closed
+for want of a minimal reproduction). Measured on three independent captures:
+zero requests started more than 1000 ms after the click, zero `console.error`,
+no document navigation, and the URL unchanged — which is mechanical proof the
+React transition never committed, since `HistoryUpdater` is keyed on the router
+state. The row is dead until the user clicks again, and **nothing records it**:
+the defect's only trace in this repo's history is an E2E flake. The hook samples
+`location.pathname` at click time, re-issues the push once if the pathname has
+not moved and the target differs from it, and beacons a counter.
+
+**Why not a choke point.** `onRowClick` is typed `(row, e) => void` and
+`DataTable` cannot tell a navigation from a sheet-opener or a selection toggle —
+several live call sites are exactly those. So there is nothing to put the fix
+behind, and this rule is the obligation instead.
+
+**Why not a `tests/guards/` regex.** Eleven of the eighteen migrated call sites
+pass their handler BY NAME (`onRowClick={handleAssetRowClick}`); a source regex
+cannot follow that, and would also be satisfied by a doc comment. The rule
+resolves the identifier through scope — and that resolution is where it was
+wrong first: capturing the scope at `Program:exit` instead of at the assignment
+made it report a hole for every named handler, i.e. green and blind. The
+companion guard's unanalysable SET is what catches that, and it was proved by
+mutation.
+
+**What it cannot see.** No data-flow analysis. A handler imported from another
+module, taken as a prop, or produced by a helper call is opaque. Those positions
+are COUNTED: `{ reportUnanalysable: true }` reports each under its own
+messageId, `{ reportRowClicks: true }` reports the denominator, and
+`tests/guards/row-click-navigation-uses-the-guarded-push.test.ts` holds the exact
+hole set plus floors on the swept population and the recognised handlers — "zero
+violations" and "zero handlers found" are otherwise the same output. Both census
+options are OFF in `eslint.config.mjs`.
+
+`onRowAuxClick` is deliberately out of scope: a middle click opens a new tab
+through `window.open` or an `<a target>` and never enters the client router.
+
+`allowRawPush` is the written exemption list, and it is **empty** — all eighteen
+call sites went through the hook. Adding an entry means saying why that call site
+cannot tolerate an idempotent retry to the href the user just asked for.
+
 ### `no-raw-prompt-logging`
 
 Flags a logging or audit call **on the agentic path** whose argument names raw
