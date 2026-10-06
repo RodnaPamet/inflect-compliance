@@ -1,0 +1,34 @@
+{
+  // Extends the root so the package compiles under the same target, lib, jsx
+  // and strictness as the application it ships into — a package that is
+  // stricter or looser than its only consumer produces errors nobody can act
+  // on, or misses errors the consumer will hit.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // THE BOUNDARY, and the reason this file exists at all.
+    //
+    // `extends` inherits the root's `baseUrl: "."` and `paths: {"@/*":
+    // ["./src/*"]}`, and both resolve against the directory of the config that
+    // DECLARED them — so inheriting them silently gives this package a working
+    // `@/` alias into the application's src/. That is precisely clause 4 of §2
+    // ("no `@/app-layer`, no `@/lib/<domain>`, no `@/components/<x>` outside
+    // the package"), so both are reset here: `paths: {}` replaces the inherited
+    // map rather than adding to it, and `baseUrl: "."` re-roots non-relative
+    // resolution at packages/ui so a bare `src/lib/...` cannot resolve to the
+    // repo root either.
+    //
+    // §5.5 of the design doc is explicit that a `paths` entry pointing the
+    // application at this package is NOT wanted in the other direction: the
+    // workspace symlink is what resolves `@inflect/ui`, and an alias would let
+    // it resolve while the install is broken, which hides exactly the failure
+    // the workspace is there to surface.
+    "baseUrl": ".",
+    "paths": {},
+    "rootDir": "src"
+  },
+  // `include`/`exclude` are inherited too, and the root's `["**/*.ts", ...]`
+  // resolves against the ROOT directory — inheriting it would hand this config
+  // the whole repository. Both are replaced, not extended.
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
+}
