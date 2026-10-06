@@ -7,11 +7,18 @@
  * second copy of that composition is the failure this subsystem has paid for
  * once already.
  *
- * The kind is now CREATABLE — the `PROPOSE_ONLY` arm of `dispatchWrite` queues
- * one — but still NOT APPROVABLE, because approving one dispatches an MCP call
- * and that job is the next slice. That asymmetry is the "control arrives before
- * the authority" ordering #2933 used, and it is safe because `EXTERNAL_MAX_MODE`
- * is `DRY_RUN`: no connection can sit at `PROPOSE_ONLY` to queue one at all.
+ * The kind is CREATABLE — the `PROPOSE_ONLY` arm of `dispatchWrite` queues one —
+ * and, since #3002, APPROVABLE: the describe below covers approval opening a
+ * journal row the `external-write-dispatch` job then sends.
+ *
+ * THIS PARAGRAPH USED TO SAY the kind was "still NOT APPROVABLE … and it is safe
+ * because `EXTERNAL_MAX_MODE` is `DRY_RUN`: no connection can sit at
+ * `PROPOSE_ONLY` to queue one at all." Both halves had gone false and neither
+ * failed anything: the approval arm shipped in #3002, and the ceiling has since
+ * been raised twice — to `PROPOSE_ONLY` (2026-10-01) and to `AUTOMATIC`
+ * (2026-10-06). Corrected in the diff that raised it the second time, because a
+ * header asserting the ceiling is a second copy of a constant with no ratchet,
+ * and the next reader trusts whichever copy they happen to open.
  *
  * ## Why the approval test seeds a CREATE-shaped row
  *

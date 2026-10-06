@@ -171,6 +171,21 @@ export interface AutomaticWriteRequest {
  * the build rather than every tenant — would have sailed through.
  *
  * Returns the refusal sentence, or null when the rung is honoured.
+ *
+ * ═══ IT RETURNS null TODAY. DO NOT DELETE IT AS DEAD CODE ═══
+ *
+ * `EXTERNAL_MAX_MODE` has been `AUTOMATIC` since 2026-10-06 (#2861), so nothing
+ * is above the ceiling and every call here answers null. That makes this
+ * function unreachable in its refusing half and therefore a tempting delete —
+ * and deleting it would reopen exactly the gap it was written for, in the one
+ * direction that is not this diff: a connection ALREADY STORING `AUTOMATIC` when
+ * the ceiling is LOWERED. Lowering is a one-word reviewed change (a rollback, an
+ * incident narrowing the build rather than every tenant one at a time), the
+ * stored rungs do not move with it, and `dispatchWrite` reads no other ceiling.
+ *
+ * `tests/unit/external-write-automatic-clamp.test.ts` keeps the refusing half
+ * alive by re-loading this module against a mocked lower ceiling, so the branch
+ * is still exercised rather than merely present.
  */
 export function automaticClampRefusal(): string | null {
     if (!isAboveClamp(AUTOMATIC, EXTERNAL_MAX_MODE)) return null;

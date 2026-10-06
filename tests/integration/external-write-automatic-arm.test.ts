@@ -27,13 +27,17 @@
  * prior-state READ is allowed to be called: reading is owner decision 2's
  * precondition, and a test that forbade it would be forbidding the control.
  *
- * ## The clamp is mocked UP, on purpose
+ * ## The clamp is PINNED UP, on purpose, and stays pinned after the raise
  *
- * `EXTERNAL_MAX_MODE` is `PROPOSE_ONLY` on this branch, so without this mock
- * every assertion below would be a statement about a path the clamp refuses —
- * an empty selection, which passes. The clamp's own behaviour in BOTH
- * directions is the subject of `tests/unit/external-write-automatic-clamp.test.ts`;
- * here it is lifted so the arm can be exercised at all.
+ * `EXTERNAL_MAX_MODE` was `PROPOSE_ONLY` when this file was written, so without
+ * the mock every assertion below would have been a statement about a path the
+ * clamp refuses — an empty selection, which passes. Since 2026-10-06 the real
+ * constant is `AUTOMATIC` and the mock is redundant, and it is KEPT rather than
+ * deleted: this file's subject is the arm, not the ceiling, and pinning the
+ * ceiling means a future LOWERING (a rollback, an incident) turns the clamp's own
+ * test red — where it belongs — instead of silently emptying every selection
+ * here. The clamp's behaviour in BOTH directions is the subject of
+ * `tests/unit/external-write-automatic-clamp.test.ts`.
  */
 const listToolsMock = jest.fn();
 const callToolMock = jest.fn();
