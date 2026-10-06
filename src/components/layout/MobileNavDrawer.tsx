@@ -54,11 +54,24 @@ import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 export interface MobileNavDrawerProps {
     open: boolean;
     onClose: () => void;
+    /**
+     * The panel's visible heading AND its accessible name (one string, so the
+     * two cannot drift). Defaults to `nav.openNavigationMenu`.
+     *
+     * That default is the HAMBURGER's label, an instruction ("Open navigation
+     * menu"), and on an open panel it reads as one: the heading tells a
+     * sighted user to open what they are already looking at, and a screen
+     * reader announces the dialog as a command. A host that names its drawer
+     * as a place ("Menu", the context's name) passes it here. The default is
+     * kept so no existing drawer changes under its users.
+     */
+    title?: string;
     children: ReactNode;
 }
 
-export function MobileNavDrawer({ open, onClose, children }: MobileNavDrawerProps) {
+export function MobileNavDrawer({ open, onClose, title, children }: MobileNavDrawerProps) {
     const tn = useTranslations('nav');
+    const panelTitle = title ?? tn('openNavigationMenu');
 
     useKeyboardShortcut('Escape', onClose, {
         enabled: open,
@@ -125,7 +138,7 @@ export function MobileNavDrawer({ open, onClose, children }: MobileNavDrawerProp
             autoFocus
             // Also passed on the root so the dialog has an accessible name
             // even if a future refactor drops the header.
-            title={tn('openNavigationMenu')}
+            title={panelTitle}
             // No `data-testid` here: vaul's `ContentProps` does not admit one,
             // and the panel is better found by its accessible NAME — which is
             // the thing a screen-reader user navigates by, so a test that
@@ -148,7 +161,7 @@ export function MobileNavDrawer({ open, onClose, children }: MobileNavDrawerProp
                 The title doubles as the panel's visible name; it is the same
                 string the root passes for the accessible name, so the two
                 cannot drift. */}
-            <Sheet.Header title={tn('openNavigationMenu')} />
+            <Sheet.Header title={panelTitle} />
             <Sheet.Body>
                 {/* `nav-drawer` is a CONTRACT, not decoration. The drawer this
                     replaced carried it on its panel and `tests/e2e/

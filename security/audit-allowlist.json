@@ -26,7 +26,12 @@
     "advisory's affected range simply predates the backport and was never amended.",
     "It is the image-size situation caught one step earlier: before the advisory",
     "metadata catches up rather than after. The same STALE mechanism will force it",
-    "out when the range is corrected upstream."
+    "out when the range is corrected upstream.",
+    "2026-10-06: the sprintf-js entry below is the classic kind: NO patched release",
+    "exists (the advisory covers every version through 1.1.3, the latest). Its only",
+    "production copy comes in through mammoth's command-line wrapper, which this app",
+    "never runs. The same day source-map-js went to 1.2.2, its patched release, so",
+    "that advisory needed no entry."
   ],
   "allow": [
     {
@@ -38,6 +43,17 @@
       "verification": "Read: `mergeAttributes` in @tiptap/core@2.27.3 contains the guard — `if (key === '__proto__') Object.defineProperty(merged, key, {...})` — in BOTH the cjs and esm builds, character-for-character the same logic as the patched 3.31.3. Executed: the advisory's own attack shape (an own __proto__ key from JSON.parse) through the real 2.27.3 mergeAttributes leaves Object.prototype untouched and lands __proto__ as an own property. A naive merge of the same payload DOES pollute, which is the positive control proving the test can tell the two apart. Held: tests/guards/tiptap-proto-merge-is-fixed.test.ts runs that attack against EVERY @tiptap/core in the tree on every CI run, and fails if any copy falls below the 2.27.3 backport floor. Mutation-proved by disarming the guard in the @tldraw/editor copy — one named test went red.",
       "reachability": "Two layers, and the second is the one that will change. 1. The code is not vulnerable — see verification above. That holds regardless of how we use it. 2. Exposure today is nil anyway: tldraw has ZERO import sites in src/ (the dependency is added ahead of the #2960 shape layer). When Phase 2 wires it up, tldraw's rich-text shapes become reachable by tenant users, so layer 2 stops being a mitigation — which is precisely why layer 1 is held by an executing guard rather than a note.",
       "upgradePlan": "tldraw 3.x declares `@tiptap/* ^2.9.1` and cannot reach the 3.x line, so the route off 2.x is a tldraw major, not a tiptap bump. Forcing tiptap 3 under tldraw 3 via `overrides` was TESTED and rejected: it installs, clears the audit and passes a production build, then silently breaks the SECOND rich-text edit session — ProseMirror never remounts and keystrokes are discarded with no error. Evidence on #2960. The real route is tldraw 4.x/5.x, which ships tiptap 3.31.3 — gated on a commercial licence, because 4.0.0 onwards bans production use without a key (#2958). Revisit when that licence question is answered. Expected end state: this entry goes STALE on its own when the advisory range is amended to record 2.27.3, and the gate then forces it out.",
+      "reviewBy": "2026-12-31"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "package": "sprintf-js",
+      "severity": "moderate",
+      "title": "sprintf-js vulnerable to denial of service through unbounded precision specifiers",
+      "reason": "NO FIXED VERSION EXISTS. The advisory covers sprintf-js through 1.1.3, which is the latest release; there is nothing to upgrade to. The production tree's only copy is sprintf-js@1.0.3, pulled in as mammoth@1.13.0 -> argparse@1.0.10 -> sprintf-js. mammoth@1.13.0 is the latest mammoth and still declares `argparse: ~1.0.3`, so it cannot be moved by a bump either.",
+      "verification": "Traced on 2026-10-06 with `npm ls sprintf-js --omit=dev` (one path, through mammoth's argparse) and by reading the installed sources. In mammoth@1.13.0, `argparse` is required ONLY by `bin/mammoth`, the command-line wrapper; nothing under `lib/` (the library entry `main: ./lib/index.js`) requires it. In argparse@1.0.10, `sprintf` is called only from `argument_parser.js` and `help/formatter.js`, on argparse's own constant format strings (usage and help text), never on a caller-supplied format.",
+      "reachability": "Not reachable. The advisory needs an attacker-controlled FORMAT STRING. The app imports mammoth only as a library (`src/app-layer/integrations/providers/sharepoint/docx.ts`, `import mammoth from 'mammoth'`, resolving to lib/index.js) and never executes mammoth's CLI, which is the only code that loads argparse and so sprintf-js. Even inside the CLI, argparse formats its own help strings, not input. Document content converted by mammoth never reaches sprintf.",
+      "upgradePlan": "The entry leaves on either of two events, and the gate forces it out as STALE when one happens: sprintf-js ships a patched release and the advisory records it, or mammoth moves to argparse 2.x, which has no sprintf-js dependency. Overriding argparse to 2.x under mammoth was considered and not done: argparse 2 changed its API, so it would break mammoth's CLI to silence an advisory that the library path never touches. Revisit at reviewBy.",
       "reviewBy": "2026-12-31"
     }
   ]

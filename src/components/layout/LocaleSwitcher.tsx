@@ -40,10 +40,29 @@ import {
     LOCALE_SHORT_LABELS,
     LOCALE_COOKIE,
     resolveLocale,
+    type Locale,
 } from '@/lib/locale-constants';
 
 export interface LocaleSwitcherProps {
     className?: string;
+    /**
+     * Persist the choice somewhere the cookie is not the whole story. Called
+     * with the chosen locale BEFORE the cookie is written and the tree is
+     * refreshed, and awaited; another choice made while it runs is ignored.
+     *
+     * Without it the cookie IS the preference, which is today's behaviour.
+     * A host that keeps the preference on the user record, and re-seeds the
+     * cookie from that record on every request, could not use this control
+     * at all: the switch flipped the page and the next request flipped it
+     * straight back. That is why `UserMenu` grew `showLanguage`. With this
+     * hook the host writes its record first, and the cookie and the refresh
+     * then agree with it.
+     *
+     * If it rejects, the switch is abandoned: no cookie, no refresh, and the
+     * old locale stays selected. Telling the user is the host's job, since the
+     * hook is the host's code and knows what failed.
+     */
+    onLocaleChange?: (locale: Locale) => Promise<void> | void;
 }
 
 const OPTIONS = SUPPORTED_LOCALES.map((locale) => ({
@@ -69,7 +88,7 @@ function persistLocale(locale: string) {
     }
 }
 
-export function LocaleSwitcher({ className }: LocaleSwitcherProps) {
+export function LocaleSwitcher({ className, onLocaleChange }: LocaleSwitcherProps) {
     // Active locale from the NextIntlClientProvider (driven by the cookie).
     const current = resolveLocale(useLocale());
     const router = useRouter();
@@ -80,9 +99,24 @@ export function LocaleSwitcher({ className }: LocaleSwitcherProps) {
         // Coerce to a supported locale before persisting so a tampered option
         // can never write a cookie pointing the request-config `import()` at a
         // missing catalog (defence in depth — `OPTIONS` is already closed).
-        persistLocale(resolveLocale(next));
-        startTransition(() => {
-            // Server components (incl. the whole app tree) re-read the cookie.
+        const locale = resolveLocale(next);
+        if (!onLocaleChange) {
+            persistLocale(locale);
+            startTransition(() => {
+                // Server components (incl. the whole app tree) re-read the cookie.
+                router.refresh();
+            });
+            return;
+        }
+        // An async transition, so `pending` holds through the host's write
+        // too and a second tap cannot race the first one's record.
+        startTransition(async () => {
+            try {
+                await onLocaleChange(locale);
+            } catch {
+                return;
+            }
+            persistLocale(locale);
             router.refresh();
         });
     };
