@@ -33,6 +33,7 @@ const LOCAL_RULES = [
     'require-agent-attribution',
     'require-mcp-tool-authorization',
     'no-raw-prompt-logging',
+    'no-router-push-in-row-click',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

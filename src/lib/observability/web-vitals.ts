@@ -21,6 +21,7 @@
  */
 
 import { metrics } from '@opentelemetry/api';
+import { NAV_PUSH_RETRY_METRIC } from './client-telemetry';
 import { log } from './logger';
 
 const METER_NAME = 'inflect-web-vitals';
@@ -70,6 +71,15 @@ const KNOWN_VITALS: ReadonlySet<string> = new Set([
     'Next.js-hydration',
     'Next.js-route-change-to-render',
     'Next.js-render',
+    // THIS APP'S OWN metric, and the first one here that is not a browser or
+    // framework measurement: one sample per row-click `router.push` that the
+    // client router dropped during hydration and `useGuardedPush` re-issued
+    // (#3099). Not a navigation-latency metric and not the measurement the
+    // docblock above says is missing — it is a FAILURE COUNT, which is the
+    // number nobody had: #3099's defect was only ever visible as an E2E flake.
+    // The name is imported, not retyped, so the producer and this allowlist
+    // cannot drift into silent 400s.
+    NAV_PUSH_RETRY_METRIC,
 ]);
 
 export function isKnownVital(name: string): boolean {

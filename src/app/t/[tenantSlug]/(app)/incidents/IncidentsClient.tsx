@@ -2,6 +2,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useRouter } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
@@ -127,6 +128,7 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
         [t, tGroup],
     );
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const tenantHref = useTenantHref();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
 
@@ -240,8 +242,8 @@ function IncidentsPageInner({ initialIncidents, tenantSlug, canManage }: Inciden
     const getIncidentRowId = useCallback((row: IncidentRow) => row.id, []);
     const handleIncidentRowClick = useCallback(
         (row: { original: IncidentRow }) =>
-            router.push(tenantHref(`/incidents/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/incidents/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
 
     return (
