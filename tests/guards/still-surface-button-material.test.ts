@@ -600,8 +600,14 @@ describe('Still Surface — the emitted classes exist in the stylesheet (#3084)'
         };
         walk(path.join(ROOT, 'src'));
         // A separator no candidate can span, so a class cannot be assembled
-        // out of the tail of one file and the head of the next.
-        return parts.join('\n \n');
+        // out of the tail of one file and the head of the next. `\0` is the
+        // ESCAPE for the same byte that used to sit here raw — raw, it made
+        // this 32 KB file binary to POSIX tooling, so a `grep` of it printed
+        // zero matches instead of an error (#3161). Keep the NUL: `'\n\n'`
+        // happens to behave identically, because PART_OF_CANDIDATE already
+        // excludes `\n`, but dropping it would remove a belt and leave the
+        // sentence above describing code that no longer exists.
+        return parts.join('\n\0\n');
     })();
 
     /**
