@@ -333,7 +333,7 @@ describe('override freshness — every override is inside the detector', () => {
         });
 
         it('a duplicated pin is examined once, under its top-level key', () => {
-            // `brace-expansion ^5.0.9` is written three times. Reporting
+            // `brace-expansion ^5.0.12` is written three times. Reporting
             // it three times would train people to skim the weekly
             // report, and labelling it by whichever parent enumerated
             // first would make the report unstable under reordering.
@@ -341,7 +341,7 @@ describe('override freshness — every override is inside the detector', () => {
             const ids = population.map((o) => `${o.name}|${o.spec}`);
             expect(ids).toEqual([...new Set(ids)]);
             expect(population.find((o) => o.name === 'brace-expansion')?.key).toBe(
-                'brace-expansion@>=3.0.0 <=5.0.6',
+                'brace-expansion@>=3.0.0 <5.0.12',
             );
         });
     });
