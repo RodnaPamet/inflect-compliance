@@ -102,7 +102,26 @@ on:
   #
   # ── SELECTING REQUIRED STATUS CHECKS: what must NEVER be required ──
   # The required set is `Lint` · `Typecheck` · `Test` (the summary job,
-  # not `Test (shard N/4)`) · `Build` · `Security`. Two exclusions are
+  # not `Test (shard N/4)`) · `Build` · `Security` · `Ratchets`.
+  #
+  # `Ratchets` was added 2026-10-06 (#3196). It had been missing since the
+  # set was first selected, and the consequence was that a PR whose
+  # architectural guards failed still merged the moment the other five went
+  # green, with nothing recording the red. Observed on #3195, where
+  # `overrides-effective` failed for an `overrides` entry carrying no
+  # `tests/guards/override-registry.json` entry while all five required
+  # checks were green — caught only because a watcher read every check by
+  # name rather than the required set.
+  #
+  # Before adding it, BOTH hazards this section exists to prevent were
+  # checked rather than assumed, against the `merge_group` candidate runs for
+  # #3188, #3192 and #3195: the `ratchets` job carries no `if:` and no queue
+  # skip, so it cannot leave its context pending forever (which is what would
+  # hang every merge), and in those runs it reports `success` rather than
+  # `skipped`, so requiring it gates on something real. Any future addition
+  # to the required set owes the same two checks.
+  #
+  # Two exclusions are
   # not merely "buys nothing" — they would HANG every merge in the repo:
   #
   #   • `Analyze (<language>)` — GitHub-MANAGED code scanning, run from
