@@ -369,14 +369,24 @@ const jsdomProject = {
             '<rootDir>/tests/rendered/style-mock.ts',
         '^react-resizable/css/styles\\.css$':
             '<rootDir>/tests/rendered/style-mock.ts',
-        // Pass-through stub for render tests that transitively touch the
-        // Tooltip primitive through Button / Switch / StatusBadge (all of
-        // which import it via `./tooltip`). Radix Tooltip requires a
-        // TooltipProvider in the tree and emits portalised content — the
-        // stub keeps those tests decoupled from that lifecycle. The
-        // dedicated tooltip test at `tests/rendered/tooltip.test.tsx`
-        // imports via `@/components/ui/tooltip` which is resolved by the
-        // generic `@/` mapper above and bypasses this stub.
+        // DELEGATE, not a pass-through stub (#3163). 18 files under
+        // `src/components/ui/` reach the Tooltip primitive by this relative
+        // spelling — Button / Switch / StatusBadge / CopyText and the rest —
+        // and `src/components/ui/tooltip.tsx` does not self-provide, so Radix
+        // throws `` `Tooltip` must be used within `TooltipProvider` ``
+        // wherever a suite mounts none. Of 354 jsdom suites only 67 import
+        // `TooltipProvider`, which is what this mapping is load-bearing for.
+        //
+        // So `tooltip-mock.tsx` renders the REAL primitive wrapped in a
+        // provider it supplies itself; it is NOT a `<>{children}</>` stub any
+        // more. Until #3163 it was, and that made tooltip behaviour
+        // unobservable from every page test whose component spelled the
+        // import relatively — read that file's docblock before changing
+        // either line below, including why its own import must stay `@/`.
+        //
+        // `tests/rendered/tooltip.test.tsx` imports via
+        // `@/components/ui/tooltip`, resolved by the generic `@/` mapper
+        // above, so it reaches the primitive without passing through here.
         '^\\.\\./tooltip$': '<rootDir>/tests/rendered/tooltip-mock.tsx',
         '^\\./tooltip$': '<rootDir>/tests/rendered/tooltip-mock.tsx',
         // Same problem with react-markdown directly.

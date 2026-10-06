@@ -2,13 +2,20 @@
  * The mode ladder for AGENT-DRIVEN WRITES TO AN EXTERNAL SYSTEM, per connection.
  *
  * Slice one of #2861, and deliberately the CONTROL rather than the capability.
- * There is no external write path in this build at all: every tool
- * `resolveExternalReadTools` hands the funnel is an `McpReadTool`. So nothing
- * here gates anything yet — which is the point. #2241's lesson, written into
- * `src/lib/identity/write-ladder.ts`, is what a rung costs when it arrives
+ * WHEN THIS FILE LANDED there was no external write path in the build at all —
+ * every tool `resolveExternalReadTools` handed the funnel was an `McpReadTool`,
+ * so nothing here gated anything, which was the point. #2241's lesson, written
+ * into `src/lib/identity/write-ladder.ts`, is what a rung costs when it arrives
  * after the authority it is supposed to govern and turns out to enforce
  * nothing. Landing the ladder first means the write path cannot be born
  * ungated: it has to ask, and the default answer is DISABLED.
+ *
+ * That ordering held. The write path arrived afterwards and had to ask: the
+ * connection gate (#2976), the dry run (#2983), the proposal arm (#2999/#3002)
+ * and the unattended arm (#3147) each read a rung this file already defined. So
+ * the paragraph above is HISTORY rather than a description of today — kept
+ * because it is the argument for the sequence, not because the build still has
+ * no writes. What governs now is the ceiling below and the dwell at the bottom.
  *
  * ── WHY FOUR RUNGS AND NOT THREE ────────────────────────────────────────────
  *
@@ -73,74 +80,137 @@ export const MODE_MIN_DAYS = 7;
  * `src/lib/identity/write-ladder.ts` — including the reason it is a constant:
  * raising it must be a diff somebody reviews, not a row somebody edits.
  *
- * `DRY_RUN` today, because that is the honest ceiling. There is no external
- * write DISPATCH in this build: nothing reads this rung to decide whether to
- * send, so `PROPOSE_ONLY` and `AUTOMATIC` would name authorities that cannot be
+ * ── RAISING IT MOVES NO CONNECTION. READ THIS BEFORE READING THE DIFF ──────
+ *
+ * This is the sentence every raise of this constant has needed and it is put
+ * first because a reader of such a diff will otherwise conclude that unattended
+ * writes just turned on. THEY DID NOT. This value is a CEILING, not a setting:
+ * every connection stays at whatever rung an operator set it to, which defaults
+ * to `DISABLED`, and no migration, backfill or default moves with the ceiling.
+ * What changes is only that the rung at the top stops being refused for naming
+ * an authority this build cannot exercise. A tenant still has to climb to it,
+ * one rung at a time, serving the dwell and producing the evidence below.
+ *
+ * ── THE CEILING'S HISTORY, KEPT RATHER THAN DELETED ─────────────────────────
+ *
+ * `DRY_RUN` at slice one, because that was the honest ceiling: there was no
+ * external write DISPATCH, nothing read the rung to decide whether to send, so
+ * `PROPOSE_ONLY` and `AUTOMATIC` would have named authorities that could not be
  * exercised. Publishing a rung a tenant can select and the product then ignores
  * is precisely the shape #2241 deleted from the identity ladder — a rung that
- * looks like a control and enforces nothing.
+ * looks like a control and enforces nothing. Each raise since has been the same
+ * argument, applied to one more rung that had become real:
  *
- * It also composes correctly with the dwell rather than around it, and raising
- * the ceiling does NOT move anything: every connection stays at whatever rung an
- * operator set it to, which defaults to `DISABLED`. What changes is only that
- * `PROPOSE_ONLY` stops being refused for naming an authority this build cannot
- * exercise.
+ *   `DRY_RUN` → `PROPOSE_ONLY`   2026-10-01, step 6 of #2861
+ *   `PROPOSE_ONLY` → `AUTOMATIC` 2026-10-06, this diff, closing #2861
  *
- * ── RAISED TO `PROPOSE_ONLY` (2026-10-01), BECAUSE THE RUNG NOW EXISTS ──────
+ * ── RAISED TO `AUTOMATIC` (2026-10-06), AND WHY THAT IS LEGITIMATE NOW ──────
  *
- * The three rungs at or below this ceiling are all implemented end to end:
+ * Every rung on the ladder is now implemented end to end:
  *
  *   DISABLED      the connection gate refuses the call outright (#2976)
  *   DRY_RUN       `recordIntent` journals what WOULD change, sends nothing (#2983)
  *   PROPOSE_ONLY  the write becomes an `AgentProposal` a human approves (#2999),
  *                 and `external-write-dispatch` then re-reads prior state,
  *                 refuses on drift, and sends it (#3002)
+ *   AUTOMATIC     `dispatchWrite` opens a journal row through
+ *                 `openAutomaticExternalWrite`, stamps the Art 12 decision
+ *                 `AUTONOMOUS`, and the dispatch pass sends it (#3147)
  *
- * ── `AUTOMATIC` IS NOW IMPLEMENTED AND STILL ABOVE THE CEILING ─────────────
+ * `AUTOMATIC` was held above the ceiling for a DESIGN reason and then for a
+ * deliberate one, and both are now discharged. The design reason: a pre-approved
+ * write must be able to BOUND an argument, not only fix it, and
+ * `ExternalToolParameterSet` held exact values only. #3051 settled it in two
+ * halves, and the halves are different in kind because a TARGET and a VALUE need
+ * different sorts of bound:
  *
- * It used to be refused for want of a DESIGN decision: a pre-approved write
- * must be able to BOUND an argument, not only fix it, and
- * `ExternalToolParameterSet` held exact values only. #3051 settled that —
- * step 5b typed the VALUE fields and step 5c bounded the TARGET by a
- * code-defined population — and the arm is built: `dispatchWrite` opens a
- * journal row at `AUTOMATIC` through `openAutomaticExternalWrite`, stamps the
- * Art 12 decision `AUTONOMOUS`, and the dispatch pass sends it.
+ *   · VALUES are bounded by a PREDICATE two humans approved — `ValueConstraint`
+ *     in `src/lib/integrations/parameter-constraints.ts` (regex | enum | integer
+ *     | length), checked for width at save time by `refusalForConstraint` and
+ *     against the supplied argument at DISPATCH time by `refusalForValue`
+ *     (#3122, step 5b). The dispatch-time half is wired at the one outbound
+ *     seam — `external-tools.ts` runs it per open field for EVERY rung, before
+ *     `dispatchWrite` is called at all — and re-run by the arm at send time.
+ *   · the TARGET is bounded by DATA, not by a predicate, because approving
+ *     `^[0-9]+$` on an employee number approves every employee and no reviewer
+ *     sees that. `resolveTargetPopulation` resolves a code-defined population
+ *     from this tenant's own rows AT DISPATCH, so an `AUTOMATIC` write cannot
+ *     aim at an arbitrary row and a new population needs a deploy rather than a
+ *     console action (#3131, step 5c).
  *
- * SO THE CEILING IS NO LONGER "the rung is unimplemented". It is a deliberate
- * hold at the last rung before unattended writes, and raising it is a decision
- * somebody makes rather than a formality the code is waiting on. Two things
- * enforce it now, where before there was one:
+ * And the authority that writes those bounds is itself four-eyed: a template
+ * edit needs one counted signature from somebody OTHER than the proposer, with
+ * the count performed by the promotion TRIGGER rather than by the application
+ * (`20261002130000_template_edit_needs_two_humans`, #3122), against the exact
+ * `pendingHash` that was signed. `AUTOMATIC` cannot bypass it — the arm refuses
+ * a call with no parameter set in force, and a set's open fields can only have
+ * come into force through that trigger.
  *
- *   · `setExternalWriteMode` refuses to STORE a rung above it — the boundary
- *     that was already here;
+ * The deliberate reason — a hold at the last rung before unattended writes — is
+ * what this diff spends. It was never "the code is waiting on something"; it was
+ * a decision reserved for a human, and the owner made it.
+ *
+ * ── WHAT A TENANT MUST NOW SATISFY TO REACH THE TOP RUNG ────────────────────
+ *
+ * The ceiling stops answering, so the LADDER decides, and for
+ * `PROPOSE_ONLY → AUTOMATIC` it asks for two things from `refusalForMove`:
+ *
+ *   · `MODE_MIN_DAYS` (7) days held at `PROPOSE_ONLY`, measured from
+ *     `modeSince`, which any narrowing restarts; and
+ *   · `MODE_MIN_EVIDENCE.PROPOSE_ONLY` (1) APPROVED PROPOSAL, counted by
+ *     `countEvidenceForRung` as an `ExternalWriteJournal` row at
+ *     `mode: 'PROPOSE_ONLY'` — a row only `openApprovedExternalWrite` writes,
+ *     and only after the full `requiredApprovals` count of distinct humans has
+ *     signed.
+ *
+ * That is strictly harder than the step below it rather than weaker, which is
+ * the property #2241 says to check: `DRY_RUN`'s evidence is a journal row the
+ * dry run writes BY ITSELF, while `PROPOSE_ONLY`'s requires a human to have
+ * approved a real external write. The rung below `AUTOMATIC` must demonstrate
+ * that humans actually reviewed external writes, not merely that the connection
+ * sat where they could have.
+ *
+ * ── THE CLAMP STILL EXISTS, AND IS NOW A NO-OP BY VALUE ─────────────────────
+ *
+ * Both enforcement points stay, and neither is dead code:
+ *
+ *   · `setExternalWriteMode` refuses to STORE a rung above the clamp it is
+ *     PASSED. The parameter is required, so a narrower clamp — an incident
+ *     response, a rollback — still refuses, and the admin route passes this
+ *     constant.
  *   · `automaticClampRefusal` refuses to DISPATCH at `AUTOMATIC` while this
- *     constant is below it, consulted by the arm AND by the dispatch pass. That
- *     half was missing: `dispatchWrite` never read this constant at all, so a
- *     row already holding the rung when the ceiling was lowered — by a
- *     rollback, or by an incident narrowing the build rather than every tenant
- *     — would have been sent.
+ *     constant is below it, consulted by the arm AND by the dispatch pass. It
+ *     returns null today and MUST NOT BE DELETED: it defends a stored row that
+ *     outlives a LOWERED ceiling, which is the opposite case to this diff. A
+ *     connection already at `AUTOMATIC` when the ceiling comes down would
+ *     otherwise still be sent, because `dispatchWrite` once read no ceiling at
+ *     all.
  *
- * And `tests/guards/external-write-clamp-is-propose-only.test.ts` pins the
- * literal, so raising it cannot land unreviewed. That guard is SUPPOSED to fail
- * on the diff that raises it.
+ * What a ceiling at the TOP of the ladder gives up is the storage-time refusal:
+ * `isAboveClamp(r, EXTERNAL_MAX_MODE)` is false for every rung, so that
+ * comparison is now trivially false everywhere and proves nothing by passing.
+ * `tests/guards/external-write-clamp-is-pinned.test.ts` states that inversion
+ * instead of quietly inheriting it, and keeps a discriminating pin at a lowered
+ * clamp so the comparison is still known to work. It also still pins the
+ * literal: a LOWERING is now the reviewed act, and so is any rung added above
+ * `AUTOMATIC`.
  *
- * ── WHAT THIS MAKES LIVE FOR THE FIRST TIME ────────────────────────────────
+ * ── WHAT THE PREVIOUS RAISE MADE LIVE, AND WHAT THIS ONE DOES ──────────────
  *
- * The evidence gate. `getExternalWritePolicy` consults `isAboveClamp` BEFORE
- * `refusalForMove`, so with the ceiling at `DRY_RUN` every wider rung returned
- * the ceiling message and `refusalForMove` was never reached for it — the dwell
- * and the evidence requirement had never once been exercised. From here,
- * `DRY_RUN → PROPOSE_ONLY` is decided by the ladder: seven days AND at least one
- * recorded intent.
+ * `getExternalWritePolicy` consults `isAboveClamp` BEFORE `refusalForMove`, so
+ * every rung above the ceiling returned the ceiling message and the dwell was
+ * never reached for it. Step 6 exposed `DRY_RUN → PROPOSE_ONLY` that way; this
+ * diff exposes `PROPOSE_ONLY → AUTOMATIC`, so the approved-proposal count above
+ * becomes a number an operator can actually be refused on for the first time.
  *
- * That gate only works because #2993 fixed what it counts. It had been counting
- * `IntegrationExecution` rows under an `automationKey` suffix nothing ever
- * wrote, so it returned 0 for every connection forever; it now counts the
- * `ExternalWriteJournal` rows `recordIntent` actually writes. Raising this
+ * Both of those only work because #2993 fixed what the gate counts. It had been
+ * counting `IntegrationExecution` rows under an `automationKey` suffix nothing
+ * ever wrote, so it returned 0 for every connection forever; it now counts the
+ * `ExternalWriteJournal` rows the subsystem actually writes. Raising this
  * constant before that fix would have refused every widen on a reason that was
  * not true.
  */
-export const EXTERNAL_MAX_MODE: ExternalWriteMode = 'PROPOSE_ONLY';
+export const EXTERNAL_MAX_MODE: ExternalWriteMode = 'AUTOMATIC';
 
 /*
  * `EXTERNAL_WRITE_AUTOMATION_SUFFIX` USED TO LIVE HERE. DO NOT BRING IT BACK.

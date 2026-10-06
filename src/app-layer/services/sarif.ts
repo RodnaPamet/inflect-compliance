@@ -235,10 +235,21 @@ export function parseSarif(input: unknown): ParsedSarif {
 
             // Fingerprint: prefer the tool's own (stable across re-scans),
             // else SHA-256 of the dedup tuple (ruleId, location, message).
+            //
+            // `\0` is the tuple delimiter — a byte no SARIF field can contain,
+            // so the parts cannot be re-cut a different way. It is written as
+            // the ESCAPE, not as a raw byte: a raw 0x00 makes this whole file
+            // binary to POSIX tooling (`grep` then reports zero matches rather
+            // than an error) and the guard at
+            // tests/guardrails/no-control-bytes-in-source.test.ts bans it.
+            // The escape is byte-identical, so the fingerprints ALREADY
+            // PERSISTED in ScannerFinding.fingerprint are unchanged — do not
+            // "simplify" this delimiter to a printable character, which would
+            // re-fingerprint every historical finding.
             const toolFp = toolFingerprint(res.fingerprints, res.partialFingerprints);
             const fingerprint = toolFp
-                ? sha256(`${ruleId} ${toolFp}`)
-                : sha256(`${ruleId} ${uri ?? ''} ${startLine ?? ''} ${messageText}`);
+                ? sha256(`${ruleId}\0${toolFp}`)
+                : sha256(`${ruleId}\0${uri ?? ''}\0${startLine ?? ''}\0${messageText}`);
 
             findings.push({
                 fingerprint,

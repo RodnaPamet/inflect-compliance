@@ -530,9 +530,9 @@
   "reason": "Generic guided-steps card (done flags, progress count, per-step CTA) with no next-intl import, so both its own strings ship as English. Both are removable without changing the shape."
  },
  "src/components/ui/checklist-gear-button.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Shared gear-popover checklist (click-to-order, drag-reorder, cmdk nav). Copy is clean — the one owned string is t('table.resetToDefaults') and `title` is a prop. One brand token is used as text."
+  "reason": "Shared gear-popover checklist (click-to-order, drag-reorder, cmdk nav). Copy is clean — the one owned string is t('table.resetToDefaults') and `title` is a prop. This entry's sole recorded coupling, \"One brand token is used as text\", had been STALE since #3102 replaced it with `text-content-brand` (:170); the three remaining `--brand-*` tokens are a background (:170), a border plus background (:182) and a ring (:243), all non-text and so outside `BRAND_AS_TEXT` by design. Promoted GENERIC by #3046 batch 4 with NO source edit — the file was already clean and only the record was wrong, which is exactly the price a stale entry carries: the design doc had flagged it, and it was still blocking two GENERIC files (`table/columns-dropdown.tsx` and `filter/edit-filters-button.tsx`) from the import-closed set."
  },
  "src/components/ui/checklist-order.ts": {
   "classification": "GENERIC",
@@ -580,9 +580,9 @@
   "reason": "Generic (chartType, config) dispatcher over three chart primitives with loading/empty/error envelopes. Its three lifecycle strings are hardcoded English rather than next-intl, and its head matter names the product twice. The dispatch shape itself carries no compliance vocabulary."
  },
  "src/components/ui/dashboard-widgets/DashboardGrid.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic react-grid-layout wrapper: its public contract is {id, position, size, enabled} plus a renderWidget callback and a layout diff, with a below-md stacked fallback. No copy, no storage, no domain imports. Coupling is comment-only and removable."
+  "reason": "Generic react-grid-layout wrapper: its public contract is {id, position, size, enabled} plus a renderWidget callback and a layout diff, with a below-md stacked fallback. No copy, no storage, no domain imports. The comment-only coupling was removed by #3046 batch 4 — \"the Inflect-flavoured contract\" (:7) now reads \"this contract\", and the `DashboardGridWidget` docblock no longer names `OrgDashboardWidgetDto` (:73), saying instead that a host's own persisted-widget DTO satisfies the shape structurally. The `Epic 41` references are repo-internal roadmap, not product vocabulary."
  },
  "src/components/ui/dashboard-widgets/DashboardWidget.tsx": {
   "classification": "GENERIC",
@@ -655,9 +655,9 @@
   "reason": "Forward-ref trigger button. `placeholder` is a prop with NO default string, so there is no copy default here; the only text it renders is `{children}` or `{placeholder}`. Edge styling rides `--ctrl-edge-*` custom properties, not `--brand-*`, and nothing uses a brand token as text. (Outside the five: :62 hardcodes `shadow-[0_0_0_3px_rgb(220_38_38_/_0.20)]` as a raw colour — a token nit, not a coupling: rule 4 covers a brand TOKEN used as TEXT, and this is the error halo on the `hasError` variant (the focus channel rides `--ctrl-edge-focus` at :54), so neither.)"
  },
  "src/components/ui/date-picker/types.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic type tiers (date primitives, preset shapes, calendar/picker props). One brand reference in a JSDoc is the only coupling — a one-line fix, same shape as filter/types.ts."
+  "reason": "Generic type tiers (date primitives, preset shapes, calendar/picker props). The one brand reference in a JSDoc — \"the Dub-originated presets renderer\" on the `Preset` base — was removed by #3046 batch 4; it now reads \"the upstream presets renderer this picker was adapted from\" and `requiresUpgrade` is described as that upstream's plan-gating flag rather than \"vendored SaaS cruft\". Mechanically clean before and after (measured `[]`), and the `Epic 58` header reference is repo-internal roadmap, not product vocabulary, on the same reading batch 3 applied to combobox's Epic 55/68. Highest-value promotion in batch 4: it was blocking four GENERIC files from the import-closed set (date-utils, presets, shared, and itself)."
  },
  "src/components/ui/date-picker/week-start.ts": {
   "classification": "GENERIC",
@@ -702,7 +702,7 @@
  "src/components/ui/file-upload.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The older Dub-lineage single-file upload primitive (distinct from FileDropzone). Generic in mechanism but carries an `evidence` preset in its prop union, a Dub brand reference, and five untranslated error sentences. No next-intl import."
+  "reason": "The older Dub-lineage single-file upload primitive (distinct from FileDropzone). Generic in mechanism but carries an `evidence` preset in its prop union, a Dub brand reference, and five untranslated error sentences. No next-intl import. Stays MIXED on those three. What changed in #3046 batch 4 is only the MECHANICAL reading: its `@/lib/resize-image` import stopped counting as a `domain-import` when that module joined `NEUTRAL_LIB`, which brings the detector into line with this entry — the import was never among the findings above, because a canvas cover-fit resizer with zero imports of its own carries no product vocabulary."
  },
  "src/components/ui/filter/edit-filters-button.tsx": {
   "classification": "GENERIC",
@@ -710,14 +710,14 @@
   "reason": "Thin wrapper over the shared <ChecklistGearButton>. Its one string is routed through next-intl (`title={t('table.editKpiCards')}`), imports are only `@/components/ui/checklist-gear-button` / `checklist-order` + next-intl + lucide. The comment's phrase \"the filter domain's icon\" is the UI sense of \"domain\", not compliance vocabulary."
  },
  "src/components/ui/filter/filter-context.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic URL-synced filter-state context — no copy, no storage key, no brand token, no domain import. Its only coupling is a compliance noun in the usage JSDoc. The `throw new Error(\"useFilters must be used within a <FilterProvider>\")` is a developer error, not UI copy, so I did not count it."
+  "reason": "Generic URL-synced filter-state context — no copy, no storage key, no brand token, no domain import. Its only coupling was one compliance noun in the usage JSDoc, `useFilterContext(controlFilterDefs, …)`, which #3046 batch 4 renamed to `itemFilterDefs`; that is the whole of the edit. The `throw new Error(\"useFilters must be used within a <FilterProvider>\")` is a developer error, not UI copy, so it was not counted then and is not now."
  },
  "src/components/ui/filter/filter-definitions.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The `createFilterDefs` / `createTypedFilterDefs` factories and the three URL codecs are entirely generic; the coupling is confined to compliance vocabulary in the JSDoc examples, which a second product would simply rewrite."
+  "reason": "The `createFilterDefs` / `createTypedFilterDefs` factories and the three URL codecs are entirely generic. The compliance vocabulary that confined the coupling to JSDoc examples was rewritten by #3046 batch 4: `createFilterDefs<Control>` became `createFilterDefs<Item>` with a colour option in place of a \"Technical\" category, `optionsFromArray([\"Technical\", \"Operational\", \"Compliance\"])` became a colour list, and the typed factory's example trades its `severity`/`Control` pair for `colour`/`Item`. No code changed and none needed to — the factories never knew what they were filtering."
  },
  "src/components/ui/filter/filter-examples.ts": {
   "classification": "MIXED",
@@ -727,7 +727,7 @@
  "src/components/ui/filter/filter-list.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Structurally a fully generic active-filter pill strip (operator toggle, value dropdown, range pill, remove). No brand-as-text, no storage key, no domain import, no domain vocabulary — but it is the single largest pocket of untranslated English in the slice, and it is the only MIXED file here whose coupling is copy alone. The `console.error` at :107-109 (\"Filter.List received an activeFilter without a corresponding filter\") is excluded from that count: it is a developer diagnostic, never rendered."
+  "reason": "Structurally a fully generic active-filter pill strip (operator toggle, value dropdown, range pill, remove). No brand-as-text, no storage key, no domain import, no domain vocabulary — but it is the single largest pocket of untranslated English in the slice, and it is the only MIXED file here whose coupling is copy alone. The `console.error` at :107-109 (\"Filter.List received an activeFilter without a corresponding filter\") is excluded from that count: it is a developer diagnostic, never rendered. The \"no domain import\" clause and the `domain-import` detector DISAGREED from #3098 until #3046 batch 4, over this file's one `@/lib/text-utils` import; batch 4 settled it this entry's way by measuring that module a zero-import leaf and adding it to `NEUTRAL_LIB`. Still MIXED, on the copy."
  },
  "src/components/ui/filter/filter-range-panel.tsx": {
   "classification": "GENERIC",
@@ -770,9 +770,9 @@
   "reason": "The filter type system — generic prop shapes plus the pure `normalizeActiveFilter` / `parseRangeToken` / `encodeRangeToken`. The single stale brand reference at :1 was the recorded coupling and #3046 removed it. #3046 also changed \"min/max controls\" to \"min/max inputs\" at :38, which the earlier audit had judged clean as the widget sense and is: a downstream line scan cannot tell it from the GRC noun, and the fix cost nothing. The `(e.g. picker: \"ACME Inc. — admin@acme.com\", pill: \"ACME Inc.\")` JSDoc at :80 is a placeholder company, not one of the named brands, so not reported."
  },
  "src/components/ui/filter/use-filter-card-visibility.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The hook's logic (order reconcile, toggle, reset, reorder over caller-supplied cards) is generic and its imports are all `@/components/ui/*`. But its documentation block is written almost entirely in this product's vocabulary, and it documents a brand-prefixed storage key that bypasses the `uiStorageKey` seam. Note the key is a caller-supplied PARAMETER — this file never constructs it — so the coupling here is the documented CONVENTION, not a key this module builds: `useLocalStorage<string[]>(storageKey, defaults)` at line 178 takes an identifier, so `RAW_STORAGE_HOOK` never fires and `codeOf` masks the docblock where the literal sits — mechanically this file is clean. Nine pages hand-spell the key themselves, from `PoliciesClient.tsx:510` to `AgentsClient.tsx:210`, all outside `SHARED_UI_ROOTS` and so outside this population; `uiStorageKey('filter-vis', entity)` yields that same string, since `UI_STORAGE_PREFIX` is `inflect`, so the fix is one seam call per caller. The vocabulary is likewise docblock prose only — lines 3-48, policies/evidence/tasks/vendors/risks, #1886 and #1905, `kpi-sparkline-canonical` — and not code."
+  "reason": "The hook's logic (order reconcile, toggle, reset, reorder over caller-supplied cards) is generic and its imports are all `@/components/ui/*`. Both recorded couplings were docblock prose and both were rewritten by #3046 batch 4. The brand-prefixed storage key is gone from the header example and from the `storageKey` prop doc, replaced by the seam call `uiStorageKey('filter-vis', entity)` — which is strictly better than neutral wording, because the old example taught every new page to hand-spell a prefixed literal and is why nine pages do. The product vocabulary (the named list pages, two issue numbers, a guard name) is generalised while the three lessons the block carries are kept: build the key through the seam, the gear edits KPI cards, and there is no `kpisToCards` factory because the callers use three different label mechanisms. The key remains a caller-supplied PARAMETER this module never constructs, so `RAW_STORAGE_HOOK` never fired and the file was mechanically clean throughout. Fixing the nine callers is a per-caller seam call and is not this file's work."
  },
  "src/components/ui/filter/use-filter-presets.ts": {
   "classification": "MIXED",
@@ -2885,9 +2885,9 @@
   "reason": "Footer pagination. Every rendered string is next-intl (`t(\"table.viewing\")`, `t(\"table.of\")`, `t(\"table.items\")`, `t(\"table.previous\")`, `t(\"table.next\")` plus all three aria labels at :97/:124/:132). `resourceName` has no default — it falls through to `t(\"table.items\")` at :112, so unlike pagination-utils.ts there is no hardcoded fallback. The English in the header comment is documentation of the rendered output, not copy: the `Viewing X–Y of Z items` sentence at :6 and the `resourceName` usage example at :15, with the same sentence recurring at :100 — an inline JSX comment beside the block it describes, not header prose. Nothing mechanical trips either: the imports are `next-intl`, `next/link`, `./table-utils` and `./pagination-utils` (:23-32), none from `src/app-layer` or a domain `src/lib`; no storage key; and the colours are background, border and content tokens only, the `before:` scroll-fade gradient at :83-91 included, so no brand token rides a text channel. Vendorable as-is."
  },
  "src/components/ui/table/pagination-utils.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure pagination arithmetic (getPageCount/getPageRange/getPaginationState/clampPage) — all generic and React-free. The exception is `formatPageRange`, which builds display text from hardcoded English: a copy-parameter default of \"items\" and the literal connective \" of \" inside the template. Note for the follow-up: this function has ZERO callers in src (grep: only its own definition at :129 plus `tests/unit/data-table.test.ts`), so the copy is unreachable from the product today and deleting the function would remove the coupling outright."
+  "reason": "Pure pagination arithmetic (getPageCount/getPageRange/getPaginationState/clampPage) — all generic and React-free. The one exception, `formatPageRange`, was DELETED by #3046 batch 4, taking the coupling with it: it built display text from hardcoded English (a copy-parameter default of \"items\" and the literal connective \" of \" in the template) and had ZERO callers in src. `pagination-controls.tsx:102-112` composes the same sentence from `common.table.{viewing,of,items}` through next-intl, so the function was a second, untranslated implementation of a string the product already renders correctly. `PaginationRange` is kept — it is `PaginationState.range`. Its four unit cases went with it, and the docblock left behind records that no test now covers the live i18n path."
  },
  "src/components/ui/table/selection-toolbar.tsx": {
   "classification": "MIXED",

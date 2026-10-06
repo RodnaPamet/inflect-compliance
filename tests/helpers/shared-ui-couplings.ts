@@ -65,10 +65,51 @@ export type CouplingKind = 'storage-key' | 'brand-as-text' | 'domain-import';
  * `SHARED_UI_ROOTS` — so the allowance is dormant, not false. An unused
  * allowance for a real module is a judgement waiting to be used; a name for
  * nothing is a judgement nobody ever made.
+ *
+ * ─── Widened by two more, and the AUDIT had already said so ──────────
+ *
+ * #3046 batch 4 adds `resize-image` and `text-utils`. The measurement is the
+ * same one batch 2 ran, with the same two numbers: both resolve, and both have
+ * ZERO import statements OF ANY KIND — not merely zero `@/` imports, so neither
+ * can pull anything in behind its allowance. (The counting pattern was run as a
+ * discriminating pair, not just on the candidates: `cn.ts` 2, `format-date.ts`
+ * 1, `resize-image.ts` 0, `text-utils.ts` 0. A pattern that matched nothing
+ * would have reported both candidates as leaves too.)
+ *
+ * What makes these two different from a judgement call is that the #3047 audit
+ * had ALREADY ruled on them, in the opposite direction to the detector:
+ *
+ *   `filter/filter-list.tsx` — the only importer of `@/lib/text-utils` — is
+ *     recorded "No brand-as-text, no storage key, **no domain import**, no
+ *     domain vocabulary … the only MIXED file here whose coupling is copy
+ *     alone". The detector was counting a `domain-import` on a file whose
+ *     recorded finding says there is none.
+ *   `file-upload.tsx` — the only importer of `@/lib/resize-image` — is
+ *     recorded as coupled by "an `evidence` preset in its prop union, a Dub
+ *     brand reference, and five untranslated error sentences". The import is
+ *     not among its findings either.
+ *
+ * So this is the detector being brought into line with a reading a human
+ * already did, not the bar moving. Both modules are first-party replacements
+ * for the `Dub utils` shim (their own docstrings say so) — a canvas
+ * cover-fit/centre-crop resizer and `truncate`/`truncateGlyph`/`pluralize`.
+ * Replacing the brand's utility shim is the WHOLE POINT of #3046, so a shared
+ * component importing one of those replacements is the decoupled state, not a
+ * residual coupling.
+ *
+ * NOT added, and measured rather than assumed: `@/components/theme`, which
+ * `layout/user-menu.tsx` imports for `ThemeToggle`. It is tempting because
+ * `src/components/theme/ThemeProvider.tsx` is one of the four non-root files
+ * `docs/shared-ui-package-design.md` admits alongside the package — but the
+ * directory holds TWO files and the admitted list holds one. Carving out the
+ * namespace would assert `ThemeToggle` neutral, which no pass has looked at;
+ * the design doc reserves it for step 4. Narrower than `SHARED_COMPONENT_DIRS`
+ * allows, so it stays coupled.
  */
 export const NEUTRAL_LIB = new Set([
     'cn', 'ui-storage', 'hooks', 'design', 'theme-constants',
     'format-date', 'kpi-trend', 'number-format', 'locale-constants',
+    'resize-image', 'text-utils',
 ]);
 
 const RAW_STORAGE_HOOK = /use(?:Local|Session)Storage(?:<[^>]*>)?\(\s*[`'"]/;

@@ -816,7 +816,6 @@ import {
   getPageRange,
   getPaginationState,
   clampPage,
-  formatPageRange,
   DEFAULT_PAGE_SIZE,
   PAGE_SIZE_OPTIONS,
 } from '@/components/ui/table/pagination-utils';
@@ -960,25 +959,18 @@ describe('clampPage', () => {
   });
 });
 
-describe('formatPageRange', () => {
-  it('formats basic range', () => {
-    expect(formatPageRange({ from: 1, to: 25, total: 100 })).toBe('1–25 of 100 items');
-  });
-
-  it('formats with custom resource name', () => {
-    const name = (plural: boolean) => plural ? 'controls' : 'control';
-    expect(formatPageRange({ from: 1, to: 25, total: 100 }, name)).toBe('1–25 of 100 controls');
-  });
-
-  it('formats singular resource name', () => {
-    const name = (plural: boolean) => plural ? 'controls' : 'control';
-    expect(formatPageRange({ from: 1, to: 1, total: 1 }, name)).toBe('1–1 of 1 control');
-  });
-
-  it('returns empty string for empty range', () => {
-    expect(formatPageRange({ from: 0, to: 0, total: 0 })).toBe('');
-  });
-});
+// `formatPageRange` and its four cases were deleted with the function by #3046
+// batch 4 — it had zero callers in `src/` and built display text from hardcoded
+// English, which is the coupling. The sentence it formatted is rendered instead
+// by `pagination-controls.tsx:102-112`, composed from the next-intl keys
+// `common.table.{viewing,of,items}` (all three present in `messages/en.json`).
+//
+// MEASURED, not assumed: no test in this repo renders that sentence — the four
+// cases removed here were the only assertions on the string's shape anywhere,
+// and deleting them lowers coverage of the FORMAT while removing the only
+// untranslated implementation of it. Covering the live path needs a rendered
+// test over `<PaginationControls>`, which is a different file's gap and is left
+// recorded rather than silently absorbed into this diff.
 
 describe('Pagination constants', () => {
   it('DEFAULT_PAGE_SIZE is a reasonable number', () => {

@@ -109,7 +109,24 @@ const CEILINGS: Record<CouplingKind, { max: number; allowance: number }> = {
     // the converse (the count fell while the GENERIC set barely moved); both
     // directions are independent, and expecting them to travel together has now
     // been wrong twice.
-    'domain-import': { max: 36, allowance: 1 },
+    //
+    // Re-seated 36 -> 34 by #3046 batch 4. `NEUTRAL_LIB` gained `resize-image`
+    // and `text-utils`, so the two files whose ONLY non-neutral `@/lib` edge was
+    // one of them stop tripping the kind: `ui/file-upload.tsx` and
+    // `ui/filter/filter-list.tsx`. Both modules have zero import statements of
+    // any kind (so neither can pull a domain module in behind the allowance) and
+    // both are the repo's first-party replacements for the `Dub utils` shim —
+    // read the full argument, including the two it deliberately did NOT add, in
+    // `NEUTRAL_LIB`'s own docstring.
+    //
+    // 34 is not a floor: the cheapest remaining real inversion is MEASURED and
+    // recorded rather than taken. `ui/TruncationBanner.tsx` imports
+    // `@/lib/list-backfill-cap` for ONE thing — the default of its existing
+    // `cap?: number` prop — so making `cap` required inverts the edge with no
+    // new mechanism. Its price is 10 call sites under `src/app/t/[tenantSlug]`
+    // that pass `truncated` and nothing else, which is why it is a batch of its
+    // own rather than a rider on this one.
+    'domain-import': { max: 34, allowance: 1 },
     // Re-seated 16 -> 10 by #3096, which replaced the brand fill token with
     // `text-content-brand` in the six files where it painted real rendered
     // TEXT and so owed WCAG 1.4.3's 4.5:1 (badge, checklist-gear-button,

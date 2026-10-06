@@ -109,9 +109,9 @@ export type DateRange = {
 };
 
 /**
- * Legacy base — present for back-compat with the Dub-originated
- * presets renderer. `requiresUpgrade` is vendored SaaS cruft; ignore
- * it in product code.
+ * Legacy base — present for back-compat with the upstream presets
+ * renderer this picker was adapted from. `requiresUpgrade` is a
+ * plan-gating flag from that upstream; ignore it in product code.
  */
 export interface Preset extends PresetMeta {
     requiresUpgrade?: boolean;
