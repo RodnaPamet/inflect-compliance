@@ -196,7 +196,7 @@ const REPO_OWNED_CHILD = '.cache';
  * and it never lets two known pieces on either side of an unknown one fuse
  * into a single segment.
  */
-const OPAQUE = ' ';
+const OPAQUE = '\0';
 
 /**
  * The calls whose arguments compose, or carry, one filesystem path.

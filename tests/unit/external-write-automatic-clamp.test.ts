@@ -15,14 +15,18 @@
  *
  * ═══ WHY THE MODULE IS RE-LOADED RATHER THAN THE ASSERTION GUARDED ═══
  *
- * The constant is `PROPOSE_ONLY` on this branch, so "the arm runs when the
- * ceiling permits it" is a statement about a path the real clamp refuses. An
- * `if (EXTERNAL_MAX_MODE === 'AUTOMATIC')` around that assertion would be a
- * vacuous pass — an empty selection is a PASS — so the selection is made
- * non-empty by hand: the ladder module is mocked and the usecase re-required
- * against it. That is the technique
- * `tests/guards/identity-write-ceiling-matches-the-pass.test.ts` uses and
- * explains, and it is used here for the same reason.
+ * The constant is `AUTOMATIC` since 2026-10-06, so it is now the REFUSING half
+ * that no live configuration exercises: `automaticClampRefusal()` returns null
+ * against the real ceiling, and every refusal below is a statement about a
+ * ceiling this build does not currently hold. That does not make the refusals
+ * hypothetical — a lowered ceiling is a rollback or an incident narrowing the
+ * build, which is precisely when the check has to work — but it does mean an
+ * `if (EXTERNAL_MAX_MODE !== 'AUTOMATIC')` around them would be a vacuous pass,
+ * an empty selection being a PASS. So the selection is made non-empty by hand:
+ * the ladder module is mocked and the usecase re-required against it. That is
+ * the technique `tests/guards/identity-write-ceiling-matches-the-pass.test.ts`
+ * uses and explains, and it is used here for the same reason — only with the
+ * polarity swapped by the raise.
  *
  * Both directions matter and only one of them is obvious. The REFUSING
  * direction proves the check exists. The PERMITTING direction proves the check
@@ -56,13 +60,6 @@ function armWithCeiling(ceiling: ExternalWriteMode): ArmModule {
 }
 
 describe('the clamp REFUSES the rung at dispatch while the ceiling is below it', () => {
-    it('refuses at the shipped ceiling, which is the live configuration', () => {
-        // No mock: this is the branch as it ships. The refusal is the state a
-        // reader should expect to find in production.
-        const { automaticClampRefusal } = require('@/app-layer/usecases/external-write-automatic') as ArmModule;
-        expect(automaticClampRefusal()).toMatch(/external_write_automatic_above_ceiling/);
-    });
-
     it.each(['DISABLED', 'DRY_RUN', 'PROPOSE_ONLY'] as const)(
         'refuses with a ceiling of %s, and names it',
         (ceiling) => {
@@ -87,6 +84,21 @@ describe('the clamp REFUSES the rung at dispatch while the ceiling is below it',
 });
 
 describe('the clamp PERMITS the rung once the ceiling reaches it', () => {
+    it('permits at the shipped ceiling, which is the live configuration', () => {
+        // No mock: this is the branch as it ships, and the assertion INVERTED on
+        // 2026-10-06 when `EXTERNAL_MAX_MODE` was raised to `AUTOMATIC` (#2861).
+        // It used to read `toMatch(/external_write_automatic_above_ceiling/)`.
+        //
+        // The refusal is no longer the state a reader should expect to find in
+        // production — the rung is honoured — and that is why this assertion
+        // belongs in this describe rather than being deleted: it is the only one
+        // in the file reading the REAL constant, so it is the only thing that
+        // would notice the live configuration and the mocked expectations
+        // drifting apart.
+        const { automaticClampRefusal } = require('@/app-layer/usecases/external-write-automatic') as ArmModule;
+        expect(automaticClampRefusal()).toBeNull();
+    });
+
     it('returns null at a ceiling of AUTOMATIC — the mutation the issue names', () => {
         // THE OTHER DIRECTION. Without this, a function that returned a refusal
         // unconditionally would satisfy every assertion above, and the rung

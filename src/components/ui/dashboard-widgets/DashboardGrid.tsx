@@ -3,14 +3,14 @@
 /**
  * Epic 41 — `<DashboardGrid>` interactive composition layer.
  *
- * Wraps `react-grid-layout`'s `WidthProvider(GridLayout)` with the
- * Inflect-flavoured contract:
+ * Wraps `react-grid-layout`'s `WidthProvider(GridLayout)` with this
+ * contract:
  *
- *   - Takes typed widget rows (`OrgDashboardWidgetDto`-shaped) and a
+ *   - Takes typed widget rows (`{ id, position, size, enabled }`) and a
  *     `renderWidget` callback. The grid owns LAYOUT only — what's
  *     rendered inside each tile is the caller's concern, so the
- *     dispatcher from backend `(type, chartType, config)` to a
- *     `<ChartRenderer>` lives in the page (prompt 5), not here.
+ *     dispatcher from a row's `(type, chartType, config)` to a concrete
+ *     chart component lives in the page, not here.
  *
  *   - On drag-stop / resize-stop, computes the diff between the new
  *     layout and the widget rows it received, and fires
@@ -69,9 +69,9 @@ const ResponsiveGridLayout = WidthProvider(RGL);
 // ─── Public types ───────────────────────────────────────────────────
 
 /**
- * The minimum widget shape the grid needs to render. The
- * OrgDashboardWidgetDto from prompt 1 satisfies this — adapter
- * patterns in the page layer hand DTOs straight in.
+ * The minimum widget shape the grid needs to render. A host's own
+ * persisted-widget DTO typically satisfies it structurally, so the page
+ * layer can hand its rows straight in without an adapter.
  */
 export interface DashboardGridWidget {
     id: string;

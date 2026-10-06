@@ -10,11 +10,12 @@
  *
  * ## What is deliberately NOT asserted here
  *
- * That any of this changes what an agent does on its own. Raising the ceiling to
- * `PROPOSE_ONLY` moves no connection — every one stays at the rung an operator
- * set, defaulting to `DISABLED`. These tests are
- * about the control, and the control exists before the authority on purpose —
- * #2241's lesson is what a rung costs when it arrives after.
+ * That any of this changes what an agent does on its own. Raising the ceiling —
+ * to `PROPOSE_ONLY` in 2026-10-01's step 6, and to `AUTOMATIC` on 2026-10-06 —
+ * moves no connection: every one stays at the rung an operator set, defaulting
+ * to `DISABLED`. These tests are about the control, and the control exists
+ * before the authority on purpose — #2241's lesson is what a rung costs when it
+ * arrives after.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -213,8 +214,17 @@ describe('moving up the ladder', () => {
         // `refusalForMove`, which is the ordering that stops an operator being
         // told to wait seven days for a rung that would be refused afterwards
         // anyway.
+        //
+        // The clamp is passed EXPLICITLY as `PROPOSE_ONLY` rather than as
+        // `EXTERNAL_MAX_MODE` since the 2026-10-06 raise (#2861). With the
+        // build's ceiling at the top of the ladder nothing is above it, so this
+        // test would have gone on passing `AUTOMATIC` and been answered by the
+        // one-rung rule — asserting the ORDERING against a clamp that refuses
+        // nothing is a claim about an empty set. A lowered clamp is also the
+        // real case: an incident narrowing the build is when the ordering has to
+        // hold.
         await expect(
-            setExternalWriteMode(ctx1, conn1, 'AUTOMATIC', EXTERNAL_MAX_MODE),
+            setExternalWriteMode(ctx1, conn1, 'AUTOMATIC', 'PROPOSE_ONLY'),
         ).rejects.toThrow(/above the ceiling this build honours/);
     });
 
@@ -555,8 +565,11 @@ describe('what the dwell counts as evidence', () => {
  * WHAT PROPOSE_ONLY COUNTS — step 4 of #2861.
  *
  * That rung returned `undefined` on a premise step 6 falsified: "no external
- * write can be proposed yet". `EXTERNAL_MAX_MODE` is now `PROPOSE_ONLY`, so
- * proposals and approvals both exist and the rung can be counted.
+ * write can be proposed yet". Raising `EXTERNAL_MAX_MODE` to `PROPOSE_ONLY` made
+ * proposals and approvals both exist, so the rung can be counted — and raising it
+ * again to `AUTOMATIC` (2026-10-06, #2861) made the count REACH AN OPERATOR:
+ * `PROPOSE_ONLY → AUTOMATIC` is the only move that asks this rung for evidence,
+ * and the ceiling used to answer that move before `refusalForMove` was consulted.
  *
  * ## The join these tests are really about
  *
@@ -643,7 +656,16 @@ describe('what PROPOSE_ONLY counts as evidence', () => {
 
         const policy = await getExternalWritePolicy(ctx1, conn);
         expect(policy.evidenceInWindow).toBe(0);
-        expect(policy.refusals.AUTOMATIC).toMatch(/above the ceiling/);
+        // The published refusal for the rung above. It used to read
+        // `toMatch(/above the ceiling/)` and INVERTED on 2026-10-06 when the
+        // clamp reached `AUTOMATIC` (#2861): `getExternalWritePolicy` consults
+        // `isAboveClamp` before `refusalForMove`, so while the ceiling sat at
+        // `PROPOSE_ONLY` the operator was told about the ceiling and this count
+        // was never shown to anybody. It is the surface that count exists for,
+        // and this is the first assertion that it actually reaches an operator.
+        expect(policy.refusals.AUTOMATIC).toMatch(
+            /has recorded 0 of the 1 required approved proposals/,
+        );
     });
 
     it('refuses PROPOSE_ONLY → AUTOMATIC naming the count, not the probe', async () => {

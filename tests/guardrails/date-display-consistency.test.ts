@@ -51,11 +51,18 @@ const SCAN_DIRS = [
  * the canonical `formatDateCompact` and no longer carries a raw
  * `toLocaleDateString` call. Re-add only if a contributor
  * reintroduces a date-locale call there with a justification.
+ *
+ * NOTE: `src/components/ui/table/pagination-utils.ts` was dropped on
+ * 2026-10-06 (#3046 batch 4) for the same reason — deleting the dead
+ * `formatPageRange` took its three `toLocaleString()` calls with it, so the
+ * entry exempted a file with nothing left to exempt. This list is only CONSULTED
+ * (`if (ALLOWED_LOCALE_FILES.has(file)) continue;`) and never checked for
+ * staleness, so an entry that outlives its cause silently keeps a future
+ * reintroduction invisible.
  */
 const ALLOWED_LOCALE_FILES = new Set<string>([
     path.join(ROOT, 'src/lib/format-date.ts'),
     path.join(ROOT, 'src/components/ui/table/pagination-controls.tsx'),
-    path.join(ROOT, 'src/components/ui/table/pagination-utils.ts'),
     path.join(ROOT, 'src/components/ui/table/table.tsx'),
     path.join(ROOT, 'src/components/ui/KpiCard.tsx'),
 ]);
