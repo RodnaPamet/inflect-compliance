@@ -4,42 +4,50 @@
  * useFilterCardVisibility — the "Edit filter cards" gear's state (2026-06-07).
  *
  * Owns the click-to-order + visibility state for the cards above a list
- * table, persists it to localStorage under `inflect:filter-vis:<entity>`, and
- * returns a ready `<EditFiltersButton>` plus the ordered visible cards.
+ * table, persists it to localStorage under a CALLER-SUPPLIED key, and returns
+ * a ready `<EditFiltersButton>` plus the ordered visible cards.
  *
  *   const cards: CardDefinition[] = useMemo(() => [
  *     { id: 'total',  label: tx('list.kpiTotal'),  kind: 'kpi' },
  *     { id: 'draft',  label: tx('list.kpiDraft'),  kind: 'kpi' },
  *     { id: 'stale',  label: tx('list.kpiStale'),  kind: 'kpi', defaultVisible: false },
  *   ], [tx]);
- *   const { visibleCards, dropdown: filterGear } =
- *     useFilterCardVisibility({ storageKey: 'inflect:filter-vis:policies', cards });
+ *   const { visibleCards, dropdown: filterGear } = useFilterCardVisibility({
+ *     storageKey: uiStorageKey('filter-vis', entity),
+ *     cards,
+ *   });
  *   // strip:   {visibleCards.map((card) => …)}
  *   // toolbar: <EntityListPage filters={{ defs: liveFilters, toolbarActions: filterGear }} />
  *
- * WHAT THE GEAR CONTROLS. `kind: 'kpi'` — on all eight list pages, since
- * #1886. The gear is named "edit cards" and edits the KPI cards; it does not
- * touch the filter dropdown, and the toolbar gets the FULL filter defs.
+ * BUILD THE KEY THROUGH THE SEAM. `storageKey` is a plain string parameter and
+ * this module never constructs one, so the host owns the namespace — pass
+ * `uiStorageKey(...)` (`@/lib/ui-storage`) rather than spelling a prefixed
+ * literal at the call site. An earlier version of this example hard-coded one
+ * host's prefix, which taught every new page to bypass the seam; the pages
+ * that already do are a per-caller fix, not a change here.
+ *
+ * WHAT THE GEAR CONTROLS. `kind: 'kpi'`, on every list page that has one. The
+ * gear is named "edit cards" and edits the KPI cards; it does not touch the
+ * filter dropdown, and the toolbar gets the FULL filter defs.
  *
  * An earlier version of this comment said the opposite ("only `kind:'filter'`
  * is wired; kpi is a forward-compat extension point") and its usage example
- * called `filtersToCards` + `selectVisibleFilters` — the two functions
- * `kpi-sparkline-canonical` now FAILS a page for calling. So the module's own
- * documentation instructed the next contributor to write code that could not
- * merge. #1905 corrected the field comment on `kind` and missed this block,
- * which is its own lesson: fixing the line you are looking at is not the same
- * as fixing the file.
+ * called `filtersToCards` + `selectVisibleFilters` — the two functions a guard
+ * now FAILS a page for calling. So the module's own documentation instructed
+ * the next contributor to write code that could not merge. The fix that
+ * followed corrected the field comment on `kind` and missed this block, which
+ * is its own lesson: fixing the line you are looking at is not the same as
+ * fixing the file.
  *
  * `preset` and `scope` remain genuine forward-compat extension points — typed,
  * unused, and free to register here later.
  *
- * WHY THERE IS NO `kpisToCards` FACTORY. Each page hand-writes its array
- * (evidence 5 cards, policies 6, tasks 4, vendors 5, risks 4, plus tests). That
- * is deliberate, but NOT for the reason recorded in the #1886 implementation
- * note — which says every label carries "that page's own tx() call" and is
- * false on its own evidence. There are three different label mechanisms in
- * play: `tx('list.kpiTotal')` (policies, evidence), `t('kpi.total')` (tasks,
- * vendors) and `t.totalRisks`, a SERVER-PASSED PROP BAG (risks). A factory
+ * WHY THERE IS NO `kpisToCards` FACTORY. Each page hand-writes its array (four
+ * to six cards each, plus tests). That is deliberate, but NOT for the reason
+ * first recorded for it — that every label carries "that page's own tx() call",
+ * which is false on its own evidence. Three different label mechanisms are in
+ * play across the callers: a page-scoped `tx('list.kpiTotal')`, a
+ * namespace-scoped `t('kpi.total')`, and a SERVER-PASSED PROP BAG. A factory
  * would therefore have to take a label resolver as a parameter, and what
  * remains to be saved is the words `kind: 'kpi'` on each line.
  *
@@ -84,7 +92,7 @@ export interface CardDefinition {
 }
 
 export interface UseFilterCardVisibilityOptions {
-    /** Convention: `'inflect:filter-vis:<entity>'`. */
+    /** Build it through the host's seam: `uiStorageKey('filter-vis', entity)`. */
     storageKey: string;
     cards: CardDefinition[];
 }
