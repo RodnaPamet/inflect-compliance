@@ -8,6 +8,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useRouter } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
 import { Plus } from '@/components/ui/icons/nucleo/plus';
 import { Robot } from '@/components/ui/icons/nucleo/robot';
@@ -71,6 +72,7 @@ export function AiSystemsClient(props: Props) {
 
 function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const tenantHref = useTenantHref();
     const tx = useTranslations('risks');
     const tGroup = useTranslations('common.filterGroups');
@@ -167,8 +169,8 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
     const getAiSystemRowId = useCallback((r: AiSystemRow) => r.id, []);
     const handleAiSystemRowClick = useCallback(
         (row: { original: AiSystemRow }) =>
-            router.push(tenantHref(`/risks/ai-systems/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/risks/ai-systems/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
 
     return (

@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -66,7 +66,7 @@ export default function LinkedTasksPanel({
     tenantHref,
     canWrite = false,
 }: LinkedTasksPanelProps) {
-    const router = useRouter();
+    const guardedPush = useGuardedPush();
     const t = useTranslations('panels');
     const tr = useTranslations();
     const tTasks = useTranslations('tasks');
@@ -238,7 +238,7 @@ export default function LinkedTasksPanel({
                 // navigate to the full task detail page on click.
                 selectionEnabled={canWrite}
                 onRowClick={(row) =>
-                    router.push(tenantHref(`/tasks/${row.original.id}`))
+                    guardedPush(tenantHref(`/tasks/${row.original.id}`))
                 }
                 resourceName={(plural) => (plural ? 'tasks' : 'task')}
                 emptyState={t('linkedTasks.empty')}

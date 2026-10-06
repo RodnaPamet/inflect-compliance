@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
 import {
     useTenantApiUrl,
@@ -47,7 +47,7 @@ interface ReviewableRow {
 export function VendorAssessmentReviewsQueueClient() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const router = useRouter();
+    const guardedPush = useGuardedPush();
     const t = useTranslations('vendors');
 
     const [rows, setRows] = useState<ReviewableRow[] | null>(null);
@@ -180,7 +180,7 @@ export function VendorAssessmentReviewsQueueClient() {
                     columns={columns}
                     getRowId={(r) => r.id}
                     onRowClick={(row) =>
-                        router.push(
+                        guardedPush(
                             tenantHref(
                                 `/admin/vendor-assessment-reviews/${row.original.id}`,
                             ),

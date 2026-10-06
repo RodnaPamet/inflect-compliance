@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { mutate as globalMutate } from 'swr';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
@@ -287,6 +288,7 @@ function RisksPageInner({
     // and the ALE chip — the same number, two currencies, one screen apart.
     const money = useMoneyFormatter();
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const prefetchData = usePrefetchTenant();
     // RQ3-4 — per-risk tail percentiles (RQ3-1 cache); failure-soft:
     // without a run the chips render the mean register.
@@ -1088,8 +1090,8 @@ function RisksPageInner({
     const getRiskRowId = useCallback((r: RiskListItem) => r.id, []);
     const handleRiskRowClick = useCallback(
         (row: { original: RiskListItem }) =>
-            router.push(tenantHref(`/risks/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/risks/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
     const handleRiskRowPrefetch = useCallback(
         (row: { original: RiskListItem }) => {

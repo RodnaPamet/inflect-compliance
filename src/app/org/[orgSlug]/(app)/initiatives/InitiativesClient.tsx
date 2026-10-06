@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
 import type { ColumnDef } from '@/components/ui/table';
 
@@ -54,6 +55,7 @@ export function InitiativesClient({
     initiatives: Row[];
 }) {
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const t = useTranslations('org');
     const [createOpen, setCreateOpen] = useState(false);
 
@@ -127,7 +129,7 @@ export function InitiativesClient({
                 data={initiatives}
                 columns={columns}
                 getRowId={(r) => r.id}
-                onRowClick={(r) => router.push(`/org/${orgSlug}/initiatives/${r.id}`)}
+                onRowClick={(r) => guardedPush(`/org/${orgSlug}/initiatives/${r.id}`)}
             />
 
             {createOpen && (

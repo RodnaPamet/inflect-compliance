@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useCallback, useMemo } from 'react';
 import { useTenantHref } from '@/lib/tenant-context-provider';
-import { useRouter } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
 import { ShieldCheck, AlertTriangle, Cpu, Flame } from 'lucide-react';
 import DonutChart from '@/components/ui/DonutChart';
@@ -100,7 +100,7 @@ function critBadge(crit: string): StatusBadgeVariant {
 export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
     const t = useTranslations('coverage');
     const tenantHref = useTenantHref();
-    const router = useRouter();
+    const guardedPush = useGuardedPush();
     const { config: matrixConfig } = useRiskMatrixConfig();
 
     // ── Column definitions ────────────────────────────────────────
@@ -143,13 +143,13 @@ export function CoverageClient({ data, tenantSlug }: CoverageClientProps) {
     const getUnmappedRiskRowId = useCallback((r: UnmappedRiskRow) => r.id, []);
     const handleUncoveredAssetRowClick = useCallback(
         (row: { original: UncoveredAssetRow }) =>
-            router.push(tenantHref(`/assets/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/assets/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
     const handleUnmappedRiskRowClick = useCallback(
         (row: { original: UnmappedRiskRow }) =>
-            router.push(tenantHref(`/risks/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/risks/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
 
     const uncoveredAssetCols = useMemo(() => createColumns<UncoveredAssetRow>([
