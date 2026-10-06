@@ -39,6 +39,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { Plus } from '@/components/ui/icons/nucleo/plus';
 import { Robot } from '@/components/ui/icons/nucleo';
 import { EntityListPage } from '@/components/layout/EntityListPage';
@@ -167,6 +168,7 @@ function AgentsInner({
     canReviewProposals,
 }: Props) {
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const t = useTranslations('agents');
     // `admin.agentDetail.*` stayed in the admin namespace when the register's
     // own copy moved to `agents.register.*` (#2426) — the detail page's ~90
@@ -413,10 +415,14 @@ function AgentsInner({
     // the page existed. `onRowClick` is also what makes DataTable mount its
     // trailing chevron column, so the row ADVERTISES that it opens — and with
     // `selectionEnabled: false` below, ONE click is what opens it.
+    //
+    // `useGuardedPush`, not `router.push`: this is the exact page and the exact
+    // click #3099 measured the client router silently dropping during
+    // hydration. See src/lib/nav/use-guarded-push.ts.
     const handleAgentRowClick = useCallback(
         (row: { original: AgentRow }) =>
-            router.push(`/t/${tenantSlug}/agents/${row.original.id}`),
-        [router, tenantSlug],
+            guardedPush(`/t/${tenantSlug}/agents/${row.original.id}`),
+        [guardedPush, tenantSlug],
     );
     // Warm that row's detail route once the pointer RESTS on it, which is what
     // the other seven entity list clients do (`assets`, `controls`, `evidence`,

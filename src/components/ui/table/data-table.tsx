@@ -10,8 +10,14 @@
  *     data={items}
  *     columns={itemColumns}
  *     loading={isLoading}
- *     onRowClick={(row) => router.push(`/items/${row.original.id}`)}
+ *     onRowClick={(row) => guardedPush(`/items/${row.original.id}`)}
  *   />
+ *
+ * `guardedPush` is `useGuardedPush()` from `@/lib/nav/use-guarded-push`, and
+ * `local/no-router-push-in-row-click` requires it: a cold row click during
+ * hydration gets its 200 and the client router then silently drops the
+ * transition (#3099). The raw `router.push` this example used to show is the
+ * banned form, and an AST rule cannot fail a doc comment that teaches it.
  *
  * For advanced features (column resizing, pinning, edit-columns), use the
  * lower-level `useTable` + `Table` directly.

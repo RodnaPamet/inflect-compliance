@@ -121,6 +121,24 @@ const config = [
             // a tool that can check is a tool that can skip.
             // See eslint-rules/rules/require-mcp-tool-authorization.js.
             'local/require-mcp-tool-authorization': 'error',
+
+            // A row click that opens the row navigates through
+            // `useGuardedPush()`, never `router.push()`. Under hydration load
+            // the client router gets its 200 and silently drops the transition
+            // (#3099, upstream vercel/next.js#99651) — the row is dead until
+            // the user clicks again, and nothing logs it. The hook re-issues the
+            // push once and emits the only counter we have for how often that
+            // happens in production. `DataTable` cannot be the choke point
+            // (`onRowClick` is also how sheets and selection toggles are wired),
+            // so the obligation has to live here.
+            //
+            // `allowRawPush` is the written exemption list and it is EMPTY: all
+            // eighteen migrated call sites went through the hook. See the rule's
+            // header for what to say when adding an entry.
+            // The two census options stay off — they report facts, and only
+            // tests/guards/row-click-navigation-uses-the-guarded-push.test.ts
+            // turns them on.
+            'local/no-router-push-in-row-click': ['error', { allowRawPush: [] }],
             '@typescript-eslint/no-explicit-any': 'warn',
             '@typescript-eslint/ban-ts-comment': [
                 'warn',

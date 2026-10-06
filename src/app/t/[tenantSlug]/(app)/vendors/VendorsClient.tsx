@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { NewVendorModal } from './NewVendorModal';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons/nucleo';
@@ -135,6 +136,7 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     // kill row navigation (the PoliciesClient regression, #1678).
     const tenantHref = useTenantHref();
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     // Null until hydrated — keeps Overdue/Due badges stable across SSR.
     const hydratedNow = useHydratedNow();
 
@@ -142,8 +144,8 @@ function VendorsPageInner({ initialVendors, initialFilters, tenantSlug, permissi
     const getVendorRowId = useCallback((v: VendorRow) => v.id, []);
     const handleVendorRowClick = useCallback(
         (row: { original: VendorRow }) =>
-            router.push(tenantHref(`/vendors/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/vendors/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
     const handleVendorRowPrefetch = useCallback(
         (row: { original: VendorRow }) =>

@@ -25,7 +25,7 @@
  * preparing a supervisory submission.
  */
 import { useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 
@@ -99,7 +99,7 @@ export function InformationRegistryClient(props: Props) {
 
 function RegistryInner({ rows }: Props) {
     const t = useTranslations('risks.informationRegistry');
-    const router = useRouter();
+    const guardedPush = useGuardedPush();
     const tenantHref = useTenantHref();
     const { state, hasActive, search } = useFilters();
 
@@ -252,8 +252,8 @@ function RegistryInner({ rows }: Props) {
     // and kills row navigation (#1678).
     const getRowId = useCallback((r: RegisterRow) => r.id, []);
     const onRowClick = useCallback(
-        (row: { original: RegisterRow }) => router.push(tenantHref(`/vendors/${row.original.id}`)),
-        [router, tenantHref],
+        (row: { original: RegisterRow }) => guardedPush(tenantHref(`/vendors/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
 
     return (

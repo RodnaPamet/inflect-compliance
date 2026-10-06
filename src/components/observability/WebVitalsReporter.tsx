@@ -22,44 +22,28 @@
  * prefetch trade, and this component reads as though it had been collecting one
  * all along.
  *
- * Renders nothing. Uses `navigator.sendBeacon` so reports survive the page
- * unload that often coincides with navigation (falls back to a keepalive
- * fetch). Best-effort — every failure is swallowed. Inert in E2E test mode.
+ * Renders nothing. The send itself — `navigator.sendBeacon` so reports survive
+ * the page unload that often coincides with navigation, a keepalive fetch
+ * fallback, the `NEXT_PUBLIC_TEST_MODE` gate and the swallowing catch — moved
+ * to `@/lib/observability/client-telemetry` when #3099 added a second producer
+ * (`useGuardedPush`'s dropped-navigation counter). It was the app's entire
+ * client-side telemetry path and it was reachable only by rendering this
+ * component; two copies of it would have been two gates to forget.
  */
 
 import { useReportWebVitals } from 'next/web-vitals';
 
+import { beaconClientMetric } from '@/lib/observability/client-telemetry';
+
 export function WebVitalsReporter() {
     useReportWebVitals((metric) => {
-        // Don't beacon during Playwright runs (noise + the sink would log
-        // per-test). NEXT_PUBLIC_TEST_MODE is inlined at build time.
-        if (process.env.NEXT_PUBLIC_TEST_MODE === '1') return;
-        try {
-            const body = JSON.stringify({
-                name: metric.name,
-                value: metric.value,
-                rating: (metric as { rating?: string }).rating,
-                navigationType: (metric as { navigationType?: string }).navigationType,
-                route:
-                    typeof window !== 'undefined' ? window.location.pathname : '/',
-            });
-            const url = '/api/telemetry/vitals';
-            if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-                navigator.sendBeacon(
-                    url,
-                    new Blob([body], { type: 'application/json' }),
-                );
-            } else {
-                void fetch(url, {
-                    method: 'POST',
-                    body,
-                    keepalive: true,
-                    headers: { 'content-type': 'application/json' },
-                });
-            }
-        } catch {
-            // Best-effort — never let telemetry break the page.
-        }
+        beaconClientMetric({
+            name: metric.name,
+            value: metric.value,
+            rating: (metric as { rating?: string }).rating,
+            navigationType: (metric as { navigationType?: string }).navigationType,
+            route: typeof window !== 'undefined' ? window.location.pathname : '/',
+        });
     });
     return null;
 }

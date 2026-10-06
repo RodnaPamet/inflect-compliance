@@ -1,0 +1,140 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * `@inflect/ui` — the token CONTRACT. 45 names. #3046, §4.
+ *
+ * THE PACKAGE REQUIRES TOKENS. IT DOES NOT SHIP THEM. IT SHIPS THEIR NAMES.
+ *
+ * A consumer is expected to override all 45 with its own palette. The values
+ * below are a deliberately brand-free neutral fallback, and their job is to
+ * make a forgotten override VISIBLE rather than invisible: an undefined custom
+ * property resolves to the property's initial value, so
+ * `background-color: var(--bg-page)` with no `--bg-page` renders transparent —
+ * the "filling with a transparent dot" failure #3047's tailwind.config.js
+ * comment describes. A fallback layer turns a missing override into the wrong
+ * colour, which somebody sees.
+ *
+ * WHY THIS FILE AND NOT `src/styles/tokens.css`. That file defines 109
+ * properties across two themes, and 64 of them are the host application's
+ * alone — the METRO navy ramp, the canvas surfaces, the nav-band animations.
+ * Shipping it would ship one company's brand into a product whose brand is not
+ * that company. It also stays where it is for a measured reason: ten test files
+ * read it by that path, three of which assert things about INFLECT's palette
+ * (that `--content-brand` clears 4.5:1 on Inflect's surfaces) — claims a shared
+ * package cannot make about an unknown consumer's brand.
+ *
+ * THE RULE THIS FILE STATES, which is the one worth remembering: a theme token
+ * is overridable by the host and belongs in the contract; a component-local
+ * variable is an implementation detail and must stay inside its component.
+ * `--switch-thumb-x` is the worked counter-example — `switch.tsx` declares and
+ * consumes it through Tailwind's arbitrary-property syntax
+ * (`[--switch-thumb-x:1rem]`), so it is NOT one of the 45 even though the
+ * measurement that produced them kept meeting it.
+ *
+ * THE CONTRACT IS CLOSED. 45 names, stable across three different populations
+ * (the 408 import-closed set, the 59 files the consumer vendors today, the 494
+ * it tracks). It is a checked list, not an aspiration.
+ *
+ * ─── WCAG, measured rather than asserted ─────────────────────────────────
+ *
+ * Every pair below was computed with the same WCAG 2.x relative-luminance
+ * arithmetic as `tests/guardrails/token-contrast-content-brand.test.ts`.
+ * 34 pairs checked, 0 below floor. Text owes 1.4.3's 4.5:1; a control edge or
+ * focus ring owes 1.4.11's 3:1.
+ *
+ *   --content-default    on --bg-page    15.80:1    --content-emphasis  19.47:1
+ *   --content-muted      on --bg-page     6.27:1    on --bg-muted        5.39:1
+ *   --content-subtle     on --bg-page     5.32:1    on --bg-muted        4.57:1
+ *   --content-brand      on --bg-page     6.62:1
+ *   --content-success    on --bg-success  5.82:1    on --bg-page         6.53:1
+ *   --content-warning    on --bg-warning  6.54:1    on --bg-page         7.19:1
+ *   --content-error      on --bg-error    6.38:1    on --bg-page         7.36:1
+ *   --content-info       on --bg-info     6.16:1    on --bg-page         7.03:1
+ *   --content-inverted   on --brand-default           5.31:1
+ *   --content-inverted   on --btn-still-danger        5.44:1
+ *   --border-strong      on --bg-default  4.60:1    --ctrl-edge-rest     4.60:1
+ *   --ctrl-edge-hover    on --bg-default  7.69:1    --ctrl-edge-focus    6.62:1
+ *   --ring               on --bg-page     6.62:1    --brand-default      5.31:1
+ *   --border-{success,warning,error,info} on --bg-default  4.30 / 3.72 / 5.44 / 5.14
+ *
+ * The discriminating negative: `--border-subtle` on `--bg-default` is 1.25:1,
+ * and that is CORRECT — it is a decorative separator, not a control edge, and a
+ * checker reporting it as a pass would be measuring nothing. `--border-subtle`,
+ * `--border-default` and `--border-emphasis` carry no contrast claim here, which
+ * mirrors the host: `--border-strong` exists in `src/styles/tokens.css`
+ * precisely because `--border-emphasis` does not reach 3:1 there either.
+ *
+ * ─── What this file does NOT do ──────────────────────────────────────────
+ *
+ * It carries ONE theme, not two. The host ships `:root` (dark) plus a
+ * `[data-theme="light"]` override and has a guard requiring every token to have
+ * both; a fallback layer making the same promise would be asserting a palette
+ * the package does not own. A consumer that themes gets both from its own
+ * tokens; a consumer that forgets gets one legible neutral.
+ *
+ * And it does not carry the Tailwind mapping. `tailwind.config.js` stays with
+ * the application; the `theme.extend.colors` subtree a consumer must merge is
+ * documented in README.md and §4. That is the one part of this design with no
+ * mechanical check on either side, because neither repo can see the other's
+ * config at build time.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Surfaces — 10 */
+  --bg-page: #ffffff;
+  --bg-default: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f6f7f8;
+  --bg-muted: #eceef0;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
+  --bg-success: #e8f5ec;
+  --bg-warning: #fdf3e2;
+  --bg-error: #fcebea;
+  --bg-info: #e8f1fb;
+
+  /* Borders — 8. Only --border-strong carries a 3:1 claim; see the header. */
+  --border-subtle: #e3e6e9;
+  --border-default: #c9ced4;
+  --border-emphasis: #9aa2ab;
+  --border-strong: #6e767f;
+  --border-success: #2f8a52;
+  --border-warning: #b07a12;
+  --border-error: #c0392b;
+  --border-info: #2e6fb8;
+
+  /* Brand — 5. A neutral slate, chosen to belong to nobody. A consumer that
+   * leaves these alone should look unbranded, not like someone else. */
+  --brand-default: #3a6ea5;
+  --brand-emphasis: #2c5580;
+  --brand-muted: #6a93c0;
+  --brand-subtle: #e9f0f7;
+  --brand-secondary-default: #5a6169;
+
+  /* Still Surface button material — 7 */
+  --btn-still-top: #ffffff;
+  --btn-still-bot: #e7eaed;
+  --btn-still-lift: #ffffff;
+  --btn-still-press: #d7dbdf;
+  --btn-still-danger: #c0392b;
+  --btn-still-danger-deep: #8e2a20;
+  --btn-still-danger-lift: #d9544a;
+
+  /* Content — 10. Every one of these paints TEXT, so every one owes 4.5:1. */
+  --content-default: #1f2328;
+  --content-emphasis: #0b0d0f;
+  --content-muted: #5a6169;
+  --content-subtle: #656c74;
+  --content-inverted: #ffffff;
+  --content-brand: #2d5ba8;
+  --content-success: #1c6b3a;
+  --content-warning: #7a4e06;
+  --content-error: #a3261e;
+  --content-info: #1b5a9c;
+
+  /* Form-control edges — 3. 1.4.11 asks 3:1 of a control boundary. */
+  --ctrl-edge-rest: #6e767f;
+  --ctrl-edge-hover: #4c545c;
+  --ctrl-edge-focus: #2d5ba8;
+
+  /* The two unprefixed survivors — 2 */
+  --primary: #3a6ea5;
+  --ring: #2d5ba8;
+}

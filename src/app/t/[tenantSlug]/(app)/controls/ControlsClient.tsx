@@ -9,6 +9,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import type { Row, RowSelectionState } from '@/components/ui/table';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 // NewControlModal was previously lazy-loaded via next/dynamic, but the JIT
 // race in `next dev` made the modal occasionally fail to mount in serial-mode
 // E2E runs (Playwright clicked the trigger before the chunk finished
@@ -250,6 +251,7 @@ function ControlsPageInner({
         [tenantSlug],
     );
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const prefetchData = usePrefetchTenant();
     const t = useTranslations('controls');
     const toast = useToast();
@@ -997,8 +999,8 @@ function ControlsPageInner({
     // rebuild the table's column model.
     const handleRowClick = useCallback(
         (row: Row<ControlListItem>) =>
-            router.push(tenantHref(`/controls/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/controls/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
     const getControlRowId = useCallback((c: ControlListItem) => c.id, []);
     const handleRowPrefetch = useCallback(

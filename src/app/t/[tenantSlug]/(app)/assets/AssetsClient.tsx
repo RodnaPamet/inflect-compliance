@@ -4,6 +4,7 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -176,6 +177,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     const [purgeError, setPurgeError] = useState<string | null>(null);
     const searchParams = useSearchParams();
     const router = useRouter();
+    const guardedPush = useGuardedPush();
     const prefetchData = usePrefetchTenant();
     useCreateQueryParam(() => setIsCreateOpen(true), `/t/${tenantSlug}/assets`);
 
@@ -905,8 +907,8 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     const getAssetRowId = useCallback((a: AssetListRow) => a.id, []);
     const handleAssetRowClick = useCallback(
         (row: { original: AssetListRow }) =>
-            router.push(tenantHref(`/assets/${row.original.id}`)),
-        [router, tenantHref],
+            guardedPush(tenantHref(`/assets/${row.original.id}`)),
+        [guardedPush, tenantHref],
     );
     const handleAssetRowPrefetch = useCallback(
         (row: { original: AssetListRow }) => {

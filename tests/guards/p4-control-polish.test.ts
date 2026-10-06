@@ -58,9 +58,16 @@ describe('R2-P4 (3) checks status humanized', () => {
 });
 
 describe('R2-P4 (5) coverage uses client navigation', () => {
-    it('CoverageClient uses router.push, not window.location.href', () => {
+    it('CoverageClient navigates through the client router, not window.location.href', () => {
         const src = read(COVERAGE_CLIENT);
-        expect(src).toMatch(/router\.push\(/);
+        // #3099 moved every row navigation onto `useGuardedPush`, which IS
+        // `router.push` plus a one-shot retry for the transition the client
+        // router silently drops during hydration. The invariant this locks is
+        // "client navigation, not a full document load", and the hook satisfies
+        // it strictly more than the raw call did — so both spellings count and
+        // the negative half below is untouched. (`guardedPush(` cannot be
+        // satisfied by `useGuardedPush(`: the hook's name capitalises the G.)
+        expect(src).toMatch(/guardedPush\(|router\.push\(/);
         expect(src).not.toMatch(/window\.location\.href\s*=/);
     });
 });
