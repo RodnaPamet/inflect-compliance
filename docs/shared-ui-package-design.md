@@ -744,6 +744,19 @@ files in small batches: a 183-path rewrite reviewed as one diff is a diff nobody
 **5.4 Tailwind content globs.** §4. Silent. `@source "../../packages/ui/src"` in
 `src/app/globals.css`.
 
+**MEASURED 2026-10-06, and the prediction was wrong in BOTH directions.** The directive landed
+with step 1, and it is inert. An arbitrary-value utility written only inside `packages/ui/src/`
+is emitted by the real postcss chain **with the directive and without it** — byte-identical
+output, 248,903 bytes either way. Tailwind 4.3.3's automatic source detection scans the whole
+repository from the cwd rather than the legacy `@config`'s `content` glob, and the control that
+proves it is that probes planted in `scripts/` and `infra/` were picked up too, neither of which
+`content` matches. The second half: a **missing** `@source` path is not an error either —
+compiling with `packages/ui/src/` moved away exits 0 with empty stderr and output 92 bytes
+shorter, so the path is silently ignored rather than enforced. The directive is kept for
+explicitness and because auto-detection skips `node_modules` and gitignored paths (which a
+real-dependency consumption at step 6 would hit), but **it is not what makes the package's classes
+appear, and step 2's rendered assertion is therefore proving auto-detection, not this line.**
+
 **5.5 tsc path aliases.** `tsconfig.json` has one alias, `"@/*": ["./src/*"]`, with
 `include: ["**/*.ts", "**/*.tsx"]` and `exclude` already listing `.claude`. The `include` glob picks
 up `packages/` for free; `@inflect/ui` resolves through the workspace symlink. A `paths` entry is
@@ -761,6 +774,25 @@ all, which was true of a closure of 408 and is false of 426 — batch 1 neutrali
 hooks that were keeping their own `GENERIC` co-located tests out, so the set now contains
 `use-threshold-load-more.test.tsx` and `use-zod-form.test.tsx`, both `.tsx`. The
 `testPathIgnorePatterns` entry has to land with step 1.
+
+**MEASURED 2026-10-06 — the entry did NOT land with step 1, because this paragraph is aimed one
+level off, and the exposure it misses is a silent loss rather than a wrong environment.** Run
+through jest's own `globsToMatcher` with the live patterns, for a file at
+`packages/ui/src/components/ui/hooks/__tests__/use-threshold-load-more.test.tsx`:
+
+| project | pattern | matches that path? |
+|---|---|---|
+| node | `**/*.test.ts`, `**/*.test.js` | **no** — `.tsx` is not `.ts` |
+| jsdom | `tests/rendered/**/*.test.{ts,tsx}`, `src/**/__tests__/**/*.test.{ts,tsx}` | **no** — anchored at `src/` |
+
+So the node project cannot collect either of the two files this paragraph names, and the jsdom
+project **stops** collecting them the moment they move: they match nothing, run nowhere, and fail
+no check. An ignore entry added at step 1 would make that loss look handled. The paragraph is right
+for a `.test.ts` under `packages/ui` — the same matcher run confirms the node project DOES match
+`packages/ui/.../probe.test.ts`, and note the existing exclusion is `<rootDir>/src/.*/__tests__/`,
+which a `packages/ui/src/.../__tests__/` path does not satisfy — so step 3 needs **both** halves:
+widen the node project's ignore AND extend the jsdom project's `testMatch` to the package. That is
+work with a moved file to prove it against, which step 1 does not have.
 
 **5.7 Coverage denominator and the `./src/lib/` floor.** `collectCoverageFrom` excludes
 `src/components/**` entirely, so the 70 component files cost nothing. But it *includes*
@@ -786,12 +818,40 @@ BUSL-1.1 becomes a dependency that check does not exclude. Fix is an `--excludeP
 larger question — what licence `@inflect/ui` carries if it is ever published — is §3's owner
 decision.
 
+**MEASURED 2026-10-06 — it does not become such a dependency, and the entry landed dormant.**
+`license-checker --production` over the installed workspace tree enumerates **862** packages and
+the only `inflect` one is the root `inflect-compliance@3.158.0`; `@inflect/ui@0.0.0` is absent,
+because `--production` walks the dependency graph and nothing depends on it. Removing the
+`--excludePackages` entry leaves `npm run license:check` green, so the entry is an allowance for a
+real `name@version` that is not yet reachable rather than a fix for a live failure. It goes live the
+moment the root declares `@inflect/ui` in its own `dependencies` — and `0.0.0` must stay `0.0.0`,
+because an `--excludePackages` pin is a `name@version` and a bumped version stops matching
+silently. §3's "consumed at HEAD, never version-pinned" is the reason there is nothing to bump.
+
 **5.10 Docker.** `COPY . .` in the builder stage brings `packages/` along, and `.dockerignore`
 excludes nothing relevant. But the `deps` stage does `COPY package.json package-lock.json ./` and
 then `RUN npm ci`, and a workspace lockfile references `packages/ui/package.json`, which that stage
 never copies. **Predicted**, not verified: `npm ci` is expected to fail there and need
 `COPY packages/ui/package.json ./packages/ui/`. Verified by building the image, which is step 1's
 last gate.
+
+**MEASURED 2026-10-06 — the line is right, the prediction is wrong, and the real failure is
+worse.** `npm ci` does **not** fail in a tree holding only `package.json`, `package-lock.json` and
+`patches/`: it exits 0, installs **2004** packages, and silently omits
+`node_modules/@inflect/ui`. With `COPY packages/ui/package.json ./packages/ui/` present it installs
+**2005** and creates `node_modules/@inflect/ui -> ../../packages/ui` — verified inside the built
+`deps` image, not only locally. So the predicted loud failure is actually an image that ships a tree
+where `import … from '@inflect/ui'` does not resolve, with nothing red anywhere; the line landed
+with step 1 for that reason rather than because `npm ci` needed it.
+
+**And the runner stage has the mirror-image problem, which nothing above names.** `npm prune
+--omit=dev` KEEPS the workspace symlink (measured), and the runner does `COPY --from=builder
+/app/node_modules` but never copies `packages/` — so the production image carries a **dangling**
+`node_modules/@inflect/ui`. Read out of the finished image rather than predicted: `readlink`
+returns `../../packages/ui`, `/app/packages` does not exist, and the link does not resolve. Inert
+while the package is empty; a runtime resolution failure the first time anything imports it. Fix is
+one `COPY --from=builder /app/packages ./packages` in the runner, and it belongs with step 2, which
+is when the package stops being empty.
 
 **5.11 What does *not* break, checked rather than assumed.** No guard globs `**/package.json`; none
 enumerates the repo root's directories. `tests/guardrails/source-scan-population.test.ts` derives

@@ -15,6 +15,18 @@ WORKDIR /app
 # failing check anywhere. See tests/guards/dockerfile-patch-ordering.test.ts.
 COPY package.json package-lock.json ./
 COPY patches ./patches
+# The workspace manifest, and the failure it prevents is SILENT rather than
+# loud. `package.json` declares `workspaces: ["packages/*"]`, so the lockfile
+# carries a `packages/ui` node and a `node_modules/@inflect/ui` link entry. The
+# design doc predicted `npm ci` would FAIL here without this file. Measured, it
+# does not: it exits 0, installs 2004 packages instead of 2005, and simply omits
+# `node_modules/@inflect/ui` — so the image would ship a tree where
+# `import … from '@inflect/ui'` does not resolve, with nothing red anywhere. With
+# this line the link is created (`node_modules/@inflect/ui -> ../../packages/ui`)
+# and the count is 2005. The package is empty today, which is exactly why the
+# line has to land now: the first moved file would otherwise fail in the builder,
+# and the deps stage is the last place anyone would look.
+COPY packages/ui/package.json ./packages/ui/
 RUN npm ci
 
 # ─── Stage 2: Builder ──────────────────────────────────────
