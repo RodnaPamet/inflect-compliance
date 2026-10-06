@@ -80,6 +80,23 @@ enum OrgAuditAction {
   // Org denials cannot use AuditLog at all — its tenantId is NOT NULL with an
   // FK to Tenant, and OrgContext has no tenant.
   ORG_AUTHZ_DENIED
+  /// A tenant removed from the organization (#3173).
+  ///
+  /// NOT a duplicate of the `TENANT_REMOVED` entry #3179 writes on the tenant's
+  /// own chain. That one is the DURABLE record — appended inside the delete
+  /// transaction, so it commits with the removal or not at all. This one is the
+  /// READABLE record, and the distinction is the whole reason it exists:
+  /// `resolveTenantContext` throws notFound on `deletedAt` and its own comment
+  /// calls itself "the single authoritative gate — every /t and /api/t request
+  /// resolves through here". So the moment a tenant is removed, every one of the
+  /// 59 route groups under /api/t 404s for it, including its own audit-log
+  /// route, and the durable record becomes reachable by direct database query
+  /// and nothing else.
+  ///
+  /// The org audit log is the only surface that still answers for a tenant that
+  /// no longer exists. Hence an org-level entry — not for a second copy of the
+  /// fact, but for a reader who can get at it.
+  ORG_TENANT_DELETED
 }
 
 enum MembershipStatus {

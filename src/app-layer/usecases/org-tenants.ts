@@ -34,6 +34,7 @@ import { logger } from '@/lib/observability/logger';
 import { getBillingMode, type Plan } from '@/lib/billing/entitlements';
 import { recordTenantDeleted } from '@/lib/observability/business-metrics';
 import { appendAuditEntryWithin } from '@/lib/audit/audit-writer';
+import { appendOrgAuditEntry } from '@/lib/audit/org-audit-writer';
 
 export interface CreateTenantUnderOrgInput {
     name: string;
@@ -390,6 +391,62 @@ export async function deleteTenantUnderOrg(
         });
         plan = (acct?.plan ?? 'FREE') as Plan;
     }
+    /*
+        THE READABLE RECORD (#3173), and it is not a second copy of the durable one.
+
+        The `TENANT_REMOVED` entry above commits inside the delete transaction, so
+        the removal cannot happen without it. What it cannot do is be READ:
+        `resolveTenantContext` throws notFound on `deletedAt` and its own comment
+        calls itself "the single authoritative gate — every /t and /api/t request
+        resolves through here", so the moment this commits, all 59 route groups
+        under /api/t 404 for this tenant — including its own audit-log route. The
+        durable record becomes reachable by direct database query and nothing else.
+
+        The org audit log is the only surface that still answers for a tenant that
+        no longer exists, which is what this entry is for.
+
+        AFTER THE TRANSACTION, AND BEST-EFFORT, both by necessity rather than
+        choice. `appendOrgAuditEntry` opens its own `$transaction` for a per-org
+        advisory lock and a chain-head read, so it cannot join the one above — an
+        interactive `Prisma.TransactionClient` has no `$transaction`. That makes
+        this the weaker of the two records, and the ordering follows from which
+        way each should fail: the durable entry goes last INSIDE the transaction so
+        a failure aborts the removal, while this one must not, because the removal
+        has already committed and throwing here would report failure for work that
+        succeeded — the exact defect #3175 fixed in the module toggle.
+
+        So the guarantee is layered rather than uniform: the removal never happens
+        unrecorded, and the org surface gets the entry unless the org chain is
+        unavailable, in which case the warning below says so and the durable record
+        still exists.
+    */
+    try {
+        await appendOrgAuditEntry({
+            organizationId: ctx.organizationId,
+            actorUserId: ctx.userId,
+            actorType: 'USER',
+            action: 'ORG_TENANT_DELETED',
+            // No target USER — the target is a tenant, and `targetUserId` is for
+            // the member-lifecycle actions. The tenant is named in detailsJson.
+            targetUserId: null,
+            detailsJson: {
+                tenantId: tenant.id,
+                slug: tenant.slug,
+                name: tenant.name,
+                revokedMemberships: revoked.count,
+            },
+            requestId: ctx.requestId,
+        });
+    } catch (err) {
+        logger.warn('org-audit.emit_failed', {
+            component: 'org-tenants',
+            organizationId: ctx.organizationId,
+            action: 'ORG_TENANT_DELETED',
+            tenantId: tenant.id,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+
     recordTenantDeleted({ plan, reason: 'org_admin_delete' });
 
     logger.info('org-tenants.deleted', {

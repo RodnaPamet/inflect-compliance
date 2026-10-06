@@ -44,6 +44,21 @@ const appendAuditEntryWithin = jest.fn(async (..._a: unknown[]) => {
     record('appendAuditEntryWithin');
     return { id: 'audit-1', entryHash: 'h', previousHash: null };
 });
+/**
+ * The org-chain append (#3173). Records whether it ran with a transaction still
+ * open, rather than going through `record()`.
+ *
+ * It MUST be outside one — `appendOrgAuditEntry` opens its own `$transaction`
+ * for a per-org advisory lock, so it cannot join the delete transaction. Routing
+ * it through `record()` would file it as `OUTSIDE-ANY-TRANSACTION:…`, which the
+ * atomicity test asserts is empty — and being outside is correct here, so that
+ * would be the harness contradicting the design rather than checking it.
+ */
+const orgAppendFromInsideTx: boolean[] = [];
+const appendOrgAuditEntry = jest.fn(async (..._a: unknown[]) => {
+    orgAppendFromInsideTx.push(openTx !== null);
+    return { id: 'org-audit-1', entryHash: 'h', previousHash: null };
+});
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -117,6 +132,9 @@ jest.mock('@/lib/observability/logger', () => ({
 jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntryWithin: (...a: unknown[]) => appendAuditEntryWithin(...a),
 }));
+jest.mock('@/lib/audit/org-audit-writer', () => ({
+    appendOrgAuditEntry: (...a: unknown[]) => appendOrgAuditEntry(...a),
+}));
 
 import { deleteTenantUnderOrg } from '@/app-layer/usecases/org-tenants';
 import type { OrgContext } from '@/app-layer/types';
@@ -162,6 +180,12 @@ function installMocks() {
     transactions.length = 0;
     openTx = null;
     appendAuditEntryWithin.mockClear();
+    appendOrgAuditEntry.mockClear();
+    appendOrgAuditEntry.mockImplementation(async () => {
+        orgAppendFromInsideTx.push(openTx !== null);
+        return { id: 'org-audit-1', entryHash: 'h', previousHash: null };
+    });
+    orgAppendFromInsideTx.length = 0;
     update.mockImplementation(() => {
         record('tenant.update');
         return Promise.resolve({});
@@ -453,5 +477,112 @@ describe('the removal is written to the audit trail', () => {
         // be a false record, which is the one thing worse than a missing one.
         await expect(deleteTenantUnderOrg(readerCtx, 't-1')).rejects.toThrow();
         expect(appendAuditEntryWithin).not.toHaveBeenCalled();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// #3173 — the org-level record, which is the READABLE one
+// ═════════════════════════════════════════════════════════════════════
+
+describe('the removal is also recorded where it can still be read', () => {
+    beforeEach(() => {
+        installMocks();
+        findFirst.mockResolvedValue({ id: 't-1', slug: 'pwc-nis2', name: 'PwC NIS2' });
+    });
+
+    /**
+     * WHY A SECOND ENTRY AT ALL. The durable one goes on the tenant's own chain,
+     * and `resolveTenantContext` throws notFound on `deletedAt` — its own comment
+     * calls itself "the single authoritative gate — every /t and /api/t request
+     * resolves through here". So the instant the removal commits, all 59 route
+     * groups under /api/t 404 for that tenant, its audit-log route included, and
+     * the durable record is reachable by direct database query and nothing else.
+     * The org audit log is the only surface that still answers.
+     */
+    it('appends ORG_TENANT_DELETED to the org chain', async () => {
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        expect(appendOrgAuditEntry).toHaveBeenCalledTimes(1);
+        const [input] = appendOrgAuditEntry.mock.calls[0] as unknown as [{
+            organizationId: string; actorUserId: string | null; actorType: string;
+            action: string; targetUserId: string | null; requestId: string;
+            detailsJson: Record<string, unknown>;
+        }];
+        expect(input).toMatchObject({
+            organizationId: 'org-1',
+            actorUserId: 'u-1',
+            actorType: 'USER',
+            action: 'ORG_TENANT_DELETED',
+            // The target is a TENANT; `targetUserId` is for member lifecycle.
+            targetUserId: null,
+            requestId: 'req-1',
+        });
+        expect(input.detailsJson).toMatchObject({
+            tenantId: 't-1', slug: 'pwc-nis2', name: 'PwC NIS2', revokedMemberships: 3,
+        });
+    });
+
+    /**
+     * It CANNOT be inside the delete transaction: `appendOrgAuditEntry` opens its
+     * own for a per-org advisory lock, and an interactive transaction client has
+     * no `$transaction` to join. Asserting it is outside pins the shape, so a
+     * later edit that "tidies" it into the transaction fails here rather than at
+     * runtime on a type error nobody sees until deploy.
+     */
+    it('from outside the delete transaction, which is the only place it can run', async () => {
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        expect(orgAppendFromInsideTx).toEqual([false]);
+        // And the transaction still holds exactly the four durable statements.
+        expect(transactions).toEqual([[
+            'tenant.update',
+            'tenantMembership.updateMany',
+            'user.updateMany',
+            'appendAuditEntryWithin',
+        ]]);
+    });
+
+    /**
+     * BEST-EFFORT, and the asymmetry is deliberate. The removal has already
+     * committed by the time this runs, so throwing would report failure for work
+     * that succeeded — the exact defect #3175 fixed in the module toggle. The
+     * durable record exists either way; this entry is about reachability.
+     */
+    it('a failing org append does not fail a removal that already committed', async () => {
+        appendOrgAuditEntry.mockRejectedValueOnce(new Error('org chain locked') as never);
+
+        await expect(deleteTenantUnderOrg(ctx, 't-1')).resolves.toMatchObject({
+            tenant: { id: 't-1', slug: 'pwc-nis2' },
+        });
+        // The durable half still happened — that is what makes failing open safe.
+        expect(appendAuditEntryWithin).toHaveBeenCalledTimes(1);
+    });
+
+    it('and says so, rather than going quiet', async () => {
+        // A silently dropped audit entry is the failure mode #2657 exists to
+        // remove. Best-effort has to mean logged, not ignored.
+        const { logger } = jest.requireMock('@/lib/observability/logger') as {
+            logger: { warn: jest.Mock };
+        };
+        appendOrgAuditEntry.mockRejectedValueOnce(new Error('org chain locked') as never);
+
+        await deleteTenantUnderOrg(ctx, 't-1');
+
+        const warned = logger.warn.mock.calls.map(c => c[0] as string);
+        expect(warned).toContain('org-audit.emit_failed');
+    });
+
+    /**
+     * THE CONTROL for the asymmetry: the two records fail in opposite directions
+     * on purpose, and without this the suite could not tell a deliberate
+     * fail-open from a missing throw.
+     */
+    it('while a failing DURABLE append still aborts the whole removal', async () => {
+        appendAuditEntryWithin.mockRejectedValueOnce(new Error('chain unavailable') as never);
+
+        await expect(deleteTenantUnderOrg(ctx, 't-1')).rejects.toThrow('chain unavailable');
+        // Never reached — the transaction rolled back, so there is nothing to
+        // record at org level either.
+        expect(appendOrgAuditEntry).not.toHaveBeenCalled();
     });
 });

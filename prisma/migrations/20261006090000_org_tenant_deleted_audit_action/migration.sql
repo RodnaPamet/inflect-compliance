@@ -1,0 +1,43 @@
+-- #3173 — THE ORG-LEVEL RECORD OF A TENANT REMOVAL.
+--
+-- Removing a tenant takes an entire customer's workspace off every surface in the
+-- product. Measured on production 2026-10-04, it was recorded nowhere: nine
+-- tenants carried a `deletedAt` and neither chain held a row for any of them.
+-- #3179 fixed the DURABLE half, appending `TENANT_REMOVED` to the tenant's own
+-- hash chain inside the delete transaction.
+--
+-- This is the READABLE half, and it is not a second copy of the same fact.
+-- `resolveTenantContext` throws notFound on `deletedAt`, and its own comment
+-- calls itself "the single authoritative gate — every /t and /api/t request
+-- resolves through here — so denying it once makes a removed tenant unreachable
+-- everywhere". The tenant's audit-log route is one of the 59 route groups behind
+-- that gate. So the moment the removal commits, the record of it is reachable by
+-- direct database query and nothing else; the org audit log is the only surface
+-- that still answers for a tenant that is gone.
+--
+-- ─── Why only DELETED, and not CREATED ──────────────────────────────
+--
+-- Creation has no readability problem: the tenant is live, so its own chain is
+-- served by the route that refuses a removed one. An `ORG_TENANT_CREATED` member
+-- would be symmetry rather than a fix, and an unused enum value is a claim the
+-- code does not make. It can be added when something needs it.
+--
+-- ─── The additive half of the enum hazard ───────────────────────────
+--
+-- `ALTER TYPE … RENAME` mid-rolling-deploy makes still-running old containers
+-- fail with SQLSTATE 42704. ADDING a value only affects readers that ENCOUNTER
+-- it, and only new code writes this one — the same argument
+-- `20261003100000_ai_human_outcome_autonomous` and
+-- `20260905140000_agent_proposal_output_guard` both wrote down, and this follows
+-- it.
+--
+-- `IF NOT EXISTS`, so a `migrate resolve --rolled-back` re-run survives: an enum
+-- addition commits in a way that does not roll back with Prisma's surrounding
+-- transaction, and the bare form then fails on the re-run and puts the container
+-- back into a restart loop (outage #2745). This file carries NO other DDL for the
+-- same reason — a partial failure then lands on a migration BOUNDARY, where
+-- `--applied` and `--rolled-back` mean what they say.
+--
+-- The value is not USED in this transaction. PostgreSQL forbids that; it does not
+-- forbid the ADD.
+ALTER TYPE "OrgAuditAction" ADD VALUE IF NOT EXISTS 'ORG_TENANT_DELETED';
