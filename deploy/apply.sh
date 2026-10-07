@@ -19,6 +19,35 @@
 #   deploy/init-roles.sh            → /opt/inflect/init-roles.sh
 #   prisma.config.ts                → /opt/inflect/prisma.config.ts
 #
+# …and the HOST CONFIG set, which lives outside /opt/inflect and belongs to a
+# host service rather than to the compose project:
+#
+#   deploy/ops-agent-config.yaml    → /etc/google-cloud-ops-agent/config.yaml
+#
+# WHY THAT IS A SECOND SET AND NOT A FOURTH ROW OF THE FIRST. Four properties
+# differ, and each one would be wrong if the two were merged:
+#
+#   directory   /etc/… , not ${REMOTE_DIR}, so the entry carries an ABSOLUTE
+#               remote path while the canonical set carries a basename.
+#   activation  a daemon restart, not `docker compose up -d`. A pushed agent
+#               config that nobody reloads changes nothing at all.
+#   validation  the agent's own engine parses it (`-in <file>`), which is a
+#               real gate: it exits 1 on an unsupported receiver type and on
+#               malformed YAML, with the line and column.
+#   blast window  NONE. Pushing it recreates no container, so it needs no
+#               service window — the opposite of the compose path, which
+#               costs a 502 on `app`. Coupling the two would mean a logging
+#               fix had to wait for a maintenance window, and a maintenance
+#               window had to carry a logging change.
+#
+# That last one is why HOST_CONFIG_ONLY=1 exists below. The mechanism nobody
+# can afford to run is the mechanism that goes unused, and an unused apply
+# path is how #2849's 148-line divergence happened in the first place.
+#
+# This set has exactly one member today, so the agent-specific validate and
+# reload steps are named inline rather than carried as fields in the array.
+# A second member is the moment to generalise them, not before.
+#
 # WHAT IT DELIBERATELY DOES NOT PUSH:
 #
 #   deploy/caddy/Caddyfile — the live /opt/inflect/caddy/Caddyfile serves a
@@ -39,9 +68,14 @@
 #   deploy/apply.sh              # preflight on the VM, then STOP and print the plan
 #   CONFIRM=1 deploy/apply.sh    # preflight, then actually apply
 #
+#   HOST_CONFIG_ONLY=1 CONFIRM=1 deploy/apply.sh
+#                                # push ONLY the host config set and reload its
+#                                # service. Touches no container, so it needs no
+#                                # service window. Still requires CONFIRM=1.
+#
 # Applying recreates containers. Expect a short 502 window on `app` and a
 # Redis restart (AOF-persisted, so queued BullMQ jobs survive). Run it in a
-# service window.
+# service window. HOST_CONFIG_ONLY=1 is the exception: it recreates nothing.
 #
 # Exit: 0 = applied (or preflight-only success), 1 = failed, 2 = refused.
 set -euo pipefail
@@ -99,7 +133,187 @@ CANONICAL_SET=(
     "${REPO_ROOT}/prisma.config.ts:prisma.config.ts"
 )
 
+# The host config set: "<local path>:<ABSOLUTE remote path>".
+#
+# Absolute, because these do not live under ${REMOTE_DIR}. Same shape as
+# check-drift.sh's APPLIABLE array on purpose — the two must name the same
+# files or a file gets pushed and never watched, which is precisely how the
+# Caddyfile became a standing divergence. tests/guards/deploy-canonical-set-is-watched.test.ts
+# asserts the agreement in both directions.
+HOST_CONFIG_SET=(
+    "${SCRIPT_DIR}/ops-agent-config.yaml:/etc/google-cloud-ops-agent/config.yaml"
+)
+
+# The service that reads the host config, and the generated artefact that
+# proves the push actually reached it.
+#
+# `google-cloud-ops-agent` is the umbrella unit; restarting it restarts the
+# fluent-bit and otel-collector subagents, which is what re-runs the
+# `google_cloud_ops_agent_engine -in <config>` ExecStartPre that COMPILES the
+# user config into the collector's own config. Agent 2.72 compiles LOGGING
+# into otel.yaml, not into fluent-bit — so otel.yaml is where a pushed change
+# becomes observable, and asserting the unit is merely `active` would pass
+# over a restart that silently kept the previous pipeline.
+OPS_AGENT_UNIT="google-cloud-ops-agent"
+OPS_AGENT_ENGINE="/opt/google-cloud-ops-agent/libexec/google_cloud_ops_agent_engine"
+OPS_AGENT_COMPILED="/run/google-cloud-ops-agent-opentelemetry-collector/otel.yaml"
+# A string the compiled collector config must contain afterwards. It comes from
+# the receiver in ops-agent-config.yaml, so it ties the assertion to the file
+# being pushed rather than to a constant that would stay true if the push
+# silently did nothing.
+OPS_AGENT_COMPILED_NEEDLE="/var/lib/docker/containers"
+
 ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --command "$1"; }
+
+# ── Host config set: preflight and apply ─────────────────────────────────
+#
+# Split into two functions because both the full run and HOST_CONFIG_ONLY=1
+# need them, and because a preflight that cannot be run without applying is
+# not a preflight.
+
+host_config_preflight() {
+    local entry local_path remote_path base lsha rsha staged rc
+    log "host config set (pushed outside ${REMOTE_DIR}, reloads a host service):"
+    for entry in "${HOST_CONFIG_SET[@]}"; do
+        local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
+        [ -f "$local_path" ] || { err "host config missing from the repo: $local_path"; return 1; }
+
+        lsha="$(sha256sum "$local_path" | awk '{print $1}')"
+        rsha="$(ssh_vm "sudo sha256sum '${remote_path}' 2>/dev/null || true" | awk '{print $1}')"
+        if [ -z "$rsha" ]; then
+            log "    WOULD CREATE ${remote_path} (absent on the VM)"
+        elif [ "$lsha" = "$rsha" ]; then
+            log "    unchanged  ${remote_path} (${lsha:0:12})"
+        else
+            log "    WOULD CHANGE ${remote_path}: repo ${lsha:0:12} → VM ${rsha:0:12}"
+        fi
+
+        # Validate with the agent's OWN engine, against TEMP output dirs.
+        #
+        # The engine compiles the user config into a collector config and
+        # writes it under -logs/-state. Pointing those at the live runtime
+        # directories would overwrite the running collector's config from a
+        # preflight, so they are a throwaway mktemp -d that is removed either
+        # way. This is the counterpart of `docker compose config -q` for the
+        # compose file: proven to exit 1 on an unsupported receiver type and
+        # on malformed YAML (reporting line:column), so it can express failure.
+        staged="/tmp/${base}.validate.${TS}"
+        log "    validating ${base} with ${OPS_AGENT_UNIT}'s own engine"
+        gcloud compute scp "$local_path" "${VM_NAME}:${staged}" \
+            --zone "$VM_ZONE" --tunnel-through-iap >/dev/null
+        rc=0
+        # The engine's output is captured to a file and printed AFTER, rather
+        # than piped through `sed` for indentation, because the exit code is the
+        # whole point of this step: a pipeline's status is its LAST command's,
+        # and `set -o pipefail` is this script's setting, not the remote shell's
+        # — so `engine | sed` would report sed's success for a rejected config.
+        # On success the output is the MERGED config, which is the host-config
+        # counterpart of the compose `up --dry-run` below: it shows what the
+        # agent would actually run, including that the built-in pipelines
+        # survive the merge.
+        ssh_vm "set -e
+            T=\$(mktemp -d)
+            trap 'sudo rm -rf \"\$T\" \"${staged}\"' EXIT
+            sudo mkdir -p \"\$T/logs\" \"\$T/state\"
+            rc=0
+            sudo ${OPS_AGENT_ENGINE} -service=otel -in '${staged}' \\
+                -logs \"\$T/logs\" -state \"\$T/state\" >\"\$T/out\" 2>&1 || rc=\$?
+            sed 's/^/      /' \"\$T/out\"
+            exit \$rc" || rc=$?
+        if [ "$rc" -ne 0 ]; then
+            err "${base} is NOT a valid ${OPS_AGENT_UNIT} config — the engine rejected it."
+            err "  Its own message is printed above and names either the unsupported field"
+            err "  or the line:column of the YAML error. Nothing was changed."
+            return 1
+        fi
+        log "      config OK"
+    done
+}
+
+host_config_apply() {
+    local entry local_path remote_path base compiled
+    for entry in "${HOST_CONFIG_SET[@]}"; do
+        local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
+
+        # Back up into ${REMOTE_DIR}, not beside the live file.
+        #
+        # Two reasons, both about the directory rather than the file. The
+        # prune step below walks ${REMOTE_DIR}/*.bak.* and keeps the newest
+        # KEEP_BACKUPS, and check-drift.sh fails loudly on anything there
+        # readable beyond root — a backup written into /etc/… would inherit
+        # neither control and would accumulate, unexamined, forever. And a
+        # dead config sitting beside a live one in a directory a daemon owns
+        # is a hazard worth not creating, even though this agent names its
+        # config as a single file (`-in <path>` in the unit) and so would not
+        # read it.
+        log "backing up ${remote_path} → ${REMOTE_DIR}/${base}.bak.${TS}"
+        ssh_vm "sudo sh -c \"cp -a '${remote_path}' '${REMOTE_DIR}/${base}.bak.${TS}' && chmod 600 '${REMOTE_DIR}/${base}.bak.${TS}'\" 2>/dev/null || true"
+
+        log "pushing ${remote_path}"
+        gcloud compute scp "$local_path" "${VM_NAME}:/tmp/${base}.new.${TS}" \
+            --zone "$VM_ZONE" --tunnel-through-iap
+        # 644, matching the live mode: this file carries no credential, and the
+        # agent reads it as root anyway. The backup above is 600 regardless,
+        # because a dead copy has no reader to accommodate.
+        ssh_vm "sudo mv '/tmp/${base}.new.${TS}' '${remote_path}' \
+            && sudo chown root:root '${remote_path}' && sudo chmod 644 '${remote_path}'"
+
+        log "restarting ${OPS_AGENT_UNIT} (no container is touched)"
+        if ! ssh_vm "sudo systemctl restart '${OPS_AGENT_UNIT}'"; then
+            err "${OPS_AGENT_UNIT} failed to restart after the push. Roll back with:"
+            err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
+            return 1
+        fi
+
+        # WIRED IS NOT DELIVERED. `systemctl is-active` goes green for an agent
+        # that restarted while keeping its previous pipeline, so assert on the
+        # COMPILED collector config instead: the needle comes from the receiver
+        # in the file just pushed, so this fails if the push did not take.
+        log "verifying the push reached the collector (${OPS_AGENT_COMPILED})"
+        # `|| compiled=""` because `set -o pipefail` is on: a transient ssh
+        # failure here would otherwise abort the script through the command
+        # substitution, AFTER the compose stack has already been applied —
+        # killing the run at the one point where its output is what an operator
+        # needs. An empty read is UNKNOWN and falls into the failure branch
+        # below, which is the safe direction.
+        compiled="$(ssh_vm "sudo grep -c -F '${OPS_AGENT_COMPILED_NEEDLE}' '${OPS_AGENT_COMPILED}' 2>/dev/null || echo 0" | tr -d '[:space:]')" \
+            || compiled=""
+        if [ -z "$compiled" ] || [ "$compiled" = "0" ]; then
+            err "${OPS_AGENT_UNIT} restarted but the compiled collector config does not"
+            err "  mention '${OPS_AGENT_COMPILED_NEEDLE}'. The push did not take effect."
+            err "  Roll back with:"
+            err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
+            return 1
+        fi
+        log "  OK   the receiver from ${base} is present in the compiled config (${compiled} ref(s))"
+    done
+}
+
+# ── HOST_CONFIG_ONLY: the no-service-window path ─────────────────────────
+#
+# Returns before anything compose-related runs, so it cannot recreate a
+# container even by mistake. It skips the env-file preflight too: these files
+# carry no ${VAR} interpolation and no secret, so there is nothing on the host
+# for them to depend on.
+if [ "${HOST_CONFIG_ONLY:-0}" = "1" ]; then
+    if [ "${DRY_RUN:-0}" = "1" ]; then
+        err "HOST_CONFIG_ONLY=1 and DRY_RUN=1 are mutually exclusive: validating these"
+        err "  files means running the host service's own engine, which only exists on"
+        err "  the VM. Drop DRY_RUN to preflight against the VM without applying."
+        exit 2
+    fi
+    log "HOST_CONFIG_ONLY — the host config set only. No container is recreated."
+    host_config_preflight || exit 1
+    if [ "${CONFIRM:-0}" != "1" ]; then
+        log ""
+        log "PREFLIGHT ONLY — nothing has been applied. Re-run with CONFIRM=1."
+        log "No service window is needed: this path recreates no container."
+        exit 0
+    fi
+    host_config_apply || exit 1
+    log "host config applied. Verify with deploy/check-drift.sh."
+    exit 0
+fi
 
 # ── DRY_RUN: local only, never reaches the VM ────────────────────────────
 #
@@ -248,6 +462,12 @@ for entry in "${CANONICAL_SET[@]:1}"; do
     fi
 done
 
+# 5. The host config set: report, and validate with the owning service's engine.
+if ! host_config_preflight; then
+    cleanup_staged
+    exit 1
+fi
+
 if [ "${CONFIRM:-0}" != "1" ]; then
     log ""
     log "PREFLIGHT ONLY — nothing has been applied."
@@ -282,6 +502,17 @@ for entry in "${CANONICAL_SET[@]:1}"; do
         --zone "$VM_ZONE" --tunnel-through-iap
     ssh_vm "sudo mv '/tmp/${remote_base}.new.${TS}' '${REMOTE_DIR}/${remote_base}' && sudo chown root:root '${REMOTE_DIR}/${remote_base}'"
 done
+
+# The host config set, before the prune below so the backup it writes is
+# covered by the same retention.
+#
+# A failure here does NOT abort the deploy. The compose file has already been
+# pushed by this point, so returning early would leave the VM holding a
+# compose file that was never applied — drift created by the tool whose job is
+# to prevent it. It is recorded instead and reported with the health result at
+# the end, which is also where an operator is already looking.
+HOST_CONFIG_FAILED=0
+host_config_apply || HOST_CONFIG_FAILED=1
 
 # ── Prune ──────────────────────────────────────────────────────────────────
 #
@@ -341,6 +572,15 @@ ROLLBACK="gcloud compute ssh ${VM_NAME} --zone ${VM_ZONE} --tunnel-through-iap -
 if [ "$HEALTH_FAILED" = "1" ]; then
     err "applied, but health checks FAILED. Roll back with:"
     printf '  %s\n' "$ROLLBACK" >&2
+    exit 1
+fi
+
+if [ "$HOST_CONFIG_FAILED" = "1" ]; then
+    err "the compose stack applied and is HEALTHY, but the host config set did not."
+    err "  Read the host-config errors above — the app is serving; what is broken is"
+    err "  whatever that service does (for the ops agent: log export, silently)."
+    err "  Fix the file and re-run with HOST_CONFIG_ONLY=1 CONFIRM=1 — no service"
+    err "  window is needed for that path."
     exit 1
 fi
 

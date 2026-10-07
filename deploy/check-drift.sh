@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 #
 # deploy/check-drift.sh — detect drift between the repo-canonical prod
-# Compose set and what the VM actually runs.
+# config set and what the VM actually runs.
+#
+# "Config set", not "Compose set": it also watches host config that belongs to
+# a systemd service rather than to the compose project — today
+# /etc/google-cloud-ops-agent/config.yaml, which apply.sh pushes from its own
+# HOST_CONFIG_SET. Until that file was versioned it was the last piece of
+# production config living only on the VM, which is the exact class of drift
+# #2849 built these two scripts to eliminate.
 #
 # Run it on a WEEKLY cadence (cron, or a scheduled Actions job once a GCP
 # service-account secret exists) so a hand-edit on the VM surfaces in days
@@ -26,9 +33,15 @@
 #   1 = drift in a file apply.sh can push (reconcile, then run apply.sh)
 #   2 = could not reach the VM (UNKNOWN — never read this as "no drift")
 #   3 = the only differences are in UNRECONCILED files — an outstanding
-#       decision, not something apply.sh can fix. That array is EMPTY as of
-#       2026-09-26 (the Caddyfile was reconciled), so this exit is currently
-#       unreachable; the code stays because the next such file will need it.
+#       decision, not something apply.sh can fix. One entry today: the
+#       Caddyfile.
+#
+#       This note used to say the array was EMPTY as of 2026-09-26 and that
+#       exit 3 was therefore unreachable. It was wrong when it was written —
+#       the entry is right there below, and on 2026-09-26 what got reconciled
+#       was the Caddyfile's CONTENT, not its entry. The two are different
+#       claims and the header collapsed them, which is how a reader ends up
+#       treating a reachable exit code as dead.
 set -euo pipefail
 
 VM_NAME="${VM_NAME:-inflect-compliance}"
@@ -56,17 +69,31 @@ if [ "$COMPOSE_BASENAME" != "$CANONICAL_COMPOSE" ] \
 fi
 
 # APPLIABLE: reconciled, and apply.sh pushes them. "<local>:<remote>".
+#
+# The last entry is host config rather than compose config — it lives outside
+# ${REMOTE_DIR} and belongs to a systemd service, and apply.sh pushes it from
+# its own HOST_CONFIG_SET. It is watched HERE and not in a separate array
+# because the property this script reports on is identical for both: the repo
+# is the source of truth and the VM must match it. Only the push mechanism
+# differs, and that is apply.sh's concern, not this script's.
+#
+# tests/guards/deploy-canonical-set-is-watched.test.ts asserts this array and
+# apply.sh's two push arrays name the same files, in both directions. A file
+# pushed but unwatched drifts silently; a file watched but unpushed is a
+# standing warning nobody can action — the Caddyfile has been exactly that
+# since 2026-09-26.
 APPLIABLE=(
     "${SCRIPT_DIR}/${COMPOSE_BASENAME}:${REMOTE_DIR}/${COMPOSE_BASENAME}"
     "${SCRIPT_DIR}/init-roles.sh:${REMOTE_DIR}/init-roles.sh"
     "${REPO_ROOT}/prisma.config.ts:${REMOTE_DIR}/prisma.config.ts"
+    "${SCRIPT_DIR}/ops-agent-config.yaml:/etc/google-cloud-ops-agent/config.yaml"
 )
 
 # UNRECONCILED: watched, reported, NOT pushed by apply.sh. Each entry owes a
 # reason, because an un-actionable warning that outlives its explanation is
 # how a check becomes noise people filter out.
 UNRECONCILED=(
-    "${SCRIPT_DIR}/caddy/Caddyfile:${REMOTE_DIR}/caddy/Caddyfile:the CONTENT is reconciled as of 2026-09-26 — the repo copy is now the superset, defining both hostnames and carrying the HTTP/3 and Cache-Control work — but apply.sh still cannot push it: its push loop stages through /tmp/\${remote_base}.new.\${TS}, which for a nested path becomes /tmp/caddy/Caddyfile.new.… and that directory does not exist on the VM. Pushing needs a flattened staging name first, and apply.sh is the push path for every other canonical file, so that change wants its own diff"
+    "${SCRIPT_DIR}/caddy/Caddyfile:${REMOTE_DIR}/caddy/Caddyfile:the CONTENT is reconciled as of 2026-09-26 — the repo copy is the superset, defining both hostnames and carrying the HTTP/3 and Cache-Control work. The MECHANICAL blocker this entry used to cite is gone: it said apply.sh had no flattened staging name for a nested remote path, and as of the ops-agent change apply.sh's HOST_CONFIG_SET loop stages every push through /tmp/\$(basename).new.\${TS}, which the Caddyfile could use unchanged. What remains is NOT mechanical. Caddy needs a reload rather than a restart, so pushing it means adding and verifying that step; the repo and VM copies are still not byte-equal, so the first push is a real content change to a live TLS terminator serving two production hostnames; and nobody has taken that decision. Moving this entry to APPLIABLE is therefore a deliberate act with its own verification, not the one-line array edit it now looks like"
 )
 
 remote_sha() {

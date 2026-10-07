@@ -1,0 +1,127 @@
+# Ships the APPLICATION container logs to Cloud Logging, additively.
+#
+# WHY THIS EXISTS
+# Container stdout is discarded every time watchtower recreates the app on
+# :latest, and nothing left the VM: Cloud Logging for this project held only
+# GCE-agent, audit and monitoring types, and a 7-day query for the #3099 counter
+# returned empty against a working positive control. So
+# `Inflect-nav-push-retry` could fire in production and leave no durable trace.
+#
+# ADDITIVE ON PURPOSE. docs/observability/01-deployment-topology.md records a
+# deliberate decision that the app "emits Pino JSON to stdout, captured by the
+# docker log driver; `docker logs` and `journalctl` remain the log surface", with
+# log SEARCH out of scope as a separate initiative. Switching the app to the
+# `gcplogs` driver would have broken that surface, so the json-file driver is
+# untouched and this tails the files it already writes.
+#
+# WHY A CONTENT FILTER RATHER THAN A PATH FILTER
+# Container log paths are keyed by container ID, which changes on every
+# recreation, so no include/exclude path names "the app" for longer than one
+# deploy. The filter is necessary, not tidy — measured on 2026-10-07:
+#   inflect-pgbouncer-1   7.2 MB/day   (1205.6 MB over 168.66 days, file mtime
+#                                       minus birth time: 2026-04-21 18:46 to
+#                                       2026-10-07 10:42)
+#   inflect-app-1        ~0.4 MB/day   (20 KB in 1.23 h — a short SAMPLE, not a
+#                                       baseline; the app container is recreated
+#                                       by watchtower so its log is always young)
+# roughly a 19x ratio of per-connection login/close noise to application logs.
+#
+# CORRECTION: this block first said 71 MB/day and a 180x ratio. Same numerator,
+# wrong denominator — 17.1 days was the CONTAINER's uptime as reported at the
+# time, while the bytes had accumulated in the LOG FILE over 168.66 days. A rate
+# is only as good as the interval under it, and the two were not the same
+# interval. The filter decision does not depend on the magnitude — content
+# beats path because container IDs churn, at 19x exactly as at 180x — but the
+# figure was wrong by 9x in the alarming direction and it had been published.
+#
+# The app emits Pino JSON and pgbouncer emits plain text, so a content test
+# separates them and survives ID churn. The receiver still reads the backlog
+# once; the exclude drops it before export, so it costs IO and no ingest.
+logging:
+  receivers:
+    docker_json:
+      type: files
+      include_paths:
+        - /var/lib/docker/containers/*/*-json.log
+  processors:
+    # Filter on the RAW wrapper, not on a parsed field.
+    #
+    # The first attempt filtered `jsonPayload.log`, which only exists if a
+    # parse_json step has already run — and it had not. The expression then
+    # evaluated against a MISSING field, which matched nearly every record, so the
+    # pipeline dropped almost everything including the app's own lines: 6 entries
+    # in 2 hours, the app absent, and one pgbouncer line still slipping through.
+    # A filter that silently drops the thing it is meant to keep looks identical
+    # to a quiet pipeline, which is why the acceptance test queried for a line
+    # known to exist rather than trusting the entry count.
+    #
+    # Docker's wrapper is always {"log":"<payload>","stream":…}. The app's payload
+    # is Pino JSON so the wrapper reads {"log":"{…; pgbouncer, caddy and redis emit
+    # plain text that begins with a timestamp. Separating them therefore needs
+    # nothing but a test on the wrapper's text — and, per the terms below, that
+    # test is two bare words rather than the escaped opening brace this comment
+    # used to recommend. The brace form was tried and lost a level of escaping
+    # somewhere in the YAML -> agent-string -> RE2 chain.
+    keep_only_json_payloads:
+      type: exclude_logs
+      match_any:
+        # TWO entries, and the arithmetic is the point: `exclude_logs` ORs its
+        # `match_any` expressions for EXCLUSION, so a line must satisfy EVERY
+        # entry to survive. Two `!~` terms therefore mean "keep only lines
+        # containing BOTH words".
+        #
+        # Bare words with no escaping, deliberately. Two early attempts died in
+        # the YAML -> agent-string -> RE2 chain: `jsonPayload.log !~ "^\{"`
+        # referenced a field no parse step had created yet, and the
+        # escaped-brace form `^\{"log":"\{` lost a level of escaping somewhere
+        # and excluded the app's own lines.
+        #
+        # WHY NOT `component`, WHICH THIS FILTER USED FIRST
+        # Because it dropped the one metric this whole config exists to carry.
+        # `component` is set by individual CALLERS; `requestId` is injected
+        # UNCONDITIONALLY by the single log helper
+        # (src/lib/observability/logger.ts — `requestId: ctx?.requestId ??
+        # 'unknown'`). `recordWebVital` passes vital/value/rating/route/
+        # navigationType and no `component`, so every `web_vital` line — which
+        # is how `Inflect-nav-push-retry`, the #3099 counter, reaches a log at
+        # all — failed the filter and was discarded before export.
+        #
+        # Proven against production rather than argued: one real beacon to
+        # /api/telemetry/vitals produced exactly one `web_vital` line in the app
+        # container, carrying zero occurrences of the word "component", and
+        # Cloud Logging received 0 of it while the same 10-minute window held 47
+        # other entries — all 47 component-bearing.
+        #
+        # `msg` is the second term because it is Pino's message key, present on
+        # every line the helper writes. It is what excludes postgres: 881 of its
+        # lines carry `requestId` as a DDL COLUMN NAME (`"requestId",
+        # "recordIds", "metadataJson"` — migration output, no row data), and
+        # none of those carry `msg`.
+        #
+        # Measured per container, whole log files:
+        #                        lines   `component`  requestId+msg
+        #   inflect-pgbouncer-1  5712461          0            0
+        #   inflect-watchtower-1  260388          0            0
+        #   inflect-postgres-1     77098          0            0   (881 on requestId alone)
+        #   inflect-clamav-1       26533          0            0
+        #   inflect-redis-1        18288          0            0
+        #   inflect-caddy-1         1749          0            0
+        #   inflect-worker-1          388        186          186
+        #   inflect-app-1              94         25           26   <- +1 is the web_vital line
+        # Strictly better on every container: it gains exactly the target class
+        # and admits nothing new.
+        - 'jsonPayload.message !~ "requestId"'
+        - 'jsonPayload.message !~ "msg"'
+    # Unwrap for readability. If this ever fails the filter above still holds,
+    # because it does not depend on it.
+    unwrap_docker:
+      type: parse_json
+      field: message
+  service:
+    pipelines:
+      docker_app:
+        receivers: [docker_json]
+        processors: [keep_only_json_payloads, unwrap_docker]
+      # Re-declared because naming any pipeline replaces the built-in set.
+      default_pipeline:
+        receivers: [syslog]

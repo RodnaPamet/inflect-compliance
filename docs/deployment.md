@@ -197,8 +197,8 @@ a file that had never run.
 
 | | |
 | --- | --- |
-| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). |
-| `deploy/check-drift.sh` | Compares repo against VM by sha256. Exit 0 in sync, 1 drift in a file `apply.sh` can push, 2 the VM was unreachable (UNKNOWN — never read as "no drift"), 3 only an `UNRECONCILED` file differs — today just the Caddyfile, whose content is reconciled while `apply.sh` has no path that pushes it. |
+| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). `HOST_CONFIG_ONLY=1 CONFIRM=1` pushes only the host config set and reloads its service — it recreates no container, so it needs no service window. |
+| `deploy/check-drift.sh` | Compares repo against VM by sha256. Exit 0 in sync, 1 drift in a file `apply.sh` can push, 2 the VM was unreachable (UNKNOWN — never read as "no drift"), 3 only an `UNRECONCILED` file differs — today just the Caddyfile. |
 
 Run `check-drift.sh` on a weekly cadence so a hand-edit on the VM surfaces in
 days rather than during an incident. It runs from an operator's machine or a
@@ -234,6 +234,48 @@ prisma.config.ts                → /opt/inflect/prisma.config.ts
 resolves its config at runtime, and the entrypoint runs `prisma migrate deploy`
 before `next start`. That mount has been live since the 2026-05-05 Prisma 7
 recovery and was absent from the repo file until #2849 reconciled it back.
+
+### And it is more than the compose project: the host config set
+
+Production config that belongs to a **host service** rather than to the
+compose project is pushed from a second array, `HOST_CONFIG_SET`:
+
+```
+deploy/ops-agent-config.yaml    → /etc/google-cloud-ops-agent/config.yaml
+```
+
+That file is what ships the app container's logs to Cloud Logging. Until it
+was versioned it lived **only on the VM** — the last piece of production config
+outside git, which is precisely the class of drift #2849 built these two
+scripts to eliminate for the compose file. Its failure mode is also the
+quietest in the stack: a wrong filter does not break the app, it stops log
+export, and an empty log query reads as "a quiet night".
+
+Four properties differ from the compose set, and each is why it is a separate
+array rather than a fourth row of the first:
+
+| | compose set | host config set |
+| --- | --- | --- |
+| remote path | basename under `/opt/inflect` | absolute, outside it |
+| activation | `docker compose up -d` | `systemctl restart <unit>` |
+| validation | `docker compose config -q` | the service's own engine parses it |
+| service window | yes — a 502 on `app` | **none**; no container is touched |
+
+The last row is why `HOST_CONFIG_ONLY=1 CONFIRM=1 deploy/apply.sh` exists. Were
+the two coupled, a logging fix would have to wait for a maintenance window and
+a maintenance window would have to carry a logging change — and a mechanism
+nobody can afford to run is a mechanism that goes unused, which is how the
+original divergence happened.
+
+Two assertions hold the pieces together. `apply.sh` verifies the restart
+actually **compiled** the config it just pushed, by looking for the receiver
+path in the generated collector config (`systemctl is-active` goes green for an
+agent that restarted while keeping its previous pipeline — ops agent 2.72
+compiles logging into `otel.yaml`, not into fluent-bit). And
+`tests/guards/deploy-canonical-set-is-watched.test.ts` asserts that everything
+`apply.sh` pushes is something `check-drift.sh` watches, in both directions: a
+file pushed but unwatched drifts silently, and a file watched but unpushed is a
+standing warning nobody can action.
 
 ### Interpolation scope is not `env_file`, and the difference bites
 
