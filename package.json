@@ -50,6 +50,7 @@
     "test:coverage": "jest --coverage",
     "test:all": "jest && playwright test",
     "typecheck": "tsc --noEmit",
+    "typecheck:ui-boundary": "tsc --noEmit -p packages/ui/tsconfig.json",
     "lint": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
     "count-any": "node scripts/count-any.js",
     "ci:local": "node scripts/ci-local.mjs",
