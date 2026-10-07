@@ -223,7 +223,7 @@ describe('every Intl.DateTimeFormat in format-date.ts is pinned to en-GB + UTC',
      * the locale and the timezone.
      */
     const SOURCE = codeOf(fs.readFileSync(
-        path.join(__dirname, '..', '..', 'src', 'lib', 'format-date.ts'),
+        path.join(__dirname, '..', '..', 'packages', 'ui', 'src', 'lib', 'format-date.ts'),
         'utf8',
     ));
 

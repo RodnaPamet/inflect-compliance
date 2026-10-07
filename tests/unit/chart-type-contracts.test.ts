@@ -305,7 +305,7 @@ describe('Chart contracts carry zero domain semantics', () => {
 
         const path = require('path') as typeof import('path');
         const src = fs.readFileSync(
-            path.resolve(__dirname, '../../src/components/ui/charts/types.ts'),
+            path.resolve(__dirname, '../../packages/ui/src/components/ui/charts/types.ts'),
             'utf-8',
         );
         // Strip comments so a harmless mention in JSDoc doesn't fail.
