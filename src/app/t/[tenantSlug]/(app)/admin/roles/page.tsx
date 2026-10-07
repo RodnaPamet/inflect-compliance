@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import type { Role } from '@prisma/client';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DataTable, createColumns } from '@/components/ui/table';

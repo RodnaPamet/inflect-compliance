@@ -12,7 +12,7 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import { apiGet } from '@/lib/api-client';
-import { LifeRing } from '@/components/ui/icons/nucleo/life-ring';
+import { LifeRing } from '@inflect/ui/components/ui/icons/nucleo/life-ring';
 
 interface NodeBia {
     processNodeId: string | null;

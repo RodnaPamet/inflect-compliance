@@ -485,7 +485,7 @@ older classifications.
 
 `git ls-files` over the same four roots returns **617**. The four extra are documentation —
 `src/components/ui/filter/GUIDE.md`, `src/components/ui/table/GUIDE.md`,
-`src/components/ui/hooks/README.md`, `src/components/ui/icons/nucleo/README.md` — outside the
+`src/components/ui/hooks/README.md`, `packages/ui/src/components/ui/icons/nucleo/README.md` (moved with its subject at step 2b) — outside the
 population because the walker takes `.ts`/`.tsx` only. They are part of the shared surface in every
 sense that matters to a consumer and are the easiest thing to forget; §1 puts them in the package.
 
@@ -1001,6 +1001,46 @@ does not look at this document. The `.dockerignore` and `tsconfig` `.claude` exc
 in place.
 
 ---
+
+## Update 2026-10-07 — step 2b, and three predictions it falsified
+
+The 333 icons moved. Population **613** before and after (333 from `packages/ui`,
+280 from `src`), which is the §5.1 invariant holding. What this step learned, each
+measured rather than reasoned:
+
+**1. `exports` needs FOUR arms, and the obvious one resolves nothing.** An
+`exports` target must name a real file — TypeScript will not append an extension
+to one — so `"./*": "./src/*"` fails with the trace saying
+`Export specifier './lib/cn' does not exist`. A directory entry needs its own arm
+again, because `nucleo` resolves through `nucleo/index.ts`. The shape that works,
+proved on a one-file isolated program with a negative control:
+
+    "./*": ["./src/*.ts", "./src/*.tsx", "./src/*/index.ts", "./src/*/index.tsx"]
+
+**2. §5.6 is wrong that no jest mapper is needed — but only for the SECOND arm.**
+`jest-resolve` does not honour an `exports` array fallback. Measured as a pair:
+`@inflect/ui/lib/cn` (arm 1, `.ts`) resolves and
+`@inflect/ui/components/ui/icons/sort-order` (arm 2, `.tsx`) fails
+`Cannot find module`. So all three projects gained
+`'^@inflect/ui/(.*)$': '<rootDir>/packages/ui/src/$1'`, which hands extension
+resolution back to jest. The prediction held for the arm that happened to be
+tested first, which is why it read as true.
+
+**3. §6 step 2 names NINE test files; there are ELEVEN.** The two it misses are
+`tests/guards/icon-import-discipline.test.ts` (it holds the Nucleo barrel
+specifier as a constant AND asserts `next.config.js` names it, so
+`optimizePackageImports` had to move too — a production config change the step
+list does not mention) and `tests/rendered/agentic-nav-item.test.tsx`.
+
+**One trap worth recording because it bit twice.** `git mv` leaves the source
+DIRECTORY behind, empty. Any "did this move?" check written as `is_dir()` then
+answers yes, so a rewrite pass silently skips the moved target. It cost 62
+specifiers on the first sweep and both directory re-exports in the barrel
+(`./nucleo`, `./continents`) on the second — and the barrel case only surfaced as
+`Module '"./icons"' has no exported member 'CircleCheck'` several layers away.
+Delete empty directories BEFORE any existence-based rewrite, and resolve `..` with
+`normpath` — `Path.as_posix()` does not, so `../icons/x` never matches a
+`src/components/ui/icons/` prefix test.
 
 ## Roadmap — the sequence, and what verifies each step
 

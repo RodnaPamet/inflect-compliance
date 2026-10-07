@@ -62,7 +62,7 @@ import { Card } from '@/components/ui/card';
 import { CopyText } from '@/components/ui/copy-text';
 import { ErrorState } from '@/components/ui/error-state';
 import { useToast } from '@/components/ui/hooks';
-import { ShieldKeyhole } from '@/components/ui/icons/nucleo';
+import { ShieldKeyhole } from '@inflect/ui/components/ui/icons/nucleo';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { SkeletonCard } from '@/components/ui/skeleton';

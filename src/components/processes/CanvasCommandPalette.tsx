@@ -35,7 +35,7 @@ import { cn } from "@inflect/ui/lib/cn";
 import { Command } from "cmdk";
 import { useCallback, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { Magnifier } from "@/components/ui/icons/nucleo/magnifier";
+import { Magnifier } from "@inflect/ui/components/ui/icons/nucleo/magnifier";
 
 import { useKeyboardShortcut } from "@/lib/hooks/use-keyboard-shortcut";
 

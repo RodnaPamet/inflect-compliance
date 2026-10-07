@@ -102,7 +102,7 @@ jest.mock('@/components/layout/use-calendar-badge', () => ({
 }));
 
 import { useNavSections } from '@/components/layout/SidebarNav';
-import { Robot } from '@/components/ui/icons/nucleo';
+import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
 
 const EN = require('../../messages/en.json') as { nav: Record<string, string> };
 

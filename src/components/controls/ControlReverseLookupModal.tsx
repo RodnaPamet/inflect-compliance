@@ -35,7 +35,7 @@ import Link from "next/link";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Heading } from "@/components/ui/typography";
-import { LoadingSpinner } from "@/components/ui/icons/loading-spinner";
+import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 
 interface MapRef {
     mapId: string;

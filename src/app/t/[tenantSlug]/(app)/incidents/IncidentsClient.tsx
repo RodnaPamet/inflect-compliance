@@ -8,7 +8,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { createColumns } from '@/components/ui/table';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { EmptyState } from '@/components/ui/empty-state';

@@ -14,7 +14,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
-import { Lock, ShieldKeyhole } from '@/components/ui/icons/nucleo';
+import { Lock, ShieldKeyhole } from '@inflect/ui/components/ui/icons/nucleo';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Modal } from '@/components/ui/modal';

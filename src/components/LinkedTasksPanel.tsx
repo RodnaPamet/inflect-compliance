@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { taskStatusVariant, taskStatusLabel, taskSeverityLabels } from '@/lib/task-status-badge';

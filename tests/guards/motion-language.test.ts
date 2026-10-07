@@ -54,7 +54,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 
 const ALLOWLIST: Array<{ file: string; reason: string }> = [
     {
-        file: 'src/components/ui/icons/expanding-arrow.tsx',
+        file: 'packages/ui/src/components/ui/icons/expanding-arrow.tsx',
         reason:
             'Decorative chevron primitive composes group-hover translate + opacity into one transition-all; the motion is intentional.',
     },

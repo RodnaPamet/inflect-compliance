@@ -1,4 +1,4 @@
-import { cn } from "@inflect/ui/lib/cn";
+import { cn } from "../../../lib/cn";
 import { motion } from "motion/react";
 
 const upPath = "M6.75 8.25L4 11L1.25 8.25";

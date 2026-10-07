@@ -28,7 +28,7 @@ import { NewEvidenceLinkModal } from './NewEvidenceLinkModal';
 import { EvidenceBulkImportModal } from './EvidenceBulkImportModal';
 import { RejectReasonModal } from './RejectReasonModal';
 import { Popover } from '@/components/ui/popover';
-import { CloudUpload, Note, Hyperlink, FileZip2 } from '@/components/ui/icons/nucleo';
+import { CloudUpload, Note, Hyperlink, FileZip2 } from '@inflect/ui/components/ui/icons/nucleo';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
@@ -79,7 +79,7 @@ import {
 } from '@/lib/evidence-review-currency';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
-import { Plus, Pen2, Download, BoxArchive, PaperPlane, Check, Xmark, CalendarRefresh, ShieldAlert, CircleHalfDottedClock } from '@/components/ui/icons/nucleo';
+import { Plus, Pen2, Download, BoxArchive, PaperPlane, Check, Xmark, CalendarRefresh, ShieldAlert, CircleHalfDottedClock } from '@inflect/ui/components/ui/icons/nucleo';
 import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 import { ownerLabel } from '@/lib/evidence-owner-label';
 

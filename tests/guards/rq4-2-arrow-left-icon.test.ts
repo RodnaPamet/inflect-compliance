@@ -17,11 +17,11 @@ import { codeOf } from '../helpers/source-blocks';
 
 const ICON_PATH = path.resolve(
     __dirname,
-    '../../src/components/ui/icons/nucleo/arrow-left.tsx',
+    '../../packages/ui/src/components/ui/icons/nucleo/arrow-left.tsx',
 );
 const BARREL_PATH = path.resolve(
     __dirname,
-    '../../src/components/ui/icons/nucleo/index.ts',
+    '../../packages/ui/src/components/ui/icons/nucleo/index.ts',
 );
 
 describe('rq4-2 arrow-left icon', () => {

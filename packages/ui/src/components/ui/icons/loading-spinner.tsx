@@ -1,4 +1,4 @@
-import { cn } from "@inflect/ui/lib/cn";
+import { cn } from "../../../lib/cn";
 
 /**
  * The twelve-bar spinner.

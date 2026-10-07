@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { RequirePermission } from '@/components/require-permission';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';

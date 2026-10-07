@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';

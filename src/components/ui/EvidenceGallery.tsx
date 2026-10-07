@@ -39,7 +39,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { isScanServable } from '@/lib/evidence-scan';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Download } from '@/components/ui/icons/nucleo';
+import { Download } from '@inflect/ui/components/ui/icons/nucleo';
 import {
     FileTypeIcon,
     resolveFileTypeIcon,

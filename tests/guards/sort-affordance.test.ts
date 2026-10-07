@@ -11,7 +11,7 @@
  *   classes that don't re-tone with the theme.
  *
  * What this ratchet detects
- *   1. `src/components/ui/icons/sort-order.tsx` — colour token.
+ *   1. `packages/ui/src/components/ui/icons/sort-order.tsx` — colour token.
  *      Bans `text-neutral-*` / `text-slate-*` / `text-gray-*` / hex
  *      colour literals on the SVG. Forces `text-content-*` use.
  *
@@ -29,7 +29,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const SORT_ICON = 'src/components/ui/icons/sort-order.tsx';
+const SORT_ICON = 'packages/ui/src/components/ui/icons/sort-order.tsx';
 const TABLE = 'src/components/ui/table/table.tsx';
 
 const PALETTE_RE = /\btext-(neutral|slate|gray)-/;

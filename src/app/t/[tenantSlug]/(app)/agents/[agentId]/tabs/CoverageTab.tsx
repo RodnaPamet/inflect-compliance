@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 
 import { Card } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
-import { ShieldSlash } from '@/components/ui/icons/nucleo';
+import { ShieldSlash } from '@inflect/ui/components/ui/icons/nucleo';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { KPIStat } from '@/components/ui/metric';

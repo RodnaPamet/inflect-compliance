@@ -18,7 +18,7 @@ import { RuleDetailSheet } from '@/components/processes/RuleDetailSheet';
 import { RuleBuilderModal } from '@/components/processes/RuleBuilderModal';
 import { TemplateLibraryModal } from '@/components/processes/TemplateLibraryModal';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { createColumns } from '@/components/ui/table';

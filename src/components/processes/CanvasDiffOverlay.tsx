@@ -27,7 +27,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { LoadingSpinner } from "@/components/ui/icons/loading-spinner";
+import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 import {
     computeCanvasDiff,
     type CanvasDiff,

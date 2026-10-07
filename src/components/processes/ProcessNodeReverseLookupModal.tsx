@@ -18,7 +18,7 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { LoadingSpinner } from "@/components/ui/icons/loading-spinner";
+import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 
 type EntityType = "risk" | "asset";
 

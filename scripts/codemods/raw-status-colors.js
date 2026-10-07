@@ -34,7 +34,8 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "../..");
 const TARGETS = ["src/app", "src/components"];
 const EXCLUDE_DIR_NAMES = new Set([
-  "icons",        // src/components/ui/icons — raw colors are part of icon defs
+  "icons",        // matched by path SEGMENT, so it covers packages/ui/.../icons too
+                  // (#3046 step 2b) — raw colors are part of icon defs
   "charts",       // src/components/ui/charts — chart palette uses raw colors
   "node_modules",
   "__tests__",
