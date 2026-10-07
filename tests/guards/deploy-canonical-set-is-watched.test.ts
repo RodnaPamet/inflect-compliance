@@ -329,9 +329,10 @@ describe('deploy/ops-agent-config.yaml — the pipeline that exports app logs', 
 
     it('the app pipeline wires the receiver through every declared processor', () => {
         // A pipeline that names the receiver but drops the exclude processor
-        // exports pgbouncer's per-connection noise too: measured on
-        // 2026-10-07 at 71 MB/day against the app's ~0.4 MB/day, a 180x
-        // ratio. That is a billing and a signal-to-noise regression at once.
+        // exports pgbouncer's per-connection noise too: measured on 2026-10-07
+        // at 7.2 MB/day over a 168.66-day log against the app's ~0.4 MB/day
+        // over a 1.23 h sample, roughly 19x. That is a billing and a
+        // signal-to-noise regression at once.
         const doc = agentConfig();
         const pipelines = doc.logging?.service?.pipelines ?? {};
         const receiverNames = Object.keys(doc.logging?.receivers ?? {});

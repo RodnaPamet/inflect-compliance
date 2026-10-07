@@ -18,13 +18,25 @@
 # Container log paths are keyed by container ID, which changes on every
 # recreation, so no include/exclude path names "the app" for longer than one
 # deploy. The filter is necessary, not tidy — measured on 2026-10-07:
-#   inflect-pgbouncer-1   71 MB/day   (1206 MB over 17.1 days of uptime)
-#   inflect-app-1        ~0.4 MB/day  (20 KB in 1.23 h)
-# a 180x ratio of per-connection login/close noise to application logs. The app
-# emits Pino JSON and pgbouncer emits plain text, so "the unwrapped payload
-# starts with {" separates them and survives ID churn. The receiver still reads
-# the backlog once; the exclude drops it before export, so it costs IO and no
-# ingest.
+#   inflect-pgbouncer-1   7.2 MB/day   (1205.6 MB over 168.66 days, file mtime
+#                                       minus birth time: 2026-04-21 18:46 to
+#                                       2026-10-07 10:42)
+#   inflect-app-1        ~0.4 MB/day   (20 KB in 1.23 h — a short SAMPLE, not a
+#                                       baseline; the app container is recreated
+#                                       by watchtower so its log is always young)
+# roughly a 19x ratio of per-connection login/close noise to application logs.
+#
+# CORRECTION: this block first said 71 MB/day and a 180x ratio. Same numerator,
+# wrong denominator — 17.1 days was the CONTAINER's uptime as reported at the
+# time, while the bytes had accumulated in the LOG FILE over 168.66 days. A rate
+# is only as good as the interval under it, and the two were not the same
+# interval. The filter decision does not depend on the magnitude — content
+# beats path because container IDs churn, at 19x exactly as at 180x — but the
+# figure was wrong by 9x in the alarming direction and it had been published.
+#
+# The app emits Pino JSON and pgbouncer emits plain text, so a content test
+# separates them and survives ID churn. The receiver still reads the backlog
+# once; the exclude drops it before export, so it costs IO and no ingest.
 logging:
   receivers:
     docker_json:
@@ -61,7 +73,7 @@ logging:
         # caddy, redis and watchtower do not. One bare word needs no escaping, so
         # there is no chain to get wrong. The cost is that an app line without a
         # `component` field is dropped; both sampled lines carry one, and a missing
-        # app line is a smaller failure than shipping 71 MB/day of pgbouncer.
+        # app line is a smaller failure than shipping pgbouncer's whole stream.
         - 'jsonPayload.message !~ "component"'
     # Unwrap for readability. If this ever fails the filter above still holds,
     # because it does not depend on it.
