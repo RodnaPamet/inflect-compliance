@@ -174,7 +174,12 @@
       "trendAria": "тенденция на {label}",
       "ganttEmptyMessage": "Няма събития от времевата линия в този диапазон.",
       "risksEmpty": "Все още няма регистрирани рискове.",
-      "severityBandsEmpty": "Няма конфигурирани нива на тежест."
+      "severityBandsEmpty": "Няма конфигурирани нива на тежест.",
+      "ganttChartAria": "Диаграма на Гант",
+      "lineChartAria": "Линейна диаграма",
+      "radarChartAria": "Радарна диаграма",
+      "lossExceedanceAria": "Крива на превишаване на загубите",
+      "lossBucketsAria": "Интервали на загубите"
     },
     "sections": {
       "accessReviews": "Прегледи на достъпа",

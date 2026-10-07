@@ -43,6 +43,7 @@
  *
  * Wraps in `<ChartFrame>` for state-driven branch rendering.
  */
+import { useTranslations } from 'next-intl';
 import { useId, useState, type ReactNode } from 'react';
 import { Group } from '@visx/group';
 import { Line } from '@visx/shape';
@@ -251,6 +252,7 @@ function RadarChartInner({
     ariaLabel,
     rings,
 }: RadarChartInnerProps) {
+    const t = useTranslations('common.chart');
     const reactId = useId();
     const chartId = `radar-${reactId.replace(/:/g, '')}`;
     const fillGradId = chartGradientId(chartId, seriesIndex, 'radial');
@@ -328,7 +330,7 @@ function RadarChartInner({
             width={width}
             height={height}
             role="img"
-            aria-label={ariaLabel ?? 'Radar chart'}
+            aria-label={ariaLabel ?? t('radarChartAria')}
         >
             <defs>
                 <ChartRadialGradient

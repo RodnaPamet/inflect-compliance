@@ -29,6 +29,7 @@
  * multi-curve overlay. Those layers can be added later if a real
  * Monte-Carlo simulator surfaces multiple percentile curves.
  */
+import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 import { ParentSize } from '@visx/responsive';
 import { Group } from '@visx/group';
@@ -102,6 +103,7 @@ function LossExceedanceInner({
     className,
     referenceLines,
 }: InnerProps) {
+    const t = useTranslations('common.chart');
     // The usecase emits the points in DESCENDING threshold order
     // (rank 1 = largest loss). For an LEC chart we want ASCENDING
     // x, so flip the order locally without mutating props.
@@ -149,7 +151,7 @@ function LossExceedanceInner({
             width={width}
             height={height}
             role="img"
-            aria-label={ariaLabel ?? 'Loss exceedance curve'}
+            aria-label={ariaLabel ?? t('lossExceedanceAria')}
             data-testid={testId ?? 'loss-exceedance-curve'}
             className={className}
         >

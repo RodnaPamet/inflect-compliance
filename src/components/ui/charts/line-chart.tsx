@@ -34,6 +34,7 @@
  *     on top via the existing R16 `<XAxis>` / `<YAxis>` from
  *     the chart-platform barrel if they need axes.
  */
+import { useTranslations } from 'next-intl';
 import { useCallback, useId, useMemo, useState, type MouseEvent } from 'react';
 import { Group } from '@visx/group';
 import { scaleLinear, scaleUtc } from '@visx/scale';
@@ -149,6 +150,7 @@ function LineChartInner({
     ariaLabel,
     showArea,
 }: LineChartInnerProps) {
+    const t = useTranslations('common.chart');
     const reactId = useId();
     const chartId = `line-${reactId.replace(/:/g, '')}`;
     const strokeGradId = chartGradientId(chartId, seriesIndex, 'linear');
@@ -234,7 +236,7 @@ function LineChartInner({
                         width={width}
                         height={height}
                         role="img"
-                        aria-label={ariaLabel ?? 'Line chart'}
+                        aria-label={ariaLabel ?? t('lineChartAria')}
                     >
                         <defs>
                             {/* Stroke gradient — horizontal so the

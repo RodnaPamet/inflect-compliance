@@ -17,6 +17,7 @@
  * reads its range + per-band counts (keyboard users tab through the
  * distribution).
  */
+import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 import { ParentSize } from '@visx/responsive';
 import { Group } from '@visx/group';
@@ -103,6 +104,7 @@ function AleHistogramInner({
     className,
     formatMoney = (v) => formatCompactCurrency(v),
 }: AleHistogramProps & { width: number; height: number }) {
+    const t = useTranslations('common.chart');
     const buckets = useMemo(() => bucketByDecade(data), [data]);
 
     const xMax = Math.max(0, width - MARGIN.left - MARGIN.right);
@@ -147,7 +149,7 @@ function AleHistogramInner({
             className={className}
         >
             <Group left={MARGIN.left} top={MARGIN.top}>
-                <g role="list" aria-label="Loss buckets">
+                <g role="list" aria-label={t('lossBucketsAria')}>
                 {buckets.map((b) => {
                     const x0 = xScale(b.exp) ?? 0;
                     const x1 = xScale(b.exp + 1) ?? 0;

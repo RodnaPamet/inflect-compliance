@@ -227,7 +227,6 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/ui/TreeView.tsx',
     'src/components/ui/TruncationBanner.tsx',
     'src/components/ui/ai-assist-rail.tsx',
-    'src/components/ui/charts/ale-histogram.tsx',
     'src/components/ui/charts/time-series-chart.tsx',
     'src/components/ui/date-picker/date-picker.tsx',
     'src/components/ui/date-picker/date-range-picker.tsx',

@@ -174,7 +174,12 @@
       "trendAria": "{label} trend",
       "ganttEmptyMessage": "No timeline events in this range.",
       "risksEmpty": "No risks registered yet.",
-      "severityBandsEmpty": "No severity bands configured."
+      "severityBandsEmpty": "No severity bands configured.",
+      "ganttChartAria": "Gantt chart",
+      "lineChartAria": "Line chart",
+      "radarChartAria": "Radar chart",
+      "lossExceedanceAria": "Loss exceedance curve",
+      "lossBucketsAria": "Loss buckets"
     },
     "sections": {
       "accessReviews": "Access reviews",

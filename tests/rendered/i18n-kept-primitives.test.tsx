@@ -43,6 +43,12 @@ import { UserMenu } from '@/components/layout/user-menu';
 import { NavBarBrand, NavBarMobileMenu } from '@/components/layout/nav-bar';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Combobox } from '@/components/ui/combobox';
+import { AleHistogram } from '@/components/ui/charts/ale-histogram';
+import { GanttChart } from '@/components/ui/charts/gantt-chart';
+import { LineChart } from '@/components/ui/charts/line-chart';
+import { LossExceedanceCurve } from '@/components/ui/charts/loss-exceedance-curve';
+import { RadarChart } from '@/components/ui/charts/radar-chart';
+import { chartReady } from '@/components/ui/charts/types';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
@@ -69,6 +75,19 @@ type Locale = 'en' | 'bg';
  * every declaration — a ref object, not a bare `let`, keeps that out of the
  * temporal dead zone.
  */
+// visx's ParentSize measures 0x0 in jsdom, and every chart primitive below
+// returns null at width 0 — so without this the five #3209 chart cases would
+// assert against an empty container and read `undefined`, which is what they
+// did on the first run. Same shape the dedicated chart suites use. Harmless to
+// the non-chart primitives in this file: nothing else mounts ParentSize.
+jest.mock('@visx/responsive', () => ({
+    ParentSize: ({
+        children,
+    }: {
+        children: (size: { width: number; height: number }) => React.ReactNode;
+    }) => <>{children({ width: 600, height: 300 })}</>,
+}));
+
 const mockLocale: { current: Locale } = { current: 'en' };
 const mockTheme: { current: 'dark' | 'light' } = { current: 'dark' };
 
@@ -514,4 +533,97 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
         );
         expectLocalised(screen.getByTestId('user-menu-sign-out').textContent, 'Sign out');
     });
+
+    // ── Shared chart primitives (#3209) ──────────────────────────────────
+    //
+    // Each of these names its SVG with a `??` FALLBACK on an optional
+    // `ariaLabel` prop rather than a plain attribute, which is why the older
+    // i18n-adoption ratchet could not see them: it reads JSX text, not a
+    // literal inside an attribute expression. A caller can still override the
+    // name; what is asserted here is the default a screen reader gets when
+    // nobody does, because that default was hard-coded English.
+    //
+    // Two prop shapes, deliberately not unified here: LineChart, RadarChart and
+    // GanttChart wrap ChartFrame and take a `state`, while LossExceedanceCurve
+    // and AleHistogram render directly and take `data`.
+    //
+    // The outer SVG is selected explicitly: gantt and radar each render a
+    // SECOND role="img" per bar/point, so a bare getByRole('img') is ambiguous
+    // and getAllByRole(...)[0] would depend on document order.
+    const outerSvgLabel = (c: HTMLElement): string | null | undefined =>
+        c.querySelector('svg[role="img"]')?.getAttribute('aria-label');
+
+    it('LineChart: the SVG default name (#3209)', () => {
+        const { container } = render(
+            <LineChart
+                state={chartReady([
+                    { date: new Date('2026-01-01'), value: 1 },
+                    { date: new Date('2026-01-02'), value: 2 },
+                ])}
+                seriesIndex={1}
+            />,
+        );
+        expectLocalised(outerSvgLabel(container), 'Line chart');
+    });
+
+    it('RadarChart: the SVG default name (#3209)', () => {
+        const { container } = render(
+            <RadarChart
+                state={chartReady([
+                    { key: 'a', label: 'A', value: 0.5 },
+                    { key: 'b', label: 'B', value: 0.8 },
+                    { key: 'c', label: 'C', value: 0.3 },
+                ])}
+                seriesIndex={1}
+            />,
+        );
+        expectLocalised(outerSvgLabel(container), 'Radar chart');
+    });
+
+    it('GanttChart: the SVG default name (#3209)', () => {
+        const { container } = render(
+            <GanttChart
+                state={chartReady([
+                    {
+                        key: 'r1',
+                        label: 'Row one',
+                        start: new Date('2026-01-01'),
+                        end: new Date('2026-02-01'),
+                        seriesIndex: 1 as const,
+                    },
+                ])}
+            />,
+        );
+        expectLocalised(outerSvgLabel(container), 'Gantt chart');
+    });
+
+    it('LossExceedanceCurve: the SVG default name (#3209)', () => {
+        const { container } = render(
+            <LossExceedanceCurve
+                data={[
+                    { threshold: 1000, exceedanceCount: 10, exceedanceFraction: 0.5 },
+                    { threshold: 2000, exceedanceCount: 4, exceedanceFraction: 0.2 },
+                ]}
+            />,
+        );
+        expectLocalised(outerSvgLabel(container), 'Loss exceedance curve');
+    });
+
+    it('AleHistogram: the bucket list name (#3209)', () => {
+        // Not the SVG here — a `<g role="list">` inside it. The SVG's own name
+        // is a computed summary, which was never a hard-coded string.
+        const { container } = render(
+            <AleHistogram
+                data={[
+                    { id: '1', title: 'R1', ale: 1000, bandName: 'High', bandColor: '#f00' },
+                    { id: '2', title: 'R2', ale: 50, bandName: 'Low', bandColor: '#0f0' },
+                ]}
+            />,
+        );
+        expectLocalised(
+            container.querySelector('g[role="list"]')?.getAttribute('aria-label'),
+            'Loss buckets',
+        );
+    });
+
 });
