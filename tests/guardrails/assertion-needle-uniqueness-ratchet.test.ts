@@ -884,8 +884,29 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
  * the convergent value is 1445. Each branch carries its OWN live count rather
  * than a projected total, which is the only arithmetic that is safe in either
  * merge order.
+ *
+ * ── 1444 -> 1445, the second mover, resolved by MEASUREMENT ──────────
+ *
+ * #3204's guard (`runner-ships-no-dangling-workspace-link`) adds exactly one
+ * un-analysable read. Both that branch and step 3a edited this line from 1445 —
+ * one up, one down — so git refused to guess and raised a conflict. That refusal
+ * is the feature.
+ *
+ * 1445 is CONFIRMED by running the ratchet on the merged tree, not derived from
+ * +1 and -1: the arithmetic predicted it, the measurement is what makes it true,
+ * and the sentinel below fails either way round if it is wrong.
+ *
+ * It is not paid down by the FIX_ADVICE route, because that would cost the
+ * assertion its subject. The guard must distinguish "the link is removed BEFORE
+ * the runner stage" from "a removal sitting inside it" — the runner copies
+ * `node_modules` from the builder, so a late removal is inert — which means
+ * slicing the Dockerfile into stages. It also masks `#` comments, and that is
+ * load-bearing: the first draft was satisfied by a COMMENT containing
+ * `rm -rf node_modules/@inflect` and passed on a tree with the removal deleted.
+ * Teaching `tests/helpers/assertion-reach.ts` to follow a sliced subject is the
+ * standing alternative and would LOWER this ceiling.
  */
-const UNANALYSABLE_READ_BASELINE = 1444;
+const UNANALYSABLE_READ_BASELINE = 1445;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

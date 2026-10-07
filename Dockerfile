@@ -87,6 +87,25 @@ RUN npm run build:worker
 # those modules.
 RUN npm prune --omit=dev
 
+# Drop the workspace symlink. `npm ci` creates
+# `node_modules/@inflect/ui -> ../../packages/ui` and the prune above KEEPS it,
+# but the runner stage copies `.next`, `node_modules`, `package.json`, `prisma`,
+# `public`, `dist` and two scripts — never `packages/`. So the runtime image
+# shipped a symlink pointing at a path it does not contain (#3204, first read out
+# of the actual image by #3193).
+#
+# Removing it rather than copying `packages/` is the §3 reading of the design:
+# the package ships SOURCE with no build step and the CONSUMER compiles it, so
+# `@inflect/ui` is a build-time specifier. `next build` and `build:worker` both
+# ran above, so nothing after this point needs to resolve it — and if something
+# ever does, this turns a silent dangling link into a loud failure, which is the
+# direction worth failing in.
+#
+# Targeted at the one link, not `rm -rf node_modules/@inflect`: a future
+# @inflect package that IS needed at runtime must not be swept away by this line.
+# `rmdir` only succeeds while the scope directory is empty.
+RUN rm -f node_modules/@inflect/ui && rmdir node_modules/@inflect 2>/dev/null || true
+
 # ─── Stage 3: Runner ──────────────────────────────────────
 FROM node:24-alpine AS runner
 WORKDIR /app
