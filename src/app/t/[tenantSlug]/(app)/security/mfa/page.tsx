@@ -15,7 +15,7 @@ import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { ShieldCheck, QrCode, Copy, CheckCircle, XCircle, Trash2, AlertTriangle, X } from 'lucide-react';
-import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { useCopyToClipboard } from '@/components/ui/hooks';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Heading } from '@/components/ui/typography';

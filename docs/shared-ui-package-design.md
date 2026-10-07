@@ -1042,6 +1042,56 @@ Delete empty directories BEFORE any existence-based rewrite, and resolve `..` wi
 `normpath` — `Path.as_posix()` does not, so `../icons/x` never matches a
 `src/components/ui/icons/` prefix test.
 
+## Update 2026-10-07 — step 3a, and what the boundary compiler settled
+
+`src/components/ui/hooks` was the first batch, and the first one run against an
+enforced §2 boundary. That changed how the move set was chosen: instead of
+reading §1 for a number, each candidate was moved and `tsc -p
+packages/ui/tsconfig.json` asked whether its closure was clean.
+
+**Three of 26 were rejected, and all three for ORDERING, not neutrality:**
+
+    use-keyboard-shortcut.tsx -> @/lib/hooks/use-keyboard-shortcut   (batch 5)
+    use-view-mode.ts          -> @/lib/ui-storage                    (§1's lib/)
+    use-toast-with-undo.ts    -> @/components/ui/undo-toast           (batch 3)
+
+Each reaches for something that belongs in the package and has not moved yet.
+Pulling their dependencies in was tried and rejected: it terminates quickly
+(`ui-storage.ts` imports nothing, `undo-toast.tsx` is clean) EXCEPT that
+`use-keyboard-shortcut` needs `keyboard-shortcut-internals.ts`, which drags
+`src/lib/hooks/` into batch 1 — and §6 holds that to last precisely because
+§5.7's `./src/lib/` floor needs a coverage run first. So the three stay, and the
+barrel stays with them.
+
+**The barrel does not move while any member is outside the package.** It is
+`GENERIC`, so §1 wants it in `packages/ui` eventually, but it re-exports all 24
+and a package file cannot re-export from `src/`. It therefore follows the icons
+precedent: stays in `src/`, re-exports 21 by package specifier and 3 relatively.
+That is why 115 barrel importers were rewritten and then rewritten back — the
+first pass assumed the barrel would move.
+
+**§5.8 is confirmed, and it fails LOUD here rather than silent.** The
+`no-restricted-syntax` exemption naming
+`src/components/ui/hooks/use-copy-to-clipboard.tsx` stopped matching, and the
+hook's own `navigator.clipboard` calls became two eslint ERRORS — the rule it is
+exempt from is the rule it implements. The paragraph predicts "produces no error,
+it just stops applying", which is the behaviour for a rule that ADDS checks; for
+an exemption the same drift is loud. Both paths are now listed.
+
+**A guard narrowed silently and still passed.** `epic60-ratchet` scans
+`src/components/ui/hooks` with `readdirSync` and asserts the barrel re-exports
+each file. After the move it scanned **3 of 24** and went green. No assertion
+failed; the denominator shrank. It now scans both roots, carries a floor of 20,
+and expects the specifier form that matches where each file lives.
+`ui-hooks-barrel` needed the same treatment, and its >= 5 floor DID fire — its
+own comment had anticipated exactly this ("if the directory moves").
+
+**Count for the next batch's brief:** the population to run is derived by HOOK
+NAME, not by path — 63 suites mention one of the 24 names, of which 10 are
+guard-side. Seven held a stale `src/.../hooks/<file>` path and one, the
+`ui-core-classification` negative control, sat behind `existsSync` and would have
+gone inert rather than failing.
+
 ## Roadmap — the sequence, and what verifies each step
 
 *(This is section 6. It is named `Roadmap` rather than numbered because this doc is

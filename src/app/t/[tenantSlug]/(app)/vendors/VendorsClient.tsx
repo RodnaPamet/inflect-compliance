@@ -46,8 +46,8 @@ import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useTranslations } from 'next-intl';
-import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
-import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
+import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 const STATUS_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'neutral'> = {
     ACTIVE: 'success', ONBOARDING: 'info',

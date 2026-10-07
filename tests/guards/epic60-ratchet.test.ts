@@ -196,14 +196,37 @@ describe('Epic 60 — legacy pattern ratchet', () => {
         // allows deep-path imports to proliferate — this smoke catches
         // the miss at the ratchet layer so the failure shows up in a
         // CI run that's scoped to Epic 60.
-        const hooksDir = path.resolve(__dirname, '../../src/components/ui/hooks');
-        const barrel = codeOf(fs.readFileSync(path.join(hooksDir, 'index.ts'), 'utf-8'));
-        const files = fs
-            .readdirSync(hooksDir)
-            .filter((f) => /^use-.+\.tsx?$/.test(f));
-        for (const f of files) {
-            const stem = f.replace(/\.tsx?$/, '');
-            expect(barrel).toContain(`./${stem}`);
+        // #3046 step 3a — hooks live in TWO places and the barrel stays in `src/`.
+        // Scanning only `src/` would leave this covering 3 of 24 files and still
+        // PASSING: a denominator that shrank without a failure, which is the
+        // shape this repo has paid for more than once. The expected specifier
+        // differs by location, so the assertion follows the file rather than
+        // assuming a relative import.
+        const ROOT = path.resolve(__dirname, '../..');
+        const hookDirs = [
+            path.join(ROOT, 'src/components/ui/hooks'),
+            path.join(ROOT, 'packages/ui/src/components/ui/hooks'),
+        ].filter((d) => fs.existsSync(d));
+        const barrel = codeOf(
+            fs.readFileSync(path.join(ROOT, 'src/components/ui/hooks/index.ts'), 'utf-8'),
+        );
+        const discovered = hookDirs.flatMap((d) =>
+            fs
+                .readdirSync(d)
+                .filter((f) => /^use-.+\.tsx?$/.test(f))
+                .map((f) => ({ dir: d, file: f })),
+        );
+        // The floor is what stops a future move from quietly emptying the scan.
+        expect(discovered.length).toBeGreaterThanOrEqual(20);
+        for (const { dir, file } of discovered) {
+            const stem = file.replace(/\.tsx?$/, '');
+            const expected = dir.includes('packages/ui')
+                ? `@inflect/ui/components/ui/hooks/${stem}`
+                : `./${stem}`;
+            expect({ stem, found: barrel.includes(expected) }).toEqual({
+                stem,
+                found: true,
+            });
         }
         // And prove the barrel was used by at least one primitive rollout.
         const testsClient = componentFiles.find((f) =>

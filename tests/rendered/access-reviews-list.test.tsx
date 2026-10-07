@@ -75,7 +75,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { AccessReviewsClient } from '@/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient';
-import { DEFAULT_LOAD_MORE_THRESHOLD } from '@/components/ui/hooks/use-threshold-load-more';
+import { DEFAULT_LOAD_MORE_THRESHOLD } from '@inflect/ui/components/ui/hooks/use-threshold-load-more';
 
 function withClient(ui: React.ReactNode) {
     // Fresh per-test SWR cache. (React Query fully removed — the nested

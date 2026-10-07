@@ -33,8 +33,8 @@ import { FilterProvider, useFilterContext, useFilters, useFilterCardVisibility, 
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { ErrorState } from '@/components/ui/error-state';
-import { useToast } from '@/components/ui/hooks/use-toast';
-import { useThresholdLoadMore } from '@/components/ui/hooks/use-threshold-load-more';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
+import { useThresholdLoadMore } from '@inflect/ui/components/ui/hooks/use-threshold-load-more';
 import { useToastWithUndo } from '@/components/ui/hooks/use-toast-with-undo';
 import { Heading } from '@/components/ui/typography';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';

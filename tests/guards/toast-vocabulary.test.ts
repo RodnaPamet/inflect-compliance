@@ -40,7 +40,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const SCAN_ROOT = path.join(ROOT, 'src');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
-const HOOK_PATH = 'src/components/ui/hooks/use-toast.ts';
+const HOOK_PATH = 'packages/ui/src/components/ui/hooks/use-toast.ts';
 
 // The canonical seam. Every other file MUST flow through
 // `useToast()`. Adding to this set requires a written rationale
@@ -50,7 +50,7 @@ const SONNER_PRIMITIVE_FILES = new Set<string>([
     'src/app/providers.tsx',
     // The useToast hook IS the seam — it imports sonner under
     // the hood and re-exports a four-method API.
-    'src/components/ui/hooks/use-toast.ts',
+    'packages/ui/src/components/ui/hooks/use-toast.ts',
     // Epic 67 undo pattern wraps sonner's `toast.custom()` to
     // render a UndoToast component. The hook owns the timing +
     // countdown bar; sonner is the renderer. Stays direct.
@@ -61,7 +61,7 @@ const SONNER_PRIMITIVE_FILES = new Set<string>([
     // Celebration toast — renders a custom milestone toast with
     // confetti + tone. The animation orchestration uses sonner's
     // promise/custom APIs that don't fit the four-method shape.
-    'src/components/ui/hooks/use-celebration.ts',
+    'packages/ui/src/components/ui/hooks/use-celebration.ts',
 ]);
 
 const SONNER_IMPORT_RE = /import[^;]*?from\s+['"]sonner['"]/m;
@@ -117,7 +117,7 @@ describe('Toast vocabulary discipline (Roadmap-2 PR-9)', () => {
         }
         if (offenders.length > 0) {
             throw new Error(
-                `Found ${offenders.length} file(s) importing directly from 'sonner' outside the canonical seam:\n  ${offenders.join('\n  ')}\n\nMigrate to \`useToast()\` from '@/components/ui/hooks/use-toast'. The four named methods (success/error/info/warning) cover every standard surface; for the destructive-undo flow, use \`useToastWithUndo\` from the same hooks barrel. Adding to SONNER_PRIMITIVE_FILES requires a written reason in the PR description.`,
+                `Found ${offenders.length} file(s) importing directly from 'sonner' outside the canonical seam:\n  ${offenders.join('\n  ')}\n\nMigrate to \`useToast()\` from '@inflect/ui/components/ui/hooks/use-toast'. The four named methods (success/error/info/warning) cover every standard surface; for the destructive-undo flow, use \`useToastWithUndo\` from the same hooks barrel. Adding to SONNER_PRIMITIVE_FILES requires a written reason in the PR description.`,
             );
         }
         expect(offenders).toEqual([]);

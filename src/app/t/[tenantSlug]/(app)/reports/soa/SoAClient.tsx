@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { buttonLikeKeys } from '@/components/ui/button-like-keys';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { textLinkVariants } from '@/components/ui/typography';
 import { StatusBadge as StatusBadgePrimitive, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { cardVariants } from '@/components/ui/card';

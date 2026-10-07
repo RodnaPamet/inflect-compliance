@@ -93,7 +93,7 @@ jest.mock('@/components/require-permission', () => ({
 import { SWRConfig } from 'swr';
 import CycleDetailPage from '@/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page';
 import PackDetailPage from '@/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page';
-import { __setConfettiForTest } from '@/components/ui/hooks/use-celebration';
+import { __setConfettiForTest } from '@inflect/ui/components/ui/hooks/use-celebration';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';

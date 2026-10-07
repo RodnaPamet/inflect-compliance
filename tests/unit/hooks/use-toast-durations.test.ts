@@ -48,7 +48,7 @@ jest.mock('sonner', () => ({
     },
 }));
 
-import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 
 /** The table the hook's own docstring publishes. */
 const DOCUMENTED: ReadonlyArray<

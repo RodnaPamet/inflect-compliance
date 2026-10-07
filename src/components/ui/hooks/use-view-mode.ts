@@ -25,7 +25,7 @@
  */
 import { useCallback } from 'react';
 
-import { useLocalStorage } from './use-local-storage';
+import { useLocalStorage } from '@inflect/ui/components/ui/hooks/use-local-storage';
 import { uiStorageKey } from '@/lib/ui-storage';
 
 export type ViewMode = 'table' | 'cards';

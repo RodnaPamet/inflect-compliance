@@ -43,8 +43,8 @@ import {
 } from './filter-defs';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
-import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
-import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
+import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 // Status badge classes — keyed off the canonical PolicyStatus enum
 // values. POLICY_STATUS_LABELS in `filter-defs.ts` is the single

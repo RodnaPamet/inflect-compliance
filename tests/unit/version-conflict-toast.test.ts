@@ -5,7 +5,7 @@
  * so a minimal `ToastApi` mock exercises every branch.
  */
 import { surfaceVersionConflict } from '@/lib/processes/version-conflict-toast';
-import type { ToastApi } from '@/components/ui/hooks/use-toast';
+import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 
 function makeToast(): jest.Mocked<ToastApi> {
     return {

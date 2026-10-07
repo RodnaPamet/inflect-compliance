@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';

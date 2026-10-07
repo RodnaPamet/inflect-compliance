@@ -18,7 +18,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { formatDateTime } from '@/lib/format-date';
 import { useTranslations } from 'next-intl';
 import type { KeyedMutator } from 'swr';
-import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import { RequirePermission } from '@/components/require-permission';
 import { UpgradeGate } from '@/components/UpgradeGate';

@@ -69,7 +69,7 @@ import 'tldraw/tldraw.css';
 
 import { useTranslations } from 'next-intl';
 
-import { useMediaQuery } from '@/components/ui/hooks/use-media-query';
+import { useMediaQuery } from '@inflect/ui/components/ui/hooks/use-media-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { atom, type Atom, type Editor, type TLBindingId, Tldraw, type TLShape, type TLShapeId } from 'tldraw';
 

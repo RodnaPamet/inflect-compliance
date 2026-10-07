@@ -13,7 +13,7 @@ import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { Heading } from '@/components/ui/typography';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { CardHeader } from '@/components/ui/card-header';
@@ -31,7 +31,7 @@ import {
     CHECKLIST_RESULT_VARIANT,
     DEFAULT_STATUS_VARIANT,
 } from './_lib/status-variants';
-import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
+import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 
 // listAudits → AuditRepository.list (auditListSelect). The lighter LIST row
 // (distinct from the detail AuditDetail). List map callback stays untyped.

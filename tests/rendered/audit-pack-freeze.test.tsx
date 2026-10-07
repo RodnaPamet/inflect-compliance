@@ -91,7 +91,7 @@ jest.mock('next/navigation', () => ({
 
 import { SWRConfig } from 'swr';
 import PackDetailPage from '@/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page';
-import { __setConfettiForTest } from '@/components/ui/hooks/use-celebration';
+import { __setConfettiForTest } from '@inflect/ui/components/ui/hooks/use-celebration';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getPermissionsForRole } from '@/lib/permissions';
 

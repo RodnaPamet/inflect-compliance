@@ -113,7 +113,7 @@ describe("Epic P6-PR-B — touch / mobile ergonomics", () => {
 
         it("imports useMediaQuery", () => {
             expect(src).toMatch(
-                /import\s*\{\s*useMediaQuery\s*\}\s*from\s*["']@\/components\/ui\/hooks\/use-media-query["']/,
+                /import\s*\{\s*useMediaQuery\s*\}\s*from\s*["']@inflect\/ui\/components\/ui\/hooks\/use-media-query["']/,
             );
         });
 

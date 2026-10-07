@@ -26,7 +26,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/icons';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
-import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { parseYMD, toYMD, startOfUtcDay } from '@/components/ui/date-picker/date-utils';
 import { CalendarHeatmap } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap';
