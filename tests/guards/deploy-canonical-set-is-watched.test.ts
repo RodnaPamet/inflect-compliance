@@ -51,6 +51,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { functionBodyOf, callExpressionOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -358,5 +359,119 @@ describe('deploy/ops-agent-config.yaml — the pipeline that exports app logs', 
         const pipelines = agentConfig().logging?.service?.pipelines ?? {};
         expect(Object.keys(pipelines)).toContain('default_pipeline');
         expect(pipelines.default_pipeline?.receivers).toEqual(['syslog']);
+    });
+});
+
+describe('deploy/ops-agent-config.yaml — the filter admits the #3099 counter', () => {
+    /**
+     * REGRESSION THIS LOCKS
+     * ---------------------
+     * The filter's first version kept lines containing the word `component`,
+     * and that DROPPED the one metric the config exists to carry. `component`
+     * is set by individual callers; `requestId` is injected unconditionally by
+     * the single log helper. `recordWebVital` passes no `component`, so every
+     * `web_vital` line — which is how `Inflect-nav-push-retry`, the #3099
+     * counter, reaches a log at all — failed the filter and was discarded
+     * before export.
+     *
+     * Proven in production, not argued: one beacon produced exactly one
+     * `web_vital` line in the app container carrying zero occurrences of
+     * "component", and Cloud Logging received 0 of it while the same window
+     * held 47 other entries, all 47 component-bearing.
+     *
+     * These assertions therefore tie the filter to what the logger ACTUALLY
+     * emits. If `log()` stops injecting `requestId`, or `recordWebVital`
+     * changes shape, or someone narrows the filter again, one of them fails.
+     */
+
+    /** `exclude_logs` ORs match_any for EXCLUSION, so a line must satisfy every term. */
+    function keepTerms(): string[] {
+        const procs = agentConfig().logging?.processors ?? {};
+        const excludes = Object.values(procs).filter((p) => p.type === 'exclude_logs');
+        expect(excludes).toHaveLength(1);
+        const exprs = (excludes[0] as { match_any?: string[] }).match_any ?? [];
+        expect(exprs.length).toBeGreaterThan(0);
+        return exprs.map((e) => {
+            // Every term is `jsonPayload.message !~ "<word>"`: keep what matches.
+            const m = /^jsonPayload\.message\s*!~\s*"([^"]+)"$/.exec(e.trim());
+            if (!m) {
+                throw new Error(
+                    `match_any entry is not the understood shape — this guard can ` +
+                        `only reason about 'jsonPayload.message !~ "<word>"': ${e}`,
+                );
+            }
+            return m[1];
+        });
+    }
+
+    const survives = (rawLine: string): boolean =>
+        keepTerms().every((w) => new RegExp(w).test(rawLine));
+
+    it('log() injects requestId unconditionally, which is why the filter uses it', () => {
+        // The property the filter rests on. A per-caller field cannot carry it:
+        // that is exactly how the first version went wrong.
+        const body = functionBodyOf(read('src/lib/observability/logger.ts'), 'log');
+        expect(/requestId:/.test(body)).toBe(true);
+        // Unconditional: not inside a `...(cond && {})` spread like the others.
+        expect(/\.\.\.\([^)]*requestId/.test(body)).toBe(false);
+    });
+
+    it('recordWebVital passes no `component`, so the filter must not require one', () => {
+        const call = callExpressionOf(
+            read('src/lib/observability/web-vitals.ts'),
+            'log',
+        );
+        expect(call).not.toBe('');
+        expect(/component/.test(call)).toBe(false);
+        expect(/web_vital/.test(call)).toBe(true);
+    });
+
+    it('a web_vital line carrying the #3099 counter SURVIVES the filter', () => {
+        // The shape `log('info', 'web_vital', …)` actually writes, with the
+        // helper's unconditional bindings. No `component` anywhere in it — that
+        // absence is the whole regression.
+        const line = JSON.stringify({
+            level: 30,
+            time: 1791370868215,
+            pid: 1,
+            hostname: '4e13ac4d78df',
+            requestId: 'unknown',
+            vital: 'Inflect-nav-push-retry',
+            value: 1234.5,
+            rating: 'unknown',
+            route: '/t/[tenant]/risks',
+            navigationType: null,
+            msg: 'web_vital',
+        });
+        expect(/component/.test(line)).toBe(false);
+        expect(survives(line)).toBe(true);
+    });
+
+    it('a component-bearing app line still survives', () => {
+        const line = JSON.stringify({
+            level: 30,
+            requestId: 'abc',
+            component: 'rls-middleware',
+            msg: 'tenant context set',
+        });
+        expect(survives(line)).toBe(true);
+    });
+
+    it('sidecar noise is still excluded, including the postgres DDL case', () => {
+        // pgbouncer is 5.7M lines and the reason a filter exists at all. Caddy
+        // and redis stand in for the rest of the sidecars.
+        //
+        // The postgres entry is the measured reason there are TWO terms rather
+        // than one: 881 of its lines carry `requestId` as a DDL COLUMN NAME
+        // (migration output echoing the AuditLog column list — identifiers, no
+        // row data). `requestId` alone would export them; they carry no `msg`.
+        const noise = [
+            '2026-10-07 10:00:00.000 UTC [123] LOG C-0x1: (nodb)/(nouser)@10.0.0.1:5432 login attempt: db=inflect user=app',
+            '\t                "requestId", "recordIds", "metadataJson", "diffJson"',
+            '2026-10-07 10:00:00.000 UTC [1] LOG:  database system is ready to accept connections',
+            '1:M 07 Oct 2026 10:00:00.000 * Background saving terminated with success',
+        ];
+        const leaked = noise.filter(survives);
+        expect(leaked).toEqual([]);
     });
 });
