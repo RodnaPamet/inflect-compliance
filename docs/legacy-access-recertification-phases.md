@@ -29,7 +29,7 @@ restate it.
 | 4b | Review queue and alias revalidation | Not started | — |
 | 5a | Harden the existing access-review flows | Not started | — |
 | 5b | Legacy recertification campaigns | Not started | — |
-| 6a | Register TypeSafe as a proposed sub-processor | Inventory PR open | — |
+| 6a | Register TypeSafe as a proposed sub-processor | Inventory PR open | #3246 |
 | 6b | Decision-model client and evaluation harness | Not started | — |
 | 6c | Adjudication in the run, and the review lanes | Not started | — |
 | 6d | Turn it on | Not started | — |
