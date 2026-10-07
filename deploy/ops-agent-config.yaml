@@ -1,0 +1,78 @@
+# Ships the APPLICATION container logs to Cloud Logging, additively.
+#
+# WHY THIS EXISTS
+# Container stdout is discarded every time watchtower recreates the app on
+# :latest, and nothing left the VM: Cloud Logging for this project held only
+# GCE-agent, audit and monitoring types, and a 7-day query for the #3099 counter
+# returned empty against a working positive control. So
+# `Inflect-nav-push-retry` could fire in production and leave no durable trace.
+#
+# ADDITIVE ON PURPOSE. docs/observability/01-deployment-topology.md records a
+# deliberate decision that the app "emits Pino JSON to stdout, captured by the
+# docker log driver; `docker logs` and `journalctl` remain the log surface", with
+# log SEARCH out of scope as a separate initiative. Switching the app to the
+# `gcplogs` driver would have broken that surface, so the json-file driver is
+# untouched and this tails the files it already writes.
+#
+# WHY A CONTENT FILTER RATHER THAN A PATH FILTER
+# Container log paths are keyed by container ID, which changes on every
+# recreation, so no include/exclude path names "the app" for longer than one
+# deploy. The filter is necessary, not tidy — measured on 2026-10-07:
+#   inflect-pgbouncer-1   71 MB/day   (1206 MB over 17.1 days of uptime)
+#   inflect-app-1        ~0.4 MB/day  (20 KB in 1.23 h)
+# a 180x ratio of per-connection login/close noise to application logs. The app
+# emits Pino JSON and pgbouncer emits plain text, so "the unwrapped payload
+# starts with {" separates them and survives ID churn. The receiver still reads
+# the backlog once; the exclude drops it before export, so it costs IO and no
+# ingest.
+logging:
+  receivers:
+    docker_json:
+      type: files
+      include_paths:
+        - /var/lib/docker/containers/*/*-json.log
+  processors:
+    # Filter on the RAW wrapper, not on a parsed field.
+    #
+    # The first attempt filtered `jsonPayload.log`, which only exists if a
+    # parse_json step has already run — and it had not. The expression then
+    # evaluated against a MISSING field, which matched nearly every record, so the
+    # pipeline dropped almost everything including the app's own lines: 6 entries
+    # in 2 hours, the app absent, and one pgbouncer line still slipping through.
+    # A filter that silently drops the thing it is meant to keep looks identical
+    # to a quiet pipeline, which is why the acceptance test queried for a line
+    # known to exist rather than trusting the entry count.
+    #
+    # Docker's wrapper is always {"log":"<payload>","stream":…}. The app's payload
+    # is Pino JSON so the wrapper reads {"log":"{…; pgbouncer, caddy and redis emit
+    # plain text that begins with a timestamp. Matching the wrapper plus an escaped
+    # opening brace therefore separates them with no parse step to go wrong.
+    keep_only_json_payloads:
+      type: exclude_logs
+      match_any:
+        # A regex with NO escaping, deliberately. Two earlier attempts failed in the
+        # YAML -> agent-string -> RE2 chain: `jsonPayload.log !~ "^\{"` referenced a
+        # field no parse step had created yet, and the escaped-brace form
+        # `^\{"log":"\{` lost a level of escaping somewhere and excluded the app's
+        # own lines. Measured, not assumed: the app log held 25 JSON lines of 93 and
+        # Cloud Logging received none of them.
+        #
+        # `component` is a field only this app's Pino logger emits — pgbouncer,
+        # caddy, redis and watchtower do not. One bare word needs no escaping, so
+        # there is no chain to get wrong. The cost is that an app line without a
+        # `component` field is dropped; both sampled lines carry one, and a missing
+        # app line is a smaller failure than shipping 71 MB/day of pgbouncer.
+        - 'jsonPayload.message !~ "component"'
+    # Unwrap for readability. If this ever fails the filter above still holds,
+    # because it does not depend on it.
+    unwrap_docker:
+      type: parse_json
+      field: message
+  service:
+    pipelines:
+      docker_app:
+        receivers: [docker_json]
+        processors: [keep_only_json_payloads, unwrap_docker]
+      # Re-declared because naming any pipeline replaces the built-in set.
+      default_pipeline:
+        receivers: [syslog]
