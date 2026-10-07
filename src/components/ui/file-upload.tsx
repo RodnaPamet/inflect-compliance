@@ -2,7 +2,7 @@ import { cn } from "@inflect/ui/lib/cn";
 import { resizeImage } from "@/lib/resize-image";
 import { VariantProps, cva } from "class-variance-authority";
 import { DragEvent, ReactNode, useState } from "react";
-import { useToast } from "./hooks/use-toast";
+import { useToast } from "@inflect/ui/components/ui/hooks/use-toast";
 import { CloudUpload, Icon, LoadingCircle } from "./icons";
 
 type AcceptedFileFormats =

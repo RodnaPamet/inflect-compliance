@@ -44,7 +44,7 @@ import type {
     CelebrateInput,
     CelebrationDedupe,
     CelebrationPreset,
-} from '@/components/ui/hooks/use-celebration';
+} from '@inflect/ui/components/ui/hooks/use-celebration';
 
 // ─── Milestone keys ─────────────────────────────────────────────────
 

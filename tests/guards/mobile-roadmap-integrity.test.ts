@@ -48,7 +48,7 @@ describe("Mobile roadmap integrity (capstone)", () => {
     );
 
     it("the canonical < md viewport hook lives in the shared hooks barrel", () => {
-        expect(exists("src/components/ui/hooks/use-is-below-md.ts")).toBe(true);
+        expect(exists("packages/ui/src/components/ui/hooks/use-is-below-md.ts")).toBe(true);
         expect(read("src/components/ui/hooks/index.ts")).toMatch(
             /useIsBelowMd/,
         );

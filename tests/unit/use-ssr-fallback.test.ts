@@ -97,7 +97,10 @@ describe('useSsrFallback — when SSR rows may seed the cache', () => {
         // satisfy an assertion about the hook.
         const src = codeOf(
             fs.readFileSync(
-                path.resolve(__dirname, '../../src/components/ui/hooks/use-ssr-fallback.ts'),
+                path.resolve(
+                    __dirname,
+                    '../../packages/ui/src/components/ui/hooks/use-ssr-fallback.ts',
+                ),
                 'utf8',
             ),
         );

@@ -197,8 +197,18 @@ const config = [
         // every text caller to serve one image caller is the wrong trade.
         // Both engines' exporters are listed; the tldraw one has the same
         // justification and will outlive the xyflow one at the cutover.
+        //
+        // #3046 step 3a — `use-copy-to-clipboard.tsx` moved into the workspace
+        // package, and this is §5.8 of docs/shared-ui-package-design.md happening:
+        // "an override whose glob stops matching produces no error, it just stops
+        // applying". Here it produced two, because the exemption stopped covering
+        // the hook and the hook's own `navigator.clipboard` calls are exactly what
+        // the rule forbids everywhere else. Both paths are listed rather than the
+        // `src/` one being replaced, so the override survives a batch that moves
+        // the file back, and so that the next reader can see where it lives now.
         files: [
             'src/components/ui/hooks/use-copy-to-clipboard.tsx',
+            'packages/ui/src/components/ui/hooks/use-copy-to-clipboard.tsx',
             'src/lib/processes/canvas-export.ts',
             'src/lib/processes/tldraw-canvas-export.ts',
         ],

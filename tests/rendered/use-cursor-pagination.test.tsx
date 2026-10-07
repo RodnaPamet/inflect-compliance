@@ -19,7 +19,7 @@ import * as React from 'react';
 
 import {
     useCursorPagination,
-} from '@/components/ui/hooks/use-cursor-pagination';
+} from '@inflect/ui/components/ui/hooks/use-cursor-pagination';
 
 interface Row {
     id: string;

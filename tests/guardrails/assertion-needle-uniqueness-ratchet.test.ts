@@ -868,27 +868,45 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
  * the LAST edit, not after the merge commit. Measuring once and then continuing
  * to edit leaves a number that was true and no longer is.
  *
- * ── 1445 -> 1446, #3204's guard, and why it is not paid down ─────────
+ * ── 1445 -> 1444 at #3046 step 3a, and the ordering note ────────────
  *
- * `tests/guards/runner-ships-no-dangling-workspace-link.test.ts` adds exactly
- * ONE un-analysable read. Measured, not projected: this branch reported
- * `current: 1446` against the 1445 ceiling, and the figure was taken AFTER the
- * last edit on the branch, which is the rule the paragraph above sets.
+ * The sentinel below refused 1445 as unspent slack: measured `live count: 1444`
+ * on this branch with `main` merged. Step 3a made ONE read analysable rather
+ * than adding any — `ui-hooks-barrel` and `epic60-ratchet` both had their barrel
+ * read rewritten from `path.join(<variable dir>, 'index.ts')` to
+ * `path.join(ROOT, '<literal path>')` while being taught to scan two roots, and
+ * a constant path is what the analyser follows.
  *
- * It is not paid down by the FIX_ADVICE route, and the reason is the guard's
- * subject rather than laziness. That guard must distinguish "the link is removed
- * BEFORE the runner stage" from "a removal sitting inside it", because the runner
- * copies `node_modules` from the builder and a late removal would be inert. So it
- * slices the Dockerfile into stages and masks `#` comments before matching — the
- * masking is itself load-bearing, since the first draft was satisfied by a
- * comment containing `rm -rf node_modules/@inflect`. A constant-path read with a
- * literal needle cannot express either distinction, so making the read analysable
- * would mean giving up what the assertion is for.
+ * ORDERING, because a sibling branch moves this same line in the opposite
+ * direction. #3204's guard adds exactly one un-analysable read, so that branch
+ * sets 1446 against its own live count. The two deltas are +1 and -1, so
+ * whichever merges SECOND will find the sentinel firing and must re-measure —
+ * the convergent value is 1445. Each branch carries its OWN live count rather
+ * than a projected total, which is the only arithmetic that is safe in either
+ * merge order.
  *
+ * ── 1444 -> 1445, the second mover, resolved by MEASUREMENT ──────────
+ *
+ * #3204's guard (`runner-ships-no-dangling-workspace-link`) adds exactly one
+ * un-analysable read. Both that branch and step 3a edited this line from 1445 —
+ * one up, one down — so git refused to guess and raised a conflict. That refusal
+ * is the feature.
+ *
+ * 1445 is CONFIRMED by running the ratchet on the merged tree, not derived from
+ * +1 and -1: the arithmetic predicted it, the measurement is what makes it true,
+ * and the sentinel below fails either way round if it is wrong.
+ *
+ * It is not paid down by the FIX_ADVICE route, because that would cost the
+ * assertion its subject. The guard must distinguish "the link is removed BEFORE
+ * the runner stage" from "a removal sitting inside it" — the runner copies
+ * `node_modules` from the builder, so a late removal is inert — which means
+ * slicing the Dockerfile into stages. It also masks `#` comments, and that is
+ * load-bearing: the first draft was satisfied by a COMMENT containing
+ * `rm -rf node_modules/@inflect` and passed on a tree with the removal deleted.
  * Teaching `tests/helpers/assertion-reach.ts` to follow a sliced subject is the
- * standing alternative, and would LOWER this ceiling rather than raise it.
+ * standing alternative and would LOWER this ceiling.
  */
-const UNANALYSABLE_READ_BASELINE = 1446;
+const UNANALYSABLE_READ_BASELINE = 1445;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

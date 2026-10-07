@@ -44,7 +44,7 @@ import {
     useCelebration,
     __setConfettiForTest,
     type CelebrationDedupe,
-} from '@/components/ui/hooks/use-celebration';
+} from '@inflect/ui/components/ui/hooks/use-celebration';
 import {
     celebrationDedupe,
     celebrationDedupeKey,

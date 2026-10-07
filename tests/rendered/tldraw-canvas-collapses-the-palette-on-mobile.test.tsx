@@ -45,7 +45,7 @@ import type { GraphRows } from '@/components/processes/tldraw/serializer';
 
 /** What `useMediaQuery` reads. Set before each mount. */
 let matches = false;
-jest.mock('@/components/ui/hooks/use-media-query', () => ({
+jest.mock('@inflect/ui/components/ui/hooks/use-media-query', () => ({
     useMediaQuery: () => ({ isMobile: matches, isTablet: false, isDesktop: !matches }),
 }));
 

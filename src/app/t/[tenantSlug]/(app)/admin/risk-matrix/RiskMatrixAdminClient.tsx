@@ -29,7 +29,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useToast } from '@/components/ui/hooks/use-toast';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 
 import { Button } from '@/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';

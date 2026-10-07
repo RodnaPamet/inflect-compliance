@@ -8,7 +8,7 @@
 
 import { act, renderHook } from '@testing-library/react';
 
-import { useCopyToClipboard } from '@/components/ui/hooks/use-copy-to-clipboard';
+import { useCopyToClipboard } from '@inflect/ui/components/ui/hooks/use-copy-to-clipboard';
 
 const realClipboard = Object.getOwnPropertyDescriptor(
     window.navigator,
