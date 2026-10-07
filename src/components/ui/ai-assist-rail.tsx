@@ -17,7 +17,7 @@
 import Link from 'next/link';
 import { cn } from '@inflect/ui/lib/cn';
 
-import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
+import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
 import { buttonVariants } from '@/components/ui/button-variants';
 
 export interface AiAssistRailProps {

@@ -13,7 +13,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { LinkedVendorsPanel } from '@/components/LinkedVendorsPanel';
 import {
@@ -48,7 +48,7 @@ import { EvidenceAddForm } from '@/components/EvidenceAddForm';
 // TP-4 — the task edit surface is now the shared inline autosave
 // TaskEditPanel (form variant), retiring the divergent EditTaskModal.
 import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
-import { Pen2, Xmark } from '@/components/ui/icons/nucleo';
+import { Pen2, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
 import { IconAction } from '@/components/ui/icon-action';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@inflect/ui/lib/cn';

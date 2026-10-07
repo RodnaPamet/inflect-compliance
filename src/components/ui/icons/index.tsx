@@ -4,83 +4,83 @@ import { LucideIcon } from "lucide-react";
 import { ComponentType, SVGProps } from "react";
 
 // custom icons
-export * from "./arrow-up-right-2";
-export * from "./copy";
-export * from "./crown-small";
+export * from "@inflect/ui/components/ui/icons/arrow-up-right-2";
+export * from "@inflect/ui/components/ui/icons/copy";
+export * from "@inflect/ui/components/ui/icons/crown-small";
 export * from "./dub-analytics";
 export * from "./dub-api";
 export * from "./dub-crafted-shield";
 export * from "./dub-links";
 export * from "./dub-partners";
 export * from "./dub-product-icon";
-export * from "./expanding-arrow";
-export * from "./file-pen";
-export * from "./file-send";
-export * from "./ios-app-store";
-export * from "./lock-small";
-export * from "./magic";
-export * from "./markdown-icon";
-export * from "./matrix-lines";
-export * from "./photo";
-export * from "./sort-order";
-export * from "./success";
-export * from "./tick";
-export * from "./user-clock";
-export * from "./verified-badge";
+export * from "@inflect/ui/components/ui/icons/expanding-arrow";
+export * from "@inflect/ui/components/ui/icons/file-pen";
+export * from "@inflect/ui/components/ui/icons/file-send";
+export * from "@inflect/ui/components/ui/icons/ios-app-store";
+export * from "@inflect/ui/components/ui/icons/lock-small";
+export * from "@inflect/ui/components/ui/icons/magic";
+export * from "@inflect/ui/components/ui/icons/markdown-icon";
+export * from "@inflect/ui/components/ui/icons/matrix-lines";
+export * from "@inflect/ui/components/ui/icons/photo";
+export * from "@inflect/ui/components/ui/icons/sort-order";
+export * from "@inflect/ui/components/ui/icons/success";
+export * from "@inflect/ui/components/ui/icons/tick";
+export * from "@inflect/ui/components/ui/icons/user-clock";
+export * from "@inflect/ui/components/ui/icons/verified-badge";
 
 // loaders
-export * from "./loading-circle";
-export * from "./loading-dots";
-export * from "./loading-spinner";
+export * from "@inflect/ui/components/ui/icons/loading-circle";
+export * from "@inflect/ui/components/ui/icons/loading-dots";
+export * from "@inflect/ui/components/ui/icons/loading-spinner";
 
 // brand logos
-export * from "./anthropic";
-export * from "./bing";
-export * from "./facebook";
-export * from "./github";
-export * from "./google";
-export * from "./instagram";
-export * from "./linkedin";
-export * from "./openai";
-export * from "./product-hunt";
-export * from "./reddit";
-export * from "./slack";
-export * from "./tiktok";
-export * from "./twitter";
-export * from "./unsplash";
-export * from "./veriff";
-export * from "./youtube";
+export * from "@inflect/ui/components/ui/icons/anthropic";
+export * from "@inflect/ui/components/ui/icons/bing";
+export * from "@inflect/ui/components/ui/icons/facebook";
+export * from "@inflect/ui/components/ui/icons/github";
+export * from "@inflect/ui/components/ui/icons/google";
+export * from "@inflect/ui/components/ui/icons/instagram";
+export * from "@inflect/ui/components/ui/icons/linkedin";
+export * from "@inflect/ui/components/ui/icons/openai";
+export * from "@inflect/ui/components/ui/icons/product-hunt";
+export * from "@inflect/ui/components/ui/icons/reddit";
+export * from "@inflect/ui/components/ui/icons/slack";
+export * from "@inflect/ui/components/ui/icons/tiktok";
+export * from "@inflect/ui/components/ui/icons/twitter";
+export * from "@inflect/ui/components/ui/icons/unsplash";
+export * from "@inflect/ui/components/ui/icons/veriff";
+export * from "@inflect/ui/components/ui/icons/youtube";
 
 // Payment platforms
-export * from "./payment-platforms/card-amex";
-export * from "./payment-platforms/card-discover";
-export * from "./payment-platforms/card-mastercard";
-export * from "./payment-platforms/card-visa";
-export * from "./payment-platforms/paypal";
-export * from "./payment-platforms/stablecoin";
-export * from "./payment-platforms/stripe-icon";
-export * from "./payment-platforms/stripe-link";
+export * from "@inflect/ui/components/ui/icons/payment-platforms/card-amex";
+export * from "@inflect/ui/components/ui/icons/payment-platforms/card-discover";
+export * from "@inflect/ui/components/ui/icons/payment-platforms/card-mastercard";
+export * from "@inflect/ui/components/ui/icons/payment-platforms/card-visa";
+export * from "@inflect/ui/components/ui/icons/payment-platforms/paypal";
+export * from "@inflect/ui/components/ui/icons/payment-platforms/stablecoin";
+export * from "@inflect/ui/components/ui/icons/payment-platforms/stripe-icon";
+export * from "@inflect/ui/components/ui/icons/payment-platforms/stripe-link";
 
 // SDKs
-export * from "./go";
-export * from "./php";
-export * from "./python";
-export * from "./ruby";
-export * from "./typescript";
+export * from "@inflect/ui/components/ui/icons/go";
+export * from "@inflect/ui/components/ui/icons/php";
+export * from "@inflect/ui/components/ui/icons/python";
+export * from "@inflect/ui/components/ui/icons/ruby";
+export * from "@inflect/ui/components/ui/icons/typescript";
 
 // continent icons
-export * from "./continents";
+export * from "@inflect/ui/components/ui/icons/continents";
 
 // default-domain logos
-export * from "./default-domains/amazon";
-export * from "./default-domains/chatgpt";
-export * from "./default-domains/figma";
-export * from "./default-domains/github-enhanced";
-export * from "./default-domains/google-enhanced";
-export * from "./default-domains/spotify";
+export * from "@inflect/ui/components/ui/icons/default-domains/amazon";
+export * from "@inflect/ui/components/ui/icons/default-domains/chatgpt";
+export * from "@inflect/ui/components/ui/icons/default-domains/figma";
+export * from "@inflect/ui/components/ui/icons/default-domains/github-enhanced";
+export * from "@inflect/ui/components/ui/icons/default-domains/google-enhanced";
+export * from "@inflect/ui/components/ui/icons/default-domains/spotify";
 
 // Nucleo icons
-export * from "./nucleo";
+export * from "@inflect/ui/components/ui/icons/nucleo";
 
 // Feature icons for pricing table
 export * from "./plan-feature-icons";

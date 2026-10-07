@@ -1,4 +1,4 @@
-import { cn } from "@inflect/ui/lib/cn";
+import { cn } from "../../../../lib/cn";
 
 export function Stablecoin({ className }: { className?: string }) {
   return (

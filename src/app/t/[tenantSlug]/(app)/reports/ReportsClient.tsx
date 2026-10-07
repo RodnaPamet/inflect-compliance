@@ -23,7 +23,7 @@ import { UpgradeGate } from '@/components/UpgradeGate';
 import useSWR from 'swr';
 import { Tooltip } from '@/components/ui/tooltip';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { LoadingSpinner } from '@/components/ui/icons/loading-spinner';
+import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 import { InlineNotice } from '@/components/ui/inline-notice';
 
 // ─── Types (mirror generateReadinessReport's payload) ───

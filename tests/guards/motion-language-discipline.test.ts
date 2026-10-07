@@ -55,7 +55,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 const EXEMPT_FILES = new Set<string>([
     // The slide-on-hover arrow is the icon's render contract — the
     // motion IS the navigation hint.
-    "src/components/ui/icons/expanding-arrow.tsx",
+    "packages/ui/src/components/ui/icons/expanding-arrow.tsx",
     // File-upload drop-zone icon: scale-110 on hover/drag = drop
     // affordance; scale-95 on active = tap feedback. Both are
     // canonical drag-and-drop motion gestures, not decorative

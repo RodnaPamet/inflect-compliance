@@ -57,7 +57,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 
 const ALLOWLIST: Array<{ file: string; reason: string }> = [
     {
-        file: 'src/components/ui/icons/expanding-arrow.tsx',
+        file: 'packages/ui/src/components/ui/icons/expanding-arrow.tsx',
         reason:
             'Decorative arrow primitive with a hover-translate animation; deliberate motion contained in a single component used as a CTA-arrow accent.',
     },

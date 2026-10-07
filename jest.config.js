@@ -173,6 +173,14 @@ const nodeProject = {
     globalTeardown: '<rootDir>/tests/setup/teardown.ts',
     moduleNameMapper: {
         '^@/env$': '<rootDir>/tests/mocks/env.ts',
+        // `@inflect/ui` resolves through the workspace symlink for tsc, but
+        // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
+        // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and
+        // `@inflect/ui/components/ui/icons/sort-order` (arm 2, `./src/*.tsx`)
+        // fails with "Cannot find module". §5.6 of the design doc predicted no
+        // mapper would be needed; that is true only for the first arm. Mapping
+        // it here hands extension resolution back to jest, which tries both.
+        '^@inflect/ui/(.*)$': '<rootDir>/packages/ui/src/$1',
         '^@/(.*)$': '<rootDir>/src/$1',
     },
     testMatch: ['**/*.test.ts', '**/*.test.js'],
@@ -348,6 +356,14 @@ const jsdomProject = {
     setupFilesAfterEnv: ['<rootDir>/tests/rendered/setup.ts'],
     moduleNameMapper: {
         '^@/env$': '<rootDir>/tests/mocks/env.ts',
+        // `@inflect/ui` resolves through the workspace symlink for tsc, but
+        // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
+        // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and
+        // `@inflect/ui/components/ui/icons/sort-order` (arm 2, `./src/*.tsx`)
+        // fails with "Cannot find module". §5.6 of the design doc predicted no
+        // mapper would be needed; that is true only for the first arm. Mapping
+        // it here hands extension resolution back to jest, which tries both.
+        '^@inflect/ui/(.*)$': '<rootDir>/packages/ui/src/$1',
         '^@/(.*)$': '<rootDir>/src/$1',
         // Epic 41 — react-grid-layout uses the package `exports` field
         // to map `react-grid-layout/legacy` → `dist/legacy.js`. Jest's
@@ -568,6 +584,14 @@ const flueProject = {
     extensionsToTreatAsEsm: ['.ts'],
     moduleNameMapper: {
         '^@/env$': '<rootDir>/tests/mocks/env.ts',
+        // `@inflect/ui` resolves through the workspace symlink for tsc, but
+        // jest-resolve does NOT honour an `exports` ARRAY fallback: measured at
+        // #3046 step 2b, `@inflect/ui/lib/cn` (arm 1, `./src/*.ts`) resolves and
+        // `@inflect/ui/components/ui/icons/sort-order` (arm 2, `./src/*.tsx`)
+        // fails with "Cannot find module". §5.6 of the design doc predicted no
+        // mapper would be needed; that is true only for the first arm. Mapping
+        // it here hands extension resolution back to jest, which tries both.
+        '^@inflect/ui/(.*)$': '<rootDir>/packages/ui/src/$1',
         '^@/(.*)$': '<rootDir>/src/$1',
     },
     testEnvironmentOptions: { customExportConditions: ['node', 'import'] },

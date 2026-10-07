@@ -21,10 +21,10 @@ import { Combobox } from '@/components/ui/combobox';
 import { Checkbox } from '@/components/ui/checkbox';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { LoadingSpinner } from '@/components/ui/icons/loading-spinner';
-import { Folder5 } from '@/components/ui/icons/nucleo/folder5';
-import { FileContent } from '@/components/ui/icons/nucleo/file-content';
-import { ChevronRight } from '@/components/ui/icons/nucleo/chevron-right';
+import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
+import { Folder5 } from '@inflect/ui/components/ui/icons/nucleo/folder5';
+import { FileContent } from '@inflect/ui/components/ui/icons/nucleo/file-content';
+import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { formatDate } from '@/lib/format-date';
 

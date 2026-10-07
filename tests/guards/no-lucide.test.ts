@@ -2,7 +2,7 @@
  * Roadmap-2 PR-8 — iconography unification (encrustation prevention).
  *
  * The codebase has two icon families: Nucleo (380+ files at
- * `src/components/ui/icons/nucleo/`, the canonical source) and
+ * `packages/ui/src/components/ui/icons/nucleo/`, the canonical source) and
  * lucide-react (100 import sites today, residual). Visually they
  * are similar enough that no obvious mismatch ships, but every new
  * import that reaches for lucide is a future divergence — the

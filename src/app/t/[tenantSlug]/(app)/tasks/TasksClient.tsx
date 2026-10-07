@@ -9,7 +9,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
 import { useTranslations } from 'next-intl';
-import { Plus, Trash } from '@/components/ui/icons/nucleo';
+import { Plus, Trash } from '@inflect/ui/components/ui/icons/nucleo';
 import { ViewsMenu } from '@/components/ui/views-menu';
 import { NewTaskModal } from './NewTaskModal';
 import { AsidePanel } from '@/components/ui/aside-panel';

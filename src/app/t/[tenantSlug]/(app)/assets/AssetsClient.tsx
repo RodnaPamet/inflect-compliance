@@ -41,7 +41,7 @@ import { formatDateTime } from '@/lib/format-date';
 import { Combobox } from '@/components/ui/combobox';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
-import { Plus, Trash } from '@/components/ui/icons/nucleo';
+import { Plus, Trash } from '@inflect/ui/components/ui/icons/nucleo';
 import { ViewsMenu } from '@/components/ui/views-menu';
 import { NewAssetModal } from './NewAssetModal';
 import { AssetDetailPanel } from './AssetDetailPanel';

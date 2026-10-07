@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
-import { CircleCheck, CircleDotted } from '@/components/ui/icons/nucleo';
+import { CircleCheck, CircleDotted } from '@inflect/ui/components/ui/icons/nucleo';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useTranslations } from 'next-intl';
 

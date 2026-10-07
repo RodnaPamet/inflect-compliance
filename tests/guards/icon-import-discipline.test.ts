@@ -21,7 +21,7 @@ import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
-const NUCLEO = '@/components/ui/icons/nucleo';
+const NUCLEO = '@inflect/ui/components/ui/icons/nucleo';
 
 function tsxFiles(dir: string, out: string[] = []): string[] {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

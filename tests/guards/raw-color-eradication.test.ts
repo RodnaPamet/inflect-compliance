@@ -36,7 +36,8 @@ const EXEMPT_FILES = new Set<string>([
 
 // Directories whose contents are skipped entirely.
 const EXEMPT_DIR_NAMES = new Set<string>([
-  "icons",        // src/components/ui/icons — raw colors are part of icon SVG defs
+  "icons",        // matched by path SEGMENT, so it covers packages/ui/.../icons too
+                  // (#3046 step 2b) — raw colors are part of icon SVG defs
   "charts",       // chart palette colors are visualization, not status semantics
   "__tests__",
   "__mocks__",

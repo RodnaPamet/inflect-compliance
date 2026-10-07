@@ -13,7 +13,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ShieldCheck } from '@/components/ui/icons/nucleo/shield-check';
+import { ShieldCheck } from '@inflect/ui/components/ui/icons/nucleo/shield-check';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { cardVariants } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';

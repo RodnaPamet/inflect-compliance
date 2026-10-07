@@ -56,7 +56,7 @@ import {
 import { signOut } from 'next-auth/react';
 import { useCallback, useMemo, type ComponentType, type SVGProps } from 'react';
 
-import { Robot } from '@/components/ui/icons/nucleo';
+import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
 import { useTheme } from '@/components/theme/ThemeProvider';
 
 export type PaletteCommandGroup = 'Navigation' | 'Actions';

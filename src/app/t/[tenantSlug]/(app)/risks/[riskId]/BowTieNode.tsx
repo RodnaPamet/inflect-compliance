@@ -5,10 +5,10 @@
    barrier / consequence. */
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { memo } from 'react';
-import { ShieldCheck } from '@/components/ui/icons/nucleo/shield-check';
-import { Bolt } from '@/components/ui/icons/nucleo/bolt';
-import { TriangleWarning } from '@/components/ui/icons/nucleo/triangle-warning';
-import { CurrencyDollar } from '@/components/ui/icons/nucleo/currency-dollar';
+import { ShieldCheck } from '@inflect/ui/components/ui/icons/nucleo/shield-check';
+import { Bolt } from '@inflect/ui/components/ui/icons/nucleo/bolt';
+import { TriangleWarning } from '@inflect/ui/components/ui/icons/nucleo/triangle-warning';
+import { CurrencyDollar } from '@inflect/ui/components/ui/icons/nucleo/currency-dollar';
 import { cn } from '@inflect/ui/lib/cn';
 import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 

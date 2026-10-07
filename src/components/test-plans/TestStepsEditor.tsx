@@ -9,7 +9,7 @@
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, ChevronUp, Xmark } from '@/components/ui/icons/nucleo';
+import { Plus, ChevronUp, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
 
 export interface TestStepDraft {
     instruction: string;

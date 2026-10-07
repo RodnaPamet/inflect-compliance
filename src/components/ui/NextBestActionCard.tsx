@@ -40,7 +40,7 @@ import { cn } from "@inflect/ui/lib/cn";
 import { Card } from "./card";
 import { Heading } from "./typography";
 import { Button } from "./button";
-import { BadgeCheck } from "./icons/nucleo/badge-check";
+import { BadgeCheck } from "@inflect/ui/components/ui/icons/nucleo/badge-check";
 import {
     resolveNextBestAction,
     type NextBestAction,

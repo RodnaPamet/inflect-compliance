@@ -44,8 +44,8 @@ import {
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@inflect/ui/lib/cn';
 
-import { ChevronLeft } from '@/components/ui/icons/nucleo/chevron-left';
-import { ChevronRight } from '@/components/ui/icons/nucleo/chevron-right';
+import { ChevronLeft } from '@inflect/ui/components/ui/icons/nucleo/chevron-left';
+import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
 import { cardVariants } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { useLocalStorage } from '@/components/ui/hooks';

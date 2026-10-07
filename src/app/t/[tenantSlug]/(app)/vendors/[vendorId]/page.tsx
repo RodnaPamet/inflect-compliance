@@ -14,7 +14,7 @@ import { useSearchParams } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref, useTenantContext, usePermissions } from '@/lib/tenant-context-provider';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { Button } from '@/components/ui/button';
-import { Pen2, Plus, ChevronRight } from '@/components/ui/icons/nucleo';
+import { Pen2, Plus, ChevronRight } from '@inflect/ui/components/ui/icons/nucleo';
 import { Tooltip, InfoTooltip } from '@/components/ui/tooltip';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';

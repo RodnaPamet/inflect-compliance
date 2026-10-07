@@ -8,7 +8,7 @@ import { ReactNode, forwardRef, useId } from "react";
 // widely imported should not pull them into whichever chunk lands it.
 // Every other LoadingSpinner call site in the app already imports the
 // module path.
-import { LoadingSpinner } from "./icons/loading-spinner";
+import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 import { Tooltip } from "./tooltip";
 import { buttonVariants } from "./button-variants";
 import { HIT_AREA_CLASS } from "./hit-area";

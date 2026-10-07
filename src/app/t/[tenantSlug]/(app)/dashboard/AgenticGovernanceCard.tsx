@@ -6,7 +6,7 @@ import { AgentStatus } from '@prisma/client';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getAgenticDashboardSummary } from '@/app-layer/usecases/agent-registry';
-import { Robot } from '@/components/ui/icons/nucleo';
+import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';

@@ -25,7 +25,7 @@ import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { Button } from '@/components/ui/button';
 import { ProcessNodeReverseLookupModal } from '@/components/processes/ProcessNodeReverseLookupModal';
-import { Pen2 } from '@/components/ui/icons/nucleo';
+import { Pen2 } from '@inflect/ui/components/ui/icons/nucleo';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { useTenantMembers } from '@/components/ui/user-combobox';

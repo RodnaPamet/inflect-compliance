@@ -11,8 +11,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Plus } from '@/components/ui/icons/nucleo/plus';
-import { Trash } from '@/components/ui/icons/nucleo/trash';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo/plus';
+import { Trash } from '@inflect/ui/components/ui/icons/nucleo/trash';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';

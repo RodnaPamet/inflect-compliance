@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { UserFocus } from '@/components/ui/icons/nucleo';
+import { UserFocus } from '@inflect/ui/components/ui/icons/nucleo';
 
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';

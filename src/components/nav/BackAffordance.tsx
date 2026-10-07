@@ -22,7 +22,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { usePathname } from 'next/navigation';
-import { ArrowLeft } from '@/components/ui/icons/nucleo';
+import { ArrowLeft } from '@inflect/ui/components/ui/icons/nucleo';
 import {
     usePreviousPath,
     tenantSlugFromPath,

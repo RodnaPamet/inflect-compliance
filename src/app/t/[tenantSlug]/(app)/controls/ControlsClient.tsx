@@ -36,7 +36,7 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { formatDateTime } from '@/lib/format-date';
 import { AppIcon } from '@/components/icons/AppIcon';
-import { Plus, Trash } from '@/components/ui/icons/nucleo';
+import { Plus, Trash } from '@inflect/ui/components/ui/icons/nucleo';
 import { ViewsMenu } from '@/components/ui/views-menu';
 import { Paperclip, ChevronDown, ChevronLeft } from 'lucide-react';
 import {
@@ -75,7 +75,7 @@ import {
 } from '@/lib/controls/control-taxonomy';
 import { applicabilityState } from '@/lib/controls/control-applicability';
 import { AiAssistRail } from '@/components/ui/ai-assist-rail';
-import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
+import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiTrends, buildKpiSparklines, centeredSparklineDomain, assignSparklineVariants } from '@/lib/charts/kpi-trends';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';

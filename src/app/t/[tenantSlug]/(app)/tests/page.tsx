@@ -21,7 +21,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { Button } from '@/components/ui/button';
 import { IconAction } from '@/components/ui/icon-action';
 import { ToggleGroup } from '@/components/ui/toggle-group';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { NewTestPlanModal } from './_components/NewTestPlanModal';
 import {
     buildPlanStatusLabels,
