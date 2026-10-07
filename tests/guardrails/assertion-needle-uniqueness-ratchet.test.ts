@@ -867,8 +867,28 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
  * branches. This is the same rule at a finer grain: before merge means after
  * the LAST edit, not after the merge commit. Measuring once and then continuing
  * to edit leaves a number that was true and no longer is.
+ *
+ * ── 1445 -> 1446, #3204's guard, and why it is not paid down ─────────
+ *
+ * `tests/guards/runner-ships-no-dangling-workspace-link.test.ts` adds exactly
+ * ONE un-analysable read. Measured, not projected: this branch reported
+ * `current: 1446` against the 1445 ceiling, and the figure was taken AFTER the
+ * last edit on the branch, which is the rule the paragraph above sets.
+ *
+ * It is not paid down by the FIX_ADVICE route, and the reason is the guard's
+ * subject rather than laziness. That guard must distinguish "the link is removed
+ * BEFORE the runner stage" from "a removal sitting inside it", because the runner
+ * copies `node_modules` from the builder and a late removal would be inert. So it
+ * slices the Dockerfile into stages and masks `#` comments before matching — the
+ * masking is itself load-bearing, since the first draft was satisfied by a
+ * comment containing `rm -rf node_modules/@inflect`. A constant-path read with a
+ * literal needle cannot express either distinction, so making the read analysable
+ * would mean giving up what the assertion is for.
+ *
+ * Teaching `tests/helpers/assertion-reach.ts` to follow a sliced subject is the
+ * standing alternative, and would LOWER this ceiling rather than raise it.
  */
-const UNANALYSABLE_READ_BASELINE = 1445;
+const UNANALYSABLE_READ_BASELINE = 1446;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
