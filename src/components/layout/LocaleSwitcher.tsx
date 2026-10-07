@@ -27,9 +27,15 @@
  * Both strings are interpolated from constants rather than written as literal
  * JSX text. A literal `>English<` text node would newly trip the i18n
  * adoption ratchet, which this file is (correctly) not baselined in.
+ *
+ * The group's own name is `common.language`, read in the viewer's locale:
+ * the word `<UserMenu>` prints beside the switch. It was the literal
+ * "Language", which a screen reader announced in English on a Bulgarian
+ * page (#3201). A host that copies this file needs the key in each of its
+ * catalogues.
  */
 
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 
@@ -91,6 +97,7 @@ function persistLocale(locale: string) {
 export function LocaleSwitcher({ className, onLocaleChange }: LocaleSwitcherProps) {
     // Active locale from the NextIntlClientProvider (driven by the cookie).
     const current = resolveLocale(useLocale());
+    const t = useTranslations('common');
     const router = useRouter();
     const [pending, startTransition] = useTransition();
 
@@ -127,7 +134,7 @@ export function LocaleSwitcher({ className, onLocaleChange }: LocaleSwitcherProp
             options={OPTIONS}
             selected={current}
             selectAction={onSelect}
-            ariaLabel="Language"
+            ariaLabel={t('language')}
             className={className}
         />
     );

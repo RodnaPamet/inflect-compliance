@@ -141,8 +141,9 @@ jest.mock('@/components/theme/ThemeProvider', () => ({
     useTheme: () => ({ theme: mockTheme.current, setTheme: () => {}, toggle: () => {} }),
 }));
 
-// UserMenu's language row mounts the switcher, which needs a router; the
-// switcher's own copy is covered by its own suite.
+// UserMenu's language row mounts the switcher, stubbed out so the UserMenu
+// case reads only the menu's own copy. The switcher's group name has a case
+// of its own, which renders the real module.
 jest.mock('@/components/layout/LocaleSwitcher', () => ({ LocaleSwitcher: () => null }));
 jest.mock('next-auth/react', () => ({ signOut: jest.fn() }));
 
@@ -327,6 +328,15 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
             />,
         );
         expectLocalised(screen.getByRole('radiogroup').getAttribute('aria-label'), 'Options');
+    });
+
+    it('LocaleSwitcher: the radiogroup name (#3201)', () => {
+        // The real module: the file-level stub above is for UserMenu's row.
+        const { LocaleSwitcher } = jest.requireActual<
+            typeof import('@/components/layout/LocaleSwitcher')
+        >('@/components/layout/LocaleSwitcher');
+        render(<LocaleSwitcher />);
+        expectLocalised(screen.getByRole('radiogroup').getAttribute('aria-label'), 'Language');
     });
 
     it('InlineNotice: the dismiss button name', () => {
