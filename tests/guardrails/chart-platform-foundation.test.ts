@@ -34,11 +34,16 @@ const CHART_ROOTS = [
     path.join(ROOT, 'packages/ui/src/components/ui/charts'),
     path.join(ROOT, 'src/components/ui/charts'),
 ];
-const chartPath = (rel: string): string =>
-    CHART_ROOTS.find((d) => fs.existsSync(path.join(d, rel))) !== undefined
-        ? path.join(CHART_ROOTS.find((d) => fs.existsSync(path.join(d, rel)))!, rel)
-        : path.join(CHART_ROOTS[1], rel);
-const CHARTS_DIR = CHART_ROOTS[1];
+const PKG_CHARTS = CHART_ROOTS[0];
+const APP_CHARTS = CHART_ROOTS[1];
+const CHARTS_DIR = APP_CHARTS;
+
+// `inPkg` decides WHICH root; the reads below still spell
+// `path.join(<constant>, rel)`. That shape matters: routing them through a
+// helper that returns the path made them `path-not-constant` to the Class D
+// analyser (#2246), which counted two new blind spots — and growth in the
+// un-analysable set is a finding in its own right, not a ceiling to raise.
+const inPkg = (rel: string): boolean => fs.existsSync(path.join(PKG_CHARTS, rel));
 const PKG = JSON.parse(
     fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'),
 ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
@@ -52,11 +57,15 @@ function hasDep(name: string): boolean {
 }
 
 function read(rel: string): string {
-    return codeOf(fs.readFileSync(chartPath(rel), 'utf-8'));
+    return inPkg(rel)
+        ? codeOf(fs.readFileSync(path.join(PKG_CHARTS, rel), 'utf-8'))
+        : codeOf(fs.readFileSync(path.join(APP_CHARTS, rel), 'utf-8'));
 }
 
 function readRaw(rel: string): string {
-    return fs.readFileSync(chartPath(rel), 'utf-8');
+    return inPkg(rel)
+        ? fs.readFileSync(path.join(PKG_CHARTS, rel), 'utf-8')
+        : fs.readFileSync(path.join(APP_CHARTS, rel), 'utf-8');
 }
 
 /**
@@ -109,7 +118,7 @@ describe('Epic 59 — chart platform foundation', () => {
         'utils.ts',
         'index.ts',
     ])('%s exists in the canonical module layout', (file) => {
-        expect(fs.existsSync(chartPath(file))).toBe(true);
+        expect(inPkg(file) || fs.existsSync(path.join(APP_CHARTS, file))).toBe(true);
     });
 
     describe('barrel', () => {

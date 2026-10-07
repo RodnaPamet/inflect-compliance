@@ -906,7 +906,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
  * Teaching `tests/helpers/assertion-reach.ts` to follow a sliced subject is the
  * standing alternative and would LOWER this ceiling.
  */
-const UNANALYSABLE_READ_BASELINE = 1445;
+const UNANALYSABLE_READ_BASELINE = 1442;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

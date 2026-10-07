@@ -229,7 +229,7 @@ const INTERIOR_SPAN_BASELINE = 310;
  *     which reads 0 today. Recorded because the DEFINITION moved even though
  *     the number did not.
  */
-const UNANALYSABLE_TOMATCH_BASELINE = 57;
+const UNANALYSABLE_TOMATCH_BASELINE = 56;
 
 /**
  * Floor on the share of `toMatch` sites whose pattern is recovered.

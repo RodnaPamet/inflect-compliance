@@ -47,7 +47,7 @@ describe('DonutChart hover-pop clearance', () => {
         // And the constant must actually be imported from the motion
         // layer (not redefined to a smaller local value).
         expect(src).toMatch(
-            /import\s*\{[^}]*\bCHART_HOVER_POP_DISTANCE\b[^}]*\}\s*from\s*['"]@\/components\/ui\/charts\/chart-motion['"]/,
+            /import\s*\{[^}]*\bCHART_HOVER_POP_DISTANCE\b[^}]*\}\s*from\s*['"](?:@\/components|@inflect\/ui\/components)\/ui\/charts\/chart-motion['"]/,
         );
     });
 
