@@ -421,6 +421,31 @@ jobs:
       - name: Run tsc --noEmit
         run: npm run typecheck
 
+      # ── The §2 boundary, which nothing enforced until now ──
+      #
+      # `packages/ui/tsconfig.json` sets `paths: {}` and re-roots `baseUrl`
+      # specifically so the package cannot reach the application through the
+      # `@/` alias. That file existed from #3193 and was compiled by NOTHING —
+      # not this workflow, not a script — so the boundary was a declaration.
+      #
+      # The root program cannot substitute for it: its `include` is `**/*.ts`,
+      # which picks up `packages/ui`, and there `@/*` resolves. Measured as a
+      # pair on a probe importing `@/lib/prisma` from `packages/ui/src`:
+      #
+      #     tsc -p packages/ui/tsconfig.json   error TS2307   (caught)
+      #     npm run typecheck (root program)   0 errors       (blind)
+      #
+      # So a package file reaching into `@/lib/<domain>` or
+      # `@/components/<x outside the package>` — §2 clauses 4 — lands green
+      # today. This step is what makes "a file in packages/ui that imports
+      # @/app-layer fails tsc instead of failing a regex" (§3) true.
+      #
+      # It is green as of #3046 step 2b: 334 icons and cn.ts compile clean
+      # under it. Added here rather than with the next batch so the first
+      # violation it catches is somebody's NEW import, not a backlog.
+      - name: "Run tsc --noEmit (packages/ui boundary)"
+        run: npm run typecheck:ui-boundary
+
   # ═══════════════════════════════════════════════════════════════
   #  Job 3: Test — Jest unit + integration + architectural guards
   #  Needs Postgres for integration tests.
