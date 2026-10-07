@@ -25,7 +25,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { CopyText } from '@/components/ui/copy-text';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';

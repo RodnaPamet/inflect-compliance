@@ -19,7 +19,7 @@ import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { cardVariants } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
 import { AppIcon } from '@/components/icons/AppIcon';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 
 function MetricCard({ label, value, tone, href }: { label: string; value: number | string; tone?: MetricTone; href?: string }) {

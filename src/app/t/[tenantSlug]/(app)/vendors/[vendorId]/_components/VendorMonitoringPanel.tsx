@@ -17,7 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { Heading } from '@/components/ui/typography';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@/lib/format-date';
 
 interface Monitor {

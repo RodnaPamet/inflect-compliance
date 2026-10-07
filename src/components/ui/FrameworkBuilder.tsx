@@ -31,7 +31,7 @@
  * minimal — every drop just calls a helper and replaces state.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { GripVertical, Loader2, Save, Undo2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';

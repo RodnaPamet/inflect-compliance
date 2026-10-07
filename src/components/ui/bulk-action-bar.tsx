@@ -28,7 +28,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { IconAction } from '@/components/ui/icon-action';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Modal, type ConfirmTone } from '@/components/ui/modal';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 export interface BulkActionDef {
     /** Stable action id (e.g. 'assign', 'status'). */

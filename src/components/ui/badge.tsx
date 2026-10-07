@@ -15,7 +15,7 @@
  *   <Badge variant="info">AI-Powered</Badge>
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import { forwardRef } from "react";
 

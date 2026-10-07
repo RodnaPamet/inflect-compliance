@@ -42,7 +42,7 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { MoreHorizontal } from "lucide-react";
 
 import { Button } from "./button";

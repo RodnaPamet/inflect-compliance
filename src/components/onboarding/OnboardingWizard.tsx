@@ -32,7 +32,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { Nis2SelfAssessmentStep } from './Nis2SelfAssessmentStep';
 import { AiGovSelfAssessmentStep } from './AiGovSelfAssessmentStep';
 import { SovereigntySelfAssessmentStep } from './SovereigntySelfAssessmentStep';

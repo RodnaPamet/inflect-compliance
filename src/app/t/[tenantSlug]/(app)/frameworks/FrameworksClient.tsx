@@ -29,7 +29,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import { Button } from '@/components/ui/button';
 import { CardList } from '@/components/ui/card-list';

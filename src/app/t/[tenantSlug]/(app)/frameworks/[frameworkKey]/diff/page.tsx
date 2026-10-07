@@ -6,7 +6,7 @@ import { Heading } from '@/components/ui/typography';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { KPIStat } from '@/components/ui/metric';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // computeRequirementsDiff (framework/fixtures.ts) — inline literal return.
 interface DiffRequirement {

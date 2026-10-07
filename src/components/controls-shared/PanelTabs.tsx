@@ -18,7 +18,7 @@
  */
 import { useCallback, useId, useRef, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 
 export function PanelTabs<T extends string>({
     tabs,

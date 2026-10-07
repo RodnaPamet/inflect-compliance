@@ -32,7 +32,7 @@
  * migrate to this primitive in R8-PR2.
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { type ComponentType, type ReactNode, type SVGProps } from "react";
 
 /**

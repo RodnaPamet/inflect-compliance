@@ -45,7 +45,7 @@
  *   - <ErrorState> (full-pane error surface)
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import {
     AlertTriangle,
     CheckCircle,

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';

@@ -36,7 +36,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 
 export interface WorkspaceShellProps {
     children: ReactNode;

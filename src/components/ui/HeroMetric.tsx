@@ -33,7 +33,7 @@
  */
 
 import * as React from "react";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 
 import { AnimatedNumber, type AnimatedNumberFormat } from "./animated-number";

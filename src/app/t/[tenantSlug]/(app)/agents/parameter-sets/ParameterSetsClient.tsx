@@ -72,7 +72,7 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { formatDate } from '@/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 

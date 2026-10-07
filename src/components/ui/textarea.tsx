@@ -18,7 +18,7 @@
  * "size" concept belongs to height which `rows` already owns.
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 

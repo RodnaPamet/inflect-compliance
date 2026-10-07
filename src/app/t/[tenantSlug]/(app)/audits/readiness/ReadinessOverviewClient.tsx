@@ -25,7 +25,7 @@ import { InfoTooltip } from '@/components/ui/tooltip';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { cardVariants } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { readinessTone, readinessVariant } from '@/lib/readiness/bands';
 
 interface Cycle { id: string; name: string; frameworkKey: string; status: string }

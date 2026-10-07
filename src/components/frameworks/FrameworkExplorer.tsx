@@ -54,7 +54,7 @@ import type {
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // ─── Coverage shapes (subset of the existing coverage usecase output) ──
 

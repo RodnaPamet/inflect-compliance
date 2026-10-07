@@ -29,7 +29,7 @@ import {
     Workflow,
     Xmark,
 } from '@/components/ui/icons/nucleo';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useCalendarBadge } from './use-calendar-badge';
 import { NavItem } from './nav-item';
 // A SEPARATE type-only import on purpose. `nav-item-import-discipline` pins the

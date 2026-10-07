@@ -12,7 +12,7 @@
  * their own rows but want consistent description styling).
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import * as React from "react";
 
 export interface FormDescriptionProps

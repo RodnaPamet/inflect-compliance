@@ -16,7 +16,7 @@
  * conditional errors without `&&` guards at every site.
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import * as React from "react";
 
 export interface FormErrorProps

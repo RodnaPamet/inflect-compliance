@@ -23,7 +23,7 @@ import { AnimatedNumber } from '@/components/ui/animated-number';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card-variants';
 import { TrendCard } from '@/components/ui/TrendCard';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // ─── Props ──────────────────────────────────────────────────────────
 

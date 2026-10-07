@@ -51,7 +51,7 @@
  *   • Not a content wrapper — it owns ONLY the heading row.
  */
 import { type ReactNode } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { Caption, Eyebrow, Heading } from '@/components/ui/typography';
 
 export interface CardHeaderProps {

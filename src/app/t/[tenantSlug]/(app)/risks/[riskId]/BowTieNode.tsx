@@ -9,7 +9,7 @@ import { ShieldCheck } from '@/components/ui/icons/nucleo/shield-check';
 import { Bolt } from '@/components/ui/icons/nucleo/bolt';
 import { TriangleWarning } from '@/components/ui/icons/nucleo/triangle-warning';
 import { CurrencyDollar } from '@/components/ui/icons/nucleo/currency-dollar';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 
 export const BOWTIE_NODE_TYPES = {

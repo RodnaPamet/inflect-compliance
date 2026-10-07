@@ -15,7 +15,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // listControlTemplates → ControlTemplateRepository.list (ControlTemplate model).
 interface ControlTemplateRow {

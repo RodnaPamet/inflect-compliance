@@ -11,7 +11,7 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { extractMutationError } from '@/lib/mutations';
 
 type ParsedRow = {

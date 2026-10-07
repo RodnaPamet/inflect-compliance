@@ -32,7 +32,7 @@
  *     grid; we preserve it by not overriding `components.Day`.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { WEEK_STARTS_ON } from './week-start';
 import { addMonths, addYears, format } from 'date-fns';
 import type { Locale as DateFnsLocale } from 'date-fns/locale';

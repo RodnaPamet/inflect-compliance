@@ -45,7 +45,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import { ControlRoiCard } from './_components/ControlRoiCard';
 import { ControlHealthCard } from './_tabs/ControlHealthCard';

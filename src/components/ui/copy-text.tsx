@@ -23,7 +23,7 @@
 
 "use client";
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { Check, Copy } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { type ReactNode, forwardRef } from "react";

@@ -42,7 +42,7 @@
  *     aria-selected attributes.
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { Command, useCommandState } from "cmdk";
 import { ChevronDown } from "lucide-react";
 import { useTranslations } from "next-intl";

@@ -17,7 +17,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { EVIDENCE_ACCEPT, formatBytes } from '@/lib/evidence-upload-limits';
 
 // Was a third copy of the accept string, byte-identical to the other two.

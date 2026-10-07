@@ -33,7 +33,7 @@ import { buildRunStatusLabels, buildResultLabels, RESULT_BADGE } from '@/compone
 import { Heading } from '@/components/ui/typography';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { Card, cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 const buildEvKindOptions = (t: (key: string) => string): ComboboxOption[] => [
     { value: 'FILE_UPLOAD', label: t('evKind.fileUpload') },

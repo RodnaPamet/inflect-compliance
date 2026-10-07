@@ -27,7 +27,7 @@ import { IdentityCrossLinks } from '@/components/admin/IdentityCrossLinks';
 import { RequirePermission } from '@/components/require-permission';
 import { cardVariants } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useTranslations } from 'next-intl';
 import { SharePointCard } from './SharePointCard';
 import { FlueEngineCard } from './FlueEngineCard';

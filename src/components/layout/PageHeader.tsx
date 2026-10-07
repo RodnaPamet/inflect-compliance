@@ -59,7 +59,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { classifyRoute } from "@/lib/nav/page-segregation";
 import {
     Breadcrumbs,

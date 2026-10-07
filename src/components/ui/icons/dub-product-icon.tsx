@@ -1,4 +1,4 @@
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { DubAnalyticsIcon } from "./dub-analytics";
 import { DubApiIcon } from "./dub-api";
 import { DubLinksIcon } from "./dub-links";

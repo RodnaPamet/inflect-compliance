@@ -37,7 +37,7 @@ import { NumberStepper } from '@/components/ui/number-stepper';
 import { Eyebrow, Heading } from '@/components/ui/typography';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { calculateRiskScore } from '@/lib/risk-scoring';
 import { RiskBandChip } from '../_shared/RiskBandChip';
 import { resolveBandForScore } from '@/lib/risk-matrix/scoring';

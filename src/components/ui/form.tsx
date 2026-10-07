@@ -1,4 +1,4 @@
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { InputHTMLAttributes, ReactNode, useMemo, useState } from "react";
 import { Button } from "./button";
 import { Heading } from '@/components/ui/typography';

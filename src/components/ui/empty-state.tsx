@@ -30,7 +30,7 @@
  * API stays backward-compatible — existing callers don't need to change.
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { AlertCircle, Inbox, SearchX } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { type PropsWithChildren, type ReactNode } from "react";

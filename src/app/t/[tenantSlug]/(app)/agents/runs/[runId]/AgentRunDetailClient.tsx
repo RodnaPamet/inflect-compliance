@@ -7,7 +7,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EmptyState } from '@/components/ui/empty-state';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 

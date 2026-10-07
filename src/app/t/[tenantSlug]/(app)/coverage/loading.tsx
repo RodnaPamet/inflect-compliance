@@ -1,7 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cardVariants } from '@/components/ui/card-variants';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 /**
  * Coverage dashboard loading skeleton.

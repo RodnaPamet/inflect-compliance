@@ -37,7 +37,7 @@
 import { diffLines } from 'diff';
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { Card } from '@/components/ui/card';
 
 export interface VersionDiffOption {

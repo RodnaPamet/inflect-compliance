@@ -16,7 +16,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { ApiClientError } from '@/lib/api-client';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // CC BY 4.0 attribution — carries everywhere derived NIS2 content renders.
 const NIS2_ATTRIBUTION =

@@ -50,7 +50,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useLocalStorage } from '@/components/ui/hooks/use-local-storage';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { uiStorageKey } from '@/lib/ui-storage';
 
 export interface AppShellFrameProps {

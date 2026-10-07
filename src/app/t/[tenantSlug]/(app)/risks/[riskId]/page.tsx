@@ -30,7 +30,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { useTenantMembers } from '@/components/ui/user-combobox';
 import { buildRiskTreatmentOptions, canonicalTreatmentLabel, buildRiskStatusOptions, riskStatusLabel, RISK_CATEGORY_OPTIONS } from '../_shared/risk-options';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { cardVariants } from '@/components/ui/card';
 import { EditRiskModal, type EditRiskForm } from './_modals/EditRiskModal';
 import { RiskAssessmentPanel } from './RiskAssessmentPanel';

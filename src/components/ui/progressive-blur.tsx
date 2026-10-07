@@ -30,7 +30,7 @@
  * container's edge via `absolute`; pointer-events are disabled so
  * clicks pass through to the underlying scroller.
  */
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import * as React from 'react';
 
 type SingleSide = 'top' | 'right' | 'bottom' | 'left';

@@ -22,7 +22,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Heading } from '@/components/ui/typography';
 import { textLinkVariants } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 interface DashboardMetrics {
     periodDays: number;

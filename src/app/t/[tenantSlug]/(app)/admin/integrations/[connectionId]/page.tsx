@@ -20,7 +20,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { RefreshCw } from 'lucide-react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 interface ExecutionRow {
     id: string;

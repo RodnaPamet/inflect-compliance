@@ -13,7 +13,7 @@
  */
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import { InitialsAvatar } from '@/components/ui/initials-avatar';
 import { Button } from '@/components/ui/button';

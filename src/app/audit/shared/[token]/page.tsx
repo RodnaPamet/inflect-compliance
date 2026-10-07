@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 type ReturnChannelKind = 'COMMENT' | 'EVIDENCE_REQUEST' | 'FINDING' | 'QUESTION';
 const KINDS: ReturnChannelKind[] = ['COMMENT', 'EVIDENCE_REQUEST', 'FINDING', 'QUESTION'];

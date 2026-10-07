@@ -42,7 +42,7 @@ import {
     type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import { ChevronLeft } from '@/components/ui/icons/nucleo/chevron-left';
 import { ChevronRight } from '@/components/ui/icons/nucleo/chevron-right';

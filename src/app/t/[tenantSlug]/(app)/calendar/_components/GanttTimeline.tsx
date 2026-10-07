@@ -20,7 +20,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import type {
     CalendarEvent,
 } from '@/app-layer/schemas/calendar.schemas';

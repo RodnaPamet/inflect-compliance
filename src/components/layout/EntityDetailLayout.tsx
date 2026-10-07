@@ -40,7 +40,7 @@ import { cardVariants } from '@/components/ui/card';
 import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { Button } from '@/components/ui/button';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 import { PageHeader } from '@/components/layout/PageHeader';
 

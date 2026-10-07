@@ -40,7 +40,7 @@
  *     client'` so it never SSRs.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { cardVariants } from '@/components/ui/card';
 import {
     Background,

@@ -30,7 +30,7 @@
  *   - `motion-reduce:animate-none` on every dot so the wave halts
  *     for users with `prefers-reduced-motion: reduce`
  */
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 export interface ShimmerDotsProps {
     /** Number of dot rows. Defaults to 4. */

@@ -17,7 +17,7 @@
  * avoids re-renders every millisecond.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { Command } from 'cmdk';
 
 import { Tooltip } from '../tooltip';

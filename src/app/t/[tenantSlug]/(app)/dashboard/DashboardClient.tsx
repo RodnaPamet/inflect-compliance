@@ -99,7 +99,7 @@ const TrendCard = dynamic(
     () => import('@/components/ui/TrendCard').then((m) => m.TrendCard),
     { ssr: false, loading: () => <Skeleton className="h-full w-full min-h-[120px] rounded-lg" /> },
 );
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { RadarChart, chartReady } from '@/components/ui/charts';
 import {
     MIN_RADAR_AXES,

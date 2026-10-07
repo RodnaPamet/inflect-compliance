@@ -18,7 +18,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { cardVariants } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 type Surface =
     | { kind: 'none' }

@@ -36,7 +36,7 @@ import type { ComponentType, CSSProperties, ElementType, SVGProps } from 'react'
 import type { LucideIcon } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tooltip } from '@/components/ui/tooltip';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useSidebarCollapsed } from './sidebar-collapse-context';
 
 /**

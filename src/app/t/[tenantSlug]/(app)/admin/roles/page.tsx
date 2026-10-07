@@ -48,7 +48,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading, Eyebrow } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // ─── Types ───
 

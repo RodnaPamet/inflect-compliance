@@ -12,7 +12,7 @@
  "src/components/layout/AppShellFrame.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The already-extracted shared frame, and clean on all five axes. Storage key routes through the seam: `collapseStorageKey ?? uiStorageKey('sidebar-collapsed')` (line 93) with `import { uiStorageKey } from '@/lib/ui-storage'` (line 54). No copy at all (every slot is a render prop), no GRC nouns, no brands, brand tokens absent, and the only other imports are `@/lib/cn` and `@/components/ui/hooks/use-local-storage` (`use-local-storage` at :52, `cn` at :53) — the first inside the `src/components/ui` shared-UI root and the second on the detector's `NEUTRAL_LIB` allowlist, so neither is a domain module — plus framework modules only (`react`, `usePathname` from `next/navigation`)."
+  "reason": "The already-extracted shared frame, and clean on all five axes. Storage key routes through the seam: `collapseStorageKey ?? uiStorageKey('sidebar-collapsed')` (line 93) with `import { uiStorageKey } from '@/lib/ui-storage'` (line 54). No copy at all (every slot is a render prop), no GRC nouns, no brands, brand tokens absent, and the only other imports are `@inflect/ui/lib/cn` and `@/components/ui/hooks/use-local-storage` (`use-local-storage` at :52, `cn` at :53) — `use-local-storage` is inside the `src/components/ui` shared-UI root and `cn` now resolves through `@inflect/ui`, outside the `@/` alias entirely, so neither is a domain module — plus framework modules only (`react`, `usePathname` from `next/navigation`)."
  },
  "src/components/layout/ClientProviders.tsx": {
   "classification": "MIXED",
@@ -22,12 +22,12 @@
  "src/components/layout/DashboardLayout.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Structurally generic — a title row plus a `space-y-section animate-dashboard-rise-in` wrapper delegating its header to `<PageHeader>`; the only runtime import is `@/lib/cn`. No copy, no storage key, no brand-as-text (`animate-dashboard-rise-in` and `space-y-section` are layout tokens). The single coupling is a GRC consumer list in one comment, removable in one edit."
+  "reason": "Structurally generic — a title row plus a `space-y-section animate-dashboard-rise-in` wrapper delegating its header to `<PageHeader>`; the only runtime import is `@inflect/ui/lib/cn`. No copy, no storage key, no brand-as-text (`animate-dashboard-rise-in` and `space-y-section` are layout tokens). The single coupling is a GRC consumer list in one comment, removable in one edit."
  },
  "src/components/layout/EntityDetailLayout.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The shell itself is domain-free: tabs/meta/actions/rail are all slots, every visible string goes through next-intl (`t('retry')`, `t('table.detailSections')`, `t('table.context')`), and the caller supplies the error and empty text. The brand token at line 344 is `border-[var(--brand-default)]` on the active tab — a BORDER, which rule 4 explicitly permits (non-text owes 3:1), so NOT a brand-as-text finding. Its one `@/lib` import, `@/lib/cn` (line 43), is clean via the `NEUTRAL_LIB` allowlist in `tests/helpers/shared-ui-couplings.ts`, not via `SHARED_UI_ROOTS` — `src/lib/cn` is not one of those four roots. What holds the file at MIXED is comment prose alone: the header names the product and its GRC detail pages at lines 6-8 and the panels the shell refuses to absorb at lines 17-19 (TraceabilityPanel, LinkedTasksPanel, TestPlansPanel, the risk inherent-vs-residual scorer), the `prevNext` JSDoc cites the domain module `@/lib/list-backfill-cap` at line 96 without importing it, and the JSX comment at lines 372-375 lists risk-detail, traceability and treatment plan. All of it is comment text, removable in one edit with no behaviour change."
+  "reason": "The shell itself is domain-free: tabs/meta/actions/rail are all slots, every visible string goes through next-intl (`t('retry')`, `t('table.detailSections')`, `t('table.context')`), and the caller supplies the error and empty text. The brand token at line 344 is `border-[var(--brand-default)]` on the active tab — a BORDER, which rule 4 explicitly permits (non-text owes 3:1), so NOT a brand-as-text finding. It has no `@/lib` import at all: `cn` (line 43) resolves through `@inflect/ui/lib/cn`, outside the `@/` alias, so no allowlist is involved. It was `NEUTRAL_LIB`-allowlisted until #3046 step 2a moved `cn.ts` into the package and dropped that entry. What holds the file at MIXED is comment prose alone: the header names the product and its GRC detail pages at lines 6-8 and the panels the shell refuses to absorb at lines 17-19 (TraceabilityPanel, LinkedTasksPanel, TestPlansPanel, the risk inherent-vs-residual scorer), the `prevNext` JSDoc cites the domain module `@/lib/list-backfill-cap` at line 96 without importing it, and the JSX comment at lines 372-375 lists risk-detail, traceability and treatment plan. All of it is comment text, removable in one edit with no behaviour change."
  },
  "src/components/layout/EntityListPage.tsx": {
   "classification": "MIXED",
@@ -42,7 +42,7 @@
  "src/components/layout/ListPageShell.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The flex/min-h-0 viewport-fit chain itself is fully generic — slots only, `@/lib/cn` the sole import, no storage key, no brand token. Two removable couplings. The aria-label one is worth the follow-up because the fix already exists in the slice: `EntityDetailLayout.tsx:409` labels the same kind of rail with `aria-label={t('table.context')}`, so a catalogue key is proven to be available for exactly this label: `common.table.context` is \"Context\", the literal at :175. The `<LeftAccordionRail>` that fills the :149-157 rail also defaults its own label to `t('tableOrientation')`, so :152's \"Orientation\" is redundant as well as untranslated. The second coupling is prose only: the header usage example names the GRC noun (`<h1>Risks</h1>`, :16-17). Beyond `@/lib/cn` the only import is the type-only `ReactNode` (:45)."
+  "reason": "The flex/min-h-0 viewport-fit chain itself is fully generic — slots only, `@inflect/ui/lib/cn` the sole import, no storage key, no brand token. Two removable couplings. The aria-label one is worth the follow-up because the fix already exists in the slice: `EntityDetailLayout.tsx:409` labels the same kind of rail with `aria-label={t('table.context')}`, so a catalogue key is proven to be available for exactly this label: `common.table.context` is \"Context\", the literal at :175. The `<LeftAccordionRail>` that fills the :149-157 rail also defaults its own label to `t('tableOrientation')`, so :152's \"Orientation\" is redundant as well as untranslated. The second coupling is prose only: the header usage example names the GRC noun (`<h1>Risks</h1>`, :16-17). Beyond `@inflect/ui/lib/cn` the only import is the type-only `ReactNode` (:45)."
  },
  "src/components/layout/LocaleSwitcher.tsx": {
   "classification": "MIXED",
@@ -62,7 +62,7 @@
  "src/components/layout/PageActions.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A 20-line layout cluster: one div, one `cn()` call, `flex flex-wrap-reverse items-center justify-end gap-tight min-h-9`. `@/lib/cn` is the only import. No strings, no GRC nouns, no brands, no storage, no brand tokens. Safe to vendor byte-identical."
+  "reason": "A 20-line layout cluster: one div, one `cn()` call, `flex flex-wrap-reverse items-center justify-end gap-tight min-h-9`. `@inflect/ui/lib/cn` is the only import. No strings, no GRC nouns, no brands, no storage, no brand tokens. Safe to vendor byte-identical."
  },
  "src/components/layout/PageBreadcrumbs.tsx": {
   "classification": "GENERIC",
@@ -72,7 +72,7 @@
  "src/components/layout/PageHeader.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The header primitive is structurally generic — breadcrumbs/back/eyebrow/title/description/meta/actions are all caller-supplied, the back link's only literal is the `←` glyph (line 226), and there is no storage key or brand token. Two couplings. The import one is the substantive one: it makes a shared primitive's visible behaviour (whether the H1 is `sr-only`) depend on this product's route registry: `classifyRoute` comes from `@/lib/nav/page-segregation` (:63), a domain module whose `MAIN_PAGES`/`SUBPAGES` lists are this product's own routes, and it decides at :198 whether the H1 renders `sr-only` (:264) — a route it does not list classifies `unknown`, so a vendoring product gets a visible H1 on every page. The second coupling is prose: the `titleAdornment` docstring's worked example at :131 is a security-incident sentence (`Ransomware on the billing cluster`), removable in one comment edit. The two near misses are worth naming — `@/lib/cn` (:62) is NEUTRAL_LIB-allowlisted, and `@/components/nav/BackAffordance` (:70) is a sibling component namespace, not `src/app-layer` or a domain `src/lib`."
+  "reason": "The header primitive is structurally generic — breadcrumbs/back/eyebrow/title/description/meta/actions are all caller-supplied, the back link's only literal is the `←` glyph (line 226), and there is no storage key or brand token. Two couplings. The import one is the substantive one: it makes a shared primitive's visible behaviour (whether the H1 is `sr-only`) depend on this product's route registry: `classifyRoute` comes from `@/lib/nav/page-segregation` (:63), a domain module whose `MAIN_PAGES`/`SUBPAGES` lists are this product's own routes, and it decides at :198 whether the H1 renders `sr-only` (:264) — a route it does not list classifies `unknown`, so a vendoring product gets a visible H1 on every page. The second coupling is prose: the `titleAdornment` docstring's worked example at :131 is a security-incident sentence (`Ransomware on the billing cluster`), removable in one comment edit. The two near misses are worth naming — `@inflect/ui/lib/cn` (:62) is a package import, outside the `@/` alias, and `@/components/nav/BackAffordance` (:70) is a sibling component namespace, not `src/app-layer` or a domain `src/lib`."
  },
  "src/components/layout/SidebarNav.tsx": {
   "classification": "COUPLED",
@@ -87,7 +87,7 @@
  "src/components/layout/WorkspaceShell.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Canvas-page shell, four slot components over `cn()` class strings; `@/lib/cn` is the only import. No strings, no storage key, no brand token. Sense-check: the one GRC-noun grep hit is a false positive — \"Pages that overload it with too many controls\" (line 79) is the UI-widget sense. \"Alteryx\" (line 6) is a layout-language reference and not one of the four listed brands."
+  "reason": "Canvas-page shell, four slot components over `cn()` class strings; `@inflect/ui/lib/cn` is the only import. No strings, no storage key, no brand token. Sense-check: the one GRC-noun grep hit is a false positive — \"Pages that overload it with too many controls\" (line 79) is the UI-widget sense. \"Alteryx\" (line 6) is a layout-language reference and not one of the four listed brands."
  },
  "src/components/layout/breadcrumbs-store.tsx": {
   "classification": "GENERIC",
@@ -112,7 +112,7 @@
  "src/components/layout/nav-section.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The thinnest MIXED in the slice. Component is fully generic (optional title span plus a gradient-hairline divider, `@/lib/cn` and the sibling collapse context the only imports, title supplied by the caller, no storage key, no brand colour token — the divider peaks at `--border-subtle`). The one coupling is two brand names in a rationale comment. Secondary, not scored because the nouns are not on t"
+  "reason": "The thinnest MIXED in the slice. Component is fully generic (optional title span plus a gradient-hairline divider, `@inflect/ui/lib/cn` and the sibling collapse context the only imports, title supplied by the caller, no storage key, no brand colour token — the divider peaks at `--border-subtle`). The one coupling is two brand names in a rationale comment. Secondary, not scored because the nouns are not on t"
  },
  "src/components/layout/notifications-bell.tsx": {
   "classification": "MIXED",
@@ -252,7 +252,7 @@
  "src/components/ui/TabSection.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Tab-body wrapper: title/description/actions/children, all ReactNode slots, `space-y-section` plus a Heading. No copy of its own, no domain vocabulary, imports @/lib/cn and local ./typography only."
+  "reason": "Tab-body wrapper: title/description/actions/children, all ReactNode slots, `space-y-section` plus a Heading. No copy of its own, no domain vocabulary, imports @inflect/ui/lib/cn and local ./typography only."
  },
  "src/components/ui/TreeExpandCollapseToggle.tsx": {
   "classification": "MIXED",
@@ -267,7 +267,7 @@
  "src/components/ui/TreeViewItem.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Stateless tree row — label/secondary/meta/depth/expanded/selected/focusable plus two callbacks. Nothing domain in the API, no copy, imports @/lib/cn only. One real brand-as-text finding in the selected state."
+  "reason": "Stateless tree row — label/secondary/meta/depth/expanded/selected/focusable plus two callbacks. Nothing domain in the API, no copy, imports @inflect/ui/lib/cn only. One real brand-as-text finding in the selected state."
  },
  "src/components/ui/TrendCard.tsx": {
   "classification": "GENERIC",
@@ -287,7 +287,7 @@
  "src/components/ui/accordion.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Radix accordion wrapper, CVA variants only. No rendered text, no domain nouns, token-backed colours (text-content-muted), imports only @/lib/cn + ./icons. Internal project vocabulary (\"Epic 60\", \"Epic 51 token system\") is not domain coupling."
+  "reason": "Radix accordion wrapper, CVA variants only. No rendered text, no domain nouns, token-backed colours (text-content-muted), imports only @inflect/ui/lib/cn + ./icons. Internal project vocabulary (\"Epic 60\", \"Epic 51 token system\") is not domain coupling."
  },
  "src/components/ui/ai-assist-rail.tsx": {
   "classification": "COUPLED",
@@ -542,7 +542,7 @@
  "src/components/ui/combobox/index.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "860-line generic option picker. Clean on four of five axes: every string resolves via `useTranslations(\"ui.combobox\")` → `getComboboxMessages` (including the trigger's aria-label fallback `t(\"triggerLabel\")` at :442), imports are only `@/lib/cn` plus sibling ui modules, no storage, and no brand token used as text. The one coupling is a GRC entity named as the motivating example in a layout comment: the wrap-rather-than-truncate rationale at :757-760 says a narrow dropdown was \"clipping full entity names like asset titles\", and Asset is a product register (`prisma/schema/assets.prisma`). Prose only — nothing reaches the screen, so vendoring this file costs one comment edit. The rest of what prose names is repo-internal roadmap rather than GRC vocabulary: Epic 55 and Epic-54 in the header prose (:9, :12, :14), Epic 68 in two inline comments (:268, :637), and `useTenantSWR` in the TODO block at :2-5. One precision on the copy axis — `t(\"triggerLabel\")` is called on the namespace translator directly, not through `getComboboxMessages`, so it is the one string with no English `safeT` fallback behind it."
+  "reason": "860-line generic option picker. Clean on four of five axes: every string resolves via `useTranslations(\"ui.combobox\")` → `getComboboxMessages` (including the trigger's aria-label fallback `t(\"triggerLabel\")` at :442), imports are only `@inflect/ui/lib/cn` plus sibling ui modules, no storage, and no brand token used as text. The one coupling is a GRC entity named as the motivating example in a layout comment: the wrap-rather-than-truncate rationale at :757-760 says a narrow dropdown was \"clipping full entity names like asset titles\", and Asset is a product register (`prisma/schema/assets.prisma`). Prose only — nothing reaches the screen, so vendoring this file costs one comment edit. The rest of what prose names is repo-internal roadmap rather than GRC vocabulary: Epic 55 and Epic-54 in the header prose (:9, :12, :14), Epic 68 in two inline comments (:268, :637), and `useTenantSWR` in the TODO block at :2-5. One precision on the copy axis — `t(\"triggerLabel\")` is called on the namespace translator directly, not through `getComboboxMessages`, so it is the one string with no English `safeT` fallback behind it."
  },
  "src/components/ui/combobox/messages.ts": {
   "classification": "MIXED",
@@ -552,7 +552,7 @@
  "src/components/ui/combobox/virtualized-options.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "488-line windowed option list with a bespoke keyboard layer and offscreen-canvas line-count measurement for wrapped-row heights. Clean on all five: zero strings beyond key names (\"ArrowDown\", \"Enter\", \"Home\") and a font stack, zero vocabulary hits, no storage, no brand-as-text, and imports confined to `@/lib/cn`, `@/components/ui/virtualized-list` and siblings."
+  "reason": "488-line windowed option list with a bespoke keyboard layer and offscreen-canvas line-count measurement for wrapped-row heights. Clean on all five: zero strings beyond key names (\"ArrowDown\", \"Enter\", \"Home\") and a font stack, zero vocabulary hits, no storage, no brand-as-text, and imports confined to `@inflect/ui/lib/cn`, `@/components/ui/virtualized-list` and siblings."
  },
  "src/components/ui/confirm-dialog.tsx": {
   "classification": "GENERIC",
@@ -617,7 +617,7 @@
  "src/components/ui/date-picker/date-picker.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Generic controlled/uncontrolled single-date picker; imports are `@/lib/cn` + `@/lib/format-date` (both generic utils), no storage key, no brand-as-text. Carries two removable English strings and two compliance examples in its \"Not-goals\" comment."
+  "reason": "Generic controlled/uncontrolled single-date picker; imports are `@inflect/ui/lib/cn` + `@/lib/format-date` (both generic utils), no storage key, no brand-as-text. Carries two removable English strings and two compliance examples in its \"Not-goals\" comment."
  },
  "src/components/ui/date-picker/date-range-picker.tsx": {
   "classification": "MIXED",
@@ -642,7 +642,7 @@
  "src/components/ui/date-picker/presets.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Presentation-only cmdk list; every string it renders comes from props (`preset.label`, `preset.shortcut`, `preset.tooltipContent`). Imports are `@/lib/cn`, cmdk and `../tooltip`. No hardcoded copy, no brand-as-text, no storage key."
+  "reason": "Presentation-only cmdk list; every string it renders comes from props (`preset.label`, `preset.shortcut`, `preset.tooltipContent`). Imports are `@inflect/ui/lib/cn`, cmdk and `../tooltip`. No hardcoded copy, no brand-as-text, no storage key."
  },
  "src/components/ui/date-picker/shared.ts": {
   "classification": "GENERIC",
@@ -732,7 +732,7 @@
  "src/components/ui/filter/filter-range-panel.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The reference example for the rest of the slice: every string goes through `useTranslations(\"common.ui\")` — t('backToFilterList'), t('clear'), t('minValue'), t('maxValue'), t('noMin'), t('noMax'), t('rangeTo') — including the aria-labels. Imports are `@/lib/cn`, next-intl, lucide and `../tooltip`. No brand token used as text, no storage key, no domain vocabulary."
+  "reason": "The reference example for the rest of the slice: every string goes through `useTranslations(\"common.ui\")` — t('backToFilterList'), t('clear'), t('minValue'), t('maxValue'), t('noMin'), t('noMax'), t('rangeTo') — including the aria-labels. Imports are `@inflect/ui/lib/cn`, next-intl, lucide and `../tooltip`. No brand token used as text, no storage key, no domain vocabulary."
  },
  "src/components/ui/filter/filter-range-utils.ts": {
   "classification": "GENERIC",
@@ -1022,32 +1022,32 @@
  "src/components/ui/icons/default-domains/amazon.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+  "reason": "Pure SVG third-party logo; only import is @inflect/ui/lib/cn, only prop is className."
  },
  "src/components/ui/icons/default-domains/chatgpt.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+  "reason": "Pure SVG third-party logo; only import is @inflect/ui/lib/cn, only prop is className."
  },
  "src/components/ui/icons/default-domains/figma.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+  "reason": "Pure SVG third-party logo; only import is @inflect/ui/lib/cn, only prop is className."
  },
  "src/components/ui/icons/default-domains/github-enhanced.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+  "reason": "Pure SVG third-party logo; only import is @inflect/ui/lib/cn, only prop is className."
  },
  "src/components/ui/icons/default-domains/google-enhanced.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+  "reason": "Pure SVG third-party logo; only import is @inflect/ui/lib/cn, only prop is className."
  },
  "src/components/ui/icons/default-domains/spotify.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG third-party logo; only import is @/lib/cn, only prop is className."
+  "reason": "Pure SVG third-party logo; only import is @inflect/ui/lib/cn, only prop is className."
  },
  "src/components/ui/icons/dub-analytics.tsx": {
   "classification": "MIXED",
@@ -1082,7 +1082,7 @@
  "src/components/ui/icons/expanding-arrow.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Two inline SVG arrows in a hover-swap wrapper; imports @/lib/cn only, className-only prop, no text."
+  "reason": "Two inline SVG arrows in a hover-swap wrapper; imports @inflect/ui/lib/cn only, className-only prop, no text."
  },
  "src/components/ui/icons/facebook.tsx": {
   "classification": "GENERIC",
@@ -1147,7 +1147,7 @@
  "src/components/ui/icons/loading-spinner.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Twelve-bar spinner with a long JSDoc about animate-pulse and currentColor. The doc discusses Tailwind/vendoring, not domain examples; imports @/lib/cn only."
+  "reason": "Twelve-bar spinner with a long JSDoc about animate-pulse and currentColor. The doc discusses Tailwind/vendoring, not domain examples; imports @inflect/ui/lib/cn only."
  },
  "src/components/ui/icons/lock-small.tsx": {
   "classification": "GENERIC",
@@ -2547,12 +2547,12 @@
  "src/components/ui/icons/payment-platforms/paypal.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG brand logo; imports @/lib/cn, className-only prop."
+  "reason": "Pure SVG brand logo; imports @inflect/ui/lib/cn, className-only prop."
  },
  "src/components/ui/icons/payment-platforms/stablecoin.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG coin glyph with layered SVG filters; imports @/lib/cn, className-only prop."
+  "reason": "Pure SVG coin glyph with layered SVG filters; imports @inflect/ui/lib/cn, className-only prop."
  },
  "src/components/ui/icons/payment-platforms/stripe-icon.tsx": {
   "classification": "GENERIC",
@@ -2612,7 +2612,7 @@
  "src/components/ui/icons/sort-order.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Two morphing chevrons driven by an `order: \"asc\" | \"desc\" | null` prop — a table-sort UI prop, not a domain prop. Imports @/lib/cn and motion/react; the comment explains a framer-motion mount bug, no domain example. Uses the semantic token `text-content-emphasis`."
+  "reason": "Two morphing chevrons driven by an `order: \"asc\" | \"desc\" | null` prop — a table-sort UI prop, not a domain prop. Imports @inflect/ui/lib/cn and motion/react; the comment explains a framer-motion mount bug, no domain example. Uses the semantic token `text-content-emphasis`."
  },
  "src/components/ui/icons/success.tsx": {
   "classification": "GENERIC",
@@ -2632,7 +2632,7 @@
  "src/components/ui/icons/twitter.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG brand logo; imports @/lib/cn, className-only prop."
+  "reason": "Pure SVG brand logo; imports @inflect/ui/lib/cn, className-only prop."
  },
  "src/components/ui/icons/typescript.tsx": {
   "classification": "GENERIC",
@@ -2732,7 +2732,7 @@
  "src/components/ui/modal.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Radix Dialog / Vaul Drawer modal with structured slots and a Confirm sugar. Every user-visible string goes through `useTranslations(\"common\")` — t(\"ui.dialog\"), t(\"close\"), t(\"ui.confirm\"), t(\"cancel\"). No storage keys, no brand-as-text, no domain imports (only @/lib/cn, @/lib/hooks/use-keyboard-inset, local ui modules). The word \"control\" appears at :192/:301/:312 in the UI-widget sense (the triggering element focus returns to, and \"focus control\" inside a quoted note on popovers) — all three in comments, none the GRC noun."
+  "reason": "Radix Dialog / Vaul Drawer modal with structured slots and a Confirm sugar. Every user-visible string goes through `useTranslations(\"common\")` — t(\"ui.dialog\"), t(\"close\"), t(\"ui.confirm\"), t(\"cancel\"). No storage keys, no brand-as-text, no domain imports (only @inflect/ui/lib/cn, @/lib/hooks/use-keyboard-inset, local ui modules). The word \"control\" appears at :192/:301/:312 in the UI-widget sense (the triggering element focus returns to, and \"focus control\" inside a quoted note on popovers) — all three in comments, none the GRC noun."
  },
  "src/components/ui/next-best-action-logic.ts": {
   "classification": "COUPLED",
@@ -2752,7 +2752,7 @@
  "src/components/ui/popover.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Radix Popover / Vaul Drawer with Menu/Item/Separator slots and ARIA menu keyboard nav. All copy via `useTranslations(\"common.ui\")` — t(\"menu\"), t(\"popoverContentDesc\"). Imports are @/lib/cn, @/lib/hooks/use-keyboard-inset and local ui modules only. No storage keys, no brand-as-text, no domain vocabulary."
+  "reason": "Radix Popover / Vaul Drawer with Menu/Item/Separator slots and ARIA menu keyboard nav. All copy via `useTranslations(\"common.ui\")` — t(\"menu\"), t(\"popoverContentDesc\"). Imports are @inflect/ui/lib/cn, @/lib/hooks/use-keyboard-inset and local ui modules only. No storage keys, no brand-as-text, no domain vocabulary."
  },
  "src/components/ui/progress-bar.tsx": {
   "classification": "MIXED",
@@ -2772,7 +2772,7 @@
  "src/components/ui/radio-group.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): radio-group.tsx:32 text-brand-emphasis. Audited note: Radix RadioGroup wrapper, CVA-sized, token-backed. No copy, no domain vocabulary (\"control\" at :22 is the form-control sense), no imports beyond @/lib/cn. I judged `data-[state=checked]:text-brand-emphasis` (line 32) NOT a brand-as-text finding on two grounds: the Item renders no text child (the selected dot is `bg-brand-emphasis`, so the class is vestigial currentColor plumbing)"
+  "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): radio-group.tsx:32 text-brand-emphasis. Audited note: Radix RadioGroup wrapper, CVA-sized, token-backed. No copy, no domain vocabulary (\"control\" at :22 is the form-control sense), no imports beyond @inflect/ui/lib/cn. I judged `data-[state=checked]:text-brand-emphasis` (line 32) NOT a brand-as-text finding on two grounds: the Item renders no text child (the selected dot is `bg-brand-emphasis`, so the class is vestigial currentColor plumbing)"
  },
  "src/components/ui/required-marker.tsx": {
   "classification": "GENERIC",
@@ -2782,7 +2782,7 @@
  "src/components/ui/scroll-container.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "35-line scroll wrapper with a tokenised bottom fade driven by useScrollProgress. Imports only @/lib/cn and the local ./hooks/use-scroll-progress. No copy, no domain, no storage, no brand tokens."
+  "reason": "35-line scroll wrapper with a tokenised bottom fade driven by useScrollProgress. Imports only @inflect/ui/lib/cn and the local ./hooks/use-scroll-progress. No copy, no domain, no storage, no brand tokens."
  },
  "src/components/ui/selection-summary-panel.tsx": {
   "classification": "MIXED",
@@ -2792,7 +2792,7 @@
  "src/components/ui/sheet.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Vaul side/bottom drawer with Title/Description/Header/Body/Footer/Actions/Close slots. All copy via `useTranslations(\"common\")` — t(\"ui.sheet\"), t(\"close\"). Imports @/lib/cn, @/lib/hooks/use-keyboard-inset and local ui modules only. No domain vocabulary, no brand-as-text, no storage keys. (`shortcut=\"Esc\"` is a key name, not copy.)"
+  "reason": "Vaul side/bottom drawer with Title/Description/Header/Body/Footer/Actions/Close slots. All copy via `useTranslations(\"common\")` — t(\"ui.sheet\"), t(\"close\"). Imports @inflect/ui/lib/cn, @/lib/hooks/use-keyboard-inset and local ui modules only. No domain vocabulary, no brand-as-text, no storage keys. (`shortcut=\"Esc\"` is a key name, not copy.)"
  },
  "src/components/ui/shimmer-dots.tsx": {
   "classification": "MIXED",
@@ -2802,7 +2802,7 @@
  "src/components/ui/skeleton.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Skeleton primitives and page-level composites. Every a11y string goes through `useTranslations('common.skeleton')` — t('dashboard'), t('details'), t('settings'); everything else is aria-hidden geometry. Imports are @/lib/cn plus local card modules. The composites are named for page SHAPES (dashboard, detail-tabs, settings, filter-toolbar), not for compliance entities, so no domain-props."
+  "reason": "Skeleton primitives and page-level composites. Every a11y string goes through `useTranslations('common.skeleton')` — t('dashboard'), t('details'), t('settings'); everything else is aria-hidden geometry. Imports are @inflect/ui/lib/cn plus local card modules. The composites are named for page SHAPES (dashboard, detail-tabs, settings, filter-toolbar), not for compliance entities, so there are no domain-props."
  },
  "src/components/ui/slider.tsx": {
   "classification": "MIXED",
@@ -2812,7 +2812,7 @@
  "src/components/ui/status-badge.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "CVA pill with neutral/info/success/warning/error variants, solid/subtle tones, default icons. Every colour is a `text-content-*`/`bg-bg-*` semantic token — no brand token anywhere. No copy (children and tooltip come from the caller), no domain vocabulary, no storage keys. The `{ OPEN: 'error', ...}` comment at :87 is a generic status-mapping illustration. Linear/Stripe/Vercel at :15 are design references of the kind this repo's own guards cite, not tenant brand names, and they sit in an inline comment at :14-16, not in anything rendered. Imports are `@/lib/cn` (NEUTRAL_LIB-allowlisted), `class-variance-authority` and the siblings `./icons` / `./tooltip` — nothing from `src/app-layer` or a domain `src/lib`. Vendorable as-is."
+  "reason": "CVA pill with neutral/info/success/warning/error variants, solid/subtle tones, default icons. Every colour is a `text-content-*`/`bg-bg-*` semantic token — no brand token anywhere. No copy (children and tooltip come from the caller), no domain vocabulary, no storage keys. The `{ OPEN: 'error', ...}` comment at :87 is a generic status-mapping illustration. Linear/Stripe/Vercel at :15 are design references of the kind this repo's own guards cite, not tenant brand names, and they sit in an inline comment at :14-16, not in anything rendered. Imports are `@inflect/ui/lib/cn` (a package import, outside the `@/` alias), `class-variance-authority` and the siblings `./icons` / `./tooltip` — nothing from `src/app-layer` or a domain `src/lib`. Vendorable as-is."
  },
  "src/components/ui/status-breakdown.tsx": {
   "classification": "MIXED",
@@ -2822,7 +2822,7 @@
  "src/components/ui/switch.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Radix Switch wrapper, CVA size variants, optional disabledTooltip. `data-[state=checked]:bg-brand-emphasis` is a BACKGROUND on the track — exempt. No copy at all (disabledTooltip/thumbIcon are caller-supplied ReactNodes), no domain vocabulary, no storage keys, only @/lib/cn + local tooltip imported."
+  "reason": "Radix Switch wrapper, CVA size variants, optional disabledTooltip. `data-[state=checked]:bg-brand-emphasis` is a BACKGROUND on the track — exempt. No copy at all (disabledTooltip/thumbIcon are caller-supplied ReactNodes), no domain vocabulary, no storage keys, only @inflect/ui/lib/cn + local tooltip imported."
  },
  "src/components/ui/tab-select.tsx": {
   "classification": "MIXED",
@@ -2852,7 +2852,7 @@
  "src/components/ui/table/data-table-cards.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "The below-md card rendering of a DataTable. Renders no copy of its own — labels come from each column's own `header` string (:140-144) and values from `flexRender`. Imports `@/lib/cn` (sanctioned), `@/components/ui/card`, `button-like-keys` and a local icon. Brand appears once as a focus ring (:122). Good a11y rationale comment, no domain content."
+  "reason": "The below-md card rendering of a DataTable. Renders no copy of its own — labels come from each column's own `header` string (:140-144) and values from `flexRender`. Imports `@inflect/ui/lib/cn` (a package import), `@/components/ui/card`, `button-like-keys` and a local icon. Brand appears once as a focus ring (:122). Good a11y rationale comment, no domain content."
  },
  "src/components/ui/table/data-table.tsx": {
   "classification": "MIXED",
@@ -2947,7 +2947,7 @@
  "src/components/ui/textarea.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "CVA textarea mirroring the Input contract, with aria-describedby wiring for description/error. Both rendered strings are caller-supplied props. No domain vocabulary, no brand tokens, no storage keys; imports @/lib/cn only."
+  "reason": "CVA textarea mirroring the Input contract, with aria-describedby wiring for description/error. Both rendered strings are caller-supplied props. No domain vocabulary, no brand tokens, no storage keys; imports @inflect/ui/lib/cn only."
  },
  "src/components/ui/timestamp-tooltip.tsx": {
   "classification": "GENERIC",
@@ -2957,7 +2957,7 @@
  "src/components/ui/toggle-group.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Segmented radiogroup with roving tabindex and link mode. Copy goes through `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"options\")}`. Imports @/lib/cn and local ./hit-area. The :63-70 comment about CSS `capitalize` and Bulgarian orthography is i18n reasoning, not domain. \"Segmented control\" at :21/:30 is the UI-widget sense."
+  "reason": "Segmented radiogroup with roving tabindex and link mode. Copy goes through `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"options\")}`. Imports @inflect/ui/lib/cn and local ./hit-area. The :63-70 comment about CSS `capitalize` and Bulgarian orthography is i18n reasoning, not domain. \"Segmented control\" at :21/:30 is the UI-widget sense."
  },
  "src/components/ui/tooltip.tsx": {
   "classification": "GENERIC",
@@ -2967,12 +2967,12 @@
  "src/components/ui/typography.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Heading/Eyebrow/Caption/TextLink. Notable as the slice's exemplar for the brand-as-text rule: :157-181 is a docblock explaining that every brand link tone used to paint `text-[var(--brand-default)]` (~4:1, failing AA) and now paints `text-content-brand`, guarded on the ratio by tests/guardrails/token-contrast-content-brand.test.ts. The `text-[var(--brand-default)]` at :160 is inside that prose, not in a class string, so rule 4 reads NON-FINDING: `codeOf` masks comments before `BRAND_AS_TEXT` runs, the same seam that keeps `use-local-storage.ts` off the storage axis — without it the file that documents the rule would be reported as breaching it. The live tones at :186-205 are all `text-content-*`, and the `bg-[var(--brand-subtle)]` at :179 is prose about fills, which owe 1.4.11's 3:1 rather than 1.4.3's 4.5:1. Clean on the other four: the primitives render `children`, so there is no copy to translate, no GRC vocabulary and no storage, and the only `@/lib` import is `cn` at :33 — permitted by the `NEUTRAL_LIB` allowlist, not by being a shared-UI root."
+  "reason": "Heading/Eyebrow/Caption/TextLink. Notable as the slice's exemplar for the brand-as-text rule: :157-181 is a docblock explaining that every brand link tone used to paint `text-[var(--brand-default)]` (~4:1, failing AA) and now paints `text-content-brand`, guarded on the ratio by tests/guardrails/token-contrast-content-brand.test.ts. The `text-[var(--brand-default)]` at :160 is inside that prose, not in a class string, so rule 4 reads NON-FINDING: `codeOf` masks comments before `BRAND_AS_TEXT` runs, the same seam that keeps `use-local-storage.ts` off the storage axis — without it the file that documents the rule would be reported as breaching it. The live tones at :186-205 are all `text-content-*`, and the `bg-[var(--brand-subtle)]` at :179 is prose about fills, which owe 1.4.11's 3:1 rather than 1.4.3's 4.5:1. Clean on the other four: the primitives render `children`, so there is no copy to translate, no GRC vocabulary and no storage, and it has no `@/lib` import at all — `cn` at :33 resolves through `@inflect/ui/lib/cn`, outside the `@/` alias, so neither the `NEUTRAL_LIB` allowlist nor a shared-UI root is doing any work here."
  },
  "src/components/ui/undo-toast.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Countdown undo toast. `message` and `undoMessage` are REQUIRED props with no English defaults, and both aria strings go through `useTranslations(\"common.ui\")` — t(\"undoWindow\"), t(\"secondsRemaining\"). `focus-visible:ring-brand-emphasis` is a RING (boundary) and fine. No domain vocabulary, no storage keys; imports @/lib/cn and sonner."
+  "reason": "Countdown undo toast. `message` and `undoMessage` are REQUIRED props with no English defaults, and both aria strings go through `useTranslations(\"common.ui\")` — t(\"undoWindow\"), t(\"secondsRemaining\"). `focus-visible:ring-brand-emphasis` is a RING (boundary) and fine. No domain vocabulary, no storage keys; imports @inflect/ui/lib/cn and sonner."
  },
  "src/components/ui/user-combobox.tsx": {
   "classification": "MIXED",

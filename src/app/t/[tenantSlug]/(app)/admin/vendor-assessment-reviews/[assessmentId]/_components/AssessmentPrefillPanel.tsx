@@ -21,7 +21,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 interface VendorDoc { id: string; type: string; title: string | null }
 interface Proposal {

@@ -37,7 +37,7 @@ import { ProcessNodeReverseLookupModal } from '@/components/processes/ProcessNod
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { EditAssetModal } from '../EditAssetModal';
 import { InheritedEvidencePanel } from '@/components/InheritedEvidencePanel';
 import { AttachedEvidencePanel } from '@/components/AttachedEvidencePanel';

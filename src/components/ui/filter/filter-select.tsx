@@ -4,7 +4,7 @@
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
 /* eslint-disable react-hooks/exhaustive-deps -- Various useEffect/useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers recreated each render) or use selector functions whose change-detection happens elsewhere. Adding the deps would either trigger unnecessary re-runs OR cause infinite render loops; the proper structural fix is to wrap parent-level callbacks in useCallback. Tracked as follow-up. */
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { Command, useCommandState } from "cmdk";
 import { ChevronDown, ListFilter } from "lucide-react";
 import {

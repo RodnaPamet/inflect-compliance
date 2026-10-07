@@ -43,7 +43,7 @@
 
 "use client";
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { type VariantProps } from "class-variance-authority";
 import { forwardRef, type ElementType, type HTMLAttributes } from "react";
 

@@ -46,7 +46,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useSidebarCollapsed } from './sidebar-collapse-context';
 
 export interface NavSectionProps {

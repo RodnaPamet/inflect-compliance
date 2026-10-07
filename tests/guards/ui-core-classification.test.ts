@@ -199,13 +199,19 @@ describe('shared-UI coupling classification (#3047)', () => {
         // A reason that genuinely wants 400 characters can have 401 or 399. The
         // assertion costs an author nothing and costs a truncation its invisibility.
         const AWAITING_NAV_PR: Record<string, string> = {
-            // These four describe files that PR #3100 (`port/t19-nav-wording`) is
+            // These describe files that PR #3100 (`port/t19-nav-wording`) is
             // rewriting as this lands. Completing prose about a file mid-rewrite
             // produces text that is wrong on arrival, so they are held rather than
-            // guessed. Delete these four entries — do not add a fifth.
+            // guessed. Delete these entries — do not add another.
+            //
+            // `nav-section.tsx` was a fourth until #3046 step 2a: rewriting its
+            // `@/lib/cn` mention to `@inflect/ui/lib/cn` took the reason from
+            // exactly 400 to 410, so it no longer carries the at-cap signature and
+            // an exemption for it is stale by this assertion's own rule. Its prose
+            // is still INCOMPLETE and still waiting on #3100 — what changed is only
+            // that the length proxy no longer flags it, so nothing here protects it.
             'src/components/layout/nav-bar.tsx': '#3100 rewrites it',
             'src/components/layout/nav-item.tsx': '#3100 rewrites it',
-            'src/components/layout/nav-section.tsx': '#3100 rewrites it',
             'src/components/layout/user-menu.tsx': '#3100 rewrites it',
         };
 
@@ -259,7 +265,7 @@ describe('shared-UI coupling classification (#3047)', () => {
         // it, or the check below passes against a resolver that resolves
         // everything — the shape a dead detector shares with a clean list.
         expect(resolve('definitely-not-a-module-in-src-lib')).toBe(false);
-        expect(resolve('cn')).toBe(true); // a file
+        expect(resolve('ui-storage')).toBe(true); // a file
         expect(resolve('hooks')).toBe(true); // a directory
 
         expect([...NEUTRAL_LIB].filter((n) => !resolve(n)).sort()).toEqual([]);

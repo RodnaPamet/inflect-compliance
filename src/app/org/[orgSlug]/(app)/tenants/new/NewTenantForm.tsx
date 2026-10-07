@@ -25,7 +25,7 @@ import { getCsrfToken } from 'next-auth/react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';

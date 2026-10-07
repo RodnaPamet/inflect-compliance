@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 export interface EntityPrevNextNavProps {
     /** Ordered entity ids, in the same order the list page shows them. */

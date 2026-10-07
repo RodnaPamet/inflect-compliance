@@ -23,7 +23,7 @@
  * detail pane has been a recurring failure mode in compliance UIs.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import type { ComplianceStatus } from '@/lib/framework-tree/types';
 
 // ─── Token map ─────────────────────────────────────────────────────────

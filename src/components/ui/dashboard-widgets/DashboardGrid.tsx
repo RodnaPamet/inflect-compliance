@@ -61,7 +61,7 @@ import RGL, {
 import { useMemo, type ReactNode } from 'react';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useIsBelowMd } from '@/components/ui/hooks';
 
 const ResponsiveGridLayout = WidthProvider(RGL);

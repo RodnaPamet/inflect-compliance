@@ -37,7 +37,7 @@
  *   canonical shape without changing their call site.
  */
 import { type ReactNode } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 export interface PageActionsProps {
     children: ReactNode;

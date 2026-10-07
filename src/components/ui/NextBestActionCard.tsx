@@ -35,7 +35,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 
 import { Card } from "./card";
 import { Heading } from "./typography";

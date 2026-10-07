@@ -15,7 +15,7 @@
  * and passes it in — this primitive never builds tenant URLs itself.
  */
 import Link from 'next/link';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
 import { buttonVariants } from '@/components/ui/button-variants';

@@ -11,7 +11,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LifeRing } from '@/components/ui/icons/nucleo/life-ring';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { cardVariants } from '@/components/ui/card';
 
 interface BiaContextRow {

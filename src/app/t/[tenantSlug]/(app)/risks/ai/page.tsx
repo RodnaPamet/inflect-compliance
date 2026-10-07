@@ -14,7 +14,7 @@ import { riskSeverityToBadgeVariant } from '@/app-layer/domain/entity-status-map
 import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 const SCALE_OPTIONS: ComboboxOption[] = [1,2,3,4,5].map(v => ({ value: String(v), label: String(v) }));
 

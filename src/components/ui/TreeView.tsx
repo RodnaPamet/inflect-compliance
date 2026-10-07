@@ -42,7 +42,7 @@
  *     for uncontrolled. Mixed use is rejected at the type level.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import {
     type KeyboardEvent,
     type ReactNode,

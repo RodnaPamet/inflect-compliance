@@ -39,7 +39,7 @@ const ROOT = path.resolve(__dirname, '../..');
 
 /** Vendored by projectZ T17, or cited in #3062 as owing neutral wording. */
 const VENDORED = [
-    'src/lib/cn.ts',
+    'packages/ui/src/lib/cn.ts',
     'src/components/theme/ThemeProvider.tsx',
     'src/components/layout/session-expired-notice.tsx',
     'src/lib/auth/session-expiry.ts',

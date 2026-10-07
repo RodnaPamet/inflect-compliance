@@ -31,7 +31,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Button } from './button';
 import { Popover } from './popover';
 import { ScrollContainer } from './scroll-container';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import type { ChecklistGearItem } from './checklist-order';
 
 export interface ChecklistGearButtonProps {

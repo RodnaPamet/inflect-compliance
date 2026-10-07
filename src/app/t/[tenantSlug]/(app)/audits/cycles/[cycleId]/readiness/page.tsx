@@ -12,7 +12,7 @@ import { cardVariants } from '@/components/ui/card';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { LineChart } from '@/components/ui/charts/line-chart';
 import { chartReady, type TimeSeriesPoint } from '@/components/ui/charts/types';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { readinessVariant } from '@/lib/readiness/bands';
 import { ReadinessScoreRing, ReadinessLegend } from '../../ReadinessScoreRing';
 import type { ReadinessResult } from '@/app-layer/usecases/audit-readiness';

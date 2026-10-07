@@ -30,7 +30,7 @@ import { Heading } from '@/components/ui/typography';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../../_lib/status-variants';
 import { humanizeSnakeCase } from '@/lib/audit/activity-humanize';
 
