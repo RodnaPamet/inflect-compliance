@@ -144,4 +144,18 @@ describe('AppShellFrame landmarks (#3104)', () => {
             expect(classes).not.toContain(scrolls);
         }
     });
+
+    it('the top chrome sits in no box of its own, so the bar can stick (#3216)', () => {
+        // A sticky element sticks only within its parent. The wrapper that
+        // marks the chrome `no-print` was exactly as tall as the bar, which
+        // left `sticky top-0` no room: below md the bar scrolled away. With
+        // `contents` the wrapper draws no box, and the bar's parent is the
+        // main-region column, as tall as the page.
+        renderFrame();
+        const wrapper = screen.getByTestId('chrome').parentElement;
+        expect(wrapper?.className.split(/\s+/)).toEqual(
+            expect.arrayContaining(['no-print', 'contents']),
+        );
+        expect(wrapper?.parentElement).toBe(screen.getByRole('main').parentElement);
+    });
 });

@@ -126,8 +126,16 @@ export function AppShellFrame({
         <>
             {/* Wrapped rather than prop-drilled: the chrome composes
                 several bars and giving each a no-print prop would be a
-                wider change than the print rule needs. */}
-            <div className="no-print">{topChrome({ onMobileMenuClick: openDrawer, mobileNavOpen: drawerOpen })}</div>
+                wider change than the print rule needs.
+
+                `contents`: the wrapper draws no box of its own. A sticky
+                element sticks only within its parent, and this wrapper was
+                exactly as tall as the top bar, so the NavBar's `sticky top-0`
+                had no room to stick in and scrolled away with the page below
+                md (#3216). Without a box the bar's parent is the main-region
+                column, as tall as the page. Print still hides it: the print
+                rule's `display: none` on `.no-print` replaces `contents`. */}
+            <div className="no-print contents">{topChrome({ onMobileMenuClick: openDrawer, mobileNavOpen: drawerOpen })}</div>
 
             {/* Inner content container.
                 Mobile: padding + max-width + centering.
@@ -183,12 +191,13 @@ export function AppShellFrame({
     // `position: sticky` sticks to the nearest scroll container. Below md
     // this column never scrolls (it grows with its content, and the document
     // scrolls), so everything sticky inside it scrolled away with the page:
-    // the NavBar's `sticky top-0`, and a host page's sticky action bar.
-    // Measured in a host (playerz, 393 px): the bar's `top` followed the
-    // scroll to -509 px. `clip` still keeps wide content from pushing the
-    // page sideways, but creates no scroll container, and it is the one
-    // non-visible value that leaves `overflow-y: visible` as it is (any
-    // other turns `visible` on the other axis into `auto`).
+    // a host page's sticky action bar, and with the top chrome's wrapper
+    // (see `contents` there) the NavBar's `sticky top-0`. Measured in a host
+    // (playerz, 393 px): the bar's `top` followed the scroll to -509 px.
+    // `clip` still keeps wide content from pushing the page sideways, but
+    // creates no scroll container, and it is the one non-visible value that
+    // leaves `overflow-y: visible` as it is (any other turns `visible` on
+    // the other axis into `auto`).
     //
     // "main-region column" rather than "<main>" since #3104: the element
     // carrying these classes is a plain <div>, and the `<main>` landmark is
