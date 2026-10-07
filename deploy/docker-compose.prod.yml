@@ -66,9 +66,27 @@
 # because it has unmet preconditions on the VM; see that file's header.
 #
 
+# ── Log rotation ────────────────────────────────────────────────
+#
+# The json-file driver grows without limit by default and nothing on the VM
+# rotates it: there is no /etc/docker/daemon.json, and `logging:` appears in
+# none of this repo's compose files. See this change's commit message for the
+# measured per-container rates.
+#
+# Declared once and referenced per service rather than left to a daemon-wide
+# default, because the daemon's config is host state outside git -- the exact
+# class of drift #2849 built apply.sh and check-drift.sh to eliminate. Here it
+# travels with the compose file that defines the containers.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # ── Postgres ──────────────────────────────────────────────────
   postgres:
+    logging: *default-logging
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -92,6 +110,7 @@ services:
 
   # ── PgBouncer ─────────────────────────────────────────────────
   pgbouncer:
+    logging: *default-logging
     image: edoburu/pgbouncer:latest
     restart: unless-stopped
     depends_on:
@@ -118,6 +137,7 @@ services:
 
   # ── Redis ─────────────────────────────────────────────────────
   redis:
+    logging: *default-logging
     image: redis:7-alpine
     restart: unless-stopped
     # Redis MUST require a password in a production-like deployment.
@@ -144,6 +164,7 @@ services:
 
   # ── ClamAV ────────────────────────────────────────────────────
   clamav:
+    logging: *default-logging
     image: clamav/clamav:1.4
     restart: unless-stopped
     volumes:
@@ -157,6 +178,7 @@ services:
 
   # ── App (Next.js) — auto-updated by Watchtower ────────────────
   app:
+    logging: *default-logging
     image: ghcr.io/rodnapamet/inflect-compliance:latest
     restart: unless-stopped
     pull_policy: always
@@ -198,6 +220,7 @@ services:
   # worker. Watchtower-enabled so it updates in lockstep with `app`.
   # See docs/deployment.md "Background worker".
   worker:
+    logging: *default-logging
     image: ghcr.io/rodnapamet/inflect-compliance:latest
     restart: unless-stopped
     pull_policy: always
@@ -241,6 +264,7 @@ services:
   # `com.centurylinklabs.watchtower.enable=true` are watched —
   # Postgres / Redis / Caddy / ClamAV stay pinned.
   watchtower:
+    logging: *default-logging
     image: containrrr/watchtower:latest
     restart: unless-stopped
     volumes:
@@ -261,6 +285,7 @@ services:
 
   # ── Caddy (TLS + reverse proxy) ───────────────────────────────
   caddy:
+    logging: *default-logging
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
