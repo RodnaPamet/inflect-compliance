@@ -11,7 +11,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
-jest.mock('@/lib/format-date', () => ({
+jest.mock('@inflect/ui/lib/format-date', () => ({
     formatDateTime: () => '2026-06-11 12:00',
 }));
 

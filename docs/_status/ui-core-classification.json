@@ -374,37 +374,42 @@
   "derivation": "audited",
   "reason": "Typed density/elevation wrapper over the glass-card recipe, delegating classes to card-variants.ts. Linear/Stripe/Vercel are cited as design references only; no copy, domain or storage."
  },
+ "src/components/ui/charts/index.ts": {
+  "classification": "COUPLED",
+  "derivation": "audited",
+  "reason": "The app-side façade left behind by #3046. It re-exports @inflect/ui/components/ui/charts and DECLARES the seven that stayed: LossExceedanceCurve and AleHistogram (both import @/lib/risk-coherence), plus ChartFrame and the four charts wrapping it. Coupled by what it declares, not by what it re-exports."
+ },
  "src/components/ui/charts/ale-histogram.tsx": {
   "classification": "COUPLED",
   "derivation": "audited",
   "reason": "A quantitative-risk (FAIR/ALE) histogram. Props are domain props (ale, bandName/bandColor = tenant matrix band, referenceLine = per-risk appetite cap), it imports a GRC domain module, and its generated a11y summary is compliance prose. The coupling is the point of the file — it does not belong in a shared core."
  },
- "src/components/ui/charts/areas.tsx": {
+ "packages/ui/src/components/ui/charts/areas.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): areas.tsx:102 text-brand-default. Audited note: Generic visx area-series renderer driven entirely by ChartContext. No domain vocabulary, no UI copy, no storage. The `text-brand-*` defaults are NOT brand-as-text findings: they set `color` so that the SVG `fill`/`stroke` resolve via `currentColor` — a non-text paint, which the rule explicitly permits (see notes)."
  },
- "src/components/ui/charts/bar-field-3d.tsx": {
+ "packages/ui/src/components/ui/charts/bar-field-3d.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "A stub 3D cross-tab chart that is generic in shape (x/z/y data, seriesIndex, ariaLabel, FallbackComponent) but whose head matter and prop JSDoc are written in product and compliance terms. Removable without touching the API."
  },
- "src/components/ui/charts/bars.tsx": {
+ "packages/ui/src/components/ui/charts/bars.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): bars.tsx:204 text-brand-emphasis. Audited note: Generic stacked-bar renderer with mount spring + hover bubble. No domain vocabulary, no copy, no storage. `text-brand-emphasis` at :204 is the same non-text fill case as areas.tsx."
  },
- "src/components/ui/charts/chart-3d-dynamic.ts": {
+ "packages/ui/src/components/ui/charts/chart-3d-dynamic.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Twenty-line next/dynamic wrapper around Chart3D. No copy, no domain terms, no storage, no domain imports."
  },
- "src/components/ui/charts/chart-3d.tsx": {
+ "packages/ui/src/components/ui/charts/chart-3d.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Stub 3D frame: a prefers-reduced-motion hook, a CSS-var-to-hex resolver, and a fallback-rendering div. `ariaLabel` is a required prop with no English default. No domain vocabulary anywhere — the long head matter is entirely about React 19 / r3f compatibility."
  },
- "src/components/ui/charts/chart-context.ts": {
+ "packages/ui/src/components/ui/charts/chart-context.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Two React contexts plus their accessor hooks. The two English strings are thrown `Error` messages ('No chart context'), not JSX text, aria-*, title, or a copy parameter default, so they are not `copy` under the stated rule."
@@ -414,27 +419,27 @@
   "derivation": "audited",
   "reason": "Genuinely generic responsive frame with loading/empty/error branches, and its user-facing copy is correctly routed through next-intl (`useTranslations('common.chart')`). What remains is compliance vocabulary in the JSDoc usage example and the head matter."
  },
- "src/components/ui/charts/chart-gloss.tsx": {
+ "packages/ui/src/components/ui/charts/chart-gloss.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Pure SVG gradient-def primitives (ChartGloss, ChartSheenSweep) plus two id builders — no runtime coupling at all. The only coupling is the worked example chosen for the id builders' JSDoc."
  },
- "src/components/ui/charts/chart-gradient.tsx": {
+ "packages/ui/src/components/ui/charts/chart-gradient.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Three token-backed SVG gradient defs plus an id builder. Shape is fully generic (series index 1..6, direction, opacity); the coupling is one JSDoc worked example."
  },
- "src/components/ui/charts/chart-legend.tsx": {
+ "packages/ui/src/components/ui/charts/chart-legend.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Generic series-swatch / gradient-strip legend, but it composes its gradient variant's aria-label from hardcoded English rather than next-intl, and names a GRC metric as the JSDoc example for `label`. Both are removable without changing the component's shape."
  },
- "src/components/ui/charts/chart-motion.tsx": {
+ "packages/ui/src/components/ui/charts/chart-motion.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Four motion hooks (hover-pop, gradient flow, entrance spring, sheen sweep) plus a reduced-motion listener. Pure numbers, refs and RAF loops. No copy, no domain vocabulary, no storage, no domain imports."
  },
- "src/components/ui/charts/examples.ts": {
+ "packages/ui/src/components/ui/charts/examples.ts": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Sample data for the generic chart contracts, but the samples are compliance samples — and the file's own head matter asserts the opposite, which makes this the clearest removable case in the slice: swap the literals and the module is fully generic."
@@ -449,17 +454,17 @@
   "derivation": "audited",
   "reason": "Generic Gantt renderer (rows with start/end/seriesIndex/dependencies, token-backed chrome, dependency-chain BFS). Two removable couplings: an English aria-label default and a compliance JSDoc example."
  },
- "src/components/ui/charts/index.ts": {
+ "packages/ui/src/components/ui/charts/index.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "A re-export barrel, so no runtime coupling of its own, but its section prose carries the product brand and quantitative-risk vocabulary — and it is also the file that re-exports the two COUPLED widgets into the shared public surface, so it is the edit point for any extraction."
+  "reason": "A re-export barrel with no runtime coupling of its own. It no longer names the two COUPLED quantitative-risk widgets, nor ChartFrame and the four charts that wrap it — shedding those is exactly what let it move (#3046). What remains is scale, axis, gradient and motion vocabulary."
  },
- "src/components/ui/charts/interaction.tsx": {
+ "packages/ui/src/components/ui/charts/interaction.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Hover/keyboard hooks and two token-backed tooltip surface components; the code is entirely generic (all labels and values are caller-supplied ReactNode, no English literals). Coupling is confined to the head-matter prose."
  },
- "src/components/ui/charts/layout.ts": {
+ "packages/ui/src/components/ui/charts/layout.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Pure, deterministic margin/padding/domain/scale/tick-density helpers \u2014 the most reusable module in the slice. Its one recorded coupling was the brand name in the head comment (\"Every chart surface in Inflect\"), rewritten to \"in the app\" by #3046 batch 2. `@/lib/format-date` is a leaf date-formatting util and joined the `NEUTRAL_LIB` allowlist in the same change, so the mechanical `domain-import` this entry also carried is gone. Promoting it is NECESSARY but not sufficient for the three GENERIC files that fell out of the import closure behind this blocker (`charts/utils.ts`, `charts/x-axis.tsx`, `charts/y-axis.tsx`): measured after the promotion, all three are still out, and so is this file — the blocking edge moved from this entry's classification to `@/lib/format-date`, which is neutral for the DETECTOR but is not one of the four non-root files `docs/shared-ui-package-design.md` §2 admits alongside the package. Admitting it takes the closed set 427 -> 432 and is a §2 decision, recorded there."
@@ -479,42 +484,42 @@
   "derivation": "audited",
   "reason": "Generic multi-axis radar (key/label/value axes, ring count, label anchoring maths) whose comments and JSDoc are the most compliance-saturated of the MIXED charts, plus an English aria-label default. Nothing domain-specific reaches the runtime."
  },
- "src/components/ui/charts/time-series-chart.tsx": {
+ "packages/ui/src/components/ui/charts/time-series-chart.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "The slice's generic interactive time-series host — context providers, scales, hover capture, tooltip wrapper. One removable coupling: its default empty state hardcodes English rather than taking it from next-intl (the `emptyState` prop lets callers override, which is exactly why this is the default-value case)."
  },
- "src/components/ui/charts/tooltip-sync.tsx": {
+ "packages/ui/src/components/ui/charts/tooltip-sync.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "27-line context provider holding a single hovered-Date state. Nothing but React."
  },
- "src/components/ui/charts/types.ts": {
+ "packages/ui/src/components/ui/charts/types.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Type-only module (plus five tiny ChartState constructors) and the single most vendorable contract surface here. It used to claim domain-freedom while its JSDoc carried compliance examples; #3046 removed all three — the brand name at :117, the noun enumeration at :120 (which stated the no-domain rule by listing the very nouns it excludes, the same self-defeating shape `use-local-storage`'s docstring has), and the `\"controls\"` display-unit example at :229. No type or field was ever domain-shaped, so GENERIC."
  },
- "src/components/ui/charts/use-heat-scale.ts": {
+ "packages/ui/src/components/ui/charts/use-heat-scale.ts": {
   "classification": "MIXED",
   "derivation": "audited",
   "reason": "Pure math hook (clamp, color-mix string builder, step values) with no runtime coupling — the extracted helpers are unit-testable without React. Coupling is confined to the rationale comments naming the consuming domain widget and hue."
  },
- "src/components/ui/charts/use-tooltip.ts": {
+ "packages/ui/src/components/ui/charts/use-tooltip.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Internal hook wrapping @visx/tooltip with RAF throttling, bisector nearest-point lookup and cross-chart sync. No copy, no domain vocabulary, no storage, no domain imports."
  },
- "src/components/ui/charts/utils.ts": {
+ "packages/ui/src/components/ui/charts/utils.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Trivially generic: a ten-line legacy shim whose entire body is `export { getFactors } from './layout';`."
  },
- "src/components/ui/charts/x-axis.tsx": {
+ "packages/ui/src/components/ui/charts/x-axis.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Token-backed visx AxisBottom plus optional grid lines, tick density delegated to layout.ts. All colours are design-system CSS vars (--border-default, --content-muted, --content-emphasis); no brand token, no copy, no domain terms."
  },
- "src/components/ui/charts/y-axis.tsx": {
+ "packages/ui/src/components/ui/charts/y-axis.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Token-backed visx AxisLeft with label-width measurement feeding the left margin back into ChartContext. Same clean token vocabulary as x-axis.tsx; no copy, no domain terms."

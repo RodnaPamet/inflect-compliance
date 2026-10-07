@@ -50,7 +50,7 @@ const SRC = codeOf(fs.readFileSync(
 describe('R18-PR5 — Donut bubble-entrance', () => {
     it('calls useChartSpring and binds it to entranceProgress', () => {
         expect(SRC).toMatch(
-            /import\s*\{[\s\S]*?useChartSpring[\s\S]*?\}\s*from\s*['"]@\/components\/ui\/charts\/chart-motion['"]/,
+            /import\s*\{[\s\S]*?useChartSpring[\s\S]*?\}\s*from\s*['"](?:@\/components|@inflect\/ui\/components)\/ui\/charts\/chart-motion['"]/,
         );
         expect(SRC).toMatch(
             /const\s+entranceProgress\s*=\s*useChartSpring\(\)/,

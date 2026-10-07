@@ -23,7 +23,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantHref: () => (path: string) => `/t/acme${path}`,
 }));
 
-jest.mock('@/lib/format-date', () => ({
+jest.mock('@inflect/ui/lib/format-date', () => ({
     formatDate: (iso: string) => `formatted(${iso})`,
 }));
 

@@ -52,7 +52,7 @@ import { EmptyState } from '../empty-state';
 import { ErrorState } from '../error-state';
 import { Skeleton } from '../skeleton';
 
-import type { ChartState } from './types';
+import type { ChartState } from '@inflect/ui/components/ui/charts/types';
 
 /** Locked minimum chart height. Prevents layout shift + 0-height collapse. */
 export const DEFAULT_MIN_HEIGHT = 240;

@@ -46,7 +46,7 @@
  */
 
 import { cn } from "@inflect/ui/lib/cn";
-import { currencyFormatter, nFormatter } from "@/lib/number-format";
+import { currencyFormatter, nFormatter } from '@inflect/ui/lib/number-format';
 import { curveCatmullRom } from "@visx/curve";
 import { ParentSize } from "@visx/responsive";
 import { scaleLinear } from "@visx/scale";
@@ -55,8 +55,8 @@ import { Text } from "@visx/text";
 import { motion } from "motion/react";
 import { Fragment, useMemo, useRef, useState } from "react";
 
-import { ChartLinearGradient, type ChartSeriesIndex } from "./chart-gradient";
-import { ChartTooltipContainer } from "./interaction";
+import { ChartLinearGradient, type ChartSeriesIndex } from '@inflect/ui/components/ui/charts/chart-gradient';
+import { ChartTooltipContainer } from '@inflect/ui/components/ui/charts/interaction';
 import { useMediaQuery } from "../hooks";
 
 const layers = [

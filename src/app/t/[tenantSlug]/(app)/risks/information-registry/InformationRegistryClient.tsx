@@ -36,7 +36,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { AppIcon } from '@/components/icons/AppIcon';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 export interface RegisterRow {
     id: string;

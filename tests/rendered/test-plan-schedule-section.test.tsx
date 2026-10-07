@@ -27,7 +27,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 
 // Stable formatDate output so the tests don't depend on the
 // machine's locale.
-jest.mock('@/lib/format-date', () => ({
+jest.mock('@inflect/ui/lib/format-date', () => ({
     formatDate: (iso: string) => `formatted(${iso})`,
 }));
 

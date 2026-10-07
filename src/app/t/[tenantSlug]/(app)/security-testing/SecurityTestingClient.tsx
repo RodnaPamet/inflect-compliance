@@ -29,7 +29,7 @@ import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast, useThresholdLoadMore } from '@/components/ui/hooks';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import {
     buildScannerFilters,
     SCANNER_FILTER_KEYS,

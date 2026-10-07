@@ -42,7 +42,7 @@ import { Bell, CheckCheck } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDateCompact } from '@/lib/format-date';
+import { formatDateCompact } from '@inflect/ui/lib/format-date';
 import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { env } from '@/env';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';

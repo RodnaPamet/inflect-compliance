@@ -24,7 +24,7 @@ import {
     TimeSeriesChart, Bars, XAxis, YAxis,
     RadarChart, chartReady, chartEmpty, type RadarAxisDatum,
 } from '@/components/ui/charts';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';

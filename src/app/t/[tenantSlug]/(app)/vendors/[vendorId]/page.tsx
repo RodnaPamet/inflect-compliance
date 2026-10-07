@@ -4,7 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useEffect, useMemo, useState, useCallback, use } from 'react';

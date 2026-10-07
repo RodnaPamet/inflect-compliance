@@ -36,6 +36,7 @@
  *     tooltip). PR-12 wires those + closes R16 with the
  *     capstone bundle.
  */
+import { useTranslations } from 'next-intl';
 import { useId, useMemo, useState } from 'react';
 import { Group } from '@visx/group';
 import { scaleBand, scaleUtc } from '@visx/scale';
@@ -47,8 +48,8 @@ import {
     ChartLinearGradient,
     chartGradientId,
     type ChartSeriesIndex,
-} from './chart-gradient';
-import type { ChartState } from './types';
+} from '@inflect/ui/components/ui/charts/chart-gradient';
+import type { ChartState } from '@inflect/ui/components/ui/charts/types';
 
 /**
  * Bar corner radius (px). Same shape as the donut's
@@ -160,6 +161,7 @@ function GanttChartInner({
     todayLine,
     ariaLabel,
 }: GanttChartInnerProps) {
+    const t = useTranslations('common.chart');
     const reactId = useId();
     const chartId = `gantt-${reactId.replace(/:/g, '')}`;
 
@@ -262,7 +264,7 @@ function GanttChartInner({
             width={width}
             height={height}
             role="img"
-            aria-label={ariaLabel ?? 'Gantt chart'}
+            aria-label={ariaLabel ?? t('ganttChartAria')}
         >
             <defs>
                 {seriesInUse.map((series) => (

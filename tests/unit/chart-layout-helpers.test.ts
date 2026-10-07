@@ -26,7 +26,7 @@ import {
     pickYAxisTickCount,
     resolveChartMargin,
     resolveChartPadding,
-} from '@/components/ui/charts/layout';
+} from '@inflect/ui/components/ui/charts/layout';
 import type { Data, Series } from '@/components/ui/charts';
 
 interface DemoValues {

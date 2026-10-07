@@ -33,7 +33,7 @@ import {
     CONTENT_WIDTH,
 } from './pdfKitFactory';
 import { SAFE_BOTTOM_Y } from './layout';
-import { formatDateShort } from '@/lib/format-date';
+import { formatDateShort } from '@inflect/ui/lib/format-date';
 
 // ─── Classification ────────────────────────────────────────────────
 

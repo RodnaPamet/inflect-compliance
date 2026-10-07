@@ -30,7 +30,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { useTenantApiUrl, useTenantHref, useMoneyFormatter, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { RiskPicker } from '../_shared/RiskPicker';
 import { AnalyticsState } from '../_shared/AnalyticsState';

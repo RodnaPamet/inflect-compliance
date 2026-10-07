@@ -13,7 +13,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { TimeSeriesChart, Bars, XAxis, YAxis } from '@/components/ui/charts';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 // CC BY 4.0 attribution — carries everywhere derived NIS2 content renders.
 const NIS2_ATTRIBUTION =

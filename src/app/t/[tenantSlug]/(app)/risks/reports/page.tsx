@@ -15,7 +15,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 import type { KeyedMutator } from 'swr';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';

@@ -11,7 +11,7 @@ import { motion } from "motion/react";
 import { useId, useMemo } from "react";
 
 import type { SparklineData, TimeSeriesPoint } from "@/components/ui/charts";
-import { ChartGloss, chartGlossId } from "@/components/ui/charts/chart-gloss";
+import { ChartGloss, chartGlossId } from "@inflect/ui/components/ui/charts/chart-gloss";
 
 /**
  * Epic 59 — compact sparkline for KPI cards and summary tiles.

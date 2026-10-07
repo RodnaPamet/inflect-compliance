@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Tooltip } from '@/components/ui/tooltip';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 
 interface MemberRow {

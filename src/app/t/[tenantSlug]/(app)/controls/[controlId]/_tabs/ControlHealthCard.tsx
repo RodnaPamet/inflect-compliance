@@ -21,7 +21,7 @@ import { InfoTooltip } from '@/components/ui/tooltip';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { cn } from '@inflect/ui/lib/cn';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import {

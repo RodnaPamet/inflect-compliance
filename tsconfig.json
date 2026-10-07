@@ -25,6 +25,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@inflect/ui/*": [
+        "./packages/ui/src/*"
       ]
     },
     "baseUrl": "."

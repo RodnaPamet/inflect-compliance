@@ -12,7 +12,7 @@ import {
     formatDateCompact,
     formatDateRange,
     formatDateTime,
-} from '@/lib/format-date';
+} from '@inflect/ui/lib/format-date';
 
 // Canonical helper — builds UTC-midnight Dates for deterministic
 // comparisons, mirrors the `parseYMD` utility in the date-picker

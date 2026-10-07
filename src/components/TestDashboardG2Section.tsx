@@ -25,7 +25,7 @@ import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { MiniAreaChart } from '@/components/ui/mini-area-chart';
 import { useTenantHref } from '@/lib/tenant-context-provider';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';

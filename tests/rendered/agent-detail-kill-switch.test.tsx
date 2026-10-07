@@ -118,7 +118,7 @@ import {
 } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentKillSwitchAction';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getPermissionsForRole } from '@/lib/permissions';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 // ─── the real en.json copy, which is what the operator actually reads ───
 

@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';

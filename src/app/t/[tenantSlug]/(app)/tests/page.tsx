@@ -1,6 +1,6 @@
 'use client';
 
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';

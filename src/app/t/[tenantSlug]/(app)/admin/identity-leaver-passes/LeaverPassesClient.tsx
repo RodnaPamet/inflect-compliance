@@ -64,7 +64,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { DataTable, createColumns } from '@/components/ui/table';

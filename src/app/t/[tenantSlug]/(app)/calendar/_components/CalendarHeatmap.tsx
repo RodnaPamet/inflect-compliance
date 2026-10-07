@@ -44,7 +44,7 @@ import { cn } from '@inflect/ui/lib/cn';
 import type { CalendarEvent } from '@/app-layer/schemas/calendar.schemas';
 import { ChartLegend, useHeatScale } from '@/components/ui/charts';
 import { Tooltip } from '@/components/ui/tooltip';
-import { formatDate, formatWeekdayShort } from '@/lib/format-date';
+import { formatDate, formatWeekdayShort } from '@inflect/ui/lib/format-date';
 
 // ─── Public props ─────────────────────────────────────────────────────
 

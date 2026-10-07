@@ -26,7 +26,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { ListPageShell } from '@/components/layout/ListPageShell';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { ShieldCheck } from '@inflect/ui/components/ui/icons/nucleo/shield-check';
 import {
     VENDOR_ASSESSMENT_VARIANT,

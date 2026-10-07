@@ -15,7 +15,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import type { ProposalDiff } from '@/lib/agentic/proposal-diff';
 // The guard's three states, and the rule that reads them. Shared with the

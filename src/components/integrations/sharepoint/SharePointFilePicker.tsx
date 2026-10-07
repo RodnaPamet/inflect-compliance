@@ -26,7 +26,7 @@ import { Folder5 } from '@inflect/ui/components/ui/icons/nucleo/folder5';
 import { FileContent } from '@inflect/ui/components/ui/icons/nucleo/file-content';
 import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 export interface SpPickedItem {
     driveId: string;

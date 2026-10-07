@@ -4,7 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Card, cardVariants } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';

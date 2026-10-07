@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { DataTable } from '@/components/ui/table';
 import type { ColumnDef } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 export interface MembersTableRow {
     id: string;

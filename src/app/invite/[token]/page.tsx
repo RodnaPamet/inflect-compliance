@@ -13,7 +13,7 @@
 import { auth } from '@/auth';
 import { getTranslations } from 'next-intl/server';
 import { previewInviteByToken } from '@/app-layer/usecases/tenant-invites';
-import { formatDateLong } from '@/lib/format-date';
+import { formatDateLong } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
 

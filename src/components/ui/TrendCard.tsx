@@ -31,7 +31,7 @@ import {
     type TimeSeriesDatum,
 } from "@/components/ui/charts";
 import { AnimatedNumber } from "@/components/ui/animated-number";
-import { formatDate } from "@/lib/format-date";
+import { formatDate } from "@inflect/ui/lib/format-date";
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 

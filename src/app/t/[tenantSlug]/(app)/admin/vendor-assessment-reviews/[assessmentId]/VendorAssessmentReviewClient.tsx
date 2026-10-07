@@ -30,7 +30,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { SkeletonDetailPage } from '@/components/ui/skeleton';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { BackAffordance } from '@/components/nav/BackAffordance';

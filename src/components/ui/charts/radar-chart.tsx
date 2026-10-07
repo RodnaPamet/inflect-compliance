@@ -43,6 +43,7 @@
  *
  * Wraps in `<ChartFrame>` for state-driven branch rendering.
  */
+import { useTranslations } from 'next-intl';
 import { useId, useState, type ReactNode } from 'react';
 import { Group } from '@visx/group';
 import { Line } from '@visx/shape';
@@ -54,9 +55,9 @@ import {
     ChartRadialGradient,
     chartGradientId,
     type ChartSeriesIndex,
-} from './chart-gradient';
-import { useChartHoverPop } from './chart-motion';
-import type { ChartState } from './types';
+} from '@inflect/ui/components/ui/charts/chart-gradient';
+import { useChartHoverPop } from '@inflect/ui/components/ui/charts/chart-motion';
+import type { ChartState } from '@inflect/ui/components/ui/charts/types';
 
 /**
  * Default number of concentric rings in the grid. Four gives a
@@ -251,6 +252,7 @@ function RadarChartInner({
     ariaLabel,
     rings,
 }: RadarChartInnerProps) {
+    const t = useTranslations('common.chart');
     const reactId = useId();
     const chartId = `radar-${reactId.replace(/:/g, '')}`;
     const fillGradId = chartGradientId(chartId, seriesIndex, 'radial');
@@ -328,7 +330,7 @@ function RadarChartInner({
             width={width}
             height={height}
             role="img"
-            aria-label={ariaLabel ?? 'Radar chart'}
+            aria-label={ariaLabel ?? t('radarChartAria')}
         >
             <defs>
                 <ChartRadialGradient

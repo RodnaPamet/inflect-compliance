@@ -19,7 +19,7 @@ import { Heading } from '@/components/ui/typography';
 import { useToast } from '@/components/ui/hooks';
 import { ApiClientError } from '@/lib/api-client';
 import { apiErrorMessage } from '@/lib/api-error';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 

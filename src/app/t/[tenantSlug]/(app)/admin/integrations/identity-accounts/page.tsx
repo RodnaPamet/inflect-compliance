@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { Tooltip } from '@/components/ui/tooltip';

@@ -17,7 +17,7 @@ import { useTranslations } from 'next-intl';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { ownerDisplayName } from '@/lib/owner-display';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { AssetCriticalityBadge } from './_form/AssetCriticalityFields';
 
 export interface AssetPanelRow {

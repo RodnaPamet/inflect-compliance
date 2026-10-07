@@ -24,7 +24,26 @@ import * as path from 'path';
 import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const CHARTS_DIR = path.join(ROOT, 'src/components/ui/charts');
+// The chart platform now spans TWO roots (#3046): the neutral primitives live
+// in `packages/ui`, while ChartFrame, the four charts that wrap it and the two
+// quantitative-risk widgets stayed in `src`. A module is resolved in whichever
+// root holds it, so this guard keeps asserting the canonical layout without
+// caring which side of the extraction a given file is on — and still fails if a
+// module exists in NEITHER.
+const CHART_ROOTS = [
+    path.join(ROOT, 'packages/ui/src/components/ui/charts'),
+    path.join(ROOT, 'src/components/ui/charts'),
+];
+const PKG_CHARTS = CHART_ROOTS[0];
+const APP_CHARTS = CHART_ROOTS[1];
+const CHARTS_DIR = APP_CHARTS;
+
+// `inPkg` decides WHICH root; the reads below still spell
+// `path.join(<constant>, rel)`. That shape matters: routing them through a
+// helper that returns the path made them `path-not-constant` to the Class D
+// analyser (#2246), which counted two new blind spots — and growth in the
+// un-analysable set is a finding in its own right, not a ceiling to raise.
+const inPkg = (rel: string): boolean => fs.existsSync(path.join(PKG_CHARTS, rel));
 const PKG = JSON.parse(
     fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'),
 ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
@@ -38,11 +57,15 @@ function hasDep(name: string): boolean {
 }
 
 function read(rel: string): string {
-    return codeOf(fs.readFileSync(path.join(CHARTS_DIR, rel), 'utf-8'));
+    return inPkg(rel)
+        ? codeOf(fs.readFileSync(path.join(PKG_CHARTS, rel), 'utf-8'))
+        : codeOf(fs.readFileSync(path.join(APP_CHARTS, rel), 'utf-8'));
 }
 
 function readRaw(rel: string): string {
-    return fs.readFileSync(path.join(CHARTS_DIR, rel), 'utf-8');
+    return inPkg(rel)
+        ? fs.readFileSync(path.join(PKG_CHARTS, rel), 'utf-8')
+        : fs.readFileSync(path.join(APP_CHARTS, rel), 'utf-8');
 }
 
 /**
@@ -95,7 +118,7 @@ describe('Epic 59 — chart platform foundation', () => {
         'utils.ts',
         'index.ts',
     ])('%s exists in the canonical module layout', (file) => {
-        expect(fs.existsSync(path.join(CHARTS_DIR, file))).toBe(true);
+        expect(inPkg(file) || fs.existsSync(path.join(APP_CHARTS, file))).toBe(true);
     });
 
     describe('barrel', () => {
@@ -118,7 +141,16 @@ describe('Epic 59 — chart platform foundation', () => {
                     '\\.',
                 )}['"]`,
             );
-            expect(barrel).toMatch(pattern);
+            // Two barrels since #3046: the package's, and the app-side façade
+            // that re-exports it and declares what stayed. A module must be
+            // re-exported by the barrel on ITS OWN side, so both are read —
+            // asserting against just one would pass or fail purely on which
+            // side of the extraction a given file happens to sit.
+            const barrels = CHART_ROOTS.map((d) => path.join(d, 'index.ts'))
+                .filter((f) => fs.existsSync(f))
+                .map((f) => fs.readFileSync(f, 'utf-8'));
+            expect(barrels).not.toEqual([]);
+            expect(barrels.some((b) => pattern.test(b))).toBe(true);
         });
 
         it.each([

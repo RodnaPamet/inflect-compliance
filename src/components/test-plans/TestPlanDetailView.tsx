@@ -14,7 +14,7 @@
  * always explicit.
  */
 
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';

@@ -24,7 +24,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading } from '@/components/ui/typography';
 import { ApiClientError } from '@/lib/api-client';
 import { apiErrorMessage } from '@/lib/api-error';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';

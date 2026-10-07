@@ -20,7 +20,7 @@ import {
     formatDateTime,
     formatDateTimeLong,
     formatDateShort,
-} from '@/lib/format-date';
+} from '@inflect/ui/lib/format-date';
 
 // Anchor to a known UTC instant. 08:00:45 UTC on a Thursday so the
 // long form's weekday assertion is testable.

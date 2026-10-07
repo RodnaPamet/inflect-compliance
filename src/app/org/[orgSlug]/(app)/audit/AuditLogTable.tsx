@@ -8,7 +8,7 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { DataTable, createColumns, TableEmptyState } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 
 interface UserRef {

@@ -1,5 +1,5 @@
 'use client';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Activity, CreditCard, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';

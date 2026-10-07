@@ -21,7 +21,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { cardVariants } from '@/components/ui/card';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 interface ExecutionRow {
     id: string;

@@ -36,7 +36,7 @@ import {
     FileTypeIcon,
     resolveFileTypeIcon,
 } from '@/components/ui/file-type-icon';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { Pen2, Download, Xmark, ShieldAlert, CircleHalfDottedClock } from '@inflect/ui/components/ui/icons/nucleo';
 import { isScanServable, isScanInfected } from '@/lib/evidence-scan';
 import Link from 'next/link';

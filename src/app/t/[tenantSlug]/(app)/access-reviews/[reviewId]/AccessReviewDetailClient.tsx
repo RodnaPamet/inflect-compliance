@@ -34,7 +34,7 @@ import { ProgressBar } from '@/components/ui/progress-bar';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { DataTable, createColumns } from '@/components/ui/table';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 
 const ALL_ROLES = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR'] as const;

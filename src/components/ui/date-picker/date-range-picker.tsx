@@ -54,7 +54,7 @@ import {
 } from 'react';
 import type { DateRange as RDPDateRange } from 'react-day-picker';
 
-import { formatDateRange } from '@/lib/format-date';
+import { formatDateRange } from '@inflect/ui/lib/format-date';
 
 import { useKeyboardShortcut, useMediaQuery } from '../hooks';
 import { Popover } from '../popover';

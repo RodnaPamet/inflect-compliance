@@ -40,7 +40,7 @@ import { AnimatedNumber } from '@/components/ui/animated-number';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDateTimeLong, formatRelativeTime } from '@/lib/format-date';
+import { formatDateTimeLong, formatRelativeTime } from '@inflect/ui/lib/format-date';
 import type {
     CreateOrgDashboardWidgetInput,
     OrgDashboardWidgetDto,

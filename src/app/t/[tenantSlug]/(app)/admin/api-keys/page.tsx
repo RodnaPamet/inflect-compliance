@@ -24,7 +24,7 @@ import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
 import { useCopyToClipboard } from '@/components/ui/hooks';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';

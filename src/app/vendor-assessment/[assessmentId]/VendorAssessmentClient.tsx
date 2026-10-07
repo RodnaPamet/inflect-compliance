@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { RequiredMarker } from '@/components/ui/required-marker';
 

@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { formatRelativeTime } from "@/lib/format-date";
+import { formatRelativeTime } from "@inflect/ui/lib/format-date";
 
 interface ActivityEntry {
     id: string;

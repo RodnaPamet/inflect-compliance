@@ -24,7 +24,7 @@ import {
     chartLoading,
     chartReady,
     isChartReady,
-} from '@/components/ui/charts/types';
+} from '@inflect/ui/components/ui/charts/types';
 import type {
     CategoryPoint,
     ChartDimensions,
@@ -40,7 +40,7 @@ import type {
     SparklineData,
     TimeSeriesPoint,
     TooltipPayload,
-} from '@/components/ui/charts/types';
+} from '@inflect/ui/components/ui/charts/types';
 import {
     exampleCategorical,
     exampleKpiMetric,
@@ -50,7 +50,7 @@ import {
     exampleSparkline,
     synthSparkline,
     type ExampleMultiValues,
-} from '@/components/ui/charts/examples';
+} from '@inflect/ui/components/ui/charts/examples';
 
 // ─── Primitive point shapes ──────────────────────────────────────────
 
@@ -305,7 +305,7 @@ describe('Chart contracts carry zero domain semantics', () => {
 
         const path = require('path') as typeof import('path');
         const src = fs.readFileSync(
-            path.resolve(__dirname, '../../src/components/ui/charts/types.ts'),
+            path.resolve(__dirname, '../../packages/ui/src/components/ui/charts/types.ts'),
             'utf-8',
         );
         // Strip comments so a harmless mention in JSDoc doesn't fail.

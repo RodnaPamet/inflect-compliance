@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import type { SoAReportDTO, SoAEntryDTO } from '@/lib/dto/soa';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 
 interface SoAPrintViewProps {

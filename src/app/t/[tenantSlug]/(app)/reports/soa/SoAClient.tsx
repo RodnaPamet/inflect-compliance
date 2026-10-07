@@ -23,7 +23,7 @@ import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { cn } from '@inflect/ui/lib/cn';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 // ─── Types ───
 

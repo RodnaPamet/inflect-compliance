@@ -30,7 +30,7 @@ import { useTranslations } from 'next-intl';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';

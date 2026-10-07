@@ -9,7 +9,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 
 interface Health {

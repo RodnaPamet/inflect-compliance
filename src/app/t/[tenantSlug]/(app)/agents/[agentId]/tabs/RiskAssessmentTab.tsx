@@ -21,7 +21,7 @@ import { Heading } from '@/components/ui/typography';
 import { ApiClientError } from '@/lib/api-client';
 import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@inflect/ui/lib/cn';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 

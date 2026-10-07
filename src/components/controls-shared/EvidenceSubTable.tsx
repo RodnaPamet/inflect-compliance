@@ -31,7 +31,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { textLinkVariants } from '@/components/ui/typography';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import type { EvidenceLinkDTO } from '@/lib/dto';
 
 // Evidence rows on the control/risk/asset evidence tabs — the `Evidence`

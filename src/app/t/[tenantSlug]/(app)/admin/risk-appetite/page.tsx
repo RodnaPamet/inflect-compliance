@@ -12,7 +12,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { useTenantApiUrl, useTenantHref, useMoneyFormatter } from '@/lib/tenant-context-provider';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 
 type Cadence = 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUALLY' | 'ANNUALLY';
