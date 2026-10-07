@@ -27,7 +27,7 @@ import { cn } from "@inflect/ui/lib/cn";
 import { Check, Copy } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { type ReactNode, forwardRef } from "react";
-import { useToast } from "./hooks/use-toast";
+import { useToast } from "@inflect/ui/components/ui/hooks/use-toast";
 import { Tooltip } from "./tooltip";
 import { useCopyToClipboard } from "./hooks";
 

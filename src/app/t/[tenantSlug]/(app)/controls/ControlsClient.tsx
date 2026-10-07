@@ -91,8 +91,8 @@ import {
     CONTROL_HEALTH_VERDICT_VARIANT,
     type ControlHealthVerdict,
 } from '@/lib/controls/control-health';
-import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
-import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
+import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 import { controlBulkActionsFor, type ControlBulkAction } from './_lib/bulk-action-policy';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 

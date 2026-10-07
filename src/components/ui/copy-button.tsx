@@ -25,7 +25,7 @@ import { type VariantProps, cva } from "class-variance-authority";
 import { Check, Copy, type LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { forwardRef } from "react";
-import { useToast } from "./hooks/use-toast";
+import { useToast } from "@inflect/ui/components/ui/hooks/use-toast";
 import { Tooltip } from "./tooltip";
 import { useCopyToClipboard } from "./hooks";
 

@@ -81,8 +81,8 @@ import { AleHistogram, type AleHistogramDatum } from '@/components/ui/charts';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { useLocalStorage } from '@/components/ui/hooks';
 import { useTranslations } from 'next-intl';
-import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
-import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
+import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 /** Bulk-action status options (canonical BulkActionBar). Labels resolve
  *  through the `risks.bulkStatus.*` catalog inside the component. */

@@ -23,7 +23,7 @@ import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
 const mockIsMobile = { current: false };
-jest.mock('@/components/ui/hooks/use-media-query', () => ({
+jest.mock('@inflect/ui/components/ui/hooks/use-media-query', () => ({
     useMediaQuery: () => ({
         device: mockIsMobile.current ? ('mobile' as const) : ('desktop' as const),
         width: mockIsMobile.current ? 393 : 1280,

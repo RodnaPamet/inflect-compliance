@@ -22,7 +22,7 @@
  */
 import { saveTldrawCanvas } from '@/lib/processes/tldraw-save';
 import type { EditorCanvas } from '@/components/processes/tldraw/editor-canvas';
-import type { ToastApi } from '@/components/ui/hooks/use-toast';
+import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 
 const CANVAS: EditorCanvas = {
     rows: {

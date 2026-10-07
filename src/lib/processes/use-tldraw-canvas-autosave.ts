@@ -57,7 +57,7 @@
 import { useCallback } from 'react';
 import type { Editor } from 'tldraw';
 
-import type { ToastApi } from '@/components/ui/hooks/use-toast';
+import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 import { serializeEditorCanvas } from '@/components/processes/tldraw/editor-canvas';
 import {
     saveTldrawCanvas,

@@ -9,7 +9,7 @@ import { render, screen } from "@testing-library/react";
 import * as React from "react";
 
 let mockBelowMd = false;
-jest.mock("@/components/ui/hooks/use-is-below-md", () => ({
+jest.mock("@inflect/ui/components/ui/hooks/use-is-below-md", () => ({
     useIsBelowMd: () => mockBelowMd,
 }));
 

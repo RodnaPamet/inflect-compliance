@@ -19,7 +19,7 @@ import { Popover } from '@/components/ui/popover';
 // it means this suite cannot start passing for the wrong reason if that
 // polyfill changes. Mocked at the LEAF module so the barrel's re-export picks
 // the stub up without pulling the whole barrel through requireActual.
-jest.mock('@/components/ui/hooks/use-media-query', () => ({
+jest.mock('@inflect/ui/components/ui/hooks/use-media-query', () => ({
     useMediaQuery: () => ({
         device: 'mobile' as const,
         width: 375,

@@ -290,7 +290,11 @@ describe('shared-UI coupling classification (#3047)', () => {
         // `use-local-storage.ts` IS the storage primitive and its docstring
         // contains `useLocalStorage('k', {})`. Masking comments is what stops
         // the guard reporting the seam as a breach of itself.
-        const hook = 'src/components/ui/hooks/use-local-storage.ts';
+        // Repointed at #3046 step 3a — this hook moved into the package. The
+        // `existsSync` guard below would otherwise make the control SKIP rather
+        // than fail, which is how a negative control stops controlling.
+        const hook =
+            'packages/ui/src/components/ui/hooks/use-local-storage.ts';
         if (fs.existsSync(path.join(ROOT, hook))) {
             expect(mechanical(hook)).not.toContain('storage-key');
         }

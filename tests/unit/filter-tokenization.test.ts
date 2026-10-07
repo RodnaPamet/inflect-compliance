@@ -75,13 +75,18 @@ describe('Filter components — no raw Dub palette colors', () => {
 });
 
 describe('Dead code sentinel — Dub pagination hooks removed', () => {
-    const REMOVED = [
-        'src/components/ui/hooks/use-router-stuff.ts',
-        'src/components/ui/hooks/use-pagination.ts',
+    // #3046 step 3a — checked in BOTH locations. The hooks directory now has a
+    // second home in `packages/ui`, and a sentinel that only watches `src/`
+    // would pass while a deleted hook was resurrected inside the package.
+    const REMOVED = ['use-router-stuff.ts', 'use-pagination.ts'];
+    const HOOK_DIRS = [
+        'src/components/ui/hooks',
+        'packages/ui/src/components/ui/hooks',
     ];
 
-    it.each(REMOVED)('%s no longer exists (superseded by useListPagination)', (rel) => {
-        expect(exists(rel)).toBe(false);
+    it.each(REMOVED)('%s no longer exists in either hooks root', (name) => {
+        const where = HOOK_DIRS.filter((d) => exists(`${d}/${name}`));
+        expect({ name, where }).toEqual({ name, where: [] });
     });
 
     it('hooks barrel does not re-export useRouterStuff or usePagination', () => {

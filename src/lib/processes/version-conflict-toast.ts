@@ -23,7 +23,7 @@
  *   Reload action is the safety mechanism, and it stands either
  *   way.
  */
-import type { ToastApi } from '@/components/ui/hooks/use-toast';
+import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 
 interface VersionConflictBody {
     error?: {

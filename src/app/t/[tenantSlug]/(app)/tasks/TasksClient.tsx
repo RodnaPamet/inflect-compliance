@@ -66,8 +66,8 @@ import { TASK_SEVERITY_VARIANT } from '@/app-layer/domain/entity-status-mapping'
 import { taskStatusVariant, TASK_STATUS_BADGE } from '@/lib/task-status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
-import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
-import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
+import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 // Status → badge tone AND label both come from the shared
 // `TASK_STATUS_BADGE` map (TP-1) — tone via `taskStatusVariant`, copy via the

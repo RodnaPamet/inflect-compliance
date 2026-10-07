@@ -867,8 +867,25 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
  * branches. This is the same rule at a finer grain: before merge means after
  * the LAST edit, not after the merge commit. Measuring once and then continuing
  * to edit leaves a number that was true and no longer is.
+ *
+ * ── 1445 -> 1444 at #3046 step 3a, and the ordering note ────────────
+ *
+ * The sentinel below refused 1445 as unspent slack: measured `live count: 1444`
+ * on this branch with `main` merged. Step 3a made ONE read analysable rather
+ * than adding any — `ui-hooks-barrel` and `epic60-ratchet` both had their barrel
+ * read rewritten from `path.join(<variable dir>, 'index.ts')` to
+ * `path.join(ROOT, '<literal path>')` while being taught to scan two roots, and
+ * a constant path is what the analyser follows.
+ *
+ * ORDERING, because a sibling branch moves this same line in the opposite
+ * direction. #3204's guard adds exactly one un-analysable read, so that branch
+ * sets 1446 against its own live count. The two deltas are +1 and -1, so
+ * whichever merges SECOND will find the sentinel firing and must re-measure —
+ * the convergent value is 1445. Each branch carries its OWN live count rather
+ * than a projected total, which is the only arithmetic that is safe in either
+ * merge order.
  */
-const UNANALYSABLE_READ_BASELINE = 1445;
+const UNANALYSABLE_READ_BASELINE = 1444;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

@@ -24,7 +24,7 @@ describe("Mobile PR-2 — responsive DataTable", () => {
     const cards = read("src/components/ui/table/data-table-cards.tsx");
     // The hook's canonical home is the shared hooks dir (mobile PR-4 promoted
     // it; table/use-is-below-md re-exports for back-compat).
-    const hook = read("src/components/ui/hooks/use-is-below-md.ts");
+    const hook = read("packages/ui/src/components/ui/hooks/use-is-below-md.ts");
 
     it("DataTable gates the card view on useIsBelowMd, and mounts the cards", () => {
         // ONLY the two things this file can say better than a render: that the

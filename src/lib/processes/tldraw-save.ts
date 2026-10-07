@@ -42,7 +42,7 @@
  * survives a dismissal, and a module that both threw and toasted would produce
  * two notices for one failure.
  */
-import type { ToastApi } from '@/components/ui/hooks/use-toast';
+import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 import type { EditorCanvas } from '@/components/processes/tldraw/editor-canvas';
 import { surfaceVersionConflict } from '@/lib/processes/version-conflict-toast';
 

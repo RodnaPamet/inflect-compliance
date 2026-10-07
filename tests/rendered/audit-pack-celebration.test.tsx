@@ -25,7 +25,7 @@ jest.mock('sonner', () => ({
 import {
     useCelebration,
     __setConfettiForTest,
-} from '@/components/ui/hooks/use-celebration';
+} from '@inflect/ui/components/ui/hooks/use-celebration';
 import { celebrationDedupe, scopedMilestone } from '@/lib/celebrations';
 
 interface ConfettiCall {

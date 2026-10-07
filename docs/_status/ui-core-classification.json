@@ -819,7 +819,7 @@
   "derivation": "audited",
   "reason": "Behavioural tests of a generic hook, but both the narrative comments and every fixture are written in compliance vocabulary. The test logic itself is domain-free — renaming the fixtures and the provenance comments would make it portable."
  },
- "src/components/ui/hooks/__tests__/use-threshold-load-more.test.tsx": {
+ "packages/ui/src/components/ui/hooks/__tests__/use-threshold-load-more.test.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Drives the hook with `range(n)` number arrays only. No domain fixtures, copy, storage or imports beyond the hook under test."
@@ -834,57 +834,57 @@
   "derivation": "audited",
   "reason": "Pure re-export barrel; every export is a generic hook. The section heading that named the GRC Controls feature as a hook's provenance now reads `(P3.5)`, and the threshold-load-more note no longer calls its callers tenant tables (#3133). Nothing mechanical fires and no prose coupling is left, so the barrel is vendorable as-is."
  },
- "src/components/ui/hooks/use-autosave-fields.ts": {
+ "packages/ui/src/components/ui/hooks/use-autosave-fields.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "The debounce/status machine is entirely generic (Record<string,string> fields, caller-supplied save/validate/canCommit, no copy of its own — networkErrorMessage is a required param with no default). The coupling was the provenance story in the docblock; #3133 reworded it to \"two edit panels\" and \"a source-text guard\", naming no product component and no repo test path."
  },
- "src/components/ui/hooks/use-celebration.ts": {
+ "packages/ui/src/components/ui/hooks/use-celebration.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "GENERIC as of #3046 batch 2, which INVERTED the coupling rather than reclassifying around it. The confetti presets, lazy loader, reduced-motion handling and DI test seam were always generic; the coupling was the milestone registry binding \u2014 the public input type was a closed union of four compliance milestones, so a second product could not call the keyed path at all. Three changes removed it: the keyed path is gone (all three production call sites already passed objects, only tests passed a key), `CelebrationPreset` / `CelebrateInput` are now declared HERE and `@/lib/celebrations` imports them back as types, and the `hasCelebrated`/`markCelebrated` pair is INJECTED rather than imported \u2014 deliberately, because `celebrationDedupeKey` is brand-prefixed (`inflect.celebrate:<key>`) and moving it in would have carried this product's storage namespace into shared UI and left the file coupled on judgement while mechanically clean. The file now imports nothing from `@/lib` or `@/app-layer`."
  },
- "src/components/ui/hooks/use-column-visibility.ts": {
+ "packages/ui/src/components/ui/hooks/use-column-visibility.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "TanStack column-visibility state over useLocalStorage. `storageKey` is a caller-supplied parameter with no default and no key construction, so rule 3 lands on the call sites, not here. No copy, no domain nouns, no domain imports."
  },
- "src/components/ui/hooks/use-copy-to-clipboard.tsx": {
+ "packages/ui/src/components/ui/hooks/use-copy-to-clipboard.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Clipboard write with execCommand fallback. The only strings are internal `throw new Error(...)` messages, which are not JSX text / aria / title / a copy default. The \"audit logging\" example an earlier pass judged to be the log-record sense is gone — #3133 reworded it, so nobody has to make that call again; \"MFA enrollment pages\" (line 105) is generic auth."
  },
- "src/components/ui/hooks/use-create-query-param.ts": {
+ "packages/ui/src/components/ui/hooks/use-create-query-param.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "The mechanism is generic: read `?create=1`, call an opaque callback, strip the param via router.replace. Both parameters (onOpen, basePath) are caller-supplied. #3133 replaced the enumeration of seven compliance list pages with \"one per list page\" and the tenant route examples with `/items`, so the docblock names no domain."
  },
- "src/components/ui/hooks/use-cursor-pagination.ts": {
+ "packages/ui/src/components/ui/hooks/use-cursor-pagination.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Generic `{rows, nextCursor}` accumulator over a caller-built URL. Error values are bounded tokens ('load_failed', 'load_failed_<status>'), not English copy. #3133 reworded \"Caller controls cursor encoding\" to \"The caller owns cursor encoding\", retiring the one word that needed a reader's judgement; \"Epic O-4 portfolio drill-down tables\" names no compliance entity."
  },
- "src/components/ui/hooks/use-enter-submit.ts": {
+ "packages/ui/src/components/ui/hooks/use-enter-submit.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Enter/Shift+Enter/IME submit policy. No copy, no storage, no imports beyond react. \"Default policy\" and `EnterSubmitModifierPolicy` are the behavioural-rule sense of policy, not a GRC Policy document; \"controlled forms\" is React vocabulary."
  },
- "src/components/ui/hooks/use-in-viewport.tsx": {
+ "packages/ui/src/components/ui/hooks/use-in-viewport.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Thin IntersectionObserver boolean wrapper. React import only; no strings, no storage, no domain vocabulary."
  },
- "src/components/ui/hooks/use-input-focused.ts": {
+ "packages/ui/src/components/ui/hooks/use-input-focused.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Tracks whether an editable element holds focus via focusin/focusout. \"Epic 57's isEditableTarget policy\" is the behavioural-rule sense. No copy, storage, or domain imports."
  },
- "src/components/ui/hooks/use-intersection-observer.ts": {
+ "packages/ui/src/components/ui/hooks/use-intersection-observer.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Returns the latest IntersectionObserverEntry with a freezeOnceVisible latch. Platform-only; nothing product-specific."
  },
- "src/components/ui/hooks/use-is-below-md.ts": {
+ "packages/ui/src/components/ui/hooks/use-is-below-md.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "matchMedia('(max-width: 767.98px)') boolean. Comments name only UI primitives (DataTable card view, Modal/Sheet). No coupling."
@@ -894,47 +894,47 @@
   "derivation": "audited",
   "reason": "Three-line compatibility re-export of @/lib/hooks/use-keyboard-shortcut — an explicitly allowed import. The call sites it names (filter-list, selection-toolbar, date-range-picker) are UI components, not domain surfaces."
  },
- "src/components/ui/hooks/use-local-storage.ts": {
+ "packages/ui/src/components/ui/hooks/use-local-storage.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "SSR-safe typed localStorage primitive with cross-tab sync and pluggable serializer. It is the primitive itself: `key` arrives from the caller and is never constructed here, so there is no key for uiStorageKey to namespace — rule 3 applies to its callers. No copy, no domain vocabulary."
  },
- "src/components/ui/hooks/use-media-query.ts": {
+ "packages/ui/src/components/ui/hooks/use-media-query.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "device/width/height + isMobile/isTablet/isDesktop from matchMedia. Comments name Radix/Vaul/popover.tsx only."
  },
- "src/components/ui/hooks/use-optimistic-update.ts": {
+ "packages/ui/src/components/ui/hooks/use-optimistic-update.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "The overlay/rollback machinery is genuinely generic over T with no domain types in the signature. The coupling was a worked JSDoc example written entirely in risk vocabulary; #3133 rewrote it over `useItem` / `/api/items`. \"Framework-agnostic\" (line 9) stays, and it is the JS-library sense rather than the compliance-framework noun."
  },
- "src/components/ui/hooks/use-resize-observer.ts": {
+ "packages/ui/src/components/ui/hooks/use-resize-observer.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "35-line ResizeObserver wrapper returning the latest entry. Nothing product-specific."
  },
- "src/components/ui/hooks/use-responsive-presentation.ts": {
+ "packages/ui/src/components/ui/hooks/use-responsive-presentation.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "dialog/drawer/sheet decision from useMediaQuery, plus a pure resolvePresentation. Surfaces only; no domain vocabulary, copy, or storage."
  },
- "src/components/ui/hooks/use-scroll-progress.ts": {
+ "packages/ui/src/components/ui/hooks/use-scroll-progress.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "rAF-batched [0..1] scroll progress with an epsilon gate and resize recompute. Pure platform code."
  },
- "src/components/ui/hooks/use-scroll.ts": {
+ "packages/ui/src/components/ui/hooks/use-scroll.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Boolean 'scrolled past threshold' with a passive listener. No coupling of any kind."
  },
- "src/components/ui/hooks/use-ssr-fallback.ts": {
+ "packages/ui/src/components/ui/hooks/use-ssr-fallback.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Compares `Record<string,string>` filter sets (union of keys, '' == missing) to decide whether an SSR payload may seed SWR. Comments say \"list page\" / \"six copies\" but name no compliance entity; all inputs are untyped records."
  },
- "src/components/ui/hooks/use-threshold-load-more.ts": {
+ "packages/ui/src/components/ui/hooks/use-threshold-load-more.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Generic in shape — slices ReadonlyArray<TRow> to a window, no I/O, no copy, no types beyond TRow. #3046 removed the motivating list of compliance pages from the docblock, and with it the `LIST_BACKFILL_CAP` citation of a domain module the file does not import — the same prose shape `EntityDetailLayout` is held at MIXED for — plus the two stray \"tenant\"/\"org-level\" references in the same paragraph. Its only import is `react`."
@@ -944,7 +944,7 @@
   "derivation": "audited",
   "reason": "Delayed-commit + undo registry over sonner. `message` and `undoMessage` are REQUIRED props with no defaults, so the English strings ('Item deleted', 'Undo') appear only as JSDoc `e.g.` illustrations, not as a copy default — not rule-1 coupling. pendingId is an in-memory Map key, never storage. Imports only @/components/ui/undo-toast, which is allowed."
  },
- "src/components/ui/hooks/use-toast.ts": {
+ "packages/ui/src/components/ui/hooks/use-toast.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Four-variant sonner wrapper with locked durations. Every message is a required caller argument; the English strings ('Item created', 'Save failed') are JSDoc usage examples with no default value behind them, and none is domain vocabulary."

@@ -8,7 +8,7 @@ import {
   useCallback,
   useRef,
 } from "react";
-import { useScrollProgress } from "../hooks/use-scroll-progress";
+import { useScrollProgress } from "@inflect/ui/components/ui/hooks/use-scroll-progress";
 
 export const FilterScroll = forwardRef<
   HTMLDivElement | null,

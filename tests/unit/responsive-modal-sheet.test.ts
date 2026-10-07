@@ -14,7 +14,7 @@ import * as path from 'path';
 import {
     resolvePresentation,
     type ResponsivePresentation,
-} from '../../src/components/ui/hooks/use-responsive-presentation';
+} from '@inflect/ui/components/ui/hooks/use-responsive-presentation';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../');
@@ -63,7 +63,9 @@ describe('resolvePresentation — core decision rule', () => {
 // ─── 2. useResponsivePresentation contract ────────────────────────
 
 describe('useResponsivePresentation — source contract', () => {
-    const src = read('src/components/ui/hooks/use-responsive-presentation.ts');
+    const src = read(
+        'packages/ui/src/components/ui/hooks/use-responsive-presentation.ts',
+    );
 
     it('is a client hook that re-exports the viewport flags', () => {
         expect(src).toMatch(/^"use client"/);
@@ -240,7 +242,9 @@ describe('No competing responsive modal system', () => {
         // exercises the shared rule; this assertion just confirms the
         // two functions still exist side-by-side in their expected files.
         expect(read('src/components/ui/modal.tsx')).toMatch(/resolveModalPresentation/);
-        expect(read('src/components/ui/hooks/use-responsive-presentation.ts'))
+        expect(
+            read('packages/ui/src/components/ui/hooks/use-responsive-presentation.ts'),
+        )
             .toMatch(/resolvePresentation/);
     });
 });

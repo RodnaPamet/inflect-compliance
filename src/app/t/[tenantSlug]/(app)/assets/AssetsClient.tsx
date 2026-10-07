@@ -50,10 +50,10 @@ import { criticalityBadgeVariant, presentCriticality } from '@/lib/asset-critica
 import type { AssetCore } from '@/lib/dto/asset.types';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import type { StatusBadgeVariant } from '@/components/ui/status-badge';
-import { useCreateQueryParam } from '@/components/ui/hooks/use-create-query-param';
+import { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
-import { useSsrFallback } from '@/components/ui/hooks/use-ssr-fallback';
+import { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 
 /** CVSS severity → StatusBadge variant (for the per-asset open-vuln badge). */

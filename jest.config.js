@@ -197,6 +197,14 @@ const nodeProject = {
         // worktree still excludes worktrees nested under it, and never the
         // worktree's own tests.
         '<rootDir>/.claude/',
+        // #3046 step 3a — the jsdom project owns co-located package tests.
+        // This project's `**/*.test.ts` WOULD match a `.test.ts` under
+        // `packages/*/src/**/__tests__/`, and the `src/.*/__tests__/` exclusion
+        // further down does not cover a `packages/ui/src/...` path. Without this
+        // such a file runs under the node environment, where an RTL render has no
+        // DOM. Today's moved test is `.tsx`, which this project cannot match
+        // anyway — the entry closes the gap before the first `.ts` one exists.
+        '<rootDir>/packages/[^/]+/src/.*/__tests__/',
         '<rootDir>/tests/e2e/',
         '<rootDir>/tests/rendered/',
         // Runs under the `flue` project below, which resolves ESM-only
@@ -430,6 +438,20 @@ const jsdomProject = {
         // existing `tests/rendered/` location stays valid for tests
         // that span multiple primitives or pages.
         '<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}',
+        // #3046 step 3a — the same pattern inside the workspace package.
+        //
+        // Both patterns above are ANCHORED: `tests/rendered/` and `src/`. A
+        // co-located hook test that moves into `packages/ui/` therefore matches
+        // NEITHER project — the node project's `**/*.test.ts` cannot match a
+        // `.tsx`, and this one is rooted at `src/`. Measured before adding this
+        // line: `jest --listTests | grep -c use-threshold-load-more` returned
+        // **0**. The test did not fail, it STOPPED RUNNING, and nothing in the
+        // repo reported it.
+        //
+        // §5.6 predicted a wrong-ENVIRONMENT problem and recommended a
+        // `testPathIgnorePatterns` entry at step 1. The real exposure is a
+        // silent LOSS, and an ignore added then would have made it look handled.
+        '<rootDir>/packages/*/src/**/__tests__/**/*.test.{ts,tsx}',
     ],
     testPathIgnorePatterns: [
         '<rootDir>/.next/',

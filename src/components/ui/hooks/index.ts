@@ -19,31 +19,31 @@
 export {
     useLocalStorage,
     type UseLocalStorageOptions,
-} from "./use-local-storage";
+} from "@inflect/ui/components/ui/hooks/use-local-storage";
 
 // ─── Viewport / observer ──────────────────────────────────────────────
-export { useInViewport } from "./use-in-viewport";
-export { useIntersectionObserver } from "./use-intersection-observer";
-export { useMediaQuery } from "./use-media-query";
-export { useResizeObserver } from "./use-resize-observer";
+export { useInViewport } from "@inflect/ui/components/ui/hooks/use-in-viewport";
+export { useIntersectionObserver } from "@inflect/ui/components/ui/hooks/use-intersection-observer";
+export { useMediaQuery } from "@inflect/ui/components/ui/hooks/use-media-query";
+export { useResizeObserver } from "@inflect/ui/components/ui/hooks/use-resize-observer";
 export {
     useResponsivePresentation,
     resolvePresentation,
     type ResponsivePresentation,
     type UseResponsivePresentation,
     type UseResponsivePresentationOptions,
-} from "./use-responsive-presentation";
+} from "@inflect/ui/components/ui/hooks/use-responsive-presentation";
 
 // ─── Scroll ───────────────────────────────────────────────────────────
-export { useScroll } from "./use-scroll";
-export { useScrollProgress } from "./use-scroll-progress";
+export { useScroll } from "@inflect/ui/components/ui/hooks/use-scroll";
+export { useScrollProgress } from "@inflect/ui/components/ui/hooks/use-scroll-progress";
 
 // ─── Optimistic UI ────────────────────────────────────────────────────
 export {
     useOptimisticUpdate,
     type UseOptimisticUpdateOptions,
     type UseOptimisticUpdateResult,
-} from "./use-optimistic-update";
+} from "@inflect/ui/components/ui/hooks/use-optimistic-update";
 
 // ─── Submit / input / keyboard ────────────────────────────────────────
 export {
@@ -51,12 +51,12 @@ export {
     type EnterSubmitModifierPolicy,
     type UseEnterSubmitOptions,
     type UseEnterSubmitResult,
-} from "./use-enter-submit";
-export { useInputFocused } from "./use-input-focused";
+} from "@inflect/ui/components/ui/hooks/use-enter-submit";
+export { useInputFocused } from "@inflect/ui/components/ui/hooks/use-input-focused";
 export { useKeyboardShortcut } from "./use-keyboard-shortcut";
 
 // ─── Dense-table ergonomics ───────────────────────────────────────────
-export { useColumnVisibility } from "./use-column-visibility";
+export { useColumnVisibility } from "@inflect/ui/components/ui/hooks/use-column-visibility";
 
 // ─── Clipboard / copy ─────────────────────────────────────────────────
 export {
@@ -65,14 +65,14 @@ export {
     type UseCopyToClipboardResult,
     type CopyOptions,
     type CopyFn,
-} from "./use-copy-to-clipboard";
+} from "@inflect/ui/components/ui/hooks/use-copy-to-clipboard";
 
 // ─── Cursor pagination ────────────────────────────────────────────────
 export {
     useCursorPagination,
     type UseCursorPaginationOptions,
     type UseCursorPaginationResult,
-} from "./use-cursor-pagination";
+} from "@inflect/ui/components/ui/hooks/use-cursor-pagination";
 
 // ─── Threshold load-more (PR-1) ───────────────────────────────────────
 //
@@ -86,7 +86,7 @@ export {
     DEFAULT_LOAD_MORE_THRESHOLD,
     type UseThresholdLoadMoreOptions,
     type UseThresholdLoadMoreResult,
-} from "./use-threshold-load-more";
+} from "@inflect/ui/components/ui/hooks/use-threshold-load-more";
 
 // ─── Celebration (Epic 62) ────────────────────────────────────────────
 export {
@@ -95,7 +95,7 @@ export {
     type CelebrationDedupe,
     type CelebrationPreset,
     type UseCelebrationResult,
-} from "./use-celebration";
+} from "@inflect/ui/components/ui/hooks/use-celebration";
 
 // ─── View mode (Epic 66) ──────────────────────────────────────────────
 export {
@@ -109,7 +109,7 @@ export {
     useToast,
     type ToastApi,
     type ToastOptions,
-} from "./use-toast";
+} from "@inflect/ui/components/ui/hooks/use-toast";
 
 // ─── Toast with undo (Epic 67) ────────────────────────────────────────
 export {
@@ -120,9 +120,9 @@ export {
 } from "./use-toast-with-undo";
 
 // ─── Responsive viewport (mobile PR-4) ────────────────────────────────
-export { useIsBelowMd } from "./use-is-below-md";
-export { useCreateQueryParam } from './use-create-query-param';
-export { useSsrFallback } from './use-ssr-fallback';
+export { useIsBelowMd } from "@inflect/ui/components/ui/hooks/use-is-below-md";
+export { useCreateQueryParam } from '@inflect/ui/components/ui/hooks/use-create-query-param';
+export { useSsrFallback } from '@inflect/ui/components/ui/hooks/use-ssr-fallback';
 
 // ─── Debounced field autosave (P3.5) ──────────────────────────────────
 export {
@@ -130,4 +130,4 @@ export {
     type AutosaveState,
     type UseAutosaveFieldsOptions,
     type UseAutosaveFieldsResult,
-} from "./use-autosave-fields";
+} from "@inflect/ui/components/ui/hooks/use-autosave-fields";
