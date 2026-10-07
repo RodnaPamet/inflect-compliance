@@ -1,4 +1,4 @@
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { LinearGradient } from "@visx/gradient";
 import { Group } from "@visx/group";
 import { Area, AreaClosed, Circle } from "@visx/shape";

@@ -48,7 +48,7 @@ import { FormField } from '@/components/ui/form-field';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';

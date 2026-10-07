@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import * as RadixSlider from "@radix-ui/react-slider";
 import { ReactNode } from "react";
 

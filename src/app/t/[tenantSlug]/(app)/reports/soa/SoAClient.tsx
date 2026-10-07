@@ -21,7 +21,7 @@ import { StatusBadge as StatusBadgePrimitive, type StatusBadgeVariant } from '@/
 import { cardVariants } from '@/components/ui/card';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import { formatDate } from '@/lib/format-date';
 

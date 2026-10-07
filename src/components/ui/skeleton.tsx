@@ -1,7 +1,7 @@
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
 import { cardVariants } from '@/components/ui/card-variants';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 /**
  * Reusable skeleton loading primitives for the dark-themed UI.
  *

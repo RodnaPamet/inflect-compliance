@@ -35,7 +35,7 @@
  *     control paints the error border without duplicating the text.
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { useTranslations } from "next-intl";
 import * as React from "react";
 import { Label } from "./label";

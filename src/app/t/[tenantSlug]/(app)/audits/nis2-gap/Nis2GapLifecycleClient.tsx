@@ -19,7 +19,7 @@ import { UserCombobox } from '@/components/ui/user-combobox';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import {
     TimeSeriesChart, Bars, XAxis, YAxis,
     RadarChart, chartReady, chartEmpty, type RadarAxisDatum,

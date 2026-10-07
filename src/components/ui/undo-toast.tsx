@@ -33,7 +33,7 @@
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { toast as sonnerToast } from "sonner";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 
 export interface UndoToastProps {
     /** Sonner-supplied id for the toast row. Used to dismiss on Undo. */

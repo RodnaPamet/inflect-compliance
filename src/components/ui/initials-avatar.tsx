@@ -23,7 +23,7 @@
  * never decides precedence.
  */
 import { useState } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // ─── Initials ──────────────────────────────────────────────────────
 

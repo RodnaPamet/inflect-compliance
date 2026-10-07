@@ -35,7 +35,7 @@
  */
 
 import { useMemo, type CSSProperties } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { isScanServable } from '@/lib/evidence-scan';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';

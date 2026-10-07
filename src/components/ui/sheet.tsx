@@ -23,7 +23,7 @@
  * rendered inside another drawer (required by Vaul for focus-trap parity).
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import { X } from "lucide-react";
 import { useTranslations } from "next-intl";

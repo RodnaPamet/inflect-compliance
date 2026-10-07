@@ -51,7 +51,7 @@ import { TaskEditPanel } from '@/components/controls-shared/TaskEditPanel';
 import { Pen2, Xmark } from '@/components/ui/icons/nucleo';
 import { IconAction } from '@/components/ui/icon-action';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 // Shared with the list's Severity column and the Severity filter — this
 // page rendered the raw enum (`CRITICAL`) next to a filter chip reading
 // "Critical".

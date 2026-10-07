@@ -35,7 +35,7 @@
  *     state guards regardless of surface.
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { cva, type VariantProps } from "class-variance-authority";

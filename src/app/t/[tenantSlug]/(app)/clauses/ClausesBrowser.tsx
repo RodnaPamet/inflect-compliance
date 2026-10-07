@@ -5,7 +5,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading, Eyebrow } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 const STATUS_COLORS: Record<string, StatusBadgeVariant> = {
     NOT_STARTED: 'neutral', IN_PROGRESS: 'info', READY: 'success', NEEDS_REVIEW: 'warning',

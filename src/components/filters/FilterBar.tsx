@@ -5,7 +5,7 @@ import { useUrlFilters } from '@/lib/hooks/useUrlFilters';
 import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 export interface FilterSelectConfig {
     key: string;

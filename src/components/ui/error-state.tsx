@@ -33,7 +33,7 @@
  *   - `<DataTable error>` prop (which can render `<ErrorState>` inline)
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { AlertTriangle, type LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { type PropsWithChildren, type ReactNode } from "react";

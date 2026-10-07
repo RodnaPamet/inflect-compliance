@@ -21,7 +21,7 @@ import {
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import {
     AUDIT_CYCLE_STATUS_VARIANT,
     AUDIT_PACK_STATUS_VARIANT,

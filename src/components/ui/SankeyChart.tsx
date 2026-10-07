@@ -29,7 +29,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import Link from 'next/link';
 import { cardVariants } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

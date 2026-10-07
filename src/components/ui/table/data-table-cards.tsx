@@ -20,7 +20,7 @@ import * as React from "react";
 import { flexRender } from "@tanstack/react-table";
 import type { Row, TableInstance, TableRowData } from "./types";
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { cardVariants } from "@/components/ui/card";
 import { buttonLikeKeys } from "@/components/ui/button-like-keys";
 import { ChevronRight } from "../icons/nucleo/chevron-right";

@@ -11,7 +11,7 @@ import { Heading } from '@/components/ui/typography';
 import { Card, cardVariants } from '@/components/ui/card';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { getAssetCriticality } from '@/lib/asset-criticality';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { parseCsvRecords } from '@/lib/csv/parse-csv';
 
 const ASSET_TYPES = [

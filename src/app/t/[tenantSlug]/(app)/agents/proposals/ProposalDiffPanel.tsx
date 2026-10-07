@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { StatusBadge } from '@/components/ui/status-badge';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { isDiffReviewable, type ProposalDiff } from '@/lib/agentic/proposal-diff';
 
 /**

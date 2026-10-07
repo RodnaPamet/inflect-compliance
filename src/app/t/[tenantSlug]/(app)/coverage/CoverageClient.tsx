@@ -16,7 +16,7 @@ import { getStatusTone } from '@/lib/design/status-tone';
 import { useRiskMatrixConfig } from '@/lib/hooks/use-risk-matrix-config';
 import { resolveBandTone, type RiskSeverityTone } from '@/lib/risk-matrix/scoring';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // ─── Types ──────────────────────────────────────────────────────────
 

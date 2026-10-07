@@ -41,7 +41,7 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/hooks';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { InheritedMappingsPanel } from '@/components/InheritedMappingsPanel';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
 import { PolicySharePointSection } from './PolicySharePointSection';

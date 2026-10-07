@@ -154,7 +154,7 @@ export type CouplingKind = 'storage-key' | 'brand-as-text' | 'domain-import';
  * allows, so it stays coupled.
  */
 export const NEUTRAL_LIB = new Set([
-    'cn', 'ui-storage', 'hooks', 'design', 'theme-constants',
+    'ui-storage', 'hooks', 'design', 'theme-constants',
     'format-date', 'kpi-trend', 'number-format', 'locale-constants',
     'resize-image', 'text-utils',
 ]);

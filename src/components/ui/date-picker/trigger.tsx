@@ -29,7 +29,7 @@
  *   - Disabled: muted surface, no pointer events.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Calendar as CalendarIcon, ChevronDown } from 'lucide-react';
 import { forwardRef, type ComponentProps } from 'react';

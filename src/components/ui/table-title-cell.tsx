@@ -35,7 +35,7 @@
  * columns. The title cell stays single-line, single-element.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 

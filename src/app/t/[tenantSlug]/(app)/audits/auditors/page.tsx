@@ -24,7 +24,7 @@ import { Plus, UserPlus, Xmark } from '@/components/ui/icons/nucleo';
 import { RequirePermission } from '@/components/require-permission';
 import { Tooltip } from '@/components/ui/tooltip';
 import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/status-variants';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 interface PackAccessRef { auditPackId: string; grantedAt: string }
 interface AuditorRow {

@@ -8,7 +8,7 @@ import { formatDate } from '@/lib/format-date';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Card, cardVariants } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';

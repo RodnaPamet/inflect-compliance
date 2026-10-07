@@ -45,7 +45,7 @@
  *     `onClick` filter that ignores clicks originating inside one.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import * as React from 'react';
 
 import { useCardListContext } from './card-list';

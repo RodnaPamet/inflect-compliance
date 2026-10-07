@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { VariantProps } from "class-variance-authority";
 import { ReactNode, forwardRef, useId } from "react";
 // Direct module, not the `./icons` barrel: the barrel re-exports every

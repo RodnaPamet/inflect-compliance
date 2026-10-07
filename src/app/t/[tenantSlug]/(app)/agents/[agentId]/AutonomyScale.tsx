@@ -7,7 +7,7 @@ import {
     AUTONOMY_MIN,
     AUTONOMY_REQUIRED_BY_CAPABILITY,
 } from '@/lib/agentic/autonomy-ceiling';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 /**
  * THE AUTONOMY LADDER, IN WORDS (#2457).

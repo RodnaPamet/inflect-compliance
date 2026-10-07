@@ -46,7 +46,7 @@ import {
 } from '@/app-layer/domain/entity-status-mapping';
 import { cardVariants } from '@/components/ui/card';
 import LinkedTasksPanel from '@/components/LinkedTasksPanel';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // Polish PR-1 — STATUS_BADGE / CRIT_BADGE moved to shared domain
 // mapping. Local aliases preserved so the dozens of inline-table

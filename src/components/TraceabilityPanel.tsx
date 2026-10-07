@@ -10,7 +10,7 @@ import { useToastWithUndo } from '@/components/ui/hooks';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 interface TraceabilityPanelProps {
     apiBase: string;            // e.g. /api/t/acme-corp

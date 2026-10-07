@@ -52,7 +52,7 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 
 import { Card } from "@/components/ui/card";
 import { KPIStat, type KPIStatProps, type MetricTone, type MetricTrend } from "@/components/ui/metric";

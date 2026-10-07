@@ -16,7 +16,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import type { RichTextContentType } from '@/components/ui/RichTextEditor';
 import type { NewPolicyFormReturn } from './useNewPolicyForm';
 

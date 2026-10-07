@@ -37,7 +37,7 @@ import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { CardHeader } from '@/components/ui/card-header';
 import { KPIStat } from '@/components/ui/metric';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { useToast } from '@/components/ui/hooks/use-toast';
 import { TestStepsEditor, type TestStepDraft, serializeSteps, hasOrphanExpectedOutput } from './TestStepsEditor';

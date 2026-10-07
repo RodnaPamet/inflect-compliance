@@ -15,7 +15,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { Heading } from '@/components/ui/typography';
 import { KPIStat } from '@/components/ui/metric';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // Shapes cross-walked from the framework install API:
 //   framework → getFramework (framework/catalog.ts)

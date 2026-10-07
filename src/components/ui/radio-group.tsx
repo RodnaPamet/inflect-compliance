@@ -12,7 +12,7 @@
  */
 
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 

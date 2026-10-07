@@ -41,7 +41,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useState, type ReactNode } from 'react';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { Button } from './button';
 import { Popover } from './popover';
 

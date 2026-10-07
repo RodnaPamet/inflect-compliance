@@ -42,7 +42,7 @@
 'use client';
 
 import * as React from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { KPIStat, type MetricTone } from '@/components/ui/metric';
 

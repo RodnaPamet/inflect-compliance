@@ -1,4 +1,4 @@
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { RectClipPath } from "@visx/clip-path";
 import { Group } from "@visx/group";
 import { BarRounded } from "@visx/shape";

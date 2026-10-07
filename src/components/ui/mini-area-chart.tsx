@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { curveNatural } from "@visx/curve";
 import { LinearGradient } from "@visx/gradient";
 import { Group } from "@visx/group";

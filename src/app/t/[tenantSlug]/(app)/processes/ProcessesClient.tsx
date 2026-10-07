@@ -30,7 +30,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import dynamic from "next/dynamic";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { useIsBelowMd } from "@/components/ui/hooks";
 import { cardVariants } from "@/components/ui/card";

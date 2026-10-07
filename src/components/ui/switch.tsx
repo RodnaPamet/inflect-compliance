@@ -16,7 +16,7 @@
  *   - lg: h-6 w-11, thumb 5, translate-x-5
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";

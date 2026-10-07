@@ -63,7 +63,7 @@ import { RiskMatrixLegend } from '@/components/risks/RiskMatrixLegend';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // RQ3-OB-D — a deduped movement arrow names the risks that took its
 // path, not just a count. The list is bounded (top N + "+M more") so

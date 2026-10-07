@@ -16,7 +16,7 @@ import {
 import { useOrgContext, useOrgHref, useOrgPermissions } from '@/lib/org-context-provider';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { OrgSwitcher } from '@/components/org-switcher';
 import { useSidebarCollapsed } from './sidebar-collapse-context';
 // PR-2 — port the org sidebar to the canonical Roadmap-12 nav

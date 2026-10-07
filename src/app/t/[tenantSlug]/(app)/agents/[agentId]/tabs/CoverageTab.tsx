@@ -15,7 +15,7 @@ import { SkeletonCard } from '@/components/ui/skeleton';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading, textLinkVariants } from '@/components/ui/typography';
 import { ApiClientError } from '@/lib/api-client';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 
 import type { AgentTabProps } from './types';

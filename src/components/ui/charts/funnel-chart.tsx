@@ -45,7 +45,7 @@
  *      the theme.
  */
 
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { currencyFormatter, nFormatter } from "@/lib/number-format";
 import { curveCatmullRom } from "@visx/curve";
 import { ParentSize } from "@visx/responsive";

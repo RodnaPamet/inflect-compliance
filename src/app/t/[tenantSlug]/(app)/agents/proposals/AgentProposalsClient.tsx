@@ -14,7 +14,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import type { ProposalDiff } from '@/lib/agentic/proposal-diff';

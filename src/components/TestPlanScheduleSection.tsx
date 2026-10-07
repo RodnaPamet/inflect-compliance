@@ -33,7 +33,7 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { formatDate } from '@/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // ─── Cadence catalog ───────────────────────────────────────────────
 //

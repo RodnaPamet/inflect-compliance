@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card-variants';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 /**
  * StatusBreakdown — Horizontal stacked bar with legend.
  *

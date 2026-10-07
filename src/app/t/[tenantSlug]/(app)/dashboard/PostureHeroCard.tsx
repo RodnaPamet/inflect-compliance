@@ -16,7 +16,7 @@
  */
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { cardVariants } from '@/components/ui/card';
 import { AnimatedNumber } from '@/components/ui/animated-number';
 import { Button } from '@/components/ui/button';

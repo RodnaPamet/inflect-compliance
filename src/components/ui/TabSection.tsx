@@ -34,7 +34,7 @@
  */
 
 import * as React from "react";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 
 import { Heading } from "./typography";
 

@@ -16,7 +16,7 @@ import { KPIStat } from '@/components/ui/metric';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { frameworkOrderKey } from '../framework-order';

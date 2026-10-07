@@ -50,7 +50,7 @@ import {
 import { ChevronRight } from '@/components/ui/icons/nucleo/chevron-right';
 import { ChevronLeft } from '@/components/ui/icons/nucleo/chevron-left';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // ─── Public types ──────────────────────────────────────────────────
 

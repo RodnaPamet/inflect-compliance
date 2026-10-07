@@ -1,4 +1,4 @@
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { SVGProps } from "react";
 
 export function StripeIcon(props: SVGProps<SVGSVGElement>) {

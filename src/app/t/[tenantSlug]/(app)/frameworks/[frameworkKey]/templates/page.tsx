@@ -9,7 +9,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading, Eyebrow } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 // getFramework (framework/catalog.ts) — only the name is read here.
 interface FrameworkSummary {

@@ -21,7 +21,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useMoneyFormatter } from '@/lib/tenant-context-provider';
 import { describeRoiGap, type ControlRoiVerdict } from '@/lib/control-roi';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { StatusBadge } from '@/components/ui/status-badge';

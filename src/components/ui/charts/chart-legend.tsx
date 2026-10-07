@@ -30,7 +30,7 @@
  */
 import type { ReactElement } from 'react';
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import type { ChartSeriesIndex } from './chart-gradient';
 import type { HeatScale } from './use-heat-scale';

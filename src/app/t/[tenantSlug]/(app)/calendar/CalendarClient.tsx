@@ -21,7 +21,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { cardVariants } from '@/components/ui/card';
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/icons';

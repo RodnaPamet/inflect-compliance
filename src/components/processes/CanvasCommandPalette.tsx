@@ -31,7 +31,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import type { RefObject } from "react";
-import { cn } from "@/lib/cn";
+import { cn } from "@inflect/ui/lib/cn";
 import { Command } from "cmdk";
 import { useCallback, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";

@@ -30,7 +30,7 @@
  * once per active-id change, not per scroll event.
  */
 
-import { cn } from '@/lib/cn';
+import { cn } from '@inflect/ui/lib/cn';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ComplianceStatusIndicator } from './ComplianceStatusIndicator';
 import {
