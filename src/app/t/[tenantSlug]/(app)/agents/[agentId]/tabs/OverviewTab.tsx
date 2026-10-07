@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
-import { ArrowUpRight } from '@/components/ui/icons/nucleo';
+import { ArrowUpRight } from '@inflect/ui/components/ui/icons/nucleo';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';

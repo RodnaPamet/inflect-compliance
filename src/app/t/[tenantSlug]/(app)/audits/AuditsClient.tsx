@@ -19,7 +19,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { CardHeader } from '@/components/ui/card-header';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { NewAuditModal } from './NewAuditModal';
 import { NewFindingModal } from './NewFindingModal';
 import { EditAuditModal } from './EditAuditModal';

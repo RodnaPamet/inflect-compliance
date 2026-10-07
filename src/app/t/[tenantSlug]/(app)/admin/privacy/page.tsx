@@ -7,7 +7,7 @@ import {
     Sitemap,
     DatabaseKey,
     UserFocus,
-} from '@/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/nucleo';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getPrivacyPosture } from '@/app-layer/usecases/privacy-posture';

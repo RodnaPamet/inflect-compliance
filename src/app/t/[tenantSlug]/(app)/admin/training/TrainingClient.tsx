@@ -12,7 +12,7 @@ import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/fi
 import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Book2 } from '@/components/ui/icons/nucleo/book2';
+import { Book2 } from '@inflect/ui/components/ui/icons/nucleo/book2';
 import { formatDate } from '@/lib/format-date';
 import { buildTrainingFilters, TRAINING_FILTER_KEYS } from './filter-defs';
 

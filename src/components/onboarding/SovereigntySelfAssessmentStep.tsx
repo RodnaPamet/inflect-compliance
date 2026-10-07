@@ -29,7 +29,7 @@ import { InfoTooltip } from '@/components/ui/tooltip';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { KPIStat } from '@/components/ui/metric';
 import { Button } from '@/components/ui/button';
-import { LoadingSpinner } from '@/components/ui/icons/loading-spinner';
+import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 import { DIGITAL_SOVEREIGNTY_ASSESSMENT } from '@/data/self-assessments/digital-sovereignty';
 import {
     scoreSelfAssessment,

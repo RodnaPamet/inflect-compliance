@@ -1,4 +1,4 @@
-import { Robot } from '@/components/ui/icons/nucleo';
+import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PageHeader } from '@/components/layout/PageHeader';

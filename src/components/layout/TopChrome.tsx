@@ -41,7 +41,7 @@ import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Popover } from '@/components/ui/popover';
-import { ShieldCheck, UserArrowRight } from '@/components/ui/icons/nucleo';
+import { ShieldCheck, UserArrowRight } from '@inflect/ui/components/ui/icons/nucleo';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { useCurrentBreadcrumbs } from './breadcrumbs-store';
 // PR-2 — OrgIdentityPill retired in favour of OrgWorkspaceSwitcher

@@ -111,13 +111,24 @@ function lint(source: string, filename: string): Finding[] {
 }
 
 /**
- * The swept population: every `.tsx` file under `src/` that git lists. Row
- * handlers are JSX, so `.ts` cannot hold one — and narrowing the sweep to the
- * directories that hold list pages today would make the guard blind to the
- * nineteenth list page living somewhere new, which is the whole point.
+ * The swept population: every `.tsx` file under `src/` OR `packages/ui/` that
+ * git lists. Row handlers are JSX, so `.ts` cannot hold one — and narrowing the
+ * sweep to the directories that hold list pages today would make the guard blind
+ * to the nineteenth list page living somewhere new, which is the whole point.
+ *
+ * `packages/ui/` joined at #3046 step 2b, when 333 GENERIC icons moved out of
+ * `src/components/ui/icons`. The arithmetic is exact: 686 under `src/` plus 332
+ * under `packages/ui/` is **1,018**, the same figure measured on the migration
+ * diff below. The files did not change, their location did — so the floor is
+ * preserved rather than lowered, which is the only honest move. Lowering it to
+ * fit a shrunken `src/` is precisely the "sweep that reads EMPTY" this floor
+ * exists to catch, and the package is somewhere a row handler could legitimately
+ * appear, so sweeping it is a widening of the guard rather than a concession.
  */
 const SWEPT: readonly string[] = repoRelativeFiles().filter(
-    (rel) => rel.startsWith('src/') && rel.endsWith('.tsx'),
+    (rel) =>
+        (rel.startsWith('src/') || rel.startsWith('packages/ui/')) &&
+        rel.endsWith('.tsx'),
 );
 
 const FINDINGS: readonly Finding[] = SWEPT.flatMap((rel) =>

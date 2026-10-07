@@ -13,7 +13,7 @@ import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/fi
 import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Users } from '@/components/ui/icons/nucleo/users';
+import { Users } from '@inflect/ui/components/ui/icons/nucleo/users';
 import { buildPersonnelFilters, PERSONNEL_FILTER_KEYS } from './filter-defs';
 
 export interface EmployeeRow {

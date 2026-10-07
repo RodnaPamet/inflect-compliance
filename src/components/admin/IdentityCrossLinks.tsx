@@ -15,7 +15,7 @@
 import type { SVGProps, ReactElement } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Key, Cloud, CircleUser, Plug2 } from '@/components/ui/icons/nucleo';
+import { Key, Cloud, CircleUser, Plug2 } from '@inflect/ui/components/ui/icons/nucleo';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 
 export type IdentitySurface = 'sso' | 'scim' | 'entra' | 'integrations';

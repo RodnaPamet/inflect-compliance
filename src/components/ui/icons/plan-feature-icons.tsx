@@ -31,8 +31,8 @@ import {
   UsersSettings,
   Versions2,
   Webhook,
-} from "./nucleo";
-import { Slack } from "./slack";
+} from "@inflect/ui/components/ui/icons/nucleo";
+import { Slack } from "@inflect/ui/components/ui/icons/slack";
 
 export const PLAN_FEATURE_ICONS = {
   clicks: CursorRays,

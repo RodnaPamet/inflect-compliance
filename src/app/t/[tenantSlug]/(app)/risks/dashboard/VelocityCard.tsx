@@ -1,8 +1,8 @@
 'use client';
 
 /* RQ-9 — Risk velocity card: portfolio direction + fastest rising/falling. */
-import { ArrowTrendUp } from '@/components/ui/icons/nucleo/arrow-trend-up';
-import { PercentageArrowDown } from '@/components/ui/icons/nucleo/percentage-arrow-down';
+import { ArrowTrendUp } from '@inflect/ui/components/ui/icons/nucleo/arrow-trend-up';
+import { PercentageArrowDown } from '@inflect/ui/components/ui/icons/nucleo/percentage-arrow-down';
 import { Card } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';

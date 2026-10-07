@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { Trash } from '@/components/ui/icons/nucleo/trash';
+import { Trash } from '@inflect/ui/components/ui/icons/nucleo/trash';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';

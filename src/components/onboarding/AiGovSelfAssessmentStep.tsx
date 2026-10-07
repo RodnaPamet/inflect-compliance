@@ -27,7 +27,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { KPIStat } from '@/components/ui/metric';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
-import { LoadingSpinner } from '@/components/ui/icons/loading-spinner';
+import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 
 // Required attribution — AISVS is CC-BY-SA-4.0; rendered wherever questions
 // show via `onboarding.aiGov.attribution` / `.disclaimer`.

@@ -58,7 +58,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
-import { Plug2 } from '@/components/ui/icons/nucleo';
+import { Plug2 } from '@inflect/ui/components/ui/icons/nucleo';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { SkeletonCard } from '@/components/ui/skeleton';

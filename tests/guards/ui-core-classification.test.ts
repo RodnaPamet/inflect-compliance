@@ -296,7 +296,11 @@ describe('shared-UI coupling classification (#3047)', () => {
         }
         // And a pure icon stays clean, so the detectors are not matching
         // everything indiscriminately.
-        const icon = 'src/components/ui/icons/nucleo/shield-check.tsx';
+        // Repointed at #3046 step 2b — this file moved into the package. The
+        // `existsSync` guard below would have made the control SKIP rather than
+        // fail, so a stale path here costs the assertion its teeth silently.
+        const icon =
+            'packages/ui/src/components/ui/icons/nucleo/shield-check.tsx';
         if (fs.existsSync(path.join(ROOT, icon))) {
             expect(mechanical(icon)).toEqual([]);
         }
@@ -308,7 +312,15 @@ describe('shared-UI coupling classification (#3047)', () => {
         // wrong by one. Counts belong in the assertion, not the artefact.
         const raw = fs.readFileSync(path.join(ROOT, MAP_PATH), 'utf8');
         const parsed = JSON.parse(raw) as Record<string, unknown>;
-        expect(Object.keys(parsed).every((k) => k.startsWith('src/'))).toBe(true);
+        // The prefix set widened at #3046 step 2b, when 333 icons moved into
+        // `packages/ui`. What this asserts is unchanged: every key is a FILE
+        // PATH under a shared-UI root, so no `counts`-style metadata header can
+        // sit in the artefact for two branches to bump.
+        expect(
+            Object.keys(parsed).every(
+                (k) => k.startsWith('src/') || k.startsWith('packages/ui/src/'),
+            ),
+        ).toBe(true);
         expect(raw).not.toMatch(/"counts"/);
     });
 });

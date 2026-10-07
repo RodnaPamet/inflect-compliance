@@ -16,7 +16,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useCurrentUserId } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
-import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
+import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
 
 interface RuleSuggestion {
     id: string;

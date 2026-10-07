@@ -9,7 +9,7 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { LoadingSpinner } from '@/components/ui/icons/loading-spinner';
+import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
 
 interface HealthRow {
     connectionId: string;

@@ -23,7 +23,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { AsidePanel } from "@/components/ui/aside-panel";
 import { Button } from "@/components/ui/button";
-import { LoadingSpinner } from "@/components/ui/icons/loading-spinner";
+import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 import { useToast } from "@/components/ui/hooks";
 import { formatDateTime } from "@/lib/format-date";
 

@@ -27,7 +27,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { formatDate } from '@/lib/format-date';
-import { ShieldCheck } from '@/components/ui/icons/nucleo/shield-check';
+import { ShieldCheck } from '@inflect/ui/components/ui/icons/nucleo/shield-check';
 import {
     VENDOR_ASSESSMENT_VARIANT,
     vendorAssessmentStatusLabelKey,

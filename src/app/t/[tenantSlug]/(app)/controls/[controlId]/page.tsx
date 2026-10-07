@@ -39,7 +39,7 @@ import dynamic from 'next/dynamic';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import { AutomationSuggestionsRail } from '@/components/automation/AutomationSuggestionsRail';
-import { Sparkle3 } from '@/components/ui/icons/nucleo/sparkle3';
+import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
 import { cardVariants } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
@@ -84,7 +84,7 @@ import type {
 } from '@/lib/dto';
 import { buildControlStatusLabels } from '../filter-defs';
 import { buildControlPatchBody } from '../_lib/control-write-values';
-import { PenWriting } from '@/components/ui/icons/nucleo/pen-writing';
+import { PenWriting } from '@inflect/ui/components/ui/icons/nucleo/pen-writing';
 
 // The detail status dropdown reuses the CANONICAL status vocabulary
 // (buildControlStatusLabels — the same i18n source the list badges + filter

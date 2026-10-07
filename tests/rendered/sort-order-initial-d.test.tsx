@@ -12,7 +12,7 @@ import { render } from '@testing-library/react';
 import * as React from 'react';
 import * as fs from 'fs';
 import * as path from 'path';
-import { SortOrder } from '@/components/ui/icons/sort-order';
+import { SortOrder } from '@inflect/ui/components/ui/icons/sort-order';
 
 describe('SortOrder — no d="undefined" on mount', () => {
     it.each(['asc', 'desc', null] as const)(
@@ -32,7 +32,7 @@ describe('SortOrder — no d="undefined" on mount', () => {
 
     it('source seeds initial={{ d }} on both motion paths', () => {
         const src = fs.readFileSync(
-            path.join(__dirname, '..', '..', 'src/components/ui/icons/sort-order.tsx'),
+            path.join(__dirname, '..', '..', 'packages/ui/src/components/ui/icons/sort-order.tsx'),
             'utf8',
         );
         const initials = src.match(/initial=\{\{\s*d:/g) ?? [];

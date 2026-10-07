@@ -50,7 +50,7 @@ import {
     ShieldSlash,
     SquareCheck,
     Workflow,
-} from '@/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/nucleo';
 import { ViewsMenu } from '@/components/ui/views-menu';
 
 /** Which of the agentic surfaces the reader is on. */

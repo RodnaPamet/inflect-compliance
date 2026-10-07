@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { FileDropzone, type FileUploadEntry } from '@/components/ui/FileDropzone';
 import { Button } from '@/components/ui/button';
-import { Download, ArrowUpRight } from '@/components/ui/icons/nucleo';
+import { Download, ArrowUpRight } from '@inflect/ui/components/ui/icons/nucleo';
 import { uploadWithProgress } from '@/lib/upload/upload-with-progress';
 import { EVIDENCE_ACCEPT, EVIDENCE_MAX_FILE_MB, EVIDENCE_UPLOAD_HINT } from '@/lib/evidence-upload-limits';
 

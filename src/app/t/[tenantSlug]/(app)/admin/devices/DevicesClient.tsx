@@ -13,7 +13,7 @@ import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/fi
 import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Desktop } from '@/components/ui/icons/nucleo/desktop';
+import { Desktop } from '@inflect/ui/components/ui/icons/nucleo/desktop';
 import { buildDeviceFilters, DEVICE_FILTER_KEYS } from './filter-defs';
 
 export interface DeviceRow {

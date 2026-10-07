@@ -28,7 +28,7 @@ import {
     useTenantContext,
 } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { SkeletonDetailPage } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';

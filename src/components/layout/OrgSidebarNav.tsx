@@ -12,7 +12,7 @@ import {
     TriangleWarning,
     UserArrowRight,
     Users,
-} from '@/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/nucleo';
 import { useOrgContext, useOrgHref, useOrgPermissions } from '@/lib/org-context-provider';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';

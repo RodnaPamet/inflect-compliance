@@ -28,7 +28,7 @@ import {
     UserArrowRight,
     Workflow,
     Xmark,
-} from '@/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/nucleo';
 import { cn } from '@inflect/ui/lib/cn';
 import { useCalendarBadge } from './use-calendar-badge';
 import { NavItem } from './nav-item';

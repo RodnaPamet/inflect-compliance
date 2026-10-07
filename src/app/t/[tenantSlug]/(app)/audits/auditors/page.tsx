@@ -20,7 +20,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { cardVariants } from '@/components/ui/card';
-import { Plus, UserPlus, Xmark } from '@/components/ui/icons/nucleo';
+import { Plus, UserPlus, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
 import { RequirePermission } from '@/components/require-permission';
 import { Tooltip } from '@/components/ui/tooltip';
 import { AUDIT_PACK_STATUS_VARIANT, DEFAULT_STATUS_VARIANT } from '../_lib/status-variants';

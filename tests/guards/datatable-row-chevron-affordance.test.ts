@@ -56,7 +56,7 @@ describe('DataTable row chevron-right affordance (v2-PR-12 follow-through)', () 
         // chrome but DataTable consumers expect a stable icon
         // footprint.
         expect(TABLE_SRC).toMatch(
-            /import\s*\{\s*ChevronRight\s*\}\s*from\s*['"]\.\.\/icons\/nucleo\/chevron-right['"]/,
+            /import\s*\{\s*ChevronRight\s*\}\s*from\s*['"]@inflect\/ui\/components\/ui\/icons\/nucleo\/chevron-right['"]/,
         );
         expect(TABLE_SRC).not.toMatch(
             /import\s*\{[^}]*\bChevronRight\b[^}]*\}\s*from\s*['"]lucide-react['"]/,

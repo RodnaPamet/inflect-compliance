@@ -17,7 +17,7 @@ import {
     Clock, AlertTriangle, Eye, EyeOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
