@@ -60,7 +60,7 @@ describe('Epic 55 — field-wrapper architecture: token discipline', () => {
         });
 
         it('uses the cn util', () => {
-            expect(surface.src).toMatch(/from ["']@\/lib\/cn["']/);
+            expect(surface.src).toMatch(/from ["']@inflect\/ui\/lib\/cn["']/);
         });
 
         it('paints on semantic tokens only', () => {

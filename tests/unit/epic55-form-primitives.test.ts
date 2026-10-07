@@ -65,7 +65,7 @@ const SHARED_CONTRACT: PrimitiveSurface[] = [
 describe('Epic 55 — shared form primitives: token + CVA discipline', () => {
     describe.each(SHARED_CONTRACT)('$label', (surface) => {
         it('uses the cn() util', () => {
-            expect(surface.src).toMatch(/from ["']@\/lib\/cn["']/);
+            expect(surface.src).toMatch(/from ["']@inflect\/ui\/lib\/cn["']/);
         });
 
         if (surface.cva) {
