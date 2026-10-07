@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';

@@ -16,7 +16,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { ManualTriggerPanel } from '@/components/processes/ManualTriggerPanel';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/hooks';

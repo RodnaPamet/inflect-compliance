@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 

@@ -15,7 +15,7 @@ import { Rocket, AlertTriangle } from 'lucide-react';
 
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ProgressBar } from '@/components/ui/progress-bar';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import type { InitiativeWidgetData } from '@/app-layer/usecases/org-security-initiative';
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'warning' | 'error' | 'success'> = {

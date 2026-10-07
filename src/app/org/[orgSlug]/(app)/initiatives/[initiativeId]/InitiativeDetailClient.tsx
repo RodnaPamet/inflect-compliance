@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { useToastWithUndo } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import type { ColumnDef } from '@/components/ui/table';
 
 const STATUSES = ['PLANNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'CANCELLED'] as const;

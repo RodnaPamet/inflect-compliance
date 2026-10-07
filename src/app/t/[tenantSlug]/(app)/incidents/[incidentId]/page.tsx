@@ -20,7 +20,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Heading } from '@/components/ui/typography';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { PHASE_ORDER } from '@/lib/incidents/deadlines';
 import {

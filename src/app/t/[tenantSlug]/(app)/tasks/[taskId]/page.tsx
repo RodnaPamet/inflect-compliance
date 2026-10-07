@@ -1,6 +1,6 @@
 'use client';
 
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';

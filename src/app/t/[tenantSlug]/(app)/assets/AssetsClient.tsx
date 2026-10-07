@@ -37,7 +37,7 @@ import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiTrends, buildKpiSparklines, centeredSparklineDomain } from '@/lib/charts/kpi-trends';
 import { BulkActionBar, type BulkActionDef } from '@/components/ui/bulk-action-bar';
 import { UserCombobox, useTenantMembers } from '@/components/ui/user-combobox';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { Combobox } from '@/components/ui/combobox';
 import { ownerDisplayName } from '@/lib/owner-display';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';

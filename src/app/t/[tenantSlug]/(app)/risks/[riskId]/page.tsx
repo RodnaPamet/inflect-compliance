@@ -3,7 +3,7 @@ import { useTranslations } from 'next-intl';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { SkeletonCard, SkeletonDetailPage } from '@/components/ui/skeleton';
 import { useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';

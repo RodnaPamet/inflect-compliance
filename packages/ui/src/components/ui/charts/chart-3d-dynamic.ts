@@ -13,7 +13,7 @@
  * Usage:
  *
  *   // Page or chart consumer:
- *   import { dynamicChart3D } from '@/components/ui/charts/chart-3d-dynamic';
+ *   import { dynamicChart3D } from '@inflect/ui/components/ui/charts/chart-3d-dynamic';
  *   const Chart3D = dynamicChart3D();
  *
  *   <Chart3D ariaLabel="..." FallbackComponent={Static2D}>

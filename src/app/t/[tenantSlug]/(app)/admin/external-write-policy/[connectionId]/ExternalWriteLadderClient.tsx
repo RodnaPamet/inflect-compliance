@@ -63,7 +63,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 /** Authority rises left to right, so the badge should too. */
 const MODE_VARIANT: Record<ExternalWriteMode, StatusBadgeVariant> = {

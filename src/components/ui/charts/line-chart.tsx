@@ -49,10 +49,10 @@ import {
     ChartLinearGradient,
     chartGradientId,
     type ChartSeriesIndex,
-} from './chart-gradient';
-import { ChartGloss, chartGlossId } from './chart-gloss';
-import { CHART_HOVER_POINT_SCALE } from './chart-motion';
-import type { ChartState, TimeSeriesPoint } from './types';
+} from '@inflect/ui/components/ui/charts/chart-gradient';
+import { ChartGloss, chartGlossId } from '@inflect/ui/components/ui/charts/chart-gloss';
+import { CHART_HOVER_POINT_SCALE } from '@inflect/ui/components/ui/charts/chart-motion';
+import type { ChartState, TimeSeriesPoint } from '@inflect/ui/components/ui/charts/types';
 
 /**
  * Default padding around the chart contents. Tighter than the

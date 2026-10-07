@@ -24,7 +24,7 @@ import {
     chartLoading,
     chartReady,
     isChartReady,
-} from '@/components/ui/charts/types';
+} from '@inflect/ui/components/ui/charts/types';
 import type {
     CategoryPoint,
     ChartDimensions,
@@ -40,7 +40,7 @@ import type {
     SparklineData,
     TimeSeriesPoint,
     TooltipPayload,
-} from '@/components/ui/charts/types';
+} from '@inflect/ui/components/ui/charts/types';
 import {
     exampleCategorical,
     exampleKpiMetric,
@@ -50,7 +50,7 @@ import {
     exampleSparkline,
     synthSparkline,
     type ExampleMultiValues,
-} from '@/components/ui/charts/examples';
+} from '@inflect/ui/components/ui/charts/examples';
 
 // ─── Primitive point shapes ──────────────────────────────────────────
 

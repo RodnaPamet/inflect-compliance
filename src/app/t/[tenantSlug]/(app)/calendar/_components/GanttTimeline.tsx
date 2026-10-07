@@ -25,7 +25,7 @@ import type {
     CalendarEvent,
 } from '@/app-layer/schemas/calendar.schemas';
 import { getCategoryTone } from '@/lib/design/status-tone';
-import { formatMonthShort, formatDate, formatDateRange } from '@/lib/format-date';
+import { formatMonthShort, formatDate, formatDateRange } from '@inflect/ui/lib/format-date';
 import { categoryLabel, statusLabel } from '@/lib/calendar-labels';
 import { Tooltip, TooltipProvider } from '@/components/ui/tooltip';
 

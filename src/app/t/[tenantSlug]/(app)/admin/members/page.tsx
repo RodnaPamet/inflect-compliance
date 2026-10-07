@@ -18,7 +18,7 @@
  * the viewport-clamp pattern that ListPageShell exists for.
  */
 
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';

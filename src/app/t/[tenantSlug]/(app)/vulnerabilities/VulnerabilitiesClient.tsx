@@ -35,7 +35,7 @@ import { FormField } from '@/components/ui/form-field';
 import { useToast, useEnterSubmit, useThresholdLoadMore } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks';
 import { unwrapCappedList, type CappedList } from '@/lib/list-backfill-cap';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { buildVulnFilters, VULN_FILTER_KEYS, buildVulnStatusLabels } from './filter-defs';
 
 /** CVE-sync freshness + reach, lazy-fetched from /vulnerabilities/status. */

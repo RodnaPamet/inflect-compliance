@@ -6,7 +6,7 @@
  * local name:
  *
  *   • api-keys/page.tsx — `import { formatDateTime as formatDate }
- *     from '@/lib/format-date'`. The local name `formatDate`
+ *     from '@inflect/ui/lib/format-date'`. The local name `formatDate`
  *     looked like the absolute-only helper but was actually
  *     `formatDateTime` (with hours + minutes). A reader scanning
  *     the file's JSX (`{formatDate(row.original.expiresAt)}`)
@@ -40,7 +40,7 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 
 // Match `… as <name>` inside a single-line `import { … } from
-// '@/lib/format-date'` statement. The detector is anchored on the
+// '@inflect/ui/lib/format-date'` statement. The detector is anchored on the
 // import-source path so a coincidental "as" elsewhere doesn't
 // trip.
 const ALIASED_FORMAT_DATE_IMPORT =

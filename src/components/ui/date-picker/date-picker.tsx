@@ -43,7 +43,7 @@ import {
     type ReactElement,
 } from 'react';
 
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 import { Popover } from '../popover';
 import { Calendar as CalendarPrimitive } from './calendar';

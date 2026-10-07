@@ -11,7 +11,7 @@ import { TableEmptyState } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { useCursorPagination } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import type { OverdueEvidenceRow } from '@/app-layer/schemas/portfolio';
 import { Heading } from '@/components/ui/typography';
 

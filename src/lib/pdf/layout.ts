@@ -5,7 +5,7 @@
  */
 import type { ReportMeta, DataSourceNote } from './types';
 import { BRAND, MARGINS, PAGE_WIDTH, PAGE_HEIGHT, CONTENT_WIDTH } from './pdfKitFactory';
-import { formatDateTime, formatDateTimeLong, formatDateShort } from '@/lib/format-date';
+import { formatDateTime, formatDateTimeLong, formatDateShort } from '@inflect/ui/lib/format-date';
 
 // ─── Cover Page ───
 

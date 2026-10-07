@@ -20,9 +20,9 @@ import { scaleBand, scaleLinear, scaleUtc } from '@visx/scale';
 import {
     ChartContext as ChartContextModule,
     ChartTooltipContext as ChartTooltipContextModule,
-} from '@/components/ui/charts/chart-context';
-import { XAxis } from '@/components/ui/charts/x-axis';
-import { YAxis } from '@/components/ui/charts/y-axis';
+} from '@inflect/ui/components/ui/charts/chart-context';
+import { XAxis } from '@inflect/ui/components/ui/charts/x-axis';
+import { YAxis } from '@inflect/ui/components/ui/charts/y-axis';
 import type {
     ChartContextType,
     ChartTooltipContextType,

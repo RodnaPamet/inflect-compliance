@@ -155,7 +155,7 @@ export type CouplingKind = 'storage-key' | 'brand-as-text' | 'domain-import';
  */
 export const NEUTRAL_LIB = new Set([
     'ui-storage', 'hooks', 'design', 'theme-constants',
-    'format-date', 'kpi-trend', 'number-format', 'locale-constants',
+    'kpi-trend', 'locale-constants',
     'resize-image', 'text-utils',
 ]);
 

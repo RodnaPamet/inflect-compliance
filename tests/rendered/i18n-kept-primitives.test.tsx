@@ -48,7 +48,7 @@ import { GanttChart } from '@/components/ui/charts/gantt-chart';
 import { LineChart } from '@/components/ui/charts/line-chart';
 import { LossExceedanceCurve } from '@/components/ui/charts/loss-exceedance-curve';
 import { RadarChart } from '@/components/ui/charts/radar-chart';
-import { chartReady } from '@/components/ui/charts/types';
+import { chartReady } from '@inflect/ui/components/ui/charts/types';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';

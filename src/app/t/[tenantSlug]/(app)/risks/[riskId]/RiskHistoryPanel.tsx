@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { useMoneyFormatter } from '@/lib/tenant-context-provider';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { sparkline } from '@/lib/ascii-sparkline';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { StatTile } from '../_shared/StatTile';

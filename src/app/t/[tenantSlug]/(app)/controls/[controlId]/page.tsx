@@ -4,7 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { SkeletonCard, SkeletonDetailPage } from '@/components/ui/skeleton';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';

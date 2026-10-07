@@ -54,20 +54,20 @@ import {
     ChartRadialGradient,
     chartGradientId,
     type ChartSeriesIndex,
-} from '@/components/ui/charts/chart-gradient';
+} from '@inflect/ui/components/ui/charts/chart-gradient';
 import {
     ChartGloss,
     chartGlossId,
     ChartSheenSweep,
     chartSheenId,
-} from '@/components/ui/charts/chart-gloss';
+} from '@inflect/ui/components/ui/charts/chart-gloss';
 import {
     CHART_HOVER_POP_DISTANCE,
     useChartFlow,
     useChartHoverPop,
     useChartSheen,
     useChartSpring,
-} from '@/components/ui/charts/chart-motion';
+} from '@inflect/ui/components/ui/charts/chart-motion';
 import { ShimmerDots } from '@/components/ui/shimmer-dots';
 
 // ─── Props ──────────────────────────────────────────────────────────

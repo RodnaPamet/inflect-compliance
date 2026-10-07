@@ -35,7 +35,7 @@ import {
     formatMonthShort,
     formatMonthYear,
     formatWeekdayShort,
-} from '@/lib/format-date';
+} from '@inflect/ui/lib/format-date';
 
 // #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
 // no longer be satisfied by a COMMENT naming the thing its assertion is about.

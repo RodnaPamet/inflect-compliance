@@ -1,6 +1,6 @@
 'use client';
 
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';

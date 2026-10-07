@@ -55,7 +55,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 // Imported, not respelled. This was a hand-written union of the same strings,
 // which is how a client keeps offering a rung the ladder has retired: when

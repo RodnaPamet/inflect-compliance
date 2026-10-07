@@ -19,7 +19,7 @@
 
 import { scaleBand, scaleLinear, scaleUtc } from '@visx/scale';
 
-import { formatDateCompact } from '@/lib/format-date';
+import { formatDateCompact } from '../../../lib/format-date';
 
 import type {
     ChartMargin,

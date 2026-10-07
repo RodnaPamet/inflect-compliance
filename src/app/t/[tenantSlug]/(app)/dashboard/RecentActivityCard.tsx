@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { getTenantCtx } from '@/app-layer/context';
 import { runInTenantContext } from '@/lib/db-context';
 import { DashboardRepository } from '@/app-layer/repositories/DashboardRepository';

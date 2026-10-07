@@ -6,7 +6,7 @@
  * underlying helper's null/invalid handling and addSuffix toggle so
  * those contracts are covered without needing jsdom.
  */
-import { formatRelativeTime } from '@/lib/format-date';
+import { formatRelativeTime } from '@inflect/ui/lib/format-date';
 
 const NOW = new Date('2026-05-03T12:00:00Z');
 const HOUR = 60 * 60 * 1000;

@@ -92,7 +92,7 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason: 'Switch thumb shadow communicates depth on the moving element — sliding without depth reads as flat.',
     },
     {
-        file: 'src/components/ui/charts/interaction.tsx',
+        file: 'packages/ui/src/components/ui/charts/interaction.tsx',
         reason: 'Chart tooltip floats above the chart canvas; shadow communicates lift.',
     },
     {

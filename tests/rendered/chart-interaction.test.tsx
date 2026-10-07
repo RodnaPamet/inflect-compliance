@@ -33,7 +33,7 @@ import {
     useChartKeyboardNavigation,
     useChartTooltipContext,
 } from '@/components/ui/charts';
-import { ChartTooltipSyncContext } from '@/components/ui/charts/tooltip-sync';
+import { ChartTooltipSyncContext } from '@inflect/ui/components/ui/charts/tooltip-sync';
 import type {
     ChartHoverState,
     Data,

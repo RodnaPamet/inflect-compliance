@@ -41,7 +41,7 @@ describe("Mobile PR-4 — dashboard + charts", () => {
     });
 
     it("the shared chart x-axis derives tick density from width", () => {
-        const src = read("src/components/ui/charts/x-axis.tsx");
+        const src = read("packages/ui/src/components/ui/charts/x-axis.tsx");
         expect(src).toMatch(/pickXAxisTickCount\(width\)/);
     });
 });

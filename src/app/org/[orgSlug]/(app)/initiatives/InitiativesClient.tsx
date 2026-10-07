@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Heading } from '@/components/ui/typography';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 type Row = {
     id: string;

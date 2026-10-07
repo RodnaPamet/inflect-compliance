@@ -22,7 +22,7 @@ import { KPIStat } from '@/components/ui/metric';
 import { Button } from '@/components/ui/button';
 import { Sheet } from '@/components/ui/sheet';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import type { OrgMaturityDto, MaturityDomainRating } from '@/app-layer/usecases/org-maturity';
 
 const LEVELS = ['INITIAL', 'REPEATABLE', 'DEFINED', 'MANAGED', 'OPTIMIZING'] as const;

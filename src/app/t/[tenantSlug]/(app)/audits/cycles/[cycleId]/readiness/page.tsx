@@ -11,7 +11,7 @@ import { InfoTooltip } from '@/components/ui/tooltip';
 import { cardVariants } from '@/components/ui/card';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { LineChart } from '@/components/ui/charts/line-chart';
-import { chartReady, type TimeSeriesPoint } from '@/components/ui/charts/types';
+import { chartReady, type TimeSeriesPoint } from '@inflect/ui/components/ui/charts/types';
 import { cn } from '@inflect/ui/lib/cn';
 import { readinessVariant } from '@/lib/readiness/bands';
 import { ReadinessScoreRing, ReadinessLegend } from '../../ReadinessScoreRing';

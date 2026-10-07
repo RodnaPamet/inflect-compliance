@@ -9,7 +9,7 @@
  *   await runEvidenceRetentionNotifications({ tenantId: 'xxx' });    // single tenant
  */
 import { Prisma } from '@prisma/client';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { TERMINAL_TASK_STATUSES } from '../domain/task-status';

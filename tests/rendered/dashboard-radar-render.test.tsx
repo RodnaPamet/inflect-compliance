@@ -29,7 +29,7 @@ jest.mock('@visx/responsive', () => ({
 }));
 
 import { RadarChart } from '@/components/ui/charts/radar-chart';
-import { chartReady, chartEmpty } from '@/components/ui/charts/types';
+import { chartReady, chartEmpty } from '@inflect/ui/components/ui/charts/types';
 import type { RadarAxisDatum } from '@/components/ui/charts/radar-chart';
 
 const AXES: RadarAxisDatum[] = [

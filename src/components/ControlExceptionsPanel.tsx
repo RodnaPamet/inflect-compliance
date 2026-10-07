@@ -25,7 +25,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 
 type Status = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'EXPIRED';

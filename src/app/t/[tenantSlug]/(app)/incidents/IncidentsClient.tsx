@@ -19,7 +19,7 @@ import {
     useFilterContext,
     useFilters,
 } from '@/components/ui/filter';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import {
     buildIncidentFilterDefs,
     buildSeverityLabels,

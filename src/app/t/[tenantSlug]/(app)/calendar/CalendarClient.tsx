@@ -35,7 +35,7 @@ import { GanttTimeline } from '@/app/t/[tenantSlug]/(app)/calendar/_components/G
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { formatDate, formatMonthYear } from '@/lib/format-date';
+import { formatDate, formatMonthYear } from '@inflect/ui/lib/format-date';
 import { getCategoryTone } from '@/lib/design/status-tone';
 import { usePermissions, useCurrentUserId } from '@/lib/tenant-context-provider';
 import {

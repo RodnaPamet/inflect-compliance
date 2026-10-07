@@ -22,7 +22,7 @@ import { Modal } from '@/components/ui/modal';
 import { Sheet } from '@/components/ui/sheet';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { OrgThreatLevelDto } from '@/app-layer/usecases/org-threat-level';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 
 const TIERS = ['GUARDED', 'LOW', 'ELEVATED', 'HIGH', 'SEVERE'] as const;
 type Tier = (typeof TIERS)[number];

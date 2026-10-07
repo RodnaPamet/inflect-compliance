@@ -73,7 +73,7 @@
  *     formatDateLong,
  *     formatDateCompact,
  *     formatDateRange,
- *   } from '@/lib/format-date';
+ *   } from '@inflect/ui/lib/format-date';
  *
  *   formatDate('2026-04-16T08:00:00Z')     // → "16 Apr 2026"
  *   formatDateTime('2026-04-16T08:00:00Z') // → "16 Apr 2026, 08:00"

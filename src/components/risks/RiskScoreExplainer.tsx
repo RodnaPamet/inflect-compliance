@@ -27,7 +27,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Popover } from '@/components/ui/popover';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import type { ScoreExplanation } from '@/app-layer/usecases/risk-score-explanation';
 
 /**

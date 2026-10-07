@@ -31,7 +31,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 

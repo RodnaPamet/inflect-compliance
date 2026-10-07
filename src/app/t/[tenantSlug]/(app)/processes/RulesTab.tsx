@@ -24,7 +24,7 @@ import { EntityListPage } from '@/components/layout/EntityListPage';
 import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import {
     FilterProvider,
     useFilterContext,

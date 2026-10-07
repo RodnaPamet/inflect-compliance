@@ -17,7 +17,7 @@
  *     - normal currency (USD) → /100.
  *     - options override (currency).
  */
-import { nFormatter, currencyFormatter } from '@/lib/number-format';
+import { nFormatter, currencyFormatter } from '@inflect/ui/lib/number-format';
 
 describe('nFormatter', () => {
     it('returns "0" for undefined, 0, NaN (the falsy short-circuit)', () => {

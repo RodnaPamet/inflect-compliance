@@ -18,7 +18,7 @@ import { Heading } from '@/components/ui/typography';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 interface Monitor {
     enabled: boolean;

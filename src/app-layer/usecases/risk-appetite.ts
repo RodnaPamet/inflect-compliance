@@ -19,7 +19,7 @@ import { logEvent } from '../events/audit';
 import { resolveALE } from './fair-calculator';
 import { getLatestSimulation } from './monte-carlo';
 import { formatCompactCurrency } from '@/lib/risk-coherence';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { createTask, addTaskLink } from './task';
 
 export type BreachType = 'PORTFOLIO_ALE' | 'SINGLE_RISK_ALE' | 'QUAL_SCORE' | 'CATEGORY_ALE';

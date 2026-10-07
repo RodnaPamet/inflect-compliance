@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';

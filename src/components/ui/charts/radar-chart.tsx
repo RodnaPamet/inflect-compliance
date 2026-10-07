@@ -55,9 +55,9 @@ import {
     ChartRadialGradient,
     chartGradientId,
     type ChartSeriesIndex,
-} from './chart-gradient';
-import { useChartHoverPop } from './chart-motion';
-import type { ChartState } from './types';
+} from '@inflect/ui/components/ui/charts/chart-gradient';
+import { useChartHoverPop } from '@inflect/ui/components/ui/charts/chart-motion';
+import type { ChartState } from '@inflect/ui/components/ui/charts/types';
 
 /**
  * Default number of concentric rings in the grid. Four gives a

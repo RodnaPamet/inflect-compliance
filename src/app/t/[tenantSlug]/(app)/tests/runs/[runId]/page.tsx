@@ -6,7 +6,7 @@
  * below bridge the hop back through the control's plan so the parent
  * context never flips between Controls and Tests. */
 
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';

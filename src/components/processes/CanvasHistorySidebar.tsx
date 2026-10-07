@@ -25,7 +25,7 @@ import { AsidePanel } from "@/components/ui/aside-panel";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 import { useToast } from "@/components/ui/hooks";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDateTime } from "@inflect/ui/lib/format-date";
 
 interface SnapshotRow {
     id: string;

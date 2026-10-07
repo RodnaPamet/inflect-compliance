@@ -34,7 +34,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { AppIcon } from '@/components/icons/AppIcon';
 import { Plus, Trash } from '@inflect/ui/components/ui/icons/nucleo';
 import { ViewsMenu } from '@/components/ui/views-menu';

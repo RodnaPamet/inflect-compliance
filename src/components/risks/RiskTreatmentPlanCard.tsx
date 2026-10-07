@@ -25,7 +25,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/hooks';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import {
     DECISION_TO_STRATEGY,

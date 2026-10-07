@@ -22,7 +22,7 @@ import { KPIStat } from '@/components/ui/metric';
 import { Heading } from '@/components/ui/typography';
 import { LossExceedanceCurve, type LossReferenceLine } from '@/components/ui/charts';
 import { useTenantApiUrl, useMoneyFormatter } from '@/lib/tenant-context-provider';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTranslations } from 'next-intl';
 import { StatTile } from '../_shared/StatTile';
 

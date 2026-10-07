@@ -20,7 +20,7 @@ import {
     useTenantContext,
 } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge } from '@/components/ui/status-badge';

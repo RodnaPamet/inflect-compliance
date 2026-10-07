@@ -45,7 +45,7 @@ import { useTranslations } from 'next-intl';
 
 import { ApiClientError } from '@/lib/api-client';
 import { apiErrorMessage } from '@/lib/api-error';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 // Zero-import leaf module — the catalogue exists precisely so a surface can
 // learn a tool's rung without dragging the whole tool graph into the bundle.

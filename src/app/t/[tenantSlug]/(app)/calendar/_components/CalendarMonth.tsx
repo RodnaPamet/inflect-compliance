@@ -34,7 +34,7 @@ import type {
     CalendarEventCategory,
 } from '@/app-layer/schemas/calendar.schemas';
 import { getCategoryTone } from '@/lib/design/status-tone';
-import { formatDate, formatMonthYear, formatWeekdayShort } from '@/lib/format-date';
+import { formatDate, formatMonthYear, formatWeekdayShort } from '@inflect/ui/lib/format-date';
 import { WEEK_STARTS_ON } from '@/components/ui/date-picker/week-start';
 import { toYMD as toUtcYMD } from '@/components/ui/date-picker/date-utils';
 import { categoryLabel } from '@/lib/calendar-labels';

@@ -22,7 +22,7 @@ import { useThresholdLoadMore } from '@/components/ui/hooks';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate } from '@/lib/format-date';
+import { formatDate } from '@inflect/ui/lib/format-date';
 import { buildBiaFilters, BIA_FILTER_KEYS } from './filter-defs';
 import { NewBiaModal } from './NewBiaModal';
 

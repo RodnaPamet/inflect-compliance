@@ -98,7 +98,7 @@ import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getPermissionsForRole } from '@/lib/permissions';
 // The same formatter the row uses, so the row lookup below cannot drift from
 // the rendering on a locale or format change.
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 // ─── the real en.json copy, which is what the operator actually reads ───
 

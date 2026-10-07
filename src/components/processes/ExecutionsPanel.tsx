@@ -15,7 +15,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Button } from '@/components/ui/button';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { useToast } from '@/components/ui/hooks';
 import { ApiClientError } from '@/lib/api-client';

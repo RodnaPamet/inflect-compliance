@@ -48,8 +48,8 @@ import {
     ChartLinearGradient,
     chartGradientId,
     type ChartSeriesIndex,
-} from './chart-gradient';
-import type { ChartState } from './types';
+} from '@inflect/ui/components/ui/charts/chart-gradient';
+import type { ChartState } from '@inflect/ui/components/ui/charts/types';
 
 /**
  * Bar corner radius (px). Same shape as the donut's

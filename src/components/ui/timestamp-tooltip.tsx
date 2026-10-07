@@ -29,7 +29,7 @@
  * flag a hydration mismatch.
  */
 
-import { formatDateTimeLong, formatRelativeTime } from '@/lib/format-date';
+import { formatDateTimeLong, formatRelativeTime } from '@inflect/ui/lib/format-date';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { Tooltip } from '@/components/ui/tooltip';
 

@@ -5,7 +5,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { getTenantCtx } from '@/app-layer/context';
 import { listReceipts } from '@/app-layer/usecases/agent-action-receipt';
-import { formatDateTime } from '@/lib/format-date';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { getTranslations } from 'next-intl/server';
 
 export const dynamic = 'force-dynamic';

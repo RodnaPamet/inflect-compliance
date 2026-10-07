@@ -22,7 +22,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { Heading } from '@/components/ui/typography';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 
 type AckStatus = 'ACKNOWLEDGED' | 'ACKNOWLEDGED_SUPERSEDED' | 'OUTSTANDING';
 
