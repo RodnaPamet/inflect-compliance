@@ -148,55 +148,146 @@ for entry in "${UNRECONCILED[@]}"; do
     fi
 done
 
-# ── Backup permissions ─────────────────────────────────────────────────────
+# ── Permissions under the deploy directory ─────────────────────────────────
 #
-# A group- or world-readable file under the deploy directory is a finding on
-# its own, independent of drift (#2889).
+# A group- or world-readable file here is not uniformly a finding, and treating
+# it as one is why this check could never pass (#3210).
 #
-# The history: 7 `.env.prod.bak.*` files sat at 644 for five months, each a
-# complete credential set, three of whose secrets were still live when they
-# were found. `apply.sh` now chmods every backup it writes and prunes the old
-# ones — but nothing stopped a hand-run `cp` from recreating the exposure, and
-# "we fixed the ones that existed" is not a control.
+# The history it was built for is real: 7 `.env.prod.bak.*` files sat at 644 for
+# five months, each a complete credential set, three of whose secrets were still
+# live when they were found (#2889). apply.sh now chmods every backup it writes
+# and prunes the old ones, but "we fixed the ones that existed" is not a control,
+# so the directory is checked on a schedule.
 #
-# Checked here because this script already walks the deploy directory on a
-# schedule and already exits non-zero for a condition an operator must act on.
-# It fails LOUDLY rather than warning: a readable credential set is not an
-# outstanding decision, it is a live exposure.
+# What was wrong was the verdict, not the check. It failed on ANY loose file and
+# told the operator to `chmod 600 ${REMOTE_DIR}/*` -- which would have stopped
+# the app, because `prisma.config.ts` is bind-mounted into `app` and `worker` and
+# both run as `nextjs` (uid 1001). So the one file that MUST stay readable was
+# reported identically to a leaked credential set, and the remedy for the second
+# was fatal to the first.
+#
+# Three classes now, and only one of them is an exposure:
+#
+#   SECRET    a credential-shaped assignment whose value is a LITERAL, readable
+#             beyond root. This is the #2889 class. Exit 1.
+#   REQUIRED  bind-mounted into a container running as a NON-ROOT user, so a
+#             narrower mode breaks that container. Expected; not a finding.
+#   TIDY      neither: dead config or a non-secret file that happens to be 644.
+#             Worth cleaning, not worth failing a scheduled check over, and
+#             failing on it is what masked the exit 3 the Caddyfile owes.
+#
+# REQUIRED is DERIVED, never listed. A hand-maintained allowlist of "files a
+# container needs" goes stale the moment a mount changes, and would then either
+# fail on a legitimate mount or -- worse -- stay silent about a credential. The
+# authority is `docker inspect`: a mount source under ${REMOTE_DIR} on a
+# container whose `.Config.User` is non-empty.
 ok "checking deploy-directory permissions"
-LOOSE=$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap \
-    --command "sudo find '${REMOTE_DIR}' -maxdepth 1 -type f \\( -perm /o+r -o -perm /g+r \\) 2>/dev/null | sort" 2>/dev/null || true)
-if [ -n "$LOOSE" ]; then
+
+# One remote pass: classify every loose file. Printed as `<CLASS> <path>` so the
+# parsing below is a field read rather than a second guess at the filesystem.
+#
+# The secret test skips comments and requires the value to not be an
+# interpolation. Two bugs are already baked out of it, both found by RUNNING it:
+#
+#   `"` must be consumed before the value is inspected, or every
+#   `PASSWORD: "${VAR}"` reads as a literal starting with a quote.
+#
+#   `?` and `{` must be EXCLUDED from the value's first character, or
+#   `${POSTGRES_PASSWORD:?it is required}` reads as `PASSWORD` + `:` + `?`
+#   and scores the canonical compose at 4 literal credentials -- a file a
+#   guard already proves has none. The `:?` is compose's fail-fast syntax, so
+#   the very token that triggered the false positive is PROOF of interpolation.
+CLASSIFY=$(cat <<'REMOTE'
+set -e
+REMOTE_DIR_X="$1"
+# every mount source under the deploy dir belonging to a non-root container
+required=""
+for c in $(sudo docker ps --format '{{.Names}}' 2>/dev/null); do
+    u=$(sudo docker inspect "$c" --format '{{.Config.User}}' 2>/dev/null)
+    [ -z "$u" ] && continue
+    for src in $(sudo docker inspect "$c" --format '{{range .Mounts}}{{.Source}}
+{{end}}' 2>/dev/null); do
+        case "$src" in "$REMOTE_DIR_X"/*) required="$required
+$src";; esac
+    done
+done
+sudo find "$REMOTE_DIR_X" -maxdepth 1 -type f \( -perm /o+r -o -perm /g+r \) 2>/dev/null | sort | while read -r f; do
+    if printf '%s\n' "$required" | grep -qxF "$f"; then
+        echo "REQUIRED $f"
+    elif sudo grep -aE '^[^#]*(PASSWORD|SECRET|_KEY|TOKEN)[A-Z_]*[=:][[:space:]]*"?[^${?"[:space:]]' "$f" >/dev/null 2>&1; then
+        echo "SECRET $f"
+    else
+        echo "TIDY $f"
+    fi
+done
+REMOTE
+)
+CLASSIFIED=$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap \
+    --command "sh -s '${REMOTE_DIR}'" <<< "$CLASSIFY" 2>/dev/null || true)
+
+SECRET_CANDIDATES=$(printf '%s\n' "$CLASSIFIED" | sed -n 's/^SECRET //p')
+
+# PUBLIC: a candidate whose bytes are a file this repo already tracks is not a
+# secret, whatever its contents look like. `deploy/.env.prod.example` is the
+# live case -- it holds `AUTH_SECRET=replace-me`, which IS a credential-shaped
+# literal, and it is also committed and public, so reporting it as an exposure
+# is noise that teaches an operator to skim this section.
+#
+# Compared by HASH against the repo copy rather than by name: a same-named file
+# that has DRIFTED from the tracked one is exactly the case worth flagging, and
+# a name match alone would wave it through.
+SECRETS=""
+for f in $SECRET_CANDIDATES; do
+    [ -n "$f" ] || continue
+    repo_copy="${SCRIPT_DIR}/$(basename "$f")"
+    if [ -f "$repo_copy" ] \
+       && [ "$(sha256sum "$repo_copy" | awk '{print $1}')" = "$(remote_sha "$f")" ]; then
+        ok "  $(basename "$f") holds a credential-shaped literal but is byte-identical"
+        ok "    to the tracked ${repo_copy#"${REPO_ROOT}/"} — public, not an exposure."
+        continue
+    fi
+    SECRETS="${SECRETS}${f}
+"
+done
+SECRETS=$(printf '%s' "$SECRETS" | sed '/^$/d')
+REQUIRED_F=$(printf '%s\n' "$CLASSIFIED" | sed -n 's/^REQUIRED //p')
+TIDY=$(printf '%s\n' "$CLASSIFIED" | sed -n 's/^TIDY //p')
+
+# An empty classification is UNKNOWN, not clean: the find, the docker calls or
+# the ssh could all have failed. Say so rather than scoring silence as a pass.
+if [ -z "$CLASSIFIED" ]; then
+    warn "could not classify ${REMOTE_DIR} permissions — treat as UNKNOWN, not clean."
+else
+    [ -n "$REQUIRED_F" ] && {
+        ok "  $(printf '%s\n' "$REQUIRED_F" | wc -l | tr -d ' ') file(s) readable by design (bind-mounted into a non-root container):"
+        printf '%s\n' "$REQUIRED_F" | while read -r f; do [ -n "$f" ] && ok "    $(basename "$f")"; done
+    }
+    [ -n "$TIDY" ] && {
+        warn "  $(printf '%s\n' "$TIDY" | wc -l | tr -d ' ') file(s) readable beyond root with no credential in them:"
+        printf '%s\n' "$TIDY" | while read -r f; do [ -n "$f" ] && warn "    $(basename "$f")"; done
+        warn "    Not an exposure, so this does not fail. Narrow or delete them per file —"
+        warn "    check 'docker inspect <name> --format {{.Config.User}}' first, because a"
+        warn "    mount into a non-root container needs the mode it has."
+    }
+fi
+
+if [ -n "$SECRETS" ]; then
     err ""
-    err "Files under ${REMOTE_DIR} are readable beyond root:"
-    printf '%s\n' "$LOOSE" | while read -r f; do err "  $f"; done
+    err "CREDENTIAL readable beyond root under ${REMOTE_DIR}:"
+    printf '%s\n' "$SECRETS" | while read -r f; do [ -n "$f" ] && err "  $f"; done
     err ""
-    err "DO NOT fix this with 'chmod 600 ${REMOTE_DIR}/*'. This message used to say"
-    err "that, and it would take the app down (#3210). Measured on the live VM:"
+    err "Each of these carries a credential-shaped value that is a LITERAL, not a"
+    err "\${VAR}. This is the #2889 class and it is a live exposure."
     err ""
-    err "  prisma.config.ts   bind-mounted into app AND worker, which run as"
-    err "                     'nextjs' (uid 1001). A root-owned 600 file is"
-    err "                     unreadable to uid 1001, the entrypoint runs"
-    err "                     'prisma migrate deploy' before 'next start', and"
-    err "                     watchtower recreates both containers on every"
-    err "                     :latest push -- so neither would start again."
-    err "  startup.sh         775, and entrypoint-fixed.sh 755: executables."
-    err "  caddy/, orangehrm-mcp/  directory mounts at 755."
-    err ""
-    err "Go per file. The credential-bearing one is:"
-    err "  gcloud compute ssh ${VM_NAME} --zone ${VM_ZONE} --tunnel-through-iap \\"
-    err "    --command \"sudo chmod 600 ${REMOTE_DIR}/.env\""
-    err ""
-    err "For anything else, check whether a container bind-mounts it and what"
-    err "user that container runs as, BEFORE narrowing its mode:"
-    err "  sudo docker inspect <name> --format '{{.Config.User}} {{range .Mounts}}{{.Source}} {{end}}'"
+    err "Fix them INDIVIDUALLY — never 'chmod 600 ${REMOTE_DIR}/*', which would"
+    err "break any file a non-root container bind-mounts (see the REQUIRED list"
+    err "above):"
+    printf '%s\n' "$SECRETS" | while read -r f; do
+        [ -n "$f" ] && err "  gcloud compute ssh ${VM_NAME} --zone ${VM_ZONE} --tunnel-through-iap \\"
+        [ -n "$f" ] && err "    --command \"sudo chmod 600 '$f'\""
+    done
     err ""
     err "Then ask what wrote them at that mode, because apply.sh no longer does."
-    err ""
-    err "NOTE: this check cannot currently reach green. It fails on ANY file here"
-    err "readable beyond root, and several MUST stay readable for a non-root"
-    err "container to work. Until it distinguishes those two classes it will keep"
-    err "exiting 1 -- which also masks the exit 3 the Caddyfile divergence owes."
     exit 1
 fi
 
