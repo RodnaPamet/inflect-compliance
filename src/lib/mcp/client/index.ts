@@ -549,6 +549,52 @@ export async function pullSnapshot(opts: PullOptions): Promise<PullResult> {
     }
 }
 
+/**
+ * Handshake and read the manifest. Nothing else.
+ *
+ * Step 1c's `validateConnection` needs to answer "is this a conforming server and
+ * what columns does it expose?" — and `pullSnapshot` would answer it by reading
+ * every page, which for a million-row legacy export is a lot of someone else's
+ * bandwidth spent on a Test button.
+ *
+ * Same handshake, same strict manifest validation, same typed failures, same
+ * `safeFetch`. It differs from `pullSnapshot` only in stopping after the manifest,
+ * so a passing probe means exactly: the server speaks the protocol version, it
+ * advertises resources, its manifest satisfies the schema, and the contract string
+ * is ours. It does NOT mean the pages are readable — the `complete` flag on a real
+ * pull is the only thing that says that, and conflating the two is what makes a
+ * green Test button a promise the product cannot keep.
+ */
+export async function probeManifest(
+    opts: Pick<PullOptions, 'url' | 'token' | 'requestTimeoutMs' | 'maxBytesPerResponse' | 'fetchImpl'>
+): Promise<LegacyManifest> {
+    const requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULTS.REQUEST_TIMEOUT_MS;
+    const ctx: CallContext = {
+        url: opts.url,
+        token: opts.token,
+        requestTimeoutMs,
+        maxBytes: opts.maxBytesPerResponse ?? DEFAULTS.MAX_BYTES_PER_RESPONSE,
+        // One handshake plus one read, so the pull budget is two request budgets
+        // rather than the whole-pass one. A probe that could outlive a Test button
+        // is a probe nobody waits for.
+        pullDeadlineAt: Date.now() + requestTimeoutMs * 3,
+        fetchImpl: opts.fetchImpl,
+        sessionId: null,
+        protocolVersion: null,
+    };
+
+    await handshake(ctx);
+    const raw = await readResource(ctx, MANIFEST_URI);
+    const parsed = ManifestSchema.safeParse(raw);
+    if (!parsed.success) {
+        throw new ContractViolationError('manifest', 'failed schema validation');
+    }
+    if (!isSupportedContract(parsed.data.contract)) {
+        throw new ContractViolationError('manifest', 'unsupported contract version');
+    }
+    return parsed.data;
+}
+
 /** Re-exported so a caller can assert the client never speaks a tool method. */
 export const CLIENT_METHODS = ['initialize', 'notifications/initialized', 'resources/read'] as const;
 

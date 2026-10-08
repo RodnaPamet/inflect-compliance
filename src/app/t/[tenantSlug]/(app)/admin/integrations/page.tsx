@@ -67,7 +67,7 @@ interface ProviderInfo {
 }
 
 /** P3 — connector category order + i18n label keys for the grouped hub. */
-const CATEGORY_ORDER = ['identity', 'cloud', 'scm', 'hris', 'document', 'other'] as const;
+const CATEGORY_ORDER = ['identity', 'legacy', 'cloud', 'scm', 'hris', 'document', 'other'] as const;
 
 export default function AdminIntegrationsPage() {
     const apiUrl = useTenantApiUrl();

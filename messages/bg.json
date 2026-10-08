@@ -5377,7 +5377,8 @@
         "scm": "Контрол на кода",
         "hris": "ЧР",
         "document": "Документи",
-        "other": "Друго"
+        "other": "Друго",
+        "legacy": "Наследени приложения"
       },
       "authorizeEntra": "Оторизиране с Microsoft Entra",
       "authorizeFailed": "Оторизацията не можа да започне."
