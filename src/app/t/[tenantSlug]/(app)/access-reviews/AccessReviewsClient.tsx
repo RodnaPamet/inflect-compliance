@@ -34,6 +34,7 @@ import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
+import { BackAffordance } from '@/components/nav/BackAffordance';
 
 /// SSR returns Prisma rows with native Date instances; the SWR
 /// fetcher returns the same shape but the dates round-trip through
@@ -187,11 +188,21 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
     return (
         <ListPageShell>
             <ListPageShell.Header>
+                {/*
+                  * #3252. This page is a SUBPAGE of `/tests`, not a sidebar
+                  * destination — it has not been in the sidebar since #1538, and the
+                  * button on Tests is its only link anywhere in the UI. Until this
+                  * mount a user who arrived that way had no way back, and on mobile no
+                  * way out at all.
+                  */}
+                <BackAffordance />
                 <div className="flex items-center justify-between">
                     <div>
                         <PageBreadcrumbs
                             items={[
                                 { label: t('crumbDashboard'), href: `/t/${tenantSlug}/dashboard` },
+                                // The real parent, now that the model says so.
+                                { label: t('crumbTests'), href: `/t/${tenantSlug}/tests` },
                                 { label: t('crumbList') },
                             ]}
                             className="mb-1"

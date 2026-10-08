@@ -31,7 +31,11 @@ export interface CanonicalParent {
 const PARENT_MAP: Record<string, CanonicalParent> = {
     '/frameworks/[frameworkKey]/readiness': { href: '/frameworks/[frameworkKey]', label: 'NIS2' },
     '/frameworks/[frameworkKey]/self-assessment': { href: '/frameworks/[frameworkKey]', label: 'NIS2' },
-    // Access reviews
+    // Access reviews. The LIST hangs off `/tests` (#3252): that in-page button is
+    // the only link to it anywhere in the UI, and it has not been a sidebar
+    // destination since #1538. The label is what a user sees on the back link, so
+    // it names where they came FROM rather than what they are looking at.
+    '/access-reviews': { href: '/tests', label: 'Tests' },
     '/access-reviews/[reviewId]': { href: '/access-reviews', label: 'Access reviews' },
 
     // Agent — all five hang off the /agents register (AGENTIC UI 1/4).
