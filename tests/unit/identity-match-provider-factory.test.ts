@@ -12,6 +12,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { declarationOf } from '../helpers/source-blocks';
+
 const mutableEnv: Record<string, string | undefined> = {
     // A literal in a mocked env object — no TypeSafe account stands behind it, and
     // these tests exist precisely to prove a key being PRESENT changes nothing
@@ -147,15 +149,22 @@ describe('6b factory — the Jev host is a code constant', () => {
     });
 
     it('no environment variable appears in the URL the provider posts to', () => {
-        const src = fs.readFileSync(JEV_SRC, 'utf8');
-        // The constant is a plain literal: no interpolation, no env read.
-        expect(src).toMatch(/export const JEV_ENDPOINT = 'https:\/\/api\.typesafe\.ai\/v1\/systemone';/);
-        // `env` is read in this file for the KEY only. Assert the URL constant is
-        // not built from it, which a template literal would allow.
-        const endpointLine = src.split('\n').find((l) => l.includes('JEV_ENDPOINT ='))!;
-        expect(endpointLine).not.toContain('`');
-        expect(endpointLine).not.toContain('env.');
-        expect(endpointLine).not.toContain('process.env');
+        // NARROWED to the declaration rather than asserted against the whole file.
+        // Two reasons, and the ratchet that caught it was right about both: a
+        // whole-file `toMatch` is satisfied by any line, so deleting this constant
+        // and adding a configurable one elsewhere keeps it green; and
+        // `raw-source-assertion-ratchet` is a DOWNWARD ratchet standing at two
+        // files, so adding a third was the wrong way to make it pass.
+        const decl = declarationOf(fs.readFileSync(JEV_SRC, 'utf8'), 'JEV_ENDPOINT');
+        // The narrowing must have found something: an empty extraction satisfies
+        // every negative assertion below.
+        expect(decl.length).toBeGreaterThan(20);
+        expect(decl).toContain('api.typesafe.ai/v1/systemone');
+        // A template literal, an `env.` read or a `process.env` read would each
+        // make the destination configurable. None may appear in the declaration.
+        expect(decl).not.toContain('`');
+        expect(decl).not.toContain('env.');
+        expect(decl).not.toContain('process.env');
     });
 
     it('pins the model to the identifier the vendor reference lists', () => {
