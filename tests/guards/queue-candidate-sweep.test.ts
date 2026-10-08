@@ -305,11 +305,33 @@ describe('#3282 — the workflow contract', () => {
         expect(selfTestLine!.i).toBeLessThan(applyLine!.i);
     });
 
-    it('is driven by the schedule and NOT by pull_request', () => {
-        // Ejection and supersession fire no webhook at all, so the schedule was
-        // always going to be the real trigger.
+    it('is driven by an event that FIRES, and NOT by pull_request', () => {
+        // REWRITTEN (#3291, round 2). This assertion used to read:
+        //
+        //     expect(yml).toMatch(/schedule:/);
+        //     expect(yml).toMatch(/cron:/);
+        //
+        // which asserts a cron EXISTS and never that it can RUN. It passed
+        // over `*/15 * * * *`, which fired zero times, and then over
+        // `7,37 * * * *`, which also fired zero times — two rounds of #3291
+        // with this guard green throughout. Capable of failing, aimed one
+        // level off the thing that mattered.
+        //
+        // The comment it carried is also now false. It said "ejection and
+        // supersession fire no webhook at all, so the schedule was always
+        // going to be the real trigger". True of `pull_request`; false of
+        // `workflow_run`, which observes a CI run reaching a conclusion and
+        // therefore sees all three orphan sources. That is why the sweep is
+        // now event-driven with the cron demoted to a daily floor.
+        //
+        // Cadence is enforced centrally, over every cron in the repo, by
+        // `tests/guardrails/merge-queue-trigger-coverage.test.ts`. Here the
+        // subject is narrower: this workflow must not be schedule-ONLY again,
+        // because its value is latency and a human-only fallback cannot
+        // deliver it at 3am.
         expect(yml).toMatch(/schedule:/);
         expect(yml).toMatch(/cron:/);
+        expect(yml).toMatch(/^\s*workflow_run:/m);
 
         // The ABSENCE is the assertion. A `pull_request` trigger here publishes
         // a check context that the merge queue waits for on the merge_group

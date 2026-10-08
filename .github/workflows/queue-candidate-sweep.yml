@@ -38,53 +38,77 @@
 name: Queue Candidate Sweep
 
 on:
-  # SCHEDULE ONLY, and deliberately — a `pull_request` trigger was the obvious
-  # way to catch a close or merge promptly, and it is the wrong tool here for a
-  # reason `tests/guardrails/merge-queue-trigger-coverage.test.ts` calls the
-  # HANG INVARIANT: a workflow that runs on `pull_request` publishes a check
-  # context, the merge queue then waits for that context on the merge_group
-  # candidate, and a workflow without a `merge_group:` trigger never produces it.
-  # The entry hangs until the timeout ejects it. Adding `merge_group:` instead
-  # would run this sweep from inside the queue it is sweeping.
+  # EVENT-DRIVEN FIRST, because the schedule provably does not fire here.
   #
-  # The guard offers an exemption list, and taking it would have needed TWO
-  # entries — the second because a `pull_request` workflow must also key its
-  # concurrency group by ref, which is meaningless for a repo-wide sweep. Two
-  # exemptions to save a few minutes of latency is the wrong trade when the
-  # schedule already covers every case.
+  #  #3291, round 2. The `*/15` cron never fired, so #3292 moved it to
+  #  `7,37 * * * *` on the theory that step syntax and quarter-hour contention
+  #  were the cause. That comment registered a falsifiable prediction. It has
+  #  now been falsified: EIGHT consecutive eligible slots, 15:37 through 19:07
+  #  on 2026-10-08, produced zero runs. `state=active`, and the same file is
+  #  correct on `workflow_dispatch`.
   #
-  # Orphans arise three ways and only one has a webhook at all: a close/merge
-  # fires `pull_request: closed`, while an EJECTION at the timeout and a
-  # SUPERSESSION fire nothing. The schedule was always going to be load-bearing
-  # rather than a backstop, so it is now the whole trigger. Worst-case latency is
-  # one interval, during which an orphan holds the 2-4 jobs measured below.
+  #  The correlation it was reasoning from survives, and it is sharper than the
+  #  fixed-minute-vs-step-syntax axis #3292 picked. Every cron on `main`:
+  #
+  #    DAILY or less   8 crons   8 of 8 have fired
+  #    SUB-DAILY       1 cron    0 of 1 has fired     <- this one, both versions
+  #
+  #  So the discriminator is CADENCE, not minute syntax — and `7,37` was still
+  #  hourly, which is why changing it changed nothing. One data point on the
+  #  interesting side is thin evidence for a MECHANISM, and inferring one from
+  #  exactly this data is the mistake #3292 already made, so no mechanism is
+  #  claimed here. What is claimed is narrower and is what the fix rests on:
+  #  nothing sub-daily has ever fired in this repo, so nothing sub-daily can be
+  #  load-bearing.
+  #
+  #  `workflow_run` IS PROVEN TO FIRE HERE — 85 runs, from the since-deleted
+  #  `deploy.yml`. It is the one event-driven trigger this workflow can take
+  #  without tripping the HANG INVARIANT below, because it publishes no PR check
+  #  context.
+  #
+  #  It also repairs this file's own stated weakness. The previous version noted
+  #  that of the three ways an orphan arises, "only one has a webhook at all" —
+  #  a close/merge fires `pull_request: closed`, while an EJECTION and a
+  #  SUPERSESSION "fire nothing". That is true of `pull_request` and false of
+  #  `workflow_run`, which observes all three:
+  #
+  #    EJECTION      the candidate's CI run concludes (failure)   -> fires
+  #    SUPERSESSION  the superseding candidate's run concludes    -> fires
+  #    CLOSE/MERGE   the next CI run to conclude, minutes away    -> fires
+  #
+  #  CI concludes many times an hour here, so worst-case latency drops from the
+  #  30 minutes the cron intended (and the infinity it delivered) to roughly one
+  #  CI completion.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+  # WHY NOT `pull_request` — THE HANG INVARIANT
+  # ------------------------------------------
+  # `tests/guardrails/merge-queue-trigger-coverage.test.ts` locks it: a workflow
+  # that runs on `pull_request` publishes a check context, the merge queue then
+  # waits for that context on the merge_group candidate, and a workflow without
+  # `merge_group:` never produces it. The entry hangs until the timeout ejects
+  # it. Adding `merge_group:` instead would run this sweep from inside the queue
+  # it is sweeping. The guard offers an exemption list and taking it would need
+  # TWO entries, the second because a `pull_request` workflow must also key its
+  # concurrency group by ref, which is meaningless for a repo-wide sweep.
+  #
+  # `workflow_run` has neither problem: the guard reads only `pull_request`
+  # workflows (it returns early otherwise), and no check context is published.
+
   schedule:
-    # EXPLICIT OFFSET MINUTES, not `*/15` — measured, not guessed (#3291).
+    # DAILY, demoted from load-bearing to a floor.
     #
-    # The original `*/15 * * * *` never fired: `state=active`, correct on
-    # `workflow_dispatch`, and SIX consecutive eligible slots produced zero runs.
-    # Schedules are not broken here — they fire abundantly:
+    # This is what the #3292 comment said to do if its prediction failed — "a
+    # daily cron plus relying on `workflow_dispatch`, because at that point
+    # nothing short of daily is trustworthy here". Honouring that, with
+    # `workflow_run` carrying the latency the cron no longer can.
     #
-    #   Load Test (k6)        162 schedule runs    cron '30 3 * * *'
-    #   DAST (ZAP Baseline)   105                  cron '0 4 * * *'
-    #   Integration Stress     52                  cron '30 2 * * *'
-    #   Override Freshness     11                  cron '0 5 * * 1'
-    #   Restore Drill           5                  cron '0 6 * * 1'
-    #
-    # EVERY workflow in this repo that fires uses a FIXED MINUTE — daily or
-    # weekly. This was the only sub-hourly cron and the only one that never ran.
-    # GitHub drops scheduled runs it cannot start, and `*/15` additionally lands
-    # on :00/:15/:30/:45, the most contended minutes of the hour.
-    #
-    # So: twice hourly at offset minutes. Half the demand, none of it on a
-    # quarter-hour boundary. Worst-case latency before an orphaned candidate is
-    # cancelled goes from 15 to 30 minutes, which is cheap against the 2h38m
-    # orphan that motivated #3282.
-    #
-    # FALSIFIABLE: if this still does not fire, frequency is not the cause and
-    # the next step is a daily cron plus relying on `workflow_dispatch`, because
-    # at that point nothing short of daily is trustworthy here.
-    - cron: '7,37 * * * *'
+    # Daily is the only cadence with evidence behind it (8 of 8). Offset minute,
+    # off the hour, consistent with every cron here that works.
+    - cron: '17 3 * * *'
+
   workflow_dispatch:
 
 permissions:
@@ -101,6 +125,17 @@ concurrency:
 jobs:
   sweep:
     name: Sweep orphaned candidates
+    # BREAK THE SELF-TRIGGER CYCLE. This job cancels runs; a cancelled run
+    # concludes; concluding fires `workflow_run` again. Left alone that is
+    # bounded (the second sweep finds nothing in-progress and cancels nothing,
+    # so it fires nothing) but it doubles the run count for no information.
+    #
+    # Skipping `cancelled` costs no real trigger: an EJECTION concludes as
+    # `failure` and a merge as `success`. Only a cancellation is skipped, and a
+    # cancellation is the one conclusion this workflow itself produces.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
