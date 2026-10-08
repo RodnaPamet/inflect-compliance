@@ -358,6 +358,86 @@ describe('#3266 — the tenant-context transaction declares its budget too', () 
         expect(unbudgeted).toEqual([]);
     });
 
+    it('the TEST cleanup transaction declares it too — it is on the same pool', () => {
+        // Why a src/ budget test reaches into tests/: the failure that opened
+        // #3266 did not surface in src/. It surfaced as
+        // `tests/integration/audit-hash-chain.test.ts` going red on an
+        // assertion about chain validity, two tests away from the cleanup
+        // that actually threw `Unable to start a transaction in the given
+        // time`. The cleanup's rollback left the tampered rows in place and
+        // the later test read them.
+        //
+        // That path runs through ONE helper, and it inherited the same
+        // 2000 ms maxWait for the same reason db-context.ts did. Nothing else
+        // in the repo asserts on it, so without this `it` a revert of the
+        // helper is green here and comes back as a load-dependent flake in a
+        // different file — the worst available failure mode, because the red
+        // suite does not name the broken one.
+        const ts = require('typescript') as typeof import('typescript');
+        const fs = require('node:fs') as typeof import('node:fs');
+        const path = require('node:path') as typeof import('node:path');
+        const file = path.join(__dirname, '../../helpers/audit-cleanup.ts');
+        const raw = fs.readFileSync(file, 'utf8');
+        const sf = ts.createSourceFile(file, raw, ts.ScriptTarget.Latest, true);
+
+        let fnFound = false;
+        let budgetedCalls = 0;
+        let bareCalls = 0;
+        // The interface the helper types its client with. Narrowing it back to
+        // a single parameter would make the budget un-passable, so the arity
+        // is part of the claim rather than a detail the call site implies.
+        let txParams = -1;
+
+        const visit = (n: import('typescript').Node): void => {
+            if (
+                ts.isFunctionDeclaration(n) &&
+                n.name?.text === 'withAuditTriggersDisabled'
+            ) {
+                fnFound = true;
+                const inner = (m: import('typescript').Node): void => {
+                    if (
+                        ts.isCallExpression(m) &&
+                        ts.isPropertyAccessExpression(m.expression) &&
+                        m.expression.name.text === '$transaction'
+                    ) {
+                        const second = m.arguments[1];
+                        const isBudget =
+                            second !== undefined &&
+                            ts.isIdentifier(second) &&
+                            second.text === 'TENANT_TX_OPTIONS';
+                        if (isBudget) budgetedCalls += 1;
+                        else bareCalls += 1;
+                    }
+                    ts.forEachChild(m, inner);
+                };
+                ts.forEachChild(n, inner);
+            }
+            if (
+                ts.isInterfaceDeclaration(n) &&
+                n.name.text === 'RawSqlClient'
+            ) {
+                for (const member of n.members) {
+                    if (
+                        ts.isMethodSignature(member) &&
+                        ts.isIdentifier(member.name) &&
+                        member.name.text === '$transaction'
+                    ) {
+                        txParams = member.parameters.length;
+                    }
+                }
+            }
+            ts.forEachChild(n, visit);
+        };
+        visit(sf);
+
+        // The denominator first: a renamed function or a moved file would
+        // otherwise make every count below zero and pass silently.
+        expect(fnFound).toBe(true);
+        expect(budgetedCalls).toBe(1);
+        expect(bareCalls).toBe(0);
+        expect(txParams).toBeGreaterThanOrEqual(2);
+    });
+
     it('the declared options are the ones the call sites spread', () => {
         expect(TENANT_TX_OPTIONS).toEqual({
             maxWait: TENANT_TX_MAX_WAIT_MS,
