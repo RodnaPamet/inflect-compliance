@@ -25,6 +25,9 @@ jest.mock('@/components/PdfExportButton', () => ({
 }));
 jest.mock('@/components/ui/tooltip', () => ({
     Tooltip: ({ children }: any) => <>{children}</>,
+    DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    InfoTooltip: () => null,
 }));
 
 import { ReportsClient } from '@/app/t/[tenantSlug]/(app)/reports/ReportsClient';

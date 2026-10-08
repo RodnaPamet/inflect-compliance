@@ -45,6 +45,7 @@ jest.mock('@/components/ui/tooltip', () => ({
     Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     InfoTooltip: () => null,
+    DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 jest.mock('next-intl', () => {

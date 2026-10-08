@@ -63,6 +63,7 @@ jest.mock('@/components/ui/tooltip', () => ({
         <>{children}</>
     ),
     InfoTooltip: () => null,
+    DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 // next/navigation isn't in scope under jsdom — stub the hooks the

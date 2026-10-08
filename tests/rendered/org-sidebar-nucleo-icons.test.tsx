@@ -41,6 +41,9 @@ jest.mock('@/components/layout/sidebar-collapse-context', () => ({
 jest.mock('@/components/org-switcher', () => ({ OrgSwitcher: () => <div data-testid="org-switcher" /> }));
 jest.mock('@/components/ui/tooltip', () => ({
     Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    InfoTooltip: () => null,
 }));
 
 import { OrgSidebarContent } from '@/components/layout/OrgSidebarNav';
