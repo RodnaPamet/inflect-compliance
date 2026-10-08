@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 import { prisma, prismaRead } from './prisma';
 import type { RequestContext } from '@/app-layer/types';
 import { runWithAuditContext, type PriorStateReader } from './audit-context';
@@ -84,7 +85,7 @@ export async function withTenantDb<T>(
                 { tenantId, source: 'api', readPriorState: priorStateReaderFor(tx) },
                 () => callback(tx),
             );
-        })
+        }, TENANT_TX_OPTIONS)
     ) as Promise<T>;
 }
 
@@ -107,7 +108,10 @@ export async function runInTenantContext<T>(
     options?: { customPrisma?: PrismaClient; timeout?: number; maxWait?: number }
 ): Promise<T> {
     const p = options?.customPrisma || prisma;
-    const txOptions: { timeout?: number; maxWait?: number } = {};
+    // Defaults DECLARED, not inherited (#3266). `{}` here meant Prisma's
+    // 2000 ms `maxWait` at 1010 of 1018 call sites; a per-call override
+    // still wins. See src/lib/db/concurrency-limits.ts for the derivation.
+    const txOptions: { timeout?: number; maxWait?: number } = { ...TENANT_TX_OPTIONS };
     if (options?.timeout) txOptions.timeout = options.timeout;
     if (options?.maxWait) txOptions.maxWait = options.maxWait;
 
@@ -179,7 +183,10 @@ export async function runInTenantReadContext<T>(
     callback: (db: PrismaTx) => Promise<T>,
     options?: { timeout?: number; maxWait?: number }
 ): Promise<T> {
-    const txOptions: { timeout?: number; maxWait?: number } = {};
+    // Defaults DECLARED, not inherited (#3266). `{}` here meant Prisma's
+    // 2000 ms `maxWait` at 1010 of 1018 call sites; a per-call override
+    // still wins. See src/lib/db/concurrency-limits.ts for the derivation.
+    const txOptions: { timeout?: number; maxWait?: number } = { ...TENANT_TX_OPTIONS };
     if (options?.timeout) txOptions.timeout = options.timeout;
     if (options?.maxWait) txOptions.maxWait = options.maxWait;
 
@@ -285,7 +292,10 @@ export async function runInTenantJobContext<T>(
     }
 
     const p = options?.customPrisma || prisma;
-    const txOptions: { timeout?: number; maxWait?: number } = {};
+    // Defaults DECLARED, not inherited (#3266). `{}` here meant Prisma's
+    // 2000 ms `maxWait` at 1010 of 1018 call sites; a per-call override
+    // still wins. See src/lib/db/concurrency-limits.ts for the derivation.
+    const txOptions: { timeout?: number; maxWait?: number } = { ...TENANT_TX_OPTIONS };
     if (options?.timeout) txOptions.timeout = options.timeout;
     if (options?.maxWait) txOptions.maxWait = options.maxWait;
 
