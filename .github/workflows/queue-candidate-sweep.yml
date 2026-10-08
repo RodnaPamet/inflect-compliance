@@ -38,12 +38,26 @@
 name: Queue Candidate Sweep
 
 on:
-  # Orphans are created by three different events and only one of them has a
-  # webhook. A close/merge fires `pull_request: closed`; an EJECTION at the
-  # 60-minute timeout and a SUPERSESSION both fire nothing at all, which is why
-  # the schedule is load-bearing rather than a backstop.
-  pull_request:
-    types: [closed]
+  # SCHEDULE ONLY, and deliberately — a `pull_request` trigger was the obvious
+  # way to catch a close or merge promptly, and it is the wrong tool here for a
+  # reason `tests/guardrails/merge-queue-trigger-coverage.test.ts` calls the
+  # HANG INVARIANT: a workflow that runs on `pull_request` publishes a check
+  # context, the merge queue then waits for that context on the merge_group
+  # candidate, and a workflow without a `merge_group:` trigger never produces it.
+  # The entry hangs until the timeout ejects it. Adding `merge_group:` instead
+  # would run this sweep from inside the queue it is sweeping.
+  #
+  # The guard offers an exemption list, and taking it would have needed TWO
+  # entries — the second because a `pull_request` workflow must also key its
+  # concurrency group by ref, which is meaningless for a repo-wide sweep. Two
+  # exemptions to save a few minutes of latency is the wrong trade when the
+  # schedule already covers every case.
+  #
+  # Orphans arise three ways and only one has a webhook at all: a close/merge
+  # fires `pull_request: closed`, while an EJECTION at the timeout and a
+  # SUPERSESSION fire nothing. The schedule was always going to be load-bearing
+  # rather than a backstop, so it is now the whole trigger. Worst-case latency is
+  # one interval, during which an orphan holds the 2-4 jobs measured below.
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:

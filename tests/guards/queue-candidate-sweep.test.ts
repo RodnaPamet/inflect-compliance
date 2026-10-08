@@ -126,7 +126,13 @@ describe('#3282 — the sweep never cancels a candidate that can still merge', (
                 run(51, 666, sha('1'), '2026-01-01T00:00:00Z'),
             ],
         });
-        expect(v.filter((x) => x.verdict === 'keep')).toHaveLength(1);
+        // COUNT IS NOT ENOUGH, and a mutation run proved it: deleting the
+        // `r.id > prev.id` tie-break still leaves exactly one survivor — the
+        // WRONG one (the first seen rather than the highest id). Asserting the
+        // length alone passed against the broken predicate.
+        const kept = v.filter((x) => x.verdict === 'keep');
+        expect(kept).toHaveLength(1);
+        expect(kept[0].runId).toBe(51);
     });
 
     it('an unrecognised ref is kept, not swept', () => {
@@ -156,10 +162,18 @@ describe('#3282 — the sweep never cancels a candidate that can still merge', (
             ],
         });
         const byId = new Map(v.map((x) => [x.runId, x]));
-        expect(byId.get(1).verdict).toBe('cancel');
-        expect(byId.get(2).verdict).toBe('cancel');
-        expect(byId.get(3).verdict).toBe('keep');
-        expect(byId.get(4).verdict).toBe('keep');
+        // Throws rather than returning undefined: a missing run id means the
+        // predicate dropped an input, which should fail loudly and by name
+        // rather than as `Object is possibly undefined`.
+        const verdictOf = (id: number): string => {
+            const hit = byId.get(id);
+            if (hit === undefined) throw new Error(`no verdict returned for run ${id}`);
+            return hit.verdict;
+        };
+        expect(verdictOf(1)).toBe('cancel');
+        expect(verdictOf(2)).toBe('cancel');
+        expect(verdictOf(3)).toBe('keep');
+        expect(verdictOf(4)).toBe('keep');
     });
 
     it("the script's own self-test passes, and is reachable from here", () => {
@@ -179,21 +193,38 @@ describe('#3282 — the workflow contract', () => {
     });
 
     it('runs --self-test BEFORE --apply', () => {
-        // Order is the whole safety argument. If --apply could run first, a
+        // Order is the whole safety argument: if --apply could run first, a
         // broken predicate would reach the cancel call.
-        const selfTestAt = yml.indexOf('--self-test');
-        const applyAt = yml.indexOf('--apply');
-        expect(selfTestAt).toBeGreaterThan(-1);
-        expect(applyAt).toBeGreaterThan(-1);
-        expect(selfTestAt).toBeLessThan(applyAt);
+        //
+        // MATCHED ON THE `run:` LINES, not on the raw text. A mutation run that
+        // moved the self-test step AFTER the sweep left this test green, because
+        // `indexOf('--self-test')` found the mention in this workflow's own
+        // DOCBLOCK — which sits above both steps and never moves. The needle was
+        // reading a comment about the safety property rather than the property.
+        const runLines = yml
+            .split('\n')
+            .map((l, i) => ({ l: l.trim(), i }))
+            .filter((x) => x.l.startsWith('run:') || x.l.startsWith('- run:'));
+        const selfTestLine = runLines.find((x) => x.l.includes('--self-test'));
+        const applyLine = runLines.find((x) => x.l.includes('--apply'));
+        expect(selfTestLine).toBeDefined();
+        expect(applyLine).toBeDefined();
+        expect(selfTestLine!.i).toBeLessThan(applyLine!.i);
     });
 
-    it('is triggered by the schedule as well as by pull_request closure', () => {
-        // Ejection and supersession fire NO webhook, so a close-only trigger
-        // would miss the two cases that motivated the issue.
+    it('is driven by the schedule and NOT by pull_request', () => {
+        // Ejection and supersession fire no webhook at all, so the schedule was
+        // always going to be the real trigger.
         expect(yml).toMatch(/schedule:/);
         expect(yml).toMatch(/cron:/);
-        expect(yml).toMatch(/types:\s*\[closed\]/);
+
+        // The ABSENCE is the assertion. A `pull_request` trigger here publishes
+        // a check context that the merge queue waits for on the merge_group
+        // candidate and that this workflow would never produce — the hang
+        // invariant in `tests/guardrails/merge-queue-trigger-coverage.test.ts`.
+        // I added that trigger first and the guard caught it; pinning it so the
+        // same mistake cannot be made again by someone optimising latency.
+        expect(yml).not.toMatch(/^\s*pull_request:/m);
     });
 
     it('does not set cancel-in-progress true on itself', () => {
