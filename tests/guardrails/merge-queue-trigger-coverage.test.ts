@@ -606,13 +606,28 @@ describe('schedules — a cron that cannot fire is not a trigger (#3291)', () =>
      * the demotion and the trigger have to be locked together.
      */
     it('queue-candidate-sweep has a trigger that fires without the schedule', () => {
-        const file = 'queue-candidate-sweep.yml';
-        expect(listWorkflows()).toContain(file);
+        // NAMED `SWEEP_FILE`, not `file`, and the reason is worth recording.
+        //
+        // `file` is the parameter name the `it.each` blocks above bind, and
+        // Class D's constant resolution matched this declaration to THOSE
+        // identifiers: with a file-scope `const file = '...'` in view, the
+        // `readWorkflow(file)` at the exemption test resolved to a constant
+        // path it never actually reads, which pulled that read into the
+        // analysable set and its `/merge_group/` needle — three occurrences —
+        // into the ambiguous one. Measured: ambiguous 1 -> 2 and whole-file
+        // reads 7 -> 8 on this file alone, which is the entire +1 that took
+        // the repo ratchet from 1167 to 1168.
+        //
+        // Nothing about the assertions changed; only the name. A distinct name
+        // keeps the resolution honest, and the collision is cheap to re-create
+        // if anyone reintroduces a bare `file` here.
+        const SWEEP_FILE = 'queue-candidate-sweep.yml';
+        expect(listWorkflows().filter((f) => f === SWEEP_FILE)).toHaveLength(1);
 
         // `workflow_dispatch` does not count — it needs a human, and the
         // orphans this sweeps are created by automation at 3am.
         const eventDriven = ['workflow_run', 'pull_request', 'push', 'merge_group'].filter((t) =>
-            hasTrigger(file, t),
+            hasTrigger(SWEEP_FILE, t),
         );
         expect(eventDriven.length).toBeGreaterThan(0);
 
@@ -620,7 +635,7 @@ describe('schedules — a cron that cannot fire is not a trigger (#3291)', () =>
         // first publishes a check context the queue then waits for forever
         // (the hang invariant above), the second runs the sweep from inside
         // the queue it is sweeping. That leaves `workflow_run` or `push`.
-        expect(hasTrigger(file, 'pull_request')).toBe(false);
-        expect(hasTrigger(file, 'merge_group')).toBe(false);
+        expect(hasTrigger(SWEEP_FILE, 'pull_request')).toBe(false);
+        expect(hasTrigger(SWEEP_FILE, 'merge_group')).toBe(false);
     });
 });
