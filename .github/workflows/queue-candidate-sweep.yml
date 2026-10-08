@@ -59,7 +59,32 @@ on:
   # rather than a backstop, so it is now the whole trigger. Worst-case latency is
   # one interval, during which an orphan holds the 2-4 jobs measured below.
   schedule:
-    - cron: '*/15 * * * *'
+    # EXPLICIT OFFSET MINUTES, not `*/15` — measured, not guessed (#3291).
+    #
+    # The original `*/15 * * * *` never fired: `state=active`, correct on
+    # `workflow_dispatch`, and SIX consecutive eligible slots produced zero runs.
+    # Schedules are not broken here — they fire abundantly:
+    #
+    #   Load Test (k6)        162 schedule runs    cron '30 3 * * *'
+    #   DAST (ZAP Baseline)   105                  cron '0 4 * * *'
+    #   Integration Stress     52                  cron '30 2 * * *'
+    #   Override Freshness     11                  cron '0 5 * * 1'
+    #   Restore Drill           5                  cron '0 6 * * 1'
+    #
+    # EVERY workflow in this repo that fires uses a FIXED MINUTE — daily or
+    # weekly. This was the only sub-hourly cron and the only one that never ran.
+    # GitHub drops scheduled runs it cannot start, and `*/15` additionally lands
+    # on :00/:15/:30/:45, the most contended minutes of the hour.
+    #
+    # So: twice hourly at offset minutes. Half the demand, none of it on a
+    # quarter-hour boundary. Worst-case latency before an orphaned candidate is
+    # cancelled goes from 15 to 30 minutes, which is cheap against the 2h38m
+    # orphan that motivated #3282.
+    #
+    # FALSIFIABLE: if this still does not fire, frequency is not the cause and
+    # the next step is a daily cron plus relying on `workflow_dispatch`, because
+    # at that point nothing short of daily is trustworthy here.
+    - cron: '7,37 * * * *'
   workflow_dispatch:
 
 permissions:
