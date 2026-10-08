@@ -16,21 +16,21 @@ restate it.
 | --- | --- | --- | --- |
 | 0a | Guard the directory tables against a second writer | Merged | #3247 |
 | 0b | Persist directory login names | Merged | #3273 |
-| 0c | Persist structured HR names and real employee numbers | In the merge queue | #3277 |
-| 1a | Publish the contract and a fake server | Open | #3257 |
+| 0c | Persist structured HR names and real employee numbers | Merged | #3277 |
+| 1a | Publish the contract and a fake server | Merged | #3257 |
 | 1b | The MCP client | Open | #3293 |
 | 1c | Register the `legacy-mcp` provider | Not started | — |
 | 2a | Snapshot models and a fail-closed pull | Not started | — |
 | 2b | Mapping UI and suggestions | Not started | — |
 | 3a | Normalisation library and labelled corpus | Merged | #3267 |
-| 3b | The deterministic engine and the precision ratchet | Open | #3286 |
+| 3b | The deterministic engine and the precision ratchet | Merged | #3286 |
 | 3c | Persist results and the crosswalk | Not started | — |
 | 4a | Naming conventions and similarity | Not started | — |
 | 4b | Review queue and alias revalidation | Not started | — |
-| 5a | Harden the existing access-review flows | In the merge queue | #3272 |
+| 5a | Harden the existing access-review flows | Merged | #3272 |
 | 5b | Legacy recertification campaigns | Not started | — |
 | 6a | Register TypeSafe as a proposed sub-processor | Merged | #3246 |
-| 6b | Decision-model client and evaluation harness | Not started | — |
+| 6b | Decision-model client and evaluation harness | Merged | #3288 |
 | 6c | Adjudication in the run, and the review lanes | Not started | — |
 | 6d | Turn it on | Not started | — |
 

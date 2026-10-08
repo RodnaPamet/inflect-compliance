@@ -37,7 +37,7 @@
  *   branch needed.
  *
  * Pairs with:
- *   - src/components/ui/skeleton.tsx (the SkeletonDashboard /
+ *   - packages/ui/src/components/ui/skeleton.tsx (the SkeletonDashboard /
  *     SkeletonTable / SkeletonDetailTabs primitives).
  */
 import * as fs from 'fs';
@@ -178,7 +178,7 @@ describe('State coverage ratchet (Polish PR-10)', () => {
         });
 
         it('the shared primitives module no longer exports it', () => {
-            const primitives = code('src/components/ui/skeleton.tsx');
+            const primitives = code('packages/ui/src/components/ui/skeleton.tsx');
             expect(primitives).not.toMatch(/export function DashboardSkeleton\b/);
             // `SkeletonDashboard` is a DIFFERENT component — the generic
             // list-dashboard shell — and must survive the split. Without

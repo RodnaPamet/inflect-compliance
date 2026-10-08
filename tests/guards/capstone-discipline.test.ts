@@ -16,8 +16,8 @@
  * rendering by default; SkeletonTable is opt-in).
  *
  * Pairs with:
- *   - src/components/ui/skeleton.tsx (the SkeletonTable primitive)
- *   - src/components/ui/empty-state.tsx (the size axis)
+ *   - packages/ui/src/components/ui/skeleton.tsx (the SkeletonTable primitive)
+ *   - packages/ui/src/components/ui/empty-state.tsx (the size axis)
  *   - docs/design-system.md (the index)
  */
 import * as fs from "fs";
@@ -48,7 +48,7 @@ const ROOT = path.resolve(__dirname, "../..");
 
 describe("v2-PR-15 SkeletonTable primitive", () => {
     const src = codeOf(
-        fs.readFileSync(path.join(ROOT, "src/components/ui/skeleton.tsx"), "utf8"),
+        fs.readFileSync(path.join(ROOT, "packages/ui/src/components/ui/skeleton.tsx"), "utf8"),
     );
 
     it("exports the SkeletonTable function", () => {
@@ -84,7 +84,7 @@ describe("v2-PR-15 SkeletonTable primitive", () => {
 
 describe("v2-PR-15 EmptyState size axis", () => {
     const src = codeOf(
-        fs.readFileSync(path.join(ROOT, "src/components/ui/empty-state.tsx"), "utf8"),
+        fs.readFileSync(path.join(ROOT, "packages/ui/src/components/ui/empty-state.tsx"), "utf8"),
     );
 
     it("declares the EmptyStateSize type", () => {

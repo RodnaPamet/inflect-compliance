@@ -6,13 +6,13 @@
  * Pages were drifting between `p-4` (compact) and `p-6` (comfortable)
  * via `p-5` and `p-8` rungs without a documented reason. PR-6
  * collapsed those drift sites onto the canonical `p-6` and shipped
- * the `<Card density>` primitive at `src/components/ui/card.tsx`.
+ * the `<Card density>` primitive at `packages/ui/src/components/ui/card.tsx`.
  *
  * What this ratchet enforces:
  *   - No new `glass-card p-5` or `glass-card p-8` strings (anywhere
  *     they appear in className: static strings, template literals,
  *     conditional ternaries).
- *   - The `<Card>` primitive itself stays in `src/components/ui/card.tsx`
+ *   - The `<Card>` primitive itself stays in `packages/ui/src/components/ui/card.tsx`
  *     and only paints `p-4`, `p-6`, or no padding (verified by the
  *     primitive's own contract tests).
  *
@@ -53,7 +53,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 const EXEMPT_FILES = new Set<string>([
   // Card primitive's docstring mentions `<div className="glass-card p-5">`
   // and `<div className="glass-card p-8">` as historical patterns.
-  "src/components/ui/card.tsx",
+  "packages/ui/src/components/ui/card.tsx",
 ]);
 
 // Match `glass-card` and `p-5` (or `p-8`) co-occurring within the same
@@ -155,7 +155,7 @@ describe("<Card> primitive contract", () => {
     // `card-variants.ts` (server-safe sibling). The `spacious` rung
     // landed in Roadmap-5 PR-2 alongside the existing trio.
     const src = fs.readFileSync(
-      path.join(ROOT, "src/components/ui/card-variants.ts"),
+      path.join(ROOT, "packages/ui/src/components/ui/card-variants.ts"),
       "utf8",
     );
     // Strip docstring + line comments so the assertion runs against
