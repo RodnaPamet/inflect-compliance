@@ -79,7 +79,7 @@ export function ShimmerDots({
         <span
             role="progressbar"
             aria-busy="true"
-            aria-label={ariaLabel ?? t('loading')}
+            aria-label={ariaLabel ?? t('loadingIndicator')}
             data-testid={testId}
             data-shimmer-dots
             className={cn(

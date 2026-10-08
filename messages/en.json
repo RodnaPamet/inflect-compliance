@@ -134,7 +134,8 @@
       "viewCards": "Cards",
       "uploading": "Uploading…",
       "openPdf": "Open PDF",
-      "openPdfNamed": "Open PDF: {title}"
+      "openPdfNamed": "Open PDF: {title}",
+      "loadingIndicator": "Loading"
     },
     "calendar": {
       "prevYear": "Go to previous year",

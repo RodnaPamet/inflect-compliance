@@ -701,12 +701,19 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
     });
 
     it('ShimmerDots: the busy region name (#3209)', () => {
-        // Reuses the existing `common.ui.loading` rather than minting a ninth
-        // key. That makes the English "Loading…" where the hard-coded default
-        // was "Loading" — the one copy change in this batch, and it matches
-        // every other loading affordance in the product.
+        // `loadingIndicator`, NOT the existing `common.ui.loading`. I reused
+        // `loading` first, which made the English "Loading…" where the
+        // hard-coded default was "Loading" — and `shimmer-dots.test.tsx` has
+        // pinned the exact string since before this change. That red was
+        // right: this is a primitive playerz vendors byte-identically, and
+        // #3209 is about removing hardcoded English, not about changing what
+        // a screen reader says.
+        //
+        // The two keys are also not redundant. `loading` is VISIBLE text and
+        // wants its ellipsis; this is an accessible NAME, where the ellipsis
+        // is at best ignored and at worst spoken.
         render(<ShimmerDots />);
-        expectLocalised(screen.getByRole('progressbar').getAttribute('aria-label'), 'Loading…');
+        expectLocalised(screen.getByRole('progressbar').getAttribute('aria-label'), 'Loading');
     });
 
     it('EvidenceGallery: the grid name (#3209)', () => {

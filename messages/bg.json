@@ -134,7 +134,8 @@
       "viewCards": "Карти",
       "uploading": "Качване…",
       "openPdf": "Отвори PDF",
-      "openPdfNamed": "Отвори PDF: {title}"
+      "openPdfNamed": "Отвори PDF: {title}",
+      "loadingIndicator": "Зареждане"
     },
     "calendar": {
       "prevYear": "Към предходната година",
