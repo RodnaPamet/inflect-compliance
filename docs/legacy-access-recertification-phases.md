@@ -23,7 +23,7 @@ restate it.
 | 2a | Snapshot models and a fail-closed pull | Not started | — |
 | 2b | Mapping UI and suggestions | Not started | — |
 | 3a | Normalisation library and labelled corpus | Merged | #3267 |
-| 3b | The deterministic engine and the precision ratchet | Open | — |
+| 3b | The deterministic engine and the precision ratchet | Open | #3286 |
 | 3c | Persist results and the crosswalk | Not started | — |
 | 4a | Naming conventions and similarity | Not started | — |
 | 4b | Review queue and alias revalidation | Not started | — |
