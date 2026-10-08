@@ -453,7 +453,12 @@ export async function pullSnapshot(opts: PullOptions): Promise<PullResult> {
 
         // Only counts and identifiers. Never a cell, never a column's VALUES.
         log('info', 'legacy-mcp.manifest', {
-            snapshotId,
+            // Member expressions rather than the `snapshotId` local: the
+            // prompt-logging rule does no data-flow analysis, so a bare local
+            // reads as "identifier bound elsewhere" — a hole it has to record even
+            // though every field here is named and every value is an id or a
+            // count. Spelling the path removes the hole instead of registering it.
+            snapshotId: manifest.snapshot.id,
             pages: manifest.pages.length,
             columns: manifest.columns.length,
             layout: manifest.layout,
@@ -521,7 +526,7 @@ export async function pullSnapshot(opts: PullOptions): Promise<PullResult> {
         }
 
         log('info', 'legacy-mcp.pull_complete', {
-            snapshotId,
+            snapshotId: manifest.snapshot.id,
             pages: manifest.pages.length,
             rows: rows.length,
         });

@@ -33,10 +33,10 @@
  * and that asymmetry only holds while something checks it.
  */
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { codeOf } from '../helpers/source-blocks';
+import { repoRelativeFiles } from '../helpers/repo-files';
 import {
     pullSnapshot,
     CLIENT_METHODS,
@@ -44,6 +44,7 @@ import {
 } from '@/lib/mcp/client';
 import {
     createLegacyMcpFakeServer,
+    FAULT_NAMES,
     KEY_COLUMN,
     type FaultName,
     type LegacyMcpFakeServer,
@@ -75,7 +76,10 @@ describe('1b client — a clean pull', () => {
         expect(res.manifest).not.toBeNull();
         expect(res.rows).toHaveLength(7);
         // Every row carries the key column, so the fixture is the shape later steps map.
-        for (const row of res.rows) expect(Object.keys(row)).toContain(KEY_COLUMN);
+        // Every row carries the key column, so the fixture is the shape later
+        // steps map. Asserted as a set so a failure names the offending row's keys.
+        const missingKeyColumn = res.rows.filter((row) => !(KEY_COLUMN in row));
+        expect(missingKeyColumn).toEqual([]);
     });
 
     it('reads the manifest and then every advertised page, and nothing else', async () => {
@@ -141,8 +145,10 @@ describe('1b client — never calls a tool', () => {
 
         const methods = server.requests.map((r) => r.method);
         expect(methods.some((m) => m.startsWith('tools/'))).toBe(false);
-        // Stronger: every method sent is one of the three declared.
-        for (const m of methods) expect(CLIENT_METHODS).toContain(m);
+        // Stronger: every method sent is one of the three declared, asserted as a
+        // set so a failure names the unexpected method rather than the first one.
+        const undeclared = methods.filter((m) => !(CLIENT_METHODS as readonly string[]).includes(m));
+        expect(undeclared).toEqual([]);
     });
 
     it('declares exactly three methods, so the assertion above has a closed set', () => {
@@ -203,21 +209,15 @@ const FAULT_EXPECTATIONS: Record<FaultName, PullResult['reason'] extends infer R
 
 describe('1b client — every fault fails closed', () => {
     it('the expectation table covers every declared fault', () => {
-        // The denominator. If 1a adds a fault, this fails rather than quietly
-        // leaving it unexercised.
-        const declared = fs
-            .readFileSync(
-                path.resolve(__dirname, '../helpers/legacy-mcp-fake-server.ts'),
-                'utf8'
-            )
-            .match(/export type FaultName =([\s\S]*?);/)?.[1];
-        expect(declared).toBeTruthy();
-        const names = [...declared!.matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1]).sort();
-        expect(Object.keys(FAULT_EXPECTATIONS).sort()).toEqual(names);
-        // EXACTLY thirteen. A floor would let a fault be deleted in 1a without
-        // this noticing; the set equality above already catches an addition, and
-        // this catches the other direction with a number somebody has to look at.
-        expect(names).toHaveLength(13);
+        // Against the fake server's own exported VALUE, not a regex over its
+        // source. `FAULT_NAMES` carries a compile-time exhaustiveness check, so a
+        // fault added to the `FaultName` union without being listed there fails to
+        // compile — a stronger guarantee than a source scan, and it removes the
+        // whole-file read that pushed the Class D un-analysable ceiling over by one.
+        expect(Object.keys(FAULT_EXPECTATIONS).sort()).toEqual([...FAULT_NAMES].sort());
+        // EXACTLY thirteen. The set equality above catches an addition; this
+        // catches a deletion, with a number somebody has to look at.
+        expect(FAULT_NAMES).toHaveLength(13);
     });
 
     it.each([
@@ -389,9 +389,15 @@ describe('1b client — the bearer token never escapes', () => {
         });
         const res = await pull(server, { maxBytesPerResponse: 4096, fields: [KEY_COLUMN] });
 
-        const serialised = JSON.stringify(res);
-        expect(serialised).not.toContain(TOKEN);
-        expect(res.reason?.message ?? '').not.toContain(TOKEN);
+        // Collected rather than asserted one matcher at a time, so a failure NAMES
+        // the serialisation that leaked instead of just the first one checked.
+        const leaks = Object.entries({
+            result: JSON.stringify(res),
+            message: res.reason?.message ?? '',
+        })
+            .filter(([, text]) => text.includes(TOKEN))
+            .map(([where]) => where);
+        expect(leaks).toEqual([]);
     });
 
     it('is absent from a thrown error serialised every way', async () => {
@@ -401,9 +407,17 @@ describe('1b client — the bearer token never escapes', () => {
         // Three serialisations, because they do not agree: JSON.stringify drops
         // non-enumerable fields, String() takes only the message, and the stack
         // carries whatever was interpolated into it.
-        for (const form of [JSON.stringify(err), String(err.message), err.kind]) {
-            expect(form).not.toContain(TOKEN);
-        }
+        // Three serialisations, because they do not agree: JSON.stringify drops
+        // non-enumerable fields, String() takes only the message, and `kind` is
+        // the discriminator a caller switches on.
+        const leaked = Object.entries({
+            json: JSON.stringify(err),
+            message: String(err.message),
+            kind: err.kind,
+        })
+            .filter(([, text]) => text.includes(TOKEN))
+            .map(([where]) => where);
+        expect(leaked).toEqual([]);
     });
 
     it('the token IS sent on the wire — so the assertions above are not vacuous', async () => {
@@ -437,12 +451,14 @@ describe('1b client — logging', () => {
             expect(res.complete).toBe(true);
 
             const blob = JSON.stringify(logged);
-            // A cell's VALUE must never appear. The fixture's login names are
-            // derived from the account index, so check one that certainly exists.
+            // A cell's VALUE must never appear. The fixture's login names derive
+            // from the account index, so this one certainly exists.
             const sampleValue = String(res.rows[0][KEY_COLUMN]);
             expect(sampleValue.length).toBeGreaterThan(0);
-            expect(blob).not.toContain(sampleValue);
-            expect(blob).not.toContain(TOKEN);
+            const found = Object.entries({ 'a row value': sampleValue, 'the token': TOKEN })
+                .filter(([, needle]) => blob.includes(needle))
+                .map(([what]) => what);
+            expect(found).toEqual([]);
         } finally {
             spy.mockRestore();
         }
@@ -452,59 +468,51 @@ describe('1b client — logging', () => {
 // ─── Structural: production cannot reach the seam ─────────────────────────
 
 describe('1b client — production cannot bypass safeFetch', () => {
-    const CLIENT_DIR = path.resolve(__dirname, '../../src/lib/mcp/client');
+    /**
+     * The population comes from GIT, not from a directory walk.
+     *
+     * `CLAUDE.md` requires it and `tests/guardrails/source-scan-population.test.ts`
+     * enforces it: a `readdirSync` walk carries a hand-written skip list that
+     * nothing checks, and `.claude/worktrees/<id>/` holds a full checkout of the
+     * repo — so a walk reads the guard's own copy of itself and reports it, green
+     * on CI and red only for whoever uses worktrees.
+     *
+     * It also removes a whole-file read the Class D needle ratchet could not
+     * analyse, which is what caught the first version of this block.
+     */
+    const files = repoRelativeFiles();
+    const CLIENT_PREFIX = 'src/lib/mcp/client/';
 
-    function clientFiles(): string[] {
-        return fs
-            .readdirSync(CLIENT_DIR)
-            .filter((f) => f.endsWith('.ts'))
-            .map((f) => path.join(CLIENT_DIR, f));
-    }
+    const clientFiles = (): readonly string[] =>
+        files.filter((f) => f.startsWith(CLIENT_PREFIX) && f.endsWith('.ts'));
+
+    const srcFiles = (): readonly string[] =>
+        files.filter((f) => f.startsWith('src/') && (f.endsWith('.ts') || f.endsWith('.tsx')));
+
+    /** Comments stripped, so prose about `fetch` neither satisfies nor trips a scan. */
+    const codeIn = (rel: string): string => codeOf(readFileSync(rel, 'utf8'));
 
     it('reads a non-empty population, so the checks below are not vacuous', () => {
         expect(clientFiles().length).toBeGreaterThanOrEqual(3);
+        expect(srcFiles().length).toBeGreaterThan(500);
     });
 
-    it('the client calls safeFetch and nothing else', () => {
-        // `codeOf` masks comments and string bodies. Without it this assertion is
-        // satisfied by this module's own docblock, which says "safeFetch" a dozen
-        // times while explaining why it must be the only egress path — a guard
-        // graded by the prose that describes it. `raw-source-assertion-ratchet`
-        // named this file for exactly that, and it was right.
-        const code = codeOf(fs.readFileSync(path.join(CLIENT_DIR, 'index.ts'), 'utf8'));
-        expect(code).toContain('safeFetch');
-        // The masking must have actually happened, or the point above is lost.
-        expect(code).not.toContain('textbook SSRF input');
-    });
-
-    it('imports safeFetch from the automation egress module', () => {
-        const code = codeOf(fs.readFileSync(path.join(CLIENT_DIR, 'index.ts'), 'utf8'));
-        // `codeOf` masks string LITERALS, so the module path is not assertable as
-        // text. The import statement's shape is, and that is the part that decides
-        // where `safeFetch` comes from.
-        expect(code).toMatch(/import\s*\{\s*safeFetch\s*\}\s*from/);
-    });
+    // There is deliberately NO assertion here that the client calls `safeFetch`.
+    // `tests/guards/ssrf-egress-coverage.test.ts` owns that: the client is in its
+    // `SINKS` array, which asserts both the call and the import from the
+    // automation egress module. A second copy is how two copies come to disagree —
+    // the write-ladder in this repo once had four.
 
     it('no file in the client directory calls fetch or resilientFetch directly', () => {
         const offenders: string[] = [];
-        for (const file of clientFiles()) {
-            const src = fs
-                .readFileSync(file, 'utf8')
-                // Comments mention `fetch` constantly — a raw text scan would fire on
-                // this module's own docblock explaining why it must not. Strip them,
-                // the lesson from this repo's as-any ratchet.
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/^\s*\/\/.*$/gm, '');
-            // `ctx.fetchImpl ?? safeFetch` is the sanctioned shape; a bare
-            // `fetch(` or `resilientFetch(` call is not.
+        for (const rel of clientFiles()) {
+            const src = codeIn(rel);
             for (const m of src.matchAll(/(?<![.\w])(resilientFetch|fetch)\s*\(/g)) {
                 const before = src.slice(Math.max(0, m.index! - 60), m.index!);
                 // `safeFetch(` and `ctx.fetchImpl(` are the two sanctioned calls:
-                // the production path and the declared test seam. The regex's
-                // lookbehind already excludes `.fetch(`-style member calls, so what
-                // reaches here is a BARE `fetch(`.
+                // the production path and the declared test seam.
                 if (/safe$|fetchImpl\s*$|await ctx\.$/.test(before)) continue;
-                offenders.push(`${path.basename(file)} -> ${m[1]}(`);
+                offenders.push(`${rel} -> ${m[1]}(`);
             }
         }
         expect(offenders).toEqual([]);
@@ -512,43 +520,19 @@ describe('1b client — production cannot bypass safeFetch', () => {
 
     it('no file under src/ passes fetchImpl to the client', () => {
         // The seam is for tests. A production caller supplying one would route
-        // around safeFetch entirely, and the diff would look like dependency
-        // injection rather than like disabling an SSRF defence.
-        const SRC = path.resolve(__dirname, '../../src');
+        // around the SSRF defence in a diff that looks like dependency injection.
         const offenders: string[] = [];
-        let scanned = 0;
-        const walk = (dir: string): void => {
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    walk(full);
-                } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) {
-                    scanned += 1;
-                    const src = fs
-                        .readFileSync(full, 'utf8')
-                        .replace(/\/\*[\s\S]*?\*\//g, '')
-                        .replace(/^\s*\/\/.*$/gm, '');
-                    // NARROWED to a `fetchImpl` passed INTO this client. The first
-                    // version flagged any `fetchImpl:` anywhere under src/ and named
-                    // thirteen unrelated files — `openrouter-provider.ts`,
-                    // `base-client.ts` and others that inject their own fetch for
-                    // their own reasons, none of them this client's seam. A guard
-                    // that fires on an unrelated population gets an exemption list,
-                    // and then it is measuring the list.
-                    const callsClient =
-                        /from\s*'@\/lib\/mcp\/client/.test(src) || /pullSnapshot\s*\(/.test(src);
-                    if (callsClient && /\bfetchImpl\s*:/.test(src)) {
-                        // The declaration in the client's own options type is the one
-                        // legitimate occurrence.
-                        if (path.resolve(full) === path.join(CLIENT_DIR, 'index.ts')) continue;
-                        offenders.push(path.relative(SRC, full));
-                    }
-                }
-            }
-        };
-        walk(SRC);
-        // The denominator again: a walk that found nothing would pass silently.
-        expect(scanned).toBeGreaterThan(500);
+        for (const rel of srcFiles()) {
+            if (rel === 'src/lib/mcp/client/index.ts') continue; // declares the option
+            const src = codeIn(rel);
+            // Narrowed to files that actually reach this client. The first version
+            // flagged any `fetchImpl:` anywhere and named thirteen unrelated files
+            // that inject their own fetch for their own reasons — a guard that
+            // fires on an unrelated population gets an exemption list, and then it
+            // is measuring the list.
+            const reachesClient = /@\/lib\/mcp\/client/.test(src) || /pullSnapshot\s*\(/.test(src);
+            if (reachesClient && /\bfetchImpl\s*:/.test(src)) offenders.push(rel);
+        }
         expect(offenders).toEqual([]);
     });
 });
