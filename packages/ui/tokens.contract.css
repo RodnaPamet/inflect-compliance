@@ -1,9 +1,9 @@
 /* ─────────────────────────────────────────────────────────────────────────
- * `@inflect/ui` — the token CONTRACT. 45 names. #3046, §4.
+ * `@inflect/ui` — the token CONTRACT. 47 names. #3046, §4.
  *
  * THE PACKAGE REQUIRES TOKENS. IT DOES NOT SHIP THEM. IT SHIPS THEIR NAMES.
  *
- * A consumer is expected to override all 45 with its own palette. The values
+ * A consumer is expected to override all 47 with its own palette. The values
  * below are a deliberately brand-free neutral fallback, and their job is to
  * make a forgotten override VISIBLE rather than invisible: an undefined custom
  * property resolves to the property's initial value, so
@@ -26,12 +26,23 @@
  * variable is an implementation detail and must stay inside its component.
  * `--switch-thumb-x` is the worked counter-example — `switch.tsx` declares and
  * consumes it through Tailwind's arbitrary-property syntax
- * (`[--switch-thumb-x:1rem]`), so it is NOT one of the 45 even though the
+ * (`[--switch-thumb-x:1rem]`), so it is NOT one of the 47 even though the
  * measurement that produced them kept meeting it.
  *
- * THE CONTRACT IS CLOSED. 45 names, stable across three different populations
- * (the 408 import-closed set, the 59 files the consumer vendors today, the 494
- * it tracks). It is a checked list, not an aspiration.
+ * THE CONTRACT IS CLOSED. 45 names were measured, stable across three
+ * different populations (the 408 import-closed set, the 59 files the consumer
+ * vendors today, the 494 it tracks). It is a checked list, not an aspiration.
+ *
+ * Two names joined it on 2026-10-08, by decision rather than measurement:
+ * `--accent-default` and `--accent-emphasis`, which the SOLID focus indicators
+ * read since they stopped naming `--brand-*` (the Button's halo, the table,
+ * card, tree and graph rings, the undo toast). Their fallbacks below are
+ * ALIASES of the brand, not neutral literals: a consumer that never overrides
+ * them focuses in its brand, which is exactly what every consumer did before
+ * the seam, and the forgotten override still renders visibly. A consumer whose
+ * focus colour is not its brand (playerz.bg: yellow focus on purple fills)
+ * overrides these two and nothing else. Lint keeps it true:
+ * `local/no-brand-focus-indicator` in the host repo.
  *
  * ─── WCAG, measured rather than asserted ─────────────────────────────────
  *
@@ -137,4 +148,10 @@
   /* The two unprefixed survivors — 2 */
   --primary: #3a6ea5;
   --ring: #2d5ba8;
+
+  /* Accent — 2. The SOLID focus indicators. Aliases of the brand on purpose:
+   * see the header. --brand-default on --bg-page is 5.31:1 (table above), and
+   * the accent inherits that number as long as it follows the brand. */
+  --accent-default: var(--brand-default);
+  --accent-emphasis: var(--brand-emphasis);
 }

@@ -233,9 +233,22 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
         expect(bandValue).not.toContain('var(--brand-muted)');
         expect(bandValue).not.toContain('var(--brand-emphasis)');
 
-        // And it positively IS the page-bg ramp (three identical
-        // --bg-page stops collapse the linear gradient to a solid).
-        expect(bandValue).toContain('var(--bg-page)');
+        // And it positively IS the page-bg ramp: three identical
+        // `--nav-band-active` stops collapse the linear gradient to a
+        // solid, and that token is the page tone (next test).
+        expect(bandValue).toContain('var(--nav-band-active)');
+    });
+
+    it('--nav-band-active is an alias of --bg-page in BOTH themes, so the band renders as it did', () => {
+        // The band reads `--nav-band-active` rather than `--bg-page` so a
+        // host that vendors NavItem can colour the current page's band
+        // without repainting its page (playerz.bg: yellow). For Inflect
+        // the token must stay the page tone EXACTLY — an alias, not a
+        // copied hex that a later palette change would leave behind. The
+        // resolution tests above prove the rendered colour; this pins the
+        // spelling that keeps them true when the page tone moves.
+        expect(METRO['--nav-band-active']).toBe('var(--bg-page)');
+        expect(PWC['--nav-band-active']).toBe('var(--bg-page)');
     });
 
     it('the DEFAULT (idle) band still uses the brand ramp — the swap is active-only', () => {
@@ -258,7 +271,7 @@ describe('<NavItem> active band tone — behavioural (Tier 2)', () => {
         expect(bandValue).toContain('var(--brand-emphasis)');
         // The idle row must not carry the active page-bg override.
         expect(link.className).not.toContain(
-            'linear-gradient(to bottom, var(--bg-page)',
+            'linear-gradient(to_bottom,_var(--nav-band-active)',
         );
     });
 });

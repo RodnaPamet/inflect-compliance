@@ -203,7 +203,7 @@ export function CardListCard({
                 className={cn(
                     'flex flex-1 flex-col p-4',
                     interactive &&
-                        'outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)] focus-visible:ring-offset-2 rounded-lg',
+                        'outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)] focus-visible:ring-offset-2 rounded-lg',
                     innerClassName,
                 )}
             >

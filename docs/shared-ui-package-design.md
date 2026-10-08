@@ -611,6 +611,12 @@ The 45: `--bg-{default,elevated,error,info,muted,overlay,page,subtle,success,war
 `--content-{brand,default,emphasis,error,info,inverted,muted,subtle,success,warning}`,
 `--ctrl-edge-{rest,hover,focus}`, `--primary`, `--ring`.
 
+**Update 2026-10-08 — the contract is 47.** `--accent-default` and `--accent-emphasis` joined by
+decision, not by measurement: the shared UI's solid focus indicators (the Button's halo, the
+table, card, tree and graph rings, the undo toast) read them instead of `--brand-*`, so a host
+whose focus colour is not its brand fill can set it. Both alias the brand in `src/styles/tokens.css`
+and in `tokens.contract.css`, so no Inflect pixel moved. `local/no-brand-focus-indicator` holds it.
+
 ---
 
 ## 1. What is in the package

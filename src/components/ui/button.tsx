@@ -177,7 +177,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
               // two-stop halo the cva base uses, so a disabled control
               // and a live one focus identically.
               "focus-visible:outline-none",
-              "focus-visible:shadow-[0_0_0_2px_var(--bg-default),0_0_0_4px_var(--brand-default)]",
+              "focus-visible:shadow-[0_0_0_2px_var(--bg-default),0_0_0_4px_var(--accent-default)]",
               INERT_BUTTON_SHELL,
               // Still Surface single-rung ladder (2026-07-28). This
               // branch does NOT route through the cva variant (it is a

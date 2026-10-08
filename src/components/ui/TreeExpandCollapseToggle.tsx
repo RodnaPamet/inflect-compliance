@@ -78,7 +78,7 @@ export function TreeExpandCollapseToggle({
                     'flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors',
                     'text-content-muted hover:text-content-emphasis hover:bg-bg-muted',
                     'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)] focus-visible:ring-inset',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)] focus-visible:ring-inset',
                 )}
             >
                 <ChevronsUpDown className="w-3.5 h-3.5" aria-hidden="true" />
@@ -95,7 +95,7 @@ export function TreeExpandCollapseToggle({
                     'flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors',
                     'text-content-muted hover:text-content-emphasis hover:bg-bg-muted',
                     'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)] focus-visible:ring-inset',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)] focus-visible:ring-inset',
                 )}
             >
                 <ChevronsDownUp className="w-3.5 h-3.5" aria-hidden="true" />
