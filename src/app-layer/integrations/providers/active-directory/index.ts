@@ -362,6 +362,16 @@ function normalizeAdEntry(
         onPremisesSyncEnabled: false,
         groups: groupCns,
         lastActiveAt: fileTimeToDate(entry.lastLogonTimestamp),
+        // Step 0b — the login names a legacy AD-joined application stores.
+        // Both were ALREADY requested and already computed above for `email`;
+        // they were simply discarded afterwards. `email` on line above is
+        // untouched: it stays `upn || mail || sam`, which the JML link
+        // reconcile and the leaver pass compare byte for byte.
+        samAccountName: sam ?? null,
+        userPrincipalName: upn ?? null,
+        // AD has no `mailNickname`; left unset rather than aliased to `sam`,
+        // which would be a manufactured answer the bridge might match on.
+        mailNickname: null,
     };
 }
 

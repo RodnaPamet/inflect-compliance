@@ -156,6 +156,54 @@ export interface IdentitySyncResult {
  * connection (provider must be okta / google-workspace). `provider` and
  * `now` are injectable for tests.
  */
+/**
+ * Step 0b — the storage form of a directory login name.
+ *
+ * ─── THESE ARE UNTRUSTED STRINGS ────────────────────────────────────────
+ *
+ * A `sAMAccountName` or UPN arrives from a directory the operator controls,
+ * not from this product, and a compromised or merely sloppy directory can put
+ * anything in an attribute. Two properties matter before storage:
+ *
+ *   CONTROL CHARACTERS ARE REMOVED. A login name is later rendered in a
+ *   review table and written into an evidence PDF, and a NUL or a
+ *   bidirectional override in it is a display attack that outlives the sync —
+ *   an RTL override can make `admin\u202Eevil` read as something else
+ *   entirely to the human approving it. Stripping at the write means every
+ *   reader is safe without each one remembering to be.
+ *
+ *   LENGTH IS CAPPED. Not validation — a bound. The real limits are smaller
+ *   (`sAMAccountName` 20, `mailNickname` 64, UPN 113), but enforcing those
+ *   here would make this function reject values the directory considers
+ *   valid, and a sync that drops an account because a vendor exceeded a
+ *   Microsoft limit is worse than one that stores a long string. 256 is a
+ *   storage bound against an absurd value, nothing more.
+ *
+ * Returns `null` for absent, empty, or whitespace-only input, which preserves
+ * the column's meaning: NULL is "this provider does not carry the concept",
+ * never "the account has no login name".
+ *
+ * NOT `sanitizePlainText`: that is an HTML sanitiser, which decodes entities
+ * and strips tags. A login name is not markup, and running it through would
+ * mangle legitimate values while still not removing a single control
+ * character or capping a single byte.
+ */
+const LOGIN_NAME_MAX = 256;
+// C0, DEL, C1, and the Unicode bidi/invisible set. Built from a string rather
+// than a literal because U+2028 and U+2029 are line terminators: written
+// literally inside a regex literal they end the expression.
+const LOGIN_NAME_CONTROL = new RegExp(
+    '[\\x00-\\x1F\\x7F-\\x9F\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u2064\\uFEFF]',
+    'g',
+);
+
+export function normaliseLoginName(value: string | null | undefined): string | null {
+    if (value == null) return null;
+    const stripped = value.replace(LOGIN_NAME_CONTROL, '').trim();
+    if (stripped === '') return null;
+    return stripped.slice(0, LOGIN_NAME_MAX);
+}
+
 export async function runIdentitySync(input: {
     tenantId: string;
     connectionId: string;
@@ -353,6 +401,13 @@ export async function runIdentitySync(input: {
                             onPremStateObservedAt: a.onPremStateObserved ? now : null,
                             groupsJson: a.groups,
                             lastActiveAt: a.lastActiveAt ?? null,
+                            // Step 0b — the login names, control-stripped and
+                            // length-bounded. `null` for a provider that does not
+                            // carry the concept (Okta, Google Workspace), which is
+                            // what the columns' NULL is documented to mean.
+                            samAccountName: normaliseLoginName(a.samAccountName),
+                            userPrincipalName: normaliseLoginName(a.userPrincipalName),
+                            mailNickname: normaliseLoginName(a.mailNickname),
                             syncedAt: now,
                         },
                         update: {
@@ -391,6 +446,15 @@ export async function runIdentitySync(input: {
                             onPremStateObservedAt: a.onPremStateObserved ? now : null,
                             groupsJson: a.groups,
                             lastActiveAt: a.lastActiveAt ?? null,
+                            // Step 0b — OVERWRITTEN on every pass, unlike the
+                            // protection columns above. These are directory state,
+                            // and the directory is their only author: a renamed
+                            // account whose UPN changed must stop matching the old
+                            // one, or the bridge keeps linking a legacy row to a
+                            // login name nobody has any more.
+                            samAccountName: normaliseLoginName(a.samAccountName),
+                            userPrincipalName: normaliseLoginName(a.userPrincipalName),
+                            mailNickname: normaliseLoginName(a.mailNickname),
                             syncedAt: now,
                         },
                     });

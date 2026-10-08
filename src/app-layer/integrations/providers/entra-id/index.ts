@@ -75,10 +75,21 @@ const LOGIN_BASE = 'https://login.microsoftonline.com';
 
 /** The user `$select` set. `signInActivity` needs AuditLog.Read.All + a premium
  *  licence; if the tenant lacks it the request 4xxs and we retry without it. */
+//
+// Step 0b added `mailNickname` to BOTH sets, and both is the point: the base
+// set is the fallback used when the tenant lacks the premium licence
+// `signInActivity` needs, so a field added only to FULL would be silently
+// absent for exactly those tenants. `userPrincipalName` was already selected
+// and already discarded.
+//
+// Neither addition touches pagination, the account cap, or resume: `$top` and
+// `@odata.nextLink` are independent of `$select`, and a resumed URL carries its
+// own `$select` from the link Graph returned, which is why the resume-token
+// origin check is unaffected.
 const USER_SELECT_FULL =
-    'id,displayName,userPrincipalName,mail,accountEnabled,userType,onPremisesSyncEnabled,signInActivity';
+    'id,displayName,userPrincipalName,mailNickname,mail,accountEnabled,userType,onPremisesSyncEnabled,signInActivity';
 const USER_SELECT_BASE =
-    'id,displayName,userPrincipalName,mail,accountEnabled,userType,onPremisesSyncEnabled';
+    'id,displayName,userPrincipalName,mailNickname,mail,accountEnabled,userType,onPremisesSyncEnabled';
 
 interface EntraDeps {
     /** Injectable directory fetch (defaults to the live Graph client). */
@@ -105,6 +116,8 @@ interface GraphUser {
     id: string;
     displayName?: string;
     userPrincipalName?: string;
+    /** Step 0b — the mail alias, e.g. `jsmith`. Entra's own login-name concept. */
+    mailNickname?: string | null;
     mail?: string | null;
     accountEnabled?: boolean;
     userType?: string;
@@ -163,6 +176,18 @@ function normalizeGraphUser(u: GraphUser): NormalizedIdentityAccount {
         // H2 — per-user SSO federation is derived from domain authenticationType
         // in the enrichment pass; unknown until then.
         ssoEnrolled: null,
+        // Step 0b — the login names. `email` above is UNCHANGED: it stays
+        // `mail || userPrincipalName`, MAIL WINS, which identity-joiner-pass
+        // documents at line 443 and the link reconcile compares byte for byte.
+        // Keeping the UPN in its own field is what lets the directory bridge
+        // match a legacy table that stores UPNs, without re-pointing a single
+        // existing link.
+        userPrincipalName: u.userPrincipalName ?? null,
+        mailNickname: u.mailNickname ?? null,
+        // Entra has no `sAMAccountName`. An on-prem-synced account HAS one in
+        // AD, but Graph does not return it on the user object, so claiming one
+        // here would be inventing it.
+        samAccountName: null,
         groups: [],
         lastActiveAt: u.signInActivity?.lastSignInDateTime
             ? new Date(u.signInActivity.lastSignInDateTime)
