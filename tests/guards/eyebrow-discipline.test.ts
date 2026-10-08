@@ -93,7 +93,7 @@ function walk(dir: string): string[] {
 describe('Eyebrow uniformity (Roadmap-4 PR-3)', () => {
     it('Eyebrow primitive locks intrinsic styling', () => {
         const src = codeOf(fs.readFileSync(
-            path.join(ROOT, 'src/components/ui/typography.tsx'),
+            path.join(ROOT, 'packages/ui/src/components/ui/typography.tsx'),
             'utf-8',
         ));
         // The intrinsic style must contain block + mb-1 + text-xs +

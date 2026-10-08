@@ -154,6 +154,14 @@ function countMatches(re: RegExp): number {
     };
     walk(path.join(ROOT, 'src/app'));
     walk(path.join(ROOT, 'src/components'));
+    // The shared package counts too. #3046 moves primitives out of
+    // `src/components`, and a budget scanning only `src` reads that move as
+    // the tree IMPROVING: batch 3 took the live count 109 -> 106 and this
+    // ratchet asked to be re-seated to 106, which would have booked a
+    // coverage loss as progress and left three slots of headroom for a real
+    // regression to spend with a green build. The borders did not go away;
+    // they changed address. (#3279)
+    walk(path.join(ROOT, 'packages/ui/src'));
     return total;
 }
 
@@ -185,7 +193,7 @@ describe('Border-tone budget (Roadmap-5 PR-10)', () => {
             baseline: BORDER_DEFAULT_BUDGET,
             count,
             allowance: DRIFT_ALLOWANCE,
-            what: '`border-border-default` occurrences in src/app + src/components',
+            what: '`border-border-default` occurrences in src/app + src/components + packages/ui/src',
         });
     });
 });

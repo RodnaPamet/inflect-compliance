@@ -99,7 +99,7 @@ interface Offence {
 describe('Link styling discipline (Roadmap-4 PR-10)', () => {
     it('typography primitive exposes the `link` tone', () => {
         const src = codeOf(fs.readFileSync(
-            path.join(ROOT, 'src/components/ui/typography.tsx'),
+            path.join(ROOT, 'packages/ui/src/components/ui/typography.tsx'),
             'utf-8',
         ));
         // Match the tone definition with the three pieces of the

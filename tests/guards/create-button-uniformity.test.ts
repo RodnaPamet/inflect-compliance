@@ -24,7 +24,7 @@
  *
  * Pairs with:
  *   - tests/guards/action-label-vocabulary.test.ts (BAN side)
- *   - src/components/ui/button-variants.ts (the variant catalogue)
+ *   - packages/ui/src/components/ui/button-variants.ts (the variant catalogue)
  */
 import * as fs from "fs";
 import * as path from "path";

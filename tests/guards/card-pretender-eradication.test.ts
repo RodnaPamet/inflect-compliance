@@ -1,7 +1,7 @@
 /**
  * Polish PR-3 — Card-pretender eradication ratchet.
  *
- * The Card primitive at `src/components/ui/card.tsx` defines a real
+ * The Card primitive at `packages/ui/src/components/ui/card.tsx` defines a real
  * elevation model (flat / inset / raised / floating) and density
  * (comfortable / compact / none). Until this PR five components
  * hand-rolled `<div className="rounded-lg border border-border-
@@ -12,7 +12,7 @@
  * What this ratchet detects
  *   The literal substring
  *     `rounded-lg border border-border-default bg-bg-subtle`
- *   anywhere in the codebase OUTSIDE `src/components/ui/card.tsx`
+ *   anywhere in the codebase OUTSIDE `packages/ui/src/components/ui/card.tsx`
  *   (the primitive that owns this recipe) and the design-system
  *   docs file.
  *
@@ -37,11 +37,11 @@ const SCAN_DIRS = ['src/app', 'src/components'];
 
 const EXEMPT_FILES = new Set<string>([
     // The primitive owns this recipe.
-    'src/components/ui/card.tsx',
+    'packages/ui/src/components/ui/card.tsx',
     // Roadmap-5 hotfix — the cva definition lives in a server-safe
     // sibling so non-`"use client"` callers (server components) can
     // import + call it. The recipe text moved from card.tsx to here.
-    'src/components/ui/card-variants.ts',
+    'packages/ui/src/components/ui/card-variants.ts',
 ]);
 
 const EXEMPT_FILE_PATTERNS: RegExp[] = [

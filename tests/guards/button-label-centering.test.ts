@@ -56,10 +56,10 @@ const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-
 
 describe('Button label centering', () => {
     describe('1. Button primitive keeps the centring mechanism', () => {
-        const src = read('src/components/ui/button.tsx');
+        const src = read('packages/ui/src/components/ui/button.tsx');
 
         it('enabled layout (cva base) centres via justify-center', () => {
-            const variants = read('src/components/ui/button-variants.ts');
+            const variants = read('packages/ui/src/components/ui/button-variants.ts');
             // The cva base array begins with the layout line.
             expect(variants).toMatch(/inline-flex items-center justify-center/);
         });
@@ -111,7 +111,7 @@ describe('Button label centering', () => {
             // decorative pseudo has to come through this ratchet and
             // re-prove centring in a real build (jsdom cannot catch it;
             // it only shows under the compiled Tailwind cascade).
-            const variants = read('src/components/ui/button-variants.ts');
+            const variants = read('packages/ui/src/components/ui/button-variants.ts');
             const withoutComments = variants
                 .replace(/\/\*[\s\S]*?\*\//g, '')
                 .replace(/\/\/[^\n]*/g, '');

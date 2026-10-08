@@ -47,7 +47,7 @@ import * as path from "path";
 import { cardVariants } from "@/components/ui/card-variants";
 
 const ROOT = path.resolve(__dirname, "../..");
-const VARIANTS_SRC = path.join(ROOT, "src/components/ui/card-variants.ts");
+const VARIANTS_SRC = path.join(ROOT, "packages/ui/src/components/ui/card-variants.ts");
 
 /**
  * The rung names, read out of the cva `density` block in the SOURCE

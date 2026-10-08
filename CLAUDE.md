@@ -1163,6 +1163,7 @@ Step 5a, which found the same defect four times in one flow.
    unauthenticated read is recorded with a named reason and never reported as complete.
    A row that cannot be keyed fails the pull rather than being dropped — an account
    missing from a snapshot is an account nobody reviews.
+
 5. **Zero is never complete.** A review over no subjects evidences nothing, and every
    natural way to write the completeness check says the opposite. `pending.length === 0`
    and `decided === total` are both TRUE of the empty set, so a campaign with no
@@ -1207,6 +1208,43 @@ Three further rules the engine holds that are easy to undo:
   primary key; a roster that contradicts itself about one person gives no reason to
   trust what it says about the others. An exactly-repeated row is tolerated — the check
   is about contradiction, not duplication.
+
+**The decision-model path, since Step 6b** (`src/app-layer/ai/identity-match/`). Four
+invariants, each enforced by a test rather than by convention:
+
+- **`TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`, and flipping it is a sub-processor
+  activation.** Not a configuration change, not an environment variable — a reviewed
+  diff, after the notice window in `docs/sub-processor-change-policy.md` closes. While
+  it is false, `getDecisionProvider` returns the local provider instead of a Jev one for
+  every mode, so a tenant setting `legacyMatchAiMode = EXTERNAL` achieves nothing. Do
+  not "simplify" that branch away on the grounds that the mode check already covers it:
+  the mode is tenant-settable and this is not.
+- **The Jev host is a code constant.** `JEV_ENDPOINT` is a plain literal — no template,
+  no `env.`, no `process.env`, asserted by reading the line. A configurable host is an
+  SSRF for whoever can write that column, and it would make the sub-processor register
+  describe a destination the code no longer uses. `LAYA_BASE_URL` is deployment
+  configuration for the same reason, and no tenant-writable column reaches it.
+- **Residency is structural.** The factory RETURNS before constructing anything
+  external; it does not construct-then-skip. A constructed-but-unused external provider
+  is one refactor away from a called one, and the refactor looks like tidying.
+  `tests/guards/ai-residency-enforcement.test.ts` reads the source for the ordering AND
+  pins the constructor set, so a fourth provider fails CI until somebody classifies it.
+- **A revision with no evaluation record produces no verdicts.** Records live in
+  `src/app-layer/ai/identity-match/evaluations/` and the directory is empty today. The
+  gate recomputes every derived figure from the record's own raw answers — a stored
+  precision figure is never trusted — and scores a model that is unsure about everything
+  as 0, not 1.
+
+Two shapes in that module that are easy to get wrong a second time:
+
+- **`z.partialRecord`, never `z.record`, for a probability map keyed on the option
+  enum.** `z.record` with an enum key is EXHAUSTIVE in Zod 4, so it demands a
+  probability for all six options and rejects every valid two-candidate response.
+- **The transport's deadline is the CALLER's.** Adjudication runs inline over every
+  residue account, so a retry that honours `Retry-After` in isolation hands a third
+  party control of the pass's schedule. A back-off that does not fit the remaining
+  budget means no retry at all, and a timeout is never retried.
+
 
 
 ## Testing Conventions

@@ -20,8 +20,8 @@
  *
  * Pairs with:
  *   - `tests/rendered/error-state.test.tsx` — primitive contract
- *   - `src/components/ui/skeleton.tsx` — the canonical skeleton family
- *   - `src/components/ui/empty-state.tsx` — companion empty primitive
+ *   - `packages/ui/src/components/ui/skeleton.tsx` — the canonical skeleton family
+ *   - `packages/ui/src/components/ui/empty-state.tsx` — companion empty primitive
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -50,7 +50,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 // Files that legitimately use `animate-pulse h-` because they ARE the
 // canonical skeleton primitives. Each entry needs a written reason.
 const EXEMPT_FILES = new Set<string>([
-  "src/components/ui/skeleton.tsx", // The canonical skeleton family
+  "packages/ui/src/components/ui/skeleton.tsx", // The canonical skeleton family
   "src/components/ui/animated-size-container.tsx", // animation utility
   "src/components/ui/animated-number.tsx", // animation utility
   // OnboardingWizard renders a side-by-side 2-pane skeleton to
@@ -162,7 +162,7 @@ describe("PR-8 state primitives discipline", () => {
 
   describe("ErrorState primitive contract", () => {
     const src = codeOf(fs.readFileSync(
-      path.join(ROOT, "src/components/ui/error-state.tsx"),
+      path.join(ROOT, "packages/ui/src/components/ui/error-state.tsx"),
       "utf8",
     ));
 
