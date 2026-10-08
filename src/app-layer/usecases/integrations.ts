@@ -1431,6 +1431,12 @@ const PROVIDER_CATEGORY: Record<string, string> = {
     // `other`: the hub groups by category, and an HRIS connector sitting in the
     // catch-all bucket is harder to recognise as one, not easier to ignore.
     orangehrm: 'hris',
+    // Step 1c. A category of its own rather than `identity`: those four are
+    // DIRECTORIES we read accounts from, and a legacy application is the opposite
+    // end of the problem — a system with its own access table and no directory
+    // behind it. Grouping them would tell an operator these connectors do the same
+    // job, and the whole premise of the recertification roadmap is that they do not.
+    'legacy-mcp': 'legacy',
     sharepoint: 'document',
     personnel: 'internal',
     device: 'internal',

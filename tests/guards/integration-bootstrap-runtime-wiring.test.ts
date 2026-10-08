@@ -57,6 +57,11 @@ const EXPECTED_PROVIDER_IDS = [
     // or test one. It sat written-but-unregistered until the proving run tried
     // to use it — which is the second direction this file now covers.
     'mcp-server',
+    // Step 1c. Registered like any other provider; what is unusual is the far end —
+    // the MCP server belongs to the CUSTOMER, in front of their own legacy
+    // application, which is why no host allowlist applies to it and its endpoint is
+    // classified `publicOrigin` rather than `vendorOrigin`.
+    'legacy-mcp',
 ].sort();
 
 describe('integration provider fleet — runtime wiring', () => {

@@ -5377,7 +5377,8 @@
         "scm": "Source control",
         "hris": "HR",
         "document": "Document",
-        "other": "Other"
+        "other": "Other",
+        "legacy": "Legacy applications"
       },
       "authorizeEntra": "Authorize with Microsoft Entra",
       "authorizeFailed": "Could not start the authorization."

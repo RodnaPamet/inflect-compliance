@@ -20,6 +20,7 @@ import { OktaProvider } from './providers/okta';
 import { GoogleWorkspaceProvider } from './providers/google-workspace';
 import { EntraIdProvider } from './providers/entra-id';
 import { ActiveDirectoryProvider } from './providers/active-directory';
+import { LegacyMcpProvider } from './providers/legacy-mcp';
 import { AzurePostureProvider } from './providers/azure-posture-provider';
 import { GcpPostureProvider } from './providers/gcp-posture-provider';
 import { BambooHrProvider } from './providers/hris';
@@ -59,6 +60,13 @@ registry.register(new EntraIdProvider());
 // Active Directory (on-prem) — direct-LDAPS directory sync + identity posture
 // checks for estates whose AD is NOT synced to Entra via Azure AD Connect.
 registry.register(new ActiveDirectoryProvider());
+
+// Step 1c. A read-only view of a legacy application's access tables, through an
+// MCP server the CUSTOMER runs. Registered here like any other provider; what
+// makes it different is that no host allowlist can apply to it, so its endpoint is
+// classified `publicOrigin` in CONFIG_FIELD_RULES and a host change cannot inherit
+// the stored token.
+registry.register(new LegacyMcpProvider());
 
 // Azure cloud posture — Powerpipe steampipe-mod-azure-compliance benchmark evidence.
 registry.register(new AzurePostureProvider());

@@ -43,6 +43,7 @@ import {
     WORKDAY_HOSTS,
     type HostAllowlist,
 } from './allowed-host';
+import { checkWebhookUrl } from '@/app-layer/automation/webhook-safety';
 
 export type ConfigFieldRule =
     /** No reach: an identifier, a threshold, a display toggle. */
@@ -54,8 +55,44 @@ export type ConfigFieldRule =
      * Only the scheme is settleable at write time.
      */
     | { kind: 'internalOrigin'; scheme: string }
+    /**
+     * A host on the PUBLIC internet that is the customer's own system — an MCP
+     * server an operator runs for one of their legacy applications (Step 1c).
+     *
+     * Distinct from both siblings, and the distinction is the point. Not a
+     * `vendorOrigin`, because no allowlist can name it: the host belongs to the
+     * customer and every customer's is different. Not an `internalOrigin`, because
+     * that kind settles only the scheme — right for an `ldaps:` bind inside the
+     * customer's own network, wrong here, where we dial out across the public
+     * internet to whatever was typed.
+     *
+     * So this kind requires `https:` AND runs `checkWebhookUrl`, refusing a
+     * literal private, loopback, link-local or metadata address and the blocked
+     * names. What it cannot settle at write time is DNS: a name resolving to
+     * 169.254.169.254 looks like any other name. `safeFetch` re-resolves and
+     * re-checks at USE time, which is the half that closes rebinding.
+     */
+    | { kind: 'publicOrigin' }
     /** A filter that must remain a filter. */
     | { kind: 'boundedQuery'; check: (value: string) => string | null };
+
+/**
+ * The rule kinds that carry a HOST, as a value.
+ *
+ * `originFieldsFor` filtered on two kinds spelled out inline, directly beneath a
+ * docstring promising that "a third origin kind added to `ConfigFieldRule` is
+ * covered here the day it is added". It would not have been: adding `publicOrigin`
+ * to the union above would have left that filter matching two names and the new
+ * kind silently outside the credential-redirect check — the exact hole the
+ * function exists to close, opened by the comment saying it could not be.
+ *
+ * Declared once, so the promise is now true.
+ */
+const ORIGIN_KINDS = new Set<ConfigFieldRule['kind']>([
+    'vendorOrigin',
+    'internalOrigin',
+    'publicOrigin',
+]);
 
 /**
  * ServiceNow encoded queries are evaluated SERVER-SIDE with the integration
@@ -185,6 +222,16 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         // touching it at all. `providers/hris/write-back.ts` holds the rest.
         writeBackEnabled: { kind: 'inert' },
     },
+    // Step 1c. The endpoint is the CUSTOMER'S own MCP server, so no vendor
+    // allowlist can name it — `publicOrigin` is the kind that says "a public host
+    // we cannot enumerate": https enforced and `checkWebhookUrl` run at save time,
+    // with `safeFetch` re-resolving at use time. Being an origin kind also puts it
+    // in `ORIGIN_KINDS`, so `redirectsStoredCredential` refuses an endpoint change
+    // that keeps the stored bearer token.
+    'legacy-mcp': {
+        endpointUrl: { kind: 'publicOrigin' },
+        applicationName: { kind: 'inert' },
+    },
     servicenow: {
         instance: { kind: 'vendorOrigin', allow: SERVICENOW_HOSTS },
         table: { kind: 'inert' },
@@ -305,15 +352,20 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
 /**
  * The config fields that decide WHERE a stored credential gets sent.
  *
- * `vendorOrigin` and `internalOrigin` already mark exactly these — the host of
- * the vendor API, and the LDAPS bind target — so the set is derived rather than
- * restated. A third origin kind added to `ConfigFieldRule` is covered here the
- * day it is added; a hand-written list would not be.
+ * `vendorOrigin`, `internalOrigin` and `publicOrigin` mark exactly these — the
+ * vendor API's host, the LDAPS bind target, and a customer-run MCP server — so
+ * the set is derived from {@link ORIGIN_KINDS} rather than restated.
+ *
+ * This used to promise that a third origin kind would be "covered here the day it
+ * is added", while filtering on two kinds spelled out inline. Adding
+ * `publicOrigin` proved that false, so the kinds live in one `Set` both this
+ * function and a reader can see. A claim about derivation is worth only as much as
+ * the derivation.
  */
 export function originFieldsFor(provider: string): string[] {
     const rules = CONFIG_FIELD_RULES[provider] ?? {};
     return Object.entries(rules)
-        .filter(([, rule]) => rule.kind === 'vendorOrigin' || rule.kind === 'internalOrigin')
+        .filter(([, rule]) => ORIGIN_KINDS.has(rule.kind))
         .map(([field]) => field);
 }
 
@@ -465,6 +517,21 @@ export function validateProviderConfig(
                 throw badRequest(`Invalid ${key}: must use ${rule.scheme}//`);
             }
             if (parsed.username || parsed.password) {
+                throw badRequest(`Invalid ${key}: must not carry credentials`);
+            }
+        } else if (rule.kind === 'publicOrigin') {
+            const value = String(raw).trim();
+            // `checkWebhookUrl` already refuses a non-https scheme, a blocked name
+            // and a literal private address. Reusing it rather than re-deriving
+            // those rules keeps ONE answer to "is this URL safe to dial" — a second
+            // implementation here is how the save-time check and the fetch-time
+            // check come to disagree, and a disagreement between them is a URL that
+            // saves and then reaches somewhere it should not.
+            const verdict = checkWebhookUrl(value);
+            if (!verdict.ok) {
+                throw badRequest(`Invalid ${key}: ${verdict.reason ?? 'not an allowed URL'}`);
+            }
+            if (new URL(value).username || new URL(value).password) {
                 throw badRequest(`Invalid ${key}: must not carry credentials`);
             }
         } else if (rule.kind === 'boundedQuery') {
