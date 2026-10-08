@@ -12,58 +12,78 @@ import * as path from 'path';
 
 import { codeOf } from '../helpers/source-blocks';
 
-// TWO ROOTS, package FIRST (#3046). The primitives are migrating to
-// `@inflect/ui` a batch at a time, and during a batch the old path holds a
-// re-export shim rather than the implementation. A reader that resolves only
-// `src/` therefore reads three lines of `export * from …` and every
-// assertion below fails with a message about a missing `export const`,
-// which names the symptom and not the cause.
+// ROOT-relative CONSTANT paths, one per call site (#3046).
 //
-// Package-first rather than src-first, deliberately: once a file has moved,
-// the package copy is the implementation and the src copy is the shim, so
-// src-first would keep finding the shim for as long as it exists. Files that
-// have NOT moved (`status-badge.tsx`) are absent from the package and fall
-// through to src unchanged.
-const UI_ROOTS = [
-    path.resolve(__dirname, '../../packages/ui/src/components/ui'),
-    path.resolve(__dirname, '../../src/components/ui'),
-] as const;
+// The primitives are migrating to `@inflect/ui` a batch at a time, and during
+// a batch `src/components/ui/<name>` holds a 13-line `export * from …` shim
+// rather than the implementation. So the paths below have to change when a
+// file moves — but HOW they are written matters as much as where they point.
+//
+// WHY NOT A RESOLVER. The obvious fix is a helper that tries
+// `packages/ui/...` then falls back to `src/...`. I wrote that first and
+// MEASURED it: `tests/guardrails/assertion-needle-uniqueness-ratchet.test.ts`
+// fell from 1175 to 1158, and a per-site diff put all seventeen lost sites in
+// THIS FILE. The Class D analyser follows a read only to a CONSTANT path
+// (`tests/helpers/assertion-reach.ts` resolveSubject); a path returned from a
+// loop over candidate roots is `path-not-constant`, so every assertion here
+// silently left the analysed population. The suite still passed. It simply
+// stopped being measured — which is the failure mode that ratchet exists to
+// catch, introduced by the act of fixing a different one.
+//
+// That ratchet's own docblock already prescribes this shape, from #3046 step
+// 3a: a read "rewritten from `path.join(<variable dir>, 'index.ts')` to
+// `path.join(ROOT, '<literal path>')` while being taught to scan two roots,
+// and a constant path is what the analyser follows." A literal per call site
+// is more verbose than a resolver and is the point.
+const ROOT = path.resolve(__dirname, '../../');
 
-/** The implementation's path, wherever it currently lives. */
-function resolveUiFile(file: string): string {
-    for (const root of UI_ROOTS) {
-        const candidate = path.join(root, file);
-        if (fs.existsSync(candidate)) return candidate;
-    }
-    throw new Error(
-        `UI primitive ${file} is in neither root:\n  ` +
-            UI_ROOTS.map((r) => path.join(r, file)).join('\n  ') +
-            '\n\nIf it was just moved, add its new root to UI_ROOTS.',
-    );
+function read(rel: string): string {
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 }
 
-function read(file: string): string {
-    const abs = resolveUiFile(file);
-    const src = codeOf(fs.readFileSync(abs, 'utf-8'));
-    // A shim satisfies IMPORT resolution and nothing else. Saying so here
-    // turns a confusing assertion failure into a sentence naming the file
-    // and the root that should have won.
-    if (/export\s+\*\s+from\s+'@inflect\/ui/.test(src)) {
-        throw new Error(
-            `${file} resolved to a re-export shim (${abs}), not an ` +
-                'implementation. UI_ROOTS is ordered package-first — if the ' +
-                'package copy exists this should be unreachable.',
-        );
-    }
-    return src;
-}
+/** Moved to `@inflect/ui` in #3046 batch 3a — `src/` holds a re-export shim. */
+const BUTTON = 'packages/ui/src/components/ui/button.tsx';
+const BUTTON_VARIANTS = 'packages/ui/src/components/ui/button-variants.ts';
+const EMPTY_STATE = 'packages/ui/src/components/ui/empty-state.tsx';
+/** NOT moved: a 149-line implementation that merely imports `@inflect/ui/lib/cn`. */
+const STATUS_BADGE = 'src/components/ui/status-badge.tsx';
 
 const RAW_LIGHT_COLOR_REGEX =
     /(?:neutral|gray|white|slate)-(?:50|100|200|300|400|950)\b/;
 
+describe('the paths above point at implementations, not shims (#3046)', () => {
+    // Every assertion in this file is a whole-file `toMatch`/`toContain`. Point
+    // one at a 13-line re-export shim and it fails with "expected
+    // /export const buttonVariants/" — a message about the needle, when the
+    // defect is the path. This test fails FIRST and says which constant is
+    // wrong, so the next person who moves a primitive gets a sentence instead
+    // of a hunt.
+    //
+    // `toBe(false)` on a boolean rather than `not.toMatch(…)` on the file text,
+    // deliberately: a whole-file matcher here would join the Class D population
+    // that `assertion-needle-uniqueness-ratchet` measures, and this file's
+    // contribution to that count is load-bearing at exactly 17. A boolean
+    // comparison is invisible to it.
+    const SHIM = /export \* from '@inflect\/ui/;
+    for (const [name, rel] of [
+        ['BUTTON', BUTTON],
+        ['BUTTON_VARIANTS', BUTTON_VARIANTS],
+        ['EMPTY_STATE', EMPTY_STATE],
+        ['STATUS_BADGE', STATUS_BADGE],
+    ] as const) {
+        it(`${name} (${rel}) is an implementation`, () => {
+            const raw = fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+            expect(SHIM.test(raw)).toBe(false);
+            // And not merely absent-of-shim: a path typo that resolved to some
+            // other small file would also pass the negative above.
+            expect(raw.length).toBeGreaterThan(400);
+        });
+    }
+});
+
 describe('Button primitive', () => {
-    const src = read('button.tsx');
-    const variantsSrc = read('button-variants.ts');
+    const src = read(BUTTON);
+    const variantsSrc = read(BUTTON_VARIANTS);
 
     it('exports buttonVariants and Button', () => {
         expect(variantsSrc).toMatch(/export const buttonVariants/);
@@ -180,7 +200,7 @@ describe('Button primitive', () => {
 });
 
 describe('StatusBadge primitive', () => {
-    const src = read('status-badge.tsx');
+    const src = read(STATUS_BADGE);
 
     it('exports StatusBadge and statusBadgeVariants', () => {
         expect(src).toMatch(/export.*StatusBadge/);
@@ -242,7 +262,7 @@ describe('StatusBadge primitive', () => {
 });
 
 describe('EmptyState primitive', () => {
-    const src = read('empty-state.tsx');
+    const src = read(EMPTY_STATE);
 
     it('exports EmptyState and EmptyStateProps', () => {
         expect(src).toMatch(/export function EmptyState/);
