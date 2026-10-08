@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.158.9",
+  "version": "3.158.11",
   "private": true,
   "license": "BUSL-1.1",
   "workspaces": [
@@ -164,7 +164,7 @@
     "mammoth": "^1.13.0",
     "marked": "^18.0.14",
     "motion": "^13.4.4",
-    "next": "16.3.6",
+    "next": "16.3.8",
     "next-auth": "4.24.15",
     "next-intl": "^4.14.7",
     "nodemailer": "^10.0.11",

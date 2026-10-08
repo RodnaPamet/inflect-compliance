@@ -126,4 +126,36 @@ describe('AppShellFrame landmarks (#3104)', () => {
         expect(column?.className).toContain('md:overflow-hidden');
         expect(column?.className).toContain('flex-1');
     });
+
+    it('below md the main-region column is no scroll container, so sticky chrome sticks', () => {
+        // `overflow-auto` here made the column the scroll container every
+        // `position: sticky` descendant sticks to. Below md the column never
+        // scrolls (the document does), so the NavBar's `sticky top-0` and a
+        // host's sticky action bar scrolled away with the page. jsdom does no
+        // layout, so the class is the contract: `overflow-x-clip` clips wide
+        // content without making a scroll container, and `md:overflow-hidden`
+        // still clamps the desktop chain.
+        renderFrame();
+        const column = screen.getByRole('main').parentElement;
+        const classes = column?.className.split(/\s+/) ?? [];
+        expect(classes).toContain('overflow-x-clip');
+        expect(classes).toContain('md:overflow-hidden');
+        for (const scrolls of ['overflow-auto', 'overflow-scroll', 'overflow-hidden', 'overflow-y-auto']) {
+            expect(classes).not.toContain(scrolls);
+        }
+    });
+
+    it('the top chrome sits in no box of its own, so the bar can stick (#3216)', () => {
+        // A sticky element sticks only within its parent. The wrapper that
+        // marks the chrome `no-print` was exactly as tall as the bar, which
+        // left `sticky top-0` no room: below md the bar scrolled away. With
+        // `contents` the wrapper draws no box, and the bar's parent is the
+        // main-region column, as tall as the page.
+        renderFrame();
+        const wrapper = screen.getByTestId('chrome').parentElement;
+        expect(wrapper?.className.split(/\s+/)).toEqual(
+            expect.arrayContaining(['no-print', 'contents']),
+        );
+        expect(wrapper?.parentElement).toBe(screen.getByRole('main').parentElement);
+    });
 });
