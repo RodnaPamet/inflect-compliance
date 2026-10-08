@@ -40,7 +40,7 @@ import { useTranslations } from 'next-intl';
 import { Popover } from '@/components/ui/popover';
 import { InitialsAvatar } from '@/components/ui/initials-avatar';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
-import { LocaleSwitcher } from './LocaleSwitcher';
+import { LocaleSwitcher, type LocaleSwitcherProps } from './LocaleSwitcher';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 import { HIT_AREA_CLASS } from '@/components/ui/hit-area';
 
@@ -106,6 +106,21 @@ export interface UserMenuProps {
      * broken or fork the menu.
      */
     showLanguage?: boolean;
+    /**
+     * Persist a language choice somewhere the cookie is not the whole story:
+     * handed to the built-in row's `<LocaleSwitcher>` as its own
+     * `onLocaleChange` (#3185), which awaits it BEFORE the cookie is written
+     * and the tree refreshed, and abandons the switch if it rejects.
+     *
+     * This is the "until it can persist the choice" that `showLanguage`
+     * describes. A host that keeps the language on the user record writes the
+     * record here and keeps the row, instead of hiding it, or rebuilding it
+     * from the switcher in `items`: a copy of this row's markup, free to
+     * drift from it.
+     *
+     * Omitted, the switcher writes the cookie alone, as before.
+     */
+    onLocaleChange?: LocaleSwitcherProps['onLocaleChange'];
     /**
      * The element that opens the menu. Omit it — as every call site in this
      * repo does — and the menu renders its own avatar button, unchanged.
@@ -192,6 +207,7 @@ export function UserMenu({
     open: controlledOpen,
     onOpenChange,
     showLanguage = true,
+    onLocaleChange,
     trigger,
 }: UserMenuProps) {
     const t = useTranslations('common');
@@ -274,7 +290,7 @@ export function UserMenu({
                                 data-testid="user-menu-language-row"
                             >
                                 <span>{t('language')}</span>
-                                <LocaleSwitcher />
+                                <LocaleSwitcher onLocaleChange={onLocaleChange} />
                             </div>
                             <Popover.Separator />
                         </>
