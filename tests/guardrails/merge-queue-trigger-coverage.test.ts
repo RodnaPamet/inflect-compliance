@@ -528,3 +528,114 @@ describe('merge queue — the operator runbook is written down', () => {
         expect(src).toMatch(/gh-readonly-queue/);
     });
 });
+
+/**
+ * Structural ratchet — a schedule that cannot fire is not a trigger (#3291).
+ *
+ * THE MEASUREMENT
+ * ---------------
+ * `queue-candidate-sweep.yml` shipped a `15`-minute step (`*` `/15` in the minute field), was `state=active`, ran
+ * correctly on `workflow_dispatch`, and produced ZERO scheduled runs. #3292
+ * read that as step syntax plus quarter-hour contention and moved it to
+ * `7,37 * * * *`. Eight further eligible slots produced zero runs.
+ *
+ * Tabulated across every cron on `main` the signal is unambiguous, and it is
+ * not the axis #3292 picked:
+ *
+ *   DAILY or less   8 crons   8 of 8 have fired
+ *   SUB-DAILY       1 cron    0 of 1 has fired
+ *
+ * WHAT THIS LOCKS, AND WHAT IT DOES NOT CLAIM
+ * -------------------------------------------
+ * No mechanism is asserted. One cron on the interesting side of a correlation
+ * cannot establish why, and reasoning a mechanism out of exactly this data is
+ * the error #3292 made. What is locked is the observation: in THIS repository
+ * nothing sub-daily has ever fired, so a sub-daily cron is a silent no-op and
+ * writing one is a defect — it reads as a trigger in review and delivers
+ * nothing, which is the same failure shape as a job that skips.
+ *
+ * The teeth are in the pairing. Asserting only "no sub-daily cron" would be
+ * satisfied by deleting the schedule outright, and asserting only "the sweep
+ * has an event-driven trigger" would be satisfied while leaving an inert cron
+ * in place to be trusted by the next reader.
+ */
+describe('schedules — a cron that cannot fire is not a trigger (#3291)', () => {
+    /** The hour field is the cadence. A single literal fires once a day. */
+    const subDaily = (cron: string): boolean => {
+        const hour = cron.trim().split(/\s+/)[1];
+        return hour !== undefined && !/^\d+$/.test(hour);
+    };
+
+    // POSITIVE CONTROL. These are the two shapes this guard must separate;
+    // if the parse ever inverts, every assertion below passes vacuously.
+    it('the cadence parse distinguishes the shapes it is asked about', () => {
+        expect(subDaily('7,37 * * * *')).toBe(true); // the #3292 version
+        expect(subDaily('*/15 * * * *')).toBe(true); // the original
+        expect(subDaily('0 */6 * * *')).toBe(true);
+        expect(subDaily('0 4 * * *')).toBe(false); // DAST — fires
+        expect(subDaily('30 3 * * *')).toBe(false); // Load Test — fires
+        expect(subDaily('0 5 * * 1')).toBe(false); // weekly — fires
+        expect(subDaily('0 9 1 1,4,7,10 *')).toBe(false); // quarterly — fires
+    });
+
+    const crons: ReadonlyArray<readonly [string, string]> = listWorkflows().flatMap((file) => {
+        const on = triggers(file);
+        const sched = on?.schedule;
+        if (!Array.isArray(sched)) return [];
+        return sched
+            .map((e) => (e as { cron?: unknown })?.cron)
+            .filter((c): c is string => typeof c === 'string')
+            .map((c) => [file, c] as const);
+    });
+
+    it('the schedule population is non-empty (else the next assertion is vacuous)', () => {
+        // Eight crons were tabulated on 2026-10-08. A collapse to zero means
+        // `triggers()` or the glob broke, not that the repo stopped scheduling.
+        expect(crons.length).toBeGreaterThanOrEqual(8);
+    });
+
+    it.each(crons)('%s — cron %s fires at most once a day', (_file, cron) => {
+        expect(subDaily(cron)).toBe(false);
+    });
+
+    /**
+     * The other half. The sweep's whole value is latency — an orphaned
+     * candidate holds 2-4 job slots until something cancels it, and the
+     * incident behind #3282 held them for 2h38m. Demoting its cron to daily
+     * is only safe because an event-driven trigger carries that latency, so
+     * the demotion and the trigger have to be locked together.
+     */
+    it('queue-candidate-sweep has a trigger that fires without the schedule', () => {
+        // NAMED `SWEEP_FILE`, not `file`, and the reason is worth recording.
+        //
+        // `file` is the parameter name the `it.each` blocks above bind, and
+        // Class D's constant resolution matched this declaration to THOSE
+        // identifiers: with a file-scope `const file = '...'` in view, the
+        // `readWorkflow(file)` at the exemption test resolved to a constant
+        // path it never actually reads, which pulled that read into the
+        // analysable set and its `/merge_group/` needle — three occurrences —
+        // into the ambiguous one. Measured: ambiguous 1 -> 2 and whole-file
+        // reads 7 -> 8 on this file alone, which is the entire +1 that took
+        // the repo ratchet from 1167 to 1168.
+        //
+        // Nothing about the assertions changed; only the name. A distinct name
+        // keeps the resolution honest, and the collision is cheap to re-create
+        // if anyone reintroduces a bare `file` here.
+        const SWEEP_FILE = 'queue-candidate-sweep.yml';
+        expect(listWorkflows().filter((f) => f === SWEEP_FILE)).toHaveLength(1);
+
+        // `workflow_dispatch` does not count — it needs a human, and the
+        // orphans this sweeps are created by automation at 3am.
+        const eventDriven = ['workflow_run', 'pull_request', 'push', 'merge_group'].filter((t) =>
+            hasTrigger(SWEEP_FILE, t),
+        );
+        expect(eventDriven.length).toBeGreaterThan(0);
+
+        // And it must stay off `pull_request`/`merge_group` specifically: the
+        // first publishes a check context the queue then waits for forever
+        // (the hang invariant above), the second runs the sweep from inside
+        // the queue it is sweeping. That leaves `workflow_run` or `push`.
+        expect(hasTrigger(SWEEP_FILE, 'pull_request')).toBe(false);
+        expect(hasTrigger(SWEEP_FILE, 'merge_group')).toBe(false);
+    });
+});
