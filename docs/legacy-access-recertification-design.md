@@ -122,6 +122,34 @@ assertion.
   gateway under `LOCAL_ONLY`, pinned by `tests/guards/ai-residency-enforcement.test.ts`.
   Compliance posture, questionnaire autofill and vendor-document extraction do not.
 
+### The decision-model client exists, and the external half is switched off
+
+`src/app-layer/ai/identity-match/` (Step 6b) holds one wire codec for the System One
+protocol and three providers: `JevDecisionProvider` (TypeSafe, hosted),
+`LayaDecisionProvider` (open weights, our infrastructure) and a stub that answers
+nothing. `getDecisionProvider` picks between them.
+
+**The external path is unreachable today, behind two independent gates.** The effective
+mode must be `EXTERNAL`, *and* `TYPESAFE_SUBPROCESSOR_ACTIVE` must be true — and it is
+`false`. A tenant can set `legacyMatchAiMode = EXTERNAL` right now; that flag is what
+makes the setting inert rather than a way to begin sending personal data before the
+notice window closes. Activation is a reviewed change to a constant.
+
+Residency is structural: the factory RETURNS before constructing anything external, and
+`tests/guards/ai-residency-enforcement.test.ts` reads the source to check the ordering
+and pins the constructor set, so a fourth provider fails CI until somebody classifies
+it.
+
+**No model may produce a verdict yet, and that is a property rather than an absence.**
+A revision needs a committed evaluation record — raw answers to every case of the
+adjudication corpus, the corpus digest, derived thresholds and canaries — and
+`src/app-layer/ai/identity-match/evaluations/` is empty, because producing one needs a
+live model. `tests/unit/identity-match-evaluation-records.test.ts` recomputes every
+derived figure from the raw answers rather than trusting the stored ones.
+
+One row of the table above was corrected by that verification: the Jev identifier is
+`jev-1.13.0`, not `jev-1.13`.
+
 ### Every AI provider generates text
 
 Seven call sites under `src/app-layer/ai/` reach a model over the network:
