@@ -68,7 +68,35 @@ function recordingFetch(reply: { status?: number; body?: unknown }) {
             headers: { 'Content-Type': 'application/json' },
         });
     }) as unknown as typeof fetch;
-    return { impl, calls, graphCalls: () => calls.filter((c) => c.url.includes('graph.microsoft.com')) };
+    return {
+        impl,
+        calls,
+        /**
+         * Hostname EQUALITY, not a substring.
+         *
+         * CodeQL flagged `c.url.includes('graph.microsoft.com')` as
+         * `js/incomplete-url-substring-sanitization`, HIGH, and it is right about
+         * the pattern: `https://evil.test/?x=graph.microsoft.com` satisfies a
+         * substring check. There is no attacker inside a test double, so this is
+         * not a vulnerability being fixed — but "it is only a test" is how a
+         * pattern survives long enough to be copied into a place where it is one,
+         * and this repo keeps a ratchet specifically to stop security gates being
+         * quietly lowered.
+         *
+         * It is also the better TEST. These assertions distinguish the calls that
+         * went to Graph from the token exchange that went to `login.microsoft…`,
+         * and a substring match would equally accept a host that merely MENTIONS
+         * Graph in a query string. Equality asks the question the assertions mean.
+         */
+        graphCalls: () =>
+            calls.filter((c) => {
+                try {
+                    return new URL(c.url).hostname === 'graph.microsoft.com';
+                } catch {
+                    return false;
+                }
+            }),
+    };
 }
 
 const CONNECTION = {
