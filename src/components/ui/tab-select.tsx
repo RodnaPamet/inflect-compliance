@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { cn } from "@inflect/ui/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import { LayoutGroup, motion } from "motion/react";
@@ -111,9 +112,10 @@ export function TabSelect<T extends string>({
     selected,
     onSelect,
     className,
-    ariaLabel = "Tabs",
+    ariaLabel,
     idPrefix,
 }: TabSelectProps<T>) {
+    const t = useTranslations("common.ui");
     const layoutGroupId = useId();
     const effectiveIdPrefix = idPrefix ?? `tab-${layoutGroupId}-`;
     const btnRefs = useRef(new Map<string, HTMLElement>());
@@ -166,7 +168,7 @@ export function TabSelect<T extends string>({
     return (
         <div
             role="tablist"
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? t("tabs")}
             aria-orientation="horizontal"
             className={cn("flex text-sm", className)}
         >

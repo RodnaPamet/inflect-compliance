@@ -230,7 +230,6 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/layout/tenant-switcher.tsx',
     'src/components/onboarding/Nis2SelfAssessmentStep.tsx',
     'src/components/ui/ComplianceStatusIndicator.tsx',
-    'src/components/ui/EvidenceGallery.tsx',
     'src/components/ui/FileDropzone.tsx',
     'src/components/ui/FrameworkBuilder.tsx',
     'src/components/ui/FrameworkMinimap.tsx',
@@ -255,7 +254,6 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'packages/ui/src/components/ui/charts/time-series-chart.tsx',
     'src/components/ui/status-breakdown.tsx',
     'src/components/ui/table-load-more-footer.tsx',
-    'src/components/ui/view-toggle.tsx',
 ]);
 
 // ─── The ratchet ────────────────────────────────────────────────

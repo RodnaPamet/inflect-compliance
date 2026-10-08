@@ -1,0 +1,40 @@
+{
+    // ── The rendered program, actually type-checked ──
+    //
+    // `tsconfig.json` beside this file is ts-jest's. It is NOT a program tsc
+    // can compile: `module: commonjs` with `moduleResolution: bundler` is
+    // TS5095 ("Option 'bundler' can only be used when 'module' is 'preserve'
+    // or 'es2015' or later"), so every `tsc -p` against it dies on the config
+    // before it reads a single test. 350 rendered suites were therefore
+    // type-checked by nothing — the same shape as the §2 boundary that
+    // `packages/ui/tsconfig.json` declared and nothing compiled (#3193).
+    //
+    // WHY A SECOND FILE INSTEAD OF FIXING THE FIRST. ts-jest resolves the
+    // tsconfig through `extends` and then does
+    // `module: resultOptions.module ?? ModuleKind.CommonJS`
+    // (ts-jest/dist/legacy/config/config-set.js). The `??` only fires when
+    // `module` is ABSENT after inheritance, and the root config sets
+    // `esnext` — so deleting `module: commonjs` from the sibling would not
+    // fall back to CommonJS, it would hand jest ESM output. That one line is
+    // load-bearing for all 350 suites' emit, and this file exists so it can
+    // stay exactly as it is.
+    //
+    // WHY THIS PAIRING. `esnext` + `bundler` is what the root tsconfig uses
+    // and what Next's bundler actually implements, so it is the semantics the
+    // code is written against: 0 errors over 2797 files. The node-flavoured
+    // pairings are not cheaper, they are differently wrong — `nodenext`
+    // reports 228, of which 138 are dynamic `await import('./x')` sites being
+    // told to say `./x.js`, a node-ESM spelling no import in this repo uses
+    // and which is not how these files are resolved. `node16` reports 690.
+    //
+    // No `include` / `exclude` / `files` of its own, on purpose: the program
+    // must stay the one ts-jest runs, or this checks a different codebase than
+    // the suites do. Pinned by tests/guards/rendered-program-is-typechecked.test.ts.
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "noEmit": true,
+        "incremental": false
+    }
+}

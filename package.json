@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.160.0",
+  "version": "3.160.2",
   "private": true,
   "license": "BUSL-1.1",
   "workspaces": [
@@ -51,6 +51,7 @@
     "test:all": "jest && playwright test",
     "typecheck": "tsc --noEmit",
     "typecheck:ui-boundary": "tsc --noEmit -p packages/ui/tsconfig.json",
+    "typecheck:rendered": "tsc --noEmit -p tests/rendered/tsconfig.typecheck.json",
     "lint": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
     "count-any": "node scripts/count-any.js",
     "ci:local": "node scripts/ci-local.mjs",
