@@ -119,10 +119,12 @@ export interface TargetPopulationEntry {
 /**
  * THE REGISTRY. Adding an entry is a reviewed code change; that is the point.
  *
- * The three entries here are the populations that ALREADY EXIST — the leaver
- * pass's `TERMINATED` roster, projected onto the three identifiers this product
- * already treats as addressable — rather than invented ones. A fourth is a
- * deploy away and should state its bound the same way.
+ * The entries here are the populations that ALREADY EXIST — each one lifted from
+ * a pass that already acts on it, rather than invented. Three project the leaver
+ * pass's `TERMINATED` roster onto the three identifiers this product treats as
+ * addressable. The fourth projects the JOINER pass's `ONBOARDING` roster, and it
+ * exists because a GRANT acts on a subject who is arriving, not leaving (#3299).
+ * A fifth is a deploy away and should state its bound the same way.
  */
 export const TARGET_POPULATIONS: Readonly<Record<string, TargetPopulationEntry>> = {
     /**
@@ -242,6 +244,87 @@ export const TARGET_POPULATIONS: Readonly<Record<string, TargetPopulationEntry>>
             // a value that decides whether a write may be addressed should land
             // on "not in the population" if a hop is missing under some RLS
             // configuration, not on a TypeError.
+            return rows.flatMap((r) =>
+                r.connectedAccount?.externalUserId ? [r.connectedAccount.externalUserId] : [],
+            );
+        },
+    },
+
+    /**
+     * THE GRANT POPULATION (#3299) — the joiner pass's own roster, addressed by
+     * the directory identifier.
+     *
+     * ═══ WHY `ONBOARDING` AND NOT `ACTIVE` ═══
+     *
+     * This is the whole design of the entry, so it is stated before the clauses.
+     *
+     * Every population above is a LEAVER population, and `TERMINATED` bounds
+     * them for free: a departure is a wave, so the status alone is narrow. A
+     * grant acts on a subject who is ARRIVING, and the obvious mirror —
+     * `status: 'ACTIVE'` — is not a bound at all. It is the entire company.
+     *
+     * That is precisely the failure this registry was built to prevent. The
+     * header records the owner's terms: approving `^[0-9]+$` on an employee
+     * number approves EVERY employee, and a reviewer reading that pattern is
+     * unlikely to see it. An `ACTIVE` population has the same property with the
+     * regex removed — it LOOKS like a status clause and it means "anyone". It
+     * would also be invisible in the small case: under `MAX_POPULATION_ROWS` it
+     * resolves `ok` and silently means "any employee", and only a tenant with
+     * more than 5000 active workers would ever see the cap refuse it.
+     *
+     * `ONBOARDING` is the arrival wave — the exact counterpart of `TERMINATED`,
+     * and narrow for the same reason rather than by a cap. It is also not
+     * invented here: `identity-joiner-run.ts` reads
+     * `where: { tenantId, status: 'ONBOARDING' }` as its starters, so this is
+     * the population a pass in this product already acts on, which is the rule
+     * the three entries above follow.
+     *
+     * ═══ WHAT IS LIFTED, AND THE ONE CLAUSE THAT IS NOT ═══
+     *
+     * The link clauses mirror `readStarters` in the joiner run — freshness,
+     * `contradictedAt: null`, provider scope — for the reasons given there.
+     *
+     * `isProtected: false` is the one clause the joiner does NOT have, and the
+     * difference is deliberate rather than an oversight copied over. The joiner
+     * CREATES an account, so no account-protection flag exists to consult yet. A
+     * grant WRITES TO AN ACCOUNT THAT ALREADY EXISTS, which is exactly what the
+     * flag is for — the leaver entra population above states it as "the
+     * account-protection flag, which exists so a named account is never written
+     * to by automation". A grant is such a write, so the clause belongs here and
+     * is taken from the leaver entry rather than the joiner one.
+     */
+    onboarding_employee_entra_account_ids: {
+        key: 'onboarding_employee_entra_account_ids',
+        description:
+            'The Entra object id of every recently-observed, unprotected directory account ' +
+            'linked to an ONBOARDING worker in this workspace — the subjects a time-bounded ' +
+            'grant may address.',
+        bound:
+            'Tenant-scoped through runInTenantContext (RLS); the linked employee is ' +
+            'ONBOARDING, which is asserted by the feed and never inferred from absence, and ' +
+            'which is the joiner pass\'s own roster rather than every active worker; the link ' +
+            'was re-observed within POPULATION_OBSERVATION_FRESHNESS_MS; the link has not been ' +
+            'contradicted by the reconciler; the account is not flagged isProtected, because a ' +
+            'grant writes to an account that already exists; the provider is entra-id alone; ' +
+            'at most MAX_POPULATION_ROWS rows, refusing at the cap.',
+        async resolve(ctx, limit) {
+            const freshSince = new Date(Date.now() - POPULATION_OBSERVATION_FRESHNESS_MS);
+            const rows = await runInTenantContext(ctx, (db) =>
+                db.identityAccountLink.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        lastVerifiedAt: { gte: freshSince },
+                        contradictedAt: null,
+                        employee: { status: 'ONBOARDING' },
+                        connectedAccount: { provider: 'entra-id', isProtected: false },
+                    },
+                    select: { connectedAccount: { select: { externalUserId: true } } },
+                    take: limit,
+                }),
+            );
+            // Optional-chained for the reason the leaver entry above gives: a
+            // value deciding whether a write may be addressed should land on
+            // "not in the population" if a hop is missing, not on a TypeError.
             return rows.flatMap((r) =>
                 r.connectedAccount?.externalUserId ? [r.connectedAccount.externalUserId] : [],
             );
