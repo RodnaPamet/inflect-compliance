@@ -41,6 +41,7 @@ import {
     signParameterChange,
 } from '@/app-layer/usecases/external-tool-parameters';
 import {
+    isTargetPopulationKey,
     MAX_POPULATION_ROWS,
     POPULATION_OBSERVATION_FRESHNESS_MS,
     resolveTargetPopulation,
@@ -65,6 +66,7 @@ const TARGETED = { employeeEmail: { kind: 'target' } };
 const EMAIL_POP = 'terminated_employee_work_emails';
 const HRIS_POP = 'terminated_employee_hris_record_ids';
 const ENTRA_POP = 'terminated_employee_entra_account_ids';
+const GRANT_POP = 'onboarding_employee_entra_account_ids';
 
 const users: Record<string, string> = {};
 const ctxFor = (tenantId: string, who: Person = 'proposer') =>
@@ -143,7 +145,7 @@ beforeEach(async () => {
 async function employee(
     tenantId: string,
     workEmail: string,
-    status: 'ACTIVE' | 'TERMINATED',
+    status: 'ACTIVE' | 'ONBOARDING' | 'TERMINATED',
     hrisRecordId: string | null = null,
 ): Promise<string> {
     const row = await prisma.employee.create({
@@ -228,10 +230,14 @@ describe('the HRIS-handle population refuses a worker with no handle', () => {
 // ═════════════════════════════════════════════════════════════════════
 
 /**
- * A terminated worker with a linked directory account, built so each clause of
- * the Entra population can be broken one at a time.
+ * A worker with a linked directory account, built so each clause of a
+ * link-based population can be broken one at a time.
+ *
+ * Renamed from `linkedLeaver` when the grant population landed (#3299): it now
+ * builds ONBOARDING workers too, and a name saying "leaver" would have made the
+ * grant block below read as if it were testing the leaver population.
  */
-async function linkedLeaver(
+async function linkedWorker(
     tenantId: string,
     opts: {
         upn: string;
@@ -239,7 +245,7 @@ async function linkedLeaver(
         isProtected?: boolean;
         lastVerifiedAt?: Date;
         contradictedAt?: Date | null;
-        employeeStatus?: 'ACTIVE' | 'TERMINATED';
+        employeeStatus?: 'ACTIVE' | 'ONBOARDING' | 'TERMINATED';
     },
 ): Promise<void> {
     const employeeId = await employee(
@@ -275,7 +281,7 @@ async function linkedLeaver(
 
 describe('the Entra population carries the leaver pass\'s own bounds', () => {
     it('returns a fresh, unprotected, uncontradicted entra link — the control', async () => {
-        await linkedLeaver(T1, { upn: 'leaver-ok' });
+        await linkedWorker(T1, { upn: 'leaver-ok' });
         const r = await resolveTargetPopulation(ctxFor(T1), ENTRA_POP);
         expect(r.state === 'ok' && [...r.values]).toEqual(['leaver-ok']);
     });
@@ -287,7 +293,7 @@ describe('the Entra population carries the leaver pass\'s own bounds', () => {
         // The cutoff is DERIVED from the constant the resolver uses, not a
         // hard-coded "30 days ago": a fixture that happened to sit outside a
         // guessed window would keep passing after somebody widened the real one.
-        await linkedLeaver(T1, {
+        await linkedWorker(T1, {
             upn: 'leaver-stale',
             lastVerifiedAt: new Date(
                 Date.now() - POPULATION_OBSERVATION_FRESHNESS_MS - 60_000,
@@ -299,7 +305,7 @@ describe('the Entra population carries the leaver pass\'s own bounds', () => {
     it('includes a link observed JUST INSIDE the window — the boundary control', async () => {
         // Paired with the test above so the exclusion is about the window and not
         // about any non-current timestamp being rejected.
-        await linkedLeaver(T1, {
+        await linkedWorker(T1, {
             upn: 'leaver-fresh-enough',
             lastVerifiedAt: new Date(
                 Date.now() - POPULATION_OBSERVATION_FRESHNESS_MS + 60_000,
@@ -310,7 +316,7 @@ describe('the Entra population carries the leaver pass\'s own bounds', () => {
     });
 
     it('excludes a link the reconciler has CONTRADICTED', async () => {
-        await linkedLeaver(T1, { upn: 'leaver-wrong', contradictedAt: new Date() });
+        await linkedWorker(T1, { upn: 'leaver-wrong', contradictedAt: new Date() });
         expect((await resolveTargetPopulation(ctxFor(T1), ENTRA_POP)).state).toBe('empty');
     });
 
@@ -318,29 +324,147 @@ describe('the Entra population carries the leaver pass\'s own bounds', () => {
         // The account-protection flag exists so a named account is never written
         // to by automation; a target population that ignored it would hand an
         // agent exactly the accounts somebody asked it to leave alone.
-        await linkedLeaver(T1, { upn: 'leaver-protected', isProtected: true });
+        await linkedWorker(T1, { upn: 'leaver-protected', isProtected: true });
         expect((await resolveTargetPopulation(ctxFor(T1), ENTRA_POP)).state).toBe('empty');
     });
 
     it('excludes another provider\'s account', async () => {
         // A mixed-provider population would widen the admissible value set for a
         // tool that addresses one directory. A second provider is a second ENTRY.
-        await linkedLeaver(T1, { upn: 'leaver-ad', provider: 'active-directory' });
+        await linkedWorker(T1, { upn: 'leaver-ad', provider: 'active-directory' });
         expect((await resolveTargetPopulation(ctxFor(T1), ENTRA_POP)).state).toBe('empty');
     });
 
     it('excludes an account whose employee is still ACTIVE', async () => {
-        await linkedLeaver(T1, { upn: 'joiner', employeeStatus: 'ACTIVE' });
+        await linkedWorker(T1, { upn: 'joiner', employeeStatus: 'ACTIVE' });
         expect((await resolveTargetPopulation(ctxFor(T1), ENTRA_POP)).state).toBe('empty');
     });
 
     it('is tenant-scoped', async () => {
-        await linkedLeaver(T1, { upn: 'one' });
-        await linkedLeaver(T2, { upn: 'two' });
+        await linkedWorker(T1, { upn: 'one' });
+        await linkedWorker(T2, { upn: 'two' });
         const one = await resolveTargetPopulation(ctxFor(T1), ENTRA_POP);
         const two = await resolveTargetPopulation(ctxFor(T2), ENTRA_POP);
         expect(one.state === 'ok' && [...one.values]).toEqual(['one']);
         expect(two.state === 'ok' && [...two.values]).toEqual(['two']);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 2b. THE GRANT POPULATION (#3299) — the same bounds on the ARRIVAL wave
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * The grant population is the first entry that is not a leaver population, and
+ * the assertion that carries its design is the ACTIVE exclusion.
+ *
+ * `ONBOARDING` was chosen over the obvious `ACTIVE` because `ACTIVE` is not a
+ * bound — it is the whole company, which is the same defect as the `^[0-9]+$`
+ * the registry header says the owner rejected, with the regex removed. That
+ * failure would also have been INVISIBLE in a small tenant: under
+ * MAX_POPULATION_ROWS an `ACTIVE` population resolves `ok` and quietly means
+ * "any employee", and only a tenant with more than 5000 workers would ever see
+ * the cap refuse it. So the exclusion is tested directly rather than left to
+ * the cap.
+ *
+ * The two populations are also checked for leaking into each other in BOTH
+ * directions. One direction would pass if the resolver ignored status entirely.
+ */
+describe('the grant population is the ONBOARDING wave, never every active worker', () => {
+    it('returns a fresh, unprotected, uncontradicted onboarding link — the control', async () => {
+        await linkedWorker(T1, { upn: 'starter-ok', employeeStatus: 'ONBOARDING' });
+        const r = await resolveTargetPopulation(ctxFor(T1), GRANT_POP);
+        expect(r.state === 'ok' && [...r.values]).toEqual(['starter-ok']);
+    });
+
+    it('EXCLUDES an ACTIVE worker — the design of the entry, not an edge case', async () => {
+        // If this ever passes with `ok`, the population has become "every
+        // employee with a directory account" and the bound is gone.
+        await linkedWorker(T1, { upn: 'steady-state', employeeStatus: 'ACTIVE' });
+        expect((await resolveTargetPopulation(ctxFor(T1), GRANT_POP)).state).toBe('empty');
+    });
+
+    it('excludes a TERMINATED worker — a grant must not address a leaver', async () => {
+        await linkedWorker(T1, { upn: 'gone', employeeStatus: 'TERMINATED' });
+        expect((await resolveTargetPopulation(ctxFor(T1), GRANT_POP)).state).toBe('empty');
+    });
+
+    it('does not leak into the leaver population, or it into this one', async () => {
+        // BOTH directions. A resolver that ignored status would put each worker
+        // in both populations, and checking one direction alone would miss it.
+        await linkedWorker(T1, { upn: 'starter', employeeStatus: 'ONBOARDING' });
+        await linkedWorker(T1, { upn: 'leaver', employeeStatus: 'TERMINATED' });
+        const grant = await resolveTargetPopulation(ctxFor(T1), GRANT_POP);
+        const leaver = await resolveTargetPopulation(ctxFor(T1), ENTRA_POP);
+        expect(grant.state === 'ok' && [...grant.values]).toEqual(['starter']);
+        expect(leaver.state === 'ok' && [...leaver.values]).toEqual(['leaver']);
+    });
+
+    it('excludes a link last observed outside the freshness window', async () => {
+        // Derived from the resolver's own constant, for the reason the leaver
+        // block gives: a fixture outside a GUESSED window keeps passing after
+        // somebody widens the real one.
+        await linkedWorker(T1, {
+            upn: 'starter-stale',
+            employeeStatus: 'ONBOARDING',
+            lastVerifiedAt: new Date(Date.now() - POPULATION_OBSERVATION_FRESHNESS_MS - 60_000),
+        });
+        expect((await resolveTargetPopulation(ctxFor(T1), GRANT_POP)).state).toBe('empty');
+    });
+
+    it('includes a link observed JUST INSIDE the window — the boundary control', async () => {
+        await linkedWorker(T1, {
+            upn: 'starter-fresh-enough',
+            employeeStatus: 'ONBOARDING',
+            lastVerifiedAt: new Date(Date.now() - POPULATION_OBSERVATION_FRESHNESS_MS + 60_000),
+        });
+        const r = await resolveTargetPopulation(ctxFor(T1), GRANT_POP);
+        expect(r.state === 'ok' && [...r.values]).toEqual(['starter-fresh-enough']);
+    });
+
+    it('excludes a link the reconciler has CONTRADICTED', async () => {
+        await linkedWorker(T1, {
+            upn: 'starter-wrong',
+            employeeStatus: 'ONBOARDING',
+            contradictedAt: new Date(),
+        });
+        expect((await resolveTargetPopulation(ctxFor(T1), GRANT_POP)).state).toBe('empty');
+    });
+
+    it('excludes a PROTECTED account — the clause the joiner pass does NOT have', async () => {
+        // The joiner run has no `isProtected` filter because it CREATES an
+        // account and there is no flag to consult yet. A grant writes to an
+        // account that already exists, so the clause is taken from the leaver
+        // entry instead. This is the test that the difference was deliberate.
+        await linkedWorker(T1, {
+            upn: 'starter-protected',
+            employeeStatus: 'ONBOARDING',
+            isProtected: true,
+        });
+        expect((await resolveTargetPopulation(ctxFor(T1), GRANT_POP)).state).toBe('empty');
+    });
+
+    it('excludes another provider\'s account', async () => {
+        await linkedWorker(T1, {
+            upn: 'starter-ad',
+            employeeStatus: 'ONBOARDING',
+            provider: 'active-directory',
+        });
+        expect((await resolveTargetPopulation(ctxFor(T1), GRANT_POP)).state).toBe('empty');
+    });
+
+    it('is tenant-scoped', async () => {
+        await linkedWorker(T1, { upn: 'start-one', employeeStatus: 'ONBOARDING' });
+        await linkedWorker(T2, { upn: 'start-two', employeeStatus: 'ONBOARDING' });
+        const one = await resolveTargetPopulation(ctxFor(T1), GRANT_POP);
+        const two = await resolveTargetPopulation(ctxFor(T2), GRANT_POP);
+        expect(one.state === 'ok' && [...one.values]).toEqual(['start-one']);
+        expect(two.state === 'ok' && [...two.values]).toEqual(['start-two']);
+    });
+
+    it('is in the operator-facing key list', async () => {
+        expect(targetPopulationKeys()).toContain(GRANT_POP);
+        expect(isTargetPopulationKey(GRANT_POP)).toBe(true);
     });
 });
 
@@ -352,7 +476,7 @@ describe('every registry entry is bounded and tenant-scoped', () => {
         const keys = targetPopulationKeys();
         expect(keys.length).toBeGreaterThanOrEqual(3);
         await employee(T2, 'only.in.t2@t2.test', 'TERMINATED', 'HR-T2');
-        await linkedLeaver(T2, { upn: 'only-in-t2' });
+        await linkedWorker(T2, { upn: 'only-in-t2' });
         for (const key of keys) {
             const entry = TARGET_POPULATIONS[key];
             expect(entry.key).toBe(key);
