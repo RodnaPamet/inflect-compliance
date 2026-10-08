@@ -9,26 +9,20 @@ import { CSP_NONCE_HEADER } from '@/lib/security/csp';
 // proxies (not their string values) on the server. That proxy bug is exactly
 // what made `cookies().get(THEME_COOKIE)` always miss and the inline script's
 // localStorage key resolve to `undefined`. See src/lib/theme-constants.ts.
+//
+// THEME_INIT_SCRIPT is the anti-FOUC script, the SECOND line of defence behind
+// the SSR cookie. The primary fix is the `data-theme` rendered server-side from
+// the theme cookie below. A user who has CHOSEN a theme has the cookie, so their
+// `<html>` is already correct in the first SSR byte, with no client script in
+// the race. The script covers everyone else: it resolves cookie → localStorage
+// → system `prefers-color-scheme` and sets `data-theme` before paint. It writes
+// nothing (see its definition for why).
 import {
-    THEME_STORAGE_KEY,
     THEME_COOKIE,
+    THEME_INIT_SCRIPT,
     type Theme,
 } from '@/lib/theme-constants';
 import './globals.css';
-
-/**
- * Anti-FOUC theme script — the SECOND line of defence behind the SSR cookie.
- *
- * The primary fix is the `data-theme` rendered server-side from the theme
- * cookie below: a returning user's `<html>` is already correct in the first
- * SSR byte, so there is no flash regardless of whether any client script runs
- * (immune to CSP/nonce/cache races). This inline script only matters for the
- * FIRST visit (no cookie yet): it resolves cookie → localStorage → system
- * `prefers-color-scheme`, sets `data-theme` before paint, AND writes the cookie
- * so the very next SSR is correct. After the first paint the flash can never
- * recur.
- */
-const THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;var ck=${JSON.stringify(THEME_COOKIE)};var lk=${JSON.stringify(THEME_STORAGE_KEY)};var t=null;var m=document.cookie.match(new RegExp('(?:^|;\\\\s*)'+ck+'=(light|dark)\\\\b'));if(m){t=m[1];}if(!t){var s=null;try{s=localStorage.getItem(lk);}catch(e){}if(s==='light'||s==='dark'){t=s;}}if(!t){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}d.setAttribute('data-theme',t);var sec=location.protocol==='https:'?'; secure':'';document.cookie=ck+'='+t+'; path=/; max-age=31536000; samesite=lax'+sec;}catch(e){}})();`;
 
 export const metadata: Metadata = {
     title: 'Inflect Compliance — Платформа за съответствие по ISO 27001',
@@ -58,9 +52,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
     // Flash-proof theme: render `data-theme` from the persisted cookie so the
     // FIRST SSR byte is already the user's theme — no client script has to beat
-    // first paint. Falls back to the `dark` baseline when no cookie is set yet
-    // (brand-new visitor); the inline script + ThemeProvider then settle the
-    // first visit and write the cookie for subsequent loads.
+    // first paint. The cookie exists only once the user has CHOSEN a theme.
+    // Without it, this renders the `dark` baseline, and the blocking inline
+    // script switches to the stored or OS theme before the browser paints, so
+    // there is no flash. Nothing writes the cookie for a visitor who never chose.
     const cookieTheme = (await cookies()).get(THEME_COOKIE)?.value;
     const initialTheme: Theme = cookieTheme === 'light' || cookieTheme === 'dark' ? cookieTheme : 'dark';
 
