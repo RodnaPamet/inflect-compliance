@@ -1,0 +1,111 @@
+# ───────────────────────────────────────────────────────────────
+#  Queue Candidate Sweep — cancel CI for candidates that cannot merge
+#
+#  When a merge-queue entry is ejected, dequeued, or has its PR closed, its
+#  `gh-readonly-queue/<branch>/pr-<n>-<sha>` CI run KEEPS EXECUTING. Those jobs
+#  can no longer merge anything and they compete for the same Actions
+#  concurrency as the rebuilt candidates of every entry behind them.
+#
+#  MEASURED, 2026-10-08 13:18Z, with the queue holding three live entries:
+#
+#    run=37770713725  pr-3264  queued since 11:32  (#3264 MERGED at 12:54)   2 jobs
+#    run=37783059584  pr-3276  13:16:27, superseded by 13:17:21              4 jobs
+#    run=37783057366  pr-3273  13:16:26, superseded by 13:17:20              4 jobs
+#    run=37782902746  pr-3273  13:15:16, superseded                          4 jobs
+#                                                                   TOTAL   14 jobs
+#
+#  Fourteen job slots on candidates that could not merge, against an observed
+#  concurrency of ~31-49. Earlier the same day a single ejected candidate held 5
+#  of ~20 — a quarter of the pool, spent at the moment scarcity had just been
+#  proven by the ejection itself.
+#
+#  WHY NOT `cancel-in-progress`
+#  ───────────────────────────
+#  It is deliberately `false` and `ci.yml` documents why: a CANCELLED
+#  merge-queue run reports FAILURE, which EJECTS the PR. Merge-queue runs are
+#  also per-entry concurrency groups, so nothing supersedes them automatically.
+#  The predicate here is "the entry is gone", which no concurrency setting can
+#  express.
+#
+#  WHY THIS JOB IS ALLOWED TO BE WRONG IN ONLY ONE DIRECTION
+#  ────────────────────────────────────────────────────────
+#  Cancelling an OPERATIVE candidate reports FAILURE and ejects a healthy PR —
+#  the exact harm this exists to prevent. So the script keeps anything it cannot
+#  prove is dead: an unreadable merge queue cancels NOTHING (unknown is not
+#  empty), and an unrecognised ref is kept rather than swept. `--self-test` runs
+#  first, so a refactor that breaks the predicate cannot reach the cancel call.
+# ───────────────────────────────────────────────────────────────
+name: Queue Candidate Sweep
+
+on:
+  # SCHEDULE ONLY, and deliberately — a `pull_request` trigger was the obvious
+  # way to catch a close or merge promptly, and it is the wrong tool here for a
+  # reason `tests/guardrails/merge-queue-trigger-coverage.test.ts` calls the
+  # HANG INVARIANT: a workflow that runs on `pull_request` publishes a check
+  # context, the merge queue then waits for that context on the merge_group
+  # candidate, and a workflow without a `merge_group:` trigger never produces it.
+  # The entry hangs until the timeout ejects it. Adding `merge_group:` instead
+  # would run this sweep from inside the queue it is sweeping.
+  #
+  # The guard offers an exemption list, and taking it would have needed TWO
+  # entries — the second because a `pull_request` workflow must also key its
+  # concurrency group by ref, which is meaningless for a repo-wide sweep. Two
+  # exemptions to save a few minutes of latency is the wrong trade when the
+  # schedule already covers every case.
+  #
+  # Orphans arise three ways and only one has a webhook at all: a close/merge
+  # fires `pull_request: closed`, while an EJECTION at the timeout and a
+  # SUPERSESSION fire nothing. The schedule was always going to be load-bearing
+  # rather than a backstop, so it is now the whole trigger. Worst-case latency is
+  # one interval, during which an orphan holds the 2-4 jobs measured below.
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # The only write this needs, and the narrowest that can cancel a run.
+  actions: write
+
+concurrency:
+  # One sweep at a time. Two concurrent sweeps would race on the same cancels —
+  # harmless (a second cancel is a 409) but the log becomes unreadable.
+  group: queue-candidate-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Sweep orphaned candidates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # Positive control BEFORE the destructive step. Six fixtures, including
+      # the two that matter: an unreadable queue must cancel nothing, and of two
+      # candidates for one queued PR exactly one must survive.
+      - name: Self-test the predicate
+        run: node scripts/sweep-orphaned-queue-candidates.mjs --self-test
+
+      # No `npm ci` — the script uses only built-in `fetch`. Installing the tree
+      # would add minutes and change nothing it reads.
+      - name: Sweep
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          QUEUE_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        run: node scripts/sweep-orphaned-queue-candidates.mjs --apply
+
+      - name: Summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          {
+            echo '### Queue candidate sweep'
+            echo
+            echo '```'
+            node scripts/sweep-orphaned-queue-candidates.mjs || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
