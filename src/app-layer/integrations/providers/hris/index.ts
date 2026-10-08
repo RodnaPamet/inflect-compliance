@@ -53,6 +53,43 @@ export interface NormalizedEmployee {
      */
     hrisRecordId?: string | null;
     fullName: string;
+    /**
+     * ─── STRUCTURED NAME PARTS (Step 0c) ────────────────────────────────
+     *
+     * Each provider already receives these and already flattened them into
+     * `fullName`. Optional because not every HRIS sends every part, and
+     * `undefined` means "this provider does not send it" rather than "this
+     * person has none".
+     *
+     * `fullName` IS NOT DERIVED FROM THESE. Every provider keeps deriving it
+     * exactly as it does today — the joiner pass builds mailbox addresses and
+     * display names from it, so changing the derivation changes what gets
+     * created in a customer's directory.
+     */
+    givenName?: string | null;
+    familyName?: string | null;
+    middleName?: string | null;
+    /** Workday `preferredName` — what the worker is called day to day. */
+    preferredName?: string | null;
+    /** Workday `legalName` — the name on the employment record. */
+    legalName?: string | null;
+    /**
+     * The HRIS's own employee number, and NULL when it has none.
+     *
+     * ─── NO FALLBACK, EVER ──────────────────────────────────────────────
+     *
+     * It never falls back to `workEmail`, unlike `externalId` directly above,
+     * and the asymmetry is deliberate. `externalId` is PROVENANCE: nothing
+     * matches on it, so an email there is harmless. This is a MATCH SIGNAL —
+     * one of the few things permitted to produce a `LINKED` without a human
+     * confirming it. A fallback would let a work email silently acquire the
+     * authority of a payroll identifier, and a legacy table full of emails
+     * would begin auto-linking at LINK strength on something that is only an
+     * address.
+     *
+     * A value here is a claim that the HR system issued this number.
+     */
+    employeeNumber?: string | null;
     workEmail: string;
     /** EmploymentStatus. */
     status: EmploymentStatusValue;
@@ -339,7 +376,23 @@ export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvide
             externalId: r.employeeNumber || r.workEmail,
             // Null, never a fallback. See NormalizedEmployee.hrisRecordId.
             hrisRecordId: r.id || null,
+            // UNCHANGED. The joiner pass builds addresses from this, so the
+            // derivation stays byte for byte what it was — including the
+            // `|| r.workEmail` floor. The parts below are kept ALONGSIDE it,
+            // never as its inputs.
             fullName: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.workEmail,
+            // Step 0c — the parts BambooHR already sends. Already in the field
+            // projection above; previously concatenated and dropped.
+            givenName: r.firstName || null,
+            familyName: r.lastName || null,
+            // BambooHR's custom report carries no middle name.
+            middleName: null,
+            // Step 0c — the REAL employee number, with no fallback. Note that
+            // `externalId` one line up DOES fall back to the work email and
+            // keeps doing so: it is provenance, and nothing matches on it.
+            // This one is a match signal, so an email here would be a lie
+            // about its own strength.
+            employeeNumber: r.employeeNumber || null,
             workEmail: r.workEmail || '',
             status: mapBambooStatus(r),
             department: r.department || null,
