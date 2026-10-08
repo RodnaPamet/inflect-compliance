@@ -8897,7 +8897,8 @@
     "hrManager": "Manager: {name}",
     "hrContradicted": "HR link contradicted by a later sync",
     "truncatedTitle": "Partial coverage.",
-    "truncatedBody": "The directory held more accounts than this campaign could snapshot, so these subjects are the first {count} and not the whole population. Closing it evidences that these accounts were reviewed — not that every account was."
+    "truncatedBody": "The directory held more accounts than this campaign could snapshot, so these subjects are the first {count} and not the whole population. Closing it evidences that these accounts were reviewed — not that every account was.",
+    "crumbTests": "Tests"
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",
