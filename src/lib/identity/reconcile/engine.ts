@@ -275,6 +275,29 @@ export type CandidateScorer = (
     context: ScorerContext
 ) => readonly SupportingSignal[];
 
+/**
+ * Extension point for Step 4a's BLOCKING, as distinct from its scoring.
+ *
+ * A scorer answers "how well do these two match?"; a blocker answers "which
+ * employees is this account even compared against?". Step 3b shipped only the
+ * second half, and that made the first half unreachable for the case 4a exists to
+ * serve: an account with a name and nothing else blocks to NOBODY under the
+ * built-in keys (email, employee number, alias, directory bridge), so no scorer is
+ * ever called for it and the outcome is `NO_CANDIDATES` whatever 4a scores.
+ *
+ * Measured rather than reasoned: a name-only account over a one-person roster
+ * reported `comparisons=0, blockedAccounts=0, NO_CANDIDATES`.
+ *
+ * A blocker MUST be a keyed lookup, not a scan. It returns candidate ids for one
+ * account, and the engine's comparison budget counts every id it returns — so a
+ * blocker that returned the whole roster would blow the budget test rather than
+ * quietly undoing the index it was added to extend.
+ */
+export type CandidateBlocker = (
+    account: CanonicalAccount,
+    context: ScorerContext
+) => readonly string[];
+
 export interface ScorerContext {
     /** `baseClean`ed and parsed forms of the account, computed once. */
     readonly accountName: ReturnType<typeof normaliseName>;
@@ -294,6 +317,13 @@ export interface EngineConfig {
     readonly serviceTokens?: readonly string[];
     /** Step 4a's scorers. Empty in Step 3b. */
     readonly scorers?: readonly CandidateScorer[];
+    /**
+     * Step 4a's blockers. Empty in Step 3b.
+     *
+     * Each returns candidate ids for an account; every id returned is compared and
+     * counted, so the stated comparison budget still binds.
+     */
+    readonly blockers?: readonly CandidateBlocker[];
     /** How many candidates to carry on each resolution, highest first. */
     readonly maxCandidates?: number;
 }
@@ -754,6 +784,7 @@ export function reconcile(input: EngineInput): EngineResult {
         (config.serviceTokens ?? DEFAULT_SERVICE_TOKENS).map((t) => t.toLowerCase())
     );
     const scorers = config.scorers ?? [];
+    const blockers = config.blockers ?? [];
     const maxCandidates = config.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
 
     const index = buildRosterIndex(input.roster);
@@ -828,9 +859,18 @@ export function reconcile(input: EngineInput): EngineResult {
         const bridgeEntry = bridge.get(loginKey);
         if (bridgeEntry) addAll(bridgeEntry.employeeIds);
 
-        if (candidateIds.size > 0) blockedAccounts += 1;
-
         const context: ScorerContext = { accountName, accountEmail, accountUsername, now: input.now };
+
+        // Step 4a's blockers, after the built-in keys. They can only ADD
+        // candidates, never remove one: a strong signal must not become
+        // unreachable because an extension did not recognise the account.
+        for (const blocker of blockers) {
+            for (const id of blocker(account, context)) {
+                if (index.byId.has(id)) candidateIds.add(id);
+            }
+        }
+
+        if (candidateIds.size > 0) blockedAccounts += 1;
 
         const scored: ScoredCandidate[] = [];
         // Sorted ids, so the evaluation order does not depend on which key
