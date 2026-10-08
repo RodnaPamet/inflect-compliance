@@ -6150,6 +6150,26 @@
       "loadFailed": "The joiner pass report could not be loaded.",
       "empty": "No joiner pass yet",
       "noDecisions": "No per-starter decisions yet"
+    },
+    "scopeGroup": {
+      "controls": "Controls",
+      "evidence": "Evidence",
+      "policies": "Policies",
+      "tasks": "Tasks",
+      "risks": "Risks",
+      "assets": "Assets",
+      "incidents": "Incidents",
+      "personnel": "Personnel",
+      "access_reviews": "Access reviews",
+      "continuity": "Business continuity",
+      "processes": "Processes",
+      "vendors": "Vendors",
+      "tests": "Tests",
+      "frameworks": "Frameworks",
+      "audits": "Audits",
+      "reports": "Reports",
+      "admin": "Admin",
+      "mcp": "Agent runtime"
     }
   },
   "riskManager": {

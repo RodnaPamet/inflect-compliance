@@ -82,36 +82,42 @@ interface CreatedKeyResponse extends ApiKeyRecord {
 // those existed, so a domain the auth layer accepted could still be a scope no
 // operator could grant through the UI — which is how assets / incidents /
 // personnel were unreachable before #2225.
-const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
-    controls:   { label: 'Controls',   scopes: ['controls:read', 'controls:write'] },
-    evidence:   { label: 'Evidence',   scopes: ['evidence:read', 'evidence:write'] },
-    policies:   { label: 'Policies',   scopes: ['policies:read', 'policies:write', 'policies:admin'] },
-    tasks:      { label: 'Tasks',      scopes: ['tasks:read', 'tasks:write'] },
-    risks:      { label: 'Risks',      scopes: ['risks:read', 'risks:write'] },
-    assets:     { label: 'Assets',     scopes: ['assets:read', 'assets:write'] },
-    incidents:  { label: 'Incidents',  scopes: ['incidents:read', 'incidents:admin'] },
-    personnel:  { label: 'Personnel',  scopes: ['personnel:read', 'personnel:admin'] },
+/**
+ * `labelKey`, not `label`. The table is module-level so it cannot call
+ * `useTranslations` itself; the key is resolved at the render site instead. All 19
+ * labels were hardcoded English until now — a uniform table, so localising only
+ * the newest row would have been worse than localising none.
+ */
+const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
+    controls:   { labelKey: 'scopeGroup.controls',   scopes: ['controls:read', 'controls:write'] },
+    evidence:   { labelKey: 'scopeGroup.evidence',   scopes: ['evidence:read', 'evidence:write'] },
+    policies:   { labelKey: 'scopeGroup.policies',   scopes: ['policies:read', 'policies:write', 'policies:admin'] },
+    tasks:      { labelKey: 'scopeGroup.tasks',      scopes: ['tasks:read', 'tasks:write'] },
+    risks:      { labelKey: 'scopeGroup.risks',      scopes: ['risks:read', 'risks:write'] },
+    assets:     { labelKey: 'scopeGroup.assets',     scopes: ['assets:read', 'assets:write'] },
+    incidents:  { labelKey: 'scopeGroup.incidents',  scopes: ['incidents:read', 'incidents:admin'] },
+    personnel:  { labelKey: 'scopeGroup.personnel',  scopes: ['personnel:read', 'personnel:admin'] },
     // All three groups offered, because all three exist in SCOPE_ACTION_MAP —
     // omitting `:admin` would leave campaign creation and close reachable only
     // by a `*` key, which is the hole #2225 closed for assets/personnel.
-    access_reviews: { label: 'Access reviews', scopes: ['access_reviews:read', 'access_reviews:write', 'access_reviews:admin'] },
+    access_reviews: { labelKey: 'scopeGroup.access_reviews', scopes: ['access_reviews:read', 'access_reviews:write', 'access_reviews:admin'] },
     // One scope each, and no `:read`: `continuity` / `processes` carry a
     // single `edit` action in PermissionSet, so SCOPE_ACTION_MAP gives them a
     // `write` group and nothing else. Listing `continuity:read` here would be
     // an operator-visible checkbox that validateScopes rejects.
-    continuity: { label: 'Business continuity', scopes: ['continuity:write'] },
-    processes:  { label: 'Processes',  scopes: ['processes:write'] },
-    vendors:    { label: 'Vendors',    scopes: ['vendors:read', 'vendors:write'] },
-    tests:      { label: 'Tests',      scopes: ['tests:read', 'tests:write'] },
-    frameworks: { label: 'Frameworks', scopes: ['frameworks:read', 'frameworks:write'] },
-    audits:     { label: 'Audits',     scopes: ['audits:read', 'audits:write'] },
-    reports:    { label: 'Reports',    scopes: ['reports:read', 'reports:write'] },
+    continuity: { labelKey: 'scopeGroup.continuity', scopes: ['continuity:write'] },
+    processes:  { labelKey: 'scopeGroup.processes',  scopes: ['processes:write'] },
+    vendors:    { labelKey: 'scopeGroup.vendors',    scopes: ['vendors:read', 'vendors:write'] },
+    tests:      { labelKey: 'scopeGroup.tests',      scopes: ['tests:read', 'tests:write'] },
+    frameworks: { labelKey: 'scopeGroup.frameworks', scopes: ['frameworks:read', 'frameworks:write'] },
+    audits:     { labelKey: 'scopeGroup.audits',     scopes: ['audits:read', 'audits:write'] },
+    reports:    { labelKey: 'scopeGroup.reports',    scopes: ['reports:read', 'reports:write'] },
     // `admin:external_tools` is listed SEPARATELY from `admin:write` because it
     // is a separate action server-side, and for the reason it is: it decides
     // whether a credential may reach a tool on somebody else's MCP server. An
     // operator ticking it is deciding this key may leave the tenant, which is
     // not something to fold into "can edit tenant settings".
-    admin:      { label: 'Admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools'] },
+    admin:      { labelKey: 'scopeGroup.admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools'] },
     // The MCP capability markers. They map to NO permissions in
     // SCOPE_ACTION_MAP — each one is an empty action list — because they are
     // checked as capabilities by the MCP boundary rather than granting anything
@@ -123,7 +129,7 @@ const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
     // whether a key may read through an agent, draft proposals as one, and
     // drive a run. `agentic-naming-vocabulary` pins that rule — an operator is
     // governing agents, not configuring a protocol.
-    mcp:        { label: 'Agent runtime', scopes: ['mcp:read', 'mcp:propose', 'mcp:orchestrate'] },
+    mcp:        { labelKey: 'scopeGroup.mcp', scopes: ['mcp:read', 'mcp:propose', 'mcp:orchestrate'] },
 };
 
 const EXPIRY_OPTIONS = [
@@ -257,10 +263,10 @@ function ScopePicker({
 
             {!isFullAccess && (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-tight">
-                    {Object.entries(SCOPE_GROUPS).map(([, group]) => (
-                        <div key={group.label} className="bg-bg-default/40 rounded-lg p-2 space-y-1">
+                    {Object.entries(SCOPE_GROUPS).map(([groupKey, group]) => (
+                        <div key={groupKey} className="bg-bg-default/40 rounded-lg p-2 space-y-1">
                             <div className="text-[10px] text-content-subtle uppercase tracking-wider font-medium">
-                                {group.label}
+                                {t(group.labelKey)}
                             </div>
                             {group.scopes.map((scope) => {
                                 const action = scope.split(':')[1];
