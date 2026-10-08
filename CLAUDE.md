@@ -1164,6 +1164,51 @@ Step 5a, which found the same defect four times in one flow.
    A row that cannot be keyed fails the pull rather than being dropped — an account
    missing from a snapshot is an account nobody reviews.
 
+5. **Zero is never complete.** A review over no subjects evidences nothing, and every
+   natural way to write the completeness check says the opposite. `pending.length === 0`
+   and `decided === total` are both TRUE of the empty set, so a campaign with no
+   subjects closes instantly, reports success, and produces an artefact attesting that
+   every account in scope was reviewed — vacuously true of its rows and false of the
+   directory, which is the only reading an auditor cares about. Step 5a found this
+   four times over in one flow: the close usecase, the Close button's `disabled`,
+   a `subjectRef` collision that silently dropped a subject through
+   `skipDuplicates`, and a `take: N` that cannot tell "N accounts" from "the first N
+   of more". So: refuse an empty population at CREATION, refuse it again at
+   COMPLETION, and read one past any cap so truncation is a fact you hold rather than
+   one you cannot observe. Any count that gates a claim about a population must assert
+   the population is non-empty in the same expression — `subjectCount > 0 && decided
+   === subjectCount`, never `decided === subjectCount`.
+
+**How invariant 2 is enforced, since Step 3b** (`src/lib/identity/reconcile/engine.ts`).
+Strength is not a number and not a claim a signal makes about itself. `SIGNAL_STRENGTH`
+is a frozen table keyed on a closed union, so a kind added without a classification is a
+compile error rather than an `undefined` that `=== 'STRONG'` quietly reports as false.
+There are exactly four strong kinds — `CONFIRMED_ALIAS`, `EMPLOYEE_NUMBER`,
+`EMAIL_EXACT`, `DIRECTORY_BRIDGE` — and `LINKED` requires one of them held by exactly
+one candidate, unvetoed.
+
+**The Step 4a extension point cannot break it, by type.** `CandidateScorer` returns
+`SupportingSignal`, whose `kind` is narrowed to the non-strong union. Naming conventions
+and similarity therefore cannot produce a `LINKED` however they score — not by
+convention, by `tsc`. Do not widen that return type to `Signal`; the exhaustive test
+over all 127 non-empty subsets of the supporting kinds (at score 10,000 each) is what
+proves the property, and it is only meaningful while the type prevents the strong case.
+
+Three further rules the engine holds that are easy to undo:
+
+- **`EMAIL_EXACT` is `emailKey` byte-equality, never a folded domain.** `+tag` removal
+  and domain equivalence are a SUPPORTING signal one layer above the key. `emailKey` is
+  what the JML chain joins on, so a link made on a folded address is a link the leaver
+  cannot act on — the design document's `da-01` case exists to say so.
+- **An employee number is derived from a login only when the login is all digits.**
+  `normaliseEmployeeNumber` accepts up to eight leading letters, so `kpatel3` yields
+  `3` — a name with a counter posing as the strongest signal in the system.
+- **A roster carrying one id twice with different fields is REFUSED**
+  (`DuplicateRosterIdError`), not resolved by arrival order. `RosterEmployee.id` is a
+  primary key; a roster that contradicts itself about one person gives no reason to
+  trust what it says about the others. An exactly-repeated row is tolerated — the check
+  is about contradiction, not duplication.
+
 **The decision-model path, since Step 6b** (`src/app-layer/ai/identity-match/`). Four
 invariants, each enforced by a test rather than by convention:
 
@@ -1200,23 +1245,6 @@ Two shapes in that module that are easy to get wrong a second time:
   party control of the pass's schedule. A back-off that does not fit the remaining
   budget means no retry at all, and a timeout is never retried.
 
-> Step 3b's own CLAUDE.md section (how invariant 2 is enforced in the deterministic
-> engine) lands with #3286; this section and that one are adjacent and will want a
-> merge.
-5. **Zero is never complete.** A review over no subjects evidences nothing, and every
-   natural way to write the completeness check says the opposite. `pending.length === 0`
-   and `decided === total` are both TRUE of the empty set, so a campaign with no
-   subjects closes instantly, reports success, and produces an artefact attesting that
-   every account in scope was reviewed — vacuously true of its rows and false of the
-   directory, which is the only reading an auditor cares about. Step 5a found this
-   four times over in one flow: the close usecase, the Close button's `disabled`,
-   a `subjectRef` collision that silently dropped a subject through
-   `skipDuplicates`, and a `take: N` that cannot tell "N accounts" from "the first N
-   of more". So: refuse an empty population at CREATION, refuse it again at
-   COMPLETION, and read one past any cap so truncation is a fact you hold rather than
-   one you cannot observe. Any count that gates a claim about a population must assert
-   the population is non-empty in the same expression — `subjectCount > 0 && decided
-   === subjectCount`, never `decided === subjectCount`.
 
 
 ## Testing Conventions

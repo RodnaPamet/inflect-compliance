@@ -274,6 +274,21 @@ function normalise(row: OrangeHrmEmployeeRow, enrichment: OrangeHrmEnrichment): 
         // NOT `empNumber`: `externalId` is provenance, not an address, and the
         // address has a field of its own on the line below.
         externalId: (row.employeeId ?? '').trim() || workEmail,
+        // Step 0c — all three parts, which OrangeHRM list rows already carry
+        // and which `fullName` below already concatenates. Trimmed, because a
+        // padded part would become a distinct value to a parts comparison.
+        givenName: (row.firstName ?? '').trim() || null,
+        middleName: (row.middleName ?? '').trim() || null,
+        familyName: (row.lastName ?? '').trim() || null,
+        // `employeeId` is the badge number an HR administrator types — the
+        // human-facing employee number, which is exactly this column's
+        // subject. NOT `empNumber`: that is the internal row id an update is
+        // addressed by, and it goes to `hrisRecordId` below.
+        //
+        // No fallback to the work email, unlike `externalId` on the line
+        // above, which keeps its: that one is provenance and nothing matches
+        // on it, this one is a match signal.
+        employeeNumber: (row.employeeId ?? '').trim() || null,
         // Null, never a fallback. See NormalizedEmployee.hrisRecordId and the
         // module docblock — this is the one field OrangeHRM exists to supply
         // honestly.

@@ -76,18 +76,50 @@ export function classifyCandidates({ queuedPrNumbers, runs }) {
 
     const inQueue = new Set(queuedPrNumbers);
 
-    /** Newest candidate per PR, by createdAt then id so ties are total. */
-    const newestForPr = new Map();
+    /**
+     * Newest candidate REF per PR — not newest RUN per PR.
+     *
+     * THE BUG THIS REPLACES, which cancelled a healthy PR's required checks.
+     * A candidate fans out across SEVERAL WORKFLOWS on one ref: measured, 33
+     * refs in this repo carry three apiece (`CI`, `Integration Stress`,
+     * `Bundle Analyze`). Grouping by PR and keeping the highest-id run therefore
+     * kept ONE of them and called the other two superseded — and when `CI` was
+     * among the losers, cancelling it reported FAILURE on the live entry, which
+     * is what `ci.yml` warns about and what took #3277 to UNMERGEABLE.
+     *
+     * Two runs sharing a ref are never superseded relative to each other: they
+     * are different checks on the SAME speculative merge. Supersession is a
+     * property of refs, so the comparison must be between refs, and every run
+     * on the newest ref is operative.
+     */
+    const newestRefForPr = new Map();
     for (const r of runs) {
         const m = CANDIDATE_REF.exec(r.headBranch);
         if (!m) continue;
         const pr = Number(m.groups.pr);
-        const prev = newestForPr.get(pr);
+        const prev = newestRefForPr.get(pr);
+        // Earliest creation seen for a ref is its creation: the workflows on one
+        // ref start within the same second, and comparing a LATER sibling's
+        // timestamp against another ref could order two refs backwards.
         const isNewer =
             prev === undefined ||
             r.createdAt > prev.createdAt ||
-            (r.createdAt === prev.createdAt && r.id > prev.id);
-        if (isNewer) newestForPr.set(pr, r);
+            // Same instant, different ref: fall back to the ref string so the
+            // order is total. NEVER to run id — ids differ between workflows on
+            // one ref, which is precisely how the old code split a candidate.
+            (r.createdAt === prev.createdAt && r.headBranch > prev.headBranch);
+        if (isNewer || r.headBranch === prev?.headBranch) {
+            // Keep the EARLIEST timestamp for the winning ref, so a slow sibling
+            // starting later cannot make its own ref look newer than it is.
+            if (prev !== undefined && r.headBranch === prev.headBranch) {
+                newestRefForPr.set(pr, {
+                    headBranch: prev.headBranch,
+                    createdAt: r.createdAt < prev.createdAt ? r.createdAt : prev.createdAt,
+                });
+            } else {
+                newestRefForPr.set(pr, { headBranch: r.headBranch, createdAt: r.createdAt });
+            }
+        }
     }
 
     return runs.map((r) => {
@@ -116,14 +148,14 @@ export function classifyCandidates({ queuedPrNumbers, runs }) {
                 reason: `pr-not-in-queue: #${pr} is ejected, dequeued or closed`,
             };
         }
-        const newest = newestForPr.get(pr);
-        if (newest && newest.id !== r.id) {
+        const newest = newestRefForPr.get(pr);
+        if (newest !== undefined && newest.headBranch !== r.headBranch) {
             return {
                 runId: r.id,
                 pr,
                 base,
                 verdict: 'cancel',
-                reason: `superseded: #${pr} has a newer candidate (run ${newest.id}, base ${newest.headBranch.slice(-40, -33)}…)`,
+                reason: `superseded: #${pr} has a newer candidate ref (${newest.headBranch.slice(-40, -33)}…, this run is on ${base.slice(0, 7)}…)`,
             };
         }
         return {
@@ -131,7 +163,7 @@ export function classifyCandidates({ queuedPrNumbers, runs }) {
             pr,
             base,
             verdict: 'keep',
-            reason: `operative: newest candidate for #${pr}, which is in the queue`,
+            reason: `operative: on the newest candidate ref for #${pr}, which is in the queue`,
         };
     });
 }
@@ -191,8 +223,47 @@ export function selfTest() {
     });
     check('unparseable ref kept', v[0].verdict, 'keep');
 
-    // 6. same createdAt, different id — the tie-break is total, so exactly one
-    //    of the two is kept rather than both or neither.
+    // 6. SEVERAL WORKFLOWS ON ONE REF — all kept. The case the old fixtures
+    //    could not express, and the one that cancelled a healthy PR's required
+    //    checks: a candidate fans out across `CI`, `Integration Stress` and
+    //    `Bundle Analyze` on the SAME ref, with different run ids and the same
+    //    creation second. Grouping by PR and keeping the highest id kept one and
+    //    called the other two superseded.
+    const sameRef = sha('f');
+    v = classifyCandidates({
+        queuedPrNumbers: [777],
+        runs: [
+            R(100, 777, sameRef, '2026-01-01T00:00:00Z'),
+            R(101, 777, sameRef, '2026-01-01T00:00:00Z'),
+            R(102, 777, sameRef, '2026-01-01T00:00:01Z'),
+        ],
+    });
+    check('all runs on one ref are kept', v.filter((x) => x.verdict === 'keep').length, 3);
+    check('none on one ref is cancelled', v.filter((x) => x.verdict === 'cancel').length, 0);
+
+    // 7. three workflows on the NEWEST ref, two on an older one: 3 kept, 2 gone.
+    //    A later-starting sibling on the OLD ref must not drag the old ref ahead
+    //    of the new one, which is why the winning ref keeps its EARLIEST stamp.
+    v = classifyCandidates({
+        queuedPrNumbers: [888],
+        runs: [
+            R(200, 888, sha('0'), '2026-01-01T00:00:00Z'),
+            R(201, 888, sha('0'), '2026-01-01T00:00:09Z'), // slow sibling, OLD ref
+            R(202, 888, sha('1'), '2026-01-01T00:00:05Z'),
+            R(203, 888, sha('1'), '2026-01-01T00:00:05Z'),
+            R(204, 888, sha('1'), '2026-01-01T00:00:06Z'),
+        ],
+    });
+    check('newest ref keeps all its runs', v.filter((x) => x.verdict === 'keep').length, 3);
+    check('older ref loses all its runs', v.filter((x) => x.verdict === 'cancel').length, 2);
+    check(
+        'the slow sibling on the old ref is still cancelled',
+        v.find((x) => x.runId === 201).verdict,
+        'cancel',
+    );
+
+    // 8. same createdAt, different REF — the tie-break is total, so exactly one
+    //    ref wins rather than both or neither.
     v = classifyCandidates({
         queuedPrNumbers: [666],
         runs: [
@@ -200,7 +271,7 @@ export function selfTest() {
             R(51, 666, sha('1'), '2026-01-01T00:00:00Z'),
         ],
     });
-    check('tie keeps exactly one', v.filter((x) => x.verdict === 'keep').length, 1);
+    check('a same-instant REF tie keeps exactly one ref', v.filter((x) => x.verdict === 'keep').length, 1);
 
     return failures;
 }
@@ -286,7 +357,7 @@ async function main() {
             for (const f of failures) console.error(`  ${f}`);
             process.exit(1);
         }
-        console.log('self-test ok: 6 fixtures, including queue-unknown and the two-candidate case');
+        console.log('self-test ok: 8 fixtures, including multi-workflow-per-ref and queue-unknown');
         return;
     }
 
