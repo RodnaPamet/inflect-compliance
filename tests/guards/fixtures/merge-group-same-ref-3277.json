@@ -1,0 +1,34 @@
+{
+    "_comment": [
+        "RECORDED FROM THE LIVE API, 2026-10-08. Not hand-built \u2014 the hand-built",
+        "fixtures could not express this shape, which is why the bug shipped.",
+        "These two runs are the real ones from the incident: #3277's merge-group",
+        "candidate, fanned out across two workflows on ONE ref. The sweep compared",
+        "run ids, called CI superseded, cancelled it, and the cancelled required",
+        "check reported FAILURE on the live entry -> UNMERGEABLE.",
+        "queuedPrNumbers is the queue as it stood when --apply ran."
+    ],
+    "queuedPrNumbers": [
+        3272,
+        3277
+    ],
+    "runs": [
+        {
+            "id": 37798490152,
+            "name": "CI",
+            "headBranch": "gh-readonly-queue/main/pr-3277-f603b4b3a59ccbad8de88ac1cc8d09aeb8e3a483",
+            "createdAt": "2026-10-08T15:10:06Z"
+        },
+        {
+            "id": 37798490800,
+            "name": "Integration Stress",
+            "headBranch": "gh-readonly-queue/main/pr-3277-f603b4b3a59ccbad8de88ac1cc8d09aeb8e3a483",
+            "createdAt": "2026-10-08T15:10:06Z"
+        }
+    ],
+    "expect": {
+        "cancel": 0,
+        "keep": 2,
+        "why": "both runs share ref pr-3277-f603b4b3a...; two workflows on one candidate are never superseded relative to each other"
+    }
+}
