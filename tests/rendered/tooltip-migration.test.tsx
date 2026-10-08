@@ -8,13 +8,14 @@
  * the accessible name, and no blocking overlay sits between the user
  * and the control.
  *
- * The jsdom project maps `./tooltip` to `tests/rendered/tooltip-mock.tsx`,
- * which since #3163 DELEGATES to the real primitive (wrapped in a provider it
- * supplies itself) rather than passing children through. These assertions
- * still focus on the button surface, which is what downstream user journeys
- * depend on — but a hint can now really open, so a future assertion here on
- * visible text should expect Radix's portalised content to be in the document
- * once a trigger takes keyboard focus.
+ * `./tooltip` resolves to the real primitive, which supplies its own Radix
+ * provider when a suite mounts none. The jsdom project used to redirect that
+ * spelling to a delegate (`tooltip-mock.tsx`, #3163) to supply the provider;
+ * that mapping is gone, and nothing now depends on how the import is spelled.
+ * These assertions still focus on the button surface, which is what downstream
+ * user journeys depend on — but a hint can really open, so a future assertion
+ * here on visible text should expect Radix's portalised content to be in the
+ * document once a trigger takes keyboard focus.
  */
 
 import { render, screen } from '@testing-library/react';

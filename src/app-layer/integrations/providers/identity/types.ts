@@ -62,6 +62,33 @@ export interface NormalizedIdentityAccount {
     /** Group / role names. */
     groups: string[];
     lastActiveAt?: Date | null;
+    /**
+     * ─── LOGIN NAMES (Step 0b) ──────────────────────────────────────────
+     *
+     * The strings a legacy application's own access table is most likely to
+     * hold. Almost nothing on-premises stores an email address as the account
+     * identifier: an AD-joined application stores `DOMAIN\sAMAccountName` or a
+     * bare `sAMAccountName`, and an Entra-federated one stores the UPN. So the
+     * directory bridge — the only LINK-strength signal that does not need a
+     * human to confirm it — has nothing to match on unless these are kept.
+     *
+     * All THREE are optional and all MAY be absent, because the three-state
+     * convention above applies here too: `undefined` means this provider does
+     * not carry the concept, not that the account has no login name. Okta and
+     * Google Workspace leave every one of them unset — their account
+     * identifier IS the email, which `email` already holds, and inventing a
+     * `samAccountName` for them would be manufacturing an answer.
+     *
+     * NONE of these may be used to derive `email`. The JML link reconcile and
+     * the leaver pass compare on `email` byte for byte, so a provider that
+     * started preferring a UPN here would silently re-point existing links.
+     */
+    /** AD only: the pre-Windows-2000 logon name, e.g. `jsmith`. */
+    samAccountName?: string | null;
+    /** AD and Entra: the user principal name, e.g. `jsmith@corp.example`. */
+    userPrincipalName?: string | null;
+    /** Entra only: the mail alias, e.g. `jsmith`. */
+    mailNickname?: string | null;
 }
 
 /**

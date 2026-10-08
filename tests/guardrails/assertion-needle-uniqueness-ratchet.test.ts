@@ -464,7 +464,28 @@ const HIGH_MULTIPLICITY = 5;
 //   have measured 1177, and had they been fully independent, 1175 is what
 //   1186 − 2 − 9 gives. Which is the arithmetic working out, not a coincidence
 //   worth trusting next time: measure, do not subtract.
-const AMBIGUOUS_NEEDLE_BASELINE = 1168;
+//
+//   RE-SEATED 1175 -> 1174 (theme stored only on choice). The pre-paint theme
+//   script moved from `layout.tsx` into `src/lib/theme-constants.ts`, and
+//   `theme-flash-init`'s script needles moved to the module that now owns it.
+//   With the script's text gone from the layout, one whole-file needle there
+//   stops matching more than once. Measured on the branch, not subtracted.
+//
+//   MERGED WITH Step 5a, which independently narrowed four whole-schema
+//   `toContain` needles and three bare-identifier ones (1175 -> 1168 on its
+//   own branch). Both narrowings are in this tree, so the live count is below
+//   either branch's figure and neither 1174 nor 1168 is correct for the union.
+//   RE-MEASURED on the merged tree at 1167, per this file's own rule — "Each
+//   branch carries its OWN live count rather than a projected total, which is the
+//   only arithmetic that is safe in either merge order."
+//
+//   The arithmetic would have agreed here (1175 - 7 - 1 = 1167), and that is
+//   precisely why the rule is to measure: the two deltas happened to be
+//   independent this time, and nothing in the numbers says whether they overlap.
+//   Same standing as the 2026-09-06 entry below — the arithmetic predicted it, the
+//   measurement is what makes it true.
+const AMBIGUOUS_NEEDLE_BASELINE = 1167;
+
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

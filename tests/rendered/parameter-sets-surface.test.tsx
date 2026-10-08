@@ -282,12 +282,13 @@ function mount() {
     // In production it is mounted once in `src/app/providers.tsx`.
     //
     // The three digest controls are `<CopyText>`, which reaches its Tooltip by
-    // the relative `./tooltip` — the path the jsdom project's
-    // `moduleNameMapper` redirects to `tests/rendered/tooltip-mock.tsx`. Since
-    // #3163 that file DELEGATES to the real primitive and supplies its own
-    // provider, so a digest's hint really opens here; before #3163 it was a
-    // pass-through and no focus or hover in this file could produce a
-    // `role="tooltip"` node at all.
+    // the relative `./tooltip`. That spelling is no longer special: the
+    // primitive supplies its own provider when a suite mounts none, so a
+    // digest's hint really opens here. Two earlier states are worth knowing,
+    // because each made this file's assertions mean something different: the
+    // spelling was once mapped to a pass-through stub, under which no focus or
+    // hover anywhere here could produce a `role="tooltip"` node at all, and
+    // then to a delegate (#3163) that rendered the real primitive.
     return render(
         <TooltipProvider delayDuration={0}>
             <ParameterSetsClient
@@ -584,14 +585,18 @@ describe('every digest is reachable from the keyboard, not only the mouse', () =
      * #3163 — THE HINT ITSELF, which this file could not reach until the
      * tooltip module mock began delegating.
      *
-     * `<CopyText>` imports the primitive as `./tooltip`, and `jest.config.js`
-     * maps that spelling to `tests/rendered/tooltip-mock.tsx`. While that file
-     * rendered `<>{children}</>`, no focus and no hover anywhere on this page
-     * could produce a `role="tooltip"` node — so "Tab opens the hint showing
-     * the whole hash" shipped resting on `tooltip.test.tsx` covering the
-     * primitive in the abstract plus Radix's documented behaviour, and on
+     * `<CopyText>` imports the primitive as `./tooltip`. `jest.config.js` used
+     * to map that spelling to `tests/rendered/tooltip-mock.tsx`, and while that
+     * file rendered `<>{children}</>`, no focus and no hover anywhere on this
+     * page could produce a `role="tooltip"` node — so "Tab opens the hint
+     * showing the whole hash" shipped resting on `tooltip.test.tsx` covering
+     * the primitive in the abstract plus Radix's documented behaviour, and on
      * nothing measured on the page that ships it. That is the defect #3163
      * records. This test is what closes it.
+     *
+     * The mapping is gone now: the primitive supplies its own provider when a
+     * suite mounts none, so `./tooltip` resolves to the real module and no
+     * spelling gets a different test environment from another.
      *
      * WHY `.focus()` AND the explicit `:focus-visible` assertion: `tooltip.tsx`
      * gates Radix's focus-open on `e.currentTarget.matches(':focus-visible')`,

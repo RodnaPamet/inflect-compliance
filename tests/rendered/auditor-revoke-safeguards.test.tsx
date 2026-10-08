@@ -62,6 +62,7 @@ jest.mock('@/components/ui/tooltip', () => ({
     Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     InfoTooltip: () => null,
+    DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 // The repo-wide `__mocks__/next-intl.js` returns a FRESH `t` function on every

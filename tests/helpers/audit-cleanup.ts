@@ -93,6 +93,16 @@
  */
 export const AUDIT_CLEANUP_MODULE = __filename;
 
+// Pure numeric constants, no `@prisma/client` and no runtime deps of its own —
+// importing it here does not violate the structural-typing rule above.
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
+
+/** A transaction budget, matching Prisma's interactive-transaction options. */
+export interface TxBudget {
+    maxWait?: number;
+    timeout?: number;
+}
+
 /** The two append-only trails this module is allowed to touch. */
 export type AuditTable = 'AuditLog' | 'OrgAuditLog';
 
@@ -109,7 +119,7 @@ export interface RawSqlTx {
  * does not drag `@prisma/client` into files that never imported it.
  */
 export interface RawSqlClient extends RawSqlTx {
-    $transaction<T>(fn: (tx: RawSqlTx) => Promise<T>): Promise<T>;
+    $transaction<T>(fn: (tx: RawSqlTx) => Promise<T>, options?: TxBudget): Promise<T>;
 }
 
 const asArray = (v: string | readonly string[]): string[] =>
@@ -127,10 +137,23 @@ async function withAuditTriggersDisabled<T>(
     db: RawSqlClient,
     body: (tx: RawSqlTx) => Promise<T>,
 ): Promise<T> {
+    // THE DECLARED BUDGET, not Prisma's inherited 2000 ms maxWait (#3266).
+    //
+    // This transaction competes for the same 25-connection pool as every
+    // other suite running on the shared `inflect_test`. Under CI shard load
+    // a 2000 ms maxWait is not enough to even ACQUIRE a connection, and the
+    // failure mode is not a slow teardown — it is
+    // `Unable to start a transaction in the given time` thrown from a
+    // cleanup, which leaves the rows the cleanup existed to remove. A later
+    // assertion in the same file then reads those leftovers and fails
+    // somewhere else entirely. Observed on
+    // `tests/integration/audit-hash-chain.test.ts`: the tamper test's
+    // cleanup threw, and the NEXT test's `verifyAuditChain(...).valid` came
+    // back false off the tampered rows it had left behind.
     return db.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
         return body(tx);
-    });
+    }, TENANT_TX_OPTIONS);
 }
 
 /**
