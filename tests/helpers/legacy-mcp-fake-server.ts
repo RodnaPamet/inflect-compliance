@@ -64,6 +64,40 @@ export type FaultName =
     /** A cell holding something shaped like a credential. */
     | 'secretShapedValue';
 
+/**
+ * Every fault, as a VALUE.
+ *
+ * `FaultName` is a type and a type cannot be enumerated at runtime, so Step 1b's
+ * "the expectation table covers every declared fault" test first read THIS FILE
+ * and regexed the union out of it. That worked and was worse in two ways: a
+ * whole-file read is what the Class D needle ratchet counts as un-analysable (it
+ * went one over its ceiling), and a regex over source text is a weaker guarantee
+ * than the compiler's.
+ *
+ * The check below makes adding a member to `FaultName` without adding it here a
+ * COMPILE error, so the list cannot drift from the union it mirrors.
+ */
+export const FAULT_NAMES = [
+    'tornSnapshot',
+    'oversharing',
+    'oversizedPage',
+    'slowResponse',
+    'malformedJson',
+    'serverSentEvents',
+    'unsupportedProtocolVersion',
+    'toolsAdvertised',
+    'redirect',
+    'schemaDrift',
+    'duplicateAccountKey',
+    'rowWithoutAccountKey',
+    'secretShapedValue',
+] as const satisfies readonly FaultName[];
+
+/** Fails to compile if a `FaultName` is missing from {@link FAULT_NAMES}. */
+type UnlistedFault = Exclude<FaultName, (typeof FAULT_NAMES)[number]>;
+const _everyFaultIsListed: UnlistedFault extends never ? true : never = true;
+void _everyFaultIsListed;
+
 export interface FakeServerOptions {
     /** Accounts in the snapshot. Default 7 — enough to page, small enough to read. */
     accounts?: number;

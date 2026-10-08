@@ -18,7 +18,7 @@ restate it.
 | 0b | Persist directory login names | Merged | #3273 |
 | 0c | Persist structured HR names and real employee numbers | Merged | #3277 |
 | 1a | Publish the contract and a fake server | Merged | #3257 |
-| 1b | The MCP client | Not started | — |
+| 1b | The MCP client | Open | #3293 |
 | 1c | Register the `legacy-mcp` provider | Not started | — |
 | 2a | Snapshot models and a fail-closed pull | Not started | — |
 | 2b | Mapping UI and suggestions | Not started | — |
@@ -30,7 +30,7 @@ restate it.
 | 5a | Harden the existing access-review flows | Merged | #3272 |
 | 5b | Legacy recertification campaigns | Not started | — |
 | 6a | Register TypeSafe as a proposed sub-processor | Merged | #3246 |
-| 6b | Decision-model client and evaluation harness | Open | #3288 |
+| 6b | Decision-model client and evaluation harness | Merged | #3288 |
 | 6c | Adjudication in the run, and the review lanes | Not started | — |
 | 6d | Turn it on | Not started | — |
 

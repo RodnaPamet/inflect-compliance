@@ -87,6 +87,15 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         reason: 'Tenant-authored automation webhook URL.',
         noBareFetchOf: 'fetch(cfg.url',
     },
+    {
+        file: 'src/lib/mcp/client/index.ts',
+        reason:
+            'Operator-supplied legacy MCP server URL (Step 1b). Somebody types a ' +
+            'hostname for a server we do not run, which is textbook SSRF input.',
+        // The client resolves `ctx.fetchImpl ?? safeFetch` into a local `doFetch`,
+        // so the shape to forbid is a bare call on the context's URL.
+        noBareFetchOf: 'fetch(ctx.url',
+    },
 ];
 
 describe('SSRF — every tenant-controlled sink routes through safeFetch', () => {
