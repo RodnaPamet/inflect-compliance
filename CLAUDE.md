@@ -1117,8 +1117,9 @@ reconciling them against HR. Design and plan:
 of truth for intent.** If the code contradicts a fact in them, the code wins and the
 pull request says so; if a step would have to deviate from the design, stop and ask.
 
-Four invariants bind everything in this subsystem. Later steps extend this section;
-these four do not move.
+Five invariants bind everything in this subsystem. Later steps extend this section;
+none of these move. The first four were seated by Step 0a; the fifth was earned by
+Step 5a, which found the same defect four times in one flow.
 
 1. **Legacy code never writes a directory table.** `IdentityAccountLink` and
    `ConnectedIdentityAccount` are read-only to it.
@@ -1137,6 +1138,20 @@ these four do not move.
    unauthenticated read is recorded with a named reason and never reported as complete.
    A row that cannot be keyed fails the pull rather than being dropped — an account
    missing from a snapshot is an account nobody reviews.
+5. **Zero is never complete.** A review over no subjects evidences nothing, and every
+   natural way to write the completeness check says the opposite. `pending.length === 0`
+   and `decided === total` are both TRUE of the empty set, so a campaign with no
+   subjects closes instantly, reports success, and produces an artefact attesting that
+   every account in scope was reviewed — vacuously true of its rows and false of the
+   directory, which is the only reading an auditor cares about. Step 5a found this
+   four times over in one flow: the close usecase, the Close button's `disabled`,
+   a `subjectRef` collision that silently dropped a subject through
+   `skipDuplicates`, and a `take: N` that cannot tell "N accounts" from "the first N
+   of more". So: refuse an empty population at CREATION, refuse it again at
+   COMPLETION, and read one past any cap so truncation is a fact you hold rather than
+   one you cannot observe. Any count that gates a claim about a population must assert
+   the population is non-empty in the same expression — `subjectCount > 0 && decided
+   === subjectCount`, never `decided === subjectCount`.
 
 
 ## Testing Conventions
