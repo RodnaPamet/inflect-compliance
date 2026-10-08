@@ -19,7 +19,7 @@ restate it.
 | 0c | Persist structured HR names and real employee numbers | Merged | #3277 |
 | 1a | Publish the contract and a fake server | Merged | #3257 |
 | 1b | The MCP client | Merged | #3293 |
-| 1c | Register the `legacy-mcp` provider | Open | #PENDING |
+| 1c | Register the `legacy-mcp` provider | Open | #3306 |
 | 2a | Snapshot models and a fail-closed pull | Not started | — |
 | 2b | Mapping UI and suggestions | Not started | — |
 | 3a | Normalisation library and labelled corpus | Merged | #3267 |
