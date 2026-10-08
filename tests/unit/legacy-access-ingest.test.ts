@@ -236,27 +236,56 @@ describe('SECRET_SHAPED_VALUE', () => {
 });
 
 describe('oversharing', () => {
-    it('reports extra columns without failing the pull', () => {
-        const extra = [...COLUMNS, 'COST_CENTRE', 'CREATED_BY'];
+    it('a manifest declaring MORE columns than the projection is NOT oversharing', () => {
+        // The regression this test exists for. A manifest declares the whole
+        // table and a mapping deliberately names a subset, so
+        // manifest-minus-projection is non-empty for every realistic mapping. An
+        // earlier version computed oversharing that way and would have put a
+        // permanent OVERSHARING banner, listing thirty columns, on every
+        // connection — the same defect as a flag that never clears.
+        const wide = [...COLUMNS, 'COST_CENTRE', 'CREATED_BY', 'PASSWORD_HASH'];
         const out = mapRows(
-            { ...mapping(), columnSetFingerprint: computeColumnSetFingerprint(extra) },
+            { ...mapping(), columnSetFingerprint: computeColumnSetFingerprint(wide) },
             [row()],
-            extra
+            wide
         );
-        expect(out.overshared).toEqual(['COST_CENTRE', 'CREATED_BY']);
-        expect(out.oversharedDenied).toEqual([]);
+        expect(out.overshared).toEqual([]);
+    });
+
+    it('a ROW carrying an unrequested column IS oversharing, and its value is dropped', () => {
+        const out = mapRows(mapping(), [row({ COST_CENTRE: 'CC-4412' })], COLUMNS);
+        expect(out.overshared).toEqual(['COST_CENTRE']);
+        expect(JSON.stringify(out.accounts)).not.toContain('CC-4412');
+        // Not fatal: dropping it is a complete remedy, and refusing would let a
+        // misconfigured legacy server halt recertification.
         expect(out.accounts).toHaveLength(1);
     });
 
-    it('separates the DENIED subset, which is a materially worse signal', () => {
-        const extra = [...COLUMNS, 'PASSWORD_HASH', 'COST_CENTRE'];
+    it('reports the column name with the casing the server actually sent', () => {
+        // An operator comparing this against their own schema needs the real name.
+        const out = mapRows(mapping(), [row({ Cost_Centre: 'x' })], COLUMNS);
+        expect(out.overshared).toEqual(['Cost_Centre']);
+    });
+
+    it('reports a DECLARED denylisted column separately, and not as a fault', () => {
+        // We never requested it, so nothing of it was read. It is still worth
+        // surfacing: a table carrying PASSWORD_HASH beside the access rows is
+        // worth an operator knowing about.
+        const wide = [...COLUMNS, 'PASSWORD_HASH', 'COST_CENTRE'];
         const out = mapRows(
-            { ...mapping(), columnSetFingerprint: computeColumnSetFingerprint(extra) },
-            [row({ PASSWORD_HASH: 'x'.repeat(40) })],
-            extra
+            { ...mapping(), columnSetFingerprint: computeColumnSetFingerprint(wide) },
+            [row()],
+            wide
         );
-        expect(out.oversharedDenied).toEqual(['PASSWORD_HASH']);
-        // And it reaches no account, which is the part that matters.
+        expect(out.declaredDenied).toEqual(['PASSWORD_HASH']);
+        expect(out.overshared).toEqual([]);
+        expect(out.accounts).toHaveLength(1);
+    });
+
+    it('a denylisted column arriving in a ROW is dropped and counted as oversharing', () => {
+        const out = mapRows(mapping(), [row({ PASSWORD_HASH: 'x'.repeat(40) })], COLUMNS);
+        expect(out.overshared).toEqual(['PASSWORD_HASH']);
+        // The part that matters: it reaches no account.
         expect(JSON.stringify(out.accounts)).not.toContain('x'.repeat(40));
     });
 });

@@ -600,7 +600,7 @@ async function flagOversharing(
         // operator; a log line is the wrong place to accumulate a customer's
         // schema.
         oversharedCount: ingest.overshared.length,
-        deniedCount: ingest.oversharedDenied.length,
+        declaredDeniedCount: ingest.declaredDenied.length,
     });
 }
 

@@ -221,6 +221,47 @@ describe('a complete pull', () => {
 });
 
 describe('oversharing', () => {
+    it('a manifest declaring MORE columns than the projection does NOT flag the connection', async () => {
+        // A manifest declares the whole table; a mapping names a subset. If that
+        // difference counted as oversharing, every connection would wear the
+        // banner permanently and it would mean nothing.
+        const wide = [...COLUMNS, 'COST_CENTRE', 'CREATED_BY'];
+        pullSnapshotMock.mockResolvedValue({
+            manifest: manifest({
+                columns: wide.map((name) => ({ name, type: 'string' as const, nullable: true })),
+            }),
+            // Rows carry ONLY the projected columns, which is what a conforming
+            // server returns for a `?fields=` request.
+            rows,
+            complete: true,
+        });
+        await prisma.integrationConnection.update({
+            where: { id: connectionId },
+            data: {
+                configJson: {
+                    endpointUrl: 'https://legacy.example.com/rpc',
+                    legacyAccessMapping: { ...MAPPING, columnSetFingerprint: computeColumnSetFingerprint(wide) },
+                },
+            },
+        });
+        const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+        expect(result.status).toBe('COMPLETE');
+        expect(result.overshared).toEqual([]);
+        const conn = await prisma.integrationConnection.findUniqueOrThrow({ where: { id: connectionId } });
+        expect(conn.oversharingObservedAt).toBeNull();
+        expect(conn.oversharingColumns).toEqual([]);
+    });
+
+
+    /**
+     * NOTE ON REACHABILITY. This drives `mapRows` with rows that carry an
+     * unrequested column, which the LIVE transport refuses outright
+     * (`lib/mcp/client`: "Refused, not filtered") — so through the real client
+     * this arrives as a transport refusal, not as a flag. The behaviour is still
+     * worth holding: it is the backstop, and the divergence from the design
+     * document's "dropped and flagged" is recorded in #3319 rather than papered
+     * over here.
+     */
     it('drops the extra column, flags the connection, and stores NO value from it', async () => {
         const extra = [...COLUMNS, 'COST_CENTRE'];
         pullSnapshotMock.mockResolvedValue({

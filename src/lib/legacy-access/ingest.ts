@@ -80,17 +80,35 @@ export class LegacyIngestError extends Error {
 export interface IngestOutcome {
     readonly accounts: readonly CanonicalAccount[];
     /**
-     * Columns the server returned that the projection did not ask for. Names only,
-     * no values — nothing of these columns is kept.
+     * Columns present in the returned ROWS that the projection did not ask for.
+     * Names only, no values — nothing of these columns is kept.
+     *
+     * Computed from the row keys, NOT from `manifest.columns`. The manifest
+     * declares the whole table and the projection is deliberately a subset of it,
+     * so a manifest-minus-projection difference is the normal case for every
+     * mapping that does not name all forty columns — flagging it would put a
+     * permanent OVERSHARING banner on every connection, which is the same defect
+     * as a flag that never clears.
+     *
+     * **Normally EMPTY through the live transport**, and that is not this module
+     * being careless. `lib/mcp/client` refuses a row carrying an unrequested
+     * column outright ("Refused, not filtered"), so such a pull never reaches
+     * here — it arrives as a transport refusal instead. This stays as the backstop
+     * for a caller holding rows from anywhere else, and the divergence from the
+     * design document's "dropped and flagged" is recorded in #3319.
      */
     readonly overshared: readonly string[];
     /**
-     * The subset of {@link overshared} that is on the never-request denylist.
-     * Reported separately because it is a materially worse signal: a server
-     * volunteering a column called `PASSWORD_HASH` to a projection that excluded it
-     * is not a tidiness problem.
+     * Denylisted columns the server DECLARES in its manifest, whether or not it
+     * returned them.
+     *
+     * Not a subset of {@link overshared} and not an error: we never requested
+     * them, so nothing of them was read. It is an operator signal worth
+     * surfacing — a table carrying `PASSWORD_HASH` next to the access rows is
+     * worth knowing about — and it is the one oversharing-adjacent fact that IS
+     * observable on every real pull.
      */
-    readonly oversharedDenied: readonly string[];
+    readonly declaredDenied: readonly string[];
     /**
      * How many date cells could not be parsed, across the whole population.
      *
@@ -277,11 +295,12 @@ export function mapRows(
     observedColumns: readonly string[]
 ): IngestOutcome {
     const projected = new Set(projectedColumns(mapping).map((c) => c.toLowerCase()));
-    const overshared = observedColumns
-        .filter((c) => !projected.has(c.trim().toLowerCase()))
-        .slice()
-        .sort();
-    const oversharedDenied = overshared.filter(isDeniedColumn);
+    // What the server DECLARED that is denylisted. Observable on every pull, and
+    // not a fault — we never asked for these.
+    const declaredDenied = observedColumns.filter(isDeniedColumn).slice().sort();
+    // Real oversharing is a ROW carrying a column the projection excluded. Built
+    // below, from the row keys, as the rows are walked.
+    const oversharedKeys = new Set<string>();
 
     const isLong = mapping.entitlements.kind === 'long';
     const byKey = new Map<string, CanonicalAccount>();
@@ -290,6 +309,12 @@ export function mapRows(
 
     for (let i = 0; i < rows.length; i += 1) {
         const index = buildRowIndex(rows[i]);
+        // Iterated over the RAW keys, not the normalised index, so the reported
+        // name is the one the server actually sent — an operator comparing this
+        // against their own schema needs its real casing.
+        for (const raw of Object.keys(rows[i])) {
+            if (!projected.has(raw.trim().toLowerCase())) oversharedKeys.add(raw);
+        }
         const accountKey = asText(readCell(index, mapping.fields.accountKey));
         if (accountKey === null) {
             // Collected rather than thrown on, so the refusal can say HOW MANY
@@ -392,7 +417,12 @@ export function mapRows(
         );
     }
 
-    return { accounts, overshared, oversharedDenied, unparsedDates };
+    return {
+        accounts,
+        overshared: [...oversharedKeys].sort(),
+        declaredDenied,
+        unparsedDates,
+    };
 }
 
 /**
