@@ -333,6 +333,24 @@ export const env = createEnv({
         ANTHROPIC_API_KEY: z.string().optional(),
         ANTHROPIC_MODEL: z.string().default('claude-haiku-4-5'),
 
+        // ── Legacy-access decision models (Step 6b) ──────────────────────
+        // Jev — TypeSafe AI's hosted System One model. The EXTERNAL path for
+        // legacy identity adjudication. The HOST is a code constant in
+        // src/app-layer/ai/identity-match/jev-provider.ts; only the key is
+        // configuration, so no env var can redirect where this provider posts.
+        // TypeSafe is a PROPOSED, INACTIVE sub-processor (docs/sub-processors.md)
+        // and TYPESAFE_SUBPROCESSOR_ACTIVE is false, so setting this key does NOT
+        // make the provider reachable for tenant work.
+        TYPESAFE_API_KEY: z.string().optional(),
+        // Laya — Convai Innovations' open-weights System One model, running on
+        // infrastructure WE operate. Deployment configuration only: no tenant
+        // setting reaches either of these, for the same SSRF reason the Jev host is
+        // a constant. The key is optional because most Laya servers sit behind a
+        // network boundary rather than an auth header, and requiring one would push
+        // operators toward the external path.
+        LAYA_BASE_URL: z.string().optional(),
+        LAYA_API_KEY: z.string().optional(),
+
         // Audit stream delivery retry (Epic E.2)
         // '0' disables retry (single POST); anything else (or unset) keeps retry on.
         // Kill-switch for debugging a misbehaving SIEM without redeploy.
@@ -497,6 +515,9 @@ export const env = createEnv({
         AI_POSTURE_PROVIDER: process.env.AI_POSTURE_PROVIDER,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
+        TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY,
+        LAYA_BASE_URL: process.env.LAYA_BASE_URL,
+        LAYA_API_KEY: process.env.LAYA_API_KEY,
 
         AUDIT_STREAM_RETRY_ENABLED: process.env.AUDIT_STREAM_RETRY_ENABLED,
         ENCRYPTION_DECRYPT_FAIL_CLOSED: process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED,
