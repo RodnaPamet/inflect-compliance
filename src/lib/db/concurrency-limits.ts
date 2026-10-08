@@ -246,6 +246,85 @@ export const AUDIT_APPEND_TIMEOUT_MS = 15_000;
  * call site appears, name it here too: a reader checking whether a
  * number is safe to change needs the full list of who reads it.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════
+ * THE TENANT-CONTEXT TRANSACTION — the same defect, 1010 call sites on
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ * #2653 stated the budget for `appendAuditEntry`'s OWN transaction. Every
+ * tenant-scoped read and write also runs inside a transaction — the one
+ * `runInTenantContext` / `withTenantDb` / `runInTenantReadContext` /
+ * `runInGlobalContext` open so RLS can bind `app.tenant_id` per
+ * transaction — and that one was still inheriting Prisma's defaults at
+ * 1010 of 1018 call sites (#3266). The plumbing to override existed and
+ * was opt-in, so `txOptions` was `{}` unless a caller said otherwise.
+ *
+ * Observed, on a `next` patch bump whose diff could not have caused it:
+ *
+ *     PrismaClientKnownRequestError: Transaction API error:
+ *       Unable to start a transaction in the given time.
+ *       at updateRisk (src/app-layer/usecases/risk.ts:438)
+ *
+ * WHY THIS IS A CONNECTION PROBLEM AND NOT A LOCK PROBLEM. `logEvent`
+ * takes a `PrismaTx` and IGNORES it — the parameter is `_db` — so the
+ * audit append opens its own transaction on the global client rather
+ * than joining the caller's. A write usecase therefore holds connection
+ * #1 for its tenant transaction and then asks for connection #2 for the
+ * append. N concurrent writes want 2N of `DB_POOL_MAX`, and the one that
+ * cannot get its FIRST connection fails at acquisition — which is
+ * charged to `maxWait`, the number nobody had stated.
+ *
+ * So the advisory-lock arithmetic above does NOT apply here: this path
+ * does not queue on the lock, it queues on the pool.
+ */
+
+/**
+ * How long a tenant-context transaction may wait to ACQUIRE a connection.
+ *
+ * 10_000 ms, and the derivation is the pool rather than the lock: the
+ * wait is for one of `DB_POOL_MAX` connections, and the binding invariant
+ * is the same one #2653 established —
+ * `DB_POOL_CONNECTION_TIMEOUT_MS >= maxWait`, or node-postgres gives up
+ * first and the caller sees its error instead of ours. At 15_000 that
+ * leaves 10_000 as a budget with headroom rather than one that races the
+ * pool's own ceiling.
+ *
+ * It is the same figure as `AUDIT_APPEND_MAX_WAIT_MS` and deliberately a
+ * SEPARATE constant: the two are the same kind of wait against the same
+ * pool today, but they are independent decisions, and aliasing one to the
+ * other would move this budget silently whenever somebody retuned the
+ * audit path.
+ *
+ * Raising it cannot introduce a failure that 2000 ms did not already
+ * have — a longer willingness to wait only converts errors into slower
+ * successes. What it costs is tail latency on a saturated pool, bounded
+ * by the pool's own 15_000.
+ */
+export const TENANT_TX_MAX_WAIT_MS = 10_000;
+
+/**
+ * How long the BODY of a tenant-context transaction may run.
+ *
+ * 5_000 ms — which is exactly Prisma's default, and that is the point.
+ * The observed failure was at ACQUISITION, so nothing measured here
+ * argues for a longer body, and raising it would raise the worst-case
+ * time a single caller can hold a pooled connection, which is the
+ * resource that was scarce in the first place.
+ *
+ * It is declared anyway because #2653's acceptance was that the number
+ * must be STATED rather than inherited. An inherited 5_000 and a stated
+ * 5_000 behave identically and read completely differently: the second
+ * is a decision a reviewer can argue with, and it stops moving when
+ * Prisma changes its mind.
+ */
+export const TENANT_TX_TIMEOUT_MS = 5_000;
+
+/** The declared budget every tenant-context transaction starts from. */
+export const TENANT_TX_OPTIONS = {
+    maxWait: TENANT_TX_MAX_WAIT_MS,
+    timeout: TENANT_TX_TIMEOUT_MS,
+} as const;
+
 export const AUDIT_APPEND_TX_OPTIONS = {
     maxWait: AUDIT_APPEND_MAX_WAIT_MS,
     timeout: AUDIT_APPEND_TIMEOUT_MS,
