@@ -451,7 +451,7 @@ export async function runIdentitySync(input: {
                             // and the directory is their only author: a renamed
                             // account whose UPN changed must stop matching the old
                             // one, or the bridge keeps linking a legacy row to a
-                            // login name nobody has any more.
+                            // login name that no longer exists.
                             samAccountName: normaliseLoginName(a.samAccountName),
                             userPrincipalName: normaliseLoginName(a.userPrincipalName),
                             mailNickname: normaliseLoginName(a.mailNickname),
