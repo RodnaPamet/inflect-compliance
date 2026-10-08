@@ -704,11 +704,6 @@
   "derivation": "audited",
   "reason": "A 51-line render shim over the resolver. It is the sink that turns the resolver's English labels into an aria-label (L45 `aria-label={label}`), but the literals live in file-icon-resolver.ts, so I record the copy finding there and the domain surface here."
  },
- "src/components/ui/file-upload.tsx": {
-  "classification": "MIXED",
-  "derivation": "audited",
-  "reason": "The older Dub-lineage single-file upload primitive (distinct from FileDropzone). Generic in mechanism but carries an `evidence` preset in its prop union, a Dub brand reference, and five untranslated error sentences. No next-intl import. Stays MIXED on those three. What changed in #3046 batch 4 is only the MECHANICAL reading: its `@/lib/resize-image` import stopped counting as a `domain-import` when that module joined `NEUTRAL_LIB`, which brings the detector into line with this entry — the import was never among the findings above, because a canvas cover-fit resizer with zero imports of its own carries no product vocabulary."
- },
  "src/components/ui/filter/edit-filters-button.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
