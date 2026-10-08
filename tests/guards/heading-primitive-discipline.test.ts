@@ -1,7 +1,7 @@
 /**
  * Roadmap-4 PR-8 — Heading-primitive discipline.
  *
- * The `<Heading>` primitive at `src/components/ui/typography.tsx`
+ * The `<Heading>` primitive at `packages/ui/src/components/ui/typography.tsx`
  * defines a deliberately-small three-level type scale:
  *
  *   <Heading level={1}>   text-2xl semibold (page titles)

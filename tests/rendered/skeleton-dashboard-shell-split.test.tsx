@@ -2,7 +2,7 @@
  * The compliance dashboard's loading shell is route-local, and the
  * generic one stayed in the primitives module.
  *
- * `DashboardSkeleton` used to live in `src/components/ui/skeleton.tsx`,
+ * `DashboardSkeleton` used to live in `packages/ui/src/components/ui/skeleton.tsx`,
  * beside `Skeleton`, `SkeletonTable` and the rest. Those are primitives
  * — shapes with no opinion about what they stand in for. That one is
  * not: it is a tracing of ONE page's sections, in that page's order,

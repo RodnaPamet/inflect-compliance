@@ -74,7 +74,7 @@ const ACTIONS_BLOCK_RE =
 // Match a single `<Button …>` open-tag (greedy up to the closing `>` or `/>`,
 // but stopping at the next `<` so we never bleed into the following sibling).
 // A Button without an explicit `variant=` is treated as `"primary"` because
-// `src/components/ui/button.tsx` defaults to it.
+// `packages/ui/src/components/ui/button.tsx` defaults to it.
 const BUTTON_OPEN_RE = /<Button(\s[^<]*?)?(\/?)>/g;
 const VARIANT_ATTR_RE = /\bvariant=["']([a-z-]+)["']/;
 

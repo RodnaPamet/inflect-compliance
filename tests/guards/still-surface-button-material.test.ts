@@ -59,10 +59,10 @@ const read = (rel: string): string =>
  */
 const code = (rel: string): string => codeOf(read(rel));
 
-const VARIANTS = 'src/components/ui/button-variants.ts';
-const BUTTON = 'src/components/ui/button.tsx';
+const VARIANTS = 'packages/ui/src/components/ui/button-variants.ts';
+const BUTTON = 'packages/ui/src/components/ui/button.tsx';
 const CONTROLS = 'src/components/ui/control-variants.ts';
-const HIT_AREA = 'src/components/ui/hit-area.ts';
+const HIT_AREA = 'packages/ui/src/components/ui/hit-area.ts';
 const FILTER_TOOLBAR = 'src/components/filters/FilterToolbar.tsx';
 
 describe('Still Surface — motionless by construction', () => {
@@ -197,7 +197,7 @@ describe('Still Surface — motionless by construction', () => {
         // each has to opt in explicitly. Adding a new rounded control?
         // Import `HIT_AREA_CLASS` rather than growing a second recipe.
         const CONSUMERS = [
-            'src/components/ui/button-variants.ts',
+            'packages/ui/src/components/ui/button-variants.ts',
             'src/components/ui/toggle-group.tsx',
             'src/components/ui/filter/filter-select.tsx',
             'src/components/layout/notifications-bell.tsx',
@@ -218,7 +218,7 @@ describe('Still Surface — motionless by construction', () => {
         // looking, in source, like it had the fix.
         const CLIPPERS = /\btruncate\b|\boverflow-hidden\b/;
         const FILES = [
-            'src/components/ui/button-variants.ts',
+            'packages/ui/src/components/ui/button-variants.ts',
             'src/components/ui/toggle-group.tsx',
             'src/components/ui/filter/filter-select.tsx',
             'src/components/layout/notifications-bell.tsx',
@@ -599,6 +599,15 @@ describe('Still Surface — the emitted classes exist in the stylesheet (#3084)'
             }
         };
         walk(path.join(ROOT, 'src'));
+        // ALSO `packages/ui/src`, because the scanner being modelled is not
+        // `tailwind.config.js`'s `content` alone: `src/app/globals.css` adds
+        // `@source "../../packages/ui/src"`. Walking only `src` modelled half
+        // of it, and #3046 batch 3 moved the primitives that emit these
+        // classes across that line — so this guard reported a class Tailwind
+        // DOES generate as "written nowhere", failing its own negative
+        // control. The docblock above warns that a hand-mirrored population
+        // drifts from the scanner; this was that drift. (#3279)
+        walk(path.join(ROOT, 'packages/ui/src'));
         // A separator no candidate can span, so a class cannot be assembled
         // out of the tail of one file and the head of the next. `\0` is the
         // ESCAPE for the same byte that used to sit here raw — raw, it made

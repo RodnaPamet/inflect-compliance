@@ -4,7 +4,7 @@
  * Bans new inline `<h1 className="...">` / `<h2>` / `<h3>` headings in
  * `src/app` and `src/components`. The canonical primitives are
  * `<Heading level={1|2|3}>`, `<Eyebrow>`, and `<Caption>` from
- * `src/components/ui/typography.tsx`.
+ * `packages/ui/src/components/ui/typography.tsx`.
  *
  * Why:
  *   - One source of truth for the type scale (semibold L1/L2/L3, the
@@ -37,7 +37,7 @@ const SHELL_FILES = new Set<string>([
   "src/components/layout/EntityListPage.tsx",
   "src/components/layout/EntityDetailLayout.tsx",
   "src/components/layout/ListPageShell.tsx",
-  "src/components/ui/typography.tsx",
+  "packages/ui/src/components/ui/typography.tsx",
 ]);
 
 // Files exempt from the ratchet. Each entry needs a written reason.

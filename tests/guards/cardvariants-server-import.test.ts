@@ -61,7 +61,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 // because it runs in the client bundle, the boundary issue does not
 // apply. Excluded from the scan.
 const EXEMPT_FILES = new Set<string>([
-    "src/components/ui/card.tsx",
+    "packages/ui/src/components/ui/card.tsx",
 ]);
 
 function isExempt(rel: string): boolean {
@@ -143,7 +143,7 @@ describe("cardVariants server-import boundary", () => {
     it("card-variants module exists and is server-safe (no use-client directive)", () => {
         const cardVariantsPath = path.join(
             ROOT,
-            "src/components/ui/card-variants.ts",
+            "packages/ui/src/components/ui/card-variants.ts",
         );
         expect(fs.existsSync(cardVariantsPath)).toBe(true);
         const src = codeOf(fs.readFileSync(cardVariantsPath, "utf8"));

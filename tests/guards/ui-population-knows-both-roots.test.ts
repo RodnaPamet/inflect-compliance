@@ -76,7 +76,18 @@ import { REPO_ROOT, repoRelative } from '../helpers/repo-files';
  * Can only go DOWN. Raising it means a new guard was written with a population
  * that will narrow silently; widen that guard instead of this number.
  */
-const SRC_ONLY_WALKER_BASELINE = 32;
+// 32 -> 21 at #3046 batch 3a. This batch repoints ELEVEN guards to walk
+// `packages/ui/src` alongside `src/components`, which is the class this ratchet
+// exists to retire — so the count falling is the intended direction and the
+// drift sentinel correctly refused the old number.
+//
+// Worth recording that this is the ratchet's FIRST payment. It was seeded at 32
+// in #3279 from a measurement on main, and the very next PR through the queue
+// was the one widening those walkers. The sentinel caught a four-hour-old green
+// on a 54-file change that had drifted 28 commits behind main — had the branch
+// been enqueued on its stale green instead of updated first, this would have
+// surfaced as a merge-group ejection rather than a PR check.
+const SRC_ONLY_WALKER_BASELINE = 21;
 
 /** A directory literal — a walk root. Excludes anything with a file extension. */
 const DIR_LITERAL = /['"`](?:\.{0,2}\/)?src\/components(?:\/[A-Za-z0-9_-]+)*['"`]/g;
