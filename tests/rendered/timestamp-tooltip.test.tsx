@@ -41,6 +41,7 @@ jest.mock('@/components/ui/tooltip', () => ({
         <>{children}</>
     ),
     InfoTooltip: () => null,
+    DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';

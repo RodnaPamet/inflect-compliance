@@ -52,6 +52,7 @@ jest.mock('@/components/ui/tooltip', () => ({
     Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     InfoTooltip: ({ content }: { content: string }) => <span>{content}</span>,
+    DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 import { ReportsClient, type PackView } from '@/app/t/[tenantSlug]/(app)/agents/reports/ReportsClient';

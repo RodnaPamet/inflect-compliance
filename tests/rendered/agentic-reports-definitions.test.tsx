@@ -46,6 +46,7 @@ jest.mock('@/components/ui/tooltip', () => ({
     Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     InfoTooltip: ({ content }: { content: string }) => <span data-testid="info-tooltip">{content}</span>,
+    DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 import { Metric, type DefinitionView } from '@/app/t/[tenantSlug]/(app)/agents/reports/Metric';

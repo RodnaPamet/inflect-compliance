@@ -147,10 +147,11 @@ describe('<FormField /> — `hint` prop (Epic 56)', () => {
         // RE-ANCHORED by #3163, deliberately and not silently. The old
         // subject was `queryByTestId('info-tooltip-trigger')` — a testid that
         // existed only on the pass-through tooltip stub. Now that
-        // `tests/rendered/tooltip-mock.tsx` DELEGATES to the real primitive,
-        // nothing emits that testid, so the old query returned null whether or
-        // not a hint trigger was on screen: a negative assertion that could no
-        // longer express its own failure.
+        // the real primitive is what renders — first via the #3163 delegate,
+        // now directly, since the primitive supplies its own provider — nothing
+        // emits that testid, so the old query returned null whether or not a
+        // hint trigger was on screen: a negative assertion that could no longer
+        // express its own failure.
         //
         // Anchored on the role + name the trigger really has, which the next
         // test asserts POSITIVELY with the same query shape — the two are a

@@ -303,10 +303,11 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
 
     it('FormField: the hint button name, for a text and a non-text label', () => {
         // The info button is the REAL `InfoTooltip`: form-field imports
-        // `./tooltip`, which jest maps to `tests/rendered/tooltip-mock.tsx` —
-        // a DELEGATE since #3163, so what renders is the primitive itself with
-        // a `TooltipProvider` supplied around it, carrying the aria-label
-        // FormField computes.
+        // `./tooltip`, and since the primitive supplies its own provider when
+        // none is mounted, that spelling resolves straight to it and renders
+        // with the aria-label FormField computes. Until that change the import
+        // was redirected to a delegate (`tooltip-mock.tsx`, #3163) which
+        // supplied the provider instead.
         //
         // `getByRole('button')` rather than the `info-tooltip-trigger` testid
         // the old stub emitted: the real primitive has no testid, and the role
