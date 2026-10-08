@@ -103,7 +103,44 @@ function makeReview(overrides: Record<string, unknown> = {}) {
                 membership: { id: 'mem_2', role: 'READER' as const, status: 'ACTIVE' },
             },
         ],
+        // Step 5a — the page now counts BOTH subject populations. A member
+        // campaign has an empty connected list, and vice versa.
+        connectedDecisions: [],
+        snapshotTruncated: false,
         lastActivityByUser: { usr_alice: new Date('2026-04-30').toISOString() },
+        ...overrides,
+    };
+}
+
+/** Step 5a — one CONNECTED_APP subject, with the HR context the page renders. */
+function connectedSubject(overrides: Record<string, unknown> = {}) {
+    return {
+        id: 'cdec_1',
+        subjectRef: 'conn-1:ext-a',
+        decision: null,
+        decidedAt: null,
+        decidedBy: null,
+        notes: null,
+        executedAt: null,
+        snapshotJson: {
+            provider: 'entra-id',
+            email: 'carol@example.test',
+            displayName: 'Carol',
+            isAdmin: true,
+            mfaEnrolled: false,
+            hr: {
+                employeeId: 'emp_1',
+                fullName: 'Carol Danvers',
+                workEmail: 'carol@example.test',
+                employmentStatus: 'ACTIVE',
+                department: 'Finance',
+                jobTitle: 'Analyst',
+                managerName: 'Nick Fury',
+                managerEmail: 'nick@example.test',
+                matchMethod: 'EMAIL_EXACT',
+                contradicted: false,
+            },
+        },
         ...overrides,
     };
 }
@@ -263,5 +300,145 @@ describe('AccessReviewDetailClient', () => {
         );
         expect(screen.queryByTestId('decision-select-dec_1')).toBeNull();
         expect(screen.getByTestId('access-review-download-evidence')).toBeTruthy();
+    });
+});
+
+// ─── Step 5a — the CONNECTED_APP surface ─────────────────────────────────
+
+describe('Step 5a — a CONNECTED_APP campaign renders and gates its own subjects', () => {
+    function renderConnected(review: Record<string, unknown>, isAdmin = true) {
+        return render(
+            withClient(
+                <AccessReviewDetailClient
+                    tenantSlug="acme"
+                    initialReview={makeReview(review) as never}
+                    currentUserId="usr_admin"
+                    isAdmin={isAdmin}
+                />,
+            ),
+        );
+    }
+
+    it('renders the connected subjects, which the member table never showed', () => {
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [connectedSubject()],
+        });
+        expect(screen.getByTestId('access-review-connected-table')).toBeInTheDocument();
+        expect(screen.getByTestId('connected-row-cdec_1')).toBeInTheDocument();
+        expect(screen.getByText('Carol')).toBeInTheDocument();
+        // The member roster is NOT rendered for a connected campaign.
+        expect(screen.queryByTestId('access-review-roster-table')).not.toBeInTheDocument();
+    });
+
+    it('shows the HR context read from IdentityAccountLink', () => {
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [connectedSubject()],
+        });
+        expect(screen.getByText('Carol Danvers')).toBeInTheDocument();
+        expect(screen.getByText(/Finance/)).toBeInTheDocument();
+    });
+
+    it('says so when an account is linked to no worker', () => {
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [
+                connectedSubject({
+                    snapshotJson: { provider: 'okta', email: 'svc@example.test', displayName: 'svc', isAdmin: false, mfaEnrolled: true, hr: null },
+                }),
+            ],
+        });
+        // `useTranslations` is mocked to the identity, so the key is the text.
+        expect(screen.getByText('hrUnlinked')).toBeInTheDocument();
+    });
+
+    it('DISABLES Close while a connected subject is undecided', () => {
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [
+                connectedSubject({ id: 'cdec_1', decision: 'CONFIRM' }),
+                connectedSubject({ id: 'cdec_2', decision: null }),
+            ],
+        });
+        expect(screen.getByTestId('access-review-close-button')).toBeDisabled();
+    });
+
+    it('ENABLES Close once every connected subject is decided', () => {
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [
+                connectedSubject({ id: 'cdec_1', decision: 'CONFIRM' }),
+                connectedSubject({ id: 'cdec_2', decision: 'REVOKE' }),
+            ],
+        });
+        expect(screen.getByTestId('access-review-close-button')).not.toBeDisabled();
+    });
+
+    it('REGRESSION — Close is DISABLED on a campaign with zero subjects', () => {
+        // The zero-equals-zero bug, in the UI. The gate was
+        // `decided !== decisionsTotal`, which for 0 and 0 is false, so the
+        // button was ENABLED: a connected campaign could be closed with every
+        // subject undecided, from a page that showed no subjects at all.
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [],
+        });
+        expect(screen.getByTestId('access-review-close-button')).toBeDisabled();
+    });
+
+    it('REGRESSION — and disabled for a MEMBER campaign with zero subjects too', () => {
+        // Same arithmetic, same answer. A member campaign that snapshotted
+        // nobody evidences nothing either.
+        renderConnected({ scope: 'ALL_USERS', decisions: [], connectedDecisions: [] });
+        expect(screen.getByTestId('access-review-close-button')).toBeDisabled();
+    });
+
+    it('warns when the snapshot was truncated at the cap', () => {
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [connectedSubject({ decision: 'CONFIRM' })],
+            snapshotTruncated: true,
+        });
+        expect(screen.getByTestId('access-review-snapshot-truncated')).toBeInTheDocument();
+    });
+
+    it('shows no truncation warning when the snapshot was complete', () => {
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [connectedSubject({ decision: 'CONFIRM' })],
+            snapshotTruncated: false,
+        });
+        expect(screen.queryByTestId('access-review-snapshot-truncated')).not.toBeInTheDocument();
+    });
+
+    it('offers CONFIRM, REVOKE and MODIFY — every verdict the backend accepts', () => {
+        renderConnected({
+            scope: 'CONNECTED_APP',
+            decisions: [],
+            connectedDecisions: [connectedSubject()],
+        });
+        const select = screen.getByTestId('connected-decision-select-cdec_1');
+        const values = Array.from(select.querySelectorAll('option')).map((o) => (o as HTMLOptionElement).value);
+        // `SubmitConnectedDecisionSchema` is z.enum(['CONFIRM','REVOKE','MODIFY'])
+        // and the close path raises a remediation task for REVOKE *or* MODIFY,
+        // so omitting MODIFY would drop a verdict the backend supports.
+        expect(values).toEqual(['', 'CONFIRM', 'REVOKE', 'MODIFY']);
+    });
+
+    it('hides the verdict control from a non-admin non-reviewer', () => {
+        renderConnected(
+            { scope: 'CONNECTED_APP', decisions: [], connectedDecisions: [connectedSubject()] },
+            false,
+        );
+        expect(screen.queryByTestId('connected-decision-select-cdec_1')).not.toBeInTheDocument();
     });
 });

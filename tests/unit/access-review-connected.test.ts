@@ -24,16 +24,30 @@ const mockDb = {
     accessReviewConnectedDecision: { createMany: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
     accessReview: { findFirst: jest.fn(), updateMany: jest.fn() },
     task: { create: jest.fn() },
+    // Step 5a — HR context is READ from IdentityAccountLink (never written),
+    // and the close path resolves the closing user's email for the PDF.
+    identityAccountLink: { findMany: jest.fn() },
+    user: { findUnique: jest.fn() },
+    fileRecord: { create: jest.fn() },
 };
 
 beforeEach(() => {
     jest.clearAllMocks();
     mockDb.connectedIdentityAccount.findMany.mockResolvedValue([
-        { id: 'acc-1', provider: 'okta', email: 'a@x.com', displayName: 'A', isAdmin: true, mfaEnrolled: false, groupsJson: [] },
-        { id: 'acc-2', provider: 'okta', email: 'b@x.com', displayName: 'B', isAdmin: false, mfaEnrolled: true, groupsJson: [] },
+        { id: 'acc-1', provider: 'okta', email: 'a@x.com', displayName: 'A', isAdmin: true, mfaEnrolled: false, groupsJson: [], connectionId: 'conn-1', externalUserId: 'ext-a' },
+        { id: 'acc-2', provider: 'okta', email: 'b@x.com', displayName: 'B', isAdmin: false, mfaEnrolled: true, groupsJson: [], connectionId: 'conn-1', externalUserId: 'ext-b' },
     ]);
     mockDb.accessReviewConnectedDecision.createMany.mockResolvedValue({ count: 2 });
-    mockDb.accessReview.findFirst.mockResolvedValue({ id: 'ar-1', name: 'Q3 connected', status: 'OPEN', deletedAt: null });
+    mockDb.identityAccountLink.findMany.mockResolvedValue([]);
+    mockDb.user.findUnique.mockResolvedValue({ email: 'closer@x.com' });
+    mockDb.accessReview.findFirst.mockResolvedValue({
+        id: 'ar-1', name: 'Q3 connected', description: null, scope: 'CONNECTED_APP',
+        periodStartAt: null, periodEndAt: null, status: 'OPEN', deletedAt: null,
+        snapshotTruncated: false,
+        reviewer: { email: 'rev@x.com' },
+        createdBy: { email: 'creator@x.com' },
+        tenant: { name: 'Acme' },
+    });
     mockDb.task.create.mockResolvedValue({ id: 'task-1' });
     mockDb.accessReviewConnectedDecision.updateMany.mockResolvedValue({ count: 1 });
     // H4 — submitConnectedDecision loads the decision + its campaign for the
@@ -49,7 +63,11 @@ describe('createConnectedAccessReview', () => {
         const r = await createConnectedAccessReview(ctx, { name: 'Q3 connected', reviewerUserId: 'u-rev' });
         expect(r.snapshotCount).toBe(2);
         const rows = mockDb.accessReviewConnectedDecision.createMany.mock.calls[0][0].data;
-        expect(rows[0].subjectRef).toBe('okta:a@x.com');
+        // Step 5a — the reference is the account's OWN grain
+        // (connectionId:externalUserId), not provider:email, which collided
+        // across two connections of one provider and silently dropped a
+        // subject through `skipDuplicates`.
+        expect(rows[0].subjectRef).toBe('conn-1:ext-a');
         expect(rows[0].snapshotJson).toMatchObject({ provider: 'okta', isAdmin: true });
     });
 

@@ -46,11 +46,28 @@ import type {
     WatermarkMode,
 } from '@/lib/pdf/types';
 
+/**
+ * Step 5a — what a CONNECTED_APP subject puts in the two snapshot columns.
+ *
+ * A connected subject is a DIRECTORY ACCOUNT. It has no tenant `Role` and no
+ * `MembershipStatus`, because it was never a member of the tenant — it is a
+ * row the identity sync observed in Okta, Entra, Google Workspace or AD. The
+ * facts a reviewer actually needs about one are whether it is a directory
+ * admin and whether MFA is enrolled, so those map onto the existing two
+ * columns rather than growing the artefact a second table.
+ *
+ * Spelled as literal unions rather than widening both fields to `string`: the
+ * member flow keeps its enum typing, and the set of things a connected row may
+ * claim stays closed and readable.
+ */
+export type DirectorySnapshotRole = 'DIRECTORY_ADMIN' | 'DIRECTORY_USER';
+export type DirectorySnapshotStatus = 'MFA_ENROLLED' | 'MFA_MISSING';
+
 export interface AccessReviewPdfDecisionRow {
     subjectUserEmail: string;
     subjectUserName: string | null;
-    snapshotRole: Role;
-    snapshotMembershipStatus: MembershipStatus;
+    snapshotRole: Role | DirectorySnapshotRole;
+    snapshotMembershipStatus: MembershipStatus | DirectorySnapshotStatus;
     decision: AccessReviewDecisionType | null;
     decidedAtIso: string | null;
     notes: string | null;

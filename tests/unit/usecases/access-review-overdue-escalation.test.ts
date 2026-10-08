@@ -22,6 +22,15 @@ type Candidate = {
     reviewer: { email: string | null; name: string | null } | null;
     tenant: { slug: string };
     decisions: Array<{ id: string; decision: string | null }>;
+    /**
+     * Step 5a — CONNECTED_APP subjects. REQUIRED rather than optional, and
+     * the job spreads it without a `?? []` fallback on purpose: a tolerant
+     * spread would let the original defect back in silently. The job counted
+     * member rows only, so a connected campaign reported zero pending and was
+     * recorded as "every reviewer slot has a verdict" — never escalated. A
+     * fixture that forgets this field now fails loudly instead.
+     */
+    connectedDecisions: Array<{ id: string; decision: string | null }>;
 };
 
 function makeDb(opts: {
@@ -86,6 +95,7 @@ describe('processAccessReviewOverdueEscalation', () => {
                 { id: 'd1', decision: null },
                 { id: 'd2', decision: 'CONFIRM' },
             ],
+            connectedDecisions: [],
             ...overrides,
         };
     }
@@ -342,4 +352,76 @@ describe('processAccessReviewOverdueEscalation', () => {
             expect(where).toMatchObject({ tenantId: 't-removed', tenant: { deletedAt: null } });
         });
     });
+    // ─── Step 5a — CONNECTED_APP campaigns escalate too ───
+
+    describe('Step 5a — connected campaigns are not invisible to escalation', () => {
+        it('escalates a connected campaign whose subjects are undecided', async () => {
+            // The defect: this job counted `decisions` only. A CONNECTED_APP
+            // campaign has ZERO of those — its subjects are
+            // AccessReviewConnectedDecision rows — so pendingCount was 0, the
+            // job read that as "every reviewer slot has a verdict", and an
+            // overdue campaign with every account untouched escalated to
+            // nobody while incrementing the skipped-because-complete counter.
+            const db = makeDb({
+                candidates: [
+                    candidate({
+                        id: 'rv-connected',
+                        decisions: [],
+                        connectedDecisions: [
+                            { id: 'c1', decision: null },
+                            { id: 'c2', decision: null },
+                        ],
+                    }),
+                ],
+                admins: new Map([[tenA, [{ email: 'owner@a.test', name: 'Owner A' }]]]),
+            });
+
+            const r = await processAccessReviewOverdueEscalation(db as never, { now });
+
+            expect(r.scanned).toBe(1);
+            expect(r.skippedComplete).toBe(0);
+            expect(r.enqueued).toBe(1);
+            expect(enqueueEmailMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('does NOT escalate a connected campaign whose subjects are all decided', async () => {
+            // The other side of the same arithmetic. Without this, the test
+            // above is satisfied by a job that escalates unconditionally.
+            const db = makeDb({
+                candidates: [
+                    candidate({
+                        id: 'rv-connected-done',
+                        decisions: [],
+                        connectedDecisions: [
+                            { id: 'c1', decision: 'CONFIRM' },
+                            { id: 'c2', decision: 'REVOKE' },
+                        ],
+                    }),
+                ],
+                admins: new Map([[tenA, [{ email: 'owner@a.test', name: 'Owner A' }]]]),
+            });
+
+            const r = await processAccessReviewOverdueEscalation(db as never, { now });
+
+            expect(r.skippedComplete).toBe(1);
+            expect(r.enqueued).toBe(0);
+            expect(enqueueEmailMock).not.toHaveBeenCalled();
+        });
+
+        it('asks the database for connectedDecisions at all', async () => {
+            // The arithmetic is only right if the rows were fetched. A select
+            // that stops asking for them makes both assertions above pass
+            // against an empty array forever — the same shape as the original
+            // defect, and invisible.
+            const db = makeDb({
+                candidates: [candidate({ id: 'rv-1' })],
+                admins: new Map([[tenA, [{ email: 'owner@a.test', name: 'Owner A' }]]]),
+            });
+            await processAccessReviewOverdueEscalation(db as never, { now });
+            const select = db.accessReview.findMany.mock.calls[0][0].select;
+            expect(select).toHaveProperty('connectedDecisions');
+            expect(select.connectedDecisions.select).toMatchObject({ decision: true });
+        });
+    });
+
 });

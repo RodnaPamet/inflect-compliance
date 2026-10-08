@@ -857,6 +857,16 @@ model AccessReview {
   /// SetNull on FileRecord delete so a stray evidence delete
   /// doesn't shred the campaign row.
   evidenceFileRecordId String?
+  /// Step 5a — the subject snapshot hit `MAX_SUBJECTS` and the directory held
+  /// more accounts than the campaign covers.
+  ///
+  /// A campaign exists to assert that a population was reviewed. Truncated, it
+  /// can only assert that a PREFIX of the population was, and every surface that
+  /// reads it — the close path, the detail page, the evidence PDF — must say so
+  /// or it is overclaiming. `take: N` cannot detect this on its own (N rows back
+  /// is indistinguishable from a directory of exactly N), so the usecase reads
+  /// `MAX_SUBJECTS + 1` and records the verdict here.
+  snapshotTruncated    Boolean            @default(false)
   createdByUserId      String
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt

@@ -61,6 +61,50 @@ interface DecisionRow {
     } | null;
 }
 
+/**
+ * Step 5a — a CONNECTED_APP subject.
+ *
+ * These rows were already in the database and already decidable through
+ * `/connected-decisions`, and this page rendered none of them: it reads
+ * `review.decisions`, which holds MEMBER rows only. So a connected campaign
+ * showed an empty subject table — and, because the Close button's gate was
+ * `decided !== decisionsTotal`, an empty table meant `0 !== 0`, which is
+ * false, which ENABLED Close. A connected campaign could be closed with every
+ * one of its subjects undecided, from a page that showed no subjects.
+ */
+interface ConnectedDecisionRow {
+    id: string;
+    subjectRef: string;
+    decision: DecisionType | null;
+    decidedAt: string | Date | null;
+    decidedBy: { id: string; email: string; name: string | null } | null;
+    notes: string | null;
+    executedAt: string | Date | null;
+    snapshotJson: {
+        provider?: string;
+        email?: string;
+        displayName?: string | null;
+        isAdmin?: boolean;
+        mfaEnrolled?: boolean;
+        groups?: unknown;
+        connectionId?: string;
+        externalUserId?: string;
+        /** Read-only HR context, or null when the account is linked to no worker. */
+        hr?: {
+            employeeId: string;
+            fullName: string;
+            workEmail: string;
+            employmentStatus: string;
+            department: string | null;
+            jobTitle: string | null;
+            managerName: string | null;
+            managerEmail: string | null;
+            matchMethod: string;
+            contradicted: boolean;
+        } | null;
+    } | null;
+}
+
 interface ReviewDetail {
     id: string;
     name: string;
@@ -78,6 +122,9 @@ interface ReviewDetail {
     createdBy: { id: string; email: string; name: string | null };
     closedBy: { id: string; email: string; name: string | null } | null;
     decisions: DecisionRow[];
+    connectedDecisions: ConnectedDecisionRow[];
+    /** The subject snapshot was cut off at the cap; the campaign covers a prefix. */
+    snapshotTruncated: boolean;
     lastActivityByUser: Record<string, string | Date>;
 }
 
@@ -138,9 +185,27 @@ export function AccessReviewDetailClient({
     } | null>(null);
     const [closing, setClosing] = useState(false);
 
-    const decisionsTotal = review.decisions.length;
-    const decided = review.decisions.filter((d) => d.decision !== null).length;
-    const pct = decisionsTotal === 0 ? 0 : Math.round((decided / decisionsTotal) * 100);
+    // ─── Progress over the subjects this campaign ACTUALLY has ──────────
+    //
+    // A campaign is one scope or the other, so exactly one of these two lists
+    // is populated. Counting over both means the progress figure, the progress
+    // bar and the Close gate all describe the same population, whichever scope
+    // the campaign is — rather than describing member rows and silently
+    // reporting 0/0 for a connected one.
+    const isConnected = review.scope === 'CONNECTED_APP';
+    const connectedRows = review.connectedDecisions ?? [];
+    const subjectCount = review.decisions.length + connectedRows.length;
+    const decided =
+        review.decisions.filter((d) => d.decision !== null).length +
+        connectedRows.filter((d) => d.decision !== null).length;
+    const decisionsTotal = subjectCount;
+    const pct = subjectCount === 0 ? 0 : Math.round((decided / subjectCount) * 100);
+    // ZERO IS NOT COMPLETE. `decided !== subjectCount` is false when both are
+    // zero, so the old gate enabled Close on a campaign with no subjects at
+    // all. A review over zero subjects evidences nothing, and the usecase now
+    // refuses it too — this is the same rule stated where the operator sees it,
+    // so the button is disabled rather than failing on press.
+    const everySubjectDecided = subjectCount > 0 && decided === subjectCount;
 
     const decisionColumns = useMemo(
         () => createColumns<DecisionRow>([
@@ -231,6 +296,157 @@ export function AccessReviewDetailClient({
         [canDecide, review.lastActivityByUser, t],
     );
 
+    const [connectedError, setConnectedError] = useState<string | null>(null);
+
+    /**
+     * Record a verdict on a connected subject.
+     *
+     * Posted straight from the row rather than through a modal: unlike the
+     * member MODIFY path there is no target role to collect — a directory
+     * account has no tenant role, and MODIFY here means "adjust this account
+     * in the identity provider", which `closeConnectedAccessReview` turns into
+     * a remediation task. Nothing to ask, so nothing to ask it with.
+     */
+    const submitConnected = async (decisionId: string, decision: DecisionType) => {
+        setConnectedError(null);
+        try {
+            const res = await fetch(`${apiBase}/connected-decisions/${decisionId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ decision }),
+            });
+            if (!res.ok) {
+                throw new Error((await res.text()) || t('submitFailed'));
+            }
+            await reviewQuery.mutate();
+            void swrMutate(CACHE_KEYS.accessReviews.list());
+        } catch (err) {
+            setConnectedError(err instanceof Error ? err.message : t('unknownError'));
+        }
+    };
+
+    // ─── Step 5a — the CONNECTED_APP subject table ──────────────────────
+    //
+    // Deliberately a SEPARATE column set rather than a widened `DecisionRow`:
+    // a directory account and a tenant membership share almost no columns. The
+    // member table shows snapshot role vs LIVE role and last activity in the
+    // product; a directory account has no membership to compare against and no
+    // product activity. What a reviewer needs instead is who the account
+    // belongs to according to HR, whether MFA is on, and whether the HR link
+    // is still believed.
+    const connectedColumns = useMemo(
+        () => createColumns<ConnectedDecisionRow>([
+            {
+                id: 'account',
+                header: t('colAccount'),
+                cell: ({ row }) => {
+                    const snap = row.original.snapshotJson ?? {};
+                    return (
+                        <div data-testid={`connected-row-${row.original.id}`}>
+                            <div className="font-medium text-content-default">
+                                {snap.displayName || snap.email || row.original.subjectRef}
+                            </div>
+                            <div className="text-xs text-content-muted">
+                                {snap.email ?? row.original.subjectRef}
+                                {snap.provider ? ` · ${snap.provider}` : ''}
+                            </div>
+                        </div>
+                    );
+                },
+            },
+            {
+                id: 'directoryPosture',
+                header: t('colSnapshotRole'),
+                cell: ({ row }) => {
+                    const snap = row.original.snapshotJson ?? {};
+                    return (
+                        <div className="text-sm">
+                            <div>{snap.isAdmin ? t('directoryAdmin') : t('directoryUser')}</div>
+                            <div className="text-xs text-content-muted">
+                                {snap.mfaEnrolled ? t('mfaEnrolled') : t('mfaMissing')}
+                            </div>
+                        </div>
+                    );
+                },
+            },
+            {
+                id: 'hr',
+                header: t('colHrContext'),
+                cell: ({ row }) => {
+                    const hr = row.original.snapshotJson?.hr ?? null;
+                    if (!hr) {
+                        // An unlinked account is a REVIEWABLE fact, not missing
+                        // data: it is a service account, a contractor the HR
+                        // feed does not carry, or an unreconciled one. Saying
+                        // "—" would read as "we did not look".
+                        return (
+                            <span className="text-xs text-content-muted italic">
+                                {t('hrUnlinked')}
+                            </span>
+                        );
+                    }
+                    return (
+                        <div className="text-sm">
+                            <div>{hr.fullName}</div>
+                            <div className="text-xs text-content-muted">
+                                {hr.employmentStatus}
+                                {hr.department ? ` · ${hr.department}` : ''}
+                            </div>
+                            {hr.managerName ? (
+                                <div className="text-xs text-content-muted">
+                                    {t('hrManager', { name: hr.managerName })}
+                                </div>
+                            ) : null}
+                            {hr.contradicted ? (
+                                <div className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                                    {t('hrContradicted')}
+                                </div>
+                            ) : null}
+                        </div>
+                    );
+                },
+            },
+            {
+                id: 'decision',
+                header: t('colDecision'),
+                cell: ({ row }) => {
+                    const d = row.original;
+                    if (d.decision) {
+                        return (
+                            <StatusBadge variant={DECISION_VARIANT[d.decision]}>
+                                {d.decision}
+                            </StatusBadge>
+                        );
+                    }
+                    if (canDecide) {
+                        return (
+                            <select
+                                className="input"
+                                defaultValue=""
+                                data-testid={`connected-decision-select-${d.id}`}
+                                onChange={(e) => {
+                                    const v = e.target.value as DecisionType | '';
+                                    if (v) void submitConnected(d.id, v);
+                                    e.target.value = '';
+                                }}
+                            >
+                                <option value="" disabled>{t('decidePrompt')}</option>
+                                <option value="CONFIRM">{t('confirmAccess')}</option>
+                                <option value="REVOKE">{t('revokeAccess')}</option>
+                                <option value="MODIFY">{t('modifyRole')}</option>
+                            </select>
+                        );
+                    }
+                    return (
+                        <span className="text-xs text-content-muted">{t('pending')}</span>
+                    );
+                },
+            },
+        ]),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [canDecide, t],
+    );
+
     return (
         <EntityDetailLayout
             id="access-review-detail-page"
@@ -286,7 +502,7 @@ export function AccessReviewDetailClient({
                         {canClose ? (
                             <Button
                                 onClick={() => setClosing(true)}
-                                disabled={decided !== decisionsTotal}
+                                disabled={!everySubjectDecided}
                                 data-testid="access-review-close-button"
                             >{t('closeCampaign')}</Button>
                         ) : null}
@@ -325,15 +541,52 @@ export function AccessReviewDetailClient({
                 </dl>
             </div>
 
-            {/* Roster — DataTable */}
-            <DataTable
-                data={review.decisions}
-                columns={decisionColumns}
-                getRowId={(d) => d.id}
-                emptyState={t('rosterEmpty')}
-                resourceName={(p) => (p ? 'subjects' : 'subject')}
-                data-testid="access-review-roster-table"
-            />
+            {/* Step 5a — a campaign that covers a PREFIX of the directory must
+                say so on the page an operator closes it from, not only in the
+                audit log they read afterwards. */}
+            {review.snapshotTruncated ? (
+                <div
+                    role="alert"
+                    data-testid="access-review-snapshot-truncated"
+                    className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+                >
+                    <strong className="font-semibold">{t('truncatedTitle')}</strong>{' '}
+                    {t('truncatedBody', { count: subjectCount })}
+                </div>
+            ) : null}
+
+            {/* Roster — DataTable. Connected campaigns render their OWN
+                subjects: `review.decisions` is empty for them, and showing an
+                empty roster beside a live Close button was the whole defect. */}
+            {connectedError ? (
+                <div
+                    role="alert"
+                    data-testid="connected-decision-error"
+                    className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100"
+                >
+                    {connectedError}
+                </div>
+            ) : null}
+
+            {isConnected ? (
+                <DataTable
+                    data={connectedRows}
+                    columns={connectedColumns}
+                    getRowId={(d) => d.id}
+                    emptyState={t('rosterEmpty')}
+                    resourceName={(p) => (p ? 'accounts' : 'account')}
+                    data-testid="access-review-connected-table"
+                />
+            ) : (
+                <DataTable
+                    data={review.decisions}
+                    columns={decisionColumns}
+                    getRowId={(d) => d.id}
+                    emptyState={t('rosterEmpty')}
+                    resourceName={(p) => (p ? 'subjects' : 'subject')}
+                    data-testid="access-review-roster-table"
+                />
+            )}
 
             {activeDecision ? (
                 <DecisionDialog

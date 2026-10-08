@@ -184,12 +184,20 @@ export async function processAccessReviewOverdueEscalation(
             reviewer: { select: { email: true, name: true } },
             tenant: { select: { slug: true } },
             decisions: { select: { id: true, decision: true } },
+            // Step 5a — the same omission as the reminder job, with a worse
+            // consequence: an overdue CONNECTED_APP campaign counted zero
+            // pending subjects, so it never escalated to the admin and was
+            // recorded as "every reviewer slot has a verdict". An access review
+            // that is overdue and untouched is precisely the state escalation
+            // exists to surface.
+            connectedDecisions: { select: { id: true, decision: true } },
         },
     });
 
     const candidates: EscalationCandidate[] = reviews.map((r) => {
-        const totalCount = r.decisions.length;
-        const pendingCount = r.decisions.filter(
+        const subjects = [...r.decisions, ...r.connectedDecisions];
+        const totalCount = subjects.length;
+        const pendingCount = subjects.filter(
             (d) => d.decision === null,
         ).length;
         const dueAt = r.dueAt as Date;
