@@ -5,6 +5,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
+import { useTranslations } from "next-intl";
 import { cn } from "@inflect/ui/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import {
@@ -125,11 +126,12 @@ export function NumberStepper({
     id,
     size,
     formatValue,
-    decrementAriaLabel = "Decrease",
-    incrementAriaLabel = "Increase",
-    ariaLabel = "Number",
+    decrementAriaLabel,
+    incrementAriaLabel,
+    ariaLabel,
     ...rest
 }: NumberStepperProps) {
+    const t = useTranslations("common.ui");
     const [inputValue, setInputValue] = useState<string>(String(value));
     const [isEditing, setIsEditing] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -251,7 +253,7 @@ export function NumberStepper({
         >
             <button
                 type="button"
-                aria-label={decrementAriaLabel}
+                aria-label={decrementAriaLabel ?? t("decrease")}
                 onClick={handleDecrement}
                 disabled={!canDecrement}
                 className={cn(
@@ -268,7 +270,7 @@ export function NumberStepper({
                     type="text"
                     inputMode="numeric"
                     role="spinbutton"
-                    aria-label={ariaLabel}
+                    aria-label={ariaLabel ?? t("numberInput")}
                     aria-valuenow={value}
                     aria-valuemin={min}
                     aria-valuemax={max}
@@ -310,7 +312,7 @@ export function NumberStepper({
 
             <button
                 type="button"
-                aria-label={incrementAriaLabel}
+                aria-label={incrementAriaLabel ?? t("increase")}
                 onClick={handleIncrement}
                 disabled={!canIncrement}
                 className={cn(

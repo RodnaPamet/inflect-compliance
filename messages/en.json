@@ -121,7 +121,21 @@
       "undoWindow": "{label} window",
       "secondsRemaining": "{seconds}s remaining",
       "switchToLightTheme": "Switch to light theme",
-      "switchToDarkTheme": "Switch to dark theme"
+      "switchToDarkTheme": "Switch to dark theme",
+      "decrease": "Decrease",
+      "increase": "Increase",
+      "numberInput": "Number",
+      "slider": "Slider",
+      "tabs": "Tabs",
+      "viewMode": "View mode",
+      "progress": "Progress",
+      "evidenceGallery": "Evidence gallery",
+      "viewTable": "Table",
+      "viewCards": "Cards",
+      "uploading": "Uploading…",
+      "openPdf": "Open PDF",
+      "openPdfNamed": "Open PDF: {title}",
+      "loadingIndicator": "Loading"
     },
     "calendar": {
       "prevYear": "Go to previous year",

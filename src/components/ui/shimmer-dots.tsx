@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Epic 64 — `<ShimmerDots>`.
  *
@@ -30,6 +32,7 @@
  *   - `motion-reduce:animate-none` on every dot so the wave halts
  *     for users with `prefers-reduced-motion: reduce`
  */
+import { useTranslations } from 'next-intl';
 import { cn } from '@inflect/ui/lib/cn';
 
 export interface ShimmerDotsProps {
@@ -58,10 +61,11 @@ export function ShimmerDots({
     rows = 4,
     cols = 16,
     dotSize = 'size-1',
-    'aria-label': ariaLabel = 'Loading',
+    'aria-label': ariaLabel,
     className,
     'data-testid': testId,
 }: ShimmerDotsProps) {
+    const t = useTranslations('common.ui');
     const total = Math.max(0, Math.floor(rows)) * Math.max(0, Math.floor(cols));
     const safeCols = Math.max(1, Math.floor(cols));
 
@@ -75,7 +79,7 @@ export function ShimmerDots({
         <span
             role="progressbar"
             aria-busy="true"
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? t('loadingIndicator')}
             data-testid={testId}
             data-shimmer-dots
             className={cn(
