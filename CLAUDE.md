@@ -1305,6 +1305,31 @@ implementation is in-house so the published reference values (`MARTHA`/`MARHTA`
 `SCORER_WEIGHTS.SIMILARITY_FLOOR` decides what a human is asked to look at — a
 mutation found it untested, so it now has its own assertions.
 
+**The `legacy-mcp` provider, since Step 1c.** Two rules, and the second is the one
+that nearly went wrong:
+
+- **`publicOrigin` is the rule kind for a host we cannot enumerate.** Not
+  `vendorOrigin` (no allowlist can name a customer's own host) and not
+  `internalOrigin` (that settles only the scheme, which is right for an `ldaps:`
+  bind inside a customer network and wrong for dialling out to whatever was typed).
+  It requires https and runs `checkWebhookUrl` at save time; `safeFetch`
+  re-resolves at use time, which is the half that closes DNS rebinding.
+- **Any new origin rule kind MUST go in `ORIGIN_KINDS`.** That `Set` is the whole
+  population of `originFieldsFor`, which is the whole population of
+  `redirectsStoredCredential`. A host-bearing field outside it can be repointed at
+  an attacker's host while keeping the stored credential. `originFieldsFor` used to
+  filter on two kinds spelled out inline beneath a docstring promising a third
+  would be covered automatically — it would not have been, and adding
+  `publicOrigin` is what proved it.
+
+Also: **a green Test button on this provider does not mean the pages are
+readable.** `probeManifest` handshakes and reads the manifest and stops, so it
+cannot see the torn-snapshot failure, which only appears while paging. And
+`validateConnection` must never call `markAuthFailure` — that flag is read by the
+freshness surface and the leaver pass, so a half-typed token in the Test box would
+otherwise be recorded as the integration being down.
+
+
 
 
 

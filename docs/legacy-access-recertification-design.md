@@ -127,6 +127,28 @@ Tool descriptions are already treated as attack surface: `src/lib/mcp/tool-manif
 and `src/lib/agentic/tool-manifest-store.ts` hash each description byte-for-byte and
 drop any tool whose definition changes.
 
+### A customer-run MCP server is a registrable connection, since Step 1c
+
+`legacy-mcp` is a registered provider. An administrator enters an HTTPS endpoint and
+a bearer token, presses Test, and gets a real handshake plus a manifest read.
+
+Its endpoint carries a NEW rule kind, `publicOrigin`, because neither existing kind
+fits: no allowlist can name a host that belongs to the customer, and settling only
+the scheme is right for an `ldaps:` bind inside their network and wrong for dialling
+out across the public internet. `publicOrigin` requires https, runs
+`checkWebhookUrl` at save time, and — by being an origin kind — puts the endpoint
+inside `redirectsStoredCredential`, so changing the host without re-entering the
+token is refused.
+
+A green Test means the server speaks a supported protocol version, advertises
+resources, and its manifest satisfies the contract. It does NOT mean the pages are
+readable: `probeManifest` stops before them deliberately, and only a real pull's
+`complete` flag says the rows came back whole.
+
+**What it does not do.** Nothing pulls. There is a connection row, a validated
+endpoint and an encrypted token, and no job that reads them — the snapshot model
+and the scheduled pull are Step 2a.
+
 ### Outbound requests to customer hosts are refused by default
 
 `safeFetch` (`src/app-layer/automation/webhook-safety.ts`) resolves the host, refuses
