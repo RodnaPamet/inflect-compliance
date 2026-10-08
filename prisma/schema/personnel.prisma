@@ -17,6 +17,35 @@ model ConnectedIdentityAccount {
   externalUserId        String
   email                 String
   displayName           String?
+  /// ─── LOGIN NAMES (Step 0b) ───────────────────────────────────────────
+  ///
+  /// What a legacy application's own access table actually holds. Almost
+  /// nothing on-premises keys users by email: an AD-joined application stores
+  /// `DOMAIN\sAMAccountName` or a bare `sAMAccountName`, and an
+  /// Entra-federated one stores the UPN. Without these the directory bridge —
+  /// the only LINK-strength signal that needs no human to confirm it — has
+  /// nothing to match on, so every legacy row would arrive as SUGGESTED at
+  /// best.
+  ///
+  /// All three NULLABLE and NOT backfilled. The next sync fills them, which is
+  /// also what makes the migration safe through a rolling deploy: a container
+  /// running the previous image upserts without these columns and Postgres
+  /// takes the NULL default, so the old and new images coexist without either
+  /// failing. A backfill would have to invent values from `email`, and a
+  /// `samAccountName` derived from an email local-part is exactly the
+  /// plausible-but-wrong key that would link the wrong person.
+  ///
+  /// NULL therefore means "this provider does not carry the concept, or has
+  /// not synced since the column existed" — never "the account has no login
+  /// name". Okta and Google Workspace leave all three null permanently: their
+  /// account identifier IS the email, which `email` already holds.
+  ///
+  /// NOT an input to `email`. The JML link reconcile and the leaver pass
+  /// compare on `email` byte for byte, so a provider that began preferring a
+  /// UPN would silently re-point live links at a different worker.
+  samAccountName        String?
+  userPrincipalName     String?
+  mailNickname          String?
   status                ConnectedAccountStatus @default(ACTIVE)
   isAdmin               Boolean                @default(false)
   mfaEnrolled           Boolean                @default(false)
@@ -346,6 +375,48 @@ model Employee {
   /// already found by (tenantId, workEmail), not searched for.
   hrisRecordId      String?
   fullName          String
+  /// ─── STRUCTURED NAME PARTS (Step 0c) ─────────────────────────────────
+  ///
+  /// Every HRIS already sends these and every provider already threw them
+  /// away, flattening them into `fullName`. Keeping them is what lets name
+  /// matching be a comparison of PARTS rather than of one concatenated
+  /// string: "Smith, John" and "John Smith" are the same person and different
+  /// strings, and a reconciler given only `fullName` has to guess which half
+  /// is the family name from word order that varies by locale and by HRIS.
+  ///
+  /// `fullName` IS NOT DERIVED FROM THESE and must not be. Each provider keeps
+  /// deriving it exactly as it does today, because the joiner pass builds
+  /// mailbox addresses and display names from it — so a change to the
+  /// derivation changes what gets created in a customer's directory.
+  ///
+  /// All nullable, not backfilled. A provider that does not send a part leaves
+  /// it null; splitting `fullName` to populate them would invent exactly the
+  /// guess these columns exist to remove.
+  givenName         String?
+  familyName        String?
+  middleName        String?
+  /// What the worker is called day to day (Workday `preferredName`). Not
+  /// authoritative for anything legal.
+  preferredName     String?
+  /// The name on the employment record (Workday `legalName`).
+  legalName         String?
+  /// ─── THE EMPLOYEE NUMBER, AND WHY IT HAS NO FALLBACK ─────────────────
+  ///
+  /// NULL whenever the HRIS does not have one. It NEVER falls back to
+  /// `workEmail`, and that is the single most important property of this
+  /// column.
+  ///
+  /// A real employee number is the strongest deterministic match signal in the
+  /// whole subsystem — CLAUDE.md invariant 2 names it alongside a confirmed
+  /// alias and an exact email as the only things that may produce a `LINKED`
+  /// without a human. `externalId` keeps its email fallback precisely because
+  /// it is PROVENANCE and nothing matches on it. If this column fell back the
+  /// same way, a work email would silently acquire the authority of a payroll
+  /// identifier, and a legacy table holding emails would start auto-linking at
+  /// LINK strength on a signal that is merely an address.
+  ///
+  /// So: a value here is a claim that the HR system issued this number.
+  employeeNumber    String?
   workEmail         String
   status            EmploymentStatus @default(ACTIVE)
   department        String?

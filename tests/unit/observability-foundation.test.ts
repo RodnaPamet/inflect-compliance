@@ -47,7 +47,6 @@ describe('console.* usage guard', () => {
             'components/ui/charts/',
             'components/ui/hooks/',
             'components/ui/filter/',
-            'components/ui/file-upload.tsx',
         ];
 
         const CONSOLE_PATTERN = /console\.(log|warn|error|info|debug)\s*\(/;

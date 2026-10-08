@@ -49,6 +49,7 @@ import {
 } from '../schemas/access-review.schemas';
 import type { Role, MembershipStatus } from '@prisma/client';
 import { generateAccessReviewPdf } from '../reports/pdf/accessReview';
+import { collectPdfBuffer } from '../reports/pdf/collect-buffer';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { Readable } from 'node:stream';
 import { logger } from '@/lib/observability/logger';
@@ -930,17 +931,3 @@ export async function closeAccessReview(
     };
 }
 
-/**
- * Drain a PDFKit document into a Buffer. Same shape as the helper
- * used by the existing report routes — listeners are attached
- * BEFORE `doc.end()` is called so no events are lost.
- */
-function collectPdfBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-        doc.on('end', () => resolve(Buffer.concat(chunks)));
-        doc.on('error', reject);
-        doc.end();
-    });
-}

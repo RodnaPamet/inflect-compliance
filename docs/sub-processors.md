@@ -32,6 +32,7 @@ auditor can verify the inventory is accurate, not merely asserted.
 | HaveIBeenPwned | SHA-1 prefix of a chosen password (k-anonymity; no PII) | Password breach check | Global | Volatile (no log) | No (security primitive) |
 | GitHub | Repo metadata (per-tenant integration only) | Repo sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft SharePoint | Document metadata (per-tenant integration only) | Document sync | Global | Token lifetime | Yes (per-tenant opt-in) |
+| TypeSafe AI (Jev) | **Proposed; inactive — nothing is sent today.** On activation, per residue account: the legacy account's username and its tokens, neutralised display name, given and family names, email **local part only**, department, title, account type, and transliteration variants; plus up to five HR candidates' name parts (middle and preferred included) with variants, department and title. Excluded by construction: email domains, employee numbers, dates, employment status, managers, entitlements, privilege flags, unmapped columns | Identity adjudication for legacy access recertification | US (West Coast) | Zero retention, required in the signed DPA | Yes (per tenant; only under `legacyMatchAiMode` = `EXTERNAL`, default `OFF`) |
 | Okta | Directory account metadata — email, status, MFA/admin flags (per-tenant integration only; read-only pull) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Google Workspace (`google-workspace`) | Directory account metadata — email, status, 2SV/admin flags (per-tenant integration only; read-only pull) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft Entra ID / Azure AD (`entra-id`) | Directory account metadata — email, status, MFA-registration/admin flags, domain federation (per-tenant integration only; read-only Graph pull; also covers on-prem AD synced via Azure AD Connect) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
@@ -200,6 +201,55 @@ Common to both:
 - **Codebase:** `src/app-layer/integrations/providers/sharepoint/` (`client.ts`, `docx.ts`).
 
 ---
+
+### TypeSafe AI (Jev) — identity adjudication for legacy access recertification (proposed, inactive)
+
+**This processor is proposed and inactive. No customer data reaches TypeSafe AI.** Nothing
+under `src/` refers to it. The planned calling module is `src/app-layer/ai/identity-match/`.
+Its addition follows [`docs/sub-processor-change-policy.md`](./sub-processor-change-policy.md);
+this entry is step 1 of that policy.
+
+- **PII shared on activation:** one request per residue account, carrying an allowlisted
+  JSON state and two typed questions — a `choice` over up to five candidate letters plus
+  `NONE`, and a boolean *is this account used by one individual*. The state holds:
+  - **the legacy account** — username and its tokens, the neutralised display name, given
+    and family names, the **email local part only**, department, title, account type, and
+    the transliteration variants tagged by scheme;
+  - **up to five HR candidates, labelled `A`–`E`** — name parts including middle and
+    preferred names, with variants, department and title.
+- **Excluded by construction:** email domains, employee numbers, dates, employment status,
+  managers, entitlements, privilege flags and unmapped columns. The letter-to-employee
+  mapping never leaves Inflect. Vetoes, the re-keyed-person rule and the timeline stay
+  deterministic, so the model judges identity and nothing else.
+- **Legal basis:** legitimate interest (Art. 6(1)(f)), active only where a tenant selects
+  `EXTERNAL`.
+- **Processing instructions:** answer two typed questions with calibrated probabilities.
+  The model returns probabilities only — it generates no text, and it creates no link: a
+  person confirms every link.
+- **Transfer:** US West Coast, under **Standard Contractual Clauses**. The vendor holds
+  **no EU-US Data Privacy Framework certification**, so the SCCs plus a transfer impact
+  assessment are the sole mechanism.
+- **Retention:** zero data retention, required in the signed DPA, together with the
+  vendor's commitment not to train on customer data.
+- **Operator-optional:** yes, and tenant-optional. `legacyMatchAiMode` defaults to `OFF`.
+  Selecting `EXTERNAL` is refused under tenant AI residency `LOCAL_ONLY`.
+- **Local alternative:** a tenant choosing `LOCAL_ONLY` is served by Laya on
+  infrastructure the operator runs. Laya is **not** a sub-processor and has no entry here.
+- **Vendor pages:** recorded on the inventory pull request during step 2 of the policy.
+- **Codebase:** none. No module, constant or environment variable references TypeSafe in
+  this revision.
+
+**Policy progress**
+
+| Step | State |
+|------|-------|
+| 1 — engineering proposes (this entry) | Complete on merge of this pull request |
+| 2 — compliance / legal review | Pending — recorded on the pull request |
+| 3 — customer notice (30 days) | Pending — notice date recorded below |
+| 4 — activation | Pending — requires steps 1–3 complete with no sustained objection |
+
+- **Notice sent:** pending.
+- **Objection window closes:** pending — 30 days after the notice date.
 
 ## SaaS mode vs. self-hosted
 

@@ -118,7 +118,24 @@ function normalise(row: WorkdayRosterRow): NormalizedEmployee | null {
     const externalId = row.employeeId || row.workerId || workEmail;
     return {
         externalId,
+        // UNCHANGED: `preferredName || legalName || workEmail`, trimmed. The
+        // joiner pass builds addresses from it. The two names are now ALSO
+        // kept separately, below, so a reconciler can compare the legal name
+        // without having to work out which of the two `fullName` happened to
+        // pick for this row.
         fullName: (row.preferredName || row.legalName || workEmail).trim(),
+        // Step 0c — both names as the report already sends them. Workday does
+        // not decompose them into given/family in this template, so those stay
+        // null rather than being split on whitespace: a split would invent the
+        // guess these columns exist to remove, and Workday tenants routinely
+        // carry names where the guess is wrong.
+        legalName: (row.legalName ?? '').trim() || null,
+        preferredName: (row.preferredName ?? '').trim() || null,
+        // `employeeId` only, and NOT the `|| workerId || workEmail` chain that
+        // `externalId` uses. `workerId` is an internal surrogate, not a number
+        // HR issues to a person, and the work email is an address — neither is
+        // the thing a legacy access table was keyed by.
+        employeeNumber: (row.employeeId ?? '').trim() || null,
         workEmail,
         status: mapWorkdayStatus(row),
         department: row.organization?.trim() || null,

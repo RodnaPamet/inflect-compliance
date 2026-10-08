@@ -146,6 +146,18 @@ const REGISTRY: RegistryEntry[] = [
             'halo against both theme blocks and asserts the brand colour ' +
             'Inflect always painted.',
     },
+    {
+        primitive: 'ThemeProvider + pre-paint script store a theme only on choice',
+        structuralRatchets: ['guards/theme-flash-init.test.ts'],
+        renderedTest: 'rendered/theme-storage-on-choice.test.tsx',
+        guards:
+            'a first visit writing the OS light/dark setting to a one-year ' +
+            'cookie and localStorage before anyone chose — the structural ' +
+            'guard can only see that `persistTheme` exists; the rendered test ' +
+            'mounts the provider and executes the inline script with every ' +
+            'cookie and storage write recorded at the source, and asserts ' +
+            'nothing is written until the user toggles.',
+    },
 ];
 
 function existsUnderTests(relPath: string): boolean {

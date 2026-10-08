@@ -585,10 +585,28 @@ export async function runHrisSync(input: {
                     // back to null rather than keeping a stale handle. A stale
                     // handle is the worse failure — a later write would address
                     // it, where null refuses.
+                    //
+                    // STEP 0C added six columns to BOTH arms, and they follow
+                    // the same last-write-wins rule for the same reason: a row
+                    // that stops reporting an employee number goes back to
+                    // null rather than keeping one the HRIS no longer asserts.
+                    // Keeping a withdrawn number would be worse than losing
+                    // it, because an employee number is a LINK-strength match
+                    // signal — a stale one auto-links a legacy row to a person
+                    // the HR system no longer says it belongs to.
+                    //
+                    // `?? null` on every one, never `undefined`: Prisma reads
+                    // `undefined` as "do not write this column", which on the
+                    // update arm would leave a stale value instead of clearing
+                    // it, quietly defeating the paragraph above.
+                    //
+                    // `fullName` and `externalId` are UNCHANGED and are not
+                    // derived from the new parts. The joiner pass builds
+                    // mailbox addresses from `fullName`.
                     await db.employee.upsert({
                         where: { tenantId_workEmail: { tenantId: ctx.tenantId, workEmail: e.workEmail } },
-                        create: { tenantId: ctx.tenantId, externalId: e.externalId, hrisRecordId: e.hrisRecordId ?? null, fullName: e.fullName, workEmail: e.workEmail, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
-                        update: { externalId: e.externalId, hrisRecordId: e.hrisRecordId ?? null, fullName: e.fullName, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
+                        create: { tenantId: ctx.tenantId, externalId: e.externalId, hrisRecordId: e.hrisRecordId ?? null, fullName: e.fullName, givenName: e.givenName ?? null, familyName: e.familyName ?? null, middleName: e.middleName ?? null, preferredName: e.preferredName ?? null, legalName: e.legalName ?? null, employeeNumber: e.employeeNumber ?? null, workEmail: e.workEmail, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
+                        update: { externalId: e.externalId, hrisRecordId: e.hrisRecordId ?? null, fullName: e.fullName, givenName: e.givenName ?? null, familyName: e.familyName ?? null, middleName: e.middleName ?? null, preferredName: e.preferredName ?? null, legalName: e.legalName ?? null, employeeNumber: e.employeeNumber ?? null, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
                     });
                     n += 1;
                 }

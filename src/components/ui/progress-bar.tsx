@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { cn } from "@inflect/ui/lib/cn";
 import { motion } from "motion/react";
 
@@ -87,13 +88,14 @@ export function ProgressBar({
     showValue = false,
     indeterminate = false,
     className,
-    "aria-label": ariaLabel = "Progress",
+    "aria-label": ariaLabel,
 }: ProgressBarProps) {
+    const t = useTranslations("common.ui");
     if (indeterminate) {
         return (
             <div
                 role="progressbar"
-                aria-label={ariaLabel}
+                aria-label={ariaLabel ?? t("progress")}
                 // No `aria-valuenow` — its absence is what marks a
                 // progressbar indeterminate to assistive tech.
                 aria-valuemin={0}
@@ -130,7 +132,7 @@ export function ProgressBar({
     const track = (
         <div
             role="progressbar"
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? t("progress")}
             aria-valuenow={effectiveValue}
             aria-valuemin={0}
             aria-valuemax={safeMax}

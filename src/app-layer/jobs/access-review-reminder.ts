@@ -145,13 +145,28 @@ export async function processAccessReviewReminders(
             decisions: {
                 select: { id: true, decision: true },
             },
+            // Step 5a — CONNECTED_APP subjects live in a SEPARATE table, and
+            // counting only `decisions` made this job silently inert for every
+            // connected campaign: zero member rows means `pendingCount === 0`,
+            // which this job reads as "every subject decided" and classifies
+            // `skippedComplete`. So a connected campaign with 300 undecided
+            // accounts and a due date tomorrow was nudged exactly never, and
+            // the counter said it was skipped for being finished.
+            connectedDecisions: {
+                select: { id: true, decision: true },
+            },
         },
     });
 
     const candidates: CampaignSnapshot[] = reviews
         .map((r) => {
-            const totalCount = r.decisions.length;
-            const pendingCount = r.decisions.filter(
+            // Both populations, summed. A campaign is one scope or the other,
+            // so one of these is always empty — summing rather than branching
+            // on `scope` keeps the arithmetic correct if a campaign ever
+            // carries both, and there is no scope value to forget.
+            const subjects = [...r.decisions, ...r.connectedDecisions];
+            const totalCount = subjects.length;
+            const pendingCount = subjects.filter(
                 (d) => d.decision === null,
             ).length;
             return {

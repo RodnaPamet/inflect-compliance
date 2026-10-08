@@ -133,6 +133,18 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     tests:      { read: ['view'], write: ['create', 'execute'] },
     incidents:  { read: ['view'], admin: ['manage'] },
     personnel:  { read: ['view'], admin: ['manage'] },
+    // Access reviews (Step 5a). The groups MIRROR the role grants rather than
+    // guessing at them: `decide` is the reviewer's own action and
+    // `PermissionSet` gives it to every role, so it belongs with `write`;
+    // `create` and `close` reproduce `assertCanAdmin` (OWNER + ADMIN), and
+    // `close` is the verb that executes REVOKE against live memberships and
+    // seals the evidence PDF — the most privileged thing on this surface.
+    //
+    // Folding `close` into `write` would hand every key that can record a
+    // verdict the power to execute the revocations, which is the
+    // authority-arriving-by-accident shape the `admin.external_tools` note
+    // below is also about.
+    access_reviews: { read: ['view'], write: ['decide'], admin: ['create', 'close'] },
     // No `read` group on these two: `PermissionSet` gives them a single
     // `edit` action and no `view`, so there is no flag a read scope could
     // set. `continuity:write` / `processes:write` are the only meaningful

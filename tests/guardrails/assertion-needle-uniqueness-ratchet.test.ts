@@ -75,6 +75,12 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
  * more than one satisfying position in the file that was read.
  *
  * History — only edit DOWNWARD, one line per change.
+ *   • 1168 (2026-10-08, Step 5a): −7. The same two narrowings recorded against
+ *     `HIGHLY_AMBIGUOUS_NEEDLE_BASELINE` below: four whole-schema `toContain`
+ *     needles replaced by one read of the `enum Role` block, and three bare
+ *     identifier needles on the access-review detail client replaced by their
+ *     `const` declarations. The step's own diff would otherwise have spent this
+ *     ratchet's headroom rather than its own.
  *   • 1575 (2026-09-02): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` (2194 files).
  *     Distribution: 797 sites at exactly 2 occurrences, 502 at 3-4, 208 at
@@ -149,6 +155,18 @@ const HIGH_MULTIPLICITY = 5;
  * out gives the reduction work an order to run in.
  *
  * History — only edit DOWNWARD.
+ *   • 165 (2026-10-08, Step 5a): −2 net. Step 5a's own diff pushed two needles
+ *     ACROSS the threshold — `toContain('EDITOR')` on the concatenated prisma
+ *     schema (4 → 5, because a new docblock names the role) and
+ *     `toContain('canDecide')` on the access-review detail client (3 → 5,
+ *     because the connected table added two call sites). Rather than raise the
+ *     ceiling, both reads were narrowed to the construct each test is about:
+ *     the `enum Role` BLOCK via `braceBlockAfter`, and the three `const`
+ *     DECLARATIONS via `toMatch`. Narrowing the enum read retired its three
+ *     sibling needles (`ADMIN`, `AUDITOR`, `READER`) too, which is why the
+ *     number lands below where it started. Found by measuring every needle in
+ *     every test that reads a file this diff touched, in both revisions, and
+ *     reporting only the crossings — not by bisection.
  *   • 276 (2026-09-02): seated with the ratchet.
  *   • 271 (2026-09-03): re-measured after the rebase described above.
  *   • 269 (2026-09-03, #2263): the two GUIDE.md mention-needles retired — a
@@ -446,7 +464,28 @@ const HIGH_MULTIPLICITY = 5;
 //   have measured 1177, and had they been fully independent, 1175 is what
 //   1186 − 2 − 9 gives. Which is the arithmetic working out, not a coincidence
 //   worth trusting next time: measure, do not subtract.
-const AMBIGUOUS_NEEDLE_BASELINE = 1175;
+//
+//   RE-SEATED 1175 -> 1174 (theme stored only on choice). The pre-paint theme
+//   script moved from `layout.tsx` into `src/lib/theme-constants.ts`, and
+//   `theme-flash-init`'s script needles moved to the module that now owns it.
+//   With the script's text gone from the layout, one whole-file needle there
+//   stops matching more than once. Measured on the branch, not subtracted.
+//
+//   MERGED WITH Step 5a, which independently narrowed four whole-schema
+//   `toContain` needles and three bare-identifier ones (1175 -> 1168 on its
+//   own branch). Both narrowings are in this tree, so the live count is below
+//   either branch's figure and neither 1174 nor 1168 is correct for the union.
+//   RE-MEASURED on the merged tree at 1167, per this file's own rule — "Each
+//   branch carries its OWN live count rather than a projected total, which is the
+//   only arithmetic that is safe in either merge order."
+//
+//   The arithmetic would have agreed here (1175 - 7 - 1 = 1167), and that is
+//   precisely why the rule is to measure: the two deltas happened to be
+//   independent this time, and nothing in the numbers says whether they overlap.
+//   Same standing as the 2026-09-06 entry below — the arithmetic predicted it, the
+//   measurement is what makes it true.
+const AMBIGUOUS_NEEDLE_BASELINE = 1167;
+
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -559,7 +598,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1175;
 //   probe over this file's own `report()` on both the branch and a tree with
 //   only `compliance-digest.ts` reverted, diffed by needle. 29 sites either
 //   side; exactly one count moved.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -885,6 +924,29 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
  * than a projected total, which is the only arithmetic that is safe in either
  * merge order.
  *
+ * ── 1442 -> 1441 on 2026-10-08 (Step 5a), paid rather than raised ────
+ *
+ * Step 5a rewrote four structural assertions in
+ * `tests/integration/access-review-api.test.ts` because the routes changed
+ * shape — `withValidatedBody` became `parseJsonBody` inside a
+ * `requirePermission` handler, and the inline `assertCanRead` became an audited
+ * route gate. The first draft asserted the new shape with regexes carrying
+ * spans (`requirePermission<[^>]*>\(\s*'access_reviews\.view'`), which pushed
+ * this count UP by two: a span lands in `needle-carries-span` and is a blind
+ * spot, which is the opposite of what those assertions were for.
+ *
+ * Replaced with LITERAL needles, each verified to occur exactly once in the
+ * file it reads — the permission key itself (`'access_reviews.create'`) and the
+ * parse call with its schema (`parseJsonBody(req, SubmitDecisionSchema)`).
+ * Pairing each route with the key it must carry is also the stronger claim: a
+ * single alternation over the four keys would have been satisfied by the WRONG
+ * key, and a create gated on `.view` is exactly the mistake rule ordering in
+ * `ROUTE_PERMISSIONS` can make.
+ *
+ * Net −1 rather than ±0 because one pre-existing span needle in that file went
+ * with them. 1441 is this branch's OWN live count, per the merge-order rule
+ * stated below — not a projection.
+ *
  * ── 1444 -> 1445, the second mover, resolved by MEASUREMENT ──────────
  *
  * #3204's guard (`runner-ships-no-dangling-workspace-link`) adds exactly one
@@ -906,7 +968,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 167;
  * Teaching `tests/helpers/assertion-reach.ts` to follow a sliced subject is the
  * standing alternative and would LOWER this ceiling.
  */
-const UNANALYSABLE_READ_BASELINE = 1442;
+const UNANALYSABLE_READ_BASELINE = 1441;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

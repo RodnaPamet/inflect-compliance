@@ -129,6 +129,30 @@ services:
       AUTH_TYPE: scram-sha-256
       STATS_PERIOD: "60"
       ADMIN_USERS: postgres
+      # ── Stop narrating the healthcheck (#3263) ──
+      #
+      # pgbouncer logs every connection at LOG level by default, and the
+      # healthcheck below opens one every 3 seconds. Measured on the prod VM:
+      # 1.2 GB in this container's log, ~67 MB/day, 92% of ALL container
+      # logging on the host — every line the same
+      # `(nodb)/postgres@127.0.0.1 login attempt: db=postgres user=postgres`.
+      #
+      # This is the right lever rather than a longer `interval`, because once
+      # the connection is not logged the 3-second probe costs nothing, and
+      # widening the interval would change failure-detection latency — a
+      # separate decision with its own risk. The probe stays as it is.
+      #
+      # `log_pooler_errors` is left at its default 1 ON PURPOSE: that is the
+      # channel you actually read when the pool is the suspect. What goes
+      # quiet is only the per-connection narration. `STATS_PERIOD: 60` above
+      # still gives one stats line a minute, which is the useful signal.
+      #
+      # Without this, #3218's `max-size: 10m` x `max-file: 3` means pgbouncer
+      # churns its entire 30 MB allowance in about ELEVEN HOURS, so the
+      # component between the app and the database would have the shortest
+      # log history of any service — bounded, and useless for triage.
+      LOG_CONNECTIONS: "0"
+      LOG_DISCONNECTIONS: "0"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U postgres"]
       interval: 3s

@@ -54,6 +54,11 @@
         "reason": "Weekly check comparing pinned dependency overrides against the live npm registry; it needs network access to a moving external source, so its result is a function of time rather than of the diff.",
         "coveredBy": "tests/guards/overrides-effective.test.ts runs on every PR and enforces that each override is registered, effective and non-stale against the LOCKFILE. Only the 'is the upstream fix newer than our floor' half needs the registry."
     },
+    "queue-candidate-sweep.yml:sweep": {
+        "kind": "never",
+        "reason": "Schedule-only (*/15) plus workflow_dispatch, and deliberately so. A `pull_request` trigger was written first and `merge-queue-trigger-coverage` rejected it on the HANG INVARIANT: a workflow that runs on pull_request publishes a check context, the merge queue waits for that context on the merge_group candidate, and a workflow without a `merge_group:` trigger never produces it \u2014 the entry hangs until the timeout ejects it. Adding `merge_group:` instead would run the sweep from inside the queue it sweeps. So this job can never be PR-reachable; the cost is up to one interval of latency before an orphaned candidate is cancelled.",
+        "coveredBy": "FULLY COVERED AT PR TIME for everything checkable offline. `tests/guards/queue-candidate-sweep.test.ts` drives the predicate through the script's `--classify` stdin seam over external fixtures (11 assertions, mutation-proved in five directions) and asserts the workflow contract from the YAML: `actions: write` and no broader, `--self-test` ordered BEFORE `--apply`, schedule present, pull_request absent, no self-cancelling concurrency. The script also runs `--self-test` inside the job before the destructive step, so a broken predicate cannot reach the cancel call at runtime either. RESIDUAL: nothing at PR time exercises the live API paths (`readMergeQueue`, `inFlightCandidates`, the cancel POST). Accepted \u2014 they need a real merge queue with orphans in it, and the predicate they feed is the part that can cause harm."
+    },
     "release.yml:release": {
         "kind": "never",
         "reason": "semantic-release runs on push to main only, and does real work only when a commit actually cuts a release \u2014 so a broken release toolchain stays latent until the next fix:/feat: commit.",

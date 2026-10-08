@@ -11,21 +11,24 @@ import * as React from 'react';
 
 // next-intl is ESM (jest can't parse its export); mock it to resolve real
 // en.json values (with {var} interpolation) so text assertions still hold.
-jest.mock('next-intl', () => {
-    const en = require('../../messages/en.json');
-    return {
-        useTranslations: (ns: string) => (key: string, params?: Record<string, unknown>) => {
-            let v = key
-                .split('.')
-                .reduce((o: unknown, k) =>
-                    o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined, en[ns]);
-            if (typeof v !== 'string') return key;
-            if (params) for (const [p, val] of Object.entries(params)) v = (v as string).replace(new RegExp(`\\{${p}\\}`, 'g'), String(val));
-            return v;
-        },
-        useLocale: () => 'en',
-    };
-});
+// No local `next-intl` factory here, on purpose.
+//
+// This file used to declare one, and its namespace lookup was `en[ns]` — a
+// SINGLE top-level key. It split the KEY on dots but not the NAMESPACE, so a
+// component calling `useTranslations('common.ui')` resolved `en['common.ui']`,
+// got undefined, and fell through to `return key`. Every string it rendered
+// came out as the key rather than the English text.
+//
+// That was invisible while the components this panel renders used
+// single-segment namespaces. `<NumberStepper>` localising its
+// `incrementAriaLabel` default (#3209) made it visible: `getAllByLabelText(
+// 'Increase')` started failing because the label was the literal "increase".
+//
+// `__mocks__/next-intl.js` is applied automatically and resolves
+// `${namespace}.${key}` as one path, which is correct for nested catalogues.
+// Its docblock says a local factory overrides it — so declaring one here was
+// opting out of the working implementation. It also exports a strict superset
+// of what this file used (`useLocale` included).
 
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,

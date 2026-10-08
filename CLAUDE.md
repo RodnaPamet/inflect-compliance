@@ -889,17 +889,35 @@ duplicating the limits table).
 
 ### Identity lifecycle — JML (joiner / leaver)
 
-The subsystem that can **disable accounts in a customer's own directory**. It is
-the highest-blast-radius capability in the product, and it is deliberately
-throttled — though less than it was: the leaver clamp was raised to `AUTOMATIC`
-on 2026-08-30 (#2187), so the ladder alone now governs how far a tenant may go.
-The joiner RUNS but cannot provision: #2687 gave `planJoinerPass` a caller, a
-04:30 UTC schedule (the OWNER-only run route ships separately), so a joiner pass leaves an
-artefact like the leaver's — while `DIRECTION_IMPLEMENTED.joiner` stays FALSE,
-because `DirectoryProvisioner` declares no create verb and decision 10's
-department→security-group map has no column, so every plan refuses
-`NO_DEPARTMENT_MAP`. A joiner direction therefore cannot be widened past
-DISABLED, and the thing it is waiting for is the entitlement map, not a trigger.
+The subsystem that can **disable accounts in a customer's own directory — and
+create them**. It is the highest-blast-radius capability in the product, and it
+is deliberately throttled, but no longer by either clamp: both sit at
+`AUTOMATIC` (leaver 2026-08-30 #2187, joiner #2954), so neither refuses any rung
+the ladder can reach and the ladder alone governs how far a tenant may go.
+
+**The joiner is implemented, and its write path is reachable through the
+product.** `DIRECTION_IMPLEMENTED.joiner` is TRUE since #2949. This section
+asserted the opposite for a long time, and every reason it gave has since been
+built: the create verb (#2923), the collision probe (#2928), the Entra
+provisioner (#2940), the entitlement map's schema and reader (#2713) and its
+writer (#2839), the operator surface (#2944). `LIVE_PROVISIONER_PROVIDERS` is
+`['active-directory', 'entra-id']` — both, not AD alone.
+
+What holds a joiner create today is **the per-connection grant, not the clamp**,
+and the two providers are deliberately asymmetric:
+
+| provider | grant field | on the connection form? | effect today |
+| --- | --- | --- | --- |
+| Entra | `joinerWritesEnabled` | **yes**, off by default | an owner can reach a live create through the product |
+| Active Directory | `joinerWritesEnabled` | **no**, undeclared on purpose | refuses for every connection — read strict `=== true`, so an absent value fails closed |
+
+Acting needs BOTH grants, not just the joiner's: `executePlannedCreates`
+resolves a provisioner *and* a writer, and refuses rather than create an account
+it could not undo. So the whole path to a real account creation is — tick the
+Entra grant, grant offboarding writes (`writesEnabled`), have an administrator
+consent `User.ReadWrite.All` + `Policy.Read.All`, and walk the ladder DISABLED
+→ DRY_RUN → (seven days) → AUTOMATIC. Every step is a deliberate act; none of
+them is a clamp.
 
 **There is no mover, and the M in JML has never stood for anything here.** This
 header carried the industry's three-letter expansion until #2487, and it was the
@@ -913,8 +931,8 @@ those two columns (`identityLeaverMode`, `identityJoinerMode`). So a mover is no
 an unimplemented direction — it is an unrepresentable one, with no rung to set,
 no column to set it in and no value to name it by. Adding one is a schema change
 and a migration before it is a feature. The distinction matters when reading the
-joiner: the joiner is a direction that EXISTS and is switched off, which is a
-different kind of nothing.
+joiner: the joiner is a direction that EXISTS, is implemented, and is switched
+off BY DEFAULT — which is a different kind of nothing.
 
 **The chain is four scheduled jobs, and the order is load-bearing.**
 
@@ -960,7 +978,8 @@ per direction on `TenantSecuritySettings.identity{Leaver,Joiner}Mode`, defaultin
 to `DISABLED`. `setIdentityWriteMode` in `usecases/identity-write-policy.ts`
 refuses multi-rung widening, refuses to leave `DRY_RUN` before
 `DRY_RUN_MIN_DAYS` (7), and refuses ANY widen of a direction whose
-`DIRECTION_IMPLEMENTED` flag is false — which is the joiner. Any move out of
+`DIRECTION_IMPLEMENTED` flag is false — which is now NO direction, both being
+true, so that refusal is unreachable and kept as the brake. Any move out of
 `DRY_RUN` — including narrowing — nulls `dryRunSince` and restarts the clock.
 
 **There was a fourth rung, `PROPOSE`, and deleting it CLOSED a hole rather than
@@ -997,6 +1016,12 @@ Two consequences worth knowing before touching this:
 `LEAVER_MAX_MODE` is a **source constant, not config**, enforced at gate 1 of
 `runIdentityLeaverPass`. It was `DRY_RUN` until 2026-08-30 and is now
 `AUTOMATIC` (#2187), so no rung the ladder can reach is refused by the clamp.
+`JOINER_MAX_MODE` in `identity-joiner-pass.ts` is its twin and sits at
+`AUTOMATIC` too (#2954), so the same holds for the joiner: with the clamp on
+`LADDER`'s last rung `isAboveClamp` can never be true and `MODE_ABOVE_CLAMP` is
+unreachable for either direction. Each constant's remaining job is to be the
+brake — narrowing it is a reviewed diff somebody can ship in a hurry, which is
+why the branch it feeds is kept rather than deleted for being inert.
 What still governs is the ladder: DISABLED by default, one rung per widen, and
 `DRY_RUN_MIN_DAYS` before leaving dry run.
 
@@ -1117,8 +1142,9 @@ reconciling them against HR. Design and plan:
 of truth for intent.** If the code contradicts a fact in them, the code wins and the
 pull request says so; if a step would have to deviate from the design, stop and ask.
 
-Four invariants bind everything in this subsystem. Later steps extend this section;
-these four do not move.
+Five invariants bind everything in this subsystem. Later steps extend this section;
+none of these move. The first four were seated by Step 0a; the fifth was earned by
+Step 5a, which found the same defect four times in one flow.
 
 1. **Legacy code never writes a directory table.** `IdentityAccountLink` and
    `ConnectedIdentityAccount` are read-only to it.
@@ -1137,6 +1163,50 @@ these four do not move.
    unauthenticated read is recorded with a named reason and never reported as complete.
    A row that cannot be keyed fails the pull rather than being dropped — an account
    missing from a snapshot is an account nobody reviews.
+5. **Zero is never complete.** A review over no subjects evidences nothing, and every
+   natural way to write the completeness check says the opposite. `pending.length === 0`
+   and `decided === total` are both TRUE of the empty set, so a campaign with no
+   subjects closes instantly, reports success, and produces an artefact attesting that
+   every account in scope was reviewed — vacuously true of its rows and false of the
+   directory, which is the only reading an auditor cares about. Step 5a found this
+   four times over in one flow: the close usecase, the Close button's `disabled`,
+   a `subjectRef` collision that silently dropped a subject through
+   `skipDuplicates`, and a `take: N` that cannot tell "N accounts" from "the first N
+   of more". So: refuse an empty population at CREATION, refuse it again at
+   COMPLETION, and read one past any cap so truncation is a fact you hold rather than
+   one you cannot observe. Any count that gates a claim about a population must assert
+   the population is non-empty in the same expression — `subjectCount > 0 && decided
+   === subjectCount`, never `decided === subjectCount`.
+
+**How invariant 2 is enforced, since Step 3b** (`src/lib/identity/reconcile/engine.ts`).
+Strength is not a number and not a claim a signal makes about itself. `SIGNAL_STRENGTH`
+is a frozen table keyed on a closed union, so a kind added without a classification is a
+compile error rather than an `undefined` that `=== 'STRONG'` quietly reports as false.
+There are exactly four strong kinds — `CONFIRMED_ALIAS`, `EMPLOYEE_NUMBER`,
+`EMAIL_EXACT`, `DIRECTORY_BRIDGE` — and `LINKED` requires one of them held by exactly
+one candidate, unvetoed.
+
+**The Step 4a extension point cannot break it, by type.** `CandidateScorer` returns
+`SupportingSignal`, whose `kind` is narrowed to the non-strong union. Naming conventions
+and similarity therefore cannot produce a `LINKED` however they score — not by
+convention, by `tsc`. Do not widen that return type to `Signal`; the exhaustive test
+over all 127 non-empty subsets of the supporting kinds (at score 10,000 each) is what
+proves the property, and it is only meaningful while the type prevents the strong case.
+
+Three further rules the engine holds that are easy to undo:
+
+- **`EMAIL_EXACT` is `emailKey` byte-equality, never a folded domain.** `+tag` removal
+  and domain equivalence are a SUPPORTING signal one layer above the key. `emailKey` is
+  what the JML chain joins on, so a link made on a folded address is a link the leaver
+  cannot act on — the design document's `da-01` case exists to say so.
+- **An employee number is derived from a login only when the login is all digits.**
+  `normaliseEmployeeNumber` accepts up to eight leading letters, so `kpatel3` yields
+  `3` — a name with a counter posing as the strongest signal in the system.
+- **A roster carrying one id twice with different fields is REFUSED**
+  (`DuplicateRosterIdError`), not resolved by arrival order. `RosterEmployee.id` is a
+  primary key; a roster that contradicts itself about one person gives no reason to
+  trust what it says about the others. An exactly-repeated row is tolerated — the check
+  is about contradiction, not duplication.
 
 
 ## Testing Conventions
@@ -1222,12 +1292,18 @@ these four do not move.
   2026-08-25 — it was `push`/`schedule`/`dispatch`-only while a separate
   `Coverage (shard N/4)` matrix re-ran the whole suite to instrument it).
 
-  It now merges **five** artifacts, and which five is load-bearing.
+  It now merges **six** artifacts, and which six is load-bearing.
   Coverage is collected by the jobs that already run the suite: the four
-  `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files) and `Ratchets`
-  (guards + guardrails + contracts, 661 files). Those two sets are
+  `Test` shards (`JEST_SKIP_RATCHETS=1`, 1392 files), `Ratchets`
+  (guards + guardrails + contracts, 661 files) and `Flue`
+  (`coverage-shard-flue`). Those sets are
   disjoint and exhaustive — together they are the whole suite, which is
   what makes the merged numbers comparable to the old single-matrix ones.
+  **Read the count off `ci.yml`, never off this paragraph:** the trailing
+  argument to `scripts/check-merged-coverage.ts` is the authority, the
+  guard derives its own expectation from the workflow rather than a
+  literal, and this sentence said *five* for as long as flue existed —
+  the one number here that nothing makes follow its source.
   Since a path key removes its files from `global`, changing WHICH tests
   contribute changes what every floor means with no number in the diff,
   so `tests/guardrails/coverage-gate-population.test.ts` pins the

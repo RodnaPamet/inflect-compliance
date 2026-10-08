@@ -4,8 +4,20 @@
  * Epic 51 — theme provider & `useTheme()` hook.
  *
  * Thin client-side layer that flips `html[data-theme]` between `"dark"` (the
- * default) and `"light"`, persisting the user's choice in localStorage and
- * honouring the system `prefers-color-scheme` for the first visit.
+ * default) and `"light"`. It persists the user's CHOICE, in the cookie and in
+ * localStorage. Until there is one, it follows the system `prefers-color-scheme`,
+ * live, and writes nothing.
+ *
+ * ── WHEN IT WRITES ──────────────────────────────────────────────────────
+ *
+ * Only in `setTheme` / `toggle`: the user picked a theme and asked for it to
+ * be kept. Never on mount, and never from the OS preference. Reading
+ * `prefers-color-scheme` needs no storage at all, and a UI-customisation cookie
+ * is exempt from consent only when the user asked for the preference to be
+ * kept (Article 29 WP194). A host that promises "only essential cookies"
+ * depends on this: this provider used to write a one-year cookie and a
+ * localStorage entry with the OS setting on every first visit. The pre-paint
+ * script in `@/lib/theme-constants` follows the same rule.
  *
  * The actual colour values live in `src/styles/tokens.css`. This file only
  * decides *which palette* is active; every token-driven component gets the
@@ -53,7 +65,10 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 const ATTR = 'data-theme';
 
-/** Persist to BOTH channels: cookie (drives SSR) + localStorage (back-compat). */
+/**
+ * Persist to BOTH channels: cookie (drives SSR) + localStorage (back-compat).
+ * Called from `setTheme` ONLY — an explicit choice. See the file header.
+ */
 function persistTheme(theme: Theme) {
     try {
         window.localStorage.setItem(STORAGE_KEY, theme);
@@ -91,11 +106,12 @@ function readStoredTheme(): Theme | null {
     return null;
 }
 
-function readInitialTheme(): Theme {
+const SYSTEM_LIGHT_QUERY = '(prefers-color-scheme: light)';
+
+/** The OS preference: light when the system asks for it, else the dark baseline. */
+function systemTheme(): Theme {
     if (typeof window === 'undefined') return 'dark';
-    const stored = readStoredTheme();
-    if (stored) return stored;
-    if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'light';
+    if (window.matchMedia?.(SYSTEM_LIGHT_QUERY).matches) return 'light';
     return 'dark';
 }
 
@@ -109,20 +125,45 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // hydration mismatch when the stored theme differs from the SSR snapshot.
     const [theme, setThemeState] = useState<Theme>('dark');
     const hasHydrated = useRef(false);
+    // Whether the user has CHOSEN a theme: one is stored, or `setTheme` ran.
+    // Until then the theme follows the OS and nothing is written.
+    const chosen = useRef(false);
 
     useEffect(() => {
         if (hasHydrated.current) return;
         hasHydrated.current = true;
-        const next = readInitialTheme();
+        const stored = readStoredTheme();
+        chosen.current = stored !== null;
+        const next = stored ?? systemTheme();
         setThemeState(next);
         applyTheme(next);
-        // Write the cookie even on a read (migrates localStorage-only users and
-        // first-visit prefers-color-scheme picks) so the NEXT load's SSR is
-        // already correct — the flash can never recur after the first paint.
-        persistTheme(next);
+        // Nothing is written here. A stored theme is already stored, and the
+        // OS preference is re-read on every visit rather than kept: see the
+        // file header. (This used to persist on mount, which also copied
+        // localStorage-only choices into the cookie. Such a visitor now
+        // renders the `dark` server default, and the pre-paint script applies
+        // their stored theme before the browser paints.)
+    }, []);
+
+    // With no stored choice, keep following the OS while the page is open —
+    // a system switch to light or dark at dusk repaints without a reload.
+    // Never written: the next visit re-reads the OS, as this one did.
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return;
+        const query = window.matchMedia(SYSTEM_LIGHT_QUERY);
+        const follow = (event: MediaQueryListEvent) => {
+            if (chosen.current) return;
+            const next: Theme = event.matches ? 'light' : 'dark';
+            setThemeState(next);
+            applyTheme(next);
+        };
+        query.addEventListener?.('change', follow);
+        return () => query.removeEventListener?.('change', follow);
     }, []);
 
     const setTheme = useCallback((next: Theme) => {
+        // The one place a theme is stored: the user picked it.
+        chosen.current = true;
         setThemeState(next);
         applyTheme(next);
         persistTheme(next);
