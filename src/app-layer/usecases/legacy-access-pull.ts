@@ -60,8 +60,11 @@ import {
     type IngestOutcome,
 } from '@/lib/legacy-access/ingest';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { notFound } from '@/lib/errors/types';
 import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
+import { assertCanAdmin } from '../policies/common';
 import { readStoredMapping } from './legacy-access-mapping';
 
 /**
@@ -665,4 +668,56 @@ function assertLayoutAgrees(mapping: StoredMapping, declared: 'wide' | 'long'): 
         + `${mapping.version} was confirmed against "${mapping.entitlements.kind}" — an `
         + 'administrator must re-confirm the mapping'
     );
+}
+
+/**
+ * Ask for a pull. Enqueues and returns the job id.
+ *
+ * Lives in the usecase layer rather than in the route for the reason the layer
+ * rules give: a route handler is an HTTP boundary — parse, call, respond — and
+ * `tests/guards/regression-scanner.test.ts` enforces that a route does not reach
+ * `lib/prisma` itself. The connection lookup and the audit row are both data
+ * access, so they belong here.
+ *
+ * The lookup is NOT the security boundary — the job re-reads the connection under
+ * tenant context and would find nothing. It is the difference between a 404 an
+ * administrator can act on and a queued job that quietly records
+ * `NOT_APPLICABLE` somewhere they are not looking.
+ */
+export async function requestLegacyAccessPull(
+    ctx: RequestContext,
+    connectionId: string
+): Promise<{ readonly jobId: string | undefined }> {
+    assertCanAdmin(ctx);
+
+    const conn = await runInTenantContext(ctx, (db) =>
+        db.integrationConnection.findFirst({
+            where: { id: connectionId, tenantId: ctx.tenantId },
+            select: { id: true },
+        })
+    );
+    if (!conn) throw notFound('Legacy access connection not found');
+
+    const job = await enqueue('legacy-access-pull', {
+        tenantId: ctx.tenantId,
+        connectionId: conn.id,
+    });
+
+    await runInTenantContext(ctx, (db) =>
+        logEvent(db, ctx, {
+            entityType: 'IntegrationConnection',
+            entityId: conn.id,
+            action: 'LEGACY_ACCESS_PULL_REQUESTED',
+            details: `Legacy access pull requested for connection "${conn.id}"`,
+            detailsJson: {
+                category: 'custom',
+                event: 'legacy_access_pull_requested',
+                connectionId: conn.id,
+                jobId: job.id ?? null,
+                requestedByUserId: ctx.userId ?? null,
+            },
+        })
+    );
+
+    return { jobId: job.id };
 }

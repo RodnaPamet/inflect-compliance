@@ -12,7 +12,7 @@
  * trustworthy: the mapping, the drift check, the ingest fault table, the hash,
  * and the order of writes.
  */
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 
@@ -66,7 +66,7 @@ const rows = [
 
 let connectionId: string;
 
-async function makeConnection(configJson: Record<string, unknown>): Promise<string> {
+async function makeConnection(configJson: Prisma.InputJsonObject): Promise<string> {
     const conn = await prisma.integrationConnection.create({
         data: {
             tenantId: TENANT,
