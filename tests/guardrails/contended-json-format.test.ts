@@ -66,7 +66,15 @@ interface Format {
      * motivated this guard. A digest is one line per file instead of thousands
      * of key names, and any reorder changes it.
      */
-    readonly keyOrderSha: string;
+    /**
+     * OPTIONAL, and the omissions are deliberate — see `messages/*.json` below.
+     *
+     * Only declare it where key order is an INVARIANT. A file that legitimately
+     * gains keys on most PRs has no stable key order, so a digest there fails on
+     * every honest addition and trains people to update the hash reflexively,
+     * which destroys the signal it exists to carry.
+     */
+    readonly keyOrderSha?: string;
 }
 
 const GOVERNED: Readonly<Record<string, Format>> = {
@@ -82,18 +90,19 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         trailingNewline: true,
         keyOrderSha: '31b3ab9eed4b779dd8b5e968f2146eb9e40d69f2c979e43195c9506d51b4e2c4',
     },
-    'messages/en.json': {
-        indent: 2,
-        escapeNonAscii: false,
-        trailingNewline: true,
-        keyOrderSha: 'f87d4d69805d2250902556fc8c50b2135d5838ac5cc3f512f369000b5b41e096',
-    },
-    'messages/bg.json': {
-        indent: 2,
-        escapeNonAscii: false,
-        trailingNewline: true,
-        keyOrderSha: '1ffc2108a8e1b7b199a491b8206acbf427fdb1d1aab259c4fc46908dd9316398',
-    },
+    // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
+    // essentially every i18n PR — #3289 added eighteen while this guard was in
+    // CI, which is how the omission got measured rather than guessed. A digest
+    // here would fail on every honest addition, so every i18n PR would carry two
+    // hash updates and people would start updating them without reading, which
+    // is worse than no check.
+    //
+    // The FORMAT check still applies and is the hazard that matters for these:
+    // a resolver re-indenting a 5,000-key catalogue is the rewrite that makes
+    // every concurrent i18n branch conflict. Key ORDER here is not an invariant;
+    // indent and escaping are.
+    'messages/en.json': { indent: 2, escapeNonAscii: false, trailingNewline: true },
+    'messages/bg.json': { indent: 2, escapeNonAscii: false, trailingNewline: true },
 };
 
 /**
@@ -173,6 +182,11 @@ describe('#3290 — contended JSON files round-trip byte-identically', () => {
         // Denominator beside the result: a table that lost its entries, or whose
         // paths rotted, would pass every assertion below over nothing.
         expect(Object.keys(GOVERNED).length).toBeGreaterThanOrEqual(4);
+        // The digest is opt-in, so it could silently become opt-out-of-entirely.
+        // At least one file must carry one, or the key-order half of this guard
+        // governs nothing while still reading as present.
+        const withDigest = Object.values(GOVERNED).filter((f) => f.keyOrderSha !== undefined);
+        expect(withDigest.length).toBeGreaterThanOrEqual(2);
         for (const rel of [...Object.keys(GOVERNED), ...Object.keys(EXEMPT)]) {
             expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
         }
@@ -203,6 +217,7 @@ describe('#3290 — contended JSON files round-trip byte-identically', () => {
 
         // THE HALF THE ROUND-TRIP IS BLIND TO. Reordering keys leaves the
         // serialisation self-consistent, so only a recorded digest catches it.
+        if (fmt.keyOrderSha === undefined) return;
         const sha = keyOrderSha(JSON.parse(raw));
         if (sha !== fmt.keyOrderSha) {
             throw new Error(
