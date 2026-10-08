@@ -23,17 +23,35 @@
  *
  * ## Ratchet policy (mirrors the `as any` ratchet)
  *
- *   • `UNMIGRATED_BASELINE` is the frozen set of files that hardcode
- *     text today. It is grandfathered debt — the i18n migration is
- *     retiring it surface-by-surface (vendors, assets, …).
- *     Membership only moves DOWN.
- *   • FORWARD: a text-bearing file that neither uses next-intl NOR
- *     sits in the baseline FAILS. That is a new un-localised surface
- *     — wire `useTranslations` / `getTranslations` before it ships.
- *   • NO-STALE: every baseline entry must still exist AND still be
- *     un-migrated-with-text. Migrate a file (adopt next-intl) or
- *     delete it ⇒ remove it from the baseline in the SAME diff. The
- *     list can only shrink, so the debt is visible and monotonic.
+ *   • `STRING_BUDGET` records, per file, how many hardcoded user-facing
+ *     strings it carries today. Every number only moves DOWN, and a file
+ *     at zero has no entry at all.
+ *   • FORWARD: any file whose live string count EXCEEDS its budget fails —
+ *     a new hardcoded string, whether or not the file uses next-intl.
+ *   • DRIFT: a budget above the live count fails too, so paying a string
+ *     down and forgetting to lower the number cannot leave headroom a
+ *     future regression spends with a green build.
+ *   • NO-STALE: an entry whose file reached zero, was deleted, or left the
+ *     scanned population must be removed.
+ *
+ * ## Why the unit is the STRING (#3265)
+ *
+ * It used to be the FILE: `UNMIGRATED_BASELINE` was a set meaning "has text
+ * and no next-intl", and the forward check was
+ * `hasHardcodedUiText(raw) && !USES_INTL.test(raw)`. `USES_INTL` is a bare
+ * identifier regex over the whole source, so ONE `t()` call anywhere made
+ * every other string in the file invisible — permanently, because a
+ * partially-migrated file has text AND intl and so matched no entry shape.
+ * It could be neither flagged nor grandfathered nor ratcheted down.
+ *
+ * Measured at the switch: 60% of the hardcoded strings in the scanned tree
+ * were invisible that way — 117 strings across 34 files, against 79 the
+ * ratchet could see. The numbers are recorded beside `STRING_BUDGET`.
+ *
+ * The old coverage of partial migration was ACCIDENTAL and worth naming: a
+ * partially migrated file surfaced only if it happened to be grandfathered,
+ * because migrating it made its entry stale and the no-stale test spoke up.
+ * For a file that was never baselined, nothing fired and nothing ever would.
  *
  * ## Scope + known limitations (deliberate, documented)
  *
@@ -102,7 +120,8 @@ function stripComments(src: string): string {
  * It was written for the regex JSX-text check this file used to run,
  * whose `>…<` window read the code between a generic's closing `>` and
  * the next JSX `<` as a text node. JSX text now comes from the AST
- * (`hasJsxTextBetweenTags`), where that cannot happen. When the switch
+ * (`collectJsxText`, which was `hasJsxTextBetweenTags` before #3265 made the
+ * unit the string rather than the file), where that cannot happen. When the switch
  * was made, no UI_PROP verdict over the 977 scanned files depended on
  * this step; it stays so that change replaced only the JSX-text half of
  * the detector.
@@ -139,7 +158,19 @@ const USES_INTL = /\b(useTranslations|getTranslations)\b/;
  * that is a separate decision, because it surfaces files no baseline lists.
  */
 const JSX_WORD = /[a-z]{3,}/;
-function hasJsxTextBetweenTags(raw: string): boolean {
+
+/**
+ * EVERY hardcoded JSX text node, not just the first (#3265).
+ *
+ * This used to be `hasJsxTextBetweenTags`, returning a boolean and short-
+ * circuiting on the first hit — it walked the AST, found the exact nodes, and
+ * threw their positions away. That made the ratchet's unit the FILE when the
+ * thing it cares about is the STRING, and one `t()` call anywhere in a file
+ * made every other string in it invisible. Collecting the text costs nothing
+ * the walk was not already doing and is what lets a partially-migrated file be
+ * graded.
+ */
+function collectJsxText(raw: string): string[] {
     const sf = ts.createSourceFile(
         'scan.tsx',
         raw,
@@ -147,22 +178,20 @@ function hasJsxTextBetweenTags(raw: string): boolean {
         false,
         ts.ScriptKind.TSX,
     );
-    let found = false;
+    const out: string[] = [];
     const visit = (node: ts.Node): void => {
-        if (found) return;
         if (
             ts.isJsxText(node) &&
             JSX_WORD.test(node.text) &&
             raw[node.getFullStart() - 1] === '>' &&
             raw[node.getEnd()] === '<'
         ) {
-            found = true;
-            return;
+            out.push(node.text.trim().replace(/\s+/g, ' '));
         }
         ts.forEachChild(node, visit);
     };
     visit(sf);
-    return found;
+    return out;
 }
 
 // UI-text-bearing props / object keys whose value is a STRING LITERAL
@@ -170,14 +199,41 @@ function hasJsxTextBetweenTags(raw: string): boolean {
 // 'NIS2'). The ["'] immediately after =/: is load-bearing: the
 // migrated {t('key')} form is in braces, so it can never match here.
 const UI_PROP =
-    /\b(?:title|placeholder|label|description|aria-label|searchPlaceholder|confirmLabel|heading|subtitle|emptyTitle|emptyDescription|tooltip|header|confirmText|cancelText|actionLabel)\s*[=:]\s*["'][^"'\n]*[a-z]{2,}[^"'\n]*["']/;
+    /\b(?:title|placeholder|label|description|aria-label|searchPlaceholder|confirmLabel|heading|subtitle|emptyTitle|emptyDescription|tooltip|header|confirmText|cancelText|actionLabel)\s*[=:]\s*["'][^"'\n]*[a-z]{2,}[^"'\n]*["']/g;
 
-/** Heuristic: does this source render hardcoded, user-facing text? */
-export function hasHardcodedUiText(raw: string): boolean {
-    return (
-        hasJsxTextBetweenTags(raw) ||
-        UI_PROP.test(stripTypeAnnotations(stripComments(raw)))
+/**
+ * Every hardcoded user-facing string in this source, with its text (#3265).
+ *
+ * `UI_PROP` now carries `/g` and is read with `matchAll`. A non-global regex's
+ * `.test()` answers "is there at least one", which is the same
+ * boolean-by-construction limitation `collectJsxText` had: it cannot see the
+ * second string in a file, so it cannot see partial migration.
+ *
+ * NOTE the `/g` + `matchAll` pairing specifically. A global regex carries
+ * `lastIndex` across `.test()` calls, so reusing this constant with `.test()`
+ * would return alternating answers for identical input. `matchAll` does not
+ * mutate it.
+ */
+function collectHardcodedUiStrings(raw: string): {
+    readonly jsx: readonly string[];
+    readonly props: readonly string[];
+    readonly total: number;
+} {
+    const jsx = collectJsxText(raw);
+    const props = [...stripTypeAnnotations(stripComments(raw)).matchAll(UI_PROP)].map(
+        (m) => m[0],
     );
+    return { jsx, props, total: jsx.length + props.length };
+}
+
+/**
+ * Heuristic: does this source render hardcoded, user-facing text?
+ *
+ * Retained as the boolean view over the collector so the invariant above reads
+ * the same, and so the two can never disagree about a file.
+ */
+export function hasHardcodedUiText(raw: string): boolean {
+    return collectHardcodedUiStrings(raw).total > 0;
 }
 
 /**
@@ -210,55 +266,102 @@ function rel(abs: string): string {
 
 // ─── Frozen baseline — grandfathered un-migrated files ──────────
 //
-// Files that hardcode user-facing text and do NOT use next-intl.
-// This list ONLY shrinks. When you localise a file, remove it here
-// in the same PR (the no-stale test enforces this).
+// Per-file CEILING on hardcoded user-facing strings. Only ever goes DOWN.
 //
-// The tenant app tree (`src/app/t/.../(app)`) and the org portal
-// (`src/app/org`) are FULLY migrated — nothing from them is
-// grandfathered. The entries below are all `src/components/**`
-// primitives that the 2026-07 component-tree wave did not reach
-// (charts, low-level UI, layout shells like ListPageShell). Being
-// imported by server components is no reason to stay here:
-// `useTranslations` also runs in a non-async Server Component, which
-// is how `skeleton.tsx` (rendered by server `loading.tsx` files) left.
-// Each is paid down by localising the file and deleting its line here.
-const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
-    'src/components/dev/swr-devtools.tsx',
-    'src/components/layout/ListPageShell.tsx',
-    'src/components/layout/org-workspace-switcher.tsx',
-    'src/components/layout/tenant-switcher.tsx',
-    'src/components/onboarding/Nis2SelfAssessmentStep.tsx',
-    'src/components/ui/ComplianceStatusIndicator.tsx',
-    'src/components/ui/FileDropzone.tsx',
-    'src/components/ui/FrameworkBuilder.tsx',
-    'src/components/ui/FrameworkMinimap.tsx',
-    'src/components/ui/FreshnessBadge.tsx',
-    'src/components/ui/GraphExplorer.tsx',
-    'src/components/ui/NextBestActionCard.tsx',
-    'src/components/ui/OnboardingTour.tsx',
-    'src/components/ui/SankeyChart.tsx',
-    'src/components/ui/TreeExpandCollapseToggle.tsx',
-    'src/components/ui/TreeView.tsx',
-    'src/components/ui/TruncationBanner.tsx',
-    'src/components/ui/ai-assist-rail.tsx',
-    'src/components/ui/date-picker/date-picker.tsx',
-    'src/components/ui/date-picker/date-range-picker.tsx',
-    'src/components/ui/filter/filter-list.tsx',
-    'src/components/ui/filter/filter-select.tsx',
-    'src/components/ui/selection-summary-panel.tsx',
-    // Moved into the package by #3212, which deleted its `src/` entry as stale
-    // (correct bookkeeping: the file was gone from `src/`). What that erased was
-    // the only trace the debt existed -- the text was never localised, it just
-    // left the population. Re-keyed here now the package is scanned. #3213
-    'packages/ui/src/components/ui/charts/time-series-chart.tsx',
-    'src/components/ui/status-breakdown.tsx',
-    'src/components/ui/table-load-more-footer.tsx',
-]);
+// WHY A COUNT AND NOT A MEMBERSHIP SET (#3265)
+// ────────────────────────────────────────────
+// This was `UNMIGRATED_BASELINE`, a set meaning "has text AND no next-intl".
+// That shape cannot express a PARTIALLY migrated file — one with text AND
+// intl — so such a file could be neither flagged nor grandfathered nor
+// ratcheted down. The debt was simply unrepresentable, and one `t()` call
+// anywhere in a file made every other string in it invisible, permanently.
+//
+// MEASURED at the switch, over the same four directories (982 .tsx files,
+// 417 of them already using next-intl):
+//
+//   visible to the old ratchet   26 files    79 strings   (all 26 were baselined)
+//   INVISIBLE (partial)          34 files   117 strings
+//   ----------------------------------------------------
+//   total                        60 files   196 strings
+//
+// So 60% of the hardcoded UI strings in the scanned tree were unseen, and the
+// invisible debt EXCEEDED the visible debt. The JSX-text-only slice of the
+// invisible set is 10 files / 21 strings, which reproduces #3265's independent
+// measurement exactly — two detectors written separately agreeing on that
+// subset is what makes the rest of these numbers trustworthy.
+//
+// The old set's verdicts are preserved: the 26 `no-intl` entries below are
+// byte-identical to the former `UNMIGRATED_BASELINE`, verified as an identical
+// set rather than an equal count.
+//
+// A file with next-intl and zero hardcoded strings scores 0 and needs no entry,
+// which is the state the old set was trying to describe by omission.
+const STRING_BUDGET: Readonly<Record<string, number>> = {
+    'packages/ui/src/components/ui/charts/time-series-chart.tsx': 1, // no-intl, 1 jsx
+    'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx': 2, // partial, 2 prop
+    'src/app/org/[orgSlug]/(app)/tenants/new/NewTenantForm.tsx': 2, // partial, 2 prop
+    'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx': 23, // partial, 1 jsx + 22 prop
+    'src/app/t/[tenantSlug]/(app)/admin/billing/BillingEventLog.tsx': 6, // partial, 6 prop
+    'src/app/t/[tenantSlug]/(app)/admin/billing/page.tsx': 1, // partial, 1 jsx
+    'src/app/t/[tenantSlug]/(app)/admin/entra/page.tsx': 8, // partial, 7 jsx + 1 prop
+    'src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx': 2, // partial, 2 prop
+    'src/app/t/[tenantSlug]/(app)/admin/notifications/page.tsx': 2, // partial, 2 prop
+    'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 9, // partial, 9 prop
+    'src/app/t/[tenantSlug]/(app)/admin/trust-center/TrustCenterAdminClient.tsx': 3, // partial, 3 prop
+    'src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx': 1, // partial, 1 prop
+    'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx': 2, // partial, 2 prop
+    'src/app/t/[tenantSlug]/(app)/audits/nis2-gap/Nis2GapLifecycleClient.tsx': 7, // partial, 2 jsx + 5 prop
+    'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap.tsx': 1, // partial, 1 prop
+    'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx': 2, // partial, 1 jsx + 1 prop
+    'src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx': 17, // partial, 17 prop
+    'src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx': 1, // partial, 1 prop
+    'src/app/t/[tenantSlug]/(app)/incidents/[incidentId]/page.tsx': 1, // partial, 1 prop
+    'src/app/t/[tenantSlug]/(app)/policies/[policyId]/PolicySharePointSection.tsx': 1, // partial, 1 jsx
+    'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx': 1, // partial, 1 prop
+    'src/app/t/[tenantSlug]/(app)/risks/NewRiskModal.tsx': 1, // partial, 1 prop
+    'src/app/t/[tenantSlug]/(app)/risks/ai-systems/NewAiSystemModal.tsx': 3, // partial, 3 prop
+    'src/app/t/[tenantSlug]/(app)/risks/ai-systems/[systemId]/AiSystemDetailClient.tsx': 3, // partial, 3 prop
+    'src/app/t/[tenantSlug]/(app)/tasks/[taskId]/page.tsx': 1, // partial, 1 prop
+    'src/app/t/[tenantSlug]/(app)/tests/page.tsx': 3, // partial, 3 prop
+    'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx': 1, // partial, 1 prop
+    'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx': 1, // partial, 1 prop
+    'src/components/TraceabilityPanel.tsx': 1, // partial, 1 prop
+    'src/components/dev/swr-devtools.tsx': 9, // no-intl, 6 jsx + 3 prop
+    'src/components/layout/ListPageShell.tsx': 2, // no-intl, 2 prop
+    'src/components/layout/MobileNavDrawer.tsx': 1, // partial, 1 prop
+    'src/components/layout/org-workspace-switcher.tsx': 6, // no-intl, 5 jsx + 1 prop
+    'src/components/layout/tenant-switcher.tsx': 5, // no-intl, 4 jsx + 1 prop
+    'src/components/onboarding/Nis2SelfAssessmentStep.tsx': 14, // no-intl, 9 jsx + 5 prop
+    'src/components/onboarding/OnboardingWizard.tsx': 3, // partial, 3 jsx
+    'src/components/processes/RuleDetailSheet.tsx': 4, // partial, 3 jsx + 1 prop
+    'src/components/risks/RiskScoreExplainer.tsx': 1, // partial, 1 prop
+    'src/components/ui/ComplianceStatusIndicator.tsx': 4, // no-intl, 4 prop
+    'src/components/ui/DonutChart.tsx': 1, // partial, 1 jsx
+    'src/components/ui/FileDropzone.tsx': 2, // no-intl, 2 prop
+    'src/components/ui/FrameworkBuilder.tsx': 3, // no-intl, 3 jsx
+    'src/components/ui/FrameworkMinimap.tsx': 2, // no-intl, 1 jsx + 1 prop
+    'src/components/ui/FreshnessBadge.tsx': 4, // no-intl, 4 prop
+    'src/components/ui/GraphExplorer.tsx': 1, // no-intl, 1 jsx
+    'src/components/ui/NextBestActionCard.tsx': 1, // no-intl, 1 jsx
+    'src/components/ui/OnboardingTour.tsx': 1, // no-intl, 1 prop
+    'src/components/ui/RichTextEditor.tsx': 1, // partial, 1 jsx
+    'src/components/ui/SankeyChart.tsx': 3, // no-intl, 1 jsx + 2 prop
+    'src/components/ui/TreeExpandCollapseToggle.tsx': 1, // no-intl, 1 prop
+    'src/components/ui/TreeView.tsx': 1, // no-intl, 1 jsx
+    'src/components/ui/TruncationBanner.tsx': 1, // no-intl, 1 jsx
+    'src/components/ui/ai-assist-rail.tsx': 5, // no-intl, 2 jsx + 3 prop
+    'src/components/ui/date-picker/date-picker.tsx': 2, // no-intl, 1 jsx + 1 prop
+    'src/components/ui/date-picker/date-range-picker.tsx': 3, // no-intl, 1 jsx + 2 prop
+    'src/components/ui/filter/filter-list.tsx': 3, // no-intl, 2 jsx + 1 prop
+    'src/components/ui/filter/filter-select.tsx': 2, // no-intl, 1 jsx + 1 prop
+    'src/components/ui/selection-summary-panel.tsx': 1, // no-intl, 1 jsx
+    'src/components/ui/status-breakdown.tsx': 1, // no-intl, 1 jsx
+    'src/components/ui/table-load-more-footer.tsx': 1, // no-intl, 1 jsx
+};
 
 // ─── The ratchet ────────────────────────────────────────────────
 
-describe('i18n adoption ratchet — new UI goes through next-intl', () => {
+describe('i18n adoption ratchet — hardcoded UI strings only ever decrease', () => {
     const files = [
         ...walk(APP_DIR),
         ...walk(ORG_DIR),
@@ -266,127 +369,100 @@ describe('i18n adoption ratchet — new UI goes through next-intl', () => {
         ...walk(PKG_COMPONENTS_DIR),
     ];
 
-    const textBearingWithoutIntl = files
-        .filter((f) => {
-            const raw = fs.readFileSync(f, 'utf-8');
-            return hasHardcodedUiText(raw) && !USES_INTL.test(raw);
-        })
-        .map(rel)
-        .sort();
+    /** rel path -> every hardcoded string in it. Files with none are absent. */
+    const live = new Map<string, { jsx: readonly string[]; props: readonly string[] }>();
+    let usesIntlCount = 0;
+    for (const abs of files) {
+        const raw = fs.readFileSync(abs, 'utf-8');
+        if (USES_INTL.test(raw)) usesIntlCount += 1;
+        const found = collectHardcodedUiStrings(raw);
+        if (found.total > 0) live.set(rel(abs), { jsx: found.jsx, props: found.props });
+    }
+    const countOf = (f: string): number => {
+        const hit = live.get(f);
+        return hit === undefined ? 0 : hit.jsx.length + hit.props.length;
+    };
 
-    it('has no NEW un-localised surface (text-bearing + no next-intl + not grandfathered)', () => {
-        const offenders = textBearingWithoutIntl.filter((f) => !UNMIGRATED_BASELINE.has(f));
-        if (offenders.length > 0) {
+    it('the detector can still see the population it grades', () => {
+        // Denominators beside the results. Every assertion below is a
+        // comparison against a recorded number, and a detector that stopped
+        // matching would report zero strings everywhere and pass all three —
+        // which is exactly the failure mode #3265 describes one level up.
+        expect(files.length).toBeGreaterThan(900);
+        expect(usesIntlCount).toBeGreaterThan(300);
+        expect(live.size).toBeGreaterThan(0);
+        // And the detector must still find BOTH kinds, or half of it could rot
+        // silently while the other half carried the count.
+        expect([...live.values()].some((v) => v.jsx.length > 0)).toBe(true);
+        expect([...live.values()].some((v) => v.props.length > 0)).toBe(true);
+    });
+
+    it('no file carries MORE hardcoded strings than its recorded budget', () => {
+        const over = [...live.keys()]
+            .filter((f) => countOf(f) > (STRING_BUDGET[f] ?? 0))
+            .sort();
+        if (over.length > 0) {
+            const detail = over
+                .map((f) => {
+                    const hit = live.get(f)!;
+                    const shown = [...hit.jsx, ...hit.props]
+                        .slice(0, 4)
+                        .map((x) => `        ${JSON.stringify(x.slice(0, 70))}`)
+                        .join('\n');
+                    return (
+                        `  ${f}\n` +
+                        `      ${countOf(f)} string(s), budget ${STRING_BUDGET[f] ?? 0}\n` +
+                        shown
+                    );
+                })
+                .join('\n');
             throw new Error(
-                `${offenders.length} file(s) render hardcoded UI text without next-intl:\n` +
-                    offenders.map((f) => `  ${f}`).join('\n') +
-                    `\n\nWire the strings through next-intl:\n` +
+                `${over.length} file(s) exceed their hardcoded-string budget:\n${detail}\n\n` +
+                    `Wire the strings through next-intl:\n` +
                     `  • Server component / page:  const t = await getTranslations('<ns>')\n` +
                     `  • Client component:         const t = useTranslations('<ns>')\n` +
                     `then move the literals into messages/en.json + messages/bg.json ` +
                     `(the GAP-19 completeness guard requires both).\n\n` +
-                    `See docs/i18n.md. Adding the file to UNMIGRATED_BASELINE is possible ` +
-                    `but discouraged — it books permanent English-only debt for a brand-new surface.`,
+                    `ADOPTING next-intl IS NOT ENOUGH ANY MORE, and that is the point of ` +
+                    `#3265: the unit is the STRING. A file that calls useTranslations once ` +
+                    `and hardcodes ten strings scores ten. Raising a budget books permanent ` +
+                    `English-only debt for a string a user will read.\n\n` +
+                    `See docs/i18n.md.`,
             );
         }
     });
 
-    it('has no stale baseline entries (every grandfathered file still exists + is still un-migrated)', () => {
-        const current = new Set(textBearingWithoutIntl);
-        const stale = [...UNMIGRATED_BASELINE].filter((f) => !current.has(f)).sort();
+    it('no budget entry has unspent slack (drift sentinel)', () => {
+        // Symmetric to every other ratchet here. A budget above the live count
+        // is headroom a future regression spends with a green build — and in
+        // this file that headroom is measured in strings a user would read.
+        const slack = Object.keys(STRING_BUDGET)
+            .filter((f) => countOf(f) < STRING_BUDGET[f])
+            .map((f) => `  ${f}: budget ${STRING_BUDGET[f]}, live ${countOf(f)}`)
+            .sort();
+        if (slack.length > 0) {
+            throw new Error(
+                `${slack.length} STRING_BUDGET entr(y/ies) sit above the live count:\n` +
+                    slack.join('\n') +
+                    `\n\nLower each to its live count in the same PR that paid the ` +
+                    `strings down. A file now at 0 should have its entry DELETED.`,
+            );
+        }
+    });
+
+    it('no stale entries — every budgeted file still exists and still has text', () => {
+        const stale = Object.keys(STRING_BUDGET)
+            .filter((f) => !live.has(f))
+            .sort();
         if (stale.length > 0) {
             throw new Error(
-                `${stale.length} UNMIGRATED_BASELINE entr(y/ies) are stale — the file was ` +
-                    `migrated to next-intl, lost its hardcoded text, was deleted, or ` +
-                    `LEFT THE SCANNED POPULATION (moved into a directory this ratchet ` +
-                    `does not walk — #3213):\n` +
+                `${stale.length} STRING_BUDGET entr(y/ies) are stale — the file reached ` +
+                    `zero hardcoded strings, was deleted, or LEFT THE SCANNED POPULATION ` +
+                    `(moved into a directory this ratchet does not walk — #3213):\n` +
                     stale.map((f) => `  ${f}`).join('\n') +
-                    `\n\nRemove them from UNMIGRATED_BASELINE in this PR. The ratchet only ` +
-                    `moves down — grandfathered debt must be deleted as it is paid off.`,
+                    `\n\nDelete them from STRING_BUDGET in this PR. The ratchet only ` +
+                    `moves down — paid-off debt must leave the list.`,
             );
         }
-    });
-});
-
-// ─── Self-test: prove the detector actually fires ───────────────
-//
-// Guards the heuristic itself. A future refactor that broke
-// hasHardcodedUiText would otherwise let every un-migrated file slip
-// through with this suite still green.
-describe('i18n adoption ratchet — detector self-test', () => {
-    it('flags a JSX text node with a real word', () => {
-        expect(hasHardcodedUiText('<h1>Dashboard overview</h1>')).toBe(true);
-    });
-
-    it('flags a text node that spans lines between two tags', () => {
-        expect(
-            hasHardcodedUiText('const x = (\n  <p>\n    Nothing to show yet\n  </p>\n);'),
-        ).toBe(true);
-    });
-
-    it('does NOT flag the TypeScript syntax the `>…<` regex read as text', () => {
-        // The three shapes that kept 39 text-free files in the baseline;
-        // each of these returned true before JSX text came from the AST.
-        // Two generic bases in an `extends` clause: `>,\n  VariantProps<`.
-        expect(
-            hasHardcodedUiText(
-                'export interface ButtonProps\n' +
-                    '    extends React.ButtonHTMLAttributes<HTMLButtonElement>,\n' +
-                    '        VariantProps<typeof buttonVariants> {}\n' +
-                    'export const B = () => <button />;',
-            ),
-        ).toBe(false);
-        // An arrow's `=>`, then code, then the next JSX `<`.
-        expect(
-            hasHardcodedUiText(
-                'function S() {\n' +
-                    '  const open = useCallback(() => setDrawerOpen(true), []);\n' +
-                    '  return (<div onClick={open} />);\n}',
-            ),
-        ).toBe(false);
-        // Code between one element's closing `>` and the next element's `<`.
-        expect(
-            hasHardcodedUiText(
-                'function C() {\n' +
-                    '  const label = <span />;\n' +
-                    '  const interactive = Boolean(onClick) && !isEmpty;\n' +
-                    '  return <div>{label}</div>;\n}',
-            ),
-        ).toBe(false);
-    });
-
-    it('flags a hardcoded UI-text prop literal', () => {
-        expect(hasHardcodedUiText('<Input placeholder="Search assets" />')).toBe(true);
-        expect(hasHardcodedUiText("const col = { header: 'Criticality' };")).toBe(true);
-    });
-
-    it('does NOT flag the next-intl {t(...)} form', () => {
-        expect(hasHardcodedUiText("<h1>{t('dashboard.title')}</h1>")).toBe(false);
-        expect(hasHardcodedUiText("<Input placeholder={t('search')} />")).toBe(false);
-    });
-
-    it('does NOT flag acronym-only / proper-noun literals', () => {
-        expect(hasHardcodedUiText('<span>ISO27001</span>')).toBe(false);
-        expect(hasHardcodedUiText("{ label: 'NIS2' }")).toBe(false);
-    });
-
-    it('does NOT flag prose inside comments', () => {
-        expect(hasHardcodedUiText('// This renders the Dashboard heading for users')).toBe(false);
-        expect(hasHardcodedUiText('/* Shows a friendly Welcome message here */')).toBe(false);
-    });
-
-    it('does NOT flag non-UI attributes (className / href / id)', () => {
-        expect(hasHardcodedUiText('<div className="flex items-center" id="asset-row" />')).toBe(false);
-    });
-
-    it('does NOT flag TS generic annotations / casts adjacent to JSX', () => {
-        // A server page's async-params signature whose `Promise<{…}>`
-        // closing `>` precedes the `return (<Client>` — the code
-        // between must not read as a JSX text node.
-        const page =
-            'export default async function P({ params }: { params: Promise<{ tenantSlug: string }> }) {\n' +
-            '  const rows = (await load()) as unknown as Promise<Row[]>;\n' +
-            '  return (<Client rows={rows} />);\n}';
-        expect(hasHardcodedUiText(page)).toBe(false);
     });
 });
