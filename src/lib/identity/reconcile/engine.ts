@@ -401,6 +401,11 @@ export const DEFAULT_SERVICE_TOKENS: readonly string[] = [
     'svc',
     'service',
     'srv',
+    // Named by the design document alongside `svc_backup` and `batch_user` as an
+    // account that must not bury real leavers in the orphan list. Kept despite
+    // being the one entry that reads like it could be a name, because it is not
+    // a surname in any locale this ships to — and because the design says so.
+    'admin',
     'batch',
     'cron',
     'daemon',

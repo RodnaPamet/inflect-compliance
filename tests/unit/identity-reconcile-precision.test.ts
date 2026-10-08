@@ -855,3 +855,63 @@ describe('RQ-3b — a roster that contradicts itself about one person is refused
         expect(r.metrics.comparisons).toBe(1);
     });
 });
+
+// ─── 12. The design document's own NON_PERSON examples ────────────────────
+
+describe('RQ-3b — the three accounts the design names as NON_PERSON', () => {
+    /**
+     * `docs/legacy-access-recertification-design.md` §3 names these three
+     * exactly: "`svc_backup`, `admin` and `batch_user` do not bury the real
+     * leavers in the orphan list."
+     *
+     * `admin` is here because the design says so. It was left out of
+     * `DEFAULT_SERVICE_TOKENS` in the first draft on the reasoning that it
+     * reads like it could be a name — which is true of the word and false of
+     * every locale this ships to, and the design had already decided. The
+     * corpus does not cover it, so without this test the omission was
+     * invisible.
+     */
+    const roster: RosterEmployee[] = [
+        { id: 'e-1', fullName: 'Bea Svcic', status: 'ACTIVE' },
+    ];
+
+    it.each([
+        ['svc_backup', null, 'NON_PERSON'],
+        ['admin', null, 'NON_PERSON'],
+        ['batch_user', null, 'NON_PERSON'],
+    ] as const)('classifies %s as %s', (accountKey, displayName, want) => {
+        const r = reconcile({
+            accounts: [{ accountKey, displayName }],
+            roster,
+            directory: [],
+            aliases: [],
+            now: NOW,
+        });
+        expect(r.resolutions[0].outcome).toBe(want);
+        expect(r.resolutions[0].note).toContain('service token');
+    });
+
+    it('spares a person whose name merely contains a service token', () => {
+        // The corpus's sa-03, restated here so the control sits beside the
+        // rule it controls for.
+        const r = reconcile({
+            accounts: [{ accountKey: 'bsvcic', displayName: 'Bea Svcic' }],
+            roster,
+            directory: [],
+            aliases: [],
+            now: NOW,
+        });
+        expect(r.resolutions[0].outcome).not.toBe('NON_PERSON');
+    });
+
+    it('classifies a service account that DOES carry a service-shaped name', () => {
+        const r = reconcile({
+            accounts: [{ accountKey: 'svc_backup', displayName: 'Backup Service' }],
+            roster,
+            directory: [],
+            aliases: [],
+            now: NOW,
+        });
+        expect(r.resolutions[0].outcome).toBe('NON_PERSON');
+    });
+});
