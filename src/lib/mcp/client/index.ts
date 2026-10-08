@@ -9,7 +9,7 @@
  * No Prisma, no `RequestContext`, no tenant. It takes a URL, a token and some
  * bounds, and returns rows or a typed failure. Step 1c wires it to a provider and
  * Step 2a persists what it returns; neither concern belongs here, and keeping them
- * out is what lets this module be tested against fourteen faults without a
+ * out is what lets this module be tested against thirteen faults without a
  * database.
  *
  * ═══════════════════════════════════════════════════════════════════════════
@@ -24,7 +24,7 @@
  * `fetchImpl` is a TEST SEAM and nothing else. Production callers pass no options
  * object at all, or one without it; a structural rule in the client's own test
  * fails if any file under `src/` supplies one, and fails if this directory calls
- * `fetch` or `resilientFetch` directly. The seam exists because the fourteen
+ * `fetch` or `resilientFetch` directly. The seam exists because the thirteen
  * faults are easier to express as a function than as a server, and it is the kind
  * of convenience that quietly becomes a bypass if nothing watches it.
  *
@@ -226,8 +226,17 @@ async function rpc(
 
     let res: Response;
     try {
-        const doFetch = ctx.fetchImpl ?? safeFetch;
-        res = await doFetch(ctx.url, { method: 'POST', headers, body, signal: controller.signal });
+        const init = { method: 'POST', headers, body, signal: controller.signal };
+        // An explicit branch, NOT `ctx.fetchImpl ?? safeFetch`. Two reasons, and
+        // the SSRF sink registry found the first: resolving into an alias means
+        // `safeFetch(` never literally appears in this file, so the registry's
+        // check — "this sink calls safeFetch" — had nothing to match and was
+        // passing on the import alone. The second is for a reader: a branch shows
+        // that exactly one path reaches the network unprotected and that it is the
+        // test seam, where a defaulted alias reads as if both are the same thing.
+        res = ctx.fetchImpl
+            ? await ctx.fetchImpl(ctx.url, init)
+            : await safeFetch(ctx.url, init);
     } catch (e) {
         clearTimeout(timer);
         if (controller.signal.aborted) throw new TimeoutError('request', budget);

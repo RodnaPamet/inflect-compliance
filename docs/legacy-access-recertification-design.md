@@ -85,7 +85,38 @@ example in the opening paragraph comes back `NO_EMPLOYEE`.
   `(tenantId, workEmail)`, so an address change — a name change by marriage, for
   instance — upserts a new row, and the departure reconcile terminates the old one.
 
-### Inflect is an MCP server, not a client
+### Inflect is an MCP server, and since Step 1b also a client
+
+The server half is unchanged. The client half is new and narrow:
+`src/lib/mcp/client/` pulls a snapshot from a server speaking
+`inflect-legacy-access/1` and refuses everything else.
+
+It speaks exactly three methods — `initialize`, `notifications/initialized` and
+`resources/read` — and `CLIENT_METHODS` exports that set so a test can assert the
+request log against a closed list. It never calls a `tools/*` method, including when
+a server advertises tools, which it is allowed to do.
+
+Every request goes through `safeFetch` in an explicit branch, so the URL an operator
+typed cannot reach a private address, a loopback, a link-local range, the metadata
+endpoint, or a redirect. The client is registered in `SINKS` in
+`tests/guards/ssrf-egress-coverage.test.ts`. The one unprotected path is an injected
+`fetch` used by the tests, and a structural rule fails if any file under `src/`
+supplies one.
+
+Bodies are read through a byte-capped stream that aborts at the cap, never
+`res.json()` — which has already allocated the whole body by the time a cap could be
+checked. There are two independent deadlines, per-request and per-pull, because a
+server that paginates slowly stays inside the first one forever.
+
+`pullSnapshot` returns `{ manifest, rows, complete, reason }` and there is exactly
+ONE `complete: true` in the module. A partial pull keeps the rows it read and says
+so, which is what global rule 4 asks for: a truncated read is recorded with a named
+reason and never reported as complete.
+
+**What it does not do.** Nothing calls it yet — registering the `legacy-mcp` provider
+is Step 1c and persisting a snapshot is Step 2a. So there is a contract, a reference
+server, and a client, and no way to reach any of them from the product.
+
 
 `src/lib/mcp/` implements the MCP wire format directly over streamable HTTP, without
 `@modelcontextprotocol/sdk`, and exposes 14 tools and two resource kinds. There is no

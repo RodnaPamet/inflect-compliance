@@ -1,6 +1,10 @@
 /**
  * Step 1b's acceptance test: a clean pull returns every row, and every one of the
- * fourteen Step 1a faults yields its typed error with `complete: false`.
+ * THIRTEEN Step 1a faults yields its typed error with `complete: false`.
+ *
+ * Thirteen, counted from the `FaultName` union rather than from the step brief —
+ * the first draft of this file said fourteen in three places and its own
+ * denominator assertion caught it.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * THE SHAPE THAT MATTERS
@@ -21,7 +25,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * These tests use `fetchImpl`, which bypasses `safeFetch`. That is the only way to
- * drive fourteen faults without fourteen servers, and it is also exactly the
+ * drive thirteen faults without thirteen servers, and it is also exactly the
  * mechanism that would let production code bypass the SSRF defence. So the
  * structural section at the bottom reads `src/` and fails if any file there passes
  * one, and fails if this client's own directory calls `fetch` or `resilientFetch`
@@ -175,7 +179,7 @@ describe('1b client — the initialize body', () => {
 
 /**
  * The expected `reason.kind` for each fault, as a table so the DENOMINATOR is
- * visible: all fourteen Step 1a faults appear, and the test below asserts the
+ * visible: all thirteen Step 1a faults appear, and the test below asserts the
  * table covers the `FaultName` union exhaustively. A fault added in 1a without a
  * row here fails that assertion rather than being silently unexercised.
  */
@@ -210,7 +214,10 @@ describe('1b client — every fault fails closed', () => {
         expect(declared).toBeTruthy();
         const names = [...declared!.matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1]).sort();
         expect(Object.keys(FAULT_EXPECTATIONS).sort()).toEqual(names);
-        expect(names.length).toBeGreaterThanOrEqual(14);
+        // EXACTLY thirteen. A floor would let a fault be deleted in 1a without
+        // this noticing; the set equality above already catches an addition, and
+        // this catches the other direction with a number somebody has to look at.
+        expect(names).toHaveLength(13);
     });
 
     it.each([
@@ -237,8 +244,44 @@ describe('1b client — every fault fails closed', () => {
     });
 
     it('slowResponse yields a timeout', async () => {
-        const server = createLegacyMcpFakeServer({ faults: { slowResponse: true }, slowMs: 200 });
-        const res = await pull(server, { requestTimeoutMs: 30, pullTimeoutMs: 2_000 });
+        // The fake server does not look at `init.signal` — it just resolves late —
+        // so an abort cannot surface through it unwrapped, and the first version of
+        // this test passed with `complete: true`. Real `fetch` rejects with an
+        // AbortError when the signal fires, so wrapping it that way is faithful
+        // rather than a workaround: what is under test is the client's abort, and
+        // the double has to be able to express the failure for the test to mean
+        // anything.
+        const server = createLegacyMcpFakeServer({ faults: { slowResponse: true }, slowMs: 500 });
+        const honouring: typeof server.fetch = (input, init) =>
+            new Promise((resolve, reject) => {
+                const signal = init?.signal as AbortSignal | undefined;
+                if (signal?.aborted) {
+                    const e = new Error('aborted');
+                    e.name = 'AbortError';
+                    reject(e);
+                    return;
+                }
+                signal?.addEventListener('abort', () => {
+                    const e = new Error('aborted');
+                    e.name = 'AbortError';
+                    reject(e);
+                });
+                server.fetch(input, init).then(resolve, reject);
+            });
+
+        const res = await pull({ ...server, fetch: honouring }, {
+            requestTimeoutMs: 40,
+            pullTimeoutMs: 5_000,
+        });
+        expect(res.complete).toBe(false);
+        expect(res.reason?.kind).toBe('timeout');
+    });
+
+    it('the whole-pull deadline also stops a pull, independently of the request one', async () => {
+        // Two budgets, two tests. A client that only honoured the per-request one
+        // would let a server paginate forever at 39ms a page.
+        const server = createLegacyMcpFakeServer({ accounts: 900, rowsPerPage: 1 });
+        const res = await pull(server, { requestTimeoutMs: 5_000, pullTimeoutMs: 1 });
         expect(res.complete).toBe(false);
         expect(res.reason?.kind).toBe('timeout');
     });
@@ -455,9 +498,12 @@ describe('1b client — production cannot bypass safeFetch', () => {
             // `ctx.fetchImpl ?? safeFetch` is the sanctioned shape; a bare
             // `fetch(` or `resilientFetch(` call is not.
             for (const m of src.matchAll(/(?<![.\w])(resilientFetch|fetch)\s*\(/g)) {
-                const before = src.slice(Math.max(0, m.index! - 40), m.index!);
-                // `doFetch(` is the local alias for the resolved implementation.
-                if (/doFetch\s*$/.test(before)) continue;
+                const before = src.slice(Math.max(0, m.index! - 60), m.index!);
+                // `safeFetch(` and `ctx.fetchImpl(` are the two sanctioned calls:
+                // the production path and the declared test seam. The regex's
+                // lookbehind already excludes `.fetch(`-style member calls, so what
+                // reaches here is a BARE `fetch(`.
+                if (/safe$|fetchImpl\s*$|await ctx\.$/.test(before)) continue;
                 offenders.push(`${path.basename(file)} -> ${m[1]}(`);
             }
         }
@@ -482,7 +528,16 @@ describe('1b client — production cannot bypass safeFetch', () => {
                         .readFileSync(full, 'utf8')
                         .replace(/\/\*[\s\S]*?\*\//g, '')
                         .replace(/^\s*\/\/.*$/gm, '');
-                    if (/\bfetchImpl\s*:/.test(src)) {
+                    // NARROWED to a `fetchImpl` passed INTO this client. The first
+                    // version flagged any `fetchImpl:` anywhere under src/ and named
+                    // thirteen unrelated files — `openrouter-provider.ts`,
+                    // `base-client.ts` and others that inject their own fetch for
+                    // their own reasons, none of them this client's seam. A guard
+                    // that fires on an unrelated population gets an exemption list,
+                    // and then it is measuring the list.
+                    const callsClient =
+                        /from\s*'@\/lib\/mcp\/client/.test(src) || /pullSnapshot\s*\(/.test(src);
+                    if (callsClient && /\bfetchImpl\s*:/.test(src)) {
                         // The declaration in the client's own options type is the one
                         // legitimate occurrence.
                         if (path.resolve(full) === path.join(CLIENT_DIR, 'index.ts')) continue;

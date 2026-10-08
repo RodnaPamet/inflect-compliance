@@ -1208,6 +1208,37 @@ Three further rules the engine holds that are easy to undo:
   trust what it says about the others. An exactly-repeated row is tolerated — the check
   is about contradiction, not duplication.
 
+**The MCP client, since Step 1b** (`src/lib/mcp/client/`). Pure transport — no Prisma,
+no tenant — and four rules that are each one careless edit from being undone:
+
+- **There is exactly ONE `complete: true` in the module.** Every other path returns
+  through a single `catch` that sets `complete: false` and reduces the typed error to a
+  `reason`. The failure mode this guards is not an exception; it is a fault reporting
+  completeness anyway, and the way it arrives is a new early return that forgets the
+  flag. If you add one, it goes through the same place.
+- **`safeFetch` is called in an EXPLICIT branch**, not resolved into
+  `ctx.fetchImpl ?? safeFetch`. The alias form made `safeFetch(` vanish from the file, so
+  `tests/guards/ssrf-egress-coverage.test.ts`'s "this sink calls safeFetch" check had
+  nothing to match and was passing on the import alone. The branch also shows that
+  exactly one path reaches the network unprotected, and that it is the test seam.
+- **`fetchImpl` is a TEST SEAM.** No file under `src/` may pass one — a structural rule
+  in `tests/unit/legacy-mcp-client.test.ts` fails if one does, and fails if the client
+  directory calls `fetch` or `resilientFetch` directly. A production caller supplying one
+  would route around the SSRF defence in a diff that looks like dependency injection.
+- **Bodies are read through a byte-capped stream that ABORTS at the cap.** Never
+  `res.json()` or `res.text()` then a length check: both have already allocated the whole
+  body by the time you could measure it, which makes the cap a report rather than a
+  defence. `Content-Length` is a free early refusal, not the check — it is a claim by the
+  party being defended against, and absent on a chunked response.
+
+Two smaller ones worth not rediscovering: a `notifications/*` response legitimately
+carries no content-type (a bodiless 202), so the `application/json` requirement applies
+only where a body is read — but SSE is refused even there, because the contract forbids
+the transport. And the client parses each advertised page URI and REBUILDS it with its
+own projection rather than requesting it verbatim: a server-supplied URI is a
+server-supplied request target.
+
+
 
 ## Testing Conventions
 
