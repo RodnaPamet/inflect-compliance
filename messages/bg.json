@@ -129,7 +129,12 @@
       "tabs": "Раздели",
       "viewMode": "Режим на изглед",
       "progress": "Напредък",
-      "evidenceGallery": "Галерия с доказателства"
+      "evidenceGallery": "Галерия с доказателства",
+      "viewTable": "Таблица",
+      "viewCards": "Карти",
+      "uploading": "Качване…",
+      "openPdf": "Отвори PDF",
+      "openPdfNamed": "Отвори PDF: {title}"
     },
     "calendar": {
       "prevYear": "Към предходната година",

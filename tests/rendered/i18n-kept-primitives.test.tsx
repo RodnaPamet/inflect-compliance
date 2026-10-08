@@ -679,6 +679,15 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
         // control "Options" in every locale, which is worse and silent.
         render(<ViewToggle view="table" onChange={() => {}} />);
         expectLocalised(screen.getByRole('radiogroup').getAttribute('aria-label'), 'View mode');
+        // Its two VISIBLE labels, which were hardcoded `<span>Table</span>` /
+        // `<span>Cards</span>` and are why this file sat in the i18n ratchet's
+        // UNMIGRATED_BASELINE. Asserted here because adding `useTranslations`
+        // for the aria-label alone would have dropped the file out of that
+        // ratchet's offender set while leaving these two in English — the
+        // debt moving out of sight rather than being paid.
+        const radios = screen.getAllByRole('radio');
+        expectLocalised(radios[0].textContent, 'Table');
+        expectLocalised(radios[1].textContent, 'Cards');
     });
 
     it('ProgressBar: the progressbar name (#3209)', () => {

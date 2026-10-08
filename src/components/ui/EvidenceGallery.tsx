@@ -239,6 +239,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
     onToggleSelect,
     downloadLabel = 'Download',
 }: GalleryCardProps<T>) {
+    const t = useTranslations('common.ui');
     const mime =
         row.fileRecord?.mimeType ??
         row.fileMimeType ??
@@ -357,7 +358,7 @@ function GalleryCard<T extends EvidenceGalleryRow>({
                 {isPending && (
                     <div className="absolute inset-0 flex items-center justify-center bg-bg-default/60 backdrop-blur-sm">
                         <span className="text-xs text-content-muted">
-                            Uploading…
+                            {t('uploading')}
                         </span>
                     </div>
                 )}
@@ -432,6 +433,7 @@ function PdfPreviewPlaceholder({
     title: string;
     rowId: string;
 }) {
+    const t = useTranslations('common.ui');
     return (
         <a
             href={url}
@@ -439,11 +441,11 @@ function PdfPreviewPlaceholder({
             rel="noopener noreferrer"
             className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-rose-500/10 to-rose-500/5 transition-colors hover:from-rose-500/20 hover:to-rose-500/10"
             data-testid={`evidence-gallery-pdfthumb-${rowId}`}
-            aria-label={`Open PDF: ${title}`}
+            aria-label={t('openPdfNamed', { title })}
             onClick={(e) => e.stopPropagation()}
         >
             <FileTypeIcon fileName="x.pdf" size={48} />
-            <span className="text-xs text-content-muted">Open PDF</span>
+            <span className="text-xs text-content-muted">{t('openPdf')}</span>
         </a>
     );
 }

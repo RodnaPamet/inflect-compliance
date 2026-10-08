@@ -73,7 +73,7 @@ export function ViewToggle({
                                     className="size-3.5"
                                     aria-hidden="true"
                                 />
-                                <span>Table</span>
+                                <span>{t('viewTable')}</span>
                             </span>
                         ),
                     },
@@ -86,7 +86,7 @@ export function ViewToggle({
                                     className="size-3.5"
                                     aria-hidden="true"
                                 />
-                                <span>Cards</span>
+                                <span>{t('viewCards')}</span>
                             </span>
                         ),
                     },
