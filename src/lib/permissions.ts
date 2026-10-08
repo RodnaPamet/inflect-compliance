@@ -20,6 +20,37 @@ export type PermissionSet = {
     /** People layer (PR-4). `manage` = connect HRIS + edit the roster (OWNER/ADMIN); `view` for all. */
     personnel: { view: boolean; manage: boolean };
     /**
+     * Access reviews (Epic G-4 + legacy recertification Step 5a).
+     *
+     * ─── THE GRANTS REPRODUCE THE PRE-KEY OUTCOMES EXACTLY ─────────────
+     *
+     * Before these keys existed the four verbs were gated by the coarse
+     * `ctx.permissions` booleans from `computePermissions`, so the caller
+     * set each key must reproduce is already fixed:
+     *
+     *   view    `assertCanRead`  — `canRead` is level >= 1, i.e. ALL five
+     *                              roles. Granted to all five.
+     *   create  `assertCanAdmin` — `canAdmin` is level >= 4, i.e. OWNER and
+     *                              ADMIN. Granted to those two.
+     *   close   `assertCanAdmin` — same two.
+     *   decide  `assertCanRead` PLUS a reviewer rule inside the usecase.
+     *
+     * `decide` is therefore granted to ALL FIVE ROLES, which looks too wide
+     * read on its own and is the only grant that reproduces today. The
+     * narrowing is not a role question: `submitDecision`,
+     * `revokeDecision` and `submitConnectedDecision` each refuse unless the
+     * caller is the campaign's ASSIGNED REVIEWER or holds `canAdmin`, and a
+     * reviewer is assigned per campaign, so any role can legitimately be one.
+     * Granting `decide` to OWNER/ADMIN only would silently strip the verb
+     * from an EDITOR, AUDITOR or READER who IS the assigned reviewer — a
+     * live authorisation regression wearing the shape of a tightening.
+     *
+     * So the reviewer rule STAYS IN THE USECASE and these keys sit in front
+     * of it. The key answers "may this role ever decide"; the usecase
+     * answers "is this the person we asked".
+     */
+    access_reviews: { view: boolean; create: boolean; decide: boolean; close: boolean };
+    /**
      * Business-continuity register — the Business Impact Analysis, its
      * dependency edges and its control links (ISO 22301 / NIS2 Art.21(2)(c)).
      *
@@ -289,6 +320,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     tests: ['view', 'create', 'execute'],
     incidents: ['view', 'manage'],
     personnel: ['view', 'manage'],
+    access_reviews: ['view', 'create', 'decide', 'close'],
     continuity: ['edit'],
     processes: ['edit'],
     frameworks: ['view', 'install'],
@@ -328,6 +360,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: true },
                 personnel: { view: true, manage: true },
+                access_reviews: { view: true, create: true, decide: true, close: true },
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: true },
@@ -354,6 +387,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: true },
                 personnel: { view: true, manage: true },
+                access_reviews: { view: true, create: true, decide: true, close: true },
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: true },
@@ -395,6 +429,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: true, execute: true },
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
+                access_reviews: { view: true, create: false, decide: true, close: false },
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: false },
@@ -416,6 +451,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: false, execute: false },
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
+                access_reviews: { view: true, create: false, decide: true, close: false },
                 continuity: { edit: false },
                 processes: { edit: false },
                 frameworks: { view: true, install: false },
@@ -437,6 +473,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tests: { view: true, create: false, execute: false },
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
+                access_reviews: { view: true, create: false, decide: true, close: false },
                 continuity: { edit: false },
                 processes: { edit: false },
                 frameworks: { view: true, install: false },

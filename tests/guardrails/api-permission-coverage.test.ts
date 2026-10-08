@@ -102,6 +102,17 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         why: 'NIS2 Article 23 incident response — privileged security-team mutations (incidents.manage) + member-visibility reads (incidents.view).',
     },
     {
+        relPath: 'src/app/api/t/[tenantSlug]/access-reviews',
+        why:
+            'Access-review campaigns (Step 5a). Every route under this root is ' +
+            'gated on an `access_reviews.*` key: create/close are the admin ' +
+            'authority that executes REVOKE against live memberships, decide is ' +
+            'the reviewer verdict that becomes SOC 2 evidence, and view covers ' +
+            'the reads including the evidence PDF. In scope as a WHOLE root — ' +
+            'the surface has eight route files today and a ninth arriving ' +
+            'ungated is exactly the regression this catches.',
+    },
+    {
         relPath: 'src/app/api/t/[tenantSlug]/gap-assessments',
         why: 'NIS2 gap-assessment delegation — dispatch/list/finalize are assessment-admin actions (admin.manage). Per-respondent answering is self-service under the separate /gap-assignments root (ctx-scoped in the usecase).',
     },

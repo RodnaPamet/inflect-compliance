@@ -114,7 +114,21 @@ export type DomainErrorCode =
     | 'DEPRECATED_RESOURCE'
     | 'CONFIGURATION_ERROR'
     | 'EXTERNAL_SERVICE_ERROR'
-    | 'PAYLOAD_TOO_LARGE';
+    | 'PAYLOAD_TOO_LARGE'
+    /**
+     * Step 5a — a connected access review was asked for over a scope holding
+     * zero active accounts.
+     *
+     * Machine-readable because the two causes need different answers and a
+     * 400 cannot tell them apart: a directory that genuinely has nobody in
+     * scope, versus a sync that has broken or never run. The second is the
+     * common one and the dangerous one — a campaign over zero subjects closes
+     * instantly as COMPLETE and produces an evidence PDF attesting that every
+     * account was reviewed, which is true of its rows and false of the world.
+     * So this refuses at CREATE, and the code lets the UI say "connect and
+     * sync a directory" rather than "bad request".
+     */
+    | 'NO_SUBJECTS';
 
 export class DomainError extends AppError {
     public readonly domainCode: DomainErrorCode;

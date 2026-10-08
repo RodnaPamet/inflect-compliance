@@ -91,6 +91,10 @@ const SCOPE_GROUPS: Record<string, { label: string; scopes: string[] }> = {
     assets:     { label: 'Assets',     scopes: ['assets:read', 'assets:write'] },
     incidents:  { label: 'Incidents',  scopes: ['incidents:read', 'incidents:admin'] },
     personnel:  { label: 'Personnel',  scopes: ['personnel:read', 'personnel:admin'] },
+    // All three groups offered, because all three exist in SCOPE_ACTION_MAP —
+    // omitting `:admin` would leave campaign creation and close reachable only
+    // by a `*` key, which is the hole #2225 closed for assets/personnel.
+    access_reviews: { label: 'Access reviews', scopes: ['access_reviews:read', 'access_reviews:write', 'access_reviews:admin'] },
     // One scope each, and no `:read`: `continuity` / `processes` carry a
     // single `edit` action in PermissionSet, so SCOPE_ACTION_MAP gives them a
     // `write` group and nothing else. Listing `continuity:read` here would be
