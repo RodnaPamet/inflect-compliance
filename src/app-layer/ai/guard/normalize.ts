@@ -24,14 +24,13 @@
  * path. It returns the FOLDED string; the scanners match against it. The
  * RAW text is never logged.
  */
+import { stripInvisible } from '@/lib/text/invisible-chars';
 
-// U+00AD SOFT HYPHEN, U+200B..U+200F, U+2060 WORD JOINER, U+FEFF BOM, and the
-// bidi controls U+202A..U+202E / U+2066..U+2069. Built via the RegExp
-// constructor from \u escapes so the source file carries no invisible chars.
-const ZERO_WIDTH_RE = new RegExp(
-    '[\\u00AD\\u200B-\\u200F\\u202A-\\u202E\\u2060\\u2066-\\u2069\\uFEFF]',
-    'g',
-);
+// The zero-width / bidi strip now lives in `src/lib/text/invisible-chars.ts`,
+// because identity reconciliation needs THIS step of this module and must not
+// have `foldHomoglyphs` (which maps Cyrillic в->b, р->p and so destroys real
+// names) or the base64/hex decoders (which APPEND to the text). Behaviour here
+// is unchanged; `tests/unit/invisible-chars-extraction.test.ts` pins that.
 
 // Homoglyph fold table — the common Cyrillic / Greek look-alikes used to
 // smuggle Latin keywords past a literal match. Deliberately small: only the
@@ -143,7 +142,7 @@ export function normalizeForScan(input: string): string {
     out = out.normalize('NFKC');
     out = foldHomoglyphs(out);
     // (4) zero-width / bidi strip.
-    out = out.replace(ZERO_WIDTH_RE, '');
+    out = stripInvisible(out);
     // (5) whitespace collapse — but NEWLINES SURVIVE.
     //
     // This collapsed `\s+` to a single space, which erased every newline before
