@@ -1,0 +1,23 @@
+-- Step 5a — RECORD THAT A CAMPAIGN'S SUBJECT LIST WAS CUT OFF.
+--
+-- `createConnectedAccessReview` snapshots the directory with `take: MAX_SUBJECTS`
+-- (5000). A tenant whose directory holds more than that got a campaign over the
+-- first 5000 accounts and no indication anywhere that the rest existed. The
+-- campaign then closed as COMPLETE, produced an evidence PDF, and asserted —
+-- truthfully about its own rows and falsely about the directory — that every
+-- account had been reviewed.
+--
+-- That is the failure mode worth a column rather than a log line: the artefact
+-- outlives the request, and an auditor reading the closed campaign has no way to
+-- ask whether it covered the population. A count alone cannot answer it either,
+-- because `take: N` returning exactly N is indistinguishable from a directory of
+-- exactly N accounts — the usecase now reads MAX_SUBJECTS + 1 and records the
+-- answer here, which is the only place it can be read back from later.
+--
+-- Defaults false, so every existing row claims nothing new. The rows created
+-- before this column existed are not retroactively flagged: whether any of them
+-- was truncated is not knowable now, and asserting either answer over them would
+-- be inventing evidence. Production holds 0 CONNECTED_APP campaigns as of
+-- 2026-10-08, so the unknowable set is empty in fact.
+ALTER TABLE "AccessReview"
+    ADD COLUMN "snapshotTruncated" BOOLEAN NOT NULL DEFAULT false;

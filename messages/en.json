@@ -8866,7 +8866,18 @@
     "closeGenerate": "Close + generate evidence",
     "directoryNotSynced": "No synced accounts from this directory yet — connect and sync it under Admin → Integrations first.",
     "directoryNoneSynced": "No directory has synced accounts yet — connect one under Admin → Integrations first.",
-    "directoryConnectLink": "Connect a directory →"
+    "directoryConnectLink": "Connect a directory →",
+    "colAccount": "Account",
+    "colHrContext": "HR context",
+    "directoryAdmin": "Directory admin",
+    "directoryUser": "Directory user",
+    "mfaEnrolled": "MFA enrolled",
+    "mfaMissing": "MFA not enrolled",
+    "hrUnlinked": "No linked worker",
+    "hrManager": "Manager: {name}",
+    "hrContradicted": "HR link contradicted by a later sync",
+    "truncatedTitle": "Partial coverage.",
+    "truncatedBody": "The directory held more accounts than this campaign could snapshot, so these subjects are the first {count} and not the whole population. Closing it evidences that these accounts were reviewed — not that every account was."
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",

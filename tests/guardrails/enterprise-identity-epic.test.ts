@@ -16,7 +16,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 /**
@@ -90,11 +90,17 @@ describe('Custom Role Schema', () => {
     });
 
     test('enum Role still exists (backward compat)', () => {
+        // Narrowed to the `enum Role` BLOCK. `schema` is every .prisma file
+        // concatenated, so `toContain('EDITOR')` was satisfied by the word
+        // appearing in any docblock anywhere — it reached 5 positions once a
+        // Step 5a comment mentioned the role by name, and at that multiplicity
+        // the needle names nothing. The claim was always about the enum's
+        // MEMBERS, so the read is now the enum.
         expect(schema).toContain('enum Role');
-        expect(schema).toContain('ADMIN');
-        expect(schema).toContain('EDITOR');
-        expect(schema).toContain('AUDITOR');
-        expect(schema).toContain('READER');
+        const roleEnum = braceBlockAfter(schema, 'enum Role \\{');
+        for (const member of ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER']) {
+            expect(roleEnum).toContain(member);
+        }
     });
 });
 

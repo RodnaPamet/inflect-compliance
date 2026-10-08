@@ -44,6 +44,26 @@ const accessReviewDetailInclude = {
     reviewer: { select: { id: true, email: true, name: true } },
     createdBy: { select: { id: true, email: true, name: true } },
     closedBy: { select: { id: true, email: true, name: true } },
+    /**
+     * Step 5a — CONNECTED_APP subjects, which this include did not carry.
+     *
+     * `AccessReviewDetailClient` renders `review.decisions`, the MEMBER rows.
+     * A CONNECTED_APP campaign has none of those — its subjects live in
+     * `AccessReviewConnectedDecision` — so the detail page showed a campaign
+     * with an empty table and a live Close button, and the only way to see or
+     * decide a connected subject was the separate `/connected-decisions`
+     * endpoint that no page called. Including them here is what lets the page
+     * render the decisions and gate Close on all of them being made.
+     *
+     * Ordered by `subjectRef` to match `listConnectedDecisions`, so the two
+     * surfaces cannot disagree about row order.
+     */
+    connectedDecisions: {
+        orderBy: [{ subjectRef: 'asc' }],
+        include: {
+            decidedBy: { select: { id: true, email: true, name: true } },
+        },
+    },
     decisions: {
         orderBy: [{ subjectUserId: 'asc' }],
         include: {
@@ -141,6 +161,12 @@ export class AccessReviewRepository {
             periodEndAt?: Date | null;
             reviewerUserId: string;
             dueAt?: Date | null;
+            /**
+             * Step 5a — the subject snapshot was cut off at the cap. Optional
+             * because the member flow has no cap to hit; defaults false, which
+             * is the truthful value for a campaign that enumerated everything.
+             */
+            snapshotTruncated?: boolean;
         },
     ) {
         return db.accessReview.create({
@@ -153,6 +179,7 @@ export class AccessReviewRepository {
                 periodEndAt: data.periodEndAt ?? null,
                 reviewerUserId: data.reviewerUserId,
                 dueAt: data.dueAt ?? null,
+                snapshotTruncated: data.snapshotTruncated ?? false,
                 createdByUserId: ctx.userId,
             },
             select: accessReviewListSelect,

@@ -49,15 +49,21 @@ describe('getPermissionsForRole', () => {
         const roles = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'] as const;
         for (const role of roles) {
             const perms = getPermissionsForRole(role);
-            // Every PermissionSet must have all 16 domains. Spelled out rather
+            // Every PermissionSet must have all 17 domains. Spelled out rather
             // than derived from PERMISSION_SCHEMA on purpose: derived, it would
             // compare the runtime bag against a list the same commit edits, and
             // agree with itself. A widening of the permission model has to be
             // written here too, which is what makes it a deliberate act.
+            //
+            // `access_reviews` is Step 5a's widening, and this test is how the
+            // deliberate act was performed: it caught the addition in CI
+            // exactly as designed, rather than letting a new domain appear in
+            // the model with nothing recording that anybody chose it.
             expect(Object.keys(perms).sort()).toEqual([
-                'admin', 'assets', 'audits', 'continuity', 'controls', 'evidence',
-                'frameworks', 'incidents', 'personnel', 'policies', 'processes',
-                'reports', 'risks', 'tasks', 'tests', 'vendors',
+                'access_reviews', 'admin', 'assets', 'audits', 'continuity',
+                'controls', 'evidence', 'frameworks', 'incidents', 'personnel',
+                'policies', 'processes', 'reports', 'risks', 'tasks', 'tests',
+                'vendors',
             ]);
         }
     });

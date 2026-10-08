@@ -68,7 +68,20 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
     it('POST /access-reviews validates with CreateAccessReviewSchema and calls createAccessReview', () => {
         expect(listRoute).toMatch(/export const POST/);
         expect(listRoute).toContain('CreateAccessReviewSchema');
-        expect(listRoute).toContain('withValidatedBody');
+        // Step 5a — `parseJsonBody` inside the handler, NOT `withValidatedBody`.
+        // Both wrappers claim the third handler argument, which
+        // `requirePermission` needs for `ctx`, so they cannot compose. The
+        // replacement is also the better order: authorisation runs BEFORE the
+        // body is parsed, and its denial writes an `AUTHZ_DENIED` row.
+        // LITERAL needles, each occurring exactly once. A regex carrying a
+        // span (`[^>]*`, `[\s\S]*?`) is invisible to the needle-uniqueness
+        // analyser — it lands in `needle-carries-span` and becomes a blind
+        // spot where an ambiguous assertion can hide. The bare identifier
+        // `parseJsonBody` is no good either: it appears at the import AND the
+        // call. The call site with its schema is unique and is the real claim.
+        expect(listRoute).toContain('parseJsonBody(req, CreateAccessReviewSchema)');
+        expect(listRoute).not.toContain('withValidatedBody');
+        expect(listRoute).toContain("'access_reviews.create'");
         expect(listRoute).toContain('createAccessReview');
     });
 
@@ -80,7 +93,9 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
     it('PUT decisions route validates with SubmitDecisionSchema and calls submitDecision', () => {
         expect(decisionRoute).toMatch(/export const PUT/);
         expect(decisionRoute).toContain('SubmitDecisionSchema');
-        expect(decisionRoute).toContain('withValidatedBody');
+        expect(decisionRoute).toContain('parseJsonBody(req, SubmitDecisionSchema)');
+        expect(decisionRoute).not.toContain('withValidatedBody');
+        expect(decisionRoute).toContain("'access_reviews.decide'");
         expect(decisionRoute).toContain('submitDecision');
     });
 
@@ -91,7 +106,12 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
 
     it('GET evidence route asserts read + uses storage provider stream', () => {
         expect(evidenceRoute).toMatch(/export const GET/);
-        expect(evidenceRoute).toContain('assertCanRead');
+        // Step 5a — the inline `assertCanRead` became
+        // `requirePermission('access_reviews.view')`. Same caller set (canRead
+        // is every role), stronger record: the inline assert threw without
+        // writing anything, so a refused evidence download left no trace.
+        expect(evidenceRoute).not.toContain('assertCanRead');
+        expect(evidenceRoute).toContain("'access_reviews.view'");
         expect(evidenceRoute).toContain('readStream');
         expect(evidenceRoute).toContain('Content-Disposition');
         // Privacy: never cache the artifact in shared caches.
@@ -101,15 +121,34 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
 
     // ── 2. Tenant scoping invariant ─────────────────────────────────
 
-    it('every route uses getTenantCtx so the tenant gate runs', () => {
-        for (const src of [
-            listRoute,
-            detailRoute,
-            decisionRoute,
-            closeRoute,
-            evidenceRoute,
-        ]) {
-            expect(src).toContain('getTenantCtx');
+    it('every route runs the tenant gate, now via requirePermission', () => {
+        // Step 5a — `getTenantCtx` moved INSIDE `requirePermission`, which
+        // resolves it (auth, tenant, membership, custom-role permissions),
+        // makes the permission decision, writes `AUTHZ_DENIED` on refusal, and
+        // hands the resolved `ctx` to the handler. So the tenant gate still
+        // runs on every route; asserting the old call by name would now be
+        // asserting that the WEAKER of the two mechanisms is present.
+        //
+        // The claim is kept as a loop over every route rather than narrowed to
+        // one, because "every route" is the invariant — a new route arriving
+        // without a gate is what this test exists to catch.
+        // Route PAIRED WITH THE KEY IT MUST CARRY, rather than "some key is
+        // present". A single alternation would be satisfied by the wrong key —
+        // a create gated on `.view` would pass it — and that is precisely the
+        // mistake the rule ordering in ROUTE_PERMISSIONS can make.
+        const GATES: ReadonlyArray<[string, string]> = [
+            [listRoute, "'access_reviews.view'"],
+            [listRoute, "'access_reviews.create'"],
+            [detailRoute, "'access_reviews.view'"],
+            [decisionRoute, "'access_reviews.decide'"],
+            [closeRoute, "'access_reviews.close'"],
+            [evidenceRoute, "'access_reviews.view'"],
+        ];
+        for (const [src, key] of GATES) {
+            expect(src).toContain(key);
+            // And not the bare pre-5a shape, which authorised nothing at the
+            // route and therefore recorded no refusal.
+            expect(src).not.toContain('const ctx = await getTenantCtx(');
         }
     });
 
@@ -155,9 +194,12 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
 
     it('detail client gates Close on isAdmin and DecisionDialog on canDecide', () => {
         // canDecide gate (assigned reviewer OR admin), CLOSED rejects.
-        expect(detailClient).toContain('isReviewer');
-        expect(detailClient).toContain('canDecide');
-        expect(detailClient).toContain('canClose');
-        expect(detailClient).toMatch(/canClose\s*=\s*isAdmin/);
+        // The DECLARATIONS, not the bare identifiers. `toContain('canDecide')`
+        // was satisfied by any use of the variable, and Step 5a added two more
+        // call sites for the connected table — five positions, at which the
+        // needle stops naming the gate it is about.
+        expect(detailClient).toMatch(/const isReviewer\s*=/);
+        expect(detailClient).toMatch(/const canDecide\s*=\s*\(isReviewer \|\| isAdmin\)/);
+        expect(detailClient).toMatch(/const canClose\s*=\s*isAdmin/);
     });
 });

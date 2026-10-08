@@ -664,9 +664,16 @@ jobs:
             --selectProjects node jsdom \
             --shard=${{ matrix.shard }}/${{ matrix.total }}
 
-      # One of the FIVE artifacts the merged gate expects. The other four
-      # are the three sibling shards and the `Ratchets` job — see the
-      # population note on `coverage-gate`.
+      # One of the SIX artifacts the merged gate expects. The other five
+      # are the three sibling shards, the `Ratchets` job and `Flue` — see
+      # the population note on `coverage-gate`.
+      #
+      # It said FIVE, and enumerated five, for as long as
+      # `coverage-shard-flue` has existed (#3253). The count the gate
+      # actually enforces is the trailing argument to
+      # `check-merged-coverage.ts` in the `coverage-gate` job, and the
+      # guard derives its expectation from this workflow rather than from
+      # a literal — so both were right and only the prose was pinned.
       - name: Upload shard coverage
         uses: actions/upload-artifact@v7
         with:

@@ -1159,6 +1159,97 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'mirrors the assertCanWrite in restoreProcessMapSnapshot; the map ' +
             'DELETE stays on admin.manage, mirroring its own assertCanAdmin.',
     },
+    // ── Access reviews (Step 5a) ─────────────────────────────────────
+    // Every verb the campaign surface exposes, gated on the keys added to
+    // `PermissionSet` in the same diff. The caller sets are UNCHANGED: see the
+    // docblock on `access_reviews` in src/lib/permissions.ts for the mapping
+    // from the old `assertCanRead`/`assertCanAdmin` pairs onto these four keys.
+    //
+    // ORDER IS LOAD-BEARING. `resolveRoutePermission` returns the FIRST rule
+    // whose path matches, so each leaf below must precede the `[^/]+` detail
+    // pattern that would otherwise swallow it — `/access-reviews/connected`
+    // matches `^…/access-reviews/[^/]+$` perfectly well, and reaching the
+    // detail rule first would gate a CREATE on a VIEW key.
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/close$`),
+        methods: ['POST'],
+        permission: 'access_reviews.close',
+        note:
+            'Closing a campaign — executes REVOKE/MODIFY against live ' +
+            'memberships, spawns deprovision tasks and seals the evidence ' +
+            'PDF. Mirrors the assertCanAdmin in closeAccessReview and ' +
+            'closeConnectedAccessReview: OWNER + ADMIN.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/decisions\\/[^/]+$`),
+        methods: ['PUT'],
+        permission: 'access_reviews.decide',
+        note:
+            'Recording a member verdict. The key is granted to all five ' +
+            'roles because the real narrowing is per-CAMPAIGN, not per-role: ' +
+            'submitDecision refuses anyone who is neither the assigned ' +
+            'reviewer nor canAdmin, and that rule stays in the usecase.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/connected-decisions\\/[^/]+$`),
+        methods: ['POST'],
+        permission: 'access_reviews.decide',
+        note:
+            'Recording a connected-app verdict — same key and same reasoning ' +
+            'as the member verdict above; submitConnectedDecision keeps the ' +
+            'identical assigned-reviewer-or-admin refusal.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/connected-decisions$`),
+        methods: ['GET'],
+        permission: 'access_reviews.view',
+        note:
+            'Listing the frozen connected subjects and their verdicts. ' +
+            'Mirrors the assertCanRead in listConnectedDecisions: all five ' +
+            'roles, which is what reading a campaign has always required.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/evidence$`),
+        methods: ['GET'],
+        permission: 'access_reviews.view',
+        note:
+            'Downloading the campaign evidence PDF. Read-shaped, so it ' +
+            'carries the read key — it is the only access-review route that ' +
+            'already asserted inline (assertCanRead), and the caller set is ' +
+            'unchanged.',
+    },
+    {
+        // BEFORE the `[^/]+` detail rule below — see the ordering note above.
+        path: new RegExp(`^${T}\\/access-reviews\\/connected$`),
+        methods: ['POST'],
+        permission: 'access_reviews.create',
+        note:
+            'Creating a CONNECTED_APP campaign over a synced directory. ' +
+            'Mirrors the assertCanAdmin in createConnectedAccessReview: ' +
+            'OWNER + ADMIN.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+$`),
+        methods: ['GET'],
+        permission: 'access_reviews.view',
+        note:
+            'Reading one campaign and its activity. Mirrors the ' +
+            'assertCanRead in getAccessReview / getAccessReviewWithActivity.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews$`),
+        methods: ['GET'],
+        permission: 'access_reviews.view',
+        note: 'Listing campaigns. Mirrors the assertCanRead in listAccessReviews.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews$`),
+        methods: ['POST'],
+        permission: 'access_reviews.create',
+        note:
+            'Creating a member-scope campaign. Mirrors the assertCanAdmin ' +
+            'in createAccessReview: OWNER + ADMIN.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────
