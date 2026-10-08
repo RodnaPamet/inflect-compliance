@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { cn } from "@inflect/ui/lib/cn";
 import * as RadixSlider from "@radix-ui/react-slider";
 import { ReactNode } from "react";
@@ -68,9 +69,10 @@ export function Slider({
     className,
     hint,
     disabled,
-    ariaLabel = "Slider",
+    ariaLabel,
     formatLabel,
 }: SliderProps) {
+    const t = useTranslations("common.ui");
     const sliderMarks = marks || [
         min,
         min + (max - min) / 3,
@@ -120,7 +122,7 @@ export function Slider({
                     </RadixSlider.Track>
 
                     <RadixSlider.Thumb
-                        aria-label={ariaLabel}
+                        aria-label={ariaLabel ?? t("slider")}
                         className="relative z-20 flex size-[calc(var(--thumb-radius)*2)] items-center justify-center rounded-full border-0 bg-bg-default shadow-[0_2px_2px_rgba(0,0,0,0.10),0_3px_3px_rgba(0,0,0,0.09)] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                         <span className="block size-[calc(var(--thumb-radius)*1.23)] rounded-full bg-content-emphasis" />

@@ -121,7 +121,15 @@
       "undoWindow": "{label}: оставащо време",
       "secondsRemaining": "Оставащо време: {seconds} сек.",
       "switchToLightTheme": "Превключи към светла тема",
-      "switchToDarkTheme": "Превключи към тъмна тема"
+      "switchToDarkTheme": "Превключи към тъмна тема",
+      "decrease": "Намаляване",
+      "increase": "Увеличаване",
+      "numberInput": "Число",
+      "slider": "Плъзгач",
+      "tabs": "Раздели",
+      "viewMode": "Режим на изглед",
+      "progress": "Напредък",
+      "evidenceGallery": "Галерия с доказателства"
     },
     "calendar": {
       "prevYear": "Към предходната година",

@@ -21,6 +21,7 @@
  * remount the filter context or refetch the underlying query.
  */
 
+import { useTranslations } from 'next-intl';
 import { LayoutGrid, Table } from 'lucide-react';
 
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -48,16 +49,17 @@ export interface ViewToggleProps {
 export function ViewToggle({
     view,
     onChange,
-    ariaLabel = 'View mode',
+    ariaLabel,
     className,
     size = 'sm',
     'data-testid': testId,
 }: ViewToggleProps) {
+    const t = useTranslations('common.ui');
     return (
         <div data-view-toggle data-view={view} data-testid={testId}>
             <ToggleGroup
                 size={size}
-                ariaLabel={ariaLabel}
+                ariaLabel={ariaLabel ?? t('viewMode')}
                 selected={view}
                 selectAction={(value) => onChange(value as ViewMode)}
                 className={className}

@@ -34,6 +34,7 @@
  *     the existing list endpoint is identical.
  */
 
+import { useTranslations } from 'next-intl';
 import { useMemo, type CSSProperties } from 'react';
 import { cn } from '@inflect/ui/lib/cn';
 import { isScanServable } from '@/lib/evidence-scan';
@@ -143,10 +144,11 @@ export function EvidenceGallery<T extends EvidenceGalleryRow>({
     selectedIds,
     onToggleSelect,
     downloadLabel = 'Download',
-    'aria-label': ariaLabel = 'Evidence gallery',
+    'aria-label': ariaLabel,
     'data-testid': dataTestId = 'evidence-gallery',
     style,
 }: EvidenceGalleryProps<T>) {
+    const t = useTranslations('common.ui');
     const items = useMemo(() => rows, [rows]);
 
     if (loading && rows.length === 0) {
@@ -182,7 +184,7 @@ export function EvidenceGallery<T extends EvidenceGalleryRow>({
     return (
         <div
             role="grid"
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? t('evidenceGallery')}
             data-testid={dataTestId}
             className="grid grid-cols-1 gap-default sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
             style={style}
