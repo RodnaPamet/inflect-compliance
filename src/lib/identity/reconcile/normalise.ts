@@ -240,7 +240,7 @@ export interface NormalisedEmail {
  * is exactly the account a leaver can never disable. So domain equivalence lives
  * here, one layer above, and informs a SUGGESTION rather than a key.
  */
-const DOMAIN_EQUIVALENCE: Readonly<Record<string, string>> = {
+export const DOMAIN_EQUIVALENCE: Readonly<Record<string, string>> = {
     'googlemail.com': 'gmail.com',
 };
 
