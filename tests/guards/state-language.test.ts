@@ -61,11 +61,6 @@ const ALLOWLIST: Array<{ file: string; reason: string }> = [
         reason:
             'Decorative arrow primitive with a hover-translate animation; deliberate motion contained in a single component used as a CTA-arrow accent.',
     },
-    {
-        file: 'src/components/ui/file-upload.tsx',
-        reason:
-            'Drag-affordance icon scales on hover/active to signal the drop zone; deliberate single-icon treatment.',
-    },
 ];
 
 const HOVER_BAN_RE =

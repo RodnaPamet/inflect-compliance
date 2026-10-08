@@ -24,7 +24,6 @@
  * contract):
  *   - `expanding-arrow.tsx` — the slide-on-hover arrow IS the
  *     icon's render contract; the visual cue is the navigation hint.
- *   - `file-upload.tsx`     — drop-zone icon scaling is the
  *     canonical drag-feedback pattern. Active-scale-95 is the
  *     tap-feedback gesture.
  *
@@ -56,11 +55,6 @@ const EXEMPT_FILES = new Set<string>([
     // The slide-on-hover arrow is the icon's render contract — the
     // motion IS the navigation hint.
     "packages/ui/src/components/ui/icons/expanding-arrow.tsx",
-    // File-upload drop-zone icon: scale-110 on hover/drag = drop
-    // affordance; scale-95 on active = tap feedback. Both are
-    // canonical drag-and-drop motion gestures, not decorative
-    // hover lifts.
-    "src/components/ui/file-upload.tsx",
     // v2-PR-12 — DataTable rows use `hover:shadow-[inset_2px_0_0_0_...]`
     // as a left-border affordance on clickable rows. `<tr>` elements
     // don't render direct CSS borders (table-border-collapse model
@@ -197,7 +191,6 @@ describe("v2-PR-4 motion language ratchet", () => {
             // Documented exemptions where the transform / inset
             // shadow IS the render contract:
             //   - icons/expanding-arrow.tsx (sliding arrow)
-            //   - file-upload.tsx (drop-zone scale + active tap)
             //   - table/table.tsx (clickable-row left-border via
             //     inset box-shadow — <tr> can't render direct borders)
             //   - table/virtual-table-body.tsx (R13-PR2 — same
