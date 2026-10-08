@@ -12,10 +12,50 @@ import * as path from 'path';
 
 import { codeOf } from '../helpers/source-blocks';
 
-const UI_DIR = path.resolve(__dirname, '../../src/components/ui');
+// TWO ROOTS, package FIRST (#3046). The primitives are migrating to
+// `@inflect/ui` a batch at a time, and during a batch the old path holds a
+// re-export shim rather than the implementation. A reader that resolves only
+// `src/` therefore reads three lines of `export * from …` and every
+// assertion below fails with a message about a missing `export const`,
+// which names the symptom and not the cause.
+//
+// Package-first rather than src-first, deliberately: once a file has moved,
+// the package copy is the implementation and the src copy is the shim, so
+// src-first would keep finding the shim for as long as it exists. Files that
+// have NOT moved (`status-badge.tsx`) are absent from the package and fall
+// through to src unchanged.
+const UI_ROOTS = [
+    path.resolve(__dirname, '../../packages/ui/src/components/ui'),
+    path.resolve(__dirname, '../../src/components/ui'),
+] as const;
+
+/** The implementation's path, wherever it currently lives. */
+function resolveUiFile(file: string): string {
+    for (const root of UI_ROOTS) {
+        const candidate = path.join(root, file);
+        if (fs.existsSync(candidate)) return candidate;
+    }
+    throw new Error(
+        `UI primitive ${file} is in neither root:\n  ` +
+            UI_ROOTS.map((r) => path.join(r, file)).join('\n  ') +
+            '\n\nIf it was just moved, add its new root to UI_ROOTS.',
+    );
+}
 
 function read(file: string): string {
-    return codeOf(fs.readFileSync(path.join(UI_DIR, file), 'utf-8'));
+    const abs = resolveUiFile(file);
+    const src = codeOf(fs.readFileSync(abs, 'utf-8'));
+    // A shim satisfies IMPORT resolution and nothing else. Saying so here
+    // turns a confusing assertion failure into a sentence naming the file
+    // and the root that should have won.
+    if (/export\s+\*\s+from\s+'@inflect\/ui/.test(src)) {
+        throw new Error(
+            `${file} resolved to a re-export shim (${abs}), not an ` +
+                'implementation. UI_ROOTS is ordered package-first — if the ' +
+                'package copy exists this should be unreachable.',
+        );
+    }
+    return src;
 }
 
 const RAW_LIGHT_COLOR_REGEX =

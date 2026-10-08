@@ -272,15 +272,42 @@ describe('globals.css — legacy → semantic alias bridge', () => {
         // src/components/ui reads a `--btn-*` token tokens.css does not
         // define. This is the half that would have caught #3153's brief, which
         // asserted `control-variants.ts` reads `--btn-ambient-*`.
-        const referenced = new Set(
-            fs
-                .readdirSync(path.join(ROOT, 'src/components/ui'))
+        // BOTH roots (#3046). `button-variants.ts` moved to `@inflect/ui`
+        // and `src/components/ui` keeps a re-export shim — which still ends
+        // in `-variants.ts`, so it is still ENUMERATED here, and reading it
+        // yields zero `var(--btn-*)` matches. The closed-set assertion below
+        // then fails for the one reason it was never meant to detect: the
+        // population went quiet rather than the tokens changing.
+        //
+        // Scanning both roots also keeps the set closed in the direction
+        // that matters. A `--btn-*` token read from the package copy is just
+        // as undefined-if-undefined as one read from src, and dropping the
+        // moved files would have silently narrowed what the inverse covers.
+        const VARIANT_ROOTS = [
+            'src/components/ui',
+            'packages/ui/src/components/ui',
+        ] as const;
+        const variantFiles = VARIANT_ROOTS.flatMap((rel) => {
+            const abs = path.join(ROOT, rel);
+            if (!fs.existsSync(abs)) return [];
+            return fs
+                .readdirSync(abs)
                 .filter((f) => f.endsWith('-variants.ts'))
-                .flatMap(
-                    (f) =>
-                        read(`src/components/ui/${f}`).match(/var\(--btn-[a-z0-9-]+\)/g) ??
-                        [],
-                )
+                .map((f) => `${rel}/${f}`);
+        });
+        // The denominator, beside the result. An empty or single-root
+        // population would make the closed-set assertion vacuous in exactly
+        // the way this comment describes, so it is asserted rather than
+        // assumed: `button-variants.ts` must be found, and found in the
+        // package once it has moved there.
+        expect(variantFiles.length).toBeGreaterThanOrEqual(2);
+        expect(
+            variantFiles.filter((f) => f.endsWith('/button-variants.ts')),
+        ).toContain('packages/ui/src/components/ui/button-variants.ts');
+
+        const referenced = new Set(
+            variantFiles
+                .flatMap((f) => read(f).match(/var\(--btn-[a-z0-9-]+\)/g) ?? [])
                 .map((m) => m.slice('var('.length, -1)),
         );
         expect(
