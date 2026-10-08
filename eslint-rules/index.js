@@ -59,5 +59,6 @@ module.exports = {
         'no-raw-prompt-logging': require('./rules/no-raw-prompt-logging'),
         'no-router-push-in-row-click': require('./rules/no-router-push-in-row-click'),
         'no-brand-focus-indicator': require('./rules/no-brand-focus-indicator'),
+        'no-translucent-focus-indicator': require('./rules/no-translucent-focus-indicator'),
     },
 };

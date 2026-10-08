@@ -300,6 +300,11 @@ const config = [
         // where a host's copy comes from: app code under src/app and the
         // domain components is Inflect's alone, and Inflect's accent IS its
         // brand. See eslint-rules/rules/no-brand-focus-indicator.js.
+        //
+        // And it is drawn SOLID: an opacity modifier on a focus ring makes
+        // its contrast depend on whatever it lands on. The table and card
+        // rings were the accent at /40 and measured 1.7:1 to 2.8:1 against
+        // WCAG 1.4.11's 3:1. See eslint-rules/rules/no-translucent-focus-indicator.js.
         files: [
             'src/components/ui/**/*.{ts,tsx}',
             'src/components/layout/**/*.{ts,tsx}',
@@ -308,6 +313,7 @@ const config = [
         ignores: ['**/__tests__/**', '**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
         rules: {
             'local/no-brand-focus-indicator': 'error',
+            'local/no-translucent-focus-indicator': 'error',
         },
     },
     {

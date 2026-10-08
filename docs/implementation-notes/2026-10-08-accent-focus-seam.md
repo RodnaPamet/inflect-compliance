@@ -29,16 +29,30 @@ Three tokens, all ALIASES, so Inflect renders exactly as before:
 `--ring` and `--focus-ring`, the translucent ring on NavItem, menus and checkboxes, were already
 their own tokens and are untouched.
 
+Two accessibility defects surfaced while measuring playerz's palette. Both were in files this change
+already touched, so they were fixed in the same diff:
+
+- **The row focus rings were translucent.** `table.tsx`, `virtual-table-body.tsx` and
+  `data-table-cards.tsx` drew the ring at `/40`. That measured about 1.7:1 on Inflect's light card,
+  about 2.2:1 on its dark one and 2.8:1 on playerz's midnight card, all under WCAG 1.4.11's 3:1 for a
+  focus indicator. The rings are now solid (4.18:1 light, 7.26:1 dark, 12.02:1 playerz). This is a
+  visible change in Inflect: the keyboard-focus ring on a table region or a mobile card is now the
+  full brand colour. `local/no-translucent-focus-indicator` keeps every shared focus ring solid.
+- **The active NavItem announced nothing.** It is now `aria-current="page"` on a link row. An action
+  row never carries it.
+
 ## Files
 
 | file | role |
 |---|---|
 | `src/styles/tokens.css` | the three aliases, in both theme blocks |
 | `src/components/ui/button-variants.ts`, `button.tsx` | halo reads `--accent-default` |
-| `src/components/ui/table/{table,virtual-table-body,data-table-cards}.tsx`, `card-list/card-list-card.tsx`, `TreeViewItem.tsx`, `TreeExpandCollapseToggle.tsx`, `GraphExplorer.tsx`, `FileDropzone.tsx`, `FrameworkMinimap.tsx`, `MetricCard.tsx` | focus rings read `--accent-default` |
+| `src/components/ui/table/{table,virtual-table-body,data-table-cards}.tsx` | focus rings read `--accent-default`, solid (were `/40`) |
+| `card-list/card-list-card.tsx`, `TreeViewItem.tsx`, `TreeExpandCollapseToggle.tsx`, `GraphExplorer.tsx`, `FileDropzone.tsx`, `FrameworkMinimap.tsx`, `MetricCard.tsx` (all in `src/components/ui/`) | focus rings read `--accent-default` |
 | `src/components/ui/undo-toast.tsx` | focus ring reads `--accent-emphasis` |
-| `src/components/layout/nav-item.tsx` | active band reads `--nav-band-active` |
+| `src/components/layout/nav-item.tsx` | active band reads `--nav-band-active`; an active link row is `aria-current="page"` |
 | `eslint-rules/rules/no-brand-focus-indicator.js` | the invariant, scoped to the shared UI |
+| `eslint-rules/rules/no-translucent-focus-indicator.js` | focus rings are drawn solid, same scope |
 | `packages/ui/tokens.contract.css`, `packages/ui/README.md` | the contract is 47 names |
 | `tests/rendered/focus-accent-seam.test.tsx` | resolves the rendered halo against both themes |
 

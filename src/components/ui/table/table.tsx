@@ -1290,7 +1290,10 @@ export function Table<T extends TableRowData>({
               // to the viewport via their own md:min-h-0 / max-h-full and are
               // unaffected (their rows are > 0 anyway when populated).
               numRows === 0 && "min-h-[400px]",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]/40",
+              // A SOLID ring. It was the accent at /40, which measured
+              // ~1.7:1 on a light card and ~2.2:1 on a dark one, under WCAG
+              // 1.4.11's 3:1 for a focus indicator; solid is 4.18:1 / 7.26:1.
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]",
               // NO scroll-snap here. Every row used to be a `snap-start`
               // point inside a `snap-y snap-proximity` container — snap
               // targets ~37px apart, which the browser re-evaluates

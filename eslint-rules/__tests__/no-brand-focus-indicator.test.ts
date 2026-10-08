@@ -48,7 +48,7 @@ describe('local/no-brand-focus-indicator', () => {
                 code: `const c = "focus-visible:shadow-[0_0_0_2px_var(--bg-default),0_0_0_4px_var(--accent-default)]";`,
             },
             {
-                name: 'the remedy: a row ring at 40% reads the accent',
+                name: 'an accent ring is not a brand read, whatever its alpha (alpha is no-translucent-focus-indicator)',
                 code: `const c = cn("focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]/40");`,
             },
             {

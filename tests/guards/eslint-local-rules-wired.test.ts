@@ -35,6 +35,7 @@ const LOCAL_RULES = [
     'no-raw-prompt-logging',
     'no-router-push-in-row-click',
     'no-brand-focus-indicator',
+    'no-translucent-focus-indicator',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

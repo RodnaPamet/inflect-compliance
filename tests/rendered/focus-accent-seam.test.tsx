@@ -21,10 +21,12 @@
  *      and the resolved halo is exactly the brand colour the button painted
  *      before the seam existed.
  *
- * The other consumers (the table and card rings at /40, the tree and graph
- * rings, the undo toast) are held structurally by the lint rule
- * `local/no-brand-focus-indicator`: once none of them may name a brand token,
- * claim 2 covers what they render.
+ * The other consumers (the table and card rings, the tree and graph rings, the
+ * undo toast) are held structurally by two lint rules:
+ * `local/no-brand-focus-indicator` (none may name a brand token, so claim 2
+ * covers what they render) and `local/no-translucent-focus-indicator` (none may
+ * carry an opacity modifier, so the colour is the token's, measured below at
+ * WCAG 1.4.11's 3:1 on every surface a ring lands on).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -69,6 +71,18 @@ function resolve(value: string, tokens: Record<string, string>): string {
     return out;
 }
 
+/** WCAG 2.x contrast between two `#rrggbb` colours. */
+function contrast(a: string, b: string): number {
+    const lum = (hex: string) => {
+        const h = hex.replace('#', '');
+        const [r, g, bl] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+        const f = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(bl);
+    };
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+}
+
 /** The `focus-visible:shadow-[…]` value an element renders, with `_` read as a space. */
 function focusHalo(el: HTMLElement): string {
     const m = /(?:^|\s)focus-visible:shadow-\[([^\]]+)\]/.exec(el.className);
@@ -80,6 +94,21 @@ describe('focus accent seam — the halo reads the accent, and the accent is the
     it.each(THEMES)('%s: the accent tokens are ALIASES of the brand', (_theme, tokens) => {
         expect(tokens['--accent-default']).toBe('var(--brand-default)');
         expect(tokens['--accent-emphasis']).toBe('var(--brand-emphasis)');
+    });
+
+    it.each(THEMES)('%s: a SOLID accent ring clears WCAG 1.4.11 on every surface it is drawn on', (_theme, tokens) => {
+        // The row rings (table, virtual table, mobile cards) were the accent
+        // at /40: about 1.7:1 on the light card and 2.2:1 on the dark one.
+        // They are solid now, and `local/no-translucent-focus-indicator`
+        // keeps every shared focus ring solid. That leaves the colour itself,
+        // and this measures it: the default accent on the three surfaces a
+        // ring lands on, and the emphasis accent on the toast it lives in.
+        const accent = resolve('var(--accent-default)', tokens);
+        const emphasis = resolve('var(--accent-emphasis)', tokens);
+        for (const surface of ['--bg-default', '--bg-page', '--bg-elevated']) {
+            expect(contrast(accent, resolve(`var(${surface})`, tokens))).toBeGreaterThanOrEqual(3);
+        }
+        expect(contrast(emphasis, resolve('var(--bg-elevated)', tokens))).toBeGreaterThanOrEqual(3);
     });
 
     it.each(THEMES)('%s: the live Button halo resolves to the brand ring it always painted', (_theme, tokens) => {

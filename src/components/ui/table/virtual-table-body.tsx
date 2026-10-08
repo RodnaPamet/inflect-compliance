@@ -471,7 +471,9 @@ export function VirtualTable<T extends TableRowData>({
             tabIndex={0}
             className={cn(
                 "flex h-full flex-col overflow-x-auto focus:outline-none",
-                "focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]/40",
+                // Solid, like table.tsx's region ring: at /40 it was under
+                // the 3:1 a focus indicator owes (WCAG 1.4.11).
+                "focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]",
                 scrollWrapperClassName,
             )}
             style={{ minHeight: 0 }}

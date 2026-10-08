@@ -24,7 +24,8 @@
  *
  *   - default       muted text, transparent bg
  *   - hover         emphasis text, bg-muted/50 (R12-PR4 tightens)
- *   - active        emphasis text, brand-subtle bg, brand left-edge
+ *   - active        emphasis text, brand-subtle bg, brand left-edge,
+ *                   and `aria-current="page"` on a link row
  *   - focus-visible 2px ring at --ring (canonical yellow)
  *
  * The transition is `transition-colors` (motion-language ratchet —
@@ -841,6 +842,12 @@ export function NavItem({
             data-testid={`nav-${slug}`}
             style={driftStyle}
             aria-label={collapsed ? label : undefined}
+            // The active row is the current page, and says so to assistive
+            // tech, not only through colour and weight (WCAG 1.3.1 / 4.1.2;
+            // 1.4.1 when the band is the only cue). Link rows only: an action
+            // row is not a place, so it is never `page`, even if a caller
+            // passes `active`.
+            aria-current={href !== undefined && active ? 'page' : undefined}
         >
             {content}
         </Row>

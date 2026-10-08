@@ -39,6 +39,8 @@ import {
     NAV_ITEM_BADGE,
     NAV_ITEM_ICON_CLASS,
 } from '@/components/layout/nav-item';
+import { SidebarCollapseProvider } from '@/components/layout/sidebar-collapse-context';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 describe('<NavItem>', () => {
     describe('default state (active=false)', () => {
@@ -219,6 +221,54 @@ describe('<NavItem>', () => {
             // the className CONTAINS the full NAV_ITEM_ICON_CLASS
             // string but doesn't equal it.
             expect(icon!.getAttribute('class')).toContain(NAV_ITEM_ICON_CLASS);
+        });
+    });
+
+    describe('aria-current — the current page is announced, not only painted', () => {
+        // Before this, the active row said "you are here" through colour,
+        // weight and the band alone, and a screen reader heard a plain link.
+        it('the active link row is aria-current="page"', () => {
+            render(
+                <NavItem href="/t/foo/controls" icon={Settings} label="Controls" active />,
+            );
+            expect(
+                screen.getByRole('link', { name: 'Controls', current: 'page' }),
+            ).toBeInTheDocument();
+        });
+
+        it('an inactive link row carries no aria-current', () => {
+            render(
+                <NavItem href="/t/foo/controls" icon={Settings} label="Controls" active={false} />,
+            );
+            expect(
+                screen.getByRole('link', { name: 'Controls' }),
+            ).not.toHaveAttribute('aria-current');
+        });
+
+        it('an action row is never the current page, even when passed active', () => {
+            // An action row (no href) is a verb, not a place; `page` on a
+            // button would announce a location that does not exist.
+            render(
+                <NavItem icon={Settings} label="Sign out" active onClick={() => {}} />,
+            );
+            expect(
+                screen.getByRole('button', { name: 'Sign out' }),
+            ).not.toHaveAttribute('aria-current');
+        });
+
+        it('still announces the page when the rail is collapsed to icons', () => {
+            // Collapsed rows are named by aria-label and wrapped in a
+            // Tooltip; the current-page state must survive both.
+            render(
+                <TooltipProvider delayDuration={0}>
+                    <SidebarCollapseProvider collapsed>
+                        <NavItem href="/t/foo/controls" icon={Settings} label="Controls" active />
+                    </SidebarCollapseProvider>
+                </TooltipProvider>,
+            );
+            expect(
+                screen.getByRole('link', { name: 'Controls', current: 'page' }),
+            ).toBeInTheDocument();
         });
     });
 
