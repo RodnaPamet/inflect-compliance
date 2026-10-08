@@ -1926,3 +1926,74 @@ enum ExternalWriteOutcome {
   /// either — invisible to both readers at once.
   INDETERMINATE
 }
+
+// ─── Legacy access recertification ─────────────────────────────────────────
+
+/// The lifecycle of one pull. Three states, deliberately.
+///
+/// PENDING is the state a crash leaves behind, so it needs nothing to run in
+/// order to be recorded — the absence of a transition IS the signal. COMPLETE
+/// is written only as the final act, after every account row is stored.
+/// PARTIAL covers every named refusal: truncated, torn, drifted, oversharing
+/// beyond tolerance, or unauthenticated. There is no FAILED, because "we read
+/// nothing" and "we read some of it" are already distinguishable from
+/// `rowCount`, and a fourth state would be a fourth thing a reader must know
+/// not to trust.
+enum LegacyAccessSnapshotStatus {
+  PENDING
+  COMPLETE
+  PARTIAL
+}
+
+/// Why a pull did not produce a complete snapshot.
+///
+/// A closed set rather than free text because the operator surface has to say
+/// what to DO about each one, and a sentence per connection cannot be grouped.
+/// The first group comes from the transport (src/lib/mcp/client), the second
+/// from ingestion (src/lib/legacy-access/ingest.ts), the third from the
+/// mapping itself.
+enum LegacyAccessRefusalReason {
+  AUTHENTICATION_FAILED
+  SSRF_BLOCKED
+  TIMEOUT
+  CONTRACT_VIOLATION
+  CAP_EXCEEDED
+  TORN_SNAPSHOT
+  INCOMPLETE_READ
+  SCHEMA_DRIFT
+  AMBIGUOUS_COLUMN_CASE
+  MISSING_ACCOUNT_KEY
+  DUPLICATE_ACCOUNT_KEY
+  CONTRADICTORY_ROWS
+  SECRET_SHAPED_VALUE
+  ROW_SCHEMA_INVALID
+  MAPPING_MISSING
+  MAPPING_UNUSABLE
+  INTERNAL_ERROR
+}
+
+/// An account's state in the legacy application, after value mapping.
+///
+/// UNKNOWN is where an unrecognised spelling lands, and that is the fail-closed
+/// direction for THIS field: read as ACTIVE it adds noise to a campaign, read
+/// as DISABLED it REMOVES a live account from the campaign — which is the
+/// failure recertification exists to prevent. UNKNOWN is neither; it reaches a
+/// human with the fact that we could not tell.
+enum LegacyAccountStatus {
+  ACTIVE
+  DISABLED
+  LOCKED
+  EXPIRED
+  UNKNOWN
+}
+
+/// What kind of principal the account is. Shared and service accounts cannot be
+/// reconciled to a person at all, so the distinction changes what a reviewer is
+/// asked rather than merely labelling a row.
+enum LegacyAccountType {
+  HUMAN
+  SERVICE
+  SHARED
+  SYSTEM
+  UNKNOWN
+}

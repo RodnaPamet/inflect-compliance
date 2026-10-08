@@ -1243,6 +1243,44 @@ executorRegistry.register('aws-posture-collect', async (payload) => {
     }, { status: r.status, errorMessage: r.errorMessage, noRetry: r.noRetry });
 });
 
+// Step 2a — legacy-access-pull: pull one legacy access snapshot through a
+// stored mapping. ON-DEMAND only: dispatched by the admin route, never
+// scheduled. See ON_DEMAND_JOBS in tests/guardrails/runtime-wiring-coverage.
+executorRegistry.register('legacy-access-pull', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runLegacyAccessPull } = await import('@/app-layer/usecases/legacy-access-pull');
+    const r = await runLegacyAccessPull({
+        tenantId: payload.tenantId,
+        connectionId: payload.connectionId,
+        triggeredBy: 'manual',
+    });
+    return makeResult('legacy-access-pull', startedAt, startMs, r.rowCount, r.rowCount, 0, {
+        executionId: r.executionId,
+        snapshotId: r.snapshotId,
+        status: r.status,
+        // The hash goes in the job details as well as the audit row: the audit
+        // trail is the evidence, and this is what an operator reading
+        // /admin/jobs sees without opening it.
+        payloadHash: r.payloadHash,
+        refusalReason: r.refusalReason,
+    }, {
+        // JobOutcome's vocabulary, which is NOT the snapshot's. Mapped rather
+        // than collapsed to ok/not-ok: a pull that found the lock held
+        // (`SKIPPED`) and one that refused a torn read (`PARTIAL`) need
+        // different responses, and `ERROR` for both would hide that.
+        status:
+            r.status === 'COMPLETE' ? 'PASSED'
+                : r.status === 'PARTIAL' ? 'PARTIAL'
+                    : r.status === 'SKIPPED_LOCKED' ? 'SKIPPED'
+                        : 'NOT_APPLICABLE',
+        errorMessage: r.refusalReason ?? undefined,
+        // A refusal is a verdict, not a transient fault — see the attempts: 1
+        // reasoning in JOB_DEFAULTS.
+        noRetry: true,
+    });
+});
+
 // PR-2 — identity-sync: sync one Okta / Google Workspace connection.
 executorRegistry.register('identity-sync', async (payload) => {
     const startedAt = new Date().toISOString();

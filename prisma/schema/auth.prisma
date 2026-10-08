@@ -303,6 +303,9 @@ model Tenant {
   @@index([organizationId])
   /// Per-region operational scans (e.g. "list every EU tenant").
   @@index([region])
+  legacyAccessSnapshots LegacyAccessSnapshot[]
+  legacyAccounts        LegacyAccount[]
+
 }
 
 // Hub-and-spoke organization layer (Epic O-1).
