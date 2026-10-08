@@ -221,6 +221,9 @@
         "docs/legacy-access-recertification-phases.md": {
             "class": "living"
         },
+        "docs/legacy-mcp-access-contract.md": {
+            "class": "authoritative"
+        },
         "docs/lickable-sidebar.md": {
             "class": "authoritative"
         },
