@@ -25,7 +25,7 @@ restate it.
 | 3a | Normalisation library and labelled corpus | Merged | #3267 |
 | 3b | The deterministic engine and the precision ratchet | Merged | #3286 |
 | 3c | Persist results and the crosswalk | Not started | — |
-| 4a | Naming conventions and similarity | Not started | — |
+| 4a | Naming conventions and similarity | Open | #PENDING |
 | 4b | Review queue and alias revalidation | Not started | — |
 | 5a | Harden the existing access-review flows | Merged | #3272 |
 | 5b | Legacy recertification campaigns | Not started | — |

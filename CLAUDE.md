@@ -1245,6 +1245,38 @@ Two shapes in that module that are easy to get wrong a second time:
   party control of the pass's schedule. A back-off that does not fit the remaining
   budget means no retry at all, and a timeout is never retried.
 
+**Conventions and similarity, since Step 4a** (`reconcile/conventions.ts`,
+`similarity.ts`, `scorers.ts`). These are the fuzzy signals, and the rules that make
+them safe to have:
+
+- **A convention is DECLARED by a human, never inferred from the data.**
+  `proposeConventions` measures how much of a snapshot each template explains and
+  returns a list with no "best"; `adoptUsernameConvention` is what adopts one, and
+  it is `assertCanAdmin`, versioned and audited. Fitting a template to the snapshot
+  it will then match is circular, and the population being fitted contains the
+  leavers this product exists to find — a learned template explains away the
+  anomalies.
+- **A collision is an EQUAL SCORE, not a tie-break.** `jsmith` generated for both
+  John and Jane Smith emits the same signal at the same score to each, and the
+  engine's existing tie rule yields `AMBIGUOUS`. Do not "improve" this by having
+  the scorer prefer the earlier hire or the lower id: that is the scorer inventing a
+  rule the convention does not contain, and it reaches a reviewer as confidence.
+- **A name that cannot be split generates NOTHING.** `fullName` splits only at
+  exactly two tokens — a mononym and a three-part name both generate no candidate.
+  Guessing turns "Maria del Carmen Garcia" into `mdel`.
+- **`CandidateBlocker` may only ADD candidates**, and every id it returns is counted
+  in `metrics.comparisons` so the stated budget still binds. A blocker that removed
+  candidates could make a STRONG signal unreachable because an extension did not
+  recognise an account; a blocker that scanned the roster would undo the blocking
+  index from outside it.
+
+Two numbers in there are pinned and should not be casually moved: the Jaro-Winkler
+implementation is in-house so the published reference values (`MARTHA`/`MARHTA`
+0.961, `DWAYNE`/`DUANE` 0.84, `DIXON`/`DICKSONX` 0.813) can be asserted, and
+`SCORER_WEIGHTS.SIMILARITY_FLOOR` decides what a human is asked to look at — a
+mutation found it untested, so it now has its own assertions.
+
+
 
 
 ## Testing Conventions
