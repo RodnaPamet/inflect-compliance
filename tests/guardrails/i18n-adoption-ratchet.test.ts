@@ -70,6 +70,22 @@ const APP_DIR = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)');
 // shrinking baseline of not-yet-localised primitives.
 const ORG_DIR = path.join(REPO_ROOT, 'src/app/org');
 const COMPONENTS_DIR = path.join(REPO_ROOT, 'src/components');
+/**
+ * The shared package's components (#3213).
+ *
+ * Until this was added, every file #3046 moved into `packages/ui` LEFT this
+ * ratchet's population, so each extraction batch quietly shrank the surface it
+ * covers. That compounds in the worst direction: the files being moved are
+ * exactly the shared primitives another product vendors, so the surface with
+ * the weakest copy discipline was the one drifting out of scope.
+ *
+ * It surfaced as a stale-baseline failure, not as reasoning -- #3212 moved
+ * `time-series-chart.tsx` and the entry had to be deleted to go green, which
+ * removed the only trace that the file had ever been grandfathered. The
+ * stale-entry message lists three causes and the real fourth one, "the file
+ * left the scanned population", was not among them.
+ */
+const PKG_COMPONENTS_DIR = path.join(REPO_ROOT, 'packages/ui/src/components');
 
 // ─── Detection ──────────────────────────────────────────────────
 
@@ -214,7 +230,6 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/layout/tenant-switcher.tsx',
     'src/components/onboarding/Nis2SelfAssessmentStep.tsx',
     'src/components/ui/ComplianceStatusIndicator.tsx',
-    'src/components/ui/EvidenceGallery.tsx',
     'src/components/ui/FileDropzone.tsx',
     'src/components/ui/FrameworkBuilder.tsx',
     'src/components/ui/FrameworkMinimap.tsx',
@@ -232,9 +247,13 @@ const UNMIGRATED_BASELINE: ReadonlySet<string> = new Set<string>([
     'src/components/ui/filter/filter-list.tsx',
     'src/components/ui/filter/filter-select.tsx',
     'src/components/ui/selection-summary-panel.tsx',
+    // Moved into the package by #3212, which deleted its `src/` entry as stale
+    // (correct bookkeeping: the file was gone from `src/`). What that erased was
+    // the only trace the debt existed -- the text was never localised, it just
+    // left the population. Re-keyed here now the package is scanned. #3213
+    'packages/ui/src/components/ui/charts/time-series-chart.tsx',
     'src/components/ui/status-breakdown.tsx',
     'src/components/ui/table-load-more-footer.tsx',
-    'src/components/ui/view-toggle.tsx',
 ]);
 
 // ─── The ratchet ────────────────────────────────────────────────
@@ -244,6 +263,7 @@ describe('i18n adoption ratchet — new UI goes through next-intl', () => {
         ...walk(APP_DIR),
         ...walk(ORG_DIR),
         ...walk(COMPONENTS_DIR),
+        ...walk(PKG_COMPONENTS_DIR),
     ];
 
     const textBearingWithoutIntl = files
@@ -277,7 +297,9 @@ describe('i18n adoption ratchet — new UI goes through next-intl', () => {
         if (stale.length > 0) {
             throw new Error(
                 `${stale.length} UNMIGRATED_BASELINE entr(y/ies) are stale — the file was ` +
-                    `migrated to next-intl, lost its hardcoded text, or was deleted:\n` +
+                    `migrated to next-intl, lost its hardcoded text, was deleted, or ` +
+                    `LEFT THE SCANNED POPULATION (moved into a directory this ratchet ` +
+                    `does not walk — #3213):\n` +
                     stale.map((f) => `  ${f}`).join('\n') +
                     `\n\nRemove them from UNMIGRATED_BASELINE in this PR. The ratchet only ` +
                     `moves down — grandfathered debt must be deleted as it is paid off.`,

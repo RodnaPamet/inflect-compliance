@@ -152,6 +152,29 @@
   --ring-offset-background: #001830;
   --primary:                #FFCD11;
 
+  /* ── Accent — the colour that POINTS (solid focus indicators) ──────
+   *
+   * A focus indicator drawn solid reads these, never a `--brand-*` token:
+   * the Button's two-stop halo (button-variants.ts, and button.tsx's inert
+   * branch), a clickable row's ring (table.tsx, virtual-table-body.tsx,
+   * data-table-cards.tsx, card-list-card.tsx, the tree and graph views)
+   * and the undo toast's ring.
+   *
+   * Inflect points with its brand, so both are ALIASES and nothing in this
+   * product renders differently because they exist. They are here for a
+   * host whose brand is a FILL colour that should not double as the
+   * pointer: playerz.bg fills with purple and focuses in yellow. While the
+   * halo read `--brand-default` directly, no token value could give that
+   * host a yellow halo without also turning every primary button yellow.
+   *
+   * `--ring` / `--focus-ring` are untouched: they are the translucent ring
+   * (NavItem, menus, checkboxes) and were already their own token. The lint
+   * rule `local/no-brand-focus-indicator` keeps the shared UI from reading
+   * a brand token for focus again.
+   */
+  --accent-default:  var(--brand-default);   /* Button focus halo, row and tree focus rings */
+  --accent-emphasis: var(--brand-emphasis);  /* the undo toast's focus ring */
+
   /* ── Glass ─────────────────────────────────────────────────────── */
   --glass-bg:     rgba(0, 47, 95, 0.82);     /* navy glass-card background */
   --glass-border: rgba(0, 83, 140, 0.50);    /* navy glass-card border */
@@ -272,6 +295,18 @@
    * read as accidental colour bleed.
    */
   --nav-band-glow-active: 0 0 6px rgba(59, 130, 246, 0.35);
+
+  /* ── Sidebar band — ACTIVE colour ──────────────────────────────────
+   *
+   * The current page's band (NAV_ITEM_ACTIVE in nav-item.tsx) is a
+   * cut-out in the PAGE tone (2026-05-13), so this aliases `--bg-page` and
+   * the band renders exactly as it did when the recipe named `--bg-page`
+   * itself. A host that marks the current page with a colour of its own
+   * overrides this one token; with `--bg-page` written into the recipe it
+   * could only do that by repainting its page. Its glow is
+   * `--nav-band-glow-active`, above.
+   */
+  --nav-band-active: var(--bg-page);
 
   /* ── Sidebar gloss highlight (R13-PR6) ─────────────────────────── */
   /*
@@ -560,6 +595,10 @@
   --ring-offset-background: #F8F6F3;
   --primary:                #D04A02;
 
+  /* ── Accent — aliases of the brand, as in the dark block ──────────── */
+  --accent-default:  var(--brand-default);   /* Button focus halo, row and tree focus rings */
+  --accent-emphasis: var(--brand-emphasis);  /* the undo toast's focus ring */
+
   /* ── Glass (warm light variant) ─────────────────────────────────── */
   --glass-bg:     rgba(248, 246, 243, 0.85); /* tinted to --bg-default so .glass-card matches solid card surfaces */
   --glass-border: rgba(229, 226, 222, 0.50);
@@ -627,6 +666,9 @@
    * across themes.
    */
   --nav-band-glow-active: 0 0 6px rgba(30, 58, 138, 0.35);
+
+  /* ── Sidebar band — ACTIVE colour: the page tone, as in the dark block ── */
+  --nav-band-active: var(--bg-page);
 
   /* ── Sidebar gloss highlight (R13-PR6) ─────────────────────────── */
   /*

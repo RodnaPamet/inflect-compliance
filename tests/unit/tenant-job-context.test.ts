@@ -28,6 +28,7 @@
  * inferred from the absence of a warning.
  */
 import { runInTenantJobContext } from '@/lib/db-context';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 import { KEK_BYPASS_SOURCES, isKekBypassSource } from '@/lib/db/kek-bypass-sources';
 import { getAuditContext } from '@/lib/audit-context';
 import type { PrismaClient } from '@prisma/client';
@@ -112,13 +113,18 @@ describe('runInTenantJobContext binds the database-level tenant context', () => 
         expect(seen[0]).toBe(tx);
     });
 
-    it('forwards timeout / maxWait to the transaction, and omits them otherwise', async () => {
+    it('forwards timeout / maxWait, and falls back to the declared budget (#3266)', async () => {
         await runInTenantJobContext(
             { tenantId: 'tenant-a', source: 'av-rescan' },
             async () => null,
             { customPrisma: mockPrisma },
         );
-        expect(txOptionsSeen[0]).toEqual({});
+        // Was `toEqual({})` before #3266: a caller that named no budget got
+        // Prisma's INHERITED 2000 ms maxWait / 5000 ms timeout, which is not a
+        // budget this repo ever chose. The negated assertion is the teeth —
+        // reverting db-context.ts to `txOptions = {}` reddens it by name.
+        expect(txOptionsSeen[0]).toEqual(TENANT_TX_OPTIONS);
+        expect(txOptionsSeen[0]).not.toEqual({});
 
         await runInTenantJobContext(
             { tenantId: 'tenant-a', source: 'av-rescan' },
@@ -126,6 +132,19 @@ describe('runInTenantJobContext binds the database-level tenant context', () => 
             { customPrisma: mockPrisma, timeout: 15_000, maxWait: 4_000 },
         );
         expect(txOptionsSeen[1]).toEqual({ timeout: 15_000, maxWait: 4_000 });
+
+        // A PARTIAL override keeps the declared value for the other half. The
+        // two fields are independent `if (options?.x)` assignments, so naming
+        // one must not silently drop the other back to Prisma's default.
+        await runInTenantJobContext(
+            { tenantId: 'tenant-a', source: 'av-rescan' },
+            async () => null,
+            { customPrisma: mockPrisma, timeout: 15_000 },
+        );
+        expect(txOptionsSeen[2]).toEqual({
+            timeout: 15_000,
+            maxWait: TENANT_TX_OPTIONS.maxWait,
+        });
     });
 });
 

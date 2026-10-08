@@ -393,26 +393,21 @@ const jsdomProject = {
             '<rootDir>/tests/rendered/style-mock.ts',
         '^react-resizable/css/styles\\.css$':
             '<rootDir>/tests/rendered/style-mock.ts',
-        // DELEGATE, not a pass-through stub (#3163). 18 files under
-        // `src/components/ui/` reach the Tooltip primitive by this relative
-        // spelling — Button / Switch / StatusBadge / CopyText and the rest —
-        // and `src/components/ui/tooltip.tsx` does not self-provide, so Radix
-        // throws `` `Tooltip` must be used within `TooltipProvider` ``
-        // wherever a suite mounts none. Of 354 jsdom suites only 67 import
-        // `TooltipProvider`, which is what this mapping is load-bearing for.
+        // No tooltip mapping any more, and that is the point (#3163 retired).
+        // 18 files under `src/components/ui/` reach the Tooltip primitive by a
+        // RELATIVE spelling and most jsdom suites mount no `TooltipProvider`,
+        // so Radix used to throw `` `Tooltip` must be used within
+        // `TooltipProvider` `` for exactly those files -- and the fix was to map
+        // the relative spellings to a delegate that supplied the provider.
         //
-        // So `tooltip-mock.tsx` renders the REAL primitive wrapped in a
-        // provider it supplies itself; it is NOT a `<>{children}</>` stub any
-        // more. Until #3163 it was, and that made tooltip behaviour
-        // unobservable from every page test whose component spelled the
-        // import relatively — read that file's docblock before changing
-        // either line below, including why its own import must stay `@/`.
-        //
-        // `tests/rendered/tooltip.test.tsx` imports via
-        // `@/components/ui/tooltip`, resolved by the generic `@/` mapper
-        // above, so it reaches the primitive without passing through here.
-        '^\\.\\./tooltip$': '<rootDir>/tests/rendered/tooltip-mock.tsx',
-        '^\\./tooltip$': '<rootDir>/tests/rendered/tooltip-mock.tsx',
+        // Keying on the SPELLING meant two components using the same primitive
+        // got different test environments, invisible at the call site. The
+        // primitive now supplies the provider itself when none is mounted
+        // (`TooltipProviderPresent` in `src/components/ui/tooltip.tsx`), so the
+        // spelling is irrelevant and `tooltip-mock.tsx` is deleted. Do not
+        // reintroduce a tooltip entry here: a suite that needs particular delay
+        // behaviour passes `delayDuration` to the tooltip, or mounts its own
+        // provider.
         // Same problem with react-markdown directly.
         '^react-markdown$': '<rootDir>/tests/rendered/react-markdown-mock.tsx',
         // Vaul drawer crashes under React 19 (`transform.match(...)`

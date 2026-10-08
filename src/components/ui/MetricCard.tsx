@@ -154,7 +154,7 @@ export function MetricCard({
                 // content; stops them being text-highlighted on click.
                 "select-none",
                 clickable
-                    ? "cursor-pointer hover:border-border-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-default focus-visible:ring-offset-2 focus-visible:ring-offset-bg-page transition-colors duration-150 ease-out"
+                    ? "cursor-pointer hover:border-border-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)] focus-visible:ring-offset-2 focus-visible:ring-offset-bg-page transition-colors duration-150 ease-out"
                     : "hover:border-border-emphasis transition-colors duration-150 ease-out",
                 // R17-PR7 — selected state recipe. Brand-default ring
                 // + brand-emphasis border + brightened glow. Anchored

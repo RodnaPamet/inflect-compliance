@@ -52,7 +52,6 @@ describe('No console.* in backend server code', () => {
         'components/ui/charts/',
         'components/ui/hooks/',
         'components/ui/filter/',
-        'components/ui/file-upload.tsx',
     ];
 
     // Client components (browser-side) are always allowed

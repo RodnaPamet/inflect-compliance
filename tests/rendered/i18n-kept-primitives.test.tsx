@@ -50,6 +50,14 @@ import { LossExceedanceCurve } from '@/components/ui/charts/loss-exceedance-curv
 import { RadarChart } from '@/components/ui/charts/radar-chart';
 import { chartReady } from '@inflect/ui/components/ui/charts/types';
 import { EmptyState } from '@/components/ui/empty-state';
+import { EvidenceGallery } from '@/components/ui/EvidenceGallery';
+import { NumberStepper } from '@/components/ui/number-stepper';
+import { ProgressBar } from '@/components/ui/progress-bar';
+import { ProgressCircle } from '@/components/ui/progress-circle';
+import { ShimmerDots } from '@/components/ui/shimmer-dots';
+import { Slider } from '@/components/ui/slider';
+import { TabSelect } from '@/components/ui/tab-select';
+import { ViewToggle } from '@/components/ui/view-toggle';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -303,10 +311,11 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
 
     it('FormField: the hint button name, for a text and a non-text label', () => {
         // The info button is the REAL `InfoTooltip`: form-field imports
-        // `./tooltip`, which jest maps to `tests/rendered/tooltip-mock.tsx` —
-        // a DELEGATE since #3163, so what renders is the primitive itself with
-        // a `TooltipProvider` supplied around it, carrying the aria-label
-        // FormField computes.
+        // `./tooltip`, and since the primitive supplies its own provider when
+        // none is mounted, that spelling resolves straight to it and renders
+        // with the aria-label FormField computes. Until that change the import
+        // was redirected to a delegate (`tooltip-mock.tsx`, #3163) which
+        // supplied the provider instead.
         //
         // `getByRole('button')` rather than the `info-tooltip-trigger` testid
         // the old stub emitted: the real primitive has no testid, and the role
@@ -625,5 +634,98 @@ describe.each<Locale>(['en', 'bg'])('shared primitives render their own copy —
             'Loss buckets',
         );
     });
+
+    // ─── #3209: the PARAMETER DEFAULTS ───
+    //
+    // These eight spoke English through a different hole from the chart cases
+    // above. There the literal sat in an attribute; here it sat in the
+    // function signature, as `ariaLabel = 'Slider'`, so it is the name a
+    // screen reader reads for every caller that passes nothing — which is
+    // most of them. `i18n-adoption-ratchet` cannot see a parameter default at
+    // all, by its own header, so nothing in this repo was counting them.
+
+    it('NumberStepper: the spinbutton and both step buttons (#3209)', () => {
+        render(<NumberStepper value={3} onChange={() => {}} min={0} max={10} />);
+        expectLocalised(screen.getByRole('spinbutton').getAttribute('aria-label'), 'Number');
+        // Two buttons, and the pair is the point: one shared key for both
+        // would have read "Decrease" on the increment control.
+        const [dec, inc] = screen.getAllByRole('button');
+        expectLocalised(dec.getAttribute('aria-label'), 'Decrease');
+        expectLocalised(inc.getAttribute('aria-label'), 'Increase');
+    });
+
+    it('Slider: the thumb name (#3209)', () => {
+        render(<Slider value={5} onChange={() => {}} min={0} max={10} />);
+        expectLocalised(screen.getByRole('slider').getAttribute('aria-label'), 'Slider');
+    });
+
+    it('TabSelect: the tablist name (#3209)', () => {
+        render(
+            <TabSelect
+                options={[
+                    { id: 'a', label: 'A' },
+                    { id: 'b', label: 'B' },
+                ]}
+                selected="a"
+                onSelect={() => {}}
+            />,
+        );
+        expectLocalised(screen.getByRole('tablist').getAttribute('aria-label'), 'Tabs');
+    });
+
+    it('ViewToggle: its own name, not the ToggleGroup fallback (#3209)', () => {
+        // ViewToggle forwards `ariaLabel` to ToggleGroup, which falls back to
+        // `common.ui.options`. So dropping the default without supplying a key
+        // here would not have left English behind — it would have renamed the
+        // control "Options" in every locale, which is worse and silent.
+        render(<ViewToggle view="table" onChange={() => {}} />);
+        expectLocalised(screen.getByRole('radiogroup').getAttribute('aria-label'), 'View mode');
+        // Its two VISIBLE labels, which were hardcoded `<span>Table</span>` /
+        // `<span>Cards</span>` and are why this file sat in the i18n ratchet's
+        // UNMIGRATED_BASELINE. Asserted here because adding `useTranslations`
+        // for the aria-label alone would have dropped the file out of that
+        // ratchet's offender set while leaving these two in English — the
+        // debt moving out of sight rather than being paid.
+        const radios = screen.getAllByRole('radio');
+        expectLocalised(radios[0].textContent, 'Table');
+        expectLocalised(radios[1].textContent, 'Cards');
+    });
+
+    it('ProgressBar: the progressbar name (#3209)', () => {
+        render(<ProgressBar value={42} />);
+        expectLocalised(screen.getByRole('progressbar').getAttribute('aria-label'), 'Progress');
+    });
+
+    it('ProgressCircle: the same key on the SVG (#3209)', () => {
+        render(<ProgressCircle progress={42} />);
+        expectLocalised(screen.getByRole('progressbar').getAttribute('aria-label'), 'Progress');
+    });
+
+    it('ShimmerDots: the busy region name (#3209)', () => {
+        // `loadingIndicator`, NOT the existing `common.ui.loading`. I reused
+        // `loading` first, which made the English "Loading…" where the
+        // hard-coded default was "Loading" — and `shimmer-dots.test.tsx` has
+        // pinned the exact string since before this change. That red was
+        // right: this is a primitive playerz vendors byte-identically, and
+        // #3209 is about removing hardcoded English, not about changing what
+        // a screen reader says.
+        //
+        // The two keys are also not redundant. `loading` is VISIBLE text and
+        // wants its ellipsis; this is an accessible NAME, where the ellipsis
+        // is at best ignored and at worst spoken.
+        render(<ShimmerDots />);
+        expectLocalised(screen.getByRole('progressbar').getAttribute('aria-label'), 'Loading');
+    });
+
+    it('EvidenceGallery: the grid name (#3209)', () => {
+        render(
+            <EvidenceGallery
+                rows={[{ id: '1', title: 'E1', type: 'FILE', status: 'APPROVED' }]}
+                fileUrl={() => null}
+            />,
+        );
+        expectLocalised(screen.getByRole('grid').getAttribute('aria-label'), 'Evidence gallery');
+    });
+
 
 });

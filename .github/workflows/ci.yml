@@ -446,6 +446,35 @@ jobs:
       - name: "Run tsc --noEmit (packages/ui boundary)"
         run: npm run typecheck:ui-boundary
 
+      # ── The rendered program, which nothing compiled either ──
+      #
+      # Same shape as the boundary above, one directory along.
+      # `tests/rendered/tsconfig.json` is ts-jest's config for the jsdom
+      # project — 350 suites — and it is not a program `tsc` can load at all:
+      # `module: commonjs` + `moduleResolution: bundler` is TS5095, so every
+      # `tsc -p` against it dies on the config before reading a test. The root
+      # program does not cover them either; its `include` is `**/*.ts`, and
+      # these are `.tsx` under `tests/`.
+      #
+      # So the suites that assert this product's accessible names, its
+      # localisation and its rendered DOM were checked by the type system
+      # nowhere. A sibling config supplies the one pairing that compiles
+      # (`esnext` + `bundler`, what the root uses and what the bundler
+      # implements) and changes nothing ts-jest reads — see the long comment
+      # in tsconfig.typecheck.json for why the two cannot be one file.
+      #
+      # Measured as a pair, the way the boundary above was:
+      #
+      #     tsc -p tests/rendered/tsconfig.typecheck.json   0 errors, 350 suites
+      #     npm run typecheck (root program)                those 350 not in it
+      #
+      # Green on arrival, and positive-controlled rather than assumed: a type
+      # error injected into a rendered suite is caught, and so is one injected
+      # into `src/`. A zero from a program that included nothing would look
+      # identical without that.
+      - name: "Run tsc --noEmit (rendered suites)"
+        run: npm run typecheck:rendered
+
   # ═══════════════════════════════════════════════════════════════
   #  Job 3: Test — Jest unit + integration + architectural guards
   #  Needs Postgres for integration tests.

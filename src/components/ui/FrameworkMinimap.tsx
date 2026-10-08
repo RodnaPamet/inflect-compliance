@@ -210,7 +210,7 @@ function MinimapRow({
             className={cn(
                 'group flex items-center gap-tight px-2 py-1.5 rounded text-left text-xs transition-colors',
                 'text-content-muted hover:text-content-emphasis hover:bg-bg-muted',
-                'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)] focus-visible:ring-inset',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)] focus-visible:ring-inset',
                 active && 'bg-[var(--brand-subtle)] text-content-brand font-medium',
             )}
         >

@@ -133,6 +133,31 @@ const REGISTRY: RegistryEntry[] = [
             'computed node/link counts, both empty branches, and the ' +
             'pin/unpin interaction.',
     },
+    {
+        primitive: 'Solid focus indicators read the accent (Button halo)',
+        structuralRatchets: ['guards/eslint-local-rules-wired.test.ts'],
+        renderedTest: 'rendered/focus-accent-seam.test.tsx',
+        guards:
+            'the lint rule `local/no-brand-focus-indicator` proves no shared ' +
+            'focus utility NAMES a brand token, which is necessary but not ' +
+            'sufficient: an accent defined as a copied hex, or not at all, ' +
+            'passes it while the halo renders a different colour (or none). ' +
+            'The rendered test resolves the live and the disabledTooltip ' +
+            'halo against both theme blocks and asserts the brand colour ' +
+            'Inflect always painted.',
+    },
+    {
+        primitive: 'ThemeProvider + pre-paint script store a theme only on choice',
+        structuralRatchets: ['guards/theme-flash-init.test.ts'],
+        renderedTest: 'rendered/theme-storage-on-choice.test.tsx',
+        guards:
+            'a first visit writing the OS light/dark setting to a one-year ' +
+            'cookie and localStorage before anyone chose — the structural ' +
+            'guard can only see that `persistTheme` exists; the rendered test ' +
+            'mounts the provider and executes the inline script with every ' +
+            'cookie and storage write recorded at the source, and asserts ' +
+            'nothing is written until the user toggles.',
+    },
 ];
 
 function existsUnderTests(relPath: string): boolean {

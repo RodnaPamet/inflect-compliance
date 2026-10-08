@@ -498,7 +498,7 @@ function FileDropzoneInner(
                     'group relative flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed transition-all',
                     // Compact (~1/3 height) for dense side-rail panels; roomy default otherwise.
                     compact ? 'min-h-[3.5rem] py-2' : 'min-h-[10rem]',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)] focus-visible:ring-offset-2',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)] focus-visible:ring-offset-2',
                     disabled
                         ? 'cursor-not-allowed border-border-default bg-bg-muted opacity-60'
                         : dragActive

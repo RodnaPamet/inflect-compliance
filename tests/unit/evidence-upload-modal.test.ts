@@ -14,7 +14,8 @@
  *      modals; modals mounted with tenant-scoped helpers.
  *   4. FileDropzone primitive — generic dropzone that replaces the
  *      legacy `<FileUpload>` (the rename happened mid-Epic-54; the
- *      old `file-upload.tsx` is still on disk for legacy callers but
+ *      old `file-upload.tsx` was deleted in #3260 — it had NO callers,
+ *      so "on disk for legacy callers" was never true of it; the
  *      the evidence modal flow uses `FileDropzone` now).
  */
 
@@ -50,8 +51,9 @@ const TEXT_MODAL_SRC = read(
 const CLIENT_SRC = read(
     'src/app/t/[tenantSlug]/(app)/evidence/EvidenceClient.tsx',
 );
-// FileDropzone is the canonical primitive; file-upload.tsx still
-// exists for legacy callers but the evidence flow has migrated.
+// FileDropzone is the canonical primitive. `file-upload.tsx` was deleted
+// in #3260: it had zero importers and zero `<FileUpload>` usages, so the
+// "exists for legacy callers" it used to claim here was never true.
 const FILE_DROPZONE_SRC = read('src/components/ui/FileDropzone.tsx');
 
 // ─── 1. UploadEvidenceModal — composition ──────────────────────

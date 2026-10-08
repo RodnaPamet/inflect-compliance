@@ -31,11 +31,40 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { HelpCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { forwardRef, type ReactNode } from "react";
+import { createContext, forwardRef, useContext, type ReactNode } from "react";
 import { cn } from "@inflect/ui/lib/cn";
 
 export type TooltipSide = "top" | "right" | "bottom" | "left";
 export type TooltipAlign = "start" | "center" | "end";
+
+/**
+ * Whether a `TooltipProvider` is already an ancestor.
+ *
+ * Radix's `Tooltip.Root` THROWS without a provider above it
+ * (`` `Tooltip` must be used within `TooltipProvider` ``), so a `<Tooltip>`
+ * rendered outside one is not a degraded tooltip, it is a crash. This flag
+ * lets `Tooltip` supply the provider itself in exactly that case and change
+ * nothing when one is already mounted.
+ *
+ * WHY A PRESENCE FLAG rather than wrapping unconditionally: Radix providers
+ * NEST BY OVERRIDING, so an unconditional wrapper would silently replace the
+ * app root's `delayDuration` with this file's default for every tooltip in the
+ * product. Detecting presence keeps a mounted provider authoritative.
+ *
+ * This replaces `tests/rendered/tooltip-mock.tsx` and the two
+ * `moduleNameMapper` entries that routed `./tooltip` / `../tooltip` to it
+ * (#3163). That mapping was keyed on how a module was SPELLED, so two
+ * components using the same primitive got different test environments --
+ * invisible at the call site, and its own docblock named that as the defect it
+ * was working around. Supplying the provider in the primitive makes the
+ * spelling irrelevant.
+ */
+const TooltipProviderPresent = createContext(false);
+
+/** Renders children unchanged -- the arm taken when a provider is already up. */
+function PassthroughWrapper({ children }: { children: ReactNode }) {
+    return <>{children}</>;
+}
 
 /**
  * Global provider. Mount once at the app root so Radix can share the
@@ -52,12 +81,14 @@ export function TooltipProvider({
     skipDelayDuration?: number;
 }) {
     return (
-        <TooltipPrimitive.Provider
-            delayDuration={delayDuration}
-            skipDelayDuration={skipDelayDuration}
-        >
-            {children}
-        </TooltipPrimitive.Provider>
+        <TooltipProviderPresent.Provider value={true}>
+            <TooltipPrimitive.Provider
+                delayDuration={delayDuration}
+                skipDelayDuration={skipDelayDuration}
+            >
+                {children}
+            </TooltipPrimitive.Provider>
+        </TooltipProviderPresent.Provider>
     );
 }
 
@@ -113,70 +144,79 @@ export const Tooltip = forwardRef<HTMLButtonElement, TooltipProps>(function Tool
     },
     ref,
 ) {
+    // BEFORE the early return: a hook after a conditional return is a
+    // rules-of-hooks violation, and `disabled` flips between renders.
+    const providerAlreadyMounted = useContext(TooltipProviderPresent);
+
     if (disabled || (content == null && title == null)) {
         return <>{children}</>;
     }
 
+    // Supply the provider when nobody above did. See TooltipProviderPresent.
+    const Wrapper = providerAlreadyMounted ? PassthroughWrapper : TooltipProvider;
+
     return (
-        <TooltipPrimitive.Root
-            delayDuration={delayDuration}
-            disableHoverableContent={disableHoverableContent}
-        >
-            <TooltipPrimitive.Trigger
-                ref={ref}
-                asChild
-                // Hover-or-keyboard, never auto. Radix opens the tooltip on
-                // ANY focus, so when a popover/dialog auto-focuses its first
-                // control (e.g. the calendar's prev-month arrow, or the theme
-                // toggle on a freshly-opened menu) the tooltip pops without
-                // the user hovering. We gate Radix's focus-open on
-                // `:focus-visible`: keyboard focus still opens it (the a11y
-                // affordance), but programmatic / pointer focus does not.
-                // React's SyntheticEvent.preventDefault() sets
-                // `defaultPrevented` unconditionally, and Radix wires this via
-                // `composeEventHandlers(props.onFocus, openOnFocus)` which
-                // skips its handler when the event is default-prevented.
-                onFocus={(e) => {
-                    try {
-                        if (!e.currentTarget.matches(":focus-visible")) {
-                            e.preventDefault();
-                        }
-                    } catch {
-                        // `:focus-visible` unsupported (e.g. jsdom) — leave the
-                        // default keyboard-a11y behaviour intact.
-                    }
-                }}
+        <Wrapper>
+            <TooltipPrimitive.Root
+                delayDuration={delayDuration}
+                disableHoverableContent={disableHoverableContent}
             >
-                {children}
-            </TooltipPrimitive.Trigger>
-            <TooltipPrimitive.Portal>
-                <TooltipPrimitive.Content
-                    side={side}
-                    align={align}
-                    sideOffset={sideOffset}
-                    collisionPadding={8}
-                    className={cn(
-                        // Layering: tooltips must always float above modals,
-                        // sheets and popovers (which top out at z-50).
-                        "z-[99] pointer-events-auto",
-                        // Surface (token-backed)
-                        "rounded-lg border border-border-default bg-bg-elevated shadow-lg",
-                        "max-w-xs px-3 py-2",
-                        "text-xs leading-snug text-content-default",
-                        // Motion — keyed to Radix's side data attributes so
-                        // the animation direction matches the tooltip position.
-                        "animate-slide-up-fade",
-                        "data-[side=bottom]:animate-slide-down-fade",
-                        "data-[state=closed]:opacity-0",
-                        contentClassName,
-                    )}
+                <TooltipPrimitive.Trigger
+                    ref={ref}
+                    asChild
+                    // Hover-or-keyboard, never auto. Radix opens the tooltip on
+                    // ANY focus, so when a popover/dialog auto-focuses its first
+                    // control (e.g. the calendar's prev-month arrow, or the theme
+                    // toggle on a freshly-opened menu) the tooltip pops without
+                    // the user hovering. We gate Radix's focus-open on
+                    // `:focus-visible`: keyboard focus still opens it (the a11y
+                    // affordance), but programmatic / pointer focus does not.
+                    // React's SyntheticEvent.preventDefault() sets
+                    // `defaultPrevented` unconditionally, and Radix wires this via
+                    // `composeEventHandlers(props.onFocus, openOnFocus)` which
+                    // skips its handler when the event is default-prevented.
+                    onFocus={(e) => {
+                        try {
+                            if (!e.currentTarget.matches(":focus-visible")) {
+                                e.preventDefault();
+                            }
+                        } catch {
+                            // `:focus-visible` unsupported (e.g. jsdom) — leave the
+                            // default keyboard-a11y behaviour intact.
+                        }
+                    }}
                 >
-                    <TooltipBody title={title} shortcut={shortcut}>
-                        {content}
-                    </TooltipBody>
-                </TooltipPrimitive.Content>
-            </TooltipPrimitive.Portal>
-        </TooltipPrimitive.Root>
+                    {children}
+                </TooltipPrimitive.Trigger>
+                <TooltipPrimitive.Portal>
+                    <TooltipPrimitive.Content
+                        side={side}
+                        align={align}
+                        sideOffset={sideOffset}
+                        collisionPadding={8}
+                        className={cn(
+                            // Layering: tooltips must always float above modals,
+                            // sheets and popovers (which top out at z-50).
+                            "z-[99] pointer-events-auto",
+                            // Surface (token-backed)
+                            "rounded-lg border border-border-default bg-bg-elevated shadow-lg",
+                            "max-w-xs px-3 py-2",
+                            "text-xs leading-snug text-content-default",
+                            // Motion — keyed to Radix's side data attributes so
+                            // the animation direction matches the tooltip position.
+                            "animate-slide-up-fade",
+                            "data-[side=bottom]:animate-slide-down-fade",
+                            "data-[state=closed]:opacity-0",
+                            contentClassName,
+                        )}
+                    >
+                        <TooltipBody title={title} shortcut={shortcut}>
+                            {content}
+                        </TooltipBody>
+                    </TooltipPrimitive.Content>
+                </TooltipPrimitive.Portal>
+            </TooltipPrimitive.Root>
+        </Wrapper>
     );
 });
 

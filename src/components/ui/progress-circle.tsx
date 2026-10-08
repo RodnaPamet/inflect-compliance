@@ -1,3 +1,6 @@
+"use client";
+
+import { useTranslations } from "next-intl";
 import { cn } from "@inflect/ui/lib/cn";
 import { type ReactNode } from "react";
 
@@ -79,9 +82,10 @@ export function ProgressCircle({
     variant = "brand",
     size = "md",
     label,
-    "aria-label": ariaLabel = "Progress",
+    "aria-label": ariaLabel,
     className,
 }: ProgressCircleProps) {
+    const t = useTranslations("common.ui");
     const progress = Math.min(Math.max(progressProp, 0), 1);
     const radius = (100 - strokeWidth) / 2;
     const circumference = radius * Math.PI * 2;
@@ -92,7 +96,7 @@ export function ProgressCircle({
         <svg
             viewBox="0 0 100 100"
             role="progressbar"
-            aria-label={ariaLabel}
+            aria-label={ariaLabel ?? t("progress")}
             aria-valuenow={pct}
             aria-valuemin={0}
             aria-valuemax={100}

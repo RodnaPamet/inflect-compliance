@@ -215,6 +215,12 @@
         "docs/kpi-filterables.md": {
             "class": "authoritative"
         },
+        "docs/legacy-access-recertification-design.md": {
+            "class": "living"
+        },
+        "docs/legacy-access-recertification-phases.md": {
+            "class": "living"
+        },
         "docs/legacy-mcp-access-contract.md": {
             "class": "authoritative"
         },

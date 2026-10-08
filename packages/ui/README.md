@@ -39,11 +39,13 @@ with step 2, when there is a file for it to have an opinion about.
 
 ## Tokens
 
-`tokens.contract.css` declares the 45 theme tokens this package's components
-will consume, each with a neutral fallback. The package requires tokens, does not
-ship them, and ships their names — the host's real palette lives in
-`src/styles/tokens.css` and stays there (§4). A consumer is expected to override
-all 45.
+`tokens.contract.css` declares the 47 theme tokens this package's components
+will consume, each with a fallback: a neutral literal for the 45 that §4 measured,
+and an alias of the brand for `--accent-default` / `--accent-emphasis`, the colour
+the solid focus indicators are drawn in (a host that focuses in its brand needs
+to do nothing). The package requires tokens, does not ship them, and ships their
+names — the host's real palette lives in `src/styles/tokens.css` and stays there
+(§4). A consumer is expected to override all 47.
 
 The Tailwind config is **not** part of the package: it stays with the
 application, and what a consumer must merge into its own `theme.extend.colors`

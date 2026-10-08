@@ -48,7 +48,12 @@ jest.mock('next/navigation', () => ({
     useSearchParams: () => new URLSearchParams(),
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
-jest.mock('@/components/layout/LocaleSwitcher', () => ({ LocaleSwitcher: () => null }));
+// Records what the menu hands its switcher; the switcher's own behaviour is
+// locale-switcher.test.tsx's.
+const mockLocaleSwitcher = jest.fn((_props: { onLocaleChange?: unknown }) => null);
+jest.mock('@/components/layout/LocaleSwitcher', () => ({
+    LocaleSwitcher: (props: { onLocaleChange?: unknown }) => mockLocaleSwitcher(props),
+}));
 
 describe('top bar — WCAG 2.5.5 touch targets', () => {
     it('the hamburger reaches 44px on a coarse pointer', () => {
@@ -179,6 +184,33 @@ describe('UserMenu — rows arrive from the host', () => {
         expect(screen.getByTestId('user-menu-theme-row')).toBeInTheDocument();
         // Header, theme, host rows: two hairlines, not two stacked together.
         expect(screen.getAllByRole('separator')).toHaveLength(2);
+    });
+});
+
+describe('UserMenu — a host persists the language through the row', () => {
+    const base = { displayName: 'Ada', displayEmail: 'ada@x.test', displayImage: null };
+    beforeEach(() => mockLocaleSwitcher.mockClear());
+
+    it('hands `onLocaleChange` to the built-in row\'s switcher', () => {
+        const onLocaleChange = jest.fn();
+        render(
+            <TooltipProvider>
+                <UserMenu {...base} open onOpenChange={jest.fn()} onLocaleChange={onLocaleChange} />
+            </TooltipProvider>,
+        );
+        expect(screen.getByTestId('user-menu-language-row')).toBeInTheDocument();
+        expect(mockLocaleSwitcher).toHaveBeenCalled();
+        expect(mockLocaleSwitcher.mock.calls.at(-1)?.[0].onLocaleChange).toBe(onLocaleChange);
+    });
+
+    it('without one, the switcher gets none: the cookie alone, as before', () => {
+        render(
+            <TooltipProvider>
+                <UserMenu {...base} open onOpenChange={jest.fn()} />
+            </TooltipProvider>,
+        );
+        expect(mockLocaleSwitcher).toHaveBeenCalled();
+        expect(mockLocaleSwitcher.mock.calls.at(-1)?.[0].onLocaleChange).toBeUndefined();
     });
 });
 

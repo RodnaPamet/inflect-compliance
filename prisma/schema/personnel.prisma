@@ -17,6 +17,35 @@ model ConnectedIdentityAccount {
   externalUserId        String
   email                 String
   displayName           String?
+  /// ─── LOGIN NAMES (Step 0b) ───────────────────────────────────────────
+  ///
+  /// What a legacy application's own access table actually holds. Almost
+  /// nothing on-premises keys users by email: an AD-joined application stores
+  /// `DOMAIN\sAMAccountName` or a bare `sAMAccountName`, and an
+  /// Entra-federated one stores the UPN. Without these the directory bridge —
+  /// the only LINK-strength signal that needs no human to confirm it — has
+  /// nothing to match on, so every legacy row would arrive as SUGGESTED at
+  /// best.
+  ///
+  /// All three NULLABLE and NOT backfilled. The next sync fills them, which is
+  /// also what makes the migration safe through a rolling deploy: a container
+  /// running the previous image upserts without these columns and Postgres
+  /// takes the NULL default, so the old and new images coexist without either
+  /// failing. A backfill would have to invent values from `email`, and a
+  /// `samAccountName` derived from an email local-part is exactly the
+  /// plausible-but-wrong key that would link the wrong person.
+  ///
+  /// NULL therefore means "this provider does not carry the concept, or has
+  /// not synced since the column existed" — never "the account has no login
+  /// name". Okta and Google Workspace leave all three null permanently: their
+  /// account identifier IS the email, which `email` already holds.
+  ///
+  /// NOT an input to `email`. The JML link reconcile and the leaver pass
+  /// compare on `email` byte for byte, so a provider that began preferring a
+  /// UPN would silently re-point live links at a different worker.
+  samAccountName        String?
+  userPrincipalName     String?
+  mailNickname          String?
   status                ConnectedAccountStatus @default(ACTIVE)
   isAdmin               Boolean                @default(false)
   mfaEnrolled           Boolean                @default(false)
