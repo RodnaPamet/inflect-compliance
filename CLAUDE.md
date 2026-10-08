@@ -1178,6 +1178,36 @@ Step 5a, which found the same defect four times in one flow.
    the population is non-empty in the same expression — `subjectCount > 0 && decided
    === subjectCount`, never `decided === subjectCount`.
 
+**How invariant 2 is enforced, since Step 3b** (`src/lib/identity/reconcile/engine.ts`).
+Strength is not a number and not a claim a signal makes about itself. `SIGNAL_STRENGTH`
+is a frozen table keyed on a closed union, so a kind added without a classification is a
+compile error rather than an `undefined` that `=== 'STRONG'` quietly reports as false.
+There are exactly four strong kinds — `CONFIRMED_ALIAS`, `EMPLOYEE_NUMBER`,
+`EMAIL_EXACT`, `DIRECTORY_BRIDGE` — and `LINKED` requires one of them held by exactly
+one candidate, unvetoed.
+
+**The Step 4a extension point cannot break it, by type.** `CandidateScorer` returns
+`SupportingSignal`, whose `kind` is narrowed to the non-strong union. Naming conventions
+and similarity therefore cannot produce a `LINKED` however they score — not by
+convention, by `tsc`. Do not widen that return type to `Signal`; the exhaustive test
+over all 127 non-empty subsets of the supporting kinds (at score 10,000 each) is what
+proves the property, and it is only meaningful while the type prevents the strong case.
+
+Three further rules the engine holds that are easy to undo:
+
+- **`EMAIL_EXACT` is `emailKey` byte-equality, never a folded domain.** `+tag` removal
+  and domain equivalence are a SUPPORTING signal one layer above the key. `emailKey` is
+  what the JML chain joins on, so a link made on a folded address is a link the leaver
+  cannot act on — the design document's `da-01` case exists to say so.
+- **An employee number is derived from a login only when the login is all digits.**
+  `normaliseEmployeeNumber` accepts up to eight leading letters, so `kpatel3` yields
+  `3` — a name with a counter posing as the strongest signal in the system.
+- **A roster carrying one id twice with different fields is REFUSED**
+  (`DuplicateRosterIdError`), not resolved by arrival order. `RosterEmployee.id` is a
+  primary key; a roster that contradicts itself about one person gives no reason to
+  trust what it says about the others. An exactly-repeated row is tolerated — the check
+  is about contradiction, not duplication.
+
 
 ## Testing Conventions
 

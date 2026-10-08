@@ -1,12 +1,15 @@
 # Legacy-application access recertification
 
-> **Status: living design** — nothing below the Roadmap heading is built. Inflect can
-> recertify accounts in the four directories it syncs; it cannot see into a legacy
-> application at all. This document is the plan for reading legacy access tables
-> through operator-hosted MCP servers and reconciling them against HR. The
-> reconciliation engine is the critical path. The optional model step that follows it
-> gets comparable detail, because in one of its modes it sends personal data to a
-> third party.
+> **Status: living design** — most of what is below the Roadmap heading is not built,
+> but it is no longer *nothing*: Steps 0a, 0b, 3a and 6a have merged, and the
+> normalisation library and the reconciliation engine now exist as described. Inflect
+> still cannot see into a legacy application at all — there is no MCP client and no
+> snapshot — so the pipeline has an engine and no input. The phases document's status
+> table is the per-step authority; this banner only says that the heading no longer
+> means "unbuilt". This document is the plan for reading legacy access tables through
+> operator-hosted MCP servers and reconciling them against HR. The reconciliation
+> engine is the critical path. The optional model step that follows it gets comparable
+> detail, because in one of its modes it sends personal data to a third party.
 
 Legacy applications are where access recertifications actually fail. SOC 2
 CC6.2/CC6.3, NIS2 Art. 21(2)(i) and ISO/IEC 27001:2022 A.5.18 all ask the same
@@ -121,6 +124,36 @@ assertion.
 - **Only one AI feature honours `aiResidency`.** Risk suggestions route to a local
   gateway under `LOCAL_ONLY`, pinned by `tests/guards/ai-residency-enforcement.test.ts`.
   Compliance posture, questionnaire autofill and vendor-document extraction do not.
+
+### The reconciliation engine exists, and nothing calls it yet
+
+`src/lib/identity/reconcile/engine.ts` (Step 3b) implements the five outcomes, the
+four strong signals, the three vetoes and the re-keyed-person rule described under
+*3. Reconciliation* below. It is a pure function: no Prisma import anywhere in its
+transitive graph, and `now` is a parameter rather than a clock read, so re-running it
+over an unchanged snapshot cannot produce a different answer.
+
+What it does NOT have is an input. There is no MCP client (Step 1b) and no snapshot
+model (Step 2a), so the only thing that calls `reconcile` today is its own test. The
+engine is ahead of the pipe that will feed it, which was deliberate — the matcher is
+the part where a mistake grants access, so it was worth building against a labelled
+corpus before there was any live data to get wrong.
+
+Two properties are worth knowing before extending it:
+
+- **A link requires a signal that is strong by KIND, never a score.** Strength comes
+  from a frozen table keyed on a closed union; a signal cannot declare itself strong.
+  Step 4a's extension point (`CandidateScorer`) returns `SupportingSignal`, whose
+  `kind` is narrowed to the non-strong union — so naming conventions and similarity
+  *cannot* produce a `LINKED`, as a compile error rather than a convention. The
+  exhaustive test runs all 127 non-empty subsets of the supporting kinds at a score
+  of 10,000 each and asserts none links.
+- **Precision is gated; recall is printed.** On the Step 3a corpus: 3 auto-links, 0
+  false, and 14 of 27 exact outcomes. The 13 misses are the cases needing name
+  matching, which is Step 4a. Gating recall would punish the engine for the correct
+  response to a tightened precision rule, so the gate asserts no false link plus a
+  floor — the three expected links individually — because a precision-only ratchet is
+  passed trivially by an engine that links nothing.
 
 ### Every AI provider generates text
 
