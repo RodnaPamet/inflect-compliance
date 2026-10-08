@@ -242,3 +242,85 @@ describe('structural — LOCAL_ONLY short-circuits before EVERY external provide
         ]);
     });
 });
+
+/**
+ * ─── The legacy-access decision factory (Step 6b) ──────────────────────────
+ *
+ * A SECOND factory now chooses between a local and an external model, for a
+ * different surface: identity adjudication for legacy access recertification.
+ * The invariant is the same one and it is enforced the same way — by reading the
+ * source and checking that nothing external is CONSTRUCTED before the
+ * `LOCAL_ONLY` return.
+ *
+ * It gets its own section rather than a shared helper because the two factories
+ * name their providers differently (`…RiskSuggestionProvider` /
+ * `…DecisionProvider`), and a helper parameterised on the suffix would pass
+ * vacuously the day somebody introduces a third naming convention: the regex
+ * would match nothing and the assertion would hold over an empty set.
+ */
+describe('structural — the 6b decision factory constructs nothing external before the guard', () => {
+    const FACTORY = path.resolve(__dirname, '../../src/app-layer/ai/identity-match/index.ts');
+    const src = () => fs.readFileSync(FACTORY, 'utf8');
+
+    /**
+     * Constructors allowed to run BEFORE the `LOCAL_ONLY` return.
+     * `buildLocalProvider` is declared above `getDecisionProvider`, so its two
+     * constructions legitimately appear earlier in the file. Anything else
+     * constructed there is external by definition.
+     */
+    const NON_EXTERNAL = ['LocalDecisionProvider', 'LayaDecisionProvider', 'StubDecisionProvider'];
+
+    /**
+     * The pinned set. A fourth provider fails this until somebody classifies it,
+     * which is exactly when the "may LOCAL_ONLY reach it?" decision is due.
+     */
+    const PINNED_CONSTRUCTORS = ['JevDecisionProvider', 'LayaDecisionProvider', 'StubDecisionProvider'];
+
+    function constructedProviders(source: string): string[] {
+        const names = [...source.matchAll(/new\s+(\w*DecisionProvider)\b/g)].map((m) => m[1]);
+        return [...new Set(names)].sort();
+    }
+
+    it('the factory source is readable and does construct providers', () => {
+        // The denominator. A regex that matches nothing would make every
+        // assertion below hold over an empty set.
+        const found = constructedProviders(src());
+        expect(found.length).toBeGreaterThan(0);
+    });
+
+    it('pins the exact constructor set', () => {
+        expect(constructedProviders(src())).toEqual([...PINNED_CONSTRUCTORS].sort());
+    });
+
+    it('every external provider is constructed AFTER the LOCAL_ONLY guard', () => {
+        const source = src();
+        const guardIdx = source.indexOf("effectiveMode === 'LOCAL_ONLY'");
+        expect(guardIdx).toBeGreaterThan(-1);
+
+        for (const m of source.matchAll(/new\s+(\w*DecisionProvider)\b/g)) {
+            if (NON_EXTERNAL.includes(m[1])) continue;
+            expect({ provider: m[1], beforeGuard: m.index! < guardIdx }).toEqual({
+                provider: m[1],
+                beforeGuard: false,
+            });
+        }
+    });
+
+    it('the LOCAL_ONLY branch returns rather than falling through', () => {
+        const source = src();
+        const guardIdx = source.indexOf("effectiveMode === 'LOCAL_ONLY'");
+        // The next statement after the guard must be a return. A branch that
+        // merely SETS a variable and continues would reach the external
+        // construction below with the guard still reading as satisfied.
+        const after = source.slice(guardIdx, guardIdx + 200);
+        expect(after).toMatch(/return\s+buildLocalProvider\(\)/);
+    });
+
+    it('the inactive-sub-processor gate also precedes the external construction', () => {
+        const source = src();
+        const gateIdx = source.indexOf('!TYPESAFE_SUBPROCESSOR_ACTIVE');
+        const jevIdx = source.indexOf('new JevDecisionProvider');
+        expect(gateIdx).toBeGreaterThan(-1);
+        expect(jevIdx).toBeGreaterThan(gateIdx);
+    });
+});

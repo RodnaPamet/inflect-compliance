@@ -204,8 +204,12 @@ Common to both:
 
 ### TypeSafe AI (Jev) — identity adjudication for legacy access recertification (proposed, inactive)
 
-**This processor is proposed and inactive. No customer data reaches TypeSafe AI.** Nothing
-under `src/` refers to it. The planned calling module is `src/app-layer/ai/identity-match/`.
+**This processor is proposed and inactive. No customer data reaches TypeSafe AI.** Since
+Step 6b the calling module `src/app-layer/ai/identity-match/` EXISTS, so the earlier
+"nothing under `src/` refers to it" no longer holds — what holds instead is stronger and
+is enforced by a test rather than by absence: `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`,
+so the factory cannot return a Jev provider for tenant work. The code is present and
+unreachable.
 Its addition follows [`docs/sub-processor-change-policy.md`](./sub-processor-change-policy.md);
 this entry is step 1 of that policy.
 
@@ -235,9 +239,20 @@ this entry is step 1 of that policy.
   Selecting `EXTERNAL` is refused under tenant AI residency `LOCAL_ONLY`.
 - **Local alternative:** a tenant choosing `LOCAL_ONLY` is served by Laya on
   infrastructure the operator runs. Laya is **not** a sub-processor and has no entry here.
-- **Vendor pages:** recorded on the inventory pull request during step 2 of the policy.
-- **Codebase:** none. No module, constant or environment variable references TypeSafe in
-  this revision.
+- **Vendor pages:** [API reference](https://docs.typesafe.ai/api) and
+  [model list](https://docs.typesafe.ai/models), both re-verified 2026-10-08 by Step 6b.
+  The verification corrected one row of the design document's vendor table: the model
+  identifier is `jev-1.13.0`, not `jev-1.13`.
+- **Codebase:** present since Step 6b, and inert. `src/app-layer/ai/identity-match/`
+  holds the wire codec and `JevDecisionProvider`; the endpoint
+  `https://api.typesafe.ai/v1/systemone` is a **code constant** so no configuration can
+  redirect it; `TYPESAFE_API_KEY` is declared in `src/env.ts` and optional.
+  **`TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`**, and `getDecisionProvider` returns the
+  local provider instead of a Jev one while it is — so no tenant path can obtain this
+  provider, with or without the key set, whatever `legacyMatchAiMode` says. That flag is
+  the code half of step 4 below: activation is flipping it, not setting a variable.
+  Pinned by `tests/guards/ai-residency-enforcement.test.ts` and
+  `tests/unit/identity-match-provider-factory.test.ts`.
 
 **Policy progress**
 

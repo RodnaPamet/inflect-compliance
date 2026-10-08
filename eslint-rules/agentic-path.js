@@ -78,6 +78,14 @@ const AGENTIC_PATH_GLOBS_LIVE = [
     'src/app-layer/usecases/workflow-*.ts',
     'src/app-layer/services/agent-*.ts',
     'src/app-layer/repositories/Agent*.ts',
+    // Step 6b. This path ingests attacker-shaped data from OPERATOR-HOSTED legacy
+    // servers: the adjudication state carries display names pulled through an MCP
+    // server somebody else runs, and "a display name written as an instruction" is
+    // a case in its own corpus. It is in scope for the same reason the MCP routes
+    // are — the principal driving the input is not a human filling in a form — and
+    // the prompt-logging rule matters doubly here, because a legacy display name is
+    // personal data that must not reach a plaintext, never-deleted audit row.
+    'src/app-layer/ai/identity-match/**/*.ts',
 ];
 
 /**
