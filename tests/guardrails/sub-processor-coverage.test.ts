@@ -139,6 +139,15 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     NOTIFICATIONS_TZ: 'notification timezone config',
     PLATFORM_ADMIN_API_KEY: 'internal platform-admin bootstrap secret',
     PLATFORM_ADMIN_API_KEY_PREVIOUS: 'internal platform-admin secret rotation',
+    // Step 6b — Laya, Convai Innovations' open-weights System One model. We RUN it:
+    // open weights under Apache-2.0 on infrastructure we operate, so nothing leaves
+    // our boundary and there is no third party to be a processor. These are
+    // deployment configuration that no tenant setting can reach — the same
+    // restriction that makes the Jev host a code constant. Jev itself is NOT here:
+    // TYPESAFE_API_KEY names a real sub-processor and is covered by the
+    // docs/sub-processors.md row that Step 6a added.
+    LAYA_BASE_URL: "base URL of a Laya System One server WE operate (open weights, Apache-2.0); no data leaves our infrastructure, so not a sub-processor — deployment config, unreachable from any tenant setting",
+    LAYA_API_KEY: 'optional bearer for our own Laya server; most deployments sit behind a network boundary instead — our infrastructure, not a third party, so not a sub-processor',
 };
 
 /**

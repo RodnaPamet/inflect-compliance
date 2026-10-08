@@ -226,7 +226,7 @@ describe('Epic 64 — EmptyState adoption floor', () => {
 
     it('the top-level EmptyState exposes the v2 surface (variants + actions)', () => {
         const src = read(
-            path.join(REPO, 'src/components/ui/empty-state.tsx'),
+            path.join(REPO, 'packages/ui/src/components/ui/empty-state.tsx'),
         );
         expect(src).toMatch(/EmptyStateVariant\s*=/);
         expect(src).toMatch(/primaryAction\?:\s*EmptyStateAction/);

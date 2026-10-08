@@ -1,7 +1,7 @@
 /**
  * Epic 56 — ad-hoc `title=` ratchet.
  *
- * The `<Tooltip>` primitive (`src/components/ui/tooltip.tsx`) is the
+ * The `<Tooltip>` primitive (`packages/ui/src/components/ui/tooltip.tsx`) is the
  * canonical way to surface a hover/focus hint on an interactive element
  * in Inflect Compliance. The native HTML `title=` attribute is kept for
  * three specific escape valves only — documented in

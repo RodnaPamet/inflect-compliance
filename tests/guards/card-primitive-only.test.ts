@@ -18,7 +18,7 @@
  *         compose with `cn(...)` already.
  *
  *   • The literal `glass-card` token survives in two places only:
- *       - `src/components/ui/card.tsx` — the cardVariants `raised`
+ *       - `packages/ui/src/components/ui/card.tsx` — the cardVariants `raised`
  *         elevation maps to it; the primitive IS the surface that
  *         owns the legacy class.
  *       - `src/app/globals.css` — the underlying CSS recipe.
@@ -47,8 +47,8 @@ import * as path from 'path';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const PRIMITIVE = 'src/components/ui/card.tsx';
-const VARIANTS = 'src/components/ui/card-variants.ts';
+const PRIMITIVE = 'packages/ui/src/components/ui/card.tsx';
+const VARIANTS = 'packages/ui/src/components/ui/card-variants.ts';
 
 interface Offence {
     file: string;

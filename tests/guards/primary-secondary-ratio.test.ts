@@ -79,14 +79,14 @@ function walk(dir: string): string[] {
 /**
  * `<Button>`'s own default variant.
  *
- * `src/components/ui/button.tsx` destructures `variant = "primary"`, so
+ * `packages/ui/src/components/ui/button.tsx` destructures `variant = "primary"`, so
  * a `<Button>` written with NO `variant` prop renders a PRIMARY. Until
  * #2379 this counter only saw a literal `variant="primary"`, which made
  * the cheapest way to add a loud button — just write `<Button>` — the
  * one shape the ceiling could not see.
  *
  * The walker above only descends `src/app` (SCAN_DIR), so the Button
- * DEFINITION in `src/components/ui/button.tsx` is never read and cannot
+ * DEFINITION in `packages/ui/src/components/ui/button.tsx` is never read and cannot
  * be mistaken for a usage; `isExempt` keeps tests, specs, stories and
  * mocks out. Nothing under `src/app` declares its own `Button`, so
  * every `<Button` the walker sees is the shared one and this default

@@ -310,7 +310,15 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     // tree it is INTRODUCED on, and reaching into another branch's just-merged
     // feature to pay one string down would widen this PR past its subject. The
     // guard now stops the 25th.
-    'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx': 24, // partial, 1 jsx + 23 prop
+    // 24 -> 6: #3289 then localised that row AND the seventeen like it. The whole
+    // SCOPE_GROUPS table was hardcoded English, so paying down only the newest row
+    // would have left it half-translated — the state where the next contributor
+    // copies whichever neighbour they land on.
+    //
+    // Keep the sequence: 23 was a file that already called `t()` and scored as
+    // ADOPTED under the old file-level check. It is the clearest record in this
+    // file of why the unit had to become the string.
+    'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx': 6, // partial, 1 jsx + 5 prop
     'src/app/t/[tenantSlug]/(app)/admin/billing/BillingEventLog.tsx': 6, // partial, 6 prop
     'src/app/t/[tenantSlug]/(app)/admin/billing/page.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/admin/entra/page.tsx': 8, // partial, 7 jsx + 1 prop

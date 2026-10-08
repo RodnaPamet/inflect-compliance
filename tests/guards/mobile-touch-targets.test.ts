@@ -26,7 +26,7 @@ const read = (p: string) => codeOf(readRaw(p));
 
 describe("Mobile PR-1 — coarse-pointer touch targets", () => {
     it("Button cva base carries a 44px coarse-pointer min-height", () => {
-        const src = read("src/components/ui/button-variants.ts");
+        const src = read("packages/ui/src/components/ui/button-variants.ts");
         expect(src).toMatch(/pointer-coarse:min-h-11/);
     });
 
@@ -45,7 +45,7 @@ describe("Mobile PR-1 — coarse-pointer touch targets", () => {
     // regression that re-inlines the class lists would have to drop it
     // to be a regression at all.
     describe("the cva-bypassing branches of button.tsx keep the floor", () => {
-        const BUTTON = "src/components/ui/button.tsx";
+        const BUTTON = "packages/ui/src/components/ui/button.tsx";
 
         it("declares the shared inert shell with the 44px floor and the hit area", () => {
             const shell = declarationOf(read(BUTTON), "INERT_BUTTON_SHELL");
@@ -66,7 +66,7 @@ describe("Mobile PR-1 — coarse-pointer touch targets", () => {
     });
 
     it("Button icon size carries a 44px coarse-pointer min-width (square touch)", () => {
-        const src = read("src/components/ui/button-variants.ts");
+        const src = read("packages/ui/src/components/ui/button-variants.ts");
         // The `icon` size string must include the coarse min-width.
         expect(src).toMatch(/icon:\s*"[^"]*pointer-coarse:min-w-11[^"]*"/);
     });

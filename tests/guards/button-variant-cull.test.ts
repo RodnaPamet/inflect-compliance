@@ -15,7 +15,7 @@
  *
  * Final Button variant catalogue (4 — primary, secondary, ghost,
  * destructive) lives in
- * `src/components/ui/button-variants.ts`.
+ * `packages/ui/src/components/ui/button-variants.ts`.
  *
  * IMPORTANT: this ratchet ONLY targets the Button variant system.
  * `<InlineNotice variant="success">`, `<StatusBadge variant="success">`,
@@ -45,8 +45,8 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 // rationale. The button.tsx primitive is also exempt (forwards the
 // variant prop directly to CVA, no string match needed).
 const EXEMPT_FILES = new Set<string>([
-    "src/components/ui/button-variants.ts",
-    "src/components/ui/button.tsx",
+    "packages/ui/src/components/ui/button-variants.ts",
+    "packages/ui/src/components/ui/button.tsx",
 ]);
 
 const RETIRED_VARIANTS = [
@@ -186,7 +186,7 @@ describe("v2-PR-1 Button variant cull ratchet", () => {
                     )
                     .join("\n");
                 throw new Error(
-                    `Found ${offenders.length} retired Button variant(s). Use the new catalogue from src/components/ui/button-variants.ts (primary | secondary | ghost | destructive).\n\nMigration map:\n  outline → secondary\n  success → primary\n  danger → destructive\n  danger-outline → destructive\n  destructive-outline → destructive\n\nFirst ${Math.min(15, offenders.length)} offender(s):\n${sample}`,
+                    `Found ${offenders.length} retired Button variant(s). Use the new catalogue from packages/ui/src/components/ui/button-variants.ts (primary | secondary | ghost | destructive).\n\nMigration map:\n  outline → secondary\n  success → primary\n  danger → destructive\n  danger-outline → destructive\n  destructive-outline → destructive\n\nFirst ${Math.min(15, offenders.length)} offender(s):\n${sample}`,
                 );
             }
             expect(offenders).toHaveLength(0);
@@ -195,7 +195,7 @@ describe("v2-PR-1 Button variant cull ratchet", () => {
 
     describe("button-variants.ts catalogue contract", () => {
         const src = fs.readFileSync(
-            path.join(ROOT, "src/components/ui/button-variants.ts"),
+            path.join(ROOT, "packages/ui/src/components/ui/button-variants.ts"),
             "utf8",
         );
 

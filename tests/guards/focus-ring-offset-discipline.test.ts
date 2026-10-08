@@ -52,7 +52,7 @@ interface AllowlistEntry {
 
 const ALLOWLIST: AllowlistEntry[] = [
     {
-        file: 'src/components/ui/typography.tsx',
+        file: 'packages/ui/src/components/ui/typography.tsx',
         reason:
             'TextLink uses `ring-offset-1` because the link is inline within a text run; a 2px offset would visually break the line height.',
     },

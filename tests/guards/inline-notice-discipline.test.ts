@@ -18,8 +18,8 @@
  * Pairs with:
  *   - `tests/rendered/inline-notice.test.tsx` — primitive contract
  *   - `src/components/ui/inline-notice.tsx` — the canonical surface
- *   - `src/components/ui/empty-state.tsx` (companion empty primitive)
- *   - `src/components/ui/error-state.tsx` (companion full-pane error)
+ *   - `packages/ui/src/components/ui/empty-state.tsx` (companion empty primitive)
+ *   - `packages/ui/src/components/ui/error-state.tsx` (companion full-pane error)
  */
 import * as fs from "fs";
 import * as path from "path";
