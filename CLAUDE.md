@@ -1108,6 +1108,37 @@ When the chain produces nothing, the causes are numerous and all present
 identically as an empty page — use the `identity-chain-diagnostic` skill rather
 than guessing.
 
+### Legacy access recertification
+
+Reading legacy applications' access tables through operator-hosted MCP servers and
+reconciling them against HR. Design and plan:
+`docs/legacy-access-recertification-design.md` and
+`docs/legacy-access-recertification-phases.md` — **those two documents are the source
+of truth for intent.** If the code contradicts a fact in them, the code wins and the
+pull request says so; if a step would have to deviate from the design, stop and ask.
+
+Four invariants bind everything in this subsystem. Later steps extend this section;
+these four do not move.
+
+1. **Legacy code never writes a directory table.** `IdentityAccountLink` and
+   `ConnectedIdentityAccount` are read-only to it.
+   `tests/guards/directory-identity-tables-single-write-seam.test.ts` enforces it
+   across three paths — a delegate call on any client, the same call on a transaction
+   client, and raw SQL — with the seams listed in that file and nowhere else. A row
+   written by a matcher that guessed would not look wrong; it would look like a sync
+   had found it.
+2. **Only a strong deterministic signal produces `LINKED`.** A confirmed alias, a real
+   employee number, an exact email, or the directory bridge. Similarity, a naming
+   convention, a model verdict and a bulk action may reach `SUGGESTED` and no further:
+   a person confirms every link.
+3. **Legacy data is untrusted input.** Size-bounded, schema-validated, rendered only as
+   text, never logged row by row, and it reaches a model only through the AI Guard.
+4. **Fail closed, and never silently.** A truncated, torn, drifted, partial or
+   unauthenticated read is recorded with a named reason and never reported as complete.
+   A row that cannot be keyed fails the pull rather than being dropped — an account
+   missing from a snapshot is an account nobody reviews.
+
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.
