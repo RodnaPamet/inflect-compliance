@@ -31,6 +31,8 @@
 
 // ─── Mocks (declared before imports — Jest hoists `jest.mock` calls) ───
 
+import { strictMock } from '../../helpers/strict-mock';
+
 const mockGetTenantCtx = jest.fn();
 const mockAppendAuditEntry = jest.fn();
 
@@ -38,10 +40,18 @@ jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...args: unknown[]) => mockGetTenantCtx(...args),
 }));
 
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntryOrQueue: (...args: unknown[]) => mockAppendAuditEntry(...args),
-    appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
-}));
+// `strictMock`, not a bare subset factory. `@/lib/audit` is a GUARDED barrel
+// (tests/guards/partial-mock-of-a-guarded-barrel.test.ts caps how many files
+// may mock it as a subset): a factory supplying only part of it resolves every
+// other export to `undefined`, so a call meant to guarantee an audit row
+// silently does nothing while every assertion still passes. The Proxy turns
+// reaching for an omitted export into an error that names it.
+jest.mock('@/lib/audit', () =>
+    strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntryOrQueue: (...args: unknown[]) => mockAppendAuditEntry(...args),
+        appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
+    }),
+);
 
 // `@/lib/observability/logger` is a BARREL, and a partial mock of a barrel is
 // the trap: the missing export does not fail at import, it throws

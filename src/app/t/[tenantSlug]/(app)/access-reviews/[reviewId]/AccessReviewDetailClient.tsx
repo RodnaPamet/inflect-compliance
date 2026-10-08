@@ -72,6 +72,30 @@ interface DecisionRow {
  * false, which ENABLED Close. A connected campaign could be closed with every
  * one of its subjects undecided, from a page that showed no subjects.
  */
+interface ConnectedSnapshot {
+    provider?: string;
+    email?: string;
+    displayName?: string | null;
+    isAdmin?: boolean;
+    mfaEnrolled?: boolean;
+    groups?: unknown;
+    connectionId?: string;
+    externalUserId?: string;
+    /** Read-only HR context, or null when the account is linked to no worker. */
+    hr?: {
+        employeeId: string;
+        fullName: string;
+        workEmail: string;
+        employmentStatus: string;
+        department: string | null;
+        jobTitle: string | null;
+        managerName: string | null;
+        managerEmail: string | null;
+        matchMethod: string;
+        contradicted: boolean;
+    } | null;
+}
+
 interface ConnectedDecisionRow {
     id: string;
     subjectRef: string;
@@ -80,29 +104,29 @@ interface ConnectedDecisionRow {
     decidedBy: { id: string; email: string; name: string | null } | null;
     notes: string | null;
     executedAt: string | Date | null;
-    snapshotJson: {
-        provider?: string;
-        email?: string;
-        displayName?: string | null;
-        isAdmin?: boolean;
-        mfaEnrolled?: boolean;
-        groups?: unknown;
-        connectionId?: string;
-        externalUserId?: string;
-        /** Read-only HR context, or null when the account is linked to no worker. */
-        hr?: {
-            employeeId: string;
-            fullName: string;
-            workEmail: string;
-            employmentStatus: string;
-            department: string | null;
-            jobTitle: string | null;
-            managerName: string | null;
-            managerEmail: string | null;
-            matchMethod: string;
-            contradicted: boolean;
-        } | null;
-    } | null;
+    /**
+     * Prisma types this `JsonValue`, which genuinely admits a string, a number
+     * and an array — the column has no schema. Declaring the narrow object
+     * shape here and asserting it at the boundary would be a lie the compiler
+     * believes; `readSnapshot` narrows instead.
+     */
+    snapshotJson: unknown;
+}
+
+/**
+ * Narrow a `snapshotJson` to the shape the table reads, degrading to `{}`.
+ *
+ * A snapshot that is not a JSON object cannot describe an account, and the
+ * columns already have a fallback for every field — the account cell falls back
+ * to `subjectRef`, HR renders "no linked worker". So degrading renders a row
+ * that is honest about knowing nothing, rather than throwing and taking the
+ * whole campaign page down over one malformed row.
+ */
+function readSnapshot(value: unknown): ConnectedSnapshot {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value as ConnectedSnapshot;
+    }
+    return {};
 }
 
 interface ReviewDetail {
@@ -340,7 +364,7 @@ export function AccessReviewDetailClient({
                 id: 'account',
                 header: t('colAccount'),
                 cell: ({ row }) => {
-                    const snap = row.original.snapshotJson ?? {};
+                    const snap = readSnapshot(row.original.snapshotJson);
                     return (
                         <div data-testid={`connected-row-${row.original.id}`}>
                             <div className="font-medium text-content-default">
@@ -358,7 +382,7 @@ export function AccessReviewDetailClient({
                 id: 'directoryPosture',
                 header: t('colSnapshotRole'),
                 cell: ({ row }) => {
-                    const snap = row.original.snapshotJson ?? {};
+                    const snap = readSnapshot(row.original.snapshotJson);
                     return (
                         <div className="text-sm">
                             <div>{snap.isAdmin ? t('directoryAdmin') : t('directoryUser')}</div>
@@ -373,7 +397,7 @@ export function AccessReviewDetailClient({
                 id: 'hr',
                 header: t('colHrContext'),
                 cell: ({ row }) => {
-                    const hr = row.original.snapshotJson?.hr ?? null;
+                    const hr = readSnapshot(row.original.snapshotJson).hr ?? null;
                     if (!hr) {
                         // An unlinked account is a REVIEWABLE fact, not missing
                         // data: it is a service account, a contractor the HR
@@ -398,7 +422,7 @@ export function AccessReviewDetailClient({
                                 </div>
                             ) : null}
                             {hr.contradicted ? (
-                                <div className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                                <div className="text-xs font-medium text-content-warning">
                                     {t('hrContradicted')}
                                 </div>
                             ) : null}
@@ -548,7 +572,7 @@ export function AccessReviewDetailClient({
                 <div
                     role="alert"
                     data-testid="access-review-snapshot-truncated"
-                    className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+                    className="rounded-md border border-border-warning bg-bg-warning p-3 text-sm text-content-warning"
                 >
                     <strong className="font-semibold">{t('truncatedTitle')}</strong>{' '}
                     {t('truncatedBody', { count: subjectCount })}
@@ -562,7 +586,7 @@ export function AccessReviewDetailClient({
                 <div
                     role="alert"
                     data-testid="connected-decision-error"
-                    className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100"
+                    className="rounded-md border border-border-error bg-bg-error p-3 text-sm text-content-error"
                 >
                     {connectedError}
                 </div>
