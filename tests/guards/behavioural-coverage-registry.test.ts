@@ -133,6 +133,19 @@ const REGISTRY: RegistryEntry[] = [
             'computed node/link counts, both empty branches, and the ' +
             'pin/unpin interaction.',
     },
+    {
+        primitive: 'Solid focus indicators read the accent (Button halo)',
+        structuralRatchets: ['guards/eslint-local-rules-wired.test.ts'],
+        renderedTest: 'rendered/focus-accent-seam.test.tsx',
+        guards:
+            'the lint rule `local/no-brand-focus-indicator` proves no shared ' +
+            'focus utility NAMES a brand token, which is necessary but not ' +
+            'sufficient: an accent defined as a copied hex, or not at all, ' +
+            'passes it while the halo renders a different colour (or none). ' +
+            'The rendered test resolves the live and the disabledTooltip ' +
+            'halo against both theme blocks and asserts the brand colour ' +
+            'Inflect always painted.',
+    },
 ];
 
 function existsUnderTests(relPath: string): boolean {

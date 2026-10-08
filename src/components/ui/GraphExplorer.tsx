@@ -251,7 +251,7 @@ const TraceNode = memo(function TraceNode({
         return (
             <Link
                 href={data.href}
-                className="no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)] rounded-md"
+                className="no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)] rounded-md"
                 onClick={(e) => e.stopPropagation()}
             >
                 {inner}

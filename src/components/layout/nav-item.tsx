@@ -514,12 +514,19 @@ export const NAV_ITEM_DEFAULT =
  *       The fix (2026-05-13 v2) is to override the ENTIRE
  *       `before:bg-[...]` arbitrary value with a parallel
  *       arbitrary value carrying the page-bg tones. Three
- *       identical `var(--bg-page)` stops collapse the linear
- *       gradient to a solid; the stardust particle layers are
- *       preserved verbatim. The `!` important still wins over
+ *       identical `var(--nav-band-active)` stops collapse the
+ *       linear gradient to a solid; the stardust particle layers
+ *       are preserved verbatim. The `!` important still wins over
  *       the BASE recipe's bg-image because both forms compile
  *       to `[&]:before:background-image: ...` and `!` raises
  *       the active variant's specificity.
+ *
+ *       `--nav-band-active` aliases `--bg-page` in both themes
+ *       (tokens.css), so the band is the same page-tone cut-out
+ *       it was when these stops named `--bg-page` directly. The
+ *       token is the seam for a host that marks the current page
+ *       with a colour of its own (playerz.bg: yellow), which it
+ *       could not do while the recipe named the page tone.
  *
  *       The glow is preserved as `--nav-band-glow-active`
  *       (navy blur) — it still anchors the band's edge softly
@@ -559,7 +566,7 @@ export const NAV_ITEM_DEFAULT =
  * accessibility gain.
  */
 export const NAV_ITEM_ACTIVE =
-    'text-content-brand bg-[radial-gradient(circle_at_left,_var(--brand-secondary-subtle),_transparent_75%)] before:opacity-100 before:animate-nav-band-active-alive before:top-1! before:bottom-1! before:w-[4px]! before:bg-[radial-gradient(circle_1.5px_at_50%_80%,_rgba(255,255,255,0.9),_transparent_70%),radial-gradient(circle_1.5px_at_50%_55%,_rgba(255,255,255,0.5),_transparent_70%),radial-gradient(circle_1.5px_at_50%_30%,_rgba(255,255,255,0.2),_transparent_70%),linear-gradient(to_bottom,_var(--bg-page),_var(--bg-page),_var(--bg-page))]! before:shadow-[var(--nav-band-glow-active)]! after:opacity-100 shadow-[0_0_12px_2px_var(--nav-row-aura-color),var(--nav-bevel-shadow)] font-medium';
+    'text-content-brand bg-[radial-gradient(circle_at_left,_var(--brand-secondary-subtle),_transparent_75%)] before:opacity-100 before:animate-nav-band-active-alive before:top-1! before:bottom-1! before:w-[4px]! before:bg-[radial-gradient(circle_1.5px_at_50%_80%,_rgba(255,255,255,0.9),_transparent_70%),radial-gradient(circle_1.5px_at_50%_55%,_rgba(255,255,255,0.5),_transparent_70%),radial-gradient(circle_1.5px_at_50%_30%,_rgba(255,255,255,0.2),_transparent_70%),linear-gradient(to_bottom,_var(--nav-band-active),_var(--nav-band-active),_var(--nav-band-active))]! before:shadow-[var(--nav-band-glow-active)]! after:opacity-100 shadow-[0_0_12px_2px_var(--nav-row-aura-color),var(--nav-bevel-shadow)] font-medium';
 
 /**
  * Badge recipe — aligned + breathing. (R12-PR8 lock.)

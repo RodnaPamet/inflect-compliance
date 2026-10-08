@@ -471,7 +471,7 @@ export function VirtualTable<T extends TableRowData>({
             tabIndex={0}
             className={cn(
                 "flex h-full flex-col overflow-x-auto focus:outline-none",
-                "focus-visible:ring-2 focus-visible:ring-[var(--brand-default)]/40",
+                "focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]/40",
                 scrollWrapperClassName,
             )}
             style={{ minHeight: 0 }}

@@ -136,10 +136,13 @@ export const buttonVariants = cva(
     // touch: the tap target never shrinks with the visual.
     "pointer-coarse:min-h-11",
     // Focus: a two-stop halo — a surface-coloured spacer ring, then the
-    // brand. Reads on every background because the spacer separates the
-    // brand ring from whatever the button is sitting on.
+    // accent. Reads on every background because the spacer separates the
+    // accent ring from whatever the button is sitting on. `--accent-default`
+    // aliases the brand here (tokens.css), so this is the brand ring it
+    // always was; a host that points with another colour than it fills
+    // with sets that one token, without touching the fill.
     "focus-visible:outline-none",
-    "focus-visible:shadow-[0_0_0_2px_var(--bg-default),0_0_0_4px_var(--brand-default)]",
+    "focus-visible:shadow-[0_0_0_2px_var(--bg-default),0_0_0_4px_var(--accent-default)]",
     // Disabled: two channels muted (brightness + saturation) plus the
     // lift dropped, so a disabled tile reads as flat, dead material
     // rather than a dimmed live one.

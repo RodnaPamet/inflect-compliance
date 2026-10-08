@@ -1290,7 +1290,7 @@ export function Table<T extends TableRowData>({
               // to the viewport via their own md:min-h-0 / max-h-full and are
               // unaffected (their rows are > 0 anyway when populated).
               numRows === 0 && "min-h-[400px]",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)]/40",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]/40",
               // NO scroll-snap here. Every row used to be a `snap-start`
               // point inside a `snap-y snap-proximity` container — snap
               // targets ~37px apart, which the browser re-evaluates

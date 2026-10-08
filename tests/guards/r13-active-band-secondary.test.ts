@@ -162,12 +162,16 @@ describe('Roadmap-13 PR-4 — active band swaps to secondary brand', () => {
             // raises specificity unambiguously.
             //
             // The linear-gradient inside the override uses three
-            // `var(--bg-page)` stops (collapsed to a solid). The
+            // `var(--nav-band-active)` stops (collapsed to a solid),
+            // and that token aliases `--bg-page` in both themes, so
+            // the band is still the page-tone cut-out —
+            // tests/rendered/nav-item-active-band-tone.test.tsx
+            // resolves it against the real theme blocks. The
             // stardust radial-particle layers are preserved
             // verbatim so the band still sparkles.
             const recipe = activeRecipe();
             expect(recipe).toMatch(
-                /before:bg-\[[\s\S]*?linear-gradient\(to_bottom,[\s\S]*?var\(--bg-page\)[\s\S]*?var\(--bg-page\)[\s\S]*?var\(--bg-page\)[\s\S]*?\)\]!/,
+                /before:bg-\[[\s\S]*?linear-gradient\(to_bottom,[\s\S]*?var\(--nav-band-active\)[\s\S]*?var\(--nav-band-active\)[\s\S]*?var\(--nav-band-active\)[\s\S]*?\)\]!/,
             );
         });
 

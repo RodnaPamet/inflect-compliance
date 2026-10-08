@@ -255,3 +255,35 @@ in a variable called `message` is invisible.
 
 **Two census options, both OFF in `eslint.config.mjs`.** They report facts, not
 findings; only the guard turns them on.
+
+### `no-brand-focus-indicator`
+
+Flags a class in the shared UI (`src/components/ui`, `src/components/layout`,
+`packages/ui/src`) that draws a FOCUS indicator — a `focus:` /
+`focus-visible:` / `focus-within:` ring, shadow, outline or border, also
+under `group-` / `peer-` and stacked variants — from a brand token: the named
+palette (`ring-brand-default`) or an arbitrary value reading `--brand-*`
+(`ring-[var(--brand-default)]/40`, the Button's
+`shadow-[…,0_0_0_4px_var(--brand-default)]`). The remedy is the accent:
+`--accent-default`, or `--accent-emphasis` where the deeper stop was meant.
+
+**Why.** `src/styles/tokens.css` aliases both accent tokens to the brand, so
+in this product the two render identically and a brand-coloured focus class
+looks right. The difference is for a host that vendors this UI and points
+with another colour than it fills with: playerz.bg fills with purple and
+focuses in yellow. A focus utility that names the brand can only be recoloured
+by recolouring every brand fill with it, so one such class gives that host one
+control whose focus ring is the wrong colour — and no screenshot of this repo
+would ever show it, because here the values are equal.
+
+**What it does not flag.** A brand ring with no focus variant (a selected
+card, a KPI glow): that is brand decoration, which a host recolours with its
+brand on purpose. A focus utility that is not an indicator
+(`focus-visible:bg-…`). The ring tokens a host already controls (`--ring`,
+`ring-ring`, `--focus-ring`, `--ctrl-edge-focus`). App code outside the shared
+directories, where Inflect's accent IS its brand.
+
+**What it cannot see.** A class assembled from fragments at run time
+(`'focus-visible:ring-' + tone`) and CSS outside JS and TS (`globals.css`).
+The shared UI has neither today, so a green run proves the visible shape is
+absent — not that every focus ring in the tree is accent-coloured.

@@ -123,7 +123,7 @@ export function DataTableCards<T extends TableRowData>({
                             // list — the opposite of what was wanted.
                             clickable && "relative min-h-11 pr-9",
                             clickable &&
-                                "cursor-pointer transition-colors duration-75 hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-default)]/40",
+                                "cursor-pointer transition-colors duration-75 hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]/40",
                         )}
                     >
                         {clickable && (

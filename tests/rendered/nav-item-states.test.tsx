@@ -164,8 +164,10 @@ describe('<NavItem>', () => {
             // the utility `from/via/to` overrides don't compose
             // against the BASE recipe's arbitrary `before:bg-[...]`
             // value. The rendered class string just needs the
-            // page-bg token present in the band's bg-image stack.
-            const bandHasBgPage = link.className.includes('var(--bg-page)');
+            // page-bg token present in the band's bg-image stack —
+            // `--nav-band-active`, the seam that aliases `--bg-page`
+            // (tokens.css) so a host can colour the band.
+            const bandHasBgPage = link.className.includes('var(--nav-band-active)');
             const bandStopSecondary = link.className.includes(
                 'before:from-[var(--brand-secondary-default)]!',
             );

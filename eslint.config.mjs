@@ -291,6 +291,26 @@ const config = [
         },
     },
     {
+        // A focus indicator in the SHARED UI reads `--accent-default` /
+        // `--accent-emphasis` (or the ring tokens), never a `--brand-*`
+        // token. Inflect aliases the accent to its brand, so this changes no
+        // pixel here; it is what lets a host that vendors this UI focus in a
+        // different colour than it fills with (playerz.bg: yellow focus on
+        // purple fills). Scoped to the shared directories because that is
+        // where a host's copy comes from: app code under src/app and the
+        // domain components is Inflect's alone, and Inflect's accent IS its
+        // brand. See eslint-rules/rules/no-brand-focus-indicator.js.
+        files: [
+            'src/components/ui/**/*.{ts,tsx}',
+            'src/components/layout/**/*.{ts,tsx}',
+            'packages/ui/src/**/*.{ts,tsx}',
+        ],
+        ignores: ['**/__tests__/**', '**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+        rules: {
+            'local/no-brand-focus-indicator': 'error',
+        },
+    },
+    {
         // `require-agent-attribution` is an invariant about PRODUCTION write
         // sites, and its companion guard already says so — the guard's
         // population is `repoFiles({ under: 'src' })`. The ESLint config did
