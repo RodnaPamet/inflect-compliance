@@ -18,7 +18,7 @@ restate it.
 | 0b | Persist directory login names | Merged | #3273 |
 | 0c | Persist structured HR names and real employee numbers | In the merge queue | #3277 |
 | 1a | Publish the contract and a fake server | Open | #3257 |
-| 1b | The MCP client | Open | #3291 |
+| 1b | The MCP client | Open | #3293 |
 | 1c | Register the `legacy-mcp` provider | Not started | — |
 | 2a | Snapshot models and a fail-closed pull | Not started | — |
 | 2b | Mapping UI and suggestions | Not started | — |
