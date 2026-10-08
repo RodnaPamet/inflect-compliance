@@ -115,6 +115,58 @@ describe('#3282 — the sweep never cancels a candidate that can still merge', (
         expect(v.filter((x) => x.verdict === 'cancel')).toHaveLength(2);
     });
 
+    it('SEVERAL WORKFLOWS ON ONE REF are all kept — the case that broke a PR', () => {
+        // THE REGRESSION. A merge-group candidate fans out across several
+        // workflows on the SAME ref — measured, 33 refs in this repo carry
+        // `CI`, `Integration Stress` and `Bundle Analyze` apiece. The original
+        // predicate compared RUN IDS (`newest.id !== r.id`), so it kept one
+        // sibling and called the rest superseded. When `CI` was among the
+        // losers, cancelling it reported FAILURE on the live entry and took
+        // #3277 to UNMERGEABLE while it merged cleanly onto main.
+        //
+        // The old fixtures could not express this: they built every ref as
+        // `pr-<n>-<base>` with a DIFFERENT base per run, so a same-ref pair was
+        // unrepresentable and the suite was green over a case that cannot occur.
+        const sameRef = sha('f');
+        const v = classifyCandidates({
+            queuedPrNumbers: [777],
+            runs: [
+                run(100, 777, sameRef, '2026-01-01T00:00:00Z'),
+                run(101, 777, sameRef, '2026-01-01T00:00:00Z'),
+                run(102, 777, sameRef, '2026-01-01T00:00:01Z'),
+            ],
+        });
+        expect(v.filter((x) => x.verdict === 'keep')).toHaveLength(3);
+        expect(v.filter((x) => x.verdict === 'cancel')).toHaveLength(0);
+    });
+
+    it('the newest REF keeps every run on it, and a slow sibling cannot reorder refs', () => {
+        // Supersession is a property of REFS, not runs. The old ref here has a
+        // sibling that started LATER than anything on the new ref, so comparing
+        // the latest run per PR would rank the old ref newest and cancel the
+        // live candidate's three runs instead.
+        const v = classifyCandidates({
+            queuedPrNumbers: [888],
+            runs: [
+                run(200, 888, sha('0'), '2026-01-01T00:00:00Z'),
+                run(201, 888, sha('0'), '2026-01-01T00:00:09Z'), // slow, OLD ref
+                run(202, 888, sha('1'), '2026-01-01T00:00:05Z'),
+                run(203, 888, sha('1'), '2026-01-01T00:00:05Z'),
+                run(204, 888, sha('1'), '2026-01-01T00:00:06Z'),
+            ],
+        });
+        expect(v.filter((x) => x.verdict === 'keep')).toHaveLength(3);
+        expect(v.filter((x) => x.verdict === 'cancel')).toHaveLength(2);
+        const byId = new Map(v.map((x) => [x.runId, x]));
+        const verdictOf = (id: number): string => {
+            const hit = byId.get(id);
+            if (hit === undefined) throw new Error(`no verdict for run ${id}`);
+            return hit.verdict;
+        };
+        expect(verdictOf(201)).toBe('cancel');
+        expect(verdictOf(204)).toBe('keep');
+    });
+
     it('ties on createdAt still leave exactly one survivor', () => {
         // A strict `>` on a timestamp alone never fires on equal values, so both
         // would be kept — or, with the comparison inverted, both cancelled. The
