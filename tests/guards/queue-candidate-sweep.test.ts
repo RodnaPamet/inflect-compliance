@@ -115,6 +115,47 @@ describe('#3282 — the sweep never cancels a candidate that can still merge', (
         expect(v.filter((x) => x.verdict === 'cancel')).toHaveLength(2);
     });
 
+    it('the RECORDED incident from the live API classifies correctly', () => {
+        // RECORDED, NOT HAND-BUILT, and that distinction is the whole lesson.
+        // The hand-built fixtures composed refs as `pr-<n>-<base>` with a
+        // different base per run, so a same-ref pair was UNREPRESENTABLE — the
+        // mutation proof certified a branch over inputs production never
+        // produces. The real population always contained the counterexample:
+        // this repo puts three workflows on every `merge_group` candidate.
+        //
+        // These are the two actual runs from the 2026-10-08 incident, pulled
+        // from the API. Regenerate with:
+        //   gh api repos/<o>/<r>/actions/runs/<id> --jq '{id,name,headBranch:.head_branch,createdAt:.created_at}'
+        const fx = JSON.parse(
+            fs.readFileSync(
+                path.join(ROOT, 'tests/guards/fixtures/merge-group-same-ref-3277.json'),
+                'utf-8',
+            ),
+        ) as {
+            queuedPrNumbers: number[];
+            runs: Array<{ id: number; name: string; headBranch: string; createdAt: string }>;
+            expect: { cancel: number; keep: number };
+        };
+
+        // The fixture must actually contain the shape it claims to, or it grades
+        // nothing — two runs, DIFFERENT workflows, IDENTICAL ref.
+        expect(fx.runs).toHaveLength(2);
+        expect(new Set(fx.runs.map((r) => r.headBranch)).size).toBe(1);
+        expect(new Set(fx.runs.map((r) => r.name)).size).toBe(2);
+        expect(fx.runs.map((r) => r.name).sort()).toEqual(['CI', 'Integration Stress']);
+
+        const v = classifyCandidates({
+            queuedPrNumbers: fx.queuedPrNumbers,
+            runs: fx.runs.map((r) => ({
+                id: r.id,
+                headBranch: r.headBranch,
+                createdAt: r.createdAt,
+            })),
+        });
+        expect(v.filter((x) => x.verdict === 'cancel')).toHaveLength(fx.expect.cancel);
+        expect(v.filter((x) => x.verdict === 'keep')).toHaveLength(fx.expect.keep);
+    });
+
     it('SEVERAL WORKFLOWS ON ONE REF are all kept — the case that broke a PR', () => {
         // THE REGRESSION. A merge-group candidate fans out across several
         // workflows on the SAME ref — measured, 33 refs in this repo carry
