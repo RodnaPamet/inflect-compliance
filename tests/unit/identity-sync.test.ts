@@ -659,4 +659,95 @@ describe('runIdentitySync — deprovision share cap', () => {
         // Positive control — `toBe` on two undefineds would also pass.
         expect(written.syncedAt).toEqual({ lt: NOW });
     });
+    // --- Step 0b: the login names reach both halves of the upsert ---
+
+    describe('Step 0b - directory login names are persisted and overwritten', () => {
+        const withNames = (id: string): NormalizedIdentityAccount => ({
+            ...acct(id),
+            samAccountName: 'ada',
+            userPrincipalName: 'ada@corp.example.com',
+            mailNickname: 'ada',
+        });
+
+        it('writes all three on CREATE', async () => {
+            await runIdentitySync({
+                tenantId: 't1', connectionId: 'conn-1', now: NOW,
+                provider: stubProvider([withNames('a')]),
+            });
+            const { create } = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+            expect(create).toMatchObject({
+                samAccountName: 'ada',
+                userPrincipalName: 'ada@corp.example.com',
+                mailNickname: 'ada',
+            });
+        });
+
+        it('OVERWRITES all three on a later sync, unlike the protection columns', async () => {
+            // Directory state, and the directory is its only author. A renamed
+            // account whose UPN changed must stop matching the old one, or the
+            // bridge keeps linking a legacy row to a login name nobody holds.
+            await runIdentitySync({
+                tenantId: 't1', connectionId: 'conn-1', now: NOW,
+                provider: stubProvider([withNames('a')]),
+            });
+            const { update } = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+            expect(update).toMatchObject({
+                samAccountName: 'ada',
+                userPrincipalName: 'ada@corp.example.com',
+                mailNickname: 'ada',
+            });
+        });
+
+        it('leaves the protection columns out of the update, still', async () => {
+            // The whole reason the update block is an explicit field list. Step
+            // 0b added three fields to it, so this is the assertion that the
+            // addition did not sweep a fourth along.
+            await runIdentitySync({
+                tenantId: 't1', connectionId: 'conn-1', now: NOW,
+                provider: stubProvider([withNames('a')]),
+            });
+            const { update } = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+            for (const f of ['isProtected', 'protectedAt', 'protectedByUserId', 'protectionReason']) {
+                expect(update).not.toHaveProperty(f);
+            }
+            // Positive control: the probe CAN see a field that is there.
+            expect(update).toHaveProperty('samAccountName');
+        });
+
+        it('writes null, never undefined, for a provider that carries no login names', async () => {
+            // Okta and Google Workspace omit the fields entirely. Prisma treats
+            // `undefined` as "do not write this column", which on the UPDATE
+            // half would LEAVE A STALE VALUE from a previous provider or a
+            // previous shape - so the sync must send an explicit null.
+            await runIdentitySync({
+                tenantId: 't1', connectionId: 'conn-1', now: NOW,
+                provider: stubProvider([acct('a')]),
+            });
+            const { create, update } = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+            for (const half of [create, update]) {
+                expect(half.samAccountName).toBeNull();
+                expect(half.userPrincipalName).toBeNull();
+                expect(half.mailNickname).toBeNull();
+            }
+        });
+
+        it('sanitises on the way in, at the single write seam', async () => {
+            await runIdentitySync({
+                tenantId: 't1', connectionId: 'conn-1', now: NOW,
+                provider: stubProvider([{
+                    ...acct('a'),
+                    samAccountName: '  ada\u202E  ',
+                    userPrincipalName: 'a'.repeat(400),
+                    mailNickname: '   ',
+                }]),
+            });
+            const { create } = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+            expect(create.samAccountName).toBe('ada');
+            expect(create.userPrincipalName).toHaveLength(256);
+            // Whitespace-only becomes NULL, not an empty string the bridge
+            // could match every unnamed account on.
+            expect(create.mailNickname).toBeNull();
+        });
+    });
+
 });
