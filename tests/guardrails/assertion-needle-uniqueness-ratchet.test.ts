@@ -446,7 +446,13 @@ const HIGH_MULTIPLICITY = 5;
 //   have measured 1177, and had they been fully independent, 1175 is what
 //   1186 − 2 − 9 gives. Which is the arithmetic working out, not a coincidence
 //   worth trusting next time: measure, do not subtract.
-const AMBIGUOUS_NEEDLE_BASELINE = 1175;
+//
+//   RE-SEATED 1175 -> 1174 (theme stored only on choice). The pre-paint theme
+//   script moved from `layout.tsx` into `src/lib/theme-constants.ts`, and
+//   `theme-flash-init`'s script needles moved to the module that now owns it.
+//   With the script's text gone from the layout, one whole-file needle there
+//   stops matching more than once. Measured on the branch, not subtracted.
+const AMBIGUOUS_NEEDLE_BASELINE = 1174;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.

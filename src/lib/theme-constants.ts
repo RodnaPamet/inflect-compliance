@@ -29,3 +29,48 @@ export const THEME_STORAGE_KEY = uiStorageKey('theme');
  * `:`), so it differs from THEME_STORAGE_KEY.
  */
 export const THEME_COOKIE = uiCookieName('theme');
+
+/** What `JSON.stringify` leaves raw that must not reach an inline <script>. */
+const UNSAFE_SCRIPT_CHARS: Record<string, string> = {
+    '<': '\\u003C',
+    '>': '\\u003E',
+    '\b': '\\b',
+    '\f': '\\f',
+    '\n': '\\n',
+    '\r': '\\r',
+    '\t': '\\t',
+    '\0': '\\0',
+    '\u2028': '\\u2028',
+    '\u2029': '\\u2029',
+};
+
+function escapeUnsafeChars(str: string): string {
+    return str.replace(/[<>\b\f\n\r\t\0\u2028\u2029]/g, (x) => UNSAFE_SCRIPT_CHARS[x]);
+}
+
+/**
+ * Anti-FOUC theme script, rendered by the root layout in `<head>` before the
+ * body, so it runs before first paint.
+ *
+ * It resolves cookie → localStorage → system `prefers-color-scheme` and sets
+ * `data-theme`. It WRITES NOTHING. A theme is stored only when the user picks
+ * one (`ThemeProvider`'s `setTheme` / `toggle`), never on a first visit and
+ * never from the OS preference: reading `prefers-color-scheme` needs no storage
+ * at all, and a UI-customisation cookie is exempt from consent only when the
+ * user asked for the preference to be kept (Article 29 WP194). An earlier
+ * version wrote the cookie here on every first visit so the NEXT server render
+ * would already be right. Without that, a visitor who never chose gets the
+ * `dark` server default, and this script corrects it before paint, every visit.
+ *
+ * Lives here, not in `layout.tsx`, for two reasons. A layout may only export the
+ * fields Next allows. And the script is code that runs in a browser, so
+ * `tests/rendered/theme-storage-on-choice.test.tsx` executes it rather than
+ * pattern-matching its source.
+ *
+ * The two names are embedded through `escapeUnsafeChars(JSON.stringify(…))`.
+ * Both are compile-time constants with no unsafe character in them, so this
+ * changes no byte of what ships. It keeps the construction sound if one of them
+ * ever stops being a constant, because `JSON.stringify` alone leaves `<` intact,
+ * and a `</script>` in an inlined string ends the element.
+ */
+export const THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;var ck=${escapeUnsafeChars(JSON.stringify(THEME_COOKIE))};var lk=${escapeUnsafeChars(JSON.stringify(THEME_STORAGE_KEY))};var t=null;var m=document.cookie.match(new RegExp('(?:^|;\\\\s*)'+ck+'=(light|dark)\\\\b'));if(m){t=m[1];}if(!t){var s=null;try{s=localStorage.getItem(lk);}catch(e){}if(s==='light'||s==='dark'){t=s;}}if(!t){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}d.setAttribute('data-theme',t);}catch(e){}})();`;
