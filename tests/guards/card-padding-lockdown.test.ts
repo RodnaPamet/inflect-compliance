@@ -53,8 +53,8 @@ import * as path from 'path';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const VARIANTS = 'src/components/ui/card-variants.ts';
-const PRIMITIVE = 'src/components/ui/card.tsx';
+const VARIANTS = 'packages/ui/src/components/ui/card-variants.ts';
+const PRIMITIVE = 'packages/ui/src/components/ui/card.tsx';
 
 interface Offence {
     file: string;

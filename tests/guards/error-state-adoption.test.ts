@@ -10,7 +10,7 @@
  *
  * The ratchet locks two invariants:
  *
- *   1. `<ErrorState>` primitive in `src/components/ui/error-state.tsx`
+ *   1. `<ErrorState>` primitive in `packages/ui/src/components/ui/error-state.tsx`
  *      stays canonical (alert role, content-error icon tint, retry
  *      button via `onRetry` prop).
  *
@@ -51,7 +51,7 @@ describe('ErrorState adoption (R11-PR3)', () => {
         // this primitive's docblock as well as in its body.
         const src = codeOf(
             fs.readFileSync(
-                path.resolve(ROOT, 'src/components/ui/error-state.tsx'),
+                path.resolve(ROOT, 'packages/ui/src/components/ui/error-state.tsx'),
                 'utf-8',
             ),
         );

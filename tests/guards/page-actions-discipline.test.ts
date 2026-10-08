@@ -26,7 +26,7 @@
  *      not policed here.
  *
  * What this ratchet does NOT police
- *   • The Button primitive itself (`src/components/ui/button.tsx`
+ *   • The Button primitive itself (`packages/ui/src/components/ui/button.tsx`
  *     and `button-variants.ts`) which DEFINES the size variants —
  *     those files necessarily reference `md` and `lg` symbols.
  *   • Modal / Sheet `size=` props (PR-7's territory).

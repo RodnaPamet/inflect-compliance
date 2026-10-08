@@ -62,7 +62,7 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason: 'Popover is a floating overlay — drop-shadow + shadow paint the lift.',
     },
     {
-        file: 'src/components/ui/tooltip.tsx',
+        file: 'packages/ui/src/components/ui/tooltip.tsx',
         reason: 'Tooltip is a floating overlay; shadow communicates lift.',
     },
     {

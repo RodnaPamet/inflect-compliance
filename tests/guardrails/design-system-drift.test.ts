@@ -273,7 +273,7 @@ describe('Duplicate implementation detector', () => {
 
     const componentFiles = findComponentFiles(COMPONENTS_DIR);
 
-    it('only one Button component exists (src/components/ui/button.tsx)', () => {
+    it('only one Button component exists (packages/ui/src/components/ui/button.tsx)', () => {
         const buttonFiles = componentFiles.filter(f => {
             const base = path.basename(f).toLowerCase();
             return (base === 'button.tsx' || base === 'btn.tsx' || base === 'appbutton.tsx')
@@ -293,7 +293,7 @@ describe('Duplicate implementation detector', () => {
         expect(rel).toEqual(['ui/status-badge.tsx']);
     });
 
-    it('only one EmptyState component exists (src/components/ui/empty-state.tsx)', () => {
+    it('only one EmptyState component exists (packages/ui/src/components/ui/empty-state.tsx)', () => {
         const emptyFiles = componentFiles.filter(f => {
             const base = path.basename(f).toLowerCase();
             return (base === 'empty-state.tsx' || base === 'emptystate.tsx')

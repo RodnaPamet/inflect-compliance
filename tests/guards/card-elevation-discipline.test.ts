@@ -19,7 +19,7 @@
  *     elevation via the prop, not via shadow utilities.
  *
  * Pairs with:
- *   - src/components/ui/card.tsx (the primitive)
+ *   - packages/ui/src/components/ui/card.tsx (the primitive)
  *   - tests/guards/card-density-discipline.test.ts (the density axis)
  *   - tests/guards/motion-language-discipline.test.ts (no
  *     hover-transform / hover-shadow on clickable surfaces)
@@ -51,7 +51,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 const EXEMPT_FILES = new Set<string>([
     // The primitive owns its own className. The Card module references
     // shadow utilities only via the docstring rationale.
-    "src/components/ui/card.tsx",
+    "packages/ui/src/components/ui/card.tsx",
 ]);
 
 function isExempt(rel: string): boolean {
@@ -144,11 +144,11 @@ describe("v2-PR-9 Card elevation ratchet", () => {
         // bodies are asserted on that file; the JSX-level wiring is
         // asserted on card.tsx.
         const variants = codeOf(fs.readFileSync(
-            path.join(ROOT, "src/components/ui/card-variants.ts"),
+            path.join(ROOT, "packages/ui/src/components/ui/card-variants.ts"),
             "utf8",
         ));
         const src = codeOf(fs.readFileSync(
-            path.join(ROOT, "src/components/ui/card.tsx"),
+            path.join(ROOT, "packages/ui/src/components/ui/card.tsx"),
             "utf8",
         ));
 

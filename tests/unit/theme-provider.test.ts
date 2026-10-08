@@ -233,7 +233,7 @@ describe('globals.css — legacy → semantic alias bridge', () => {
         // "Defined in BOTH themes" is the actual claim, and only a count can
         // make it.
         const tokens = readCss('src/styles/tokens.css');
-        const buttonVariants = read('src/components/ui/button-variants.ts');
+        const buttonVariants = read('packages/ui/src/components/ui/button-variants.ts');
         const definitions = (token: string): number =>
             (tokens.match(new RegExp(`^\\s*${token}\\s*:`, 'gm')) ?? []).length;
         const reads = (src: string, token: string): number =>

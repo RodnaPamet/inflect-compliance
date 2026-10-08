@@ -337,9 +337,19 @@
  "src/components/ui/button-variants.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/button-variants` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/button-variants.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
   "reason": "CVA recipe only. Brand tokens appear solely as gradient stops, borders and shadows; the one text usage is `hover:text-content-brand` (L168) — the AA-safe token, with a comment explaining the 4:1 problem it avoids. No copy, no domain, no storage."
  },
  "src/components/ui/button.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/button` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/button.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "The core button primitive — no rendered copy, no storage, and every brand token is used as background/border/shadow (L181 focus halo, L310 kbd background), which the rules explicitly permit. The one domain example in a comment was removed under #3046: the label-centering note's `+ Asset` — itself the antipattern `no-plus-prefix-labels` forbids in a real label — now reads `+ New`. Nothing else was ever coupled, so this is GENERIC. Highest-value unblock in the set: 7 GENERIC files import it directly and promoting it adds 4 files to the import-closed subset (empty-state, error-state, table-empty-state and itself)."
@@ -367,9 +377,19 @@
  "src/components/ui/card-variants.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/card-variants` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/card-variants.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
   "reason": "A single cva() of class strings on semantic tokens, split out so server components can call it. Nothing to couple to."
  },
  "src/components/ui/card.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/card` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/card.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Typed density/elevation wrapper over the glass-card recipe, delegating classes to card-variants.ts. Linear/Stripe/Vercel are cited as design references only; no copy, domain or storage."
@@ -672,6 +692,11 @@
  "src/components/ui/empty-state.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/empty-state` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/empty-state.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
   "reason": "Variant-driven empty/no-results/missing-prereqs state. title/description/action labels are props; the one owned string is t(\"learnMore\"). JSDoc examples (\"Pick a plan before you can add members\", \"Clear filters\") are generic SaaS."
  },
  "src/components/ui/entity-picker.tsx": {
@@ -685,6 +710,11 @@
   "reason": "The chrome is generic (ordered ids + hrefFor, alt+Arrow shortcuts, ends disabled) and all phrases come from the 'ui.recordStepper' catalog. The coupling is one exported constant that could be a prop or config. `labelSingular = 'item'` is a translation-key slug, not displayed copy, so it is NOT a copy finding."
  },
  "src/components/ui/error-state.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/error-state` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/error-state.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Mirror of EmptyState for failed loads. Defaults route through next-intl (t(\"title\"), t(\"tryAgain\")) and L105-107 documents exactly why they were moved out of the parameter list (\"a literal there renders English in every locale\"). The English quoted in the JSDoc describes the en catalog values, not hardcoded copy."
@@ -815,6 +845,11 @@
   "reason": "Pure timestamp → level/ageDays resolver with threshold options and a future-date clamp. No strings, no imports, no domain — all the English and the \"evidence\" reference live in FreshnessBadge.tsx."
  },
  "src/components/ui/hit-area.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/hit-area` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/hit-area.ts": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Exports one class string (`before:content-[''] before:absolute before:-inset-px before:rounded-none`) with a long measurement rationale. No copy, domain, brand or storage."
@@ -2807,6 +2842,11 @@
  "src/components/ui/skeleton.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/skeleton` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/skeleton.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
   "reason": "Skeleton primitives and page-level composites. Every a11y string goes through `useTranslations('common.skeleton')` — t('dashboard'), t('details'), t('settings'); everything else is aria-hidden geometry. Imports are @inflect/ui/lib/cn plus local card modules. The composites are named for page SHAPES (dashboard, detail-tabs, settings, filter-toolbar), not for compliance entities, so there are no domain-props."
  },
  "src/components/ui/slider.tsx": {
@@ -2967,9 +3007,19 @@
  "src/components/ui/tooltip.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/tooltip` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/tooltip.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
   "reason": "Radix Tooltip plus InfoTooltip and DynamicTooltipWrapper. Copy via `useTranslations(\"common.ui\")` — `aria-label={ariaLabel ?? t(\"moreInformation\")}`, with an explicit comment at :238-239 on why the default cannot be a parameter literal. All content/title/shortcut come from callers. Judged NOT domain-props: the JSDoc example `title=\"Scheduled review\"` / `content=\"A periodic review keeps this record current.\"` at :17-18 is illustrative comment prose, not a prop default or a runtime string — nothing in the component carries it."
  },
  "src/components/ui/typography.tsx": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "Re-export shim, not an implementation. #3046 batch 3a moved the primitive to `packages/ui/src/components/ui/typography` and left this one-line `export *` so the ~875 `@/components/ui/*` imports across `src/` keep resolving until batch 3b rewrites them, which deletes this file and this entry. GENERIC by construction: a re-export carries no copy, no token, no domain import and no brand reference \u2014 there is nothing in it to couple. Content-reading guards were repointed at the real file in the same diff, because a guard that read THIS path would pass on an empty population rather than fail."
+ },
+ "packages/ui/src/components/ui/typography.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Heading/Eyebrow/Caption/TextLink. Notable as the slice's exemplar for the brand-as-text rule: :157-181 is a docblock explaining that every brand link tone used to paint `text-[var(--brand-default)]` (~4:1, failing AA) and now paints `text-content-brand`, guarded on the ratio by tests/guardrails/token-contrast-content-brand.test.ts. The `text-[var(--brand-default)]` at :160 is inside that prose, not in a class string, so rule 4 reads NON-FINDING: `codeOf` masks comments before `BRAND_AS_TEXT` runs, the same seam that keeps `use-local-storage.ts` off the storage axis — without it the file that documents the rule would be reported as breaching it. The live tones at :186-205 are all `text-content-*`, and the `bg-[var(--brand-subtle)]` at :179 is prose about fills, which owe 1.4.11's 3:1 rather than 1.4.3's 4.5:1. Clean on the other four: the primitives render `children`, so there is no copy to translate, no GRC vocabulary and no storage, and it has no `@/lib` import at all — `cn` at :33 resolves through `@inflect/ui/lib/cn`, outside the `@/` alias, so neither the `NEUTRAL_LIB` allowlist nor a shared-UI root is doing any work here."

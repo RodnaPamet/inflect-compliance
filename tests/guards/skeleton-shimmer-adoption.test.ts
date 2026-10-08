@@ -2,7 +2,7 @@ import { codeOf } from '../helpers/source-blocks';
 /**
  * Roadmap-11 PR-2 — Skeleton shimmer adoption.
  *
- * The `<Skeleton>` primitive in `src/components/ui/skeleton.tsx`
+ * The `<Skeleton>` primitive in `packages/ui/src/components/ui/skeleton.tsx`
  * now renders a gradient-sweep shimmer (translateX `::after`
  * overlay) on top of the static colour bar. Every loading.tsx
  * file under `src/app/t/[tenantSlug]/(app)/**` should reach the
@@ -52,7 +52,7 @@ function walk(dir: string, results: string[] = []): string[] {
 describe('Skeleton shimmer adoption (R11-PR2)', () => {
     test('the shared Skeleton primitive renders the shimmer-sweep overlay', () => {
         const src = codeOf(
-            fs.readFileSync(path.resolve(ROOT, 'src/components/ui/skeleton.tsx'), 'utf-8'),
+            fs.readFileSync(path.resolve(ROOT, 'packages/ui/src/components/ui/skeleton.tsx'), 'utf-8'),
         );
         // Canonical shimmer signature on the primitive.
         expect(src).toMatch(/after:animate-shimmer-sweep/);
@@ -138,7 +138,7 @@ describe('Skeleton shimmer adoption (R11-PR2)', () => {
             throw new Error(
                 `${offenders.length} loading.tsx file(s) don't reach the shared Skeleton primitive:\n  ` +
                     offenders.join('\n  ') +
-                    '\n\nFix: replace the hand-rolled `animate-pulse` divs with `<Skeleton>` (or any of the `Skeleton*` primitives in `src/components/ui/skeleton.tsx`) — either in the loading.tsx itself or in a route-local shell it imports.\n' +
+                    '\n\nFix: replace the hand-rolled `animate-pulse` divs with `<Skeleton>` (or any of the `Skeleton*` primitives in `packages/ui/src/components/ui/skeleton.tsx`) — either in the loading.tsx itself or in a route-local shell it imports.\n' +
                     'OR add the file path to EXEMPTIONS with a reason if the loading surface intentionally isn\'t a skeleton.',
             );
         }

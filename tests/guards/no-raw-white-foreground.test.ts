@@ -31,8 +31,8 @@ const COMPONENTS = path.join(ROOT, 'src/components');
 // own — white is the correct, theme-independent foreground there.
 const ALLOWED = new Set<string>([
     // Brand-filled button surfaces (bg = var(--brand-*) / bg-black/25).
-    'src/components/ui/button.tsx',
-    'src/components/ui/button-variants.ts',
+    'packages/ui/src/components/ui/button.tsx',
+    'packages/ui/src/components/ui/button-variants.ts',
     // Checkbox on the brand-emphasis fill when checked.
     'src/components/ui/table/columns-dropdown.tsx',
     // Heat-map cell label sits on the computed heat-scale fill.
