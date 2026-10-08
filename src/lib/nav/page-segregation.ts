@@ -116,7 +116,13 @@ export const BACK_AFFORDANCE_COHORT_TODO: readonly string[] = [
  * affordance is forbidden here.
  */
 export const MAIN_PAGES: readonly string[] = [
-    '/access-reviews',
+    // `/access-reviews` was here and is now a SUBPAGE of `/tests` (#3252). All
+    // three clauses of the docstring above were false for it: it has not been in
+    // the sidebar since #1538 removed it deliberately, its only link in the whole
+    // UI is a button on `/tests`, and forbidding the back affordance is what left
+    // a user who arrived that way with no way out — on mobile, no way at all.
+    // Reclassifying makes the guard-enforced claim true rather than relaxing the
+    // claim to fit; see `canonical-parents.ts` for the parent entry.
     '/admin',
     // AGENTIC UI 1/4 (#2421) — the agent register is a sidebar destination
     // now, so it is MAIN and must NOT render a back affordance. It used to be
@@ -154,7 +160,9 @@ export const MAIN_PAGES: readonly string[] = [
  * before lookup.
  */
 export const SUBPAGES: readonly string[] = [
-    // Access reviews
+    // Access reviews. The LIST is a subpage too (#3252) — reached only from the
+    // button on `/tests`, never from the sidebar.
+    '/access-reviews',
     '/access-reviews/[reviewId]',
 
     // Admin subpages

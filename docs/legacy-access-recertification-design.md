@@ -156,6 +156,26 @@ assertion.
   gateway under `LOCAL_ONLY`, pinned by `tests/guards/ai-residency-enforcement.test.ts`.
   Compliance posture, questionnaire autofill and vendor-document extraction do not.
 
+### Conventions and similarity are wired in, and still cannot link
+
+Step 4a added the medium and weak signals: a declared username convention, and two
+name-similarity measures (Jaro-Winkler and a token-set ratio, both in-house so the
+published reference values can be pinned). On the Step 3a corpus they move the
+`SUGGESTED` count from 3 to 18 of 27 cases while adding **no** auto-link — Step 3b's
+type-level guarantee holds, and the corpus run asserts it.
+
+A convention is DECLARED. `proposeConventions` reports how much of a snapshot each
+template explains uniquely and returns no recommendation;
+`adoptUsernameConvention` is what adopts one, gated on `assertCanAdmin`, versioned
+with the previous template retained, and audited. A collision — one generated
+username for two employees — yields `AMBIGUOUS`, never the earlier of them.
+
+Step 4a also had to extend the engine, because Step 3b's scoring extension point
+was unreachable without a blocking one: an account with a name and nothing else
+blocks to nobody under the built-in keys, so no scorer was ever called for it.
+`CandidateBlocker` may only add candidates, and every id it returns is counted
+against the stated comparison budget.
+
 ### The reconciliation engine exists, and nothing calls it yet
 
 `src/lib/identity/reconcile/engine.ts` (Step 3b) implements the five outcomes, the
