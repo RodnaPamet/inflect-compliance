@@ -280,9 +280,12 @@ function rel(abs: string): string {
 // 417 of them already using next-intl):
 //
 //   visible to the old ratchet   26 files    79 strings   (all 26 were baselined)
-//   INVISIBLE (partial)          34 files   117 strings
+//   INVISIBLE (partial)          34 files   118 strings
 //   ----------------------------------------------------
-//   total                        60 files   196 strings
+//   total                        60 files   197 strings
+//
+// (196 at first measurement; +1 when #3272 merged a new hardcoded label while
+//  this PR was in the queue. Re-measured on the union rather than on the branch.)
 //
 // So 60% of the hardcoded UI strings in the scanned tree were unseen, and the
 // invisible debt EXCEEDED the visible debt. The JSX-text-only slice of the
@@ -300,7 +303,14 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'packages/ui/src/components/ui/charts/time-series-chart.tsx': 1, // no-intl, 1 jsx
     'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx': 2, // partial, 2 prop
     'src/app/org/[orgSlug]/(app)/tenants/new/NewTenantForm.tsx': 2, // partial, 2 prop
-    'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx': 23, // partial, 1 jsx + 22 prop
+    // 23 -> 24: #3272 (Step 5a) added `label: 'Access reviews'` to the scope
+    // group map after this budget was first measured, and the ratchet caught it
+    // on the merge-group candidate — green alone, red on the union. Recorded at
+    // 24 rather than localised here: a ratchet's baseline is the state of the
+    // tree it is INTRODUCED on, and reaching into another branch's just-merged
+    // feature to pay one string down would widen this PR past its subject. The
+    // guard now stops the 25th.
+    'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx': 24, // partial, 1 jsx + 23 prop
     'src/app/t/[tenantSlug]/(app)/admin/billing/BillingEventLog.tsx': 6, // partial, 6 prop
     'src/app/t/[tenantSlug]/(app)/admin/billing/page.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/admin/entra/page.tsx': 8, // partial, 7 jsx + 1 prop
