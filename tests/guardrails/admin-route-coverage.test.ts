@@ -34,6 +34,7 @@ const ADMIN_ONLY_ROUTES = [
     // Legacy access recertification (Step 2a). Both admin.manage: PUT decides
     // which legacy column means email and which means employeeNumber, and GET
     // enumerates a customer's legacy schema.
+    'admin/legacy-access/profile/route.ts',
     'admin/legacy-access/pull/route.ts',
     'admin/legacy-access/mapping/route.ts',
     // /admin/* routes

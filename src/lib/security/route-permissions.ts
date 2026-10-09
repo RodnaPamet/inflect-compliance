@@ -98,6 +98,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         // customer's legacy SCHEMA. What a reviewer legitimately needs — why one
         // account was suggested to one person — is the convention and the signal
         // list, not the whole column map.
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/profile$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Profiles a legacy connection\'s columns for the mapping screen. POST '
+            + 'because it dials a customer-hosted server; the response enumerates '
+            + 'their schema, so it is not a reader\'s.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/legacy-access\\/pull$`),
         methods: ['POST'],
         permission: 'admin.manage',
