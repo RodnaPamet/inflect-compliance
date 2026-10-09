@@ -120,9 +120,16 @@ const DISPATCH_BATCH_LIMIT = 50;
  *
  * A literal string here goes stale the moment the endpoint renames its tool,
  * and the failure is silent: the grant would settle `APPLIED` again with no
- * test reddening. `tests/unit/external-write-accepted-outcome.test.ts`
+ * test reddening. `tests/unit/external-write-dispatch.test.ts`'s
+ * "ASYNC_DELIVERY_TOOLS tracks what the endpoint actually advertises"
  * cross-checks this set against the name the endpoint actually advertises,
  * found by glob so it survives the route moving.
+ *
+ * (That citation used to name `external-write-accepted-outcome.test.ts`, a
+ * file which has never existed. The CHECK was real and had teeth the whole
+ * time — only the pointer was wrong, which is the more common of the two and
+ * the one that looks identical to the dangerous version until you go and
+ * look.)
  */
 export const ASYNC_DELIVERY_TOOLS: ReadonlySet<string> = new Set([
     // Entra entitlement management. MEASURED: the `adminAdd` POST returned 200

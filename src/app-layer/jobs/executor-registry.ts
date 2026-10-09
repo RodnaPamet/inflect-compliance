@@ -1667,6 +1667,18 @@ executorRegistry.register('external-write-dispatch', async (payload) => {
     return makeResult('external-write-dispatch', startedAt, startMs, r.scanned, r.applied, r.refused, {
         tenants: r.tenants,
         indeterminate: r.indeterminate,
+        // `accepted` was missing here, which made the whole ACCEPTED population
+        // invisible in this job's telemetry: a pass that accepted twelve
+        // requests reported scanned=12, applied=0 and nothing else, reading as
+        // a pass that did nothing. The reconcile counts (#3334) are reported
+        // for the same reason — a promotion nobody can count is a control
+        // nobody can show is running.
+        accepted: r.accepted,
+        reconcileScanned: r.reconcile.scanned,
+        promoted: r.reconcile.promoted,
+        reconcileNotYet: r.reconcile.notYet,
+        reconcileUnreadable: r.reconcile.unreadable,
+        reconcileUnverifiable: r.reconcile.unverifiable,
     });
 });
 

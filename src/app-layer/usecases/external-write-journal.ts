@@ -221,6 +221,49 @@ export async function settleWrite(
 }
 
 /**
+ * Promote an `ACCEPTED` row to `APPLIED` once delivery is confirmed (#3334).
+ *
+ * A SECOND function rather than a parameter on `settleWrite`, because the two
+ * differ in the one clause that matters. `settleWrite`'s `where` is pinned to
+ * `outcome: 'PENDING'` so that settling twice cannot rewrite an outcome
+ * somebody has already read and acted on; this one is pinned to
+ * `outcome: 'ACCEPTED'` for exactly the same reason, one state along. Widening
+ * either to accept both would remove that protection from both.
+ *
+ * Only ever to `APPLIED`. There is no demotion arm here, and
+ * `external-write-reconcile.ts` records why: `FAILED` is a positive claim that
+ * the far end changed nothing, and no timer is evidence for it.
+ */
+export async function promoteAcceptedWrite(
+    ctx: RequestContext,
+    journalId: string,
+    detail: string,
+): Promise<void> {
+    const res = await runInTenantContext(ctx, (db) =>
+        db.externalWriteJournal.updateMany({
+            where: { id: journalId, tenantId: ctx.tenantId, outcome: 'ACCEPTED' },
+            data: { outcome: 'APPLIED', detail: sanitizePlainText(detail), settledAt: new Date() },
+        }),
+    );
+    if (res.count === 0) {
+        // Same hazard as `settleWrite`: an RLS-filtered or already-promoted
+        // update reports success with zero rows, so a caller that trusted the
+        // call would believe it had recorded a promotion that is not there.
+        logger.warn('external write journal: nothing to promote', {
+            component: 'external-write-journal',
+            tenantId: ctx.tenantId,
+            journalId,
+        });
+        return;
+    }
+    logger.info('external write promoted to APPLIED', {
+        component: 'external-write-journal',
+        tenantId: ctx.tenantId,
+        journalId,
+    });
+}
+
+/**
  * Read one row back, decrypted.
  *
  * Exists because a journal you cannot read is half a control, and because the
