@@ -167,6 +167,21 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // The MCP transport itself, and the credential exchange in front of it.
     'mcp/route.ts',
     'mcp/token/route.ts',
+    // A SECOND MCP server, and the reason it is second rather than two more
+    // tools on the first (#3297). `mcp/route.ts` is AGENT-FACING: an agent
+    // authenticated there calls `tools/call` and the tool executes. The grant's
+    // rails — template and bounds approval, the population re-resolved at send,
+    // the PENDING journal row, the prior-state pairing — all live on the
+    // OUTBOUND path in `external-write-dispatch`, so a grant tool on the
+    // agent-facing server would be a grant tool with the rails stripped off.
+    //
+    // This endpoint's only intended client is our own dispatch, reaching it
+    // over HTTPS because `safeFetch` refuses loopback. An agent arrives only
+    // through the external-tools funnel, which is the door with the approval
+    // machinery behind it. OWNER-only (`admin.tenant_lifecycle`), two tools,
+    // and the tenant is authenticated from the path rather than asserted in an
+    // argument.
+    't/[tenantSlug]/admin/mcp/entra-grant/route.ts',
     // PHASE 1, point 01's third bullet — the per-tenant driver toggle. The
     // column shipped with a reader, a default and no writer; a gate whose
     // customer half cannot be moved through the product is a constant wearing

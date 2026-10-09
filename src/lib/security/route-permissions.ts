@@ -361,6 +361,24 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'is the only first-party plan-change path; OWNER-only.',
     },
 
+    // ── The grant MCP endpoint (two tools, our own dispatch is the client) ──
+    {
+        path: new RegExp(`^${T}\\/admin\\/mcp\\/entra-grant(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'An MCP server advertising a time-bounded Entra access-package grant '
+            + 'and its paired prior-state read (#3297). Assigning access in a '
+            + "customer's directory is the same class of authority as nominating "
+            + 'the read that runs immediately before it, which is why this takes '
+            + 'the key `external-prior-state-read` takes rather than '
+            + '`admin.manage`. OWNER-only; ADMIN does not hold it. The only '
+            + 'intended caller is our own `external-write-dispatch`, which '
+            + 'reaches it over HTTPS because `safeFetch` refuses loopback — so '
+            + 'the credential is an API key for this tenant and the tenant is '
+            + 'authenticated from the path rather than asserted in a tool '
+            + 'argument.',
+    },
+
     // ── Which ENGINE executes this tenant's agentic runs ────────────
     {
         path: new RegExp(`^${T}\\/admin\\/agent-driver(\\/.*)?$`),
