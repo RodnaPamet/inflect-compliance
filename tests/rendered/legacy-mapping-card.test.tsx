@@ -102,6 +102,24 @@ const PROFILE = {
 };
 
 let calls: { url: string; method: string }[] = [];
+const realFetch = global.fetch;
+
+afterEach(() => {
+    // RESTORED, not left installed — hygiene, on a global this suite replaces.
+    //
+    // I added this believing it explained a merge-queue candidate failure in
+    // `linked-tasks-panel-response-shape.test.tsx`, which installs no fetch mock
+    // of its own and would therefore inherit one. MEASURED, and it does not:
+    // running the two suites in that order passes identically with and without
+    // this restore, because jest gives each test FILE its own global in this
+    // configuration. The candidate failure has another cause.
+    //
+    // Keeping it anyway. Replacing a shared global and not putting it back is
+    // wrong regardless of whether anything currently notices, and the next
+    // sibling suite is not guaranteed to be as isolated as this one happens to be.
+    global.fetch = realFetch;
+    jest.restoreAllMocks();
+});
 
 beforeEach(() => {
     calls = [];
