@@ -145,6 +145,18 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // authority-arriving-by-accident shape the `admin.external_tools` note
     // below is also about.
     access_reviews: { read: ['view'], write: ['decide'], admin: ['create', 'close'] },
+    // Legacy reconciliation (Step 4b). Same principle as the entry above —
+    // the groups MIRROR the role grants. `confirm` is OWNER+ADMIN only, so it
+    // is `admin` and there is deliberately NO `write` group: there is no
+    // middle action here to put in one.
+    //
+    // A machine may READ the queue — export it, feed a dashboard, count what is
+    // outstanding. Whether a machine should CONFIRM is a different question and
+    // the answer is behind the same gate as a human admin, not a weaker one: a
+    // confirmation attaches an account to a named person and the result is
+    // acted on automatically from then on. An unattended key doing that is the
+    // shape recertification exists to detect.
+    identity_reconciliation: { read: ['view'], admin: ['confirm'] },
     // No `read` group on these two: `PermissionSet` gives them a single
     // `edit` action and no `view`, so there is no flag a read scope could
     // set. `continuity:write` / `processes:write` are the only meaningful
