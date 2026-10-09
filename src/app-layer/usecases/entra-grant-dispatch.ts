@@ -199,6 +199,37 @@ export type GrantOutcome =
  * no end date costs no database read and no key material. The client's copy
  * stays because it is the one that protects a direct caller.
  */
+/**
+ * Does this existing holding run LONGER than the grant being asked for? (#3300)
+ *
+ * The case #3300 exists to catch: a subject already holds the package until a
+ * later date, and a grant for a shorter window either does nothing or — if
+ * Entra treats `adminAdd` as a replace rather than an add — silently SHORTENS
+ * access the operator never asked to reduce. A grant is not obviously
+ * idempotent, which is why the endpoint declares `idempotentHint: false`, and
+ * the prior-state read is where that gets caught.
+ *
+ * CONSERVATIVE IN BOTH UNKNOWN CASES, deliberately:
+ *
+ *   - a holding with NO end date is a permanent one, so it runs longer than any
+ *     bounded grant and this returns true;
+ *   - an end date that will not parse returns true as well, because "we could
+ *     not read when this ends" is not evidence that it ends sooner.
+ *
+ * The alternative — treating an unreadable date as earlier — lets the grant
+ * through on the strength of a value nobody could read, and the harm it would
+ * cause is the one this function exists to prevent.
+ */
+export function runsLongerThanRequested(
+    existing: { readonly endDateTime: string | null },
+    requestedEnd: Date,
+): boolean {
+    if (existing.endDateTime === null || existing.endDateTime === '') return true;
+    const ends = Date.parse(existing.endDateTime);
+    if (Number.isNaN(ends)) return true;
+    return ends > requestedEnd.getTime();
+}
+
 export async function grantTimeBoundedAccess(
     ctx: RequestContext,
     input: TimeBoundedGrantInput,
@@ -216,6 +247,35 @@ export async function grantTimeBoundedAccess(
         connection: resolved.connection,
         now: () => now,
     });
+
+    // THE PRIOR STATE, READ BEFORE THE WRITE (#3300).
+    //
+    // Not the same read `external-write-dispatch` makes through the paired
+    // tool, and not a replacement for it: that one captures the before-state
+    // into the journal for the audit record, and it happens at dispatch. This
+    // one answers a question the caller needs answered NOW — would this grant
+    // reduce access the subject already has?
+    //
+    // `live` only, which is what #3326's shape is for: an EXPIRED assignment is
+    // not a holding, and counting one here would refuse a grant that is exactly
+    // what the subject needs.
+    const prior = await client.readAssignments({
+        targetId: input.targetId,
+        accessPackageId: input.accessPackageId,
+    });
+    const longer = prior.live.find((a) => runsLongerThanRequested(a, input.endDateTime));
+    if (longer) {
+        return {
+            ok: false,
+            refused:
+                'This subject already holds that access package until '
+                + `${longer.endDateTime ?? 'an unstated date'}, which is LATER than the end `
+                + 'date requested. Granting again would not extend it and may shorten it, so '
+                + 'nothing was sent. Request a later end date, or let the existing assignment '
+                + 'run out.',
+        };
+    }
+
     const result = await client.requestTimeBoundedAssignment(input);
     if ('refused' in result) return { ok: false, refused: result.refused };
 
