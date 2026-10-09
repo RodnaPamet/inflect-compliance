@@ -46,6 +46,7 @@ export async function runExternalWriteDispatchJob(
         applied: 0,
         refused: 0,
         indeterminate: 0,
+        accepted: 0,
     };
 
     for (const tenantId of tenants) {
@@ -55,6 +56,11 @@ export async function runExternalWriteDispatchJob(
             total.applied += r.applied;
             total.refused += r.refused;
             total.indeterminate += r.indeterminate;
+            // Accumulated too, or an accepted write is counted NOWHERE: a pass
+            // that accepted twelve requests would report zero applied, zero
+            // refused and zero indeterminate, and read as a pass that did
+            // nothing.
+            total.accepted += r.accepted;
         } catch (err) {
             // One tenant's broken connection must not stop every other tenant's
             // approved writes. The row stays PENDING and the next pass retries

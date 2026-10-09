@@ -92,6 +92,45 @@ import {
  */
 const DISPATCH_BATCH_LIMIT = 50;
 
+/**
+ * Tools whose far end ACCEPTS a request and delivers it LATER (#3324).
+ *
+ * ═══ WHY A DECLARATION HERE, NOT A HINT FROM THE TOOL ═══
+ *
+ * The obvious design is an `asyncDelivery` annotation the tool advertises, and
+ * it is wrong twice over. The far end is the CUSTOMER'S server, so the hint is
+ * written by the party whose behaviour it describes; and
+ * `hashToolManifest` hashes `inputSchema` ONLY, so an annotation is not covered
+ * by the pin a human accepted — a far end could add or remove it after
+ * acceptance with nothing going red.
+ *
+ * So this is a closed set in our own source: reviewable, and not writable by
+ * the thing being described.
+ *
+ * ═══ WHY KEYING ON THE ADVERTISED NAME IS SAFE ═══
+ *
+ * A customer's own server could advertise a tool of the same name and be read
+ * as asynchronous when it is not. That direction is harmless: `ACCEPTED` claims
+ * strictly LESS than `APPLIED`, so a false positive under-claims a write that
+ * did happen. The damaging direction is the false NEGATIVE — an asynchronous
+ * tool absent from this set, settling `APPLIED` for a delivery that may never
+ * occur — and that is the defect being fixed rather than one being introduced.
+ *
+ * ═══ THE RENAME HAZARD, AND WHAT CATCHES IT ═══
+ *
+ * A literal string here goes stale the moment the endpoint renames its tool,
+ * and the failure is silent: the grant would settle `APPLIED` again with no
+ * test reddening. `tests/unit/external-write-accepted-outcome.test.ts`
+ * cross-checks this set against the name the endpoint actually advertises,
+ * found by glob so it survives the route moving.
+ */
+export const ASYNC_DELIVERY_TOOLS: ReadonlySet<string> = new Set([
+    // Entra entitlement management. MEASURED: the `adminAdd` POST returned 200
+    // at 07:07:11Z with `state = submitted/Accepted`; the assignment reached
+    // `delivered/Fulfilled` at 07:10:20Z, 3m09s later.
+    'grant_time_bounded_access',
+]);
+
 export interface ExternalWriteDispatchResult {
     /** Rows this pass looked at. */
     scanned: number;
@@ -101,6 +140,14 @@ export interface ExternalWriteDispatchResult {
     refused: number;
     /** Sent, and we do not know what happened. Needs a human. */
     indeterminate: number;
+    /**
+     * Sent, and the far end ACCEPTED it for later delivery (#3324).
+     *
+     * Counted apart from `applied` because it is a different claim. An
+     * operator reading "12 applied" believes twelve changes happened; for an
+     * asynchronous far end that is not yet known.
+     */
+    accepted: number;
 }
 
 /**
@@ -172,6 +219,7 @@ export async function runExternalWriteDispatch(input: {
         applied: 0,
         refused: 0,
         indeterminate: 0,
+        accepted: 0,
     };
     if (due.length === 0) return result;
 
@@ -329,6 +377,28 @@ export async function runExternalWriteDispatch(input: {
                 `The write was sent and no answer came back: ${(err as Error).message}`,
             );
             result.indeterminate += 1;
+            continue;
+        }
+
+        if (ASYNC_DELIVERY_TOOLS.has(row.advertisedToolName)) {
+            // ACCEPTED, not APPLIED. `callTool` returned when the far end took
+            // the request, which for this tool is at acceptance and not at
+            // delivery — so `APPLIED` would be a positive claim that the far
+            // end changed, the exact mirror of the claim the catch arm above
+            // refuses to make in the other direction.
+            //
+            // The detail says what is and is not known, because this row is
+            // terminal until something promotes it and the operator reading it
+            // has no other source for that distinction.
+            await settleWrite(
+                ctx,
+                row.id,
+                'ACCEPTED',
+                'The far end accepted this request and delivers asynchronously, so it is not yet '
+                    + 'known to have taken effect. Confirm with the paired prior-state read before '
+                    + 'treating the access as granted.',
+            );
+            result.accepted += 1;
             continue;
         }
 

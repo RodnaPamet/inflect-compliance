@@ -1,0 +1,39 @@
+-- An accepted external write is not an applied one (#3324).
+--
+-- Entitlement management delivers ASYNCHRONOUSLY. Measured against a live
+-- licensed tenant: the `adminAdd` POST returned HTTP 200 at 07:07:11Z with
+-- `state = submitted/Accepted`, and the assignment did not reach
+-- `delivered/Fulfilled` until 07:10:20Z — 3m09s later. A request can also fail
+-- AFTER acceptance (a policy violation, an ineligible target, an unavailable
+-- resource), so a 200 on the POST is not evidence the subject has access.
+--
+-- `external-write-dispatch` settled 'APPLIED' the moment `callTool` returned,
+-- which for such a tool is at ACCEPTANCE. That is a positive claim that the far
+-- end changed — the mirror of the claim the catch arm is careful NOT to make:
+--
+--     INDETERMINATE, not FAILED. … FAILED is a positive claim that the far end
+--     changed nothing — which nobody here can make.
+--
+-- Nobody at the POST site can make the inverse claim either, so this adds the
+-- state that is actually knowable there.
+--
+-- IF NOT EXISTS, and ALONE IN THIS FILE. Both are required by
+-- `tests/guardrails/migration-enum-isolation.test.ts`, which exists because of
+-- outage #2745: Postgres commits an enum addition in a way that does not roll
+-- back with the surrounding transaction, so a later failing statement leaves
+-- the value permanent while the rest is not — and `migrate resolve
+-- --rolled-back` then re-runs the file, where a non-idempotent ADD VALUE fails
+-- against the enum that already contains it. Production was down ~25 hours.
+--
+-- NO `BEFORE`/`AFTER` CLAUSE, so the value APPENDS to the end of the physical
+-- type. `prisma/schema/enums.prisma` therefore declares ACCEPTED LAST — after
+-- INDETERMINATE — even though it reads as belonging beside APPLIED. That is not
+-- an oversight: `prisma migrate diff` compares enum values as a SET and cannot
+-- see an order disagreement, so the agreement is held by
+-- `tests/guardrails/enum-member-order-matches-migrations.test.ts` instead.
+--
+-- Appending cannot renumber an existing member, and `ExternalWriteOutcome` is
+-- not in that guard's ORDINAL_SENSITIVE list — no column is sorted by it.
+
+-- AlterEnum
+ALTER TYPE "ExternalWriteOutcome" ADD VALUE IF NOT EXISTS 'ACCEPTED';

@@ -1925,6 +1925,31 @@ enum ExternalWriteOutcome {
   /// the captured prior state, and the PENDING sweep would never surface the row
   /// either — invisible to both readers at once.
   INDETERMINATE
+  /// The far end ACCEPTED the request and will deliver it later (#3324).
+  ///
+  /// Measured, not assumed: an Entra `adminAdd` POST returned 200 at 07:07:11Z
+  /// with `state = submitted/Accepted` and the assignment did not reach
+  /// `delivered/Fulfilled` until 07:10:20Z. A request can also fail after
+  /// acceptance, so a 200 is not evidence the subject has access.
+  ///
+  /// Its own value rather than APPLIED, which is a positive claim that the far
+  /// end changed — the mirror of the claim the INDETERMINATE comment above
+  /// refuses to make in the other direction. And rather than INDETERMINATE,
+  /// which means "we do not know whether anything changed": here we know
+  /// exactly what happened — the request was taken and queued. Collapsing the
+  /// two would make a healthy async write indistinguishable from a lost
+  /// response, and the lost response is the one that needs an operator.
+  ///
+  /// DECLARED LAST, not beside APPLIED where it reads as belonging. A bare
+  /// `ADD VALUE` appends to the end of the physical type, `prisma migrate diff`
+  /// compares enum values as a SET and cannot see the disagreement, and
+  /// `enum-member-order-matches-migrations` is what holds the two in step.
+  ///
+  /// NOTHING PROMOTES IT YET. A row settled here stays here; resolving it to
+  /// APPLIED or FAILED on evidence needs a reconcile pass that does not exist.
+  /// That is deliberate and tracked — an honest terminal state beats a false
+  /// one — but it means this value is not yet a transient.
+  ACCEPTED
 }
 
 // ─── Legacy access recertification ─────────────────────────────────────────
