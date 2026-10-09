@@ -114,7 +114,7 @@ export async function mintMcpServerToken(
     const row = await runInTenantContext(ctx, (db) =>
         db.integrationConnection.findFirst({
             where: { id: connectionId, tenantId: ctx.tenantId },
-            select: { id: true, provider: true, secretEncrypted: true },
+            select: { id: true, provider: true, secretEncrypted: true, configJson: true },
         }),
     );
     if (!row) return { ok: false, refusal: { kind: 'not_found' } };
@@ -146,9 +146,27 @@ export async function mintMcpServerToken(
     // token minted onto an OAuth connection is a credential that is stored,
     // compared against, and never sent: every grant would fail as a mismatch,
     // and the cause would be invisible from either side.
-    const oauthField = ['clientSecret', 'refreshToken'].some(
-        (k) => typeof secrets[k] === 'string' && (secrets[k] as string).trim() !== '',
-    );
+    //
+    // ALL FOUR, ACROSS BOTH PLACES, and this is the half I got wrong first.
+    // `authorizationFor`'s trigger is
+    //
+    //     const tenantId     = str(config.tenantId);       // configJson
+    //     const clientId     = str(config.clientId);       // configJson
+    //     const clientSecret = str(secrets.clientSecret);
+    //     const refreshToken = str(secrets.refreshToken);
+    //     if (tenantId || clientId || clientSecret || refreshToken) { …OAuth… }
+    //
+    // so TWO of the four live on `configJson`, not in the secret blob. Checking
+    // only the secrets passes a connection whose config names a tenant and a
+    // client — which is the shape the one real `mcp-server` connection in
+    // production actually has — and that connection would then be minted a
+    // token it can never present. Worse, with the OAuth branch triggered and
+    // its secrets absent, `authorizationFor` throws
+    // "partly configured for OAuth" and never reaches the static header at all.
+    const cfg = (row.configJson ?? {}) as Record<string, unknown>;
+    const set = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+    const oauthField =
+        set(cfg.tenantId) || set(cfg.clientId) || set(secrets.clientSecret) || set(secrets.refreshToken);
     if (oauthField) return { ok: false, refusal: { kind: 'oauth_configured' } };
 
     const rotated = typeof secrets.authorization === 'string' && secrets.authorization !== '';

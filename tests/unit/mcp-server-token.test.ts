@@ -54,6 +54,7 @@ const row = (over: Record<string, unknown> = {}) => ({
     id: CONN,
     provider: 'mcp-server',
     secretEncrypted: null,
+    configJson: {},
     ...over,
 });
 
@@ -121,11 +122,34 @@ describe('the rest of the connection survives', () => {
 });
 
 describe('a token that would never be sent is refused at mint time', () => {
-    it.each([['clientSecret'], ['refreshToken']])(
-        'refuses when %s is configured — the dispatch would send an OAuth bearer instead',
-        async (field) => {
+    /**
+     * ALL FOUR OF `authorizationFor`'s TRIGGER FIELDS, and two of them are on
+     * `configJson` rather than in the secret blob:
+     *
+     *     const tenantId     = str(config.tenantId);
+     *     const clientId     = str(config.clientId);
+     *     const clientSecret = str(secrets.clientSecret);
+     *     const refreshToken = str(secrets.refreshToken);
+     *     if (tenantId || clientId || clientSecret || refreshToken) { …OAuth… }
+     *
+     * The first version of this test covered only the secrets, which is the
+     * shape the ONE REAL `mcp-server` connection in production does NOT have —
+     * it carries `clientId` and `tenantId` in its config. So the check passed a
+     * connection it had to refuse, and the table below is split by WHERE the
+     * field lives precisely so a future reader cannot lose that again.
+     */
+    it.each([
+        ['secrets', 'clientSecret'],
+        ['secrets', 'refreshToken'],
+        ['config', 'tenantId'],
+        ['config', 'clientId'],
+    ])(
+        'refuses when %s.%s is set — the dispatch would send an OAuth bearer instead',
+        async (where, field) => {
             findFirstMock.mockResolvedValue(
-                row({ secretEncrypted: JSON.stringify({ [field]: 'x' }) }),
+                where === 'secrets'
+                    ? row({ secretEncrypted: JSON.stringify({ [field]: 'x' }) })
+                    : row({ configJson: { [field]: 'x' } }),
             );
             const out = await mintMcpServerToken(ctx, CONN);
             expect(out.ok).toBe(false);
@@ -135,15 +159,38 @@ describe('a token that would never be sent is refused at mint time', () => {
         },
     );
 
+    it('refuses the shape the REAL production connection has', async () => {
+        // Not a hypothetical. The one `mcp-server` connection in production
+        // points at Microsoft's own server with `clientId` and `tenantId` in
+        // config and no OAuth secrets — the exact combination the first version
+        // of this check waved through.
+        findFirstMock.mockResolvedValue(
+            row({
+                configJson: {
+                    url: 'https://mcp.svc.cloud.microsoft/enterprise',
+                    clientId: '186cef0d-3fbf-4ce0-9811-7d310aeb2401',
+                    tenantId: '0fc6f345-0eee-4408-89a9-96fdd1b6439d',
+                },
+            }),
+        );
+        const out = await mintMcpServerToken(ctx, CONN);
+        expect(out.ok === false && out.refusal.kind).toBe('oauth_configured');
+    });
+
     it('the sentence says what to DO about it, not just that it failed', async () => {
         const text = describeMintRefusal({ kind: 'oauth_configured' });
         expect(text).toContain('never sends the static Authorization secret');
         expect(text).toContain('Clear the OAuth fields');
     });
 
-    it('a whitespace-only OAuth field does not count as configured', async () => {
+    it.each([
+        ['secrets', 'clientSecret'],
+        ['config', 'tenantId'],
+    ])('a whitespace-only %s.%s does not count as configured', async (where, field) => {
         findFirstMock.mockResolvedValue(
-            row({ secretEncrypted: JSON.stringify({ clientSecret: '   ' }) }),
+            where === 'secrets'
+                ? row({ secretEncrypted: JSON.stringify({ [field]: '   ' }) })
+                : row({ configJson: { [field]: '   ' } }),
         );
         const out = await mintMcpServerToken(ctx, CONN);
         expect(out.ok).toBe(true);
