@@ -32,6 +32,7 @@ const Body = z.object({
     entitlements: EntitlementLayoutSchema,
     statusValues: z.record(z.string().min(1).max(64), z.enum(CANONICAL_STATUSES)).optional(),
     columnSetFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+    confirmedColumns: z.array(z.string().min(1).max(256)).max(512).optional(),
 });
 
 export const PUT = withApiErrorHandling(

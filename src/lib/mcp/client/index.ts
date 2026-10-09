@@ -144,6 +144,25 @@ export interface PullResult {
     readonly overshared: readonly string[];
 }
 
+export interface ProfileReadResult {
+    readonly manifest: LegacyManifest;
+    /**
+     * The FIRST page's rows. Returned so the caller can compute statistics and
+     * throw them away; nothing persists them and nothing renders them.
+     */
+    readonly rows: readonly LegacyRow[];
+    /** Columns the server returned outside the projection. Stripped from `rows`. */
+    readonly overshared: readonly string[];
+    /**
+     * More pages exist and were deliberately not read.
+     *
+     * NOT a fault and NOT a cap breach — see `profileFirstPage`'s docblock. It is
+     * here so a caller cannot mistake a one-page sample for the whole table, which
+     * is the same distinction `complete` draws for a pull.
+     */
+    readonly truncated: boolean;
+}
+
 export const DEFAULTS = {
     REQUEST_TIMEOUT_MS: 15_000,
     PULL_TIMEOUT_MS: 120_000,
@@ -640,6 +659,140 @@ export async function probeManifest(
 }
 
 /** Re-exported so a caller can assert the client never speaks a tool method. */
+/**
+ * Read the manifest and the FIRST PAGE ONLY, for column profiling.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY THIS IS NOT `pullSnapshot` WITH A CAP
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Every cap in {@link pullSnapshot} THROWS rather than truncating —
+ * `maxPages: 1` raises `CapExceededError` before a single page is requested, and
+ * `maxTotalRows` raises it mid-read. That is correct for a SNAPSHOT, where a
+ * partial read must never be mistaken for a population: invariant 4 says a
+ * truncated read is recorded with a named reason and never reported as complete.
+ *
+ * Profiling wants the opposite, and wants it honestly. One page is ENOUGH and is
+ * not a failure, because a profile is not evidence — it is scaffolding for a
+ * decision an administrator is about to make, with no `accountKey` requirement,
+ * no payload hash, no stored row and no bearing on what recertification reads. So
+ * stopping after page one is the contract here rather than a cap being breached,
+ * and {@link ProfileReadResult.truncated} says plainly that more pages exist.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * IT REQUESTS MORE COLUMNS THAN A PULL, AND THAT IS THE POINT
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A pull requests only the MAPPED columns. A profile requests every column that
+ * is not denylisted, because you cannot map a column you were never shown — the
+ * mapping does not exist yet. The denylist is what keeps that from being a
+ * widening: a name matching it is excluded from profiling exactly as it is
+ * excluded from a pull, so the sensitive columns are never requested at either
+ * stage. The caller assembles that list; this function only transmits it.
+ *
+ * Rows are returned so the caller can compute statistics and DISCARD them.
+ * `lib/legacy-access/profile.ts` is the only intended caller and returns no row
+ * to anybody.
+ */
+export async function profileFirstPage(
+    opts: Pick<PullOptions, 'url' | 'token' | 'fields' | 'requestTimeoutMs'
+        | 'maxBytesPerResponse' | 'maxRowsPerPage' | 'fetchImpl'>
+): Promise<ProfileReadResult> {
+    const requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULTS.REQUEST_TIMEOUT_MS;
+    const maxRowsPerPage = opts.maxRowsPerPage ?? LIMITS.MAX_ROWS_PER_PAGE;
+    const ctx: CallContext = {
+        url: opts.url,
+        token: opts.token,
+        requestTimeoutMs,
+        maxBytes: opts.maxBytesPerResponse ?? DEFAULTS.MAX_BYTES_PER_RESPONSE,
+        // Handshake, manifest, one page: three request budgets, not the whole-pull
+        // one. Somebody is watching a spinner.
+        pullDeadlineAt: Date.now() + requestTimeoutMs * 4,
+        fetchImpl: opts.fetchImpl,
+        sessionId: null,
+        protocolVersion: null,
+    };
+
+    await handshake(ctx);
+
+    const rawManifest = await readResource(ctx, MANIFEST_URI);
+    const parsedManifest = ManifestSchema.safeParse(rawManifest);
+    if (!parsedManifest.success) {
+        throw new ContractViolationError('manifest', 'failed schema validation');
+    }
+    const manifest = parsedManifest.data;
+    if (!isSupportedContract(manifest.contract)) {
+        throw new ContractViolationError('manifest', 'unsupported contract version');
+    }
+
+    const declared = new Set(manifest.columns.map((c) => c.name));
+    if (opts.fields?.length) {
+        const undeclared = opts.fields.filter((f) => !declared.has(f));
+        if (undeclared.length > 0) {
+            throw new ContractViolationError('projection', 'requests undeclared columns');
+        }
+    }
+    const allowed = opts.fields?.length ? new Set(opts.fields) : declared;
+
+    // Page ONE, rebuilt from our own grammar rather than requested verbatim — a
+    // server-supplied URI is a server-supplied request target, and that holds
+    // whether the read is a pull or a probe.
+    const advertised = manifest.pages[0];
+    const parsedUri = parseAccountsUri(advertised);
+    if (!parsedUri) throw new ContractViolationError('manifest', 'unparseable page uri');
+    if (parsedUri.page !== 1) {
+        throw new ContractViolationError('manifest', 'page uris are not sequential');
+    }
+
+    const rawPage = await readResource(ctx, accountsUri(1, opts.fields));
+    const parsedPage = PageSchema.safeParse(rawPage);
+    if (!parsedPage.success) {
+        throw new ContractViolationError('page', 'failed schema validation');
+    }
+    const body = parsedPage.data;
+
+    if (body.snapshotId !== manifest.snapshot.id) {
+        throw new TornSnapshotError(manifest.snapshot.id, body.snapshotId, 1);
+    }
+    if (body.page !== 1) {
+        throw new ContractViolationError('page', 'page number does not match the request');
+    }
+    if (body.rows.length > maxRowsPerPage) {
+        throw new CapExceededError('rows-per-page', maxRowsPerPage, body.rows.length);
+    }
+
+    // Stripped and reported, as in a pull: a column we did not ask for is removed
+    // here so no later caller can mishandle it, and NAMED so the server owner's
+    // bug stays visible. For a profile the stripped set is the interesting one —
+    // the projection already excluded the denylist, so anything stripped here is a
+    // column the server volunteered against an explicit field list.
+    const oversharedColumns = new Set<string>();
+    const rows: LegacyRow[] = [];
+    for (const row of body.rows) {
+        const kept: LegacyRow = {};
+        for (const [column, value] of Object.entries(row)) {
+            if (allowed.has(column)) kept[column] = value;
+            else oversharedColumns.add(column);
+        }
+        rows.push(kept);
+    }
+
+    log('info', 'legacy-mcp.profile_read', {
+        snapshotId: manifest.snapshot.id,
+        pages: manifest.pages.length,
+        columns: manifest.columns.length,
+        rows: rows.length,
+    });
+
+    return {
+        manifest,
+        rows,
+        overshared: [...oversharedColumns].sort(),
+        // More pages exist and we deliberately did not read them. Not a fault.
+        truncated: manifest.pages.length > 1,
+    };
+}
+
 export const CLIENT_METHODS = ['initialize', 'notifications/initialized', 'resources/read'] as const;
 
 export { CONTRACT_VERSION };

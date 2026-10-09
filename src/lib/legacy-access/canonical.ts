@@ -295,6 +295,22 @@ export const StoredMappingSchema = z.object({
     version: z.number().int().positive(),
     /** The column set this mapping was confirmed against. See the module docblock. */
     columnSetFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+    /**
+     * The column NAMES the fingerprint was taken over.
+     *
+     * Stored alongside the hash because a hash cannot be DIFFED, and the drift
+     * screen's whole job is to show which columns were added and which removed.
+     * `computeColumnSetFingerprint` is one-way; without the names, a drift
+     * refusal can only say "something changed", which tells an administrator to
+     * re-confirm a mapping they have no way to review.
+     *
+     * OPTIONAL, and that is deliberate rather than lazy: mappings saved before
+     * this field existed carry only the hash, and they are still valid mappings
+     * that must keep pulling. The drift screen says plainly that it cannot show a
+     * diff for them rather than rendering an empty one, which would read as "no
+     * columns changed" — the opposite of the truth.
+     */
+    confirmedColumns: z.array(z.string().min(1).max(256)).max(512).optional(),
     /** canonical field → source column name. A field absent here is not collected. */
     fields: z.partialRecord(z.enum(CANONICAL_FIELDS), z.string().min(1).max(256)),
     entitlements: EntitlementLayoutSchema,
@@ -388,6 +404,22 @@ export function assertMappingUsable(mapping: StoredMapping): void {
             problems.push(
                 `column "${column}" is mapped to more than one canonical field `
                 + `(${claimants.slice().sort().join(', ')})`
+            );
+        }
+    }
+
+    // If the mapping carries BOTH the column names and their fingerprint, they
+    // must agree. A mismatch is not cosmetic: the fingerprint is what refuses a
+    // drifted pull and the names are what the drift screen shows, so two that
+    // disagree mean the screen explains the refusal with the wrong columns —
+    // which is worse than showing nothing, because it looks authoritative.
+    if (mapping.confirmedColumns) {
+        const derived = computeColumnSetFingerprint(mapping.confirmedColumns);
+        if (derived !== mapping.columnSetFingerprint) {
+            problems.push(
+                'confirmedColumns does not hash to columnSetFingerprint '
+                + `(names give ${derived.slice(0, 12)}…, the stored hash is `
+                + `${mapping.columnSetFingerprint.slice(0, 12)}…)`
             );
         }
     }
@@ -547,4 +579,45 @@ export function computePayloadHash(accounts: readonly CanonicalAccount[]): strin
     const hasher = createPayloadHasher();
     for (const account of ordered) hasher.update(account);
     return hasher.digest();
+}
+
+// ─── Column-set drift, as something a person can read ──────────────────────
+
+export interface ColumnSetDiff {
+    readonly added: readonly string[];
+    readonly removed: readonly string[];
+    /**
+     * True when the stored mapping predates {@link StoredMapping.confirmedColumns}
+     * and carries only a hash, so no diff is derivable.
+     *
+     * Reported rather than defaulted to an empty diff: "nothing changed" and "I
+     * cannot tell what changed" must not look the same on a screen whose purpose
+     * is to justify asking somebody to re-confirm.
+     */
+    readonly indeterminate: boolean;
+}
+
+/**
+ * Which columns appeared and which vanished since a mapping was confirmed.
+ *
+ * Compared on the NORMALISED form the fingerprint uses — trimmed and
+ * lower-cased — so a server that re-cases its headers produces an empty diff,
+ * consistent with that same change not tripping drift in the first place. The
+ * names REPORTED are the current ones for additions and the stored ones for
+ * removals, because those are the spellings each side can actually look up.
+ */
+export function diffColumnSets(
+    mapping: StoredMapping,
+    observedColumns: readonly string[]
+): ColumnSetDiff {
+    if (!mapping.confirmedColumns) {
+        return { added: [], removed: [], indeterminate: true };
+    }
+    const norm = (c: string): string => c.trim().toLowerCase();
+    const before = new Map(mapping.confirmedColumns.map((c) => [norm(c), c]));
+    const after = new Map(observedColumns.map((c) => [norm(c), c]));
+
+    const added = [...after].filter(([k]) => !before.has(k)).map(([, v]) => v).sort();
+    const removed = [...before].filter(([k]) => !after.has(k)).map(([, v]) => v).sort();
+    return { added, removed, indeterminate: false };
 }

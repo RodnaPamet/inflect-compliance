@@ -63,6 +63,12 @@ export interface SaveMappingInput {
      * a particular set of columns, and this is the record of WHICH.
      */
     readonly columnSetFingerprint: string;
+    /**
+     * The column names the fingerprint was taken over, so a later drift refusal
+     * can show WHICH columns moved. Optional on the wire for the same
+     * backward-compatibility reason the stored field is optional.
+     */
+    readonly confirmedColumns?: readonly string[];
 }
 
 /** Read the mapping in force. `assertCanRead`, because a reviewer may see why a row says what it says. */
@@ -119,6 +125,7 @@ export async function saveLegacyAccessMapping(
         const candidate = {
             version: (current?.version ?? 0) + 1,
             columnSetFingerprint: input.columnSetFingerprint,
+            ...(input.confirmedColumns ? { confirmedColumns: [...input.confirmedColumns] } : {}),
             fields: input.fields,
             entitlements: input.entitlements,
             statusValues: input.statusValues,
@@ -157,6 +164,9 @@ export async function saveLegacyAccessMapping(
             [MAPPING_CONFIG_KEY]: {
                 version: mapping.version,
                 columnSetFingerprint: mapping.columnSetFingerprint,
+                ...(mapping.confirmedColumns
+                    ? { confirmedColumns: [...mapping.confirmedColumns] }
+                    : {}),
                 fields: { ...mapping.fields },
                 entitlements: mapping.entitlements,
                 ...(mapping.statusValues ? { statusValues: { ...mapping.statusValues } } : {}),
@@ -198,6 +208,10 @@ export async function saveLegacyAccessMapping(
                 fields: { ...mapping.fields },
                 entitlementLayout: mapping.entitlements.kind,
                 projection: projectedColumns(mapping),
+                // The DIFF, not just the new state. "What changed?" is the
+                // question an auditor asks, and answering it with two
+                // seventeen-key objects leaves them doing the comparison by eye.
+                diff: diffMappings(current, mapping) as unknown as Record<string, unknown>,
                 confirmedByUserId: mapping.confirmedByUserId,
             },
         });
@@ -222,4 +236,111 @@ function sameMapping(a: StoredMapping, b: StoredMapping): boolean {
     if (norm(a.fields) !== norm(b.fields)) return false;
     if (norm(a.statusValues) !== norm(b.statusValues)) return false;
     return true;
+}
+
+// ─── The audited diff ──────────────────────────────────────────────────────
+
+export interface MappingFieldChange {
+    readonly from: string;
+    readonly to: string;
+}
+
+export interface MappingDiff {
+    /** canonical field → column, for fields the new version maps and the old did not. */
+    readonly fieldsAdded: Readonly<Record<string, string>>;
+    /** canonical field → the column the OLD version mapped, for fields now unmapped. */
+    readonly fieldsRemoved: Readonly<Record<string, string>>;
+    /** canonical field → { from, to }, for fields that moved to a different column. */
+    readonly fieldsChanged: Readonly<Record<string, MappingFieldChange>>;
+    readonly layoutChanged: MappingFieldChange | null;
+    /** Status folds, as a count of changed keys. The keys are the SOURCE values. */
+    readonly statusValueKeysChanged: readonly string[];
+    readonly fingerprintChanged: MappingFieldChange | null;
+}
+
+/**
+ * What changed between two mapping versions.
+ *
+ * Audited because "why did this account get suggested to that person last month?"
+ * is answerable only if the mapping in force at the time is recoverable, and a
+ * bare before/after of the whole object is not an answer — somebody comparing two
+ * seventeen-key objects in an audit viewer is doing the diff by eye, which is the
+ * work this is supposed to have done for them.
+ *
+ * Column NAMES and status SOURCE VALUES appear here, and both are safe: a column
+ * name is schema metadata the mapping screen already shows, and a status source
+ * value reached that screen only by passing `mayExposeValueSet` — it is a
+ * vocabulary member like `A` or `LOCKD`, which describes many rows rather than a
+ * person. No cell value can appear, because this function never sees a row.
+ */
+export function diffMappings(
+    previous: StoredMapping | null,
+    next: StoredMapping
+): MappingDiff {
+    const before = previous?.fields ?? {};
+    const after = next.fields;
+
+    const fieldsAdded: Record<string, string> = {};
+    const fieldsRemoved: Record<string, string> = {};
+    const fieldsChanged: Record<string, MappingFieldChange> = {};
+
+    for (const [field, column] of Object.entries(after)) {
+        if (typeof column !== 'string') continue;
+        const old = (before as Record<string, string | undefined>)[field];
+        if (old === undefined) fieldsAdded[field] = column;
+        else if (old !== column) fieldsChanged[field] = { from: old, to: column };
+    }
+    for (const [field, column] of Object.entries(before)) {
+        if (typeof column !== 'string') continue;
+        if ((after as Record<string, string | undefined>)[field] === undefined) {
+            fieldsRemoved[field] = column;
+        }
+    }
+
+    const layoutBefore = previous ? describeLayout(previous.entitlements) : null;
+    const layoutAfter = describeLayout(next.entitlements);
+    const layoutChanged =
+        layoutBefore !== null && layoutBefore !== layoutAfter
+            ? { from: layoutBefore, to: layoutAfter }
+            : null;
+
+    // The union of both key sets, so a REMOVED fold is reported as loudly as an
+    // added one. Dropping a fold silently re-routes a status to UNKNOWN, which is
+    // the fail-closed direction but still a change somebody made.
+    const foldsBefore = previous?.statusValues ?? {};
+    const foldsAfter = next.statusValues ?? {};
+    const statusValueKeysChanged = [
+        ...new Set([...Object.keys(foldsBefore), ...Object.keys(foldsAfter)]),
+    ]
+        .filter((k) => (foldsBefore as Record<string, string | undefined>)[k]
+            !== (foldsAfter as Record<string, string | undefined>)[k])
+        .sort();
+
+    const fingerprintChanged =
+        previous && previous.columnSetFingerprint !== next.columnSetFingerprint
+            ? { from: previous.columnSetFingerprint, to: next.columnSetFingerprint }
+            : null;
+
+    return {
+        fieldsAdded,
+        fieldsRemoved,
+        fieldsChanged,
+        layoutChanged,
+        statusValueKeysChanged,
+        fingerprintChanged,
+    };
+}
+
+/** A layout as one short string, so a diff of two layouts reads as a diff. */
+function describeLayout(layout: StoredMapping['entitlements']): string {
+    switch (layout.kind) {
+        case 'none':
+            return 'none';
+        case 'wide':
+            return `wide(${[...layout.columns].sort().join(',')})`;
+        case 'long':
+            return `long(${layout.column})`;
+        case 'delimited':
+            return `delimited(${layout.column} on "${layout.delimiter}")`;
+    }
 }
