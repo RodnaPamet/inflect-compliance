@@ -51,6 +51,22 @@ export type PermissionSet = {
      */
     access_reviews: { view: boolean; create: boolean; decide: boolean; close: boolean };
     /**
+     * Reconciling legacy accounts to people (Step 4b).
+     *
+     * `confirm` is deliberately narrower than `access_reviews.decide`, which
+     * EDITOR, AUDITOR and READER all hold. Deciding an access review is the
+     * assigned reviewer's job and its effect is bounded by that review.
+     * Confirming an alias writes a DURABLE row: from then on the account
+     * resolves as LINKED on every future run, and a LINKED is acted on by later
+     * steps without anybody looking. A wrong confirmation therefore keeps
+     * somebody's access across every subsequent cycle, silently, which is the
+     * failure recertification exists to catch rather than cause.
+     *
+     * So it follows `close` (OWNER/ADMIN) rather than `decide`. Owner ruling,
+     * 2026-10-09.
+     */
+    identity_reconciliation: { view: boolean; confirm: boolean };
+    /**
      * Business-continuity register — the Business Impact Analysis, its
      * dependency edges and its control links (ISO 22301 / NIS2 Art.21(2)(c)).
      *
@@ -321,6 +337,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     incidents: ['view', 'manage'],
     personnel: ['view', 'manage'],
     access_reviews: ['view', 'create', 'decide', 'close'],
+    identity_reconciliation: ['view', 'confirm'],
     continuity: ['edit'],
     processes: ['edit'],
     frameworks: ['view', 'install'],
@@ -361,6 +378,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 incidents: { view: true, manage: true },
                 personnel: { view: true, manage: true },
                 access_reviews: { view: true, create: true, decide: true, close: true },
+                identity_reconciliation: { view: true, confirm: true },
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: true },
@@ -388,6 +406,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 incidents: { view: true, manage: true },
                 personnel: { view: true, manage: true },
                 access_reviews: { view: true, create: true, decide: true, close: true },
+                identity_reconciliation: { view: true, confirm: true },
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: true },
@@ -430,6 +449,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
                 access_reviews: { view: true, create: false, decide: true, close: false },
+                identity_reconciliation: { view: true, confirm: false },
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: false },
@@ -452,6 +472,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
                 access_reviews: { view: true, create: false, decide: true, close: false },
+                identity_reconciliation: { view: true, confirm: false },
                 continuity: { edit: false },
                 processes: { edit: false },
                 frameworks: { view: true, install: false },
@@ -474,6 +495,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 incidents: { view: true, manage: false },
                 personnel: { view: true, manage: false },
                 access_reviews: { view: true, create: false, decide: true, close: false },
+                identity_reconciliation: { view: true, confirm: false },
                 continuity: { edit: false },
                 processes: { edit: false },
                 frameworks: { view: true, install: false },

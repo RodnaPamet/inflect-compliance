@@ -283,6 +283,29 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
             + 'is in the index because a suspended alias must not be offered to the engine, '
             + 'so the filter is always three-way.',
     },
+    // ── Legacy access recertification (Step 4b) ─────────────────────
+    {
+        model: 'LegacyAccountResolution',
+        fields: ['tenantId', 'accountKey', 'createdAt'],
+        justification:
+            'usecases/legacy-reviewer-actions.ts answers "is the result this reviewer '
+            + 'was shown still the LATEST for this account" before accepting any decision: '
+            + 'equality on tenantId + accountKey, then createdAt desc with take: 2. It runs '
+            + 'once per decision and once per row of a bulk confirmation, so the unindexed '
+            + 'form is a table scan per click. createdAt is in the index because the ORDER '
+            + 'is what makes the answer "latest" rather than "some".',
+    },
+    {
+        model: 'LegacyAccountResolution',
+        fields: ['tenantId', 'executionId', 'outcome'],
+        justification:
+            'The review queue lists one run: equality on tenantId + executionId, then '
+            + 'outcome IN (SUGGESTED, AMBIGUOUS, UNMATCHED) — the three a human has to '
+            + 'decide. The existing (tenantId, snapshotId, outcome) does not serve it: a '
+            + 'snapshot can have many runs, so filtering by snapshot would return every '
+            + 'run ever made against it and the queue would show withdrawn suggestions '
+            + 'beside current ones.',
+    },
     // ── Legacy access recertification (Step 2a) ─────────────────────
     {
         model: 'LegacyAccount',

@@ -208,6 +208,13 @@ model LegacyAccountResolution {
   @@index([tenantId])
   @@index([tenantId, snapshotId, outcome])
   @@index([tenantId, employeeId])
+  /// The version check in usecases/legacy-reviewer-actions.ts: "is the result
+  /// this reviewer was shown still the latest for this account". Runs once per
+  /// decision AND once per bulk row, so an unindexed form is a scan per click.
+  @@index([tenantId, accountKey, createdAt])
+  /// The queue listing: equality on tenantId + executionId, then the outcome
+  /// filter that selects the three a human has to look at.
+  @@index([tenantId, executionId, outcome])
 }
 
 /// The durable crosswalk: this legacy account belongs to this employee, because
@@ -246,6 +253,25 @@ model LegacyIdentityAlias {
   /// signal in the system ambiguous.
   classification LegacyAliasClassification @default(EMPLOYEE)
 
+  /// Required for NON_PERSON, and only meaningful there: a service account
+  /// nobody owns is the thing this classification exists to stop somebody
+  /// declaring. Not in the shape CHECK constraint — see the migration for why
+  /// "contradictory" and "incomplete" are enforced differently.
+  ownerUserId String?
+
+  /// Why, for the decisions a machine cannot check: MANUAL, EXTERNAL and
+  /// NON_PERSON. Encrypted at rest and sanitised at the write path — it is free
+  /// text a reviewer typed about a named person, read back into a review
+  /// surface.
+  justification String?
+
+  /// When an EXTERNAL classification stops being a claim about today.
+  ///
+  /// An expired EXTERNAL returns to the QUEUE rather than being suspended.
+  /// Nothing about it became doubtful — it became old, and those are different
+  /// findings for a reviewer.
+  expiresAt DateTime?
+
   method LegacyMatchMethod
   status LegacyAliasStatus @default(ACTIVE)
 
@@ -277,4 +303,8 @@ model LegacyIdentityAlias {
   @@index([tenantId])
   @@index([tenantId, connectionId, status])
   @@index([tenantId, employeeId])
+  /// The expiry sweep's own read: "which EXTERNAL aliases have expired?" runs
+  /// every cycle for every connection, and without this it scans every alias
+  /// the tenant holds.
+  @@index([tenantId, classification, expiresAt])
 }

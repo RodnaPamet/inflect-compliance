@@ -186,6 +186,18 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  this list.
     IdentityWriteJournal: ['detail'],
 
+    // ─── Legacy access recertification (Step 4b) ──────
+    //  `justification` is free text a REVIEWER typed about a named person — why
+    //  this login is that contractor, why this service account belongs to that
+    //  team, why they overrode the engine. It routinely names the individual.
+    //
+    //  Note what is NOT here: `signalsJson`. That is the engine's own evidence —
+    //  signal kinds, scores, the columns a match rested on — which the review
+    //  surface renders and a reviewer filters on. Encrypting it would make the
+    //  one field that explains a decision the one field nobody can query, and it
+    //  carries no free text.
+    LegacyIdentityAlias: ['justification'],
+
     // ─── Agent-driven external writes (#2861) ──────────
     //  `detail` for the same reason as `IdentityWriteJournal.detail` one entry
     //  up: it is the far end's rejection message, and third-party errors

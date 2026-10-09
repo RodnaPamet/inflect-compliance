@@ -59,6 +59,8 @@ const isDeadlineName = (n: string) =>
  * projection gap gets laundered into a documented decision.
  */
 const EXCLUSIONS: Record<string, string> = {
+    'LegacyIdentityAlias.expiresAt':
+        'When an EXTERNAL classification stops being a claim about today. Excluded for the reason `AgentProposal.expiresAt` is, and the argument transfers: lapsing IS the designed outcome, not a failure to pre-empt. An EXTERNAL alias that expires returns the account to the review queue, where somebody looks at it again with current facts — which is precisely what a time-boxed classification is for. A calendar entry would turn "this decision has a shelf life" into "renew it before it lapses", and a reviewer who renews on a reminder rather than on evidence is rubber-stamping the one classification that exists because nobody could verify it against HR. The expiry is shown on the queue row it belongs to, where the decision is actually made.',
     'LegacyAccount.expiresAt':
         'When an account in a CUSTOMER\'s legacy application expires. Not a '
         + 'compliance deadline for this tenant and not theirs to act on through our '
