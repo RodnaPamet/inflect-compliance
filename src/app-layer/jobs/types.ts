@@ -799,6 +799,7 @@ export interface JobPayloadMap {
     'aws-posture-collect': AwsPostureCollectPayload;
     'compliance-posture-summary': CompliancePostureSummaryPayload;
     'compliance-posture-summary-dispatch': CompliancePostureDispatchPayload;
+    'legacy-access-pull': LegacyAccessPullPayload;
     'identity-sync': IdentitySyncPayload;
     'identity-sync-dispatch': IdentitySyncDispatchPayload;
     'identity-leaver-pass': IdentityLeaverPassPayload;
@@ -888,6 +889,20 @@ export interface HrisSyncDispatchPayload {
 
 /** identity-sync — sync one Okta / Google Workspace connection's directory. */
 export interface IdentitySyncPayload {
+    tenantId: string;
+    connectionId: string;
+}
+
+/**
+ * One legacy access pull, for one connection.
+ *
+ * `connectionId` is required and there is deliberately no fan-out sibling: a
+ * pull is an ON-DEMAND act an administrator asks for, not a nightly sweep.
+ * Recertification reads a snapshot somebody chose to take, and a scheduled pull
+ * would quietly re-read a customer's access tables on a cadence nobody
+ * consented to.
+ */
+export interface LegacyAccessPullPayload {
     tenantId: string;
     connectionId: string;
 }
@@ -1007,6 +1022,19 @@ export const JOB_DEFAULTS: Record<JobName, {
     removeOnComplete: number | boolean;
     removeOnFail: number | boolean;
 }> = {
+    'legacy-access-pull': {
+        // NOT retried, and that is the useful behaviour rather than the lazy one.
+        // A refusal already lands as a PARTIAL snapshot carrying a named reason,
+        // which is what an administrator who pressed the button needs to see; a
+        // silent retry that succeeds hides that the customer's server is flaky.
+        // And a retry would mostly be inert anyway — attempt one holds the
+        // per-connection lock under a 30-minute lease, so a prompt retry returns
+        // SKIPPED_LOCKED rather than re-reading anything.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1_000 },
+        removeOnComplete: 100,
+        removeOnFail: 100,
+    },
     'agent-run-execute': {
         // RETRIED, and the retry is the point. A SIGTERM mid-run leaves the
         // row RUNNING with its completed steps committed; the executor derives

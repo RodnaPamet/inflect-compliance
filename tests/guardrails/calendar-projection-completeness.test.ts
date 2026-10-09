@@ -59,6 +59,14 @@ const isDeadlineName = (n: string) =>
  * projection gap gets laundered into a documented decision.
  */
 const EXCLUSIONS: Record<string, string> = {
+    'LegacyAccount.expiresAt':
+        'When an account in a CUSTOMER\'s legacy application expires. Not a '
+        + 'compliance deadline for this tenant and not theirs to act on through our '
+        + 'calendar — it is an observed property of somebody else\'s system, read from '
+        + 'a snapshot. Projecting it would also put named employees\' account-expiry '
+        + 'dates onto a shared surface, which is a disclosure the recertification '
+        + 'reviewer surface deliberately scopes per subject.',
+
     // ── Credential + session lifetimes: not compliance obligations. Nobody
     //    "meets" an API key expiry; it is a security property of the secret,
     //    surfaced on the admin screens that manage the secret itself.

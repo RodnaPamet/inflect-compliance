@@ -87,6 +87,31 @@ const SECRET_FIELDS_WITH_CONFIG_RULES: readonly string[] = [];
  * Rules whose field no registered provider declares. Dead entries, and one of
  * them is a whole provider that no longer exists.
  */
+/**
+ * Rule keys that are NOT connection-form fields, and are not supposed to be.
+ *
+ * A `configJson` key can be written by a USECASE rather than typed into a form,
+ * and it still needs a rule — `CONFIG_FIELD_RULES` is an ALLOWLIST and
+ * `validateProviderConfig` throws on a key it cannot find. So these are live
+ * entries with no `configFields` counterpart, which is the exact OPPOSITE of an
+ * orphan: deleting one breaks a write path, where deleting an orphan breaks
+ * nothing. Keeping them in the same list would have made that distinction
+ * invisible, and #3315 is what a missing entry costs — Step 1c registered
+ * `legacy-mcp` without declaring Step 4a's key, and adopting a username
+ * convention returned 400 for the only provider the feature exists for.
+ */
+const USECASE_WRITTEN_KEYS: Readonly<Record<string, string>> = {
+    'legacy-mcp.legacyUsernameConvention':
+        'Written by usecases/legacy-username-convention.ts (Step 4a). Operator-authored '
+        + 'template plus a version and the template it replaced — adopted through an '
+        + 'audited usecase, never a form field. Validated by parseConvention, not here.',
+    'legacy-mcp.legacyAccessMapping':
+        'Written by usecases/legacy-access-mapping.ts (Step 2a). The canonical-field '
+        + 'mapping plus its version and column-set fingerprint. Step 2b builds it in the '
+        + 'UI, but it is still saved as one structured object by that usecase rather than '
+        + 'typed field-by-field. Validated by StoredMappingSchema, not here.',
+};
+
 const ORPHAN_RULES: readonly string[] = [
     'servicenow.sysparm_query: rule for a field no provider schema declares',
     'sharepoint: rules exist for an UNREGISTERED provider',
@@ -143,12 +168,42 @@ describe('config field classification — the cross-walk config-schema.ts claims
                 continue;
             }
             for (const key of Object.keys(rules)) {
-                if (!d.config.has(key) && !d.secret.has(key)) {
-                    orphans.push(`${provider}.${key}: rule for a field no provider schema declares`);
-                }
+                if (d.config.has(key) || d.secret.has(key)) continue;
+                // A key a usecase writes is not an orphan — see the map's docblock.
+                if (`${provider}.${key}` in USECASE_WRITTEN_KEYS) continue;
+                orphans.push(`${provider}.${key}: rule for a field no provider schema declares`);
             }
         }
         expect(orphans.sort()).toEqual([...ORPHAN_RULES].sort());
+    });
+
+    it('has no stale USECASE_WRITTEN_KEYS entries', () => {
+        // Two ways an entry goes stale, and both matter. The rule can be deleted
+        // (the entry then describes nothing), or the key can become a real form
+        // field (the entry then hides it from the unclassified-field check below).
+        const declared = declaredFields();
+        const stale: string[] = [];
+        for (const full of Object.keys(USECASE_WRITTEN_KEYS)) {
+            const [provider, key] = full.split('.');
+            const rules = CONFIG_FIELD_RULES[provider];
+            if (!rules || !(key in rules)) {
+                stale.push(`${full}: no such rule any more`);
+                continue;
+            }
+            const d = declared.get(provider);
+            if (d && (d.config.has(key) || d.secret.has(key))) {
+                stale.push(`${full}: now a declared field, so the entry must go`);
+            }
+        }
+        expect(stale).toEqual([]);
+    });
+
+    it('every USECASE_WRITTEN_KEYS entry carries a written reason', () => {
+        for (const [key, reason] of Object.entries(USECASE_WRITTEN_KEYS)) {
+            expect(reason.length).toBeGreaterThan(40);
+            expect(reason).toMatch(/usecases\//);
+            expect(key).toMatch(/^[a-z-]+\.[A-Za-z]+$/);
+        }
     });
 
     it('every declared configField has a rule, so a new field cannot arrive unclassified', () => {

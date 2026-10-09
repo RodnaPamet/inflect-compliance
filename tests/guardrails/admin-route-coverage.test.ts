@@ -31,6 +31,11 @@ import * as path from 'path';
  */
 const ADMIN_ONLY_ROUTES = [
     'admin/calendar/consent/route.ts',
+    // Legacy access recertification (Step 2a). Both admin.manage: PUT decides
+    // which legacy column means email and which means employeeNumber, and GET
+    // enumerates a customer's legacy schema.
+    'admin/legacy-access/pull/route.ts',
+    'admin/legacy-access/mapping/route.ts',
     // /admin/* routes
     'admin/members/route.ts',
     'admin/members/[membershipId]/route.ts',

@@ -26,6 +26,7 @@ import * as path from 'node:path';
 import '@/app-layer/integrations/bootstrap';
 import { registry } from '@/app-layer/integrations/registry';
 import { codeOf } from '../helpers/source-blocks';
+import { repoRelativeFiles } from '../helpers/repo-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 // Comment-masked at the seam. Every harvest below (registered executors,
@@ -39,6 +40,15 @@ const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8
  * reason. A new executor job must be scheduled OR added here deliberately.
  */
 const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
+    // Step 2a. Deliberately NOT scheduled: a pull reads a customer's whole
+    // access table, and recertification works from a snapshot somebody CHOSE to
+    // take. A nightly sweep would re-read those tables on a cadence nobody
+    // consented to, and would produce snapshots no campaign is waiting for.
+    'legacy-access-pull': 'Dispatched by POST /api/t/:slug/admin/legacy-access/pull, which '
+        + 'enqueues one pull for one connection. Never pulled inside a request: the job '
+        + 'dials a customer-hosted MCP server, pages until it has the whole table, and '
+        + 'writes thousands of rows, so an HTTP timeout must not be what decides whether '
+        + 'a snapshot is complete.',
     'agent-run-execute': 'Enqueued by startWorkflowRun AND by resumeWorkflowRun when the resolved driver is flue. '
         + 'A reasoning loop decides for itself how many tools to call and how long to keep '
         + 'going, so it belongs in the worker rather than a web request; the static engine, '
@@ -170,23 +180,38 @@ describe('Runtime wiring forward-lock', () => {
          * state a fact.
          */
         it('every "dispatched by" reason names a real enqueue site', () => {
-            // Scoped to app-layer, which is where every `enqueue(...)` lives.
-            const walk = (dir: string, out: string[] = []): string[] => {
-                for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                    const p = path.join(dir, e.name);
-                    if (e.isDirectory()) walk(p, out);
-                    else if (p.endsWith('.ts')) out.push(p);
-                }
-                return out;
-            };
-            // Only files that actually enqueue something can vouch for a job.
-            // Requiring the NAME to appear in such a file — rather than
-            // anywhere in the tree — is what keeps this from degrading into
-            // the hole it replaced: a file must not be able to satisfy the
-            // check by merely mentioning the job in a comment or a type.
-            const dispatchers = walk(path.join(ROOT, 'src/app-layer'))
-                .map((f) => codeOf(fs.readFileSync(f, 'utf8')))
-                .filter((src) => /\benqueue\(/.test(src));
+                // The population is ALL of `src/`, and it used to be
+                // `src/app-layer` on the stated premise that "this is where every
+                // `enqueue(...)` lives". That premise was false by a wide margin:
+                // eleven enqueue sites sit outside it, ten of them in
+                // `src/app/api` -- including `admin/identity-leaver-passes/run`
+                // and `admin/identity-joiner-passes/run`, which are the canonical
+                // shape for an on-demand admin action.
+                //
+                // So the check could not be satisfied by a job dispatched from a
+                // ROUTE, and the cheapest way past it was to word the reason
+                // without "dispatched by" -- turning the one checkable claim in
+                // this map back into a sentence. Widening the population makes
+                // MORE reasons checkable, never fewer.
+                //
+                // Git-backed rather than a `readdirSync` walk, per the repo rule:
+                // a directory walk reads whatever is on disk, and
+                // `.claude/worktrees/<id>/` holds full checkouts of the repo.
+                //
+                // Only files that actually enqueue something can vouch for a job.
+                // Requiring the NAME to appear in such a file -- rather than
+                // anywhere in the tree -- is what keeps this from degrading into
+                // the hole it replaced: a file must not be able to satisfy the
+                // check by merely mentioning the job in a comment or a type.
+                const dispatchers = repoRelativeFiles()
+                    .filter((f) => f.startsWith('src/') && f.endsWith('.ts'))
+                    .map((f) => codeOf(fs.readFileSync(path.join(ROOT, f), 'utf8')))
+                    .filter((src) => /\benqueue\(/.test(src));
+                // The population must not be able to empty itself silently. An
+                // empty `dispatchers` would fail every "dispatched by" reason at
+                // once, which reads as many broken jobs rather than one broken
+                // scan -- so assert it found the sites we know exist.
+                expect(dispatchers.length).toBeGreaterThanOrEqual(20);
 
             const unenqueued: string[] = [];
             for (const [job, reason] of Object.entries(ON_DEMAND_JOBS)) {

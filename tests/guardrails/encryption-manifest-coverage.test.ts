@@ -71,6 +71,14 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'LegacyAccessSnapshot.refusalDetail':
+        'System-generated explanation of why a legacy access pull was not complete, and ' +
+        'structurally not free text about a person: `LegacyIngestError.detail` permits column ' +
+        'names, counts and account keys and forbids cell values, and every construction site ' +
+        'builds from those. The one reason that could carry a secret — SECRET_SHAPED_VALUE — ' +
+        'names only the egress scanner rule ids, which that scanner documents as carrying no ' +
+        'user content. Encrypting it would hide the operator-facing half of a refusal from the ' +
+        'surface that exists to show it.',
     'AgenticEvidenceArtefact.withdrawnReason':
         'One of three codes — CONTROL_REMOVED, SOURCE_UNVERIFIABLE or ' +
         'OBLIGATION_UNMAPPED — pinned by a DB CHECK and by the ' +
