@@ -70,16 +70,45 @@ beforeEach(() => {
 });
 
 describe('the token is composed and strong, not typed by hand', () => {
-    it('is <connectionId>.<secret>, so nobody concatenates anything', async () => {
+    it('is Bearer <connectionId>.<secret>, so nobody concatenates anything', async () => {
         const out = await mintMcpServerToken(ctx, CONN);
         expect(out.ok).toBe(true);
         const token = out.ok ? out.token : '';
-        expect(token.startsWith(`${CONN}.`)).toBe(true);
+        expect(token.startsWith(`Bearer ${CONN}.`)).toBe(true);
+    });
+
+    /**
+     * THE SCHEME IS PART OF THE STORED VALUE, and this test exists because the
+     * first version did not have it and the defect was invisible to every unit
+     * test on either side.
+     *
+     * `secrets.authorization` is the COMPLETE header value. `mcp/client.ts`
+     * sends it verbatim (`Authorization: opts.authorization`), `mcp/token.ts`'s
+     * static path returns it verbatim, and its OAuth path adds the scheme
+     * itself (`return \`Bearer ${minted.accessToken}\``).
+     *
+     * Stored without the scheme, the dispatch sends `Authorization: cm1a2b…`,
+     * `parseToken` requires `^Bearer\s+` and refuses it as malformed. Measured
+     * end to end against production: the dispatch settled FAILED with "The
+     * prior-state read could not be run" and the 401 never appeared in the
+     * journal.
+     *
+     * It hid because `authenticateGrantCaller` STRIPS a leading `Bearer ` from
+     * the stored value, so the reading half accepts both forms. Only the two
+     * halves together could tell them apart.
+     */
+    it('carries the SCHEME, because the dispatch sends the value verbatim', async () => {
+        const out = await mintMcpServerToken(ctx, CONN);
+        const token = out.ok ? out.token : '';
+        expect(token).toMatch(/^Bearer /);
+        // And the stored value is the same thing, not a stripped copy of it:
+        // the endpoint reads this exact string back out of the row.
+        expect(stored().authorization).toBe(token);
     });
 
     it('carries a secret of the DECLARED length, which no operator picks', async () => {
         const out = await mintMcpServerToken(ctx, CONN);
-        const secret = (out.ok ? out.token : '').slice(CONN.length + 1);
+        const secret = (out.ok ? out.token : '').slice('Bearer '.length + CONN.length + 1);
         // base64url of N bytes is ceil(4N/3) chars with no padding.
         const expected = Math.ceil((GRANT_TOKEN_SECRET_BYTES * 4) / 3);
         expect(secret).toHaveLength(expected);
@@ -221,7 +250,7 @@ describe('rotation, and what the audit row may say', () => {
         expect(first.ok && first.rotated).toBe(false);
 
         findFirstMock.mockResolvedValue(
-            row({ secretEncrypted: JSON.stringify({ authorization: `${CONN}.old` }) }),
+            row({ secretEncrypted: JSON.stringify({ authorization: `Bearer ${CONN}.old` }) }),
         );
         const second = await mintMcpServerToken(ctx, CONN);
         expect(second.ok && second.rotated).toBe(true);
@@ -230,7 +259,7 @@ describe('rotation, and what the audit row may say', () => {
     it('the audit row carries NO part of the token', async () => {
         const out = await mintMcpServerToken(ctx, CONN);
         const token = out.ok ? out.token : '';
-        const secret = token.slice(CONN.length + 1);
+        const secret = token.slice('Bearer '.length + CONN.length + 1);
         const serialised = JSON.stringify(logEventMock.mock.calls[0]);
         // POSITIVE CONTROL first: a negated assertion over an empty window
         // passes while checking nothing.

@@ -173,7 +173,28 @@ export async function mintMcpServerToken(
     // The CONNECTION ID is part of the token because it is what the endpoint
     // looks the row up by; the secret half is what it compares. Composed here
     // so the operator never has to concatenate anything.
-    const token = `${row.id}.${randomBytes(GRANT_TOKEN_SECRET_BYTES).toString('base64url')}`;
+    //
+    // ═══ THE `Bearer ` PREFIX IS PART OF THE STORED VALUE ═══
+    //
+    // `secrets.authorization` is the COMPLETE header value, not the credential
+    // inside it. Both halves of the dispatch say so:
+    //
+    //     // mcp/client.ts
+    //     ...(opts.authorization ? { Authorization: opts.authorization } : {}),
+    //     // mcp/token.ts — the static path returns it VERBATIM
+    //     const staticHeader = str(secrets.authorization);
+    //     return staticHeader || undefined;
+    //     // mcp/token.ts — and the OAuth path adds the scheme itself
+    //     return `Bearer ${minted.accessToken}`;
+    //
+    // So a value stored without the scheme is sent as `Authorization: cm1a2b…`,
+    // and `parseToken` at the endpoint requires `^Bearer\s+` and refuses it as
+    // malformed. MEASURED end to end: the dispatch settled FAILED with "The
+    // prior-state read could not be run" and the 401 was invisible from the
+    // journal — the two halves had been tested only in isolation, and
+    // `authenticateGrantCaller` STRIPS a leading `Bearer ` from the stored
+    // value, so the reading side tolerates both forms and hid the asymmetry.
+    const token = `Bearer ${row.id}.${randomBytes(GRANT_TOKEN_SECRET_BYTES).toString('base64url')}`;
 
     await runInTenantContext(ctx, async (db) => {
         await db.integrationConnection.update({
