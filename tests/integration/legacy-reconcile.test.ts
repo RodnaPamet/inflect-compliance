@@ -353,7 +353,7 @@ describe('gate 3 — the directory bridge is fresh per link', () => {
     });
 });
 
-describe('aliases are READ, never written', () => {
+describe('aliases are read and revalidated, never created', () => {
     it('resolves CONFIRMED_ALIAS from an existing active alias', async () => {
         await prisma.legacyIdentityAlias.create({
             data: {
@@ -386,7 +386,7 @@ describe('aliases are READ, never written', () => {
         expect(nobody.outcome).not.toBe('LINKED');
     });
 
-    it('creates no alias of its own — Step 4b writes them', async () => {
+    it('CREATES no alias of its own — revalidation only ever suspends', async () => {
         await runLegacyReconcile(ctx(), { snapshotId });
         expect(await prisma.legacyIdentityAlias.count({ where: { tenantId: TENANT } })).toBe(0);
     });
@@ -428,5 +428,153 @@ describe('results are immutable', () => {
         expect(secondRows.find((r) => r.accountKey === 'nobody')!.outcome).toBe('LINKED');
         // Both sets coexist against the same snapshot.
         expect(await prisma.legacyAccountResolution.count({ where: { tenantId: TENANT } })).toBe(4);
+    });
+});
+
+describe('Step 4b — alias revalidation', () => {
+    const aliasFor = (accountKey: string, employee: string, confirmedAt = new Date('2026-06-01')) =>
+        prisma.legacyIdentityAlias.create({
+            data: {
+                tenantId: TENANT, connectionId, accountKey,
+                employeeId: employee, method: 'CONFIRMED_ALIAS',
+                confirmedAt, signalsJson: [],
+            },
+        });
+
+    const aliasRow = (accountKey: string) =>
+        prisma.legacyIdentityAlias.findFirstOrThrow({
+            where: { tenantId: TENANT, connectionId, accountKey },
+        });
+
+    const resolutionFor = (accountKey: string, executionId: string) =>
+        prisma.legacyAccountResolution.findFirstOrThrow({
+            where: { tenantId: TENANT, accountKey, executionId },
+        });
+
+    // ── The invariant this step exists to protect ───────────────────────────
+
+    it('a DEPARTURE does not suspend the alias, and the account still LINKS', async () => {
+        // The whole point. Without the link the account lands in the queue as
+        // UNMATCHED, indistinguishable from an unclassified service account —
+        // and the one fact that made it urgent, that it belongs to somebody who
+        // has gone, is the fact that was deleted.
+        await aliasFor('nobody', employeeId);
+        await prisma.employee.update({
+            where: { id: employeeId },
+            data: { status: 'TERMINATED', endDate: new Date('2026-09-01') },
+        });
+
+        const run = await runLegacyReconcile(ctx(), { snapshotId });
+
+        const alias = await aliasRow('nobody');
+        expect(alias.status).toBe('ACTIVE');
+        expect(alias.suspendedReason).toBeNull();
+        expect(alias.suspendedAt).toBeNull();
+
+        const res = await resolutionFor('nobody', run.executionId!);
+        expect(res.outcome).toBe('LINKED');
+        expect(res.method).toBe('CONFIRMED_ALIAS');
+        expect(res.employeeId).toBe(employeeId);
+    });
+
+    // ── Each trigger, through the database ──────────────────────────────────
+
+    it('HR_RECORD_VANISHED suspends, and withholds the alias from the SAME run', async () => {
+        // The ordering proof: suspend first, resolve against the survivors.
+        // Resolving against what was read and suspending afterwards would record
+        // CONFIRMED_ALIAS on the very run that stopped trusting the alias.
+        await aliasFor('nobody', 'employee-that-is-not-on-the-roster');
+
+        const run = await runLegacyReconcile(ctx(), { snapshotId });
+
+        const alias = await aliasRow('nobody');
+        expect(alias.status).toBe('SUSPENDED');
+        expect(alias.suspendedReason).toBe('HR_RECORD_VANISHED');
+        expect(alias.suspendedAt).not.toBeNull();
+
+        const res = await resolutionFor('nobody', run.executionId!);
+        expect(res.method).not.toBe('CONFIRMED_ALIAS');
+        expect(res.outcome).not.toBe('LINKED');
+    });
+
+    it('HR_RECORD_REKEYED suspends when the terminated record has a successor', async () => {
+        await aliasFor('nobody', employeeId);
+        await prisma.employee.update({
+            where: { id: employeeId },
+            data: { status: 'TERMINATED', endDate: new Date('2026-09-01') },
+        });
+        // Same name, starting after the predecessor left — the engine's own
+        // definition of a re-key, reused rather than restated.
+        await prisma.employee.create({
+            data: {
+                tenantId: TENANT, fullName: 'Jane Smith', givenName: 'Jane',
+                familyName: 'Smith', status: 'ACTIVE', startDate: new Date('2026-09-15'),
+                // A DIFFERENT address on purpose. The re-key rule identifies the
+                // successor by name and timeline; giving it the predecessor's
+                // email would make it a rival strong match for `jsmith` and the
+                // test would be exercising an email tie instead.
+                workEmail: 'jane.smith.2@corp.test',
+            },
+        });
+
+        await runLegacyReconcile(ctx(), { snapshotId });
+
+        const alias = await aliasRow('nobody');
+        expect(alias.status).toBe('SUSPENDED');
+        expect(alias.suspendedReason).toBe('HR_RECORD_REKEYED');
+    });
+
+    it('ACCOUNT_RECREATED suspends when the account postdates its own confirmation', async () => {
+        // `sourceCreatedAt` is the legacy application's own date. The row's
+        // `createdAt` is when WE stored it and would prove nothing.
+        await aliasFor('nobody', employeeId, new Date('2026-06-01'));
+        await prisma.legacyAccount.updateMany({
+            where: { tenantId: TENANT, snapshotId, accountKey: 'nobody' },
+            data: { sourceCreatedAt: new Date('2026-08-20') },
+        });
+
+        await runLegacyReconcile(ctx(), { snapshotId });
+
+        const alias = await aliasRow('nobody');
+        expect(alias.status).toBe('SUSPENDED');
+        expect(alias.suspendedReason).toBe('ACCOUNT_RECREATED');
+    });
+
+    it('ACCOUNT_POSTDATES_EMPLOYMENT_END suspends on an end date backdated after the fact', async () => {
+        // Held at confirmation time and fails now — the case a one-off check at
+        // confirmation could never catch.
+        await aliasFor('nobody', employeeId, new Date('2026-06-01'));
+        await prisma.legacyAccount.updateMany({
+            where: { tenantId: TENANT, snapshotId, accountKey: 'nobody' },
+            data: { sourceCreatedAt: new Date('2026-05-10') },
+        });
+        await prisma.employee.update({
+            where: { id: employeeId },
+            data: { status: 'TERMINATED', endDate: new Date('2026-04-01') },
+        });
+
+        await runLegacyReconcile(ctx(), { snapshotId });
+
+        const alias = await aliasRow('nobody');
+        expect(alias.status).toBe('SUSPENDED');
+        expect(alias.suspendedReason).toBe('ACCOUNT_POSTDATES_EMPLOYMENT_END');
+    });
+
+    // ── Idempotence ─────────────────────────────────────────────────────────
+
+    it('a second run does not re-stamp an already suspended alias', async () => {
+        await aliasFor('nobody', 'employee-that-is-not-on-the-roster');
+        await runLegacyReconcile(ctx(), { snapshotId });
+        const first = await aliasRow('nobody');
+
+        await runLegacyReconcile(ctx(), { snapshotId });
+        const second = await aliasRow('nobody');
+
+        // The `where` filters on status ACTIVE, so the row is already out of
+        // scope. Without that filter every run would overwrite `suspendedAt`
+        // with a later clock, and "when did we stop trusting this?" would always
+        // answer "just now".
+        expect(second.suspendedAt).toEqual(first.suspendedAt);
+        expect(second.suspendedReason).toBe('HR_RECORD_VANISHED');
     });
 });

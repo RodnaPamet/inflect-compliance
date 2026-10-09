@@ -761,6 +761,50 @@ function rekeyedSuccessor(
     return matches.length === 1 ? matches[0] : null;
 }
 
+/**
+ * A re-key lookup over one roster, built once.
+ *
+ * Exported for Step 4b's alias revalidation, which has to answer exactly the
+ * question {@link rekeyedSuccessor} already answers — "is this terminated record
+ * a re-key, or did this person simply leave?" — and must answer it the SAME way.
+ *
+ * That distinction is the whole of the revalidation rule: a re-keyed record makes
+ * an alias doubtful and suspends it; a departure must NOT, because suspending
+ * there would take the account out of the leaver population and hide it. Two
+ * independent definitions of "re-keyed" would eventually disagree, and the
+ * direction they disagree in grants access.
+ *
+ * A factory rather than a bare function because the index costs O(roster) to
+ * build and revalidation calls this once per alias. Returning a closure keeps
+ * that cost paid once, the same way {@link makeConventionBlocker} does.
+ */
+export function makeRekeyLookup(
+    roster: readonly RosterEmployee[]
+): (terminated: RosterEmployee) => RosterEmployee | null {
+    const index = buildRosterIndex(roster);
+    const memo = new Map<string, RosterEmployee | null>();
+    return (terminated) => {
+        const hit = memo.get(terminated.id);
+        if (hit !== undefined) return hit;
+        const found = rekeyedSuccessor(terminated, index);
+        memo.set(terminated.id, found);
+        return found;
+    };
+}
+
+/**
+ * The engine's date normalisation, exported so revalidation compares dates the
+ * same way the vetoes do.
+ *
+ * Deliberately not re-implemented at the call site: `ACCOUNT_POSTDATES_END_DATE`
+ * and revalidation's employment-window check are the same comparison asked at
+ * two moments, and a second date parser is how they come to disagree about a
+ * timestamp with an offset.
+ */
+export function isoDay(raw: string | null | undefined): string | null {
+    return dayOf(raw);
+}
+
 function nameKey(e: RosterEmployee): string | null {
     const n = normaliseName(e.fullName);
     const given = (e.givenName ? baseClean(e.givenName) : n.given) ?? '';
@@ -1027,13 +1071,40 @@ function decide(
             // The one place a strong, unvetoed, unique signal still does not
             // link. See `rekeyedSuccessor`.
             const successor = rekeyedSuccessor(employee, index);
-            return {
-                ...base,
-                outcome: 'SUGGESTED',
-                employeeId: successor ? successor.id : winner.employeeId,
-                method: 'REKEYED_PERSON_RULE',
-                signals: winner.signals,
-            };
+
+            // ...with one exception: a CONFIRMED_ALIAS on a record that was not
+            // re-keyed.
+            //
+            // `rekeyedSuccessor`'s rationale is about INFERRED signals — "an old
+            // email, an old number" pointing at a row the leaver process has
+            // finished with. An alias is not an inference. A person looked at
+            // this account and said it belongs to that human, and if that human
+            // has since left with no successor then the terminated row is the
+            // CORRECT answer, not a stale one.
+            //
+            // Downgrading it is the failure the alias exists to prevent. A
+            // `LINKED` is acted on by later steps without anybody looking; a
+            // `SUGGESTED` waits in a queue. So the departed employee's account
+            // would stop being reported as a leaver with access at the moment
+            // they departed — the one moment it matters. See
+            // `lib/identity/reconcile/alias-revalidation`, whose whole subject
+            // is this distinction, and which found this by asserting the
+            // end-to-end claim rather than its own return value.
+            //
+            // A re-keyed record still downgrades, alias or not: there the person
+            // IS still here under a new row, so the alias is genuinely doubtful.
+            // Revalidation suspends that case before the engine sees it; this
+            // branch is what keeps the engine right when called without it.
+            const viaAlias = winner.signals.some((s) => s.kind === 'CONFIRMED_ALIAS');
+            if (!(viaAlias && !successor)) {
+                return {
+                    ...base,
+                    outcome: 'SUGGESTED',
+                    employeeId: successor ? successor.id : winner.employeeId,
+                    method: 'REKEYED_PERSON_RULE',
+                    signals: winner.signals,
+                };
+            }
         }
 
         return {
