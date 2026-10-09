@@ -189,9 +189,23 @@ describe('1b client — the initialize body', () => {
  * table covers the `FaultName` union exhaustively. A fault added in 1a without a
  * row here fails that assertion rather than being silently unexercised.
  */
-const FAULT_EXPECTATIONS: Record<FaultName, PullResult['reason'] extends infer R ? (R extends { kind: infer K } ? K : never) : never> = {
+type FaultKind = PullResult['reason'] extends infer R ? (R extends { kind: infer K } ? K : never) : never;
+
+/**
+ * `null` means the fault does NOT fail the pull.
+ *
+ * Widened from a bare kind when oversharing stopped being a refusal (#3319): the
+ * transport now strips unrequested columns and names them in
+ * `PullResult.overshared`, leaving fatality to the caller, which is the only
+ * party that knows the never-request denylist. The table keeps the entry so the
+ * exhaustiveness check below still covers the whole `FaultName` union — a fault
+ * that becomes non-fatal must stay visible here, not quietly leave the list.
+ */
+const FAULT_EXPECTATIONS: Record<FaultName, FaultKind | null> = {
     tornSnapshot: 'torn-snapshot',
-    oversharing: 'contract-violation',
+    // NOT a failure since #3319 — stripped and reported instead. See the
+    // dedicated test below, which asserts the strip and the report.
+    oversharing: null,
     oversizedPage: 'cap-exceeded',
     slowResponse: 'timeout',
     malformedJson: 'contract-violation',
@@ -325,17 +339,41 @@ describe('1b client — every fault fails closed', () => {
         expect(res.reason?.kind).toBe('cap-exceeded');
     });
 
-    it('oversharing is refused rather than filtered', async () => {
-        // Silently dropping the extra column would make the server's oversharing
-        // invisible, and its owner is the only one who can fix it.
+    it('oversharing is STRIPPED and REPORTED, not refused (#3319)', async () => {
+        // The split: the transport removes the column at the socket, so nothing
+        // downstream can store, render or log what it never receives — and names
+        // it, so the server owner's bug stays visible. Whether it is FATAL is the
+        // caller's call, because that depends on the never-request denylist, which
+        // is product policy this module does not know.
+        //
+        // The previous behaviour refused every such pull. That argument was sound
+        // and its scope was wrong: it settled a product question inside the
+        // transport, so a customer whose server ignores `?fields=` had their
+        // recertification stopped rather than flagged.
         const server = createLegacyMcpFakeServer({
             accounts: 3,
             rowsPerPage: 3,
             faults: { oversharing: true },
         });
         const res = await pull(server, { fields: [KEY_COLUMN] });
-        expect(res.complete).toBe(false);
-        expect(res.reason?.kind).toBe('contract-violation');
+
+        expect(res.complete).toBe(true);
+        expect(res.reason).toBeUndefined();
+        // Named, so the caller can judge severity.
+        expect(res.overshared.length).toBeGreaterThan(0);
+        // And GONE from the rows. This is the half only the transport can do.
+        for (const row of res.rows) {
+            expect(Object.keys(row)).toEqual([KEY_COLUMN]);
+        }
+    });
+
+    it('a conforming server reports no oversharing', async () => {
+        // The denominator. Without this, a bug that reported every column as
+        // overshared would pass the test above.
+        const server = createLegacyMcpFakeServer({ accounts: 3, rowsPerPage: 3 });
+        const res = await pull(server, { fields: [KEY_COLUMN] });
+        expect(res.complete).toBe(true);
+        expect(res.overshared).toEqual([]);
     });
 
     it('a 401 is authentication-failed, not a generic contract violation', async () => {

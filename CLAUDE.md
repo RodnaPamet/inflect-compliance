@@ -1261,6 +1261,20 @@ no tenant — and four rules that are each one careless edit from being undone:
   in `tests/unit/legacy-mcp-client.test.ts` fails if one does, and fails if the client
   directory calls `fetch` or `resilientFetch` directly. A production caller supplying one
   would route around the SSRF defence in a diff that looks like dependency injection.
+- **Oversharing is STRIPPED and REPORTED here, never refused here.** An unrequested
+  column is removed at the socket — so nothing downstream can store, render or log
+  what it never receives — and its NAME goes into `PullResult.overshared`. Whether
+  it is fatal is the CALLER's decision, because fatality depends on the
+  never-request denylist, which is product policy this module does not know:
+  `usecases/legacy-access-pull.ts` refuses with `OVERSHARED_DENIED_COLUMN` when a
+  stripped column is denylisted and flags the connection otherwise. Do not
+  "restore" the unconditional refusal this replaced (#3319): its argument was right
+  — silently dropping a column hides the server owner's bug from the only person
+  who can fix it — but its scope was wrong, and it meant a customer whose server
+  ignores `?fields=` had their recertification stopped rather than flagged. The
+  names are reported on failure paths too, because a denylisted column having
+  crossed the wire is a fact about what left their network, not a claim about the
+  table.
 - **Bodies are read through a byte-capped stream that ABORTS at the cap.** Never
   `res.json()` or `res.text()` then a length check: both have already allocated the whole
   body by the time you could measure it, which makes the cap a report rather than a

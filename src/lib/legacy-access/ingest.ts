@@ -91,11 +91,14 @@ export interface IngestOutcome {
      * as a flag that never clears.
      *
      * **Normally EMPTY through the live transport**, and that is not this module
-     * being careless. `lib/mcp/client` refuses a row carrying an unrequested
-     * column outright ("Refused, not filtered"), so such a pull never reaches
-     * here — it arrives as a transport refusal instead. This stays as the backstop
-     * for a caller holding rows from anywhere else, and the divergence from the
-     * design document's "dropped and flagged" is recorded in #3319.
+     * being careless. `lib/mcp/client` now STRIPS unrequested columns at the
+     * socket and reports their names in `PullResult.overshared`, so the rows that
+     * reach here carry none — the pull usecase reads the transport's list, which
+     * is authoritative because it saw what was actually on the wire.
+     *
+     * This stays as the backstop for a caller holding rows from anywhere else,
+     * and it is a real one: it is what would catch a future reader that bypassed
+     * the client. #3319 records the policy history.
      */
     readonly overshared: readonly string[];
     /**

@@ -121,6 +121,27 @@ export interface PullResult {
     readonly complete: boolean;
     /** The typed failure's `kind`, plus its message. Absent when complete. */
     readonly reason?: { readonly kind: LegacyMcpClientError['kind']; readonly message: string };
+    /**
+     * Column names that arrived in rows but were NOT requested -- stripped from
+     * `rows` here, reported for the caller to judge.
+     *
+     * This used to be a refusal -- every unrequested column threw
+     * `ContractViolationError` and the pull died. The argument for that was sound
+     * -- silently dropping it would make a server's oversharing invisible, and its
+     * owner is the only one who can fix it -- but it settled a PRODUCT question
+     * inside the transport, and settled it the strict way for every case. A
+     * customer whose server ignores `?fields=` is misconfigured, not hostile, and
+     * refusing every pull stopped their recertification outright.
+     *
+     * The split: the transport does what only it can -- strip at the boundary, so
+     * nothing downstream can mishandle what it never receives -- and names what it
+     * stripped. Fatality is the caller's, because it depends on the never-request
+     * denylist, which is product policy this module does not know. See
+     * `usecases/legacy-access-pull.ts`.
+     *
+     * Empty on a conforming server, and empty on every failure path. Names only.
+     */
+    readonly overshared: readonly string[];
 }
 
 export const DEFAULTS = {
@@ -407,6 +428,9 @@ export async function pullSnapshot(opts: PullOptions): Promise<PullResult> {
         sessionId: null,
         protocolVersion: null,
     };
+        // Names only, deduplicated across every page. Never a value: the whole
+        // point is that these columns' CONTENTS do not survive this loop.
+        const oversharedColumns = new Set<string>();
 
     let manifest: LegacyManifest | null = null;
     const rows: LegacyRow[] = [];
@@ -463,7 +487,6 @@ export async function pullSnapshot(opts: PullOptions): Promise<PullResult> {
             columns: manifest.columns.length,
             layout: manifest.layout,
         });
-
         for (const [index, advertisedUri] of manifest.pages.entries()) {
             const expectedPage = index + 1;
 
@@ -509,20 +532,30 @@ export async function pullSnapshot(opts: PullOptions): Promise<PullResult> {
                 );
             }
 
-            // Oversharing. A row carrying a column nobody asked for is data we did
-            // not request leaving a system we do not run, and accepting it would
-            // put it in front of a reviewer and into the mapping UI. Refused, not
-            // filtered: silently dropping it would make a server's oversharing
-            // invisible, and the server's owner is the one who can fix it.
-            for (const row of body.rows) {
-                for (const column of Object.keys(row)) {
-                    if (!allowed.has(column)) {
-                        throw new ContractViolationError('page', 'row carries an unrequested column');
+                // Oversharing. A row carrying a column nobody asked for is data we
+                // did not request, leaving a system we do not run.
+                //
+                // STRIPPED here and REPORTED to the caller, not thrown. The strip is
+                // the half only the transport can do: a column removed at the
+                // boundary cannot be stored, rendered, logged or handed to a model
+                // by any later caller, however careless. The REFUSAL is the half
+                // only the caller can do, because fatality depends on the
+                // never-request denylist, which is product policy this module
+                // deliberately does not know -- the same reason `maxTotalRows` is
+                // the caller's to pass rather than this module's to decide.
+                //
+                // Dropping them SILENTLY would be the bad version, and is what the
+                // previous unconditional refusal was guarding against. Reporting the
+                // names keeps the server owner's bug visible without letting it halt
+                // a customer's recertification.
+                for (const row of body.rows) {
+                    const kept: LegacyRow = {};
+                    for (const [column, value] of Object.entries(row)) {
+                        if (allowed.has(column)) kept[column] = value;
+                        else oversharedColumns.add(column);
                     }
+                    rows.push(kept);
                 }
-            }
-
-            rows.push(...body.rows);
         }
 
         log('info', 'legacy-mcp.pull_complete', {
@@ -532,7 +565,7 @@ export async function pullSnapshot(opts: PullOptions): Promise<PullResult> {
         });
 
         // THE ONLY `complete: true` IN THIS MODULE.
-        return { manifest, rows, complete: true };
+        return { manifest, rows, complete: true, overshared: [...oversharedColumns].sort() };
     } catch (e) {
         const err = e instanceof LegacyMcpClientError ? e : mapEgressError(e);
         log('warn', 'legacy-mcp.pull_failed', {
@@ -544,6 +577,17 @@ export async function pullSnapshot(opts: PullOptions): Promise<PullResult> {
             manifest,
             rows,
             complete: false,
+            // Reported on the failure path TOO, from the pages that were read.
+            //
+            // An earlier draft of this returned `[]` here, reasoning that a partial
+            // read gives no basis for claiming what the whole table overshares.
+            // True, and beside the point: the caller already knows `complete:
+            // false` means "not the whole picture", and a denylisted column having
+            // crossed the wire is a FACT about what left the customer's network,
+            // not a claim about the table. Suppressing it would hide the one
+            // oversharing case that is security-relevant behind an unrelated
+            // transport fault.
+            overshared: [...oversharedColumns].sort(),
             reason: { kind: err.kind, message: err.message },
         };
     }
