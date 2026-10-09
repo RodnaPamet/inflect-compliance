@@ -49,6 +49,15 @@ const APP_ROOT = path.resolve(
  * consistency is large.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // A sub-table inside a CONNECTION DETAIL page, not a list page. CLAUDE.md
+    // names this case explicitly: "Sub-tables nested inside a detail tab —
+    // <DataTable> directly is the right primitive there". Viewport-clamping it
+    // would fight the sections above and below it (the drift notice, the status
+    // value-map editor, the entitlement layout picker and the save button), all of
+    // which must stay reachable while the column list scrolls naturally.
+    'admin/integrations/[connectionId]/LegacyAccessMappingCard.tsx':
+        'detail-page sub-table — column mapping sits between a drift notice, a value-map editor and a save action',
+
     'frameworks/[frameworkKey]/readiness/Nis2ReadinessClient.tsx':
         'multi-section readiness view (KPIs + trend chart + domain + gap tables) — not a single viewport-clamped list',
     'audits/nis2-gap/Nis2GapLifecycleClient.tsx':

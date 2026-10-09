@@ -13,6 +13,7 @@ import {
     PAYLOAD_HASH_ALGORITHM_VERSION,
     assertMappingUsable,
     canonicaliseAccount,
+    diffColumnSets,
     computeColumnSetFingerprint,
     computePayloadHash,
     createPayloadHasher,
@@ -327,5 +328,83 @@ describe('payload hash', () => {
 
     it('records an algorithm version, so a later canonicalisation fix cannot condemn old snapshots', () => {
         expect(PAYLOAD_HASH_ALGORITHM_VERSION).toBe(1);
+    });
+});
+
+describe('diffColumnSets — why a drift refusal is justifiable', () => {
+    const cols = ['LOGIN', 'EMAIL_ADDR', 'STATUS'];
+    const confirmed = (over: Partial<StoredMapping> = {}): StoredMapping => ({
+        ...baseMapping(over),
+        columnSetFingerprint: computeColumnSetFingerprint(cols),
+        confirmedColumns: cols,
+        ...over,
+    });
+
+    it('names the columns ADDED and REMOVED since confirmation', () => {
+        const d = diffColumnSets(confirmed(), ['LOGIN', 'STATUS', 'COST_CENTRE']);
+        expect(d.added).toEqual(['COST_CENTRE']);
+        expect(d.removed).toEqual(['EMAIL_ADDR']);
+        expect(d.indeterminate).toBe(false);
+    });
+
+    it('is EMPTY when only the casing changed, matching what does not trip drift', () => {
+        const d = diffColumnSets(confirmed(), cols.map((c) => c.toLowerCase()));
+        expect(d).toEqual({ added: [], removed: [], indeterminate: false });
+    });
+
+    it('is EMPTY when only the order changed', () => {
+        const d = diffColumnSets(confirmed(), [...cols].reverse());
+        expect(d.added).toEqual([]);
+        expect(d.removed).toEqual([]);
+    });
+
+    it('reports a RENAME as one addition and one removal, which is all it can know', () => {
+        const d = diffColumnSets(confirmed(), ['LOGIN', 'EMAIL_ADDRESS', 'STATUS']);
+        expect(d.added).toEqual(['EMAIL_ADDRESS']);
+        expect(d.removed).toEqual(['EMAIL_ADDR']);
+    });
+
+    it('reports INDETERMINATE for a mapping that stores only the hash', () => {
+        // Mappings saved before `confirmedColumns` existed are still valid and
+        // must keep pulling. "I cannot tell what changed" must not render as "no
+        // columns changed" on a screen whose job is to justify re-confirmation.
+        const legacy = baseMapping();
+        expect(legacy.confirmedColumns).toBeUndefined();
+        const d = diffColumnSets(legacy, ['LOGIN', 'ANYTHING']);
+        expect(d.indeterminate).toBe(true);
+        expect(d.added).toEqual([]);
+        expect(d.removed).toEqual([]);
+    });
+
+    it('reports the CURRENT spelling for additions and the STORED one for removals', () => {
+        // Each side is the spelling that side can actually look up.
+        const d = diffColumnSets(confirmed(), ['LOGIN', 'EMAIL_ADDR', 'Status_New']);
+        expect(d.added).toEqual(['Status_New']);
+        expect(d.removed).toEqual(['STATUS']);
+    });
+});
+
+describe('confirmedColumns must hash to columnSetFingerprint', () => {
+    it('accepts names that agree with the stored hash', () => {
+        const cols = ['LOGIN', 'EMAIL_ADDR'];
+        expect(problemsOf(baseMapping({
+            columnSetFingerprint: computeColumnSetFingerprint(cols),
+            confirmedColumns: cols,
+        }))).toEqual([]);
+    });
+
+    it('REFUSES names that disagree with the stored hash', () => {
+        // A mismatch means the drift screen would explain a refusal with the wrong
+        // columns, which is worse than showing nothing because it looks
+        // authoritative.
+        const problems = problemsOf(baseMapping({
+            columnSetFingerprint: computeColumnSetFingerprint(['LOGIN']),
+            confirmedColumns: ['LOGIN', 'SOMETHING_ELSE'],
+        }));
+        expect(problems.join(' ')).toContain('does not hash to columnSetFingerprint');
+    });
+
+    it('accepts a mapping with no confirmedColumns at all', () => {
+        expect(problemsOf(baseMapping())).toEqual([]);
     });
 });

@@ -40,6 +40,9 @@ const SCAN_DIR = 'src/app/t/[tenantSlug]/(app)';
  * absence of a gear; PRs that mount a gear should REMOVE the entry.
  */
 const EXEMPTIONS: Record<string, string> = {
+    'admin/integrations/[connectionId]/LegacyAccessMappingCard.tsx':
+        '(a) sub-component — the connection detail page owns the surface; this is a column-mapping editor over a fixed, short list of columns the far end declares, so per-column hide/show is not meaningful.',
+
     'admin/vendor-assessment-reviews/VendorAssessmentReviewsQueueClient.tsx':
         '(b) results view — cross-vendor review queue with a fixed derived column set (vendor, status, score, risk, submitted); per-column hide/show not meaningful.',
     'security-testing/SecurityTestingClient.tsx':

@@ -107,6 +107,17 @@ export interface FakeServerOptions {
     slowMs?: number;
     /** Where `redirect` points. Another origin, so SSRF rules bite. */
     redirectTo?: string;
+    /**
+     * Declare a column whose NAME is on the never-request denylist.
+     *
+     * Not a fault: a legacy access table legitimately HAS a password column, and a
+     * conforming server is entitled to declare it. What must never happen is a
+     * caller requesting it — which is a property of OUR projection, provable only
+     * if the server offers the column in the first place. Step 2b's profiler asks
+     * for every non-denylisted column, so this is what makes that assertion mean
+     * something.
+     */
+    declaresDeniedColumn?: boolean;
 }
 
 export interface LoggedRequest {
@@ -141,6 +152,14 @@ const BASE_COLUMNS = [
 
 /** A column that appears only after `schemaDrift` — the added one a drift test sees. */
 const DRIFT_COLUMN = { name: 'COST_CENTRE', type: 'string' as const, nullable: true };
+
+/**
+ * A declared column that no caller may request.
+ *
+ * `PASSWORD_HASH` matches the denylist's `hash` alternative as well as `pass`, so
+ * a test using it proves the pattern rather than one literal.
+ */
+const DENIED_COLUMN = { name: 'PASSWORD_HASH', type: 'string' as const, nullable: true };
 
 /**
  * A credential-shaped value for the `secretShapedValue` fault.
@@ -183,7 +202,10 @@ export function createLegacyMcpFakeServer(opts: FakeServerOptions = {}): LegacyM
 
     const on = (f: FaultName) => faults[f] === true;
     const snapshotId = () => `snap-${pull}`;
-    const columns = () => (on('schemaDrift') && pull > 1 ? [...BASE_COLUMNS, DRIFT_COLUMN] : BASE_COLUMNS);
+    const columns = () => {
+        const base = on('schemaDrift') && pull > 1 ? [...BASE_COLUMNS, DRIFT_COLUMN] : BASE_COLUMNS;
+        return opts.declaresDeniedColumn ? [...base, DENIED_COLUMN] : base;
+    };
     const pageCount = () => Math.max(1, Math.ceil(accounts / rowsPerPage));
 
     /** The conforming row for account `i`, before any projection or fault. */

@@ -65,7 +65,20 @@ async function clearOwnRows(): Promise<void> {
     await prisma.integrationConnection.deleteMany({ where });
     await prisma.employee.deleteMany({ where });
     await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: T } });
-    await prisma.tenant.deleteMany({ where: { id: T } });
+    // The TENANT is deliberately left behind. A usecase this suite exercises
+    // writes a hash-chained audit row, and `audit_log_immutable` refuses every
+    // DELETE on `AuditLog`, so `AuditLog_tenantId_fkey` holds the tenant alive and
+    // this line raised SQLSTATE 23001 — which Prisma renders as a foreign-key
+    // violation, so there is no actual FK to go looking for.
+    //
+    // It passed for a long time only because `resetDatabase` TRUNCATEs, and a
+    // TRUNCATE bypasses the row-level DELETE trigger: whether `AuditLog` happened
+    // to be empty here depended on which sibling suite had run first in the same
+    // shard. `--shard` is a hash over file paths, so ADDING any test file
+    // anywhere re-partitions the shards and changes that ordering (#3320) — which
+    // is how a PR that touches none of this turns the suite red.
+    //
+    // A leftover tenant row is harmless; the next run's `resetDatabase` clears it.
 }
 
 /**

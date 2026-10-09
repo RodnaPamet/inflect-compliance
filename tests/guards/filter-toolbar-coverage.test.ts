@@ -47,6 +47,9 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * length to stop hand-waved exemptions.
  */
 const EXEMPTIONS: Record<string, string> = {
+    "src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/LegacyAccessMappingCard.tsx":
+        "a column-mapping editor on a connection detail page: a fixed, short list of columns the far end declares, not a filterable or user-configurable dataset",
+
     "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/VendorAssessmentReviewsQueueClient.tsx":
         "Cross-vendor review queue — an admin aggregation of submitted/reviewed/closed assessments across all vendors, ordered by review priority; inline status is the only facet and the set is bounded, so it uses sort + row click-through rather than the faceted FilterToolbar.",
     "src/app/org/[orgSlug]/(app)/initiatives/InitiativesClient.tsx":
