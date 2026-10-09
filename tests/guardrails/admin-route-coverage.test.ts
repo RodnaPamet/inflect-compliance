@@ -188,6 +188,12 @@ const ADMIN_ONLY_ROUTES = [
     // a customer's directory on every form load.
     'admin/entra-entitlement/access-packages/route.ts',
     'admin/entra-entitlement/assignment-policies/route.ts',
+    // #3330 — mints the grant endpoint's bearer token. OWNER-only for the same
+    // reason as the two above: the credential carries authority to change
+    // something in a customer's own directory, so handing it out is an exercise
+    // of that authority. A sibling path rather than nested under
+    // admin/integrations, where first-match-wins would resolve to admin.manage.
+    'admin/mcp-server-token/[connectionId]/route.ts',
     'admin/identity-leaver-passes/route.ts',
     // #2687 — the joiner's half of the same pair. The report names which of a
     // customer's people the product would create an account for and at what

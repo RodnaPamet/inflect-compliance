@@ -192,6 +192,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // because a toggle that is one of SIX terms tells an operator almost
     // nothing on its own, so there was nothing coherent to put on a page
     // until the other five could be shown beside it.
+    // #3330 — mints the grant endpoint's bearer token. Discovered by
+    // IS_AGENTIC because the path carries "mcp", and genuinely agentic: the
+    // credential it issues is the one our own dispatch presents to the grant
+    // endpoint. OWNER-only, and a sibling of admin/integrations rather than
+    // nested under it, for the first-match-wins reason its own note gives.
+    't/[tenantSlug]/admin/mcp-server-token/[connectionId]/route.ts',
     't/[tenantSlug]/admin/agent-driver/route.ts',
     // The read half of that card: which of the six terms are satisfied and
     // which one blocks. Read-only, same tenant-lifecycle key.

@@ -575,7 +575,23 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'tools and a test asserts the COUNT, because its only intended client ' +
             'is our own dispatch, which is handed a resolved package id by an ' +
             'approved template and has no use for discovery.',
-    },
+    // ── Minting the grant endpoint's token (#3330) ──────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/mcp-server-token(\\/.*)?$`),
+        methods: ['POST'],
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Mints (or rotates) the bearer token the grant MCP endpoint ' +
+            'authenticates. OWNER-only because minting the credential GRANTS the ' +
+            'authority it carries: whoever holds it can drive a time-bounded ' +
+            'directory write in the customer\'s own tenant. Same class as the ' +
+            'external write policy above, not the configuration-editing class of ' +
+            'the integrations CRUD — which is also why this is a SIBLING path and ' +
+            'not nested under admin/integrations/<id>: matching is ' +
+            'first-match-wins and that rule resolves to admin.manage, so nesting ' +
+            'would document a weaker gate than the handler enforces. POST only: ' +
+            'it overwrites any previous value, and a GET returning a credential ' +
+            'invites a browser, a proxy or a log to keep it.',    },
 
     // ── Per-tenant DEK rotation (Epic F.2 follow-up) ────────────────
     {
