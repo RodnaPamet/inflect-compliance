@@ -167,7 +167,7 @@ export async function verifySnapshotPayloadHash(
     };
 }
 
-const ACCOUNT_SELECT = {
+export const ACCOUNT_SELECT = {
     accountKey: true,
     username: true,
     displayName: true,
@@ -187,7 +187,7 @@ const ACCOUNT_SELECT = {
     accountType: true,
 } as const;
 
-interface StoredAccountRow {
+export interface StoredAccountRow {
     readonly accountKey: string;
     readonly username: string | null;
     readonly displayName: string | null;
