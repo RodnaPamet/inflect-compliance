@@ -29,6 +29,7 @@
  * somebody widens the real one.
  */
 import {
+    classifyAssignment,
     createEntraEntitlementClient,
     expiryRefusal,
     MAX_GRANT_DAYS,
@@ -286,27 +287,30 @@ describe('readAssignments — the prior state the write replaces', () => {
                 ],
             },
         });
-        const rows = await clientWith(f.impl).readAssignments({
+        const read = await clientWith(f.impl).readAssignments({
             targetId: TARGET,
             accessPackageId: PACKAGE,
         });
-        expect(rows).toEqual([
+        expect(read.all).toEqual([
             {
                 assignmentId: 'asg-1',
                 accessPackageId: PACKAGE,
                 state: 'Delivered',
                 endDateTime: '2026-11-01T00:00:00Z',
+                liveness: 'live',
             },
         ]);
+        // Ends after NOW, so it is a current holding and appears in BOTH.
+        expect(read.live).toEqual(read.all);
     });
 
     it('drops a row with no id rather than carrying a record with a hole in it', async () => {
         const f = recordingFetch({ body: { value: [{ state: 'Delivered' }, { id: 'asg-2' }] } });
-        const rows = await clientWith(f.impl).readAssignments({
+        const read = await clientWith(f.impl).readAssignments({
             targetId: TARGET,
             accessPackageId: PACKAGE,
         });
-        expect(rows.map((r) => r.assignmentId)).toEqual(['asg-2']);
+        expect(read.all.map((r) => r.assignmentId)).toEqual(['asg-2']);
     });
 
     it('reports an empty result as empty, and a FAILED read as an error', async () => {
@@ -315,7 +319,7 @@ describe('readAssignments — the prior state the write replaces', () => {
         const empty = recordingFetch({ body: { value: [] } });
         await expect(
             clientWith(empty.impl).readAssignments({ targetId: TARGET, accessPackageId: PACKAGE }),
-        ).resolves.toEqual([]);
+        ).resolves.toEqual({ all: [], live: [] });
 
         const broken = recordingFetch({
             status: 403,
@@ -324,5 +328,147 @@ describe('readAssignments — the prior state the write replaces', () => {
         await expect(
             clientWith(broken.impl).readAssignments({ targetId: TARGET, accessPackageId: PACKAGE }),
         ).rejects.toThrow(/Authorization_RequestDenied/);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 4. LIVENESS — #3326. AN EXPIRED ASSIGNMENT IS NOT A HOLDING
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * WHAT IS BEING PROTECTED, AND WHICH DIRECTION THE ERROR RUNS
+ * ──────────────────────────────────────────────────────────
+ * Graph does not remove an expired assignment — it stays in the collection with
+ * `state: Expired`. So a read filtered on subject and package returns history
+ * mixed with holdings, and the question "do they already have this" cannot be
+ * answered by the row COUNT.
+ *
+ * The direction matters more than the fact. A subject whose only assignment
+ * expired last month has exactly one row, so `length > 0` reads TRUE — and a
+ * caller concluding "already held, the grant is a no-op" SUPPRESSES the grant
+ * that would have restored their access. A denial of access dressed as an
+ * optimisation, backed by a real assignment with a real end date, so nothing in
+ * the journal looks wrong. That is why the shape changed rather than the
+ * docblock.
+ */
+describe('classifyAssignment — state alone does not answer it', () => {
+    const at = NOW; // 2026-10-08T12:00:00.000Z
+    const FUTURE = '2026-11-01T00:00:00Z';
+    const PAST = '2026-09-01T00:00:00Z';
+
+    it.each([
+        // The load-bearing pair: same state, opposite verdicts.
+        ['delivered, ending later', 'delivered', FUTURE, 'live'],
+        ['delivered, ALREADY ENDED', 'delivered', PAST, 'inactive'],
+
+        // Case. The live Graph payload is lowercase; the docs and the portal
+        // filter say `Delivered`. A comparison pinned to either spelling passes
+        // against a fixture written from the other and fails against the API.
+        ['the docs spelling', 'Delivered', FUTURE, 'live'],
+        ['shouting', 'DELIVERED', FUTURE, 'live'],
+        ['padded', '  delivered  ', FUTURE, 'live'],
+
+        // No expiry is a permanent holding, not a missing one.
+        ['delivered with no end date', 'delivered', null, 'live'],
+        ['delivered with an empty end date', 'delivered', '', 'live'],
+
+        // In flight: not held yet, and NOT history. Filing these under a
+        // `historical` bucket would be this very defect a second time.
+        ['delivering', 'delivering', FUTURE, 'pending'],
+        ['partially delivered', 'partiallyDelivered', FUTURE, 'pending'],
+
+        ['expired', 'expired', PAST, 'inactive'],
+        ['delivery failed', 'deliveryFailed', FUTURE, 'inactive'],
+
+        // Unknown is a real answer and never collapses into inactive.
+        ['no state at all', null, FUTURE, 'unknown'],
+        ['an empty state', '', FUTURE, 'unknown'],
+        ['a state added to the enum later', 'unknownFutureValue', FUTURE, 'unknown'],
+        ['a date that will not parse', 'delivered', 'not-a-date', 'unknown'],
+    ])('%s', (_label, state, end, expected) => {
+        expect(classifyAssignment(state, end, at)).toBe(expected);
+    });
+
+    it('an assignment ending EXACTLY now is inactive, not live', () => {
+        // The boundary is strict: `end > now`. An assignment whose window has
+        // closed to the millisecond is not a holding, and picking the inclusive
+        // side here would make the no-op suppression win a tie.
+        expect(classifyAssignment('delivered', at.toISOString(), at)).toBe('inactive');
+        expect(classifyAssignment('delivered', new Date(at.getTime() + 1).toISOString(), at)).toBe(
+            'live',
+        );
+    });
+
+    it('a delivered row with a PAST end date is inactive — the #3324 window', () => {
+        // Measured live: an assignment sat at `state=delivered` with an
+        // endDateTime already in the past. Inside that window Entra has not yet
+        // processed the expiry, so neither field alone is trustworthy and the
+        // tie breaks toward ATTEMPTING the write: a rejected duplicate is a
+        // visible error, a suppressed grant is a silent denial.
+        expect(classifyAssignment('delivered', PAST, at)).toBe('inactive');
+    });
+});
+
+describe('readAssignments — `all` keeps the history, `live` answers the question', () => {
+    const row = (id: string, state: string, endDateTime: string | null) => ({
+        id,
+        state,
+        accessPackage: { id: PACKAGE },
+        schedule: { expiration: { endDateTime } },
+    });
+
+    it('a subject whose ONLY assignment expired holds nothing — the defect', async () => {
+        const f = recordingFetch({
+            body: { value: [row('asg-old', 'expired', '2026-09-01T00:00:00Z')] },
+        });
+        const read = await clientWith(f.impl).readAssignments({
+            targetId: TARGET,
+            accessPackageId: PACKAGE,
+        });
+        // The shape that was wrong: one row, so `length > 0` said "already has
+        // it" and the grant would have been suppressed.
+        expect(read.all).toHaveLength(1);
+        expect(read.live).toHaveLength(0);
+        // And the row is KEPT, because "previously held this until 2026-09-01"
+        // is exactly what an assessor wants from a prior-state record.
+        expect(read.all[0].liveness).toBe('inactive');
+        expect(read.all[0].endDateTime).toBe('2026-09-01T00:00:00Z');
+    });
+
+    it('separates a live holding from the lapsed ones beside it', async () => {
+        const f = recordingFetch({
+            body: {
+                value: [
+                    row('asg-old', 'expired', '2026-09-01T00:00:00Z'),
+                    row('asg-now', 'delivered', '2026-11-01T00:00:00Z'),
+                    row('asg-queued', 'delivering', '2026-11-01T00:00:00Z'),
+                ],
+            },
+        });
+        const read = await clientWith(f.impl).readAssignments({
+            targetId: TARGET,
+            accessPackageId: PACKAGE,
+        });
+        expect(read.all).toHaveLength(3);
+        expect(read.live.map((r) => r.assignmentId)).toEqual(['asg-now']);
+        // `delivering` is in neither `live` nor forgotten: it is pending, and a
+        // caller can tell "a grant is already in flight" from "they held it and
+        // it lapsed" — two different operator actions.
+        expect(read.all.map((r) => r.liveness)).toEqual(['inactive', 'live', 'pending']);
+    });
+
+    it('classifies the whole batch against ONE clock reading', async () => {
+        // Two rows with the SAME end date must land in the same bucket. Reading
+        // the clock per row could straddle a boundary and split them, which is
+        // not a thing the directory said.
+        const same = '2026-10-08T12:00:00.000Z'; // exactly NOW
+        const f = recordingFetch({
+            body: { value: [row('a', 'delivered', same), row('b', 'delivered', same)] },
+        });
+        const read = await clientWith(f.impl).readAssignments({
+            targetId: TARGET,
+            accessPackageId: PACKAGE,
+        });
+        expect(new Set(read.all.map((r) => r.liveness)).size).toBe(1);
     });
 });
