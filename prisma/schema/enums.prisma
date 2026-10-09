@@ -1375,6 +1375,18 @@ enum AccessReviewScope {
   /// Workspace) rather than tenant memberships. Decisions land in
   /// AccessReviewConnectedDecision.
   CONNECTED_APP
+  /// Step 5b — recertify one LEGACY application from a reconciled snapshot.
+  ///
+  /// Decisions land in `AccessReviewConnectedDecision` too, with `subjectRef`
+  /// as `connectionId:accountKey` and `connectedAccountId` NULL: a legacy
+  /// account has no `ConnectedIdentityAccount` row, because nothing syncs it
+  /// into the directory tables and nothing ever will — the legacy client has no
+  /// write operation.
+  ///
+  /// Reusing that table rather than adding a third decision model is what keeps
+  /// reminders, closing and the evidence PDF working for this scope without a
+  /// second implementation of each.
+  LEGACY_APP
 }
 
 /// Lifecycle for an access review campaign.

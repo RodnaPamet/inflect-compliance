@@ -1,0 +1,15 @@
+-- Step 5b: a recertification campaign over one legacy application.
+--
+-- `IF NOT EXISTS`, and the reason is an outage rather than style. Postgres
+-- commits an enum addition outside the surrounding transaction, and Prisma wraps
+-- a migration in one — so a bare `ADD VALUE` that is followed by a failing
+-- statement leaves the value permanent while the rest rolls back, and the
+-- re-run then fails on the duplicate. That is how
+-- 20260920120000_agent_proposal_run_provenance put production into a restart
+-- loop for ~25 hours (#2745/#2746).
+--
+-- There is no other DDL in this migration, so the hazard does not arise here —
+-- but `tests/guardrails/migration-enum-isolation.test.ts` asks for the
+-- idempotent form regardless, and a migration that is safe only because it
+-- happens to be alone is one edit away from not being.
+ALTER TYPE "AccessReviewScope" ADD VALUE IF NOT EXISTS 'LEGACY_APP';
