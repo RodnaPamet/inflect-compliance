@@ -46,9 +46,30 @@ import {
     resolveEntraEntitlementConnection,
     ENTRA_PROVIDER,
     type EntraEntitlementRefusal,
+    type EntraEntitlementResolution,
 } from '@/app-layer/usecases/entra-grant-dispatch';
 import { MAX_GRANT_DAYS } from '@/app-layer/integrations/providers/entra-id/entitlement';
 import { makeRequestContext } from '../helpers/make-context';
+
+
+/**
+ * Narrow a resolution to one refusal kind, or throw saying what arrived.
+ *
+ * A `as { missing: string[] }` cast was the first attempt and CI rejected it:
+ * the union declares `readonly string[]`, so the cast did not overlap. Worth
+ * keeping the narrowing rather than widening the cast — `Extract` makes the
+ * field types follow the union automatically, and a wrong `kind` fails with the
+ * resolution printed instead of `undefined` on a mis-cast property.
+ */
+function refusalOf<K extends EntraEntitlementRefusal['kind']>(
+    r: EntraEntitlementResolution,
+    kind: K,
+): Extract<EntraEntitlementRefusal, { kind: K }> {
+    if (r.state !== 'refused' || r.refusal.kind !== kind) {
+        throw new Error(`expected a ${kind} refusal, got ${JSON.stringify(r)}`);
+    }
+    return r.refusal as Extract<EntraEntitlementRefusal, { kind: K }>;
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-10-09T12:00:00.000Z');
@@ -112,8 +133,7 @@ describe('resolveEntraEntitlementConnection — four refusals, four fixes', () =
         // write to a directory nobody named, silently and consistently.
         findManyMock.mockResolvedValue([conn(), conn({ id: 'conn-2' })]);
         const r = await resolveEntraEntitlementConnection(ctx);
-        expect(r.state === 'refused' && r.refusal.kind).toBe('ambiguous');
-        expect(r.state === 'refused' && (r.refusal as { count: number }).count).toBe(2);
+        expect(refusalOf(r, 'ambiguous').count).toBe(2);
     });
 
     it('refuses when there is no enabled connection at all', async () => {
@@ -128,8 +148,7 @@ describe('resolveEntraEntitlementConnection — four refusals, four fixes', () =
             throw new Error('bad auth tag');
         });
         const r = await resolveEntraEntitlementConnection(ctx);
-        expect(r.state === 'refused' && r.refusal.kind).toBe('secret_unavailable');
-        const detail = r.state === 'refused' ? (r.refusal as { detail: string }).detail : '';
+        const detail = refusalOf(r, 'secret_unavailable').detail;
         expect(detail).toBe('bad auth tag');
         // The ciphertext must not travel with the message.
         expect(detail).not.toContain(SECRETS);
@@ -144,10 +163,7 @@ describe('resolveEntraEntitlementConnection — four refusals, four fixes', () =
             conn({ secretEncrypted: JSON.stringify({ tenantId: 't', clientId: 'c' }) }),
         ]);
         const r = await resolveEntraEntitlementConnection(ctx);
-        expect(r.state === 'refused' && r.refusal.kind).toBe('incomplete_config');
-        expect(r.state === 'refused' && (r.refusal as { missing: string[] }).missing).toEqual([
-            'clientSecret',
-        ]);
+        expect(refusalOf(r, 'incomplete_config').missing).toEqual(['clientSecret']);
     });
 
     it('treats a whitespace-only credential as missing', async () => {
@@ -170,16 +186,23 @@ describe('resolveEntraEntitlementConnection — four refusals, four fixes', () =
 // ═════════════════════════════════════════════════════════════════════
 
 describe('describeEntitlementRefusal — four different actions, four sentences', () => {
-    const CASES: ReadonlyArray<readonly [EntraEntitlementRefusal, RegExp]> = [
-        [{ kind: 'no_connection' }, /Connect one under Admin/],
-        [{ kind: 'ambiguous', count: 3 }, /disable the connections/],
-        [{ kind: 'secret_unavailable', detail: 'x' }, /Re-enter the client secret/],
-        [{ kind: 'incomplete_config', missing: ['clientId'] }, /Complete the connection/],
+    // STRING needles with `toContain`, not regexes with `toMatch`.
+    // `assertion-span-reach-ratchet` caps the `toMatch` arguments it cannot
+    // read, and a regex arriving through an `it.each` parameter is exactly
+    // that — `identifier-unresolved`. The detector's own denominator is part of
+    // its result, so adding an unreadable argument degrades the measurement
+    // rather than the assertion. A literal substring says the same thing and
+    // stays analysable.
+    const CASES: ReadonlyArray<readonly [EntraEntitlementRefusal, string]> = [
+        [{ kind: 'no_connection' }, 'Connect one under Admin'],
+        [{ kind: 'ambiguous', count: 3 }, 'disable the connections'],
+        [{ kind: 'secret_unavailable', detail: 'x' }, 'Re-enter the client secret'],
+        [{ kind: 'incomplete_config', missing: ['clientId'] }, 'Complete the connection'],
     ];
 
     it.each(CASES)('%j names what to do about it', (refusal, expected) => {
         const text = describeEntitlementRefusal(refusal);
-        expect(text).toMatch(expected);
+        expect(text).toContain(expected);
         // Each must say something an operator can act on — not "it did not work".
         expect(text.length).toBeGreaterThan(40);
     });

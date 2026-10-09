@@ -39,7 +39,15 @@ jest.mock('@/app-layer/context', () => ({
 // The AUTHZ_DENIED row `requirePermission` writes on denial must not reach a
 // real database in a unit test. Its existence is the reason this population uses
 // `requirePermission` rather than a usecase-layer assert (CLAUDE.md C.1).
+// SPREAD requireActual, not a subset factory. `partial-mock-of-a-guarded-barrel`
+// caps subset mocks of this barrel and says why: it re-exports
+// `appendAuditEntryOrQueue`, the no-silent-drop wrapper (#2657), and a factory
+// supplying only some names resolves the rest to `undefined` — so a call that
+// was supposed to guarantee an audit row silently does nothing while every
+// assertion still passes. Spreading keeps every other export real and overrides
+// only the two writes this test must keep off a database.
 jest.mock('@/lib/audit', () => ({
+    ...jest.requireActual('@/lib/audit'),
     appendAuditEntryOrQueue: jest.fn(async () => ({
         recorded: 'chain' as const,
         auditId: 'audit-x',

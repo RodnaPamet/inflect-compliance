@@ -31,6 +31,8 @@ import * as path from 'path';
  */
 const ADMIN_ONLY_ROUTES = [
     'admin/calendar/consent/route.ts',
+    // The grant MCP endpoint (#3297) — OWNER-only via admin.tenant_lifecycle.
+    'admin/mcp/entra-grant/route.ts',
     // /admin/* routes
     'admin/members/route.ts',
     'admin/members/[membershipId]/route.ts',
