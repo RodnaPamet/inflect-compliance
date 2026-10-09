@@ -76,6 +76,13 @@ const MIGRATED_PAGES = [
     // ceiling comment asks for and keeps these two files under the raw-colour
     // assertion below instead of merely counted.
     'admin/identity-write-policy/page.tsx',
+    // Step 4b legacy reconciliation queue; design-system-native from birth
+    // (ListPageShell + DataTable + StatusBadge + InlineNotice + Sheet +
+    // PageBreadcrumbs + BackAffordance primitives, semantic content-* tokens
+    // only, no raw colours and no legacy btn/badge). Promoted on landing rather
+    // than parked in the unmigrated tally, which is what the ceiling comment
+    // asks for.
+    'admin/integrations/[connectionId]/reconciliation/page.tsx',
     'admin/identity-write-policy/WriteLadderClient.tsx',
     // SP-5 — SharePoint sync-health dashboard; semantic tokens + KPIStat only.
     'admin/integrations/sharepoint-health/page.tsx',

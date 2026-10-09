@@ -172,6 +172,10 @@ export const SUBPAGES: readonly string[] = [
     '/admin/agents',
     '/admin/agents/[agentId]',
     '/admin/agents/review-quality',
+    // The Step 4b reconciliation queue. A SUBPAGE, not MAIN: it is reached only
+    // from the connection it belongs to, never from the sidebar — a queue is
+    // meaningless without the connection and the run that produced it.
+    '/admin/integrations/[connectionId]/reconciliation',
     '/admin/api-keys',
     '/admin/audit-log',
     '/admin/billing',

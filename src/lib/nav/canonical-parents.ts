@@ -80,6 +80,15 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/agent-runs': { href: '/agents', label: 'Agents' },
     '/admin/mcp/agent-receipts': { href: '/agents', label: 'Agents' },
     '/admin/mcp/quarantine': { href: '/agents', label: 'Agents' },
+    // The Step 4b queue's parent is the integrations list rather than the
+    // connection it belongs to: these entries are STATIC route forms, and the
+    // connection's own href needs the id this map cannot see. The breadcrumb
+    // trail on the page carries the connection link, so the specific parent is
+    // not lost — it is just not expressible here.
+    '/admin/integrations/[connectionId]/reconciliation': {
+        href: '/admin/integrations',
+        label: 'Integrations',
+    },
     '/admin/agents': { href: '/agents', label: 'Agents' },
     '/admin/agents/[agentId]': { href: '/agents', label: 'Agents' },
     '/admin/agents/review-quality': { href: '/agents', label: 'Agents' },
