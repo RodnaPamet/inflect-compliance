@@ -310,3 +310,109 @@ describe('describeGrantAuthRefusal — every kind, distinct, and leaking nothing
         expect(new Set([a, b, c]).size).toBe(3);
     });
 });
+
+// ═════════════════════════════════════════════════════════════════════
+// OAUTH SHADOWS THE STATIC SECRET (#3340)
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * The failure these cover is invisible from both ends, which is why it is
+ * worth its own refusal kind rather than folding into `secret_mismatch`.
+ *
+ * `authorizationFor` takes its OAuth branch if ANY of four fields is set and
+ * then never reads `secrets.authorization`. So the dispatch sends a minted
+ * access token while this function compares the stored static value. Both
+ * sides are behaving correctly, the audit trail records AUTHZ_DENIED, and
+ * nothing names the cause — so every grant through that connection fails
+ * permanently and the only way to diagnose it is to know the precedence rule
+ * exists.
+ *
+ * Each of the four fields gets its own case ON PURPOSE. Two of them live on
+ * `configJson` and two are secrets, and a check that read only the secrets
+ * would pass three of these tests while missing the shape the one real
+ * production connection actually had.
+ */
+describe('a connection configured for OAuth cannot be authenticated by its static secret', () => {
+    const CORRECT = `Bearer ${CONN}.${SECRET}`;
+
+    it.each([
+        ['config.tenantId', { configJson: { tenantId: 'a-tenant-guid' } }],
+        ['config.clientId', { configJson: { clientId: 'an-app-guid' } }],
+        [
+            'secrets.clientSecret',
+            {
+                secretEncrypted: JSON.stringify({
+                    authorization: `${CONN}.${SECRET}`,
+                    clientSecret: 'a-client-secret', // pragma: allowlist secret -- test fixture
+                }),
+            },
+        ],
+        [
+            'secrets.refreshToken',
+            {
+                secretEncrypted: JSON.stringify({
+                    authorization: `${CONN}.${SECRET}`,
+                    refreshToken: 'a-refresh-token', // pragma: allowlist secret -- test fixture
+                }),
+            },
+        ],
+    ])('refuses oauth_shadows_static when %s is set', async (_label, over) => {
+        findUniqueMock.mockResolvedValue(row(over));
+        const result = await authenticateGrantCaller(CORRECT);
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        // NOT `secret_mismatch`: the presented credential is the correct one
+        // for the stored value, and reporting a mismatch would send an
+        // operator to check a secret that is right.
+        expect(result.refusal.kind).toBe('oauth_shadows_static');
+    });
+
+    it('still accepts when all four OAuth fields are absent — the control', async () => {
+        findUniqueMock.mockResolvedValue(row({ configJson: { url: 'https://example.test/mcp' } }));
+        const result = await authenticateGrantCaller(CORRECT);
+        expect(result.ok).toBe(true);
+    });
+
+    it('treats an empty-string OAuth field as absent, not as configured', async () => {
+        // An integrations form that submits every field posts '' for the ones
+        // left blank. Treating those as "configured" would refuse every
+        // static-secret connection saved through that form.
+        findUniqueMock.mockResolvedValue(
+            row({ configJson: { tenantId: '', clientId: '   ' } }),
+        );
+        const result = await authenticateGrantCaller(CORRECT);
+        expect(result.ok).toBe(true);
+    });
+
+    it('is attributable, so the route can write the AUTHZ_DENIED row', async () => {
+        findUniqueMock.mockResolvedValue(row({ configJson: { tenantId: 'a-tenant-guid' } }));
+        const result = await authenticateGrantCaller(CORRECT);
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.refusal.attributable).toBe(true);
+        expect(result.refusal).toMatchObject({ tenantId: 'tenant-A' });
+    });
+
+    it('takes precedence over a wrong secret, because it is the more useful answer', async () => {
+        // With both problems present, "your secret is wrong" is true and
+        // useless — fixing the secret changes nothing while the OAuth fields
+        // remain.
+        findUniqueMock.mockResolvedValue(row({ configJson: { tenantId: 'a-tenant-guid' } }));
+        const result = await authenticateGrantCaller(`Bearer ${CONN}.not-the-stored-secret`);
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.refusal.kind).toBe('oauth_shadows_static');
+    });
+
+    it('explains the cause without naming either credential', () => {
+        const sentence = describeGrantAuthRefusal({
+            kind: 'oauth_shadows_static',
+            attributable: true,
+            tenantId: 'tenant-A',
+        } satisfies GrantAuthRefusal);
+        expect(sentence).toMatch(/OAuth/);
+        expect(sentence).toMatch(/Remove/i);
+        expect(sentence).not.toContain(SECRET);
+    });
+});
+

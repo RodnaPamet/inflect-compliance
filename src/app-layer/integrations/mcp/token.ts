@@ -212,6 +212,22 @@ export async function authorizationForConnection(
  * Precedence is refresh-credentials first. A connection carrying both has been
  * migrated from a pasted token to a real flow, and the flow is the one that
  * still works tomorrow.
+ *
+ * THAT PRECEDENCE IS NOW ONLY REACHABLE FOR ROWS THAT PREDATE #3340.
+ * `mcp-server-provider.validateConnection` refuses to save both together and
+ * #3330's mint refuses to add a static token to an OAuth connection, because
+ * the silent half of this rule turned out to be expensive: the grant endpoint
+ * (#3323) authenticates by comparing the presented bearer against
+ * `secrets.authorization`, so for a connection carrying both, the dispatch
+ * sends a minted token while the endpoint compares the static one. Two
+ * unrelated credentials, both sides correct, `AUTHZ_DENIED` in the trail, and
+ * nothing naming the cause.
+ *
+ * The precedence is kept rather than reversed — reversing it would make a
+ * migrated connection start sending a dead pasted token — but it is no longer
+ * the only thing standing between an operator and that failure:
+ * `authenticateGrantCaller` refuses such a row by name
+ * (`oauth_shadows_static`) instead of reporting a mismatch.
  */
 export async function authorizationFor(
     connectionId: string,

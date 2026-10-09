@@ -192,6 +192,42 @@ export class McpServerProvider implements IntegrationProvider {
             return { valid: false, error: 'Server URL is required.' };
         }
 
+        // ── Two credentials, one of which would be silently discarded (#3340)
+        //
+        // `authorizationFor` takes the OAuth branch if ANY of its four fields
+        // is set and never looks at `secrets.authorization` again. So a
+        // connection carrying both is valid, saveable, and quietly ignores the
+        // static value — and for the grant endpoint (#3323), which
+        // authenticates by comparing the presented bearer against that stored
+        // static secret, it means the two sides compare different credentials.
+        // Every grant through such a connection fails permanently while both
+        // halves behave correctly and neither can see why.
+        //
+        // Refused HERE rather than in the form because the API reaches this
+        // and the form does not cover it. Note the fields are split across
+        // config and secrets — two of the four live on `configJson`, which is
+        // how an earlier version of this check missed the one real connection
+        // that had them.
+        const filled = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
+        const oauthFields = (
+            [
+                ['tenantId', config.tenantId],
+                ['clientId', config.clientId],
+                ['clientSecret', secrets.clientSecret],
+                ['refreshToken', secrets.refreshToken],
+            ] as const
+        ).filter(([, v]) => filled(v));
+        if (filled(secrets.authorization) && oauthFields.length > 0) {
+            return {
+                valid: false,
+                error:
+                    'This connection has both a static Authorization secret and an OAuth '
+                    + `configuration (${oauthFields.map(([k]) => k).join(', ')}). Only the OAuth `
+                    + 'credential would ever be sent and the static value would be ignored '
+                    + 'silently, so remove whichever one this server does not use.',
+            };
+        }
+
         // Minted FRESH here, never from the token cache. Validation exists to
         // answer "do these credentials work", and a cached token would answer
         // "did they work earlier" — so an operator who replaces a bad secret
