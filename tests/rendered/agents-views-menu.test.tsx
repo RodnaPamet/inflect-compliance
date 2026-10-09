@@ -79,6 +79,9 @@ const VIEWS = EN.agents.views;
 
 /** The entry ids, in the order the menu declares them. */
 const ENTRY_IDS = [
+    // #3301 — FIRST in OPERATE, because it is the only entry that accepts an
+    // intent; the two below it review what one produced.
+    'agents-view-compose',
     'agents-view-proposals',
     'agents-view-runs',
     'agents-view-receipts',
@@ -115,7 +118,7 @@ async function openMenu(
 /** The rendered menu-item rows, in DOM order. */
 const items = () => screen.queryAllByRole('menuitem');
 
-describe('eight entries in two labelled groups', () => {
+describe('nine entries in two labelled groups', () => {
     it('renders exactly those, in order', async () => {
         await openMenu();
         // The ids, as an exact ordered list — a count would pass for six rows
@@ -128,6 +131,7 @@ describe('eight entries in two labelled groups', () => {
     it('each entry links to its own /agents child route', async () => {
         await openMenu();
         expect(items().map((el) => el.getAttribute('href'))).toEqual([
+            '/t/acme/agents/compose',
             '/t/acme/agents/proposals',
             '/t/acme/agents/runs',
             '/t/acme/agents/receipts',
@@ -148,6 +152,7 @@ describe('eight entries in two labelled groups', () => {
     it('the labels are the destinations, not acronyms', async () => {
         await openMenu();
         expect(items().map((el) => el.textContent?.trim())).toEqual([
+            VIEWS.compose,
             VIEWS.proposals,
             VIEWS.runs,
             VIEWS.receipts,
@@ -202,6 +207,7 @@ describe('a permission-absent entry is NOT RENDERED', () => {
     it('drops the assurance entries without the register key', async () => {
         await openMenu({ canInvestigate: false });
         expect(items().map((el) => el.id)).toEqual([
+            'agents-view-compose',
             'agents-view-proposals',
             'agents-view-runs',
         ]);
@@ -215,7 +221,7 @@ describe('a permission-absent entry is NOT RENDERED', () => {
         for (const id of ['agents-view-receipts', 'agents-view-quarantine']) {
             expect(document.getElementById(id)).toBeNull();
         }
-        expect(screen.queryAllByRole('menuitem', { hidden: true }).length).toBe(2);
+        expect(screen.queryAllByRole('menuitem', { hidden: true }).length).toBe(3);
         expect(document.querySelectorAll('[aria-disabled="true"]').length).toBe(0);
         expect(document.querySelectorAll('[disabled]').length).toBe(0);
     });

@@ -8348,7 +8348,8 @@
       "quarantine": "Quarantine",
       "reviewQuality": "Review quality",
       "decisions": "AI decision log",
-      "externalTools": "External tools"
+      "externalTools": "External tools",
+      "compose": "Compose a request"
     },
     "reviewQuality": {
       "accessTitle": "Agent register access required",
@@ -8658,7 +8659,6 @@
       }
     },
     "compose": {
-      "linkLabel": "Compose a request",
       "breadcrumb": "Compose",
       "title": "Compose a request",
       "intro": "Pick an approved template, fill in the fields it leaves open, and submit it for approval. Nothing is sent until somebody else approves it.",

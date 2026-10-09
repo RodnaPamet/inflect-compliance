@@ -107,7 +107,7 @@ export function AgentsViewsMenu({
                             // gate-homogeneous. Submitting additionally needs write, and
                             // the page says so rather than hiding the form.
                             id: 'agents-view-compose',
-                            label: t('compose.linkLabel'),
+                            label: t('views.compose'),
                             icon: <PenWriting className="size-4" />,
                             href: href('/agents/compose'),
                             selected: current === 'compose',
