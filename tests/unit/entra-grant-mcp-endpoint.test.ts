@@ -1,57 +1,58 @@
 /**
- * #3297 — the grant MCP endpoint: who may reach it, and what it advertises.
+ * #3297 / #3323 — the grant MCP endpoint: who may reach it, and what it advertises.
  *
  * WHAT IS ACTUALLY BEING PROTECTED
  * ────────────────────────────────
- * Three properties, none of which is "the route returns 200":
+ * Four properties, none of which is "the route returns 200":
  *
- *   1. OWNER-ONLY, AND THE ROUTE TABLE AGREES. `admin.tenant_lifecycle` is the
- *      key, ADMIN does not hold it, and the rule in `route-permissions.ts` must
- *      resolve to the same key the handler was wrapped with. Those are two
- *      separate facts — a route can be wrapped correctly and left out of the
- *      table, or listed under a weaker key — so both are asserted, and a
- *      disagreement between them is its own defect.
- *   2. THE WRITE AND THE READ ARE CLASSIFIED CORRECTLY BY THE REAL PREDICATE.
- *      Not "the annotation says X" — the assertion runs `declaresWrite`, the
- *      one definition the dispatch and the pairing both consult. The read must
+ *   1. AN UNAUTHENTICATED CALLER REACHES NEITHER USECASE. The 401 must happen
+ *      before the body is parsed and before any tool runs, so the assertions
+ *      are on the usecase spies NOT having been called — the only way to state
+ *      "nothing happened" rather than "nothing was returned".
+ *   2. AN ATTRIBUTABLE REFUSAL IS AUDITED; AN UNATTRIBUTABLE ONE IS NOT.
+ *      `requirePermission` wrote AUTHZ_DENIED for free and this endpoint no
+ *      longer has it, so the row is written explicitly — but only where a
+ *      tenant is known. A malformed token names no tenant and `AuditLog` is
+ *      tenant-scoped, so there is nothing to write and inventing a row would
+ *      mean guessing whose trail it belongs in. Both halves are asserted,
+ *      because the gap is a decision and not an oversight.
+ *   3. THE WRITE AND THE READ ARE CLASSIFIED BY THE REAL PREDICATE. The
+ *      assertion runs `declaresWrite`, the one definition the dispatch and the
+ *      pairing both consult — not a look at the annotation. The read must
  *      classify as a read or `setPriorStateRead` refuses the pairing; the grant
- *      must classify as a write or it skips the write rails entirely, which is
- *      the whole reason this endpoint exists.
- *   3. A REFUSAL IS IN-BAND. An operator's bad end date must come back as an
- *      MCP result with `isError`, at HTTP 200, so the client's session survives.
- *      A 500 would also "not grant access", which is why the assertion is on
- *      the shape and not merely on the absence of a grant.
+ *      must classify as a write or it skips the write rails, which is the whole
+ *      reason this endpoint exists.
+ *   4. A REFUSAL FROM A TOOL IS IN-BAND. An operator's bad end date comes back
+ *      as an MCP result with `isError` at HTTP 200, so the client's session
+ *      survives. A 500 would also "not grant access", which is why the
+ *      assertion is on the shape rather than on the absence of a grant.
  *
- * WHY THE CATALOGUE IS ASSERTED BY COUNT AS WELL AS BY NAME
- * ────────────────────────────────────────────────────────
- * `toHaveLength(2)` is the load-bearing half. This endpoint's safety argument is
- * that it advertises a grant and its paired read AND NOTHING ELSE — a third tool
- * appearing here reaches a privileged surface whose only intended client is our
- * own dispatch. Checking the two by name would pass with a third beside them.
+ * WHY THE CATALOGUE IS ASSERTED BY COUNT
+ * ──────────────────────────────────────
+ * `toHaveLength(2)` is load-bearing. This endpoint's safety argument is that it
+ * advertises a grant and its paired read AND NOTHING ELSE — a third tool here
+ * reaches a privileged surface whose only intended client is our own dispatch.
+ * Checking the two by name would pass with a third beside them. Discovery
+ * (#3329) is deliberately elsewhere for exactly this reason.
  */
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const getTenantCtxMock = jest.fn<any, [unknown, unknown]>();
-jest.mock('@/app-layer/context', () => ({
-    getTenantCtx: (params: unknown, req: unknown) => getTenantCtxMock(params, req),
+const authMock = jest.fn();
+jest.mock('@/app-layer/usecases/entra-grant-auth', () => ({
+    ...jest.requireActual('@/app-layer/usecases/entra-grant-auth'),
+    authenticateGrantCaller: (h: string | null) => authMock(h),
 }));
 
-// The AUTHZ_DENIED row `requirePermission` writes on denial must not reach a
-// real database in a unit test. Its existence is the reason this population uses
-// `requirePermission` rather than a usecase-layer assert (CLAUDE.md C.1).
 // SPREAD requireActual, not a subset factory. `partial-mock-of-a-guarded-barrel`
-// caps subset mocks of this barrel and says why: it re-exports
-// `appendAuditEntryOrQueue`, the no-silent-drop wrapper (#2657), and a factory
-// supplying only some names resolves the rest to `undefined` — so a call that
-// was supposed to guarantee an audit row silently does nothing while every
-// assertion still passes. Spreading keeps every other export real and overrides
-// only the two writes this test must keep off a database.
+// caps subset mocks of this barrel: it re-exports `appendAuditEntryOrQueue`, the
+// no-silent-drop wrapper (#2657), and a factory supplying only some names
+// resolves the rest to `undefined` — so a call meant to guarantee an audit row
+// silently does nothing while every assertion still passes.
+const auditMock = jest.fn(async (_input: unknown) => ({
+    recorded: 'chain' as const,
+    auditId: 'audit-x',
+}));
 jest.mock('@/lib/audit', () => ({
     ...jest.requireActual('@/lib/audit'),
-    appendAuditEntryOrQueue: jest.fn(async () => ({
-        recorded: 'chain' as const,
-        auditId: 'audit-x',
-    })),
+    appendAuditEntryOrQueue: (input: unknown) => auditMock(input as never),
     appendAuditEntry: jest.fn(async () => ({
         id: 'audit-x',
         entryHash: 'hash-x',
@@ -75,43 +76,33 @@ jest.mock('@/app-layer/usecases/entra-grant-dispatch', () => ({
 
 import { NextRequest } from 'next/server';
 
-import {
-    POST,
-    GRANT_TOOL,
-    READ_TOOL,
-} from '@/app/api/t/[tenantSlug]/admin/mcp/entra-grant/route';
-import { getPermissionsForRole } from '@/lib/permissions';
-import { resolveRoutePermission } from '@/lib/security/route-permissions';
+import { POST, GRANT_TOOL, READ_TOOL } from '@/app/api/mcp/entra-grant/route';
 import { declaresWrite } from '@/lib/mcp/tool-write-classification';
 import { MAX_GRANT_DAYS } from '@/app-layer/integrations/providers/entra-id/entitlement';
 
-const PATH = '/api/t/acme/admin/mcp/entra-grant';
+const PATH = '/api/mcp/entra-grant';
+const CONN = 'conn-abc123';
+const TOKEN = `Bearer ${CONN}.s3cret-value`;
 
-function ctxFor(role: 'OWNER' | 'ADMIN' | 'EDITOR') {
-    return {
-        requestId: 'req-1',
-        userId: `${role.toLowerCase()}-1`,
-        tenantId: 'tenant-A',
-        role,
-        permissions: {
-            canRead: true,
-            canWrite: true,
-            canAdmin: role === 'OWNER' || role === 'ADMIN',
-            canAudit: true,
-            canExport: true,
-        },
-        appPermissions: getPermissionsForRole(role),
-    };
-}
-
-const rpc = (body: unknown): NextRequest =>
+const rpc = (body: unknown, auth: string | null = TOKEN): NextRequest =>
     new NextRequest(`http://localhost${PATH}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            ...(auth === null ? {} : { Authorization: auth }),
+        },
         body: JSON.stringify(body),
     });
 
-const ARGS = { params: Promise.resolve({ tenantSlug: 'acme' }) };
+/**
+ * `withApiErrorHandling` returns an `ApiRouteHandler<Context>` whose both
+ * overloads declare a required `ctx`, so a route with no dynamic segments is
+ * still called with two arguments. The cast lives here once rather than at
+ * nineteen call sites — each copy would be a chance to write something
+ * meaningful into a slot this route never reads.
+ */
+const call = (body: unknown, auth: string | null = TOKEN) =>
+    POST(rpc(body, auth), undefined as never);
 
 const GRANT_ARGS = {
     targetId: '46184453-e63b-4f20-86c2-c557ed5d5df9',
@@ -120,66 +111,147 @@ const GRANT_ARGS = {
     endDateTime: '2026-11-01T00:00:00.000Z',
 };
 
+const AUTHED = {
+    ok: true as const,
+    tenantId: 'tenant-A',
+    connectionId: CONN,
+    connectionName: 'Grant endpoint',
+};
+
 beforeEach(() => {
     jest.clearAllMocks();
-    getTenantCtxMock.mockResolvedValue(ctxFor('OWNER'));
+    authMock.mockResolvedValue(AUTHED);
     grantMock.mockResolvedValue({ ok: true as const, requestId: 'req-1' });
     readMock.mockResolvedValue({ ok: true as const, assignments: [] });
+    auditMock.mockResolvedValue({ recorded: 'chain' as const, auditId: 'audit-x' });
 });
 
 // ═════════════════════════════════════════════════════════════════════
 // 1. WHO MAY REACH IT
 // ═════════════════════════════════════════════════════════════════════
 
-describe('the grant endpoint is OWNER-only, and the route table says so too', () => {
-    it('the route-permissions rule resolves to admin.tenant_lifecycle', () => {
-        // The TABLE's answer, independent of how the handler was wrapped. A
-        // route can be wrapped correctly and listed under a weaker key.
-        const resolved = resolveRoutePermission(PATH, 'POST');
-        expect(resolved).toBeTruthy();
-        expect(resolved?.permission).toBe('admin.tenant_lifecycle');
-    });
-
-    it('an OWNER reaches the handler', async () => {
-        const res = await POST(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), ARGS);
+describe('the endpoint authenticates a per-connection token, not a permission', () => {
+    it('an authenticated caller reaches the handler', async () => {
+        const res = await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
         expect(res.status).toBe(200);
     });
 
-    it('an ADMIN is REFUSED — tenant_lifecycle is the OWNER-only key', async () => {
-        // The distinction this endpoint rests on. ADMIN holds every other admin
-        // flag; `getPermissionsForRole('ADMIN')` returns tenant_lifecycle false
-        // explicitly, and that is what keeps a grant out of ADMIN's reach.
-        getTenantCtxMock.mockResolvedValue(ctxFor('ADMIN'));
-        const res = await POST(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), ARGS);
-        expect(res.status).toBe(403);
-    });
-
-    it('an EDITOR is refused', async () => {
-        getTenantCtxMock.mockResolvedValue(ctxFor('EDITOR'));
-        const res = await POST(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), ARGS);
-        expect(res.status).toBe(403);
+    it.each([
+        ['no credential', { kind: 'no_credential', attributable: false }],
+        ['a malformed token', { kind: 'malformed', attributable: false }],
+        ['an unknown connection', { kind: 'unknown_connection', attributable: false }],
+        ['a wrong secret', { kind: 'secret_mismatch', attributable: true, tenantId: 'tenant-A' }],
+        ['a disabled connection', { kind: 'disabled', attributable: true, tenantId: 'tenant-A' }],
+    ])('%s is refused 401', async (_label, refusal) => {
+        authMock.mockResolvedValue({ ok: false, refusal });
+        const res = await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        expect(res.status).toBe(401);
     });
 
     it('a refused caller reaches NEITHER usecase', async () => {
-        // The 403 must happen before the handler body. A route that returned 403
-        // after calling the usecase would already have written.
-        getTenantCtxMock.mockResolvedValue(ctxFor('ADMIN'));
-        await POST(rpc({
+        // The only way to say "nothing happened". A route that 401'd after
+        // calling the usecase would already have written.
+        authMock.mockResolvedValue({
+            ok: false,
+            refusal: { kind: 'secret_mismatch', attributable: true, tenantId: 'tenant-A' },
+        });
+        await call({
             jsonrpc: '2.0', id: 1, method: 'tools/call',
             params: { name: GRANT_TOOL, arguments: GRANT_ARGS },
-        }), ARGS);
+        });
         expect(grantMock).not.toHaveBeenCalled();
         expect(readMock).not.toHaveBeenCalled();
+    });
+
+    it('authenticates BEFORE parsing the body — malformed JSON from a bad caller is still 401', async () => {
+        // Order matters: a caller that may not be here must not have its
+        // payload parsed, and a refusal must cost the same whatever it sent.
+        authMock.mockResolvedValue({ ok: false, refusal: { kind: 'malformed', attributable: false } });
+        const res = await POST(
+            new NextRequest(`http://localhost${PATH}`, { method: 'POST', body: 'not json' }),
+            undefined as never,
+        );
+        expect(res.status).toBe(401);
     });
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// 2. WHAT IT ADVERTISES
+// 2. THE REFUSAL TRAIL `requirePermission` USED TO GIVE FOR FREE
+// ═════════════════════════════════════════════════════════════════════
+
+describe('an attributable refusal is audited; an unattributable one cannot be', () => {
+    it('a wrong secret writes AUTHZ_DENIED against the connection', async () => {
+        authMock.mockResolvedValue({
+            ok: false,
+            refusal: { kind: 'secret_mismatch', attributable: true, tenantId: 'tenant-A' },
+        });
+        await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        expect(auditMock).toHaveBeenCalledTimes(1);
+        const entry = auditMock.mock.calls[0][0] as Record<string, unknown>;
+        expect(entry.tenantId).toBe('tenant-A');
+        expect(entry.action).toBe('AUTHZ_DENIED');
+        expect(entry.entity).toBe('IntegrationConnection');
+        expect(entry.entityId).toBe(CONN);
+        expect(entry.detailsJson).toEqual({ endpoint: 'entra-grant', reason: 'secret_mismatch' });
+    });
+
+    it('the audit row carries NO part of the presented credential', async () => {
+        authMock.mockResolvedValue({
+            ok: false,
+            refusal: { kind: 'secret_mismatch', attributable: true, tenantId: 'tenant-A' },
+        });
+        await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        const serialised = JSON.stringify(auditMock.mock.calls[0][0]);
+        // POSITIVE CONTROL first. Both assertions below are negated, and a
+        // negated assertion over an empty or absent window passes while
+        // checking nothing — so prove the row was captured before asserting
+        // what it lacks.
+        expect(serialised).toContain('AUTHZ_DENIED');
+        expect(serialised).not.toContain('s3cret-value');
+        expect(serialised).not.toContain(TOKEN);
+        // NOT the secret's LENGTH. That assertion was here and was unsound in
+        // both directions: `'s3cret-value'.length` is 12 and the connection id
+        // `conn-abc123` contains "12", so it failed for a reason that is not a
+        // leak — and had the length been a digit string absent from the row it
+        // would have passed without the endpoint doing anything right.
+    });
+
+    it('an UNATTRIBUTABLE refusal writes no row, because there is no tenant to write it to', async () => {
+        // The deliberate gap. `AuditLog` is tenant-scoped and a malformed token
+        // names no tenant, so a row here would mean guessing whose trail it
+        // belongs in. Asserted so the gap reads as a decision.
+        authMock.mockResolvedValue({ ok: false, refusal: { kind: 'malformed', attributable: false } });
+        await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        expect(auditMock).not.toHaveBeenCalled();
+    });
+
+    it('a failed audit write does not turn the 401 into a 500', async () => {
+        // Best-effort, like `requirePermission`'s own: the refusal already
+        // happened and the caller is owed its answer either way.
+        authMock.mockResolvedValue({
+            ok: false,
+            refusal: { kind: 'secret_mismatch', attributable: true, tenantId: 'tenant-A' },
+        });
+        auditMock.mockRejectedValue(new Error('chain and outbox both unavailable'));
+        const res = await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        expect(res.status).toBe(401);
+    });
+
+    it('an AUTHENTICATED call writes no AUTHZ_DENIED row', async () => {
+        // The positive control: the audit assertions above are about refusals,
+        // not about the endpoint auditing everything it touches.
+        await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        expect(auditMock).not.toHaveBeenCalled();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 3. WHAT IT ADVERTISES
 // ═════════════════════════════════════════════════════════════════════
 
 describe('the catalogue is exactly two tools, correctly classified', () => {
     async function listTools() {
-        const res = await POST(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), ARGS);
+        const res = await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
         const body = await res.json();
         return body.result.tools as Array<{
             name: string;
@@ -189,36 +261,23 @@ describe('the catalogue is exactly two tools, correctly classified', () => {
     }
 
     it('advertises TWO tools and no more', async () => {
-        // The count is the assertion. A third tool here reaches a privileged
-        // surface whose only intended client is our own dispatch, and checking
-        // the two by name would pass with a third beside them.
         const tools = await listTools();
         expect(tools).toHaveLength(2);
         expect(tools.map((t) => t.name).sort()).toEqual([GRANT_TOOL, READ_TOOL].sort());
     });
 
     it('the grant classifies as a WRITE under the real predicate', async () => {
-        // `declaresWrite`, not a look at the annotation — it is the one
-        // definition the dispatch and the pairing both consult. If this ever
-        // returns false the grant skips the write rails, which is the whole
-        // reason this endpoint exists instead of a tool on /api/mcp.
         const grant = (await listTools()).find((t) => t.name === GRANT_TOOL)!;
         expect(declaresWrite(grant.annotations)).toBe(true);
     });
 
     it('the prior-state read classifies as a READ, or the pairing is refused', async () => {
-        // `setPriorStateRead` refuses a read that is not declared read-only,
-        // because pairing a write as the prior-state read would send two changes
-        // per dispatch with the first unjournalled.
         const read = (await listTools()).find((t) => t.name === READ_TOOL)!;
         expect(declaresWrite(read.annotations)).toBe(false);
         expect(read.annotations?.readOnlyHint).toBe(true);
     });
 
     it('both tools declare readOnlyHint EXPLICITLY, neither by default', async () => {
-        // The grant would classify correctly by saying nothing. It says false
-        // anyway so the pair reads as deliberate — a pair where one side is
-        // explicit and the other relies on a default invites a tidy-up.
         for (const t of await listTools()) {
             expect(t.annotations).toBeDefined();
             expect(Object.hasOwn(t.annotations!, 'readOnlyHint')).toBe(true);
@@ -226,33 +285,32 @@ describe('the catalogue is exactly two tools, correctly classified', () => {
     });
 
     it("the grant's description quotes the real cap, not a second literal", async () => {
-        // The description is PINNED material — `McpToolManifestPin` hashes it and
-        // refuses a definition rewritten since a human accepted it — so it must
-        // name the bound rather than leave a model to infer that a grant is
-        // temporary. Derived from the constant so it cannot drift from the
-        // refusal that enforces it.
         const grant = (await listTools()).find((t) => t.name === GRANT_TOOL)!;
         expect(grant.description).toContain(`${MAX_GRANT_DAYS} days`);
         expect(grant.description).toMatch(/refused, not adjusted/);
     });
 
-    it('the grant requires an end date in its schema', async () => {
-        const grant = (await listTools()).find((t) => t.name === GRANT_TOOL)!;
-        const schema = (grant as unknown as { inputSchema: { required: string[] } }).inputSchema;
-        expect(schema.required).toContain('endDateTime');
+    it("the read's description says an EXPIRED assignment is not a holding", async () => {
+        // Measured live (#3311): an assignment that lapses stays in the
+        // collection as `expired` rather than being deleted, which is why
+        // #3326 exists. The description is pinned material a human accepts, so
+        // it must not let a model read a lapsed row as current access.
+        const read = (await listTools()).find((t) => t.name === READ_TOOL)!;
+        expect(read.description).toMatch(/expired/i);
+        expect(read.description).toMatch(/NOT a current holding/i);
     });
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// 3. HOW IT ANSWERS
+// 4. HOW IT ANSWERS
 // ═════════════════════════════════════════════════════════════════════
 
 describe('tool calls and refusals', () => {
     it('a grant call reaches the usecase and returns the request id', async () => {
-        const res = await POST(rpc({
+        const res = await call({
             jsonrpc: '2.0', id: 7, method: 'tools/call',
             params: { name: GRANT_TOOL, arguments: GRANT_ARGS },
-        }), ARGS);
+        });
         expect(res.status).toBe(200);
         expect(grantMock).toHaveBeenCalledTimes(1);
         const body = await res.json();
@@ -260,14 +318,26 @@ describe('tool calls and refusals', () => {
         expect(body.result.isError).toBeFalsy();
     });
 
+    it('the usecase receives the SYSTEM context for the authenticated tenant', async () => {
+        // The actor is the machine. A delegated context would attribute a
+        // machine write to whichever user happened to be resolvable.
+        await call({
+            jsonrpc: '2.0', id: 7, method: 'tools/call',
+            params: { name: GRANT_TOOL, arguments: GRANT_ARGS },
+        });
+        const ctx = grantMock.mock.calls[0][0] as { tenantId: string; userId: unknown };
+        expect(ctx.tenantId).toBe('tenant-A');
+        // The SENTINEL, not null. `buildSystemContext` sets `userId: 'system'`
+        // deliberately and greppably; a null would also be true of a context
+        // that merely failed to resolve a user, so it is the weaker claim.
+        expect(ctx.userId).toBe('system');
+    });
+
     it('an unparseable end date becomes an Invalid Date, not a thrown 500', async () => {
-        // The route does `new Date(<whatever>)` on purpose so `expiryRefusal`
-        // can refuse it by name. Throwing would turn an operator's typo into a
-        // 500 instead of a sentence telling them what to fix.
-        await POST(rpc({
+        await call({
             jsonrpc: '2.0', id: 8, method: 'tools/call',
             params: { name: GRANT_TOOL, arguments: { ...GRANT_ARGS, endDateTime: 'next friday' } },
-        }), ARGS);
+        });
         const passed = grantMock.mock.calls[0][1] as { endDateTime: Date };
         expect(passed.endDateTime instanceof Date).toBe(true);
         expect(Number.isNaN(passed.endDateTime.getTime())).toBe(true);
@@ -278,10 +348,10 @@ describe('tool calls and refusals', () => {
             ok: false as const, refused: 'Grant refused: the end date is missing',
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
-        const res = await POST(rpc({
+        const res = await call({
             jsonrpc: '2.0', id: 9, method: 'tools/call',
             params: { name: GRANT_TOOL, arguments: GRANT_ARGS },
-        }), ARGS);
+        });
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.result.isError).toBe(true);
@@ -289,41 +359,51 @@ describe('tool calls and refusals', () => {
     });
 
     it('an unknown tool name is an in-band refusal, and names nothing else', async () => {
-        const res = await POST(rpc({
+        const res = await call({
             jsonrpc: '2.0', id: 10, method: 'tools/call',
             params: { name: 'delete_everything', arguments: {} },
-        }), ARGS);
+        });
         const body = await res.json();
         expect(body.result.isError).toBe(true);
         expect(body.result.content[0].text).toMatch(/Unknown tool/);
-        // It must not enumerate what DOES exist.
         expect(body.result.content[0].text).not.toContain(GRANT_TOOL);
     });
 
-    it('malformed JSON is a 400 parse error, not a crash', async () => {
+    it('malformed JSON from an AUTHENTICATED caller is a 400 parse error', async () => {
         const res = await POST(
-            new NextRequest(`http://localhost${PATH}`, { method: 'POST', body: 'not json' }),
-            ARGS,
+            new NextRequest(`http://localhost${PATH}`, {
+                method: 'POST',
+                headers: { Authorization: TOKEN },
+                body: 'not json',
+            }),
+            undefined as never,
         );
         expect(res.status).toBe(400);
     });
 
     it('a batch of only NOTIFICATIONS gets 202 and no body', async () => {
-        // A notification carries no id and gets no reply. Answering a batch of
-        // them with `[]` would be a response to requests that asked for none.
-        const res = await POST(rpc([{ jsonrpc: '2.0', method: 'notifications/initialized' }]), ARGS);
+        const res = await call([{ jsonrpc: '2.0', method: 'notifications/initialized' }]);
         expect(res.status).toBe(202);
         expect(await res.text()).toBe('');
     });
 
     it('a batch request gets an array, a single request gets an object', async () => {
-        const batch = await POST(rpc([
+        const batch = await call([
             { jsonrpc: '2.0', id: 1, method: 'tools/list' },
             { jsonrpc: '2.0', id: 2, method: 'tools/list' },
-        ]), ARGS);
+        ]);
         expect(Array.isArray(await batch.json())).toBe(true);
-
-        const single = await POST(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), ARGS);
+        const single = await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
         expect(Array.isArray(await single.json())).toBe(false);
+    });
+
+    it('exposes no resources, and a resources/read is refused', async () => {
+        // `dispatchMcp` advertises a resources capability unconditionally, so
+        // this endpoint claims one whether or not it has any. Defaulting the
+        // handlers to the agent-facing server's would reach this tenant's
+        // compliance data from a grant endpoint.
+        const list = await call({ jsonrpc: '2.0', id: 1, method: 'resources/list' });
+        const body = await list.json();
+        expect(body.result?.resources ?? []).toEqual([]);
     });
 });

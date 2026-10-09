@@ -322,8 +322,29 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // readable, only the code worse.
     'src/app-layer/usecases/agent-circuit-breaker.ts — identifier bound elsewhere',
     'src/lib/agentic/circuit-breaker-store.ts — identifier bound elsewhere',
+    // RELOCATION BROUGHT IT INTO SCOPE, rather than new logging (#3323). The
+    // grant endpoint moved from `src/app/api/t/<slug>/admin/mcp/entra-grant` to
+    // `src/app/api/mcp/entra-grant` because the first path's EDGE contract
+    // admits only a session cookie or an `iflk_` key, and our own dispatch
+    // holds neither. `src/app/api/mcp/**` is a LIVE agentic glob and the old
+    // path matched none, so this file's logging is newly MEASURED, not newly
+    // written — the move is the forcing function working as intended.
+    //
+    // The one hole is `detail: err instanceof Error ? err.message : String(err)`
+    // in the catch around `appendAuditEntryOrQueue`. It cannot be named at the
+    // sink: a literal would say nothing, and any expression over `err` is this
+    // class by construction. The other two fields beside it, `tenantId` and
+    // `reason`, ARE named, and `reason` is a member of the closed seven-case
+    // `GrantAuthRefusal` union.
+    //
+    // What cannot be shown structurally: nothing prompt-shaped exists in that
+    // module to name. The thrown value comes from OUR audit writer, not from a
+    // caller — the route authenticates before it parses a body, so a refused
+    // request's payload is never read, let alone logged. The presented
+    // credential is excluded deliberately and by test: not the secret, and not
+    // its length.
+    'src/app/api/mcp/entra-grant/route.ts — identifier bound elsewhere',
 ];
-
 /**
  * Floor on the sink calls the sweep recognised. Measured at 33 across 11 files
  * when this landed; floored a little below so an ordinary refactor does not
@@ -617,7 +638,12 @@ const SINK_FLOOR = 30;
 // would drain the hole) because the text is operator-facing copy that a test
 // should be able to assert on by name, and a three-line literal spread inside
 // an `updateRun` call is harder to read than the hole is expensive.
-const MEASURED_HOLES = 177;
+// 177 -> 178: THE GRANT ENDPOINT MOVED INTO THE AGENTIC GLOB (#3323). One hole,
+// `identifier bound elsewhere`, in a file that is new to this POPULATION rather
+// than new to the repo — see its entry in KNOWN_UNANALYSABLE for why the path
+// had to change and why the `err.message` beside two named fields cannot be
+// drained. Measured, not projected: 178 is this branch's live count.
+const MEASURED_HOLES = 178;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -636,7 +662,17 @@ const MEASURED_HOLES = 177;
 // 99 → 100: KILL SWITCH STOPS THE MODEL CALL. The one new sink is
 // `haltRunAtKill`'s audit row. Raising the denominator TIGHTENS
 // `HOLES_PER_SINK_CEILING`, which is the direction this pair is meant to move.
-const MEASURED_SINKS = 100;
+// 100 -> 102: the same relocation brings TWO sinks with it — the unattributable
+// refusal's `logger.warn` and the audit-write failure's `logger.error`. Raising
+// the denominator by more than the numerator TIGHTENS `HOLES_PER_SINK_CEILING`
+// (1.83 -> 1.8039), which is the direction this pair is meant to move.
+//
+// Raised by MY OWN contribution only. The live sink count on this branch is
+// 108, so the floor carries slack from sinks somebody added without recording
+// them here; claiming those would set a floor on work I did not do, and a floor
+// above the true count fails for an unrelated reason the day somebody deletes a
+// log line.
+const MEASURED_SINKS = 102;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

@@ -181,7 +181,7 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // machinery behind it. OWNER-only (`admin.tenant_lifecycle`), two tools,
     // and the tenant is authenticated from the path rather than asserted in an
     // argument.
-    't/[tenantSlug]/admin/mcp/entra-grant/route.ts',
+    'mcp/entra-grant/route.ts',
     // PHASE 1, point 01's third bullet — the per-tenant driver toggle. The
     // column shipped with a reader, a default and no writer; a gate whose
     // customer half cannot be moved through the product is a constant wearing
