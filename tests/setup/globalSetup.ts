@@ -17,6 +17,8 @@ import {
     getDbName,
     adminConnectionString,
     perWorkerDbName,
+    checkoutTag,
+    selectReapableWorkerDbs,
     acquireTestDbRunLock,
     rememberTestDbRunLock,
     releaseTestDbRunLock,
@@ -155,6 +157,65 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
                 workerDbs.push(wdb);
                 await admin.query(`DROP DATABASE IF EXISTS "${wdb}" WITH (FORCE)`);
                 await admin.query(`CREATE DATABASE "${wdb}" TEMPLATE "${baseName}"`);
+            }
+            // ── Reap THIS CHECKOUT'S orphans (#3356) ─────────────────
+            //
+            // `globalTeardown` drops the databases it created, but only
+            // when it runs. A hard-killed run leaves all of them behind,
+            // and the `DROP ... WITH (FORCE)` above only reclaims the
+            // indices the NEW run is about to use — so a 7-worker run
+            // followed by a 4-worker run orphans w5..w7 permanently, with
+            // teardown working perfectly. Measured residue on the shared
+            // dev Postgres: 215 databases, 8.7 GB, 39 checkout tags.
+            //
+            // Gated on the lock being HELD, which is the safety argument:
+            // the lock is per (checkout, base database), so while we hold
+            // it nothing else can be using a database bearing our tag.
+            // `selectReapableWorkerDbs` is where that reasoning lives and
+            // is unit-tested; see its docblock for why a wider rule keyed
+            // on connection count would have deleted live worktrees'
+            // databases.
+            if (runLock.status === 'acquired') {
+                try {
+                    const { rows } = await admin.query<{ datname: string; conns: number }>(
+                        `SELECT d.datname,
+                                (SELECT count(*) FROM pg_stat_activity a
+                                  WHERE a.datname = d.datname)::int AS conns
+                           FROM pg_database d
+                          WHERE d.datname LIKE $1`,
+                        [`${baseName}%`],
+                    );
+                    const reapable = selectReapableWorkerDbs(
+                        rows,
+                        baseName,
+                        checkoutTag(),
+                        workerDbs,
+                    );
+                    let reaped = 0;
+                    for (const name of reapable) {
+                        try {
+                            // Deliberately NOT `WITH (FORCE)`. The counts
+                            // were read a moment ago; if a connection has
+                            // appeared since, failing is right and
+                            // terminating someone's session is not.
+                            await admin.query(`DROP DATABASE IF EXISTS "${name}"`);
+                            reaped += 1;
+                        } catch {
+                            /* in use after all, or already gone */
+                        }
+                    }
+                    if (reaped > 0) {
+                        console.log(
+                            `[test-setup] Reaped ${reaped} orphaned per-worker DB(s) from ` +
+                                `earlier runs of this checkout`,
+                        );
+                    }
+                } catch (err) {
+                    // Housekeeping must never be why a test run cannot start.
+                    console.warn(
+                        `[test-setup] Orphan reap skipped (${err instanceof Error ? err.message : err})`,
+                    );
+                }
             }
             await admin.end();
             // Record the names actually created, so teardown drops exactly
