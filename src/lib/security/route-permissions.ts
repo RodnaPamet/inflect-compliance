@@ -92,6 +92,29 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         // calendar one. A weaker key here would be an UNLOGGED gate — the
         // request would pass the middleware and be refused deeper, where
         // nothing writes AUTHZ_DENIED.
+        // Legacy access recertification (Step 2a). Both `admin.manage`.
+        //
+        // GET is admin rather than reader on purpose: the response enumerates a
+        // customer's legacy SCHEMA. What a reviewer legitimately needs — why one
+        // account was suggested to one person — is the convention and the signal
+        // list, not the whole column map.
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/pull$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Starts a legacy access pull. Enqueues only — the job dials a '
+            + 'customer-hosted MCP server and writes a snapshot.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/mapping$`),
+        methods: ['GET', 'PUT'],
+        permission: 'admin.manage',
+        note:
+            'Reads and sets the column mapping. PUT decides which legacy column '
+            + 'means email and which means employeeNumber, both STRONG signals; '
+            + 'GET enumerates a customer legacy schema, so neither is a reader.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/calendar\\/consent$`),
         permission: 'admin.manage',
         note: 'Grant, read or withdraw tenant-wide calendar consent (audited).',

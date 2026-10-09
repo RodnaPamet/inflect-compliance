@@ -195,6 +195,15 @@ model IntegrationConnection {
   /// makes a cross-tenant reference unrepresentable rather than merely
   /// filtered.
   @@unique([id, tenantId])
+  /// OVERSHARING: the far end returned columns the `?fields=` projection
+  /// did not ask for. Flagged on the CONNECTION as well as on the snapshot
+  /// so an operator sees a misbehaving server without opening a pull, and
+  /// deliberately not fatal — dropping the columns is a complete remedy, and
+  /// refusing would let a misconfigured legacy server halt recertification.
+  oversharingObservedAt DateTime?
+  oversharingColumns    String[]
+  legacyAccessSnapshots LegacyAccessSnapshot[]
+
 }
 
 model IntegrationExecution {

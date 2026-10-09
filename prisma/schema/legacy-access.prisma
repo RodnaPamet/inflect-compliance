@@ -1,0 +1,151 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// Legacy access recertification — snapshots pulled from operator-hosted MCP
+// servers in front of legacy applications.
+//
+// Two models, and the split is the whole design: a SNAPSHOT is the integrity
+// evidence (what was asked for, what came back, whether it was whole), and an
+// ACCOUNT is one row of the canonical schema. Readers only ever use accounts
+// belonging to a snapshot whose status is COMPLETE, because a snapshot that is
+// anything else is a population nobody can vouch for — and a recertification
+// campaign over an incomplete population produces an artefact attesting that
+// every account in scope was reviewed, which would be true of its rows and
+// false of the application.
+//
+// Canonical fields ONLY. Whatever else the legacy table carried was dropped at
+// the boundary by src/lib/legacy-access/ingest.ts. A column nobody mapped is a
+// column nobody classified, and the retention policy, the encryption manifest
+// and the erasure path all range over columns somebody classified.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// One pull from one connection.
+///
+/// `status` starts PENDING and becomes COMPLETE only as the final act of a
+/// successful pull, after every account row is written. A crash part-way
+/// through therefore leaves PENDING, which no reader will touch — the absence
+/// of a transition is the failure signal, so nothing has to run to record it.
+model LegacyAccessSnapshot {
+  id           String @id @default(cuid())
+  tenantId     String
+  connectionId String
+
+  /// The snapshot id the FAR END minted, carried so a torn read can be
+  /// recognised across pages and so an operator can correlate with their own
+  /// server's logs. Not unique here: a server may legitimately re-serve one
+  /// snapshot id to a retried pull.
+  remoteSnapshotId String
+
+  /// The mapping version this pull applied, and the column-set fingerprint the
+  /// mapping was confirmed against. Stored on the snapshot rather than only in
+  /// `configJson` because the mapping will change and this row must keep
+  /// meaning what it meant: "these rows were produced by THAT mapping".
+  mappingVersion       Int
+  columnSetFingerprint String
+
+  /// SHA-256 over the mapped rows in canonical form. Re-derivable from the
+  /// stored accounts, which is what makes it evidence rather than a checksum.
+  /// Null while PENDING and on a refusal — a hash over a population we never
+  /// finished reading would certify the wrong thing.
+  payloadHash String?
+
+  /// Which canonicalisation produced `payloadHash`. Recorded per row, never
+  /// read from the current source constant: a verifier that assumed today's
+  /// algorithm would report every snapshot taken before a canonicalisation fix
+  /// as corrupt, which is the opposite of what integrity evidence is for.
+  payloadHashAlgorithmVersion Int @default(1)
+
+  /// Accounts actually stored. Compare with `rowsReceived` to see what the
+  /// mapping collapsed (a long entitlement layout legitimately yields fewer
+  /// accounts than rows).
+  rowCount     Int @default(0)
+  rowsReceived Int @default(0)
+
+  status        LegacyAccessSnapshotStatus  @default(PENDING)
+  refusalReason LegacyAccessRefusalReason?
+  /// Operator-facing explanation. System-generated and never a cell value —
+  /// see the LegacyIngestError docblock, which is where that rule is enforced.
+  refusalDetail String?
+
+  /// Columns the server returned that the `?fields=` projection did not ask
+  /// for. NAMES only; no value of these columns is stored anywhere. A
+  /// non-empty array is the OVERSHARING condition, mirrored onto the
+  /// connection so an operator sees it without opening a snapshot.
+  oversharedColumns String[]
+
+  /// Date cells that could not be parsed, across the whole pull. A number
+  /// rather than a refusal: an unparseable `createdAt` disables the temporal
+  /// veto for that account, and the veto only ever removes candidates, so
+  /// losing it yields more for a human to look at rather than fewer.
+  unparsedDateCount Int @default(0)
+
+  pulledAt    DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant     Tenant                @relation(fields: [tenantId], references: [id])
+  connection IntegrationConnection @relation(fields: [connectionId, tenantId], references: [id, tenantId])
+  accounts   LegacyAccount[]
+
+  /// Lets a child row's FK be composite, which is what makes a cross-tenant
+  /// parent pointer unrepresentable rather than merely checked.
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, connectionId, status, pulledAt])
+  @@index([tenantId, connectionId, completedAt])
+}
+
+/// One account from one snapshot, in canonical form.
+///
+/// Immutable once written. A snapshot is a point-in-time observation, so an
+/// account that changed in the legacy application is a new row in a new
+/// snapshot — never an update here. Keeping the history is what lets a reviewer
+/// be asked "this is what we saw on the 9th" and what lets an auditor recompute
+/// the payload hash of a snapshot taken months ago.
+model LegacyAccount {
+  id         String @id @default(cuid())
+  tenantId   String
+  snapshotId String
+
+  /// The account's key in the source application, and the unit of review.
+  /// Unique per snapshot: a duplicate is refused at ingestion rather than
+  /// collapsed by an upsert, because two rows claiming one key give no reason
+  /// to trust what either says.
+  accountKey String
+
+  username       String?
+  displayName    String?
+  givenName      String?
+  familyName     String?
+  email          String?
+  employeeNumber String?
+  department     String?
+  title          String?
+  managerRef     String?
+
+  status      LegacyAccountStatus @default(UNKNOWN)
+  lastLoginAt DateTime?
+  /// Drives the temporal veto — an account that did not exist when a person
+  /// left cannot be that person's — so it is load-bearing for correctness
+  /// rather than informational.
+  sourceCreatedAt DateTime?
+  expiresAt       DateTime?
+
+  entitlements String[]
+  isPrivileged Boolean?
+  accountType  LegacyAccountType @default(UNKNOWN)
+
+  createdAt DateTime @default(now())
+
+  tenant   Tenant               @relation(fields: [tenantId], references: [id])
+  snapshot LegacyAccessSnapshot @relation(fields: [snapshotId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([snapshotId, accountKey])
+  @@index([tenantId])
+  /// Backs the verify query exactly: equality on `tenantId` + `snapshotId`, then
+  /// a range scan and ordering on `accountKey` — which is the order the payload
+  /// hash is defined over, so the recompute pages without a sort. Supersedes a
+  /// plain `[tenantId, snapshotId]`, which this covers as a prefix.
+  @@index([tenantId, snapshotId, accountKey])
+  @@index([tenantId, email])
+  @@index([tenantId, employeeNumber])
+}

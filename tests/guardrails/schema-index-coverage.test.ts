@@ -274,6 +274,16 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── Legacy access recertification (Step 2a) ─────────────────────
+    {
+        model: 'LegacyAccount',
+        fields: ['tenantId', 'snapshotId', 'accountKey'],
+        justification:
+            'The payload-hash recompute in usecases/legacy-access-verify.ts pages a '
+            + 'snapshot in accountKey order: equality on tenantId + snapshotId, then a '
+            + 'range scan on accountKey. The third column is what lets the index serve '
+            + 'the ORDER BY as well as the filter, so verification never sorts.',
+    },
     // ── Risk (from list-query-indexes.test.ts) ──────────────────────
     {
         model: 'Risk',

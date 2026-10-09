@@ -231,6 +231,24 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
     'legacy-mcp': {
         endpointUrl: { kind: 'publicOrigin' },
         applicationName: { kind: 'inert' },
+        // Two STRUCTURED keys, both `inert` because neither reaches a host nor
+        // carries a query — and both declared here because this map is an
+        // allowlist, not a description: `validateProviderConfig` THROWS on a key
+        // it cannot find, so an undeclared key is a write path that 400s.
+        //
+        // `legacyUsernameConvention` is Step 4a's, and leaving it out is exactly
+        // the regression `usecases/legacy-username-convention.ts` predicted in
+        // prose — "when Step 1c registers `legacy-mcp` with rules, this key has to
+        // be declared there or this call starts throwing". Step 1c registered the
+        // provider and did not declare it, so adopting a convention 400'd for the
+        // only provider the feature exists for. The comment was right and nothing
+        // executed it; `tests/unit/legacy-access-mapping.test.ts` now does.
+        //
+        // Neither is validated HERE: `parseConvention` and `StoredMappingSchema`
+        // own their shapes, and a second opinion in this file is how the two come
+        // to disagree. `inert` means "no reach", not "unchecked".
+        legacyUsernameConvention: { kind: 'inert' },
+        legacyAccessMapping: { kind: 'inert' },
     },
     servicenow: {
         instance: { kind: 'vendorOrigin', allow: SERVICENOW_HOSTS },
