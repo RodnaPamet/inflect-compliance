@@ -29,11 +29,13 @@ import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
-import { Heading } from '@/components/ui/typography';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Input } from '@/components/ui/input';
 import { InlineNotice } from '@/components/ui/inline-notice';
 
 interface Template {
@@ -176,17 +178,21 @@ export function ComposeClient({
 
     return (
         <div className="space-y-section">
-            <div className="space-y-default">
-                <Heading level={1}>{t('compose.title')}</Heading>
-                <p className="max-w-prose text-content-muted">{t('compose.intro')}</p>
-            </div>
+            <PageHeader
+                back={{ smart: true }}
+                title={t('compose.title')}
+                description={t('compose.intro')}
+            />
 
             {!canWrite ? (
                 <InlineNotice variant="info">{t('compose.readOnly')}</InlineNotice>
             ) : null}
 
             {templates.length === 0 ? (
-                <InlineNotice variant="warning">{t('compose.noTemplates')}</InlineNotice>
+                <EmptyState
+                    title={t('compose.noTemplatesTitle')}
+                    description={t('compose.noTemplatesDesc')}
+                />
             ) : (
                 <Card className="space-y-default">
                     <FormField label={t('compose.templateLabel')}>
@@ -236,8 +242,7 @@ export function ComposeClient({
                                 label={t('compose.fieldLabel', { field: f.name })}
                                 hint={t('compose.fieldHint', { kind: f.kind })}
                             >
-                                <input
-                                    className="w-full rounded border border-border-subtle bg-bg-default px-3 py-2"
+                                <Input
                                     value={values[f.name] ?? ''}
                                     onChange={(e) =>
                                         setValues((p) => ({ ...p, [f.name]: e.target.value }))

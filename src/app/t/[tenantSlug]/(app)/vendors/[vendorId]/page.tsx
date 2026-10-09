@@ -1328,7 +1328,21 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                 <div className="space-y-default">
                     {canWrite && (
                         <div className="flex justify-end">
-                            <Button variant="primary" onClick={() => setShowLinkForm(!showLinkForm)} id="add-link-btn">
+                            {/*
+                              * SECONDARY, not primary (#3301). This is a
+                              * disclosure toggle, and one of the two labels it
+                              * can render is "Cancel" — which a page's loudest
+                              * action should never be. The real primary on this
+                              * flow is the SUBMIT inside the form it reveals
+                              * (`submit-link-btn`), which stays primary.
+                              *
+                              * Demoted to pay for the compose page's sole CTA
+                              * under `primary-secondary-ratio`, whose rule is
+                              * that the ceiling moves only in a PR that pays
+                              * for it by demoting an equivalent primary. This
+                              * page held NINE, the most in the product.
+                              */}
+                            <Button variant="secondary" onClick={() => setShowLinkForm(!showLinkForm)} id="add-link-btn">
                                 {showLinkForm ? tx('detail.cancel') : tx('detail.linkEntity')}
                             </Button>
                         </div>

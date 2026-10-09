@@ -8666,7 +8666,6 @@
       "accessMessage": "You do not have permission to view agent governance in this workspace.",
       "templateLabel": "Template",
       "templatePlaceholder": "Choose an approved template",
-      "noTemplates": "This workspace has no approved templates yet. An administrator saves one on the external-tool catalogue before a request can be composed.",
       "toolLine": "Sends {tool}",
       "subjectLabel": "Subject",
       "subjectPlaceholder": "Choose who this is about",
@@ -8679,7 +8678,9 @@
       "queued": "Queued for approval. Nothing has been sent. Proposal {id}.",
       "quarantined": "Quarantined — this will NOT be reviewed, and nothing was sent. The output guard refused it ({verdict}). Proposal {id}.",
       "failed": "Nothing was sent. {reason}",
-      "loadFailed": "That template's fields could not be loaded. {reason}"
+      "loadFailed": "That template's fields could not be loaded. {reason}",
+      "noTemplatesTitle": "No approved templates yet",
+      "noTemplatesDesc": "An administrator saves one on the external-tool catalogue before a request can be composed."
     }
   },
   "securityTesting": {
