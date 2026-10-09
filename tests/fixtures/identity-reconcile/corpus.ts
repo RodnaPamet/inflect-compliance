@@ -45,7 +45,8 @@ export type CorpusCategory =
     | 'service-account'
     | 'yot-and-yo'
     | 'mixed-script'
-    | 'pathological-input';
+    | 'pathological-input'
+    | 'alias-on-departed-employee';
 
 export interface LegacyAccountSlice {
     readonly accountKey: string;
@@ -88,6 +89,16 @@ export interface CorpusCase {
     readonly account: LegacyAccountSlice;
     readonly hr: readonly EmployeeSlice[];
     readonly directory: readonly DirectoryAccountSlice[];
+    /**
+     * Confirmed aliases in force for this case.
+     *
+     * Added because the corpus could not EXPRESS an alias at all — every
+     * consumer passed `aliases: []`, so no case could ever exercise the one
+     * signal that links an account on its own. A fixture that cannot produce the
+     * input is green about it forever, and that is how the departed-employee
+     * defect survived Steps 3b and 4a (see #3346).
+     */
+    readonly aliases?: readonly { readonly accountKey: string; readonly employeeId: string }[];
     readonly expected: { readonly outcome: Outcome; readonly employeeId: string | null };
     /** Normal forms Step 3a asserts directly. */
     readonly normalForms?: {
@@ -104,6 +115,20 @@ export interface CorpusCase {
 
 const active = (id: string, fullName: string, extra: Partial<EmployeeSlice> = {}): EmployeeSlice => ({
     id, fullName, status: 'ACTIVE', startDate: '2020-01-06', ...extra,
+});
+
+/**
+ * A departed employee. `endDate` is required rather than defaulted: a
+ * TERMINATED record with no end date cannot be distinguished from a data fault,
+ * and the temporal rules this corpus exercises all read it.
+ */
+const departed = (
+    id: string,
+    fullName: string,
+    endDate: string,
+    extra: Partial<EmployeeSlice> = {}
+): EmployeeSlice => ({
+    id, fullName, status: 'TERMINATED', startDate: '2020-01-06', endDate, ...extra,
 });
 
 export const CORPUS: readonly CorpusCase[] = [
@@ -412,12 +437,83 @@ export const CORPUS: readonly CorpusCase[] = [
         expected: { outcome: 'SUGGESTED', employeeId: 'e-100' },
         normalForms: { nameGiven: 'Jamie', nameFamily: 'Jones' },
     },
+
+    // ‾‾‾ An alias whose person has left ‾‾‾
+    //
+    // The three together pin the branch from both sides. Case `aod-03` is the
+    // one that stops a future change from "fixing" the leaver case by removing
+    // the terminated downgrade altogether.
+    {
+        id: 'aod-01',
+        category: 'alias-on-departed-employee',
+        why: 'An alias is a decision a person made, not an inference. When its employee leaves with no successor the terminated row is the CORRECT answer — and a LINKED is acted on by later steps where a SUGGESTED waits in a queue, so downgrading here stops the account being reported as a leaver at the one moment it matters.',
+        account: { accountKey: 'mray', displayName: 'Max Ray' },
+        hr: [departed('e-900', 'Max Ray', '2026-08-31', { givenName: 'Max', familyName: 'Ray' })],
+        directory: [],
+        aliases: [{ accountKey: 'mray', employeeId: 'e-900' }],
+        expected: { outcome: 'LINKED', employeeId: 'e-900' },
+    },
+    {
+        id: 'aod-02',
+        category: 'alias-on-departed-employee',
+        why: 'With a re-keyed successor the alias IS doubtful — the person is still here under a new row — so the downgrade is right and points at the successor. Revalidation suspends this case before a run sees it; the engine must still be correct when called without it.',
+        account: { accountKey: 'nwosu', displayName: 'Ada Nwosu' },
+        hr: [
+            departed('e-901', 'Ada Nwosu', '2026-01-31', { givenName: 'Ada', familyName: 'Nwosu' }),
+            active('e-902', 'Ada Nwosu', { givenName: 'Ada', familyName: 'Nwosu', startDate: '2026-03-01' }),
+        ],
+        directory: [],
+        aliases: [{ accountKey: 'nwosu', employeeId: 'e-901' }],
+        expected: { outcome: 'SUGGESTED', employeeId: 'e-902' },
+    },
+    {
+        id: 'aod-03',
+        category: 'alias-on-departed-employee',
+        why: 'An INFERRED strong signal on a departed employee still downgrades. The alias exception must not be over-generalised into the email and employee-number paths, whose reasoning — an old address pointing at a row the leaver process has finished with — is unchanged.',
+        account: { accountKey: 'tokoro', displayName: 'Tomo Okoro', email: 'tomo.okoro@example.test' },
+        hr: [departed('e-903', 'Tomo Okoro', '2026-07-15', {
+            givenName: 'Tomo', familyName: 'Okoro', workEmail: 'tomo.okoro@example.test',
+        })],
+        directory: [],
+        expected: { outcome: 'SUGGESTED', employeeId: 'e-903' },
+    },
 ];
+/**
+ * One corpus case as engine input.
+ *
+ * Owned by the FIXTURE rather than written out at each consumer, because
+ * `aliases: []` was hardcoded at every one of them — so an alias case was
+ * unsatisfiable in three separate places, and fixing two of them still left a
+ * LINKED case that could never link. Spread the result to add a `config`:
+ *
+ *     reconcile({ ...engineInputFor(c), config: step4aExtensions(c.hr) })
+ *
+ * A consumer that builds the object by hand reintroduces the defect, and the
+ * next field added to `CorpusCase` will be dropped the same way.
+ */
+export function engineInputFor(c: CorpusCase): {
+    accounts: readonly LegacyAccountSlice[];
+    roster: readonly EmployeeSlice[];
+    directory: readonly DirectoryAccountSlice[];
+    aliases: readonly { readonly accountKey: string; readonly employeeId: string }[];
+    now: string;
+} {
+    return {
+        accounts: [c.account],
+        roster: c.hr,
+        directory: c.directory,
+        aliases: c.aliases ?? [],
+        now: CORPUS_NOW,
+    };
+}
+
+/** The instant every corpus-driven run uses, so freshness is not per-consumer. */
+export const CORPUS_NOW = '2026-10-08T00:00:00.000Z';
 
 /** Every category the corpus claims to cover. Asserted exhaustive by its test. */
 export const CORPUS_CATEGORIES: readonly CorpusCategory[] = [
     'last-first-order', 'initials', 'numeric-suffix', 'domain-alias',
     'cyrillic-streamlined', 'cyrillic-traditional', 'username-reuse-after-termination',
     'rekeyed-email', 'contractor', 'service-account', 'yot-and-yo', 'mixed-script',
-    'pathological-input',
+    'pathological-input', 'alias-on-departed-employee',
 ];
