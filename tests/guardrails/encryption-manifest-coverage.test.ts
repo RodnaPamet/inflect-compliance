@@ -71,6 +71,21 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'LegacyIdentityAlias.suspendedReason':
+        'Why an alias was taken out of force. System-generated and operator-facing: a ' +
+        'suspended alias is not offered to the engine, so the reason exists to tell a ' +
+        'person what to do about it, and encrypting it would hide that from the surface ' +
+        'whose job is to show it. No cell value from the legacy application can reach it ' +
+        '— nothing that writes this field reads a row.',
+    'LegacyAccountResolution.note':
+        'System-generated, and the engine writes exactly one shape into it: ' +
+        '`service token: <token>`, where the token comes from the connection own ' +
+        'configuration (see the single `note:` site in lib/identity/reconcile/engine.ts). ' +
+        'No cell value can reach it. The evidence that IS personal data lives in ' +
+        'signalsJson alongside emails and employee numbers, and is plaintext for the ' +
+        'same reason ConnectedIdentityAccount email is: it is an identifier the ' +
+        'reconciliation joins on, and the surface that exists to show a reviewer WHY ' +
+        'an account was suggested cannot show them an opaque blob.',
     'LegacyAccessSnapshot.refusalDetail':
         'System-generated explanation of why a legacy access pull was not complete, and ' +
         'structurally not free text about a person: `LegacyIngestError.detail` permits column ' +

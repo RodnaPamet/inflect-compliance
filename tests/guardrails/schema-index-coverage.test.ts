@@ -274,6 +274,15 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    {
+        model: 'LegacyIdentityAlias',
+        fields: ['tenantId', 'connectionId', 'status'],
+        justification:
+            'usecases/legacy-reconcile.ts loads the ACTIVE aliases for one connection on '
+            + 'every run: equality on tenantId + connectionId + status. The status column '
+            + 'is in the index because a suspended alias must not be offered to the engine, '
+            + 'so the filter is always three-way.',
+    },
     // ── Legacy access recertification (Step 2a) ─────────────────────
     {
         model: 'LegacyAccount',

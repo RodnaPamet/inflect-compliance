@@ -28,6 +28,8 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /** Models with a dedicated two-tenant BEHAVIOURAL isolation test. */
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
+    LegacyAccountResolution: "tests/integration/legacy-reconcile-rls.test.ts",
+    LegacyIdentityAlias: "tests/integration/legacy-reconcile-rls.test.ts",
     LegacyAccessSnapshot: "tests/integration/legacy-access-rls.test.ts",
     LegacyAccount: "tests/integration/legacy-access-rls.test.ts",
     ExternalToolParameterSet:
