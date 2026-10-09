@@ -133,7 +133,7 @@ interface ReviewDetail {
     id: string;
     name: string;
     description: string | null;
-    scope: 'ALL_USERS' | 'ADMIN_ONLY' | 'CUSTOM' | 'CONNECTED_APP';
+    scope: 'ALL_USERS' | 'ADMIN_ONLY' | 'CUSTOM' | 'CONNECTED_APP' | 'LEGACY_APP';
     status: Status;
     periodStartAt: string | Date | null;
     periodEndAt: string | Date | null;
