@@ -613,8 +613,22 @@ jobs:
       # WORKER COUNT — `--runInBand` is deliberate, and it is NOT a bug
       # that it leaves `tests/setup/globalSetup.ts`'s per-worker database
       # cloning switched off. That machinery gates on `maxWorkers > 1`, and
-      # it exists to make PARALLEL execution safe. Serial execution against
-      # one database is already safe; there is nothing for it to protect.
+      # it exists to make PARALLEL execution safe.
+      #
+      # It is worth being precise about what that leaves unprotected, because an
+      # earlier version of this comment was not. Serial execution against one
+      # database is safe from CONCURRENT interference — two suites writing the
+      # same row at the same instant. It is NOT safe from ORDERING dependence: a
+      # suite that reads a row a sibling created, or deletes one a sibling still
+      # needs, is decided by which sibling ran first. `--shard=K/4` hashes file
+      # paths, so adding any test file re-partitions all four shards and changes
+      # that ordering — which is how a PR touching none of this reddens suites it
+      # has never heard of (#3336, measured on #3332).
+      #
+      # Switching the cloning on is still the wrong fix — see the measurement
+      # below. Isolation has to come from the suites, and
+      # `tests/guards/integration-suite-audit-teardown.test.ts` ratchets the one
+      # shape that bites hardest.
       #
       # This was tried the other way on 2026-08-05 and measured, on hosted
       # 2-core `ubuntu-latest` runners with Postgres in a service container
