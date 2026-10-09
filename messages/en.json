@@ -8349,7 +8349,8 @@
       "quarantine": "Quarantine",
       "reviewQuality": "Review quality",
       "decisions": "AI decision log",
-      "externalTools": "External tools"
+      "externalTools": "External tools",
+      "compose": "Compose a request"
     },
     "reviewQuality": {
       "accessTitle": "Agent register access required",
@@ -8657,6 +8658,30 @@
         "target": "names the row this call is about; the population below bounds which rows",
         "unknown": "a constraint this build cannot read, so the template will not dispatch"
       }
+    },
+    "compose": {
+      "breadcrumb": "Compose",
+      "title": "Compose a request",
+      "intro": "Pick an approved template, fill in the fields it leaves open, and submit it for approval. Nothing is sent until somebody else approves it.",
+      "accessTitle": "Agent governance",
+      "accessMessage": "You do not have permission to view agent governance in this workspace.",
+      "templateLabel": "Template",
+      "templatePlaceholder": "Choose an approved template",
+      "toolLine": "Sends {tool}",
+      "subjectLabel": "Subject",
+      "subjectPlaceholder": "Choose who this is about",
+      "fieldLabel": "{field}",
+      "fieldHint": "Bounded by the approved template ({kind}).",
+      "approvedNote": "Every other value comes from the approved template and cannot be changed here.",
+      "submit": "Submit for approval",
+      "submitting": "Submitting…",
+      "readOnly": "You can see this surface but not submit a request. Ask somebody with edit permission.",
+      "queued": "Queued for approval. Nothing has been sent. Proposal {id}.",
+      "quarantined": "Quarantined — this will NOT be reviewed, and nothing was sent. The output guard refused it ({verdict}). Proposal {id}.",
+      "failed": "Nothing was sent. {reason}",
+      "loadFailed": "That template's fields could not be loaded. {reason}",
+      "noTemplatesTitle": "No approved templates yet",
+      "noTemplatesDesc": "An administrator saves one on the external-tool catalogue before a request can be composed."
     }
   },
   "securityTesting": {

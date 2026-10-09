@@ -53,6 +53,14 @@ const MIGRATED_PAGES = [
     // StatusBadge / InlineNotice / Heading primitives, no raw colour utilities
     // and no legacy btn/badge classes.
     // Moved from admin/agents/review-quality by AGENTIC UI 1/4 (#2428).
+    // #3301 — PROMOTED ON LANDING, which is this ratchet's own stated path
+    // forward for a new page: built from the design system throughout
+    // (PageHeader, Card, Combobox, FormField, Input, Button, EmptyState,
+    // InlineNotice) with semantic tokens only, so parking it in the
+    // unmigrated tally would raise a shared ceiling to accommodate a file
+    // that has nothing to migrate.
+    'agents/compose/page.tsx',
+    'agents/compose/ComposeClient.tsx',
     'agents/review-quality/page.tsx',
     // Asset CSV import wizard; design-system-native from birth
     // (semantic tokens + Card/Button/DataTable/StatusBadge only).

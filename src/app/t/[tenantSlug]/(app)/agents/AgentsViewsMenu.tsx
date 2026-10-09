@@ -47,6 +47,7 @@ import { useTranslations } from 'next-intl';
 import {
     BadgeCheck,
     Gauge6,
+    PenWriting,
     ShieldSlash,
     SquareCheck,
     Workflow,
@@ -63,7 +64,8 @@ export type AgentsViewRoute =
     | 'review-quality'
     | 'reports'
     | 'decisions'
-    | 'external-tools';
+    | 'external-tools'
+    | 'compose';
 
 export interface AgentsViewsMenuProps {
     current: AgentsViewRoute;
@@ -97,6 +99,20 @@ export function AgentsViewsMenu({
                     id: 'operate',
                     label: t('views.groupOperate'),
                     items: [
+                        canReviewProposals && {
+                            // #3301 — the only item here that ACCEPTS an intent; the other
+                            // two review what one produced, which is why it sits first.
+                            // Gated on `canReviewProposals` (= `admin.view`), which is
+                            // exactly what its destination asks, so this group stays
+                            // gate-homogeneous. Submitting additionally needs write, and
+                            // the page says so rather than hiding the form.
+                            id: 'agents-view-compose',
+                            label: t('views.compose'),
+                            icon: <PenWriting className="size-4" />,
+                            href: href('/agents/compose'),
+                            selected: current === 'compose',
+
+                        },
                         canReviewProposals && {
                             id: 'agents-view-proposals',
                             label: t('views.proposals'),

@@ -114,6 +114,29 @@ export interface TargetPopulationEntry {
      * and the raw length is what says whether the ROW cap was reached.
      */
     resolve(ctx: RequestContext, limit: number): Promise<string[]>;
+    /**
+     * OPTIONAL display labels for values `resolve` has ALREADY returned (#3301).
+     *
+     * Only a human-facing picker needs this. A model is given the bound and
+     * never a snapshot of its contents — `jsonSchemaForConstraint` is explicit
+     * that advertising the population as an enum would be a stale bound a model
+     * trusts — but an operator choosing a person cannot choose between GUIDs.
+     *
+     * THE POPULATION OWNS ITS OWN PRESENTATION, because only it knows what its
+     * values mean. `terminated_employee_work_emails` needs no entry here: a
+     * work email IS its own label, and absence means exactly that rather than
+     * "not implemented yet".
+     *
+     * ═══ LABELLING CANNOT WIDEN THE BOUND ═══
+     *
+     * It takes the values `resolve` returned and may only describe them. It
+     * cannot add a candidate, because the picker renders the resolved set and a
+     * value absent from the returned map falls back to the raw value — so a
+     * label resolver that under-returns loses a NAME, never a bound. That
+     * direction is deliberate: the alternative shape, where labelling produced
+     * the list, would make the bound a function of the presentation layer.
+     */
+    label?(ctx: RequestContext, values: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }
 
 /**
@@ -126,6 +149,46 @@ export interface TargetPopulationEntry {
  * exists because a GRANT acts on a subject who is arriving, not leaving (#3299).
  * A fifth is a deploy away and should state its bound the same way.
  */
+/**
+ * Label Entra object ids with the worker they belong to.
+ *
+ * Tenant-scoped through `runInTenantContext` exactly as the resolvers are, and
+ * keyed on the SAME join — so a value that resolves gets a label from the same
+ * row that admitted it rather than from a second, looser query.
+ *
+ * `fullName` and `workEmail` are both NOT NULL on `Employee`, so a label is
+ * never silently empty. A value with no row simply gets none, and the picker
+ * shows the raw id.
+ */
+async function labelEntraAccountIds(
+    ctx: RequestContext,
+    values: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+    if (values.length === 0) return new Map();
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.identityAccountLink.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                connectedAccount: { externalUserId: { in: [...values] } },
+            },
+            select: {
+                employee: { select: { fullName: true, workEmail: true } },
+                connectedAccount: { select: { externalUserId: true } },
+            },
+            // Bounded by the input, which is itself already capped at
+            // MAX_POPULATION_ROWS by the resolver that produced it.
+            take: values.length,
+        }),
+    );
+    const out = new Map<string, string>();
+    for (const r of rows) {
+        const id = r.connectedAccount?.externalUserId;
+        const e = r.employee;
+        if (id && e) out.set(id, `${e.fullName} (${e.workEmail})`);
+    }
+    return out;
+}
+
 export const TARGET_POPULATIONS: Readonly<Record<string, TargetPopulationEntry>> = {
     /**
      * The population the leaver pass acts on, addressed by work email.
@@ -248,6 +311,7 @@ export const TARGET_POPULATIONS: Readonly<Record<string, TargetPopulationEntry>>
                 r.connectedAccount?.externalUserId ? [r.connectedAccount.externalUserId] : [],
             );
         },
+        label: labelEntraAccountIds,
     },
 
     /**
@@ -329,6 +393,7 @@ export const TARGET_POPULATIONS: Readonly<Record<string, TargetPopulationEntry>>
                 r.connectedAccount?.externalUserId ? [r.connectedAccount.externalUserId] : [],
             );
         },
+        label: labelEntraAccountIds,
     },
 };
 
@@ -375,6 +440,77 @@ export type TargetPopulationResolution =
  * than an unlabelled rejection — a broken read must not be indistinguishable
  * from a bound that did its job.
  */
+/**
+ * IS THIS VALUE A MEMBER OF THIS POPULATION? (#3301)
+ *
+ * The DECISION, separated from the wording. `external-tools.ts` had this as a
+ * private `refuseUnlessInPopulation` that threw model-facing strings, which made
+ * it unreachable from any human surface — and #3301's compose form needs exactly
+ * this check to let an operator "pick a subject from its population".
+ *
+ * Reimplementing it there was the alternative and the wrong one: this is the
+ * bound that decides WHICH ROW a directory write is about, and a second copy of
+ * it is a second thing to get wrong. So the five states travel as a discriminated
+ * union and each caller supplies its own sentence — the model-facing wording in
+ * `external-tools.ts` is unchanged, byte for byte, and two existing test files
+ * assert those strings.
+ *
+ * Why each state is distinct rather than collapsed into "not a member":
+ *
+ *   · `unknown_key` — a deploy removed or renamed the population. The template
+ *     is undispatchable until re-proposed through four eyes, which is the safe
+ *     direction.
+ *   · `unresolvable` — the read failed. "We could not look" is not "nothing
+ *     matched", and reporting it as a value refusal sends a caller round a retry
+ *     loop against a broken database.
+ *   · `too_large` — past the row cap, so membership cannot be decided at all.
+ *   · `empty` — resolved and holds nothing. The template is inert, which is an
+ *     operator's problem rather than the caller's.
+ *   · `not_a_member` — the ordinary refusal. It carries the population SIZE and
+ *     never its contents: a count tells an operator whether the bound is doing
+ *     work, where a list would hand the caller every identifier it was not
+ *     allowed to have.
+ */
+export type TargetMembership =
+    | { readonly ok: true }
+    | { readonly ok: false; readonly kind: 'not_a_string' }
+    | { readonly ok: false; readonly kind: 'unknown_key' }
+    | { readonly ok: false; readonly kind: 'unresolvable'; readonly detail: string }
+    | { readonly ok: false; readonly kind: 'too_large'; readonly cap: number }
+    | { readonly ok: false; readonly kind: 'empty' }
+    | { readonly ok: false; readonly kind: 'not_a_member'; readonly size: number };
+
+export async function checkTargetInPopulation(
+    ctx: RequestContext,
+    population: string,
+    value: unknown,
+): Promise<TargetMembership> {
+    if (typeof value !== 'string' || value.length === 0) {
+        return { ok: false, kind: 'not_a_string' };
+    }
+    const resolved = await resolveTargetPopulation(ctx, population);
+    switch (resolved.state) {
+        case 'unknown_key':
+            return { ok: false, kind: 'unknown_key' };
+        case 'unresolvable':
+            return { ok: false, kind: 'unresolvable', detail: resolved.detail };
+        case 'too_large':
+            return { ok: false, kind: 'too_large', cap: resolved.cap };
+        case 'empty':
+            return { ok: false, kind: 'empty' };
+        case 'ok':
+            return resolved.values.has(value)
+                ? { ok: true }
+                : { ok: false, kind: 'not_a_member', size: resolved.values.size };
+        default: {
+            // A new resolution state is a compile error here rather than a
+            // silent `undefined` that no caller refuses on.
+            const unreachable: never = resolved;
+            return unreachable;
+        }
+    }
+}
+
 export async function resolveTargetPopulation(
     ctx: RequestContext,
     key: string,

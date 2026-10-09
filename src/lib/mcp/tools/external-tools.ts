@@ -51,7 +51,7 @@ import {
     type OpenFields,
 } from '@/lib/integrations/open-fields';
 import { refusalForValue } from '@/lib/integrations/parameter-constraints';
-import { resolveTargetPopulation } from '@/app-layer/usecases/external-tool-target-populations';
+import { checkTargetInPopulation } from '@/app-layer/usecases/external-tool-target-populations';
 import { getPriorStateRead } from '@/app-layer/usecases/external-prior-state-read';
 import { recordIntent } from '@/app-layer/usecases/external-write-journal';
 import { openAutomaticExternalWrite } from '@/app-layer/usecases/external-write-automatic';
@@ -120,15 +120,18 @@ async function refuseUnlessInPopulation(
     population: string,
     value: unknown,
 ): Promise<void> {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw new Error(
-            `external_target_not_a_string: "${field}" names the row this call is about, so it ` +
-                `takes a non-empty string identifier. Nothing was sent.`,
-        );
-    }
-
-    const resolved = await resolveTargetPopulation(ctx, population);
-    switch (resolved.state) {
+    // The DECISION moved to `checkTargetInPopulation` (#3301) so a human compose
+    // surface can make the same check rather than a second copy of it; the
+    // WORDING stayed here, byte for byte, because these strings reach a model
+    // and two test files assert them.
+    const m = await checkTargetInPopulation(ctx, population, value);
+    if (m.ok) return;
+    switch (m.kind) {
+        case 'not_a_string':
+            throw new Error(
+                `external_target_not_a_string: "${field}" names the row this call is about, so it ` +
+                    `takes a non-empty string identifier. Nothing was sent.`,
+            );
         case 'unknown_key':
             throw new Error(
                 `external_target_population_unknown: parameter set "${label}" is bounded by ` +
@@ -140,13 +143,13 @@ async function refuseUnlessInPopulation(
             throw new Error(
                 `external_target_population_unresolvable: the target population ` +
                     `"${population}" for parameter set "${label}" could not be read ` +
-                    `(${resolved.detail}), so no value can be checked against it. This is NOT ` +
+                    `(${m.detail}), so no value can be checked against it. This is NOT ` +
                     `"the value is not in the population". Nothing was sent.`,
             );
         case 'too_large':
             throw new Error(
                 `external_target_population_too_large: the target population "${population}" ` +
-                    `returns more than ${resolved.cap} rows, so it cannot act as a bound and ` +
+                    `returns more than ${m.cap} rows, so it cannot act as a bound and ` +
                     `membership cannot be decided. Nothing was sent.`,
             );
         case 'empty':
@@ -155,16 +158,13 @@ async function refuseUnlessInPopulation(
                     `parameter set "${label}" currently contains no rows, so there is no row ` +
                     `this call may be about. Nothing was sent.`,
             );
-        case 'ok':
-            if (!resolved.values.has(value)) {
-                throw new Error(
-                    `external_target_not_in_population: "${field}" must name a row in the ` +
-                        `approved target population "${population}", which currently has ` +
-                        `${resolved.values.size} member(s), and the value supplied is not one ` +
-                        `of them. Nothing was sent.`,
-                );
-            }
-            return;
+        case 'not_a_member':
+            throw new Error(
+                `external_target_not_in_population: "${field}" must name a row in the ` +
+                    `approved target population "${population}", which currently has ` +
+                    `${m.size} member(s), and the value supplied is not one ` +
+                    `of them. Nothing was sent.`,
+            );
     }
 }
 
