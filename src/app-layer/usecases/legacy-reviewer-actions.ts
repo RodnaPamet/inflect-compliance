@@ -554,35 +554,168 @@ export async function bulkConfirmLegacyAccounts(
 }
 
 /**
+ * Why a row is in the queue.
+ *
+ * The reviewer needs this distinction. `UNDECIDED` is work nobody has done;
+ * `EXTERNAL_EXPIRED` is work somebody DID, whose answer has a shelf life and has
+ * reached the end of it. Showing them identically would make a lapsed
+ * contractor look like a fresh unknown, and the right question is different in
+ * each case — "who is this?" versus "are they still here?".
+ */
+export type QueueReason = 'UNDECIDED' | 'EXTERNAL_EXPIRED';
+
+export interface QueueRow {
+    readonly accountKey: string;
+    readonly outcome: string;
+    readonly candidates: readonly ScoredCandidate[];
+    readonly reason: QueueReason;
+    /** For EXTERNAL_EXPIRED: when it lapsed. */
+    readonly expiredAt: Date | null;
+}
+
+/**
  * The queue: everything a reviewer still has to decide.
  *
- * `assertCanViewReconciliation`, not the confirm key — a reviewer who may not
- * decide may still need to see what is outstanding, and an auditor checking
- * that the queue is being worked needs exactly this read.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A DECIDED ACCOUNT LEAVES THE QUEUE — WHICH TAKES AN ALIAS READ
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The engine resolves an account on evidence, and three of the six reviewer
+ * actions produce no evidence it can use: `readAliases` feeds it only EMPLOYEE
+ * aliases, because only those name a person. So a NON_PERSON, EXTERNAL or
+ * ORPHAN account resolves `UNMATCHED` on every subsequent run, for ever.
+ *
+ * Listing the queue from resolutions ALONE therefore undoes the reviewer's work
+ * every cycle: they classify forty service accounts, the next run resolves all
+ * forty as UNMATCHED, and the queue asks them again. The suppression has to come
+ * from the alias table, because that is where the answer lives.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THREE THINGS THAT DO *NOT* SUPPRESS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * - **A SUSPENDED alias.** Revalidation suspends exactly when it has stopped
+ *   believing the answer, so a suspended row is the clearest case of something
+ *   needing a human. Suppressing on it would hide the output of the
+ *   revalidation pass behind the pass's own effect.
+ *
+ * - **An EXPIRED `EXTERNAL`.** The classification said "not on the roster, and
+ *   that is true until this date". Past the date it is not a wrong answer, it is
+ *   an OLD one — so the account returns, labelled {@link QueueReason}
+ *   `EXTERNAL_EXPIRED` rather than as a fresh unknown.
+ *
+ * - **An alias on a different connection.** The key is
+ *   `(connectionId, accountKey)`; the same login name in two legacy systems is
+ *   two accounts, and one reviewer's decision about one of them says nothing
+ *   about the other.
+ *
+ * Read with the VIEW key, not confirm: an auditor checking that the queue is
+ * being worked needs exactly this, and a reviewer who may not decide may still
+ * need to see what is outstanding.
  */
 export async function listReconciliationQueue(
     ctx: RequestContext,
-    input: { readonly executionId: string }
-): Promise<readonly { accountKey: string; outcome: string; candidates: readonly ScoredCandidate[] }[]> {
+    input: { readonly executionId: string; readonly connectionId: string; readonly now?: Date }
+): Promise<readonly QueueRow[]> {
     assertCanViewReconciliation(ctx);
 
+    const now = input.now ?? new Date();
+
+    const [rows, aliases] = await Promise.all([
+        runInTenantContext(ctx, (db) =>
+            db.legacyAccountResolution.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    executionId: input.executionId,
+                    // The three a human has to look at. LINKED needs nobody, and
+                    // NON_PERSON was already decided by rule rather than by a
+                    // person.
+                    outcome: { in: ['SUGGESTED', 'AMBIGUOUS', 'UNMATCHED'] },
+                },
+                orderBy: { accountKey: 'asc' },
+                select: { accountKey: true, outcome: true, candidatesJson: true },
+            })
+        ),
+        runInTenantContext(ctx, (db) =>
+            db.legacyIdentityAlias.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    connectionId: input.connectionId,
+                    status: 'ACTIVE',
+                },
+                select: { accountKey: true, classification: true, expiresAt: true },
+            })
+        ),
+    ]);
+
+    const decided = new Map(aliases.map((a) => [a.accountKey, a]));
+
+    const out: QueueRow[] = [];
+    for (const r of rows) {
+        const a = decided.get(r.accountKey);
+        const base = {
+            accountKey: r.accountKey,
+            outcome: r.outcome,
+            candidates: (r.candidatesJson ?? []) as unknown as readonly ScoredCandidate[],
+        };
+
+        if (!a) {
+            out.push({ ...base, reason: 'UNDECIDED', expiredAt: null });
+            continue;
+        }
+
+        // An EXTERNAL past its date comes BACK, labelled. Everything else with a
+        // live alias stays out: the reviewer answered it.
+        const lapsed =
+            a.classification === 'EXTERNAL'
+            && a.expiresAt !== null
+            && a.expiresAt.getTime() <= now.getTime();
+
+        if (lapsed) {
+            out.push({ ...base, reason: 'EXTERNAL_EXPIRED', expiredAt: a.expiresAt });
+        }
+    }
+
+    return out;
+}
+
+/**
+ * The EXTERNAL classifications that have lapsed, across a connection.
+ *
+ * Exposed separately from the queue because the two answer different questions.
+ * The queue is bounded to ONE run and shows what a reviewer should work on now;
+ * this is bounded to the connection and answers "how much of our external
+ * population has gone stale", which is a number somebody reports rather than
+ * works through.
+ *
+ * Deliberately NOT a suspension. Nothing about a lapsed EXTERNAL became
+ * doubtful — `suspendedReason` is a closed set of four facts that make an alias
+ * untrustworthy, and "it got old" is not one of them. Writing it there would
+ * make the suspension metric unreadable: a spike would no longer mean the HR
+ * feed or the accounts had changed, it would mean a quarter had ended.
+ */
+export async function listExpiredExternals(
+    ctx: RequestContext,
+    input: { readonly connectionId: string; readonly now?: Date }
+): Promise<readonly { accountKey: string; expiredAt: Date }[]> {
+    assertCanViewReconciliation(ctx);
+    const now = input.now ?? new Date();
+
     const rows = await runInTenantContext(ctx, (db) =>
-        db.legacyAccountResolution.findMany({
+        db.legacyIdentityAlias.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                executionId: input.executionId,
-                // The three a human has to look at. LINKED needs nobody, and
-                // NON_PERSON was already decided by rule.
-                outcome: { in: ['SUGGESTED', 'AMBIGUOUS', 'UNMATCHED'] },
+                connectionId: input.connectionId,
+                status: 'ACTIVE',
+                classification: 'EXTERNAL',
+                expiresAt: { lte: now },
             },
-            orderBy: { accountKey: 'asc' },
-            select: { accountKey: true, outcome: true, candidatesJson: true },
+            orderBy: { expiresAt: 'asc' },
+            select: { accountKey: true, expiresAt: true },
         })
     );
 
-    return rows.map((r) => ({
-        accountKey: r.accountKey,
-        outcome: r.outcome,
-        candidates: (r.candidatesJson ?? []) as unknown as readonly ScoredCandidate[],
-    }));
+    // `expiresAt` is non-null by the filter; the cast records that rather than
+    // re-checking it.
+    return rows.map((r) => ({ accountKey: r.accountKey, expiredAt: r.expiresAt as Date }));
 }
