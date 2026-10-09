@@ -46,8 +46,8 @@ import {
     createEntraEntitlementClient,
     expiryRefusal,
     MAX_GRANT_DAYS,
-    type AccessAssignmentState,
     type TimeBoundedGrantInput,
+    type AssignmentReadResult,
 } from '@/app-layer/integrations/providers/entra-id/entitlement';
 
 import type { RequestContext } from '../types';
@@ -232,11 +232,18 @@ export async function grantTimeBoundedAccess(
 }
 
 export type AssignmentReadOutcome =
-    | { readonly ok: true; readonly assignments: readonly AccessAssignmentState[] }
+    | { readonly ok: true; readonly assignments: AssignmentReadResult }
     | { readonly ok: false; readonly refused: string };
 
 /**
- * The prior state: what this subject already holds of this package.
+ * The prior state: every assignment of this package to this subject, held or
+ * lapsed, each one classified (#3326).
+ *
+ * The outcome carries `AssignmentReadResult` rather than an array on purpose.
+ * An array here invited `assignments.length > 0` as the answer to "do they
+ * already have it", which is FALSE for a subject whose assignment expired —
+ * and false in the harmful direction, suppressing the grant that would have
+ * restored their access.
  *
  * Separate from the grant and not folded into it, because
  * `external-write-dispatch` calls the paired read as its OWN tool call before

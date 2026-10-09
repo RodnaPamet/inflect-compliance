@@ -166,12 +166,117 @@ export interface EntitlementClientOptions {
     readonly now?: () => Date;
 }
 
+/**
+ * How an assignment stands RIGHT NOW, derived rather than reported (#3326).
+ *
+ * Graph keeps expired assignments in the collection — it does not remove them —
+ * so a read filtered only on subject and package returns history and holdings
+ * mixed together. `state` alone does not separate them either, because it lags:
+ * #3324 measured a row sitting at `delivered` with an `endDateTime` already in
+ * the past. So liveness is computed from BOTH fields, and the raw `state` is
+ * kept on the row so an assessor sees what the directory actually said.
+ *
+ * `unknown` is a real answer and never collapses into `inactive`. A state this
+ * code does not recognise, or an unparseable date, must not be classified by
+ * guesswork in either direction.
+ */
+export type AssignmentLiveness = 'live' | 'pending' | 'inactive' | 'unknown';
+
 /** One assignment as this product reads it. Identifying fields only. */
 export interface AccessAssignmentState {
     readonly assignmentId: string;
     readonly accessPackageId: string | null;
+    /** Verbatim from Graph, for the audit record. Lowercase in the live payload. */
     readonly state: string | null;
     readonly endDateTime: string | null;
+    /** Derived by `classifyAssignment`. Never sent by the directory. */
+    readonly liveness: AssignmentLiveness;
+}
+
+/**
+ * The read's result, SHAPED so the wrong question cannot be asked (#3326).
+ *
+ * The defect this replaces was not missing data — every row carried its own
+ * `state`. It was a bare array, which invites `assignments.length > 0` as the
+ * answer to "does the subject already hold this". For a subject whose only
+ * assignment expired last month that reads TRUE, and the grant that would have
+ * restored their access gets suppressed as redundant. A denial of access
+ * wearing the costume of an optimisation, with a real assignment and a real end
+ * date behind it, so nothing in the journal looks wrong.
+ *
+ * `all` keeps every row because "previously held this until 2026-08-01" is
+ * exactly what an assessor wants from a prior-state record; dropping it to
+ * simplify a boolean would throw away the better half. `live` is the ONLY thing
+ * that answers the no-op question, and it holds nothing but provably-live rows.
+ */
+export interface AssignmentReadResult {
+    /** Everything the directory returned, unfiltered — the audit record. */
+    readonly all: readonly AccessAssignmentState[];
+    /** Only `liveness === 'live'`. `live.length > 0` is the no-op test. */
+    readonly live: readonly AccessAssignmentState[];
+}
+
+/**
+ * Classify one assignment. Pure, and exported so it is testable without a fetch.
+ *
+ * ═══ WHY `delivered` IS NOT ENOUGH ═══
+ *
+ * Microsoft's own PowerShell sample filters `state eq 'Delivered'` to answer
+ * "who holds this", and that is nearly right. It is wrong for the window #3324
+ * measured, where the row still says `delivered` and the end date has passed.
+ * Inside that window this returns `inactive`, which is the SAFE direction and
+ * deliberately so:
+ *
+ *   - calling it inactive when access is in fact still live means we attempt a
+ *     grant that Entra may reject as already-assigned — a visible error;
+ *   - calling it live when access has in fact lapsed means we suppress the
+ *     grant — a silent denial of access to somebody who should have it.
+ *
+ * The first is noisy and recoverable, the second is quiet and harmful, so the
+ * tie is broken toward attempting the write.
+ *
+ * ═══ CASE ═══
+ *
+ * Compared case-insensitively on purpose. The live Graph v1.0 payload carries
+ * `delivered` lowercase while the documentation and the portal filter both say
+ * `Delivered`; a comparison pinned to either spelling passes against a fixture
+ * written from the docs and fails against the API.
+ */
+export function classifyAssignment(
+    state: string | null,
+    endDateTime: string | null,
+    now: Date,
+): AssignmentLiveness {
+    const normalised = typeof state === 'string' ? state.trim().toLowerCase() : '';
+    if (normalised === '') return 'unknown';
+    switch (normalised) {
+        case 'delivering':
+        case 'partiallydelivered':
+            // In flight: not held yet, and NOT history. Folding these into an
+            // `historical` bucket would be this very defect a second time — a
+            // field read as something it is not.
+            return 'pending';
+        case 'expired':
+        case 'deliveryfailed':
+            return 'inactive';
+        case 'delivered':
+            break;
+        default:
+            // Includes `unknownFutureValue`, which Graph reserves for enum
+            // members added later. Guessing on behalf of a future value is how
+            // a new state becomes silently live.
+            return 'unknown';
+    }
+    // `delivered`: the END DATE decides, for the reason in the docblock.
+    if (endDateTime === null || endDateTime === '') {
+        // No expiration is a permanent holding, not a missing one — the grant
+        // path always sets one, but an assignment made by another route need
+        // not have.
+        return 'live';
+    }
+    const end = Date.parse(endDateTime);
+    if (Number.isNaN(end)) return 'unknown';
+    return end > now.getTime() ? 'live' : 'inactive';
 }
 
 function graphErrorCode(status: number, text: string): string {
@@ -222,7 +327,14 @@ export function createEntraEntitlementClient(options: EntitlementClientOptions) 
 
     return {
         /**
-         * THE PRIOR STATE: what this subject already holds of this package.
+         * THE PRIOR STATE: every assignment of this package to this subject,
+         * held or lapsed, each one CLASSIFIED (#3326).
+         *
+         * This docblock used to read "what this subject already holds of this
+         * package", and that sentence is what made a bare array look adequate.
+         * Graph does not remove an expired assignment, so the read returns
+         * history too; the shape now says so — `all` for the record, `live` for
+         * the question.
          *
          * This is the read that `setPriorStateRead` pairs with the write below,
          * and the pairing's own rule decides which read it has to be: the state
@@ -240,7 +352,7 @@ export function createEntraEntitlementClient(options: EntitlementClientOptions) 
         async readAssignments(args: {
             targetId: string;
             accessPackageId: string;
-        }): Promise<AccessAssignmentState[]> {
+        }): Promise<AssignmentReadResult> {
             const target = assertEntraObjectId(args.targetId);
             const filter =
                 `$filter=target/objectId eq '${encodeURIComponent(target)}'` +
@@ -263,21 +375,31 @@ export function createEntraEntitlementClient(options: EntitlementClientOptions) 
                     schedule?: { expiration?: { endDateTime?: unknown } | null } | null;
                 }>;
             };
-            return (parsed.value ?? []).flatMap((row) => {
+            // ONE clock reading for the whole batch. Classifying row-by-row
+            // against a moving `now` could put two rows with the same end date
+            // in different buckets, which is not a thing the directory said.
+            const at = now();
+            const all = (parsed.value ?? []).flatMap((row) => {
                 // A row with no id cannot be referred to afterwards, so it is
                 // dropped rather than carried as a record with a hole in it.
                 if (typeof row.id !== 'string' || row.id === '') return [];
                 const end = row.schedule?.expiration?.endDateTime;
+                const state = typeof row.state === 'string' ? row.state : null;
+                const endDateTime = typeof end === 'string' ? end : null;
                 return [
                     {
                         assignmentId: row.id,
                         accessPackageId:
                             typeof row.accessPackage?.id === 'string' ? row.accessPackage.id : null,
-                        state: typeof row.state === 'string' ? row.state : null,
-                        endDateTime: typeof end === 'string' ? end : null,
+                        state,
+                        endDateTime,
+                        liveness: classifyAssignment(state, endDateTime, at),
                     },
                 ];
             });
+            // `live` is derived here rather than left to the caller: a caller
+            // that has to filter is a caller that can forget to.
+            return { all, live: all.filter((a) => a.liveness === 'live') };
         },
 
         /**
