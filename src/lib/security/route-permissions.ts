@@ -575,6 +575,8 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'tools and a test asserts the COUNT, because its only intended client ' +
             'is our own dispatch, which is handed a resolved package id by an ' +
             'approved template and has no use for discovery.',
+    },
+
     // ── Minting the grant endpoint's token (#3330) ──────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/mcp-server-token(\\/.*)?$`),
@@ -591,7 +593,8 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'first-match-wins and that rule resolves to admin.manage, so nesting ' +
             'would document a weaker gate than the handler enforces. POST only: ' +
             'it overwrites any previous value, and a GET returning a credential ' +
-            'invites a browser, a proxy or a log to keep it.',    },
+            'invites a browser, a proxy or a log to keep it.',
+    },
 
     // ── Per-tenant DEK rotation (Epic F.2 follow-up) ────────────────
     {
