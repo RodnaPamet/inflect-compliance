@@ -1242,6 +1242,46 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // pattern that would otherwise swallow it — `/access-reviews/connected`
     // matches `^…/access-reviews/[^/]+$` perfectly well, and reaching the
     // detail rule first would gate a CREATE on a VIEW key.
+    // ── Legacy reconciliation queue (Step 4b) ───────────────────────
+    //
+    // LEAVES FIRST. `resolveRoutePermission` returns the first rule whose path
+    // matches, and while `^…/queue$` cannot swallow `…/queue/decide` today, a
+    // later `^…/queue/[^/]+$` added above these would gate a WRITE on the VIEW
+    // key. Ordering them this way makes that mistake impossible rather than
+    // merely unlikely — the same reasoning the access-review block below states.
+    {
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/queue\\/decide$`),
+        methods: ['POST'],
+        permission: 'identity_reconciliation.confirm',
+        note:
+            'One reviewer decision. Durable: from then on the account resolves ' +
+            'LINKED on every run and later steps act on it without anybody ' +
+            'looking, so this follows access_reviews.close (OWNER + ADMIN) ' +
+            'rather than .decide. Mirrors assertCanConfirmReconciliation, which ' +
+            'reads the GRANULAR key so a custom role granting confirm over a ' +
+            'READER base is not refused by the usecase after passing here.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/queue\\/bulk-confirm$`),
+        methods: ['POST'],
+        permission: 'identity_reconciliation.confirm',
+        note:
+            'Same key as a single decision — bulk is a convenience over the same ' +
+            'path, not a weaker one. The narrowing that makes it safe is in the ' +
+            'usecase: SUGGESTED rows only, above a margin derived from the ' +
+            'scorer weights, capped, and re-checked row by row.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/queue$`),
+        methods: ['GET'],
+        permission: 'identity_reconciliation.view',
+        note:
+            'Reading the queue. The VIEW key rather than admin.manage: an ' +
+            'auditor checking the queue is being worked needs exactly this, and ' +
+            'a reviewer who may not decide may still need to see what is ' +
+            'outstanding. Unlike the sibling mapping route, the response carries ' +
+            'accounts and the engine evidence for them, not the customer schema.',
+    },
     {
         path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/close$`),
         methods: ['POST'],
