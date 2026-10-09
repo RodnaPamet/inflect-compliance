@@ -79,7 +79,7 @@
  * ceiling would let somebody fix one suite, add another, and keep the number
  * steady with no net improvement.
  *
- * This guard does NOT claim all 62 are currently failing — most are green,
+ * This guard does NOT claim all 61 are currently failing — most are green,
  * because their ordering happens to be kind. It claims they are all one shard
  * re-partition away from not being, which is a property of the file and is what
  * is actually checked here.
@@ -162,7 +162,6 @@ const GRANDFATHERED: ReadonlySet<string> = new Set([
     'fair-recompute.test.ts',
     'finding-create-modal.test.ts',
     'framework-delta.test.ts',
-    'identity-onprem-observation-seam.test.ts',
     'inherited-control-data-usecase.test.ts',
     'invite-redemption.test.ts',
     'invite-routes.test.ts',
