@@ -110,6 +110,16 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // and redeemOrgInvite specifically operates pre-membership
         // (the redeemer is not yet a member, mirroring tenant-invites).
         'org-invites.ts',
+        // #3323 — the grant endpoint's authenticator. The TENANT IS THIS
+        // FUNCTION'S OUTPUT: it is handed `<connectionId>.<secret>` and its
+        // whole job is to establish which tenant that credential belongs to,
+        // so there is no tenant context to read within. Same shape as
+        // `redeemOrgInvite` above, which is allowlisted because it operates
+        // pre-membership. The read is by PRIMARY KEY, selects six columns,
+        // cannot enumerate, and takes no caller-shaped filter; everything
+        // afterwards runs through `buildSystemContext` on the tenant it
+        // resolved.
+        'entra-grant-auth.ts',
         // Epic 41 — configurable dashboard widget CRUD. OrgDashboardWidget
         // is org-scoped, NOT tenant-scoped (not in TENANT_SCOPED_MODELS).
         // Same access shape as org-members.ts / org-invites.ts: global
