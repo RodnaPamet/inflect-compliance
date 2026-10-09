@@ -33,6 +33,7 @@
  */
 
 import { probeManifest, profileFirstPage } from '@/lib/mcp/client';
+import { LEGACY_MCP_PROVIDER_ID } from '@/app-layer/integrations/providers/legacy-mcp';
 import { runInTenantContext } from '@/lib/db-context';
 import { decryptField } from '@/lib/security/encryption';
 import { badRequest } from '@/lib/errors/types';
@@ -99,9 +100,21 @@ export async function profileLegacyConnection(
     const conn = await runInTenantContext(ctx, (db) =>
         db.integrationConnection.findFirstOrThrow({
             where: { id: connectionId, tenantId: ctx.tenantId },
-            select: { id: true, configJson: true, secretEncrypted: true },
+            select: { id: true, provider: true, configJson: true, secretEncrypted: true },
         })
     );
+
+    // Refused for any other provider, by NAME rather than by whether it happens
+    // to carry an `endpointUrl`. Without this an `entra-id` connection reaches the
+    // credential check below and is told it is "missing its endpoint or bearer
+    // token" — true, and a useless thing to tell somebody about a connection that
+    // was never meant to have one.
+    if (conn.provider !== LEGACY_MCP_PROVIDER_ID) {
+        throw badRequest(
+            `Column profiling applies to ${LEGACY_MCP_PROVIDER_ID} connections; this one is `
+            + `${conn.provider}.`
+        );
+    }
 
     const config = (conn.configJson ?? {}) as Record<string, unknown>;
     const url = typeof config.endpointUrl === 'string' ? config.endpointUrl.trim() : '';

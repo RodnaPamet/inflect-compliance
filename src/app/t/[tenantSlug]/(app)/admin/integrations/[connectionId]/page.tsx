@@ -21,6 +21,7 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@inflect/ui/lib/cn';
+import { LegacyAccessMappingCard } from './LegacyAccessMappingCard';
 
 interface ExecutionRow {
     id: string;
@@ -132,6 +133,13 @@ export default function ConnectionOutcomePage() {
                     <DataTable data={rows} columns={cols} getRowId={(r) => r.id} emptyState={t('integrations.outcome.empty')} />
                 )}
             </Card>
+
+            {/*
+              * Renders only for a `legacy-mcp` connection — the card decides that
+              * from the connection's PROVIDER rather than from whether it happens
+              * to carry an endpoint, so every other provider's page is unchanged.
+              */}
+            <LegacyAccessMappingCard connectionId={connectionId} />
         </div>
     );
 }
