@@ -76,6 +76,19 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
  * entries — graduate, don't grow.
  */
 const WAVE_2_DEFERRED: ReadonlyArray<{ page: string; entity: string; reason: string }> = [
+  {
+    page: 'src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/page.tsx',
+    entity: 'legacy reconciliation queue',
+    reason:
+      'Not a detail page. It sits UNDER a [connectionId] route, which is what '
+      + 'brings it into this guard\'s scope, but it renders a LIST — accounts '
+      + 'awaiting a decision on one run — on ListPageShell + DataTable + '
+      + 'FilterToolbar, which is the list-page composition rather than the '
+      + 'entity-detail one. EntityDetailLayout would frame a queue as a record '
+      + 'with fields, and the thing a reviewer needs is a table they can filter, '
+      + 'sort and bulk-select. The surface it belongs to is the connection '
+      + 'detail page, which IS adopted; this is that page\'s list.',
+  },
     {
         page: 'src/app/t/[tenantSlug]/(app)/risks/ai-systems/[systemId]/page.tsx',
         entity: 'AiSystem',

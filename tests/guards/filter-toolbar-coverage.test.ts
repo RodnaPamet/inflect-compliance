@@ -47,6 +47,16 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * length to stop hand-waved exemptions.
  */
 const EXEMPTIONS: Record<string, string> = {
+    "src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/page.tsx":
+        "BLOCKED, not unwanted. This queue has two obvious facets (engine outcome, " +
+        "why the row is here) and wants them. It cannot have them: " +
+        "`createFilterDefs` requires `icon: LucideIcon`, and `no-lucide` forbids " +
+        "any NEW lucide import site — the existing filter-def files " +
+        "(e.g. tests/filter-defs.ts) are grandfathered in its migration " +
+        "allowlist. So the documented filter API is unreachable from new code, " +
+        "and the two ways out are both laundering: adding a new file to a LEGACY " +
+        "allowlist, or claiming filters are not needed here. Tracked so this " +
+        "entry is removed rather than forgotten.",
     "src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/LegacyAccessMappingCard.tsx":
         "a column-mapping editor on a connection detail page: a fixed, short list of columns the far end declares, not a filterable or user-configurable dataset",
 
