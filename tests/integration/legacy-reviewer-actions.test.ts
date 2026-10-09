@@ -17,6 +17,7 @@ import {
     bulkConfirmLegacyAccounts,
     candidateMargin,
     decideLegacyAccount,
+    listExpiredExternals,
     listReconciliationQueue,
 } from '@/app-layer/usecases/legacy-reviewer-actions';
 
@@ -167,7 +168,7 @@ describe('authorisation', () => {
     });
 
     it('viewing the queue needs only the view key', async () => {
-        const q = await listReconciliationQueue(ctx('READER'), { executionId });
+        const q = await listReconciliationQueue(ctx('READER'), { executionId, connectionId });
         expect(q.map((x) => x.accountKey)).toEqual(['alovelace']);
     });
 });
@@ -439,5 +440,133 @@ describe('bulk confirmation', () => {
         const a = await alias();
         expect(a.classification).toBe('EMPLOYEE');
         expect(a.method).toBe('CONFIRMED_ALIAS');
+    });
+});
+
+describe('the queue stops asking once a reviewer has answered', () => {
+    const queue = (now?: Date) =>
+        listReconciliationQueue(ctx(), { executionId, connectionId, ...(now ? { now } : {}) });
+
+    it('an UNDECIDED account is in the queue, labelled as such', async () => {
+        const q = await queue();
+        expect(q).toHaveLength(1);
+        expect(q[0]).toMatchObject({ accountKey: 'alovelace', reason: 'UNDECIDED' });
+        expect(q[0].expiredAt).toBeNull();
+    });
+
+    it.each(['NON_PERSON', 'EXTERNAL', 'ORPHAN'] as const)(
+        'a %s decision removes it — without this the reviewer is asked again every run',
+        async (kind) => {
+            // The defect this guards: readAliases feeds the engine EMPLOYEE
+            // aliases only, so these three resolve UNMATCHED for ever. A queue
+            // built from resolutions alone undoes the reviewer's work every
+            // cycle — classify forty service accounts, and the next run asks
+            // about all forty.
+            const action =
+                kind === 'NON_PERSON'
+                    ? { kind, ownerUserId: 'user-owner', justification: 'nightly export batch job' }
+                    : kind === 'EXTERNAL'
+                        ? {
+                            kind, justification: 'external auditor, ISO engagement',
+                            expiresAt: new Date(Date.now() + 90 * 86_400_000),
+                        }
+                        : { kind, justification: 'nobody in the team recognises this login' };
+
+            await decideLegacyAccount(ctx(), {
+                connectionId, accountKey: 'alovelace', executionId,
+                action: action as never,
+            });
+
+            expect(await queue()).toEqual([]);
+        }
+    );
+
+    it('a CONFIRMED account is out of the queue too', async () => {
+        await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'CONFIRM', employeeId },
+        });
+        expect(await queue()).toEqual([]);
+    });
+
+    it('an EXPIRED EXTERNAL comes BACK, labelled EXTERNAL_EXPIRED', async () => {
+        const expiresAt = new Date(Date.now() + 86_400_000);
+        await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'EXTERNAL', justification: 'contractor through to year end', expiresAt },
+        });
+        // Before the date: suppressed.
+        expect(await queue()).toEqual([]);
+
+        // After it: back, and NOT as a fresh unknown. A lapsed contractor and an
+        // unidentified login need different questions asked.
+        const after = await queue(new Date(expiresAt.getTime() + 1000));
+        expect(after).toHaveLength(1);
+        expect(after[0].reason).toBe('EXTERNAL_EXPIRED');
+        expect(after[0].expiredAt).toEqual(expiresAt);
+    });
+
+    it('a SUSPENDED alias does NOT suppress — that is the revalidation output', async () => {
+        await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'ORPHAN', justification: 'nobody recognises this login at all' },
+        });
+        expect(await queue()).toEqual([]);
+
+        await prisma.legacyIdentityAlias.updateMany({
+            where: { tenantId: T1, connectionId, accountKey: 'alovelace' },
+            data: { status: 'SUSPENDED', suspendedReason: 'HR_RECORD_VANISHED', suspendedAt: new Date() },
+        });
+
+        // Suppressing on a suspended row would hide the revalidation pass's
+        // output behind the pass's own effect.
+        const q = await queue();
+        expect(q).toHaveLength(1);
+        expect(q[0].reason).toBe('UNDECIDED');
+    });
+
+    it('an alias on a DIFFERENT connection does not suppress', async () => {
+        const other = await prisma.integrationConnection.create({
+            data: { tenantId: T1, provider: 'legacy-mcp', name: 'second legacy', configJson: {} },
+        });
+        await decideLegacyAccount(ctx(), {
+            connectionId: other.id, accountKey: 'alovelace', executionId,
+            action: { kind: 'ORPHAN', justification: 'unattributable in the OTHER system' },
+        });
+        // The same login name in two legacy systems is two accounts, and one
+        // decision says nothing about the other.
+        const q = await queue();
+        expect(q).toHaveLength(1);
+        expect(q[0].reason).toBe('UNDECIDED');
+    });
+
+    it('listExpiredExternals reports the lapsed population for a connection', async () => {
+        const expiresAt = new Date(Date.now() + 86_400_000);
+        await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'EXTERNAL', justification: 'contractor through to year end', expiresAt },
+        });
+        expect(await listExpiredExternals(ctx(), { connectionId })).toEqual([]);
+        const lapsed = await listExpiredExternals(ctx(), {
+            connectionId, now: new Date(expiresAt.getTime() + 1000),
+        });
+        expect(lapsed).toEqual([{ accountKey: 'alovelace', expiredAt: expiresAt }]);
+    });
+
+    it('a lapsed EXTERNAL is NOT recorded as a suspension', async () => {
+        // `suspendedReason` is a closed set of four facts that make an alias
+        // UNTRUSTWORTHY. "It got old" is not one of them, and writing it there
+        // would make the suspension metric unreadable — a spike would mean a
+        // quarter had ended rather than that something changed.
+        const expiresAt = new Date(Date.now() + 1000);
+        await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'EXTERNAL', justification: 'short engagement, ends immediately', expiresAt },
+        });
+        const a = await prisma.legacyIdentityAlias.findFirstOrThrow({
+            where: { tenantId: T1, connectionId, accountKey: 'alovelace' },
+        });
+        expect(a.status).toBe('ACTIVE');
+        expect(a.suspendedReason).toBeNull();
     });
 });
