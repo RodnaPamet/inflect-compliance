@@ -58,6 +58,14 @@ const RICH_TEXT_COVERAGE: Readonly<
     Record<string, { usecases: readonly string[]; sanitizer: Sanitizer }>
 > = {
     PolicyVersion: { usecases: ['src/app-layer/usecases/policy.ts'], sanitizer: 'sanitizePolicyContent' },
+    // `justification` is the reviewer's own words about a named person, and it
+    // is read back into the review surface — so it is sanitised at the single
+    // write path rather than at each reader. `decideLegacyAccount` is the only
+    // way the column is ever set; the revalidation pass only ever clears it.
+    LegacyIdentityAlias: {
+        usecases: ['src/app-layer/usecases/legacy-reviewer-actions.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     Task: { usecases: ['src/app-layer/usecases/task.ts'], sanitizer: 'sanitizePlainText' },
     // `usecases/issue.ts` was the second write path here
     // (`addIssueComment`). Its `/issues` routes were retired, the
