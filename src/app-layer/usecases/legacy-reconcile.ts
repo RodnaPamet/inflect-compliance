@@ -513,13 +513,34 @@ async function readAliases(
 ): Promise<readonly AliasUnderReview[]> {
     const rows = await runInTenantContext(ctx, (db) =>
         db.legacyIdentityAlias.findMany({
-            where: { tenantId: ctx.tenantId, connectionId, status: 'ACTIVE' },
+            where: {
+                tenantId: ctx.tenantId,
+                connectionId,
+                status: 'ACTIVE',
+                // EMPLOYEE only. The other three classifications are statements
+                // about what the account IS — a service account, an external
+                // human, an unattributable login — and none of them links it to
+                // a person on the roster.
+                //
+                // Step 4b part 2 made `employeeId` nullable to hold them, and
+                // this filter is what that nullability cost: without it a
+                // NON_PERSON row reaches the engine as a `ConfirmedAlias` whose
+                // employeeId is null, and the fix that suggests itself at the
+                // mapping step is a cast. The database constraint
+                // `LegacyIdentityAlias_classification_shape` guarantees the
+                // converse — an EMPLOYEE row always HAS one — so after this
+                // filter the non-null assertion below is a fact about the
+                // schema rather than a hope.
+                classification: 'EMPLOYEE',
+            },
             select: { accountKey: true, employeeId: true, confirmedAt: true },
         })
     );
     return rows.map((r) => ({
         accountKey: r.accountKey,
-        employeeId: r.employeeId,
+        // Guaranteed non-null by the CHECK constraint for classification
+        // EMPLOYEE, which is the only classification this query returns.
+        employeeId: r.employeeId as string,
         confirmedAt: r.confirmedAt.toISOString(),
     }));
 }
