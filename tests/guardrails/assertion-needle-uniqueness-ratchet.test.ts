@@ -484,7 +484,18 @@ const HIGH_MULTIPLICITY = 5;
 //   independent this time, and nothing in the numbers says whether they overlap.
 //   Same standing as the 2026-09-06 entry below — the arithmetic predicted it, the
 //   measurement is what makes it true.
-const AMBIGUOUS_NEEDLE_BASELINE = 1167;
+//
+//   RE-SEATED 1167 -> 1166 (#3356, the per-worker DB reaper). Not a narrowing
+//   anyone set out to do: the reap passes `workerDbs` to the selector, which
+//   took `per-worker-db-naming`'s `toMatch(/workerDbs/)` from 4 satisfying
+//   positions to 5 and tripped the HIGH_MULTIPLICITY arm. Reading that test
+//   showed the needle had been a tautology for months — it is named "the
+//   marker carries the names globalSetup created" and matched the
+//   declaration, the push, the log and the marker alike, so deleting
+//   `workerDbs` from the marker left four survivors satisfying it. Pinned to
+//   the marker assignment, which drops it out of the ambiguous set too.
+//   Measured on this branch at **1166**, not subtracted.
+const AMBIGUOUS_NEEDLE_BASELINE = 1166;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

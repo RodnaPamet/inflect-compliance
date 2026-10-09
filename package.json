@@ -39,6 +39,7 @@
     "db:check-failed-migration": "node scripts/check-failed-migration.mjs",
     "db:test:catchup": "tsx scripts/catchup-test-db.ts",
     "db:check-schema-drift": "node scripts/check-fresh-db-schema-drift.mjs",
+    "db:test:reap": "tsx scripts/reap-test-databases.ts",
     "db:bootstrap-owners": "tsx scripts/bootstrap-tenant-owners.ts",
     "db:backfill-org-widgets": "tsx scripts/backfill-org-dashboard-widgets.ts",
     "db:reconcile-org-widgets": "tsx scripts/reconcile-org-dashboard-widgets.ts",

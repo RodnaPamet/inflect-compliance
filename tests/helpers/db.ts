@@ -167,6 +167,69 @@ export function perWorkerDbName(baseName: string, workerId: string | number): st
     return name;
 }
 
+/**
+ * One row of `pg_database` as the reaper needs to see it.
+ */
+export interface WorkerDbRow {
+    readonly datname: string;
+    /** Live backends attached, from `pg_stat_activity`. */
+    readonly conns: number;
+}
+
+/**
+ * Which per-worker databases is it SAFE for this run to drop? (#3356)
+ *
+ * A pure function because the selection is the whole danger and the
+ * `DROP` loop around it is mechanical. Measured on the shared dev
+ * Postgres: 215 per-worker databases, 8.7 GB, across 39 checkout tags —
+ * residue from runs that were killed before `globalTeardown` could drop
+ * what they created, which is what a timeout on a long local suite does.
+ *
+ * ─── Why the tag, and not liveness, is the safety property ──────────
+ *
+ * The obvious rule — "drop any per-worker database with no live
+ * connection that is not ours" — is unsafe here, and the measurement
+ * says so: **all 39 tags read `conns = 0`**, including 12 whose
+ * checkout still exists on disk. A checkout BETWEEN test runs is
+ * indistinguishable from an abandoned one by connection count, so that
+ * rule would have deleted 11 live worktrees' databases out from under
+ * them. Most of those are agent worktrees nested under
+ * `.claude/worktrees/`, which a casual enumeration does not even see:
+ * scanning one directory level found 2 live checkouts, and enumerating
+ * properly (112 roots) found 12.
+ *
+ * So this selects ONLY databases bearing the caller's own
+ * `checkoutTag()`. That is sound rather than merely cautious, because
+ * the concurrent-run lock is per (checkout, base database) and is held
+ * for the whole run: while we hold it, nothing else can be using a
+ * database with our tag. Cross-tag residue is left to a human running
+ * `npm run db:test:reap`.
+ *
+ * `conns === 0` is still required, as insurance for the case the lock
+ * could not be taken and for anything this reasoning has not foreseen.
+ *
+ * @param rows   candidate rows, typically `datname LIKE '<base>%'`
+ * @param baseName the base test database name
+ * @param tag    THIS checkout's tag — never another's
+ * @param keep   names the current run created and is about to use
+ */
+export function selectReapableWorkerDbs(
+    rows: readonly WorkerDbRow[],
+    baseName: string,
+    tag: string,
+    keep: readonly string[],
+): string[] {
+    // Built from the same two inputs `perWorkerDbName` composes, so a
+    // change to the naming scheme cannot leave this matching the old one.
+    const mine = new RegExp(
+        `^${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_${tag}_w\\d+$`,
+    );
+    const kept = new Set(keep);
+    return rows
+        .filter((r) => mine.test(r.datname) && !kept.has(r.datname) && r.conns === 0)
+        .map((r) => r.datname);
+}
+
 /** Swap the database name in a Postgres URL, preserving everything else. */
 export function withDbName(url: string, dbName: string): string {
     const u = new URL(url);
