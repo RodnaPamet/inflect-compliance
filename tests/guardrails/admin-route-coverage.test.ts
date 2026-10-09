@@ -179,6 +179,15 @@ const ADMIN_ONLY_ROUTES = [
     // the ladder above it, and a sibling path for the same first-match-wins
     // reason.
     'admin/external-prior-state-read/[connectionId]/route.ts',
+    // #3329 — discovery for the grant compose form. READ-ONLY, so admin.manage
+    // rather than the OWNER-only key its external-write-policy sibling carries:
+    // that one sets how far an agent may go when CHANGING a customer system,
+    // whereas knowing which access packages exist grants nothing. Two files
+    // rather than one with a mode flag, because policies are read per package —
+    // fetching every package's policies to build one payload is an N+1 against
+    // a customer's directory on every form load.
+    'admin/entra-entitlement/access-packages/route.ts',
+    'admin/entra-entitlement/assignment-policies/route.ts',
     'admin/identity-leaver-passes/route.ts',
     // #2687 — the joiner's half of the same pair. The report names which of a
     // customer's people the product would create an account for and at what

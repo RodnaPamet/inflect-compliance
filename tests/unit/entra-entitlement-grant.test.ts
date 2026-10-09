@@ -33,6 +33,7 @@ import {
     createEntraEntitlementClient,
     expiryRefusal,
     MAX_GRANT_DAYS,
+    policyBelongsToPackage,
     type TimeBoundedGrantInput,
 } from '@/app-layer/integrations/providers/entra-id/entitlement';
 
@@ -470,5 +471,196 @@ describe('readAssignments — `all` keeps the history, `live` answers the questi
             accessPackageId: PACKAGE,
         });
         expect(new Set(read.all.map((r) => r.liveness)).size).toBe(1);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 5. DISCOVERY — #3329
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * A fetch double that answers Graph calls from a QUEUE, one reply per call.
+ *
+ * `recordingFetch` serves one body to every call, which cannot express paging —
+ * and paging is where the interesting failures are.
+ */
+function recordingFetchSeq(replies: ReadonlyArray<{ status?: number; body?: unknown }>) {
+    const calls: Array<{ url: string }> = [];
+    let i = 0;
+    const impl = (async (url: unknown) => {
+        calls.push({ url: String(url) });
+        if (String(url).includes('/oauth2/v2.0/token')) {
+            return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+        const r = replies[Math.min(i, replies.length - 1)];
+        i += 1;
+        return new Response(JSON.stringify(r.body ?? {}), {
+            status: r.status ?? 200,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }) as unknown as typeof fetch;
+    /** Hostname EQUALITY, for the reason `recordingFetch` states at length. */
+    const hostsHit = () =>
+        calls
+            .map((c) => {
+                try {
+                    return new URL(c.url).hostname;
+                } catch {
+                    return '';
+                }
+            })
+            .filter((h) => h !== '');
+    const graphUrls = () =>
+        calls.map((c) => c.url).filter((u) => {
+            try {
+                return new URL(u).hostname === 'graph.microsoft.com';
+            } catch {
+                return false;
+            }
+        });
+    return { impl, calls, hostsHit, graphUrls };
+}
+
+const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
+const pkgRow = (id: string) => ({ id, displayName: `pkg ${id}`, description: null, isHidden: false });
+
+describe('policyBelongsToPackage — an absent answer is not a yes', () => {
+    it('matches when the echoed package id is the one asked for', () => {
+        expect(
+            policyBelongsToPackage(
+                { id: 'pol-1', displayName: 'p', accessPackageId: 'pkg-1' },
+                'pkg-1',
+            ),
+        ).toBe(true);
+    });
+
+    it('REFUSES a null package id rather than treating it as a match', () => {
+        // The direction that matters. `accessPackageId` and `assignmentPolicyId`
+        // are both opaque GUIDs, so a policy admitted without proof of
+        // belonging composes a grant Graph ACCEPTS for the wrong thing.
+        expect(
+            policyBelongsToPackage({ id: 'pol-1', displayName: 'p', accessPackageId: null }, 'pkg-1'),
+        ).toBe(false);
+    });
+
+    it('refuses a different package', () => {
+        expect(
+            policyBelongsToPackage(
+                { id: 'pol-1', displayName: 'p', accessPackageId: 'pkg-OTHER' },
+                'pkg-1',
+            ),
+        ).toBe(false);
+    });
+});
+
+describe('readAccessPackages — paging, and the nextLink is not a request target', () => {
+    it('follows a page and returns both pages\' items, not truncated', async () => {
+        const f = recordingFetchSeq([
+            { body: { value: [pkgRow('a')], '@odata.nextLink': `${GRAPH_BASE}/more?$skiptoken=X` } },
+            { body: { value: [pkgRow('b')] } },
+        ]);
+        const page = await clientWith(f.impl).readAccessPackages();
+        expect(page.items.map((p) => p.id)).toEqual(['a', 'b']);
+        expect(page.truncated).toBe(false);
+    });
+
+    it('REBUILDS the nextLink against our own Graph base, carrying its query', async () => {
+        const f = recordingFetchSeq([
+            { body: { value: [pkgRow('a')], '@odata.nextLink': `${GRAPH_BASE}/more?$skiptoken=X` } },
+            { body: { value: [] } },
+        ]);
+        await clientWith(f.impl).readAccessPackages();
+        const urls = f.graphUrls();
+        // The second Graph call is the follow-up, and it carries the cursor.
+        expect(urls.length).toBeGreaterThanOrEqual(2);
+        expect(urls[1]).toContain('$skiptoken=X');
+        expect(urls[1].startsWith(`${GRAPH_BASE}/`)).toBe(true);
+    });
+
+    it('a nextLink on a FOREIGN host is never requested, and says the list is incomplete', async () => {
+        // The load-bearing security assertion. This function attaches a Graph
+        // bearer token to whatever url it is given, and `index.ts` already
+        // states the consequence: a tampered cursor would send that token to an
+        // arbitrary host.
+        const f = recordingFetchSeq([
+            {
+                body: {
+                    value: [pkgRow('a')],
+                    '@odata.nextLink': 'https://evil.test/v1.0/more?$skiptoken=X',
+                },
+            },
+            { body: { value: [pkgRow('SHOULD-NOT-APPEAR')] } },
+        ]);
+        const page = await clientWith(f.impl).readAccessPackages();
+        expect(f.hostsHit()).not.toContain('evil.test');
+        expect(page.items.map((p) => p.id)).toEqual(['a']);
+        // Stopping EARLY must not read as a complete list.
+        expect(page.truncated).toBe(true);
+    });
+
+    it('refuses a host that merely CONTAINS the Graph hostname', async () => {
+        // The shape CodeQL calls `js/incomplete-url-substring-sanitization`, and
+        // which `recordingFetch` in this file already has a paragraph about.
+        // `https://evil.test/?x=graph.microsoft.com` satisfies an `includes`
+        // check and fails a `startsWith` one, so this is the only case that can
+        // tell the two implementations apart — the previous test's
+        // `https://evil.test/v1.0/more` is refused by BOTH and therefore proves
+        // nothing about which is in use.
+        const f = recordingFetchSeq([
+            {
+                body: {
+                    value: [pkgRow('a')],
+                    '@odata.nextLink': 'https://evil.test/v1.0/more?x=graph.microsoft.com',
+                },
+            },
+            { body: { value: [pkgRow('SHOULD-NOT-APPEAR')] } },
+        ]);
+        const page = await clientWith(f.impl).readAccessPackages();
+        expect(f.hostsHit()).not.toContain('evil.test');
+        expect(page.items.map((p) => p.id)).toEqual(['a']);
+        expect(page.truncated).toBe(true);
+    });
+
+    it('reports truncation when the page cap is reached with a cursor outstanding', async () => {
+        // Every page offers another. The bound must hold and SAY it held.
+        const f = recordingFetchSeq([
+            { body: { value: [pkgRow('a')], '@odata.nextLink': `${GRAPH_BASE}/more?$skiptoken=X` } },
+        ]);
+        const page = await clientWith(f.impl).readAccessPackages();
+        expect(page.truncated).toBe(true);
+        // Ten pages, not unbounded — the cap is the point.
+        expect(f.graphUrls().length).toBe(10);
+    });
+
+    it('drops a row with no id rather than offering something unsubmittable', async () => {
+        const f = recordingFetchSeq([{ body: { value: [{ displayName: 'nameless' }, pkgRow('b')] } }]);
+        const page = await clientWith(f.impl).readAccessPackages();
+        expect(page.items.map((p) => p.id)).toEqual(['b']);
+    });
+});
+
+describe('readAssignmentPolicies — scoped to one package, and it echoes which', () => {
+    it('filters server-side on the package and expands the id back', async () => {
+        const f = recordingFetchSeq([
+            { body: { value: [{ id: 'pol-1', displayName: 'P', accessPackage: { id: PACKAGE } }] } },
+        ]);
+        const page = await clientWith(f.impl).readAssignmentPolicies(PACKAGE);
+        const url = decodeURIComponent(f.graphUrls()[0] ?? '');
+        expect(url).toContain(`accessPackage/id eq '${PACKAGE}'`);
+        // The expand is what makes the belonging check real rather than a
+        // restatement of the request.
+        expect(url).toContain('$expand=accessPackage($select=id)');
+        expect(page.items[0].accessPackageId).toBe(PACKAGE);
+    });
+
+    it('carries a null package id through rather than inventing one', async () => {
+        // So `policyBelongsToPackage` gets to refuse it, instead of this layer
+        // filling the gap from the request and confirming its own input.
+        const f = recordingFetchSeq([{ body: { value: [{ id: 'pol-1', displayName: 'P' }] } }]);
+        const page = await clientWith(f.impl).readAssignmentPolicies(PACKAGE);
+        expect(page.items[0].accessPackageId).toBeNull();
     });
 });
