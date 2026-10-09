@@ -227,7 +227,24 @@ model LegacyIdentityAlias {
 
   connectionId String
   accountKey   String
-  employeeId   String
+
+  /// The person, when the classification is EMPLOYEE.
+  ///
+  /// Nullable because three of Step 4b's six reviewer actions do not produce an
+  /// employee link at all. The guarantee this gave up is NOT traded for a
+  /// comment — `LegacyIdentityAlias_classification_shape` reinstates it in the
+  /// database: EMPLOYEE requires an employeeId, and the other three forbid one.
+  /// Prisma's `migrate diff` does not see CHECK constraints, which is why this
+  /// one does not appear in `prisma/fresh-db-schema-drift.expected.sql` and why
+  /// `Tenant_previousEncryptedDek_differs` has lived there unlisted since
+  /// April.
+  employeeId String?
+
+  /// What the reviewer decided this account IS. One row per account either way,
+  /// so an account cannot be both aliased to a person and marked NON_PERSON —
+  /// which two tables would have permitted, and which would make the strongest
+  /// signal in the system ambiguous.
+  classification LegacyAliasClassification @default(EMPLOYEE)
 
   method LegacyMatchMethod
   status LegacyAliasStatus @default(ACTIVE)
