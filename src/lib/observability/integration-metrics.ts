@@ -470,6 +470,35 @@ export function recordLegacyReconcileOutcomes(attrs: {
     }
 }
 
+let _legacyAliasSuspension: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+
+/**
+ * Aliases revalidation withdrew, by reason.
+ *
+ * Its own counter rather than a sixth outcome, for the reason the refusal
+ * counter one block down gives: a suspension is not a resolution of an account,
+ * it is a change to a standing decision, and folding the two series together
+ * would make "how many accounts resolved this way" uncountable.
+ *
+ * The reason is the dimension that matters. A run suspending twenty aliases
+ * because an HR feed re-keyed a department is a routine morning; a run
+ * suspending twenty because accounts are being recreated is an incident, and a
+ * single `suspended` total cannot tell the two apart.
+ */
+export function recordLegacyAliasSuspensions(attrs: {
+    provider: string;
+    byReason: Readonly<Record<string, number>>;
+}): void {
+    if (!_legacyAliasSuspension)
+        _legacyAliasSuspension = getMeter().createCounter('legacy.alias.suspension', {
+            description: 'Confirmed legacy aliases withdrawn by revalidation, by reason',
+            unit: '1',
+        });
+    for (const [reason, count] of Object.entries(attrs.byReason)) {
+        _legacyAliasSuspension.add(count, { provider: attrs.provider, reason });
+    }
+}
+
 /**
  * A reconciliation run that refused before resolving anything.
  *
