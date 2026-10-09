@@ -39,7 +39,11 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_c: unknown, fn: (db: unknown) => unknown) => fn(mockTx)),
 }));
 
-import { runExternalWriteDispatch } from '@/app-layer/usecases/external-write-dispatch';
+import {
+    ASYNC_DELIVERY_TOOLS,
+    runExternalWriteDispatch,
+} from '@/app-layer/usecases/external-write-dispatch';
+import { repoRelativeFiles } from '../helpers/repo-files';
 
 const T = 'tenant-x';
 const CONN = 'cmconnaaaaaaaaaaaaaaaaaa';
@@ -172,5 +176,102 @@ describe('a send that throws', () => {
         expect(settled()!.outcome).toBe('INDETERMINATE');
         expect(r.indeterminate).toBe(1);
         expect(r.refused).toBe(0);
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// ACCEPTED IS NOT APPLIED — #3324
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * WHAT IS BEING PROTECTED
+ * ───────────────────────
+ * `callTool` returns when the far end TAKES the request. For entitlement
+ * management that is acceptance, not delivery — measured at 3m09s apart against
+ * a live licensed tenant, and a request can still fail after acceptance.
+ *
+ * So `APPLIED` there is a positive claim that the far end changed, which is the
+ * exact mirror of the claim the catch arm is careful NOT to make:
+ *
+ *     INDETERMINATE, not FAILED. … FAILED is a positive claim that the far end
+ *     changed nothing — which nobody here can make.
+ *
+ * Nobody at the POST site can make the inverse claim either. The asymmetry was
+ * the bug: the failure path reasoned about what is knowable and the success
+ * path assumed.
+ */
+describe('a tool whose far end delivers asynchronously settles ACCEPTED', () => {
+    const GRANT = 'grant_time_bounded_access';
+
+    beforeEach(() => {
+        // Same harness, one field different: the tool this row names.
+        mockTx.externalWriteJournal.findMany.mockResolvedValue([
+            journalRow({ advertisedToolName: GRANT, toolName: `mcp__${CONN}__${GRANT}` }),
+        ]);
+        getPriorStateReadMock.mockResolvedValue({
+            writeToolName: `mcp__${CONN}__${GRANT}`,
+            readToolName: READ,
+        });
+    });
+
+    it('settles ACCEPTED, not APPLIED', async () => {
+        const r = await runExternalWriteDispatch({ tenantId: T });
+        expect(settled()?.outcome).toBe('ACCEPTED');
+        expect(r.accepted).toBe(1);
+        // The load-bearing half: it must not ALSO be counted as applied, or an
+        // operator reading "1 applied" believes a change happened.
+        expect(r.applied).toBe(0);
+    });
+
+    it('carries a detail saying what is NOT yet known', async () => {
+        // The row is terminal until something promotes it, and the operator
+        // reading it has no other source for that distinction — so a null
+        // detail here would be the whole defect with a different enum value.
+        await runExternalWriteDispatch({ tenantId: T });
+        const detail = settled()?.detail ?? '';
+        expect(detail).toContain('accepted');
+        expect(detail).toContain('not yet known');
+        expect(detail.length).toBeGreaterThan(40);
+    });
+
+    it('the write WAS sent — this is not a refusal wearing a new name', async () => {
+        await runExternalWriteDispatch({ tenantId: T });
+        expect(callToolMock.mock.calls.some((c) => c[1] === GRANT)).toBe(true);
+    });
+});
+
+describe('ASYNC_DELIVERY_TOOLS tracks what the endpoint actually advertises', () => {
+    /**
+     * A literal string in the dispatch goes stale the moment the endpoint
+     * renames its tool, and the failure is SILENT: the grant would settle
+     * `APPLIED` again with nothing reddening. This is the check that catches a
+     * rename — the same shape as pinning a property rather than a token.
+     *
+     * Found by GLOB, not by path, because the route has already moved once
+     * (#3323 relocated it off `/api/t/**`) and a pinned path would have broken
+     * on that move while the thing it protects was still correct.
+     */
+    const routeFiles = repoRelativeFiles().filter(
+        (f) => /^src\/app\/api\/.*entra-grant\/route\.ts$/.test(f),
+    );
+
+    it('found the grant endpoint at all — otherwise the check below is vacuous', () => {
+        // The positive control. Without it, a glob that matches nothing makes
+        // every assertion over it pass by having no subject.
+        expect(routeFiles.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('declares every tool name the endpoint advertises as its WRITE verb', () => {
+        const { readFileSync } = require('node:fs') as typeof import('node:fs');
+        const { join } = require('node:path') as typeof import('node:path');
+        const { REPO_ROOT } = require('../helpers/repo-files') as { REPO_ROOT: string };
+        for (const rel of routeFiles) {
+            const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
+            // The grant verb specifically. The READ tool is read-only and never
+            // reaches a journal row, so it is deliberately not required here.
+            const m = /export const GRANT_TOOL = '([^']+)'/.exec(src);
+            expect(m).not.toBeNull();
+            expect(ASYNC_DELIVERY_TOOLS.has(m![1])).toBe(true);
+        }
     });
 });

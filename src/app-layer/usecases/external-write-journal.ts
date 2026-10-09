@@ -159,8 +159,16 @@ export async function beginWrite(
     return { journalId: row.id };
 }
 
-/** What a settled write can have become. `RECORDED_ONLY` is not settleable. */
-export type SettledOutcome = 'APPLIED' | 'FAILED' | 'INDETERMINATE';
+/**
+ * What a settled write can have become. `RECORDED_ONLY` is not settleable.
+ *
+ * `ACCEPTED` is settleable and TERMINAL AS THINGS STAND (#3324): the far end
+ * took the request and delivers later, and nothing yet promotes the row to
+ * `APPLIED` or `FAILED` on evidence. It is listed here rather than left out
+ * because an honest terminal state beats a false one — `APPLIED` for a
+ * delivery that may never happen is the defect it replaces.
+ */
+export type SettledOutcome = 'APPLIED' | 'FAILED' | 'INDETERMINATE' | 'ACCEPTED';
 
 /**
  * Close a row with what the far end said.
