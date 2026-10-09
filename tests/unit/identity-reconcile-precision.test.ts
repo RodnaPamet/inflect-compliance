@@ -52,7 +52,7 @@ import {
     type CandidateScorer,
     DuplicateRosterIdError,
 } from '@/lib/identity/reconcile/engine';
-import { CORPUS, type CorpusCase } from '../fixtures/identity-reconcile/corpus';
+import { CORPUS, engineInputFor, type CorpusCase } from '../fixtures/identity-reconcile/corpus';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -61,13 +61,9 @@ import path from 'node:path';
 const NOW = '2026-10-08T00:00:00.000Z';
 
 function inputFor(c: CorpusCase): EngineInput {
-    return {
-        accounts: [c.account as CanonicalAccount],
-        roster: c.hr as readonly RosterEmployee[],
-        directory: c.directory as readonly DirectoryAccount[],
-        aliases: [],
-        now: NOW,
-    };
+    // Through the fixture's own builder, so this site cannot drift from the
+    // other consumers — `aliases: []` was hardcoded at all three of them.
+    return engineInputFor(c) as EngineInput;
 }
 
 function runCase(c: CorpusCase) {
