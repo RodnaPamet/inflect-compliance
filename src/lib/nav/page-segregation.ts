@@ -232,6 +232,7 @@ export const SUBPAGES: readonly string[] = [
     // parameter set is scoped to a TOOL ON A CONNECTION, and the catalogue is
     // where an operator already has that connection selected.
     '/agents/parameter-sets',
+    '/agents/compose',
     '/agents/proposals',
     '/agents/quarantine',
     '/agents/receipts',

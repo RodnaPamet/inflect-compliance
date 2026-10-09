@@ -56,6 +56,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // the tool catalogue for a specific connection, so that is where Back
     // belongs.
     '/agents/parameter-sets': { href: '/agents/external-tools', label: 'External tools' },
+    '/agents/compose': { href: '/agents', label: 'Agents' },
     '/agents/proposals': { href: '/agents', label: 'Agents' },
     '/agents/reports': { href: '/agents', label: 'Agents' },
     '/agents/runs': { href: '/agents', label: 'Agents' },

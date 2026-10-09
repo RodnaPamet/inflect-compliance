@@ -106,6 +106,14 @@ const AGENTIC_ROUTES: readonly string[] = [
     // `admin.agent_registry` like its siblings — and unreachable by any API
     // key, since that flag is subtracted from even a `*` credential.
     '/agents/external-tools',
+    // #3301 — the one surface that accepts an INTENT rather than reviewing
+    // output. Linked from the Views menu's OPERATE group, beside the other
+    // two acts somebody performs: an operator fills an approved template's
+    // open fields and gets a proposal, never a dispatch. `admin.view` to see
+    // it and `canWrite` to submit — the lower bar of the two deliberately,
+    // because requiring approve-authority to compose would turn four eyes
+    // into two.
+    '/agents/compose',
 ] as const;
 
 /**
