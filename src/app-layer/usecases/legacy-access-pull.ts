@@ -48,6 +48,7 @@ import { logger } from '@/lib/observability/logger';
 import { pullSnapshot, type LegacyMcpClientError } from '@/lib/mcp/client';
 import {
     PAYLOAD_HASH_ALGORITHM_VERSION,
+    isDeniedColumn,
     computePayloadHash,
     projectedColumns,
     type CanonicalAccount,
@@ -247,6 +248,40 @@ async function pullUnderLock(
         );
     }
 
+    // ── 3b. Oversharing, split by severity ──────────────────────────────────
+    // The transport strips every unrequested column at the socket and names what
+    // it stripped; fatality is decided HERE, because it depends on the
+    // never-request denylist, which is product policy the transport does not know.
+    //
+    // A denylisted column among them is a REFUSAL: a column matching
+    // `pass|pwd|hash|salt|secret|token|pin|ssn|egn|ЕГН|national.?id|iban|card` left
+    // the customer's network despite a projection that excluded it, and nothing
+    // about this pull should be treated as routine. Anything else is a flag — the
+    // server is misconfigured, the strip is a complete remedy, and refusing would
+    // let their bug stop their own recertification.
+    //
+    // Checked BEFORE the incomplete-read branch on purpose. A torn read and a
+    // leaked credential-shaped column can arrive together, and the second is the
+    // one somebody must act on; reporting TORN_SNAPSHOT would bury it.
+    const oversharedDenied = pull.overshared.filter(isDeniedColumn);
+    if (oversharedDenied.length > 0) {
+        return await recordRefusal(ctx, bookkeeping, {
+            conn,
+            executionId,
+            mapping,
+            observedColumns: [],
+            rowsReceived: pull.rows.length,
+            reason: 'OVERSHARED_DENIED_COLUMN',
+            // Column NAMES, which are schema metadata. No value: the transport
+            // stripped those before this process could hold them, which is the
+            // entire reason the strip lives there and not here.
+            detail:
+                `the server returned ${oversharedDenied.join(', ')} despite a projection `
+                + 'that excluded it, and those columns must never be requested. Nothing from '
+                + 'this pull is stored. Fix the server\'s field filtering before retrying',
+        });
+    }
+
     // ── 4. Drift, before anything is stored ─────────────────────────────────
     // `.map(c => c.name)` — a manifest column is `{ name, type, nullable }`, not a
     // string. The fingerprint and the mapping both speak in NAMES.
@@ -392,7 +427,7 @@ async function pullUnderLock(
                     : { errorMessage: 'snapshot row count disagreed with the write' }),
             },
         });
-        await flagOversharing(db, conn.id, ingest, completedAt);
+        await flagOversharing(db, conn.id, pull.overshared, ingest, completedAt);
         await logEvent(db, ctx, {
             entityType: 'LegacyAccessSnapshot',
             entityId: snapshotId,
@@ -428,7 +463,7 @@ async function pullUnderLock(
         payloadHash: stored === ingest.accounts.length ? payloadHash : null,
         refusalReason: stored === ingest.accounts.length ? null : 'INTERNAL_ERROR',
         refusalDetail: null,
-        overshared: ingest.overshared,
+        overshared: [...new Set([...pull.overshared, ...ingest.overshared])].sort(),
     };
 }
 
@@ -579,10 +614,17 @@ async function recordRefusal(
 async function flagOversharing(
     db: PrismaTx,
     connectionId: string,
+    transportOvershared: readonly string[],
     ingest: IngestOutcome,
     now: Date
 ): Promise<void> {
-    if (ingest.overshared.length === 0) {
+    // The UNION of what the transport stripped and what `mapRows` saw. The two
+    // should never disagree — the transport strips before `mapRows` is reached, so
+    // its list is authoritative and the ingest side is empty — but taking the
+    // union means a future caller that bypassed the client still gets flagged
+    // rather than silently not.
+    const observed = [...new Set([...transportOvershared, ...ingest.overshared])].sort();
+    if (observed.length === 0) {
         await db.integrationConnection.updateMany({
             where: { id: connectionId },
             data: { oversharingObservedAt: null, oversharingColumns: [] },
@@ -591,7 +633,11 @@ async function flagOversharing(
     }
     await db.integrationConnection.updateMany({
         where: { id: connectionId },
-        data: { oversharingObservedAt: now, oversharingColumns: [...ingest.overshared] },
+        // `observed`, not `ingest.overshared`. The transport strips before
+        // `mapRows` is reached, so the ingest side is empty on every live pull —
+        // writing it here recorded a flag with no columns in it, which the
+        // behavioural test caught and a reading of this function would not have.
+        data: { oversharingObservedAt: now, oversharingColumns: observed },
     });
     logger.warn('legacy MCP server returned columns the projection did not request', {
         component: 'legacy-access',
@@ -599,7 +645,7 @@ async function flagOversharing(
         // COUNTS and a denied/not-denied split. The names are on the row for an
         // operator; a log line is the wrong place to accumulate a customer's
         // schema.
-        oversharedCount: ingest.overshared.length,
+        oversharedCount: observed.length,
         declaredDeniedCount: ingest.declaredDenied.length,
     });
 }

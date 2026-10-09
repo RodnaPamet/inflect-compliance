@@ -381,10 +381,12 @@ the boundary.
   `LOCKD` each map onto `ACTIVE`, `DISABLED`, `LOCKED`, `EXPIRED` or `UNKNOWN`.
 - **Entitlement layout is declared.** Wide tables (`ROLE_1` … `ROLE_n`) are unpivoted;
   long tables (one row per role) are grouped by `accountKey`.
-- **Projection happens at the source.** Once mapped, page reads request only the
-  mapped columns through `?fields=`, so a sensitive column never leaves the legacy
-  network. Columns returned anyway are dropped and the connection is flagged
-  **`OVERSHARING`**.
+- **Projection happens at the source.** Once mapped, page reads request only the mapped columns through `?fields=`, so a sensitive column never leaves the legacy network. Columns returned anyway are **stripped by the transport** — removed at the socket, so nothing downstream can store, render or log what it never receives — and **reported by name** to the caller, which decides severity:
+  - a stripped column on the never-request denylist **refuses the pull** (`OVERSHARED_DENIED_COLUMN`), because a credential-shaped column left the customer's network despite a projection that excluded it, and nothing about that pull should be treated as routine;
+  - anything else **flags the connection `OVERSHARING`** and the pull completes. The server is misconfigured rather than hostile, the strip is a complete remedy, and refusing every such pull would let their bug stop their own recertification.
+
+  This split replaced an unconditional refusal in the transport (#3319). That refusal's argument was right — silently dropping a column would make the server owner's bug invisible, and they are the only ones who can fix it — but its scope was wrong: it settled a product question inside a module that cannot know the denylist, and settled it the strict way for every case. Reporting the names keeps the bug visible without making it an outage.
+
 - **Some columns are never requested.** A name matching
   `pass(word)?|pwd|hash|salt|secret|token|pin|ssn|egn|ЕГН|national.?id|iban|card` is
   excluded from mapping and from projection. `EGN` is the Bulgarian national

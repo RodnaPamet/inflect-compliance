@@ -19,7 +19,17 @@ import { prismaTestClient, resetDatabase } from '../helpers/db';
 const pullSnapshotMock = jest.fn();
 jest.mock('@/lib/mcp/client', () => ({
     ...jest.requireActual('@/lib/mcp/client'),
-    pullSnapshot: (...args: unknown[]) => pullSnapshotMock(...args),
+    pullSnapshot: async (...args: unknown[]) => {
+        const r = await pullSnapshotMock(...args);
+        // `overshared` defaults to [] so a test that is not about oversharing need
+        // not restate it. Defaulted HERE rather than in the usecase: the usecase
+        // must keep reading a required field, because a real PullResult always
+        // carries one and a silent `?? []` there would hide a transport that
+        // stopped reporting.
+        return r && typeof r === 'object' && !('overshared' in r)
+            ? { ...r, overshared: [] }
+            : r;
+    },
 }));
 
 import { CONTRACT_VERSION } from '@/lib/mcp/client';
@@ -205,7 +215,7 @@ describe('a complete pull', () => {
         pullSnapshotMock.mockResolvedValue({
             manifest: manifest({ snapshot: { id: 'empty', generatedAt: '2026-10-09T00:00:00.000Z', rowCount: 0 } }),
             rows: [],
-            complete: true,
+            complete: true, overshared: [],
         });
         const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
         expect(result.status).toBe('COMPLETE');
@@ -233,7 +243,7 @@ describe('oversharing', () => {
             // Rows carry ONLY the projected columns, which is what a conforming
             // server returns for a `?fields=` request.
             rows,
-            complete: true,
+            complete: true, overshared: [],
         });
         await prisma.integrationConnection.update({
             where: { id: connectionId },
@@ -269,7 +279,7 @@ describe('oversharing', () => {
                 columns: extra.map((name) => ({ name, type: 'string' as const, nullable: true })),
             }),
             rows: rows.map((r) => ({ ...r, COST_CENTRE: 'CC-4412' })),
-            complete: true,
+            complete: true, overshared: [],
         });
         // The mapping was confirmed against the WIDER set, so this is oversharing
         // rather than drift — the server sends a column the projection excluded.
@@ -318,31 +328,96 @@ describe('oversharing', () => {
     });
 });
 
+describe('oversharing, split by severity (#3319)', () => {
+    it('a DENYLISTED overshared column REFUSES the pull and stores nothing', async () => {
+        // A column matching the never-request pattern left the customer's network
+        // despite a projection that excluded it. The transport stripped it, so no
+        // value is held here — but nothing about this pull is routine.
+        pullSnapshotMock.mockResolvedValue({
+            manifest: manifest(), rows, complete: true,
+            overshared: ['PASSWORD_HASH'],
+        });
+        const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+
+        expect(result.status).toBe('PARTIAL');
+        expect(result.refusalReason).toBe('OVERSHARED_DENIED_COLUMN');
+        const stored = await prisma.legacyAccount.count({ where: { tenantId: TENANT } });
+        expect(stored).toBe(0);
+    });
+
+    it('names the column but never a value — the transport stripped those', async () => {
+        pullSnapshotMock.mockResolvedValue({
+            manifest: manifest(), rows, complete: true,
+            overshared: ['PASSWORD_HASH', 'API_TOKEN'],
+        });
+        const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+        const snap = await prisma.legacyAccessSnapshot.findUniqueOrThrow({
+            where: { id: result.snapshotId! },
+        });
+        expect(snap.refusalDetail).toContain('PASSWORD_HASH');
+        expect(snap.refusalDetail).toContain('API_TOKEN');
+        expect(snap.payloadHash).toBeNull();
+    });
+
+    it('an ORDINARY overshared column completes the pull and flags the connection', async () => {
+        // The server is misconfigured, the strip is a complete remedy, and
+        // refusing would let their bug stop their own recertification.
+        pullSnapshotMock.mockResolvedValue({
+            manifest: manifest(), rows, complete: true,
+            overshared: ['COST_CENTRE'],
+        });
+        const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+
+        expect(result.status).toBe('COMPLETE');
+        expect(result.overshared).toEqual(['COST_CENTRE']);
+        expect(result.payloadHash).toMatch(/^[0-9a-f]{64}$/);
+        const conn = await prisma.integrationConnection.findUniqueOrThrow({ where: { id: connectionId } });
+        expect(conn.oversharingColumns).toEqual(['COST_CENTRE']);
+        expect(conn.oversharingObservedAt).not.toBeNull();
+        // And the accounts ARE stored — this is the non-fatal branch.
+        const stored = await prisma.legacyAccount.count({ where: { tenantId: TENANT } });
+        expect(stored).toBe(2);
+    });
+
+    it('refuses on a denylisted column even when the read ALSO tore', async () => {
+        // Checked before the incomplete-read branch on purpose: a torn read and a
+        // leaked credential-shaped column can arrive together, and reporting
+        // TORN_SNAPSHOT would bury the one somebody must act on.
+        pullSnapshotMock.mockResolvedValue({
+            manifest: manifest(), rows, complete: false,
+            reason: { kind: 'torn-snapshot', message: 'pages disagreed' },
+            overshared: ['IBAN'],
+        });
+        const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+        expect(result.refusalReason).toBe('OVERSHARED_DENIED_COLUMN');
+    });
+});
+
 describe('every fault yields a snapshot that is not COMPLETE, with a named reason', () => {
     const cases: Array<[string, unknown, string]> = [
         [
             'an incomplete transport read',
-            { manifest: manifest(), rows, complete: false, reason: { kind: 'torn-snapshot', message: 'pages disagreed' } },
+            { manifest: manifest(), rows, complete: false, overshared: [], reason: { kind: 'torn-snapshot', message: 'pages disagreed' } },
             'TORN_SNAPSHOT',
         ],
         [
             'a timeout',
-            { manifest: manifest(), rows: [], complete: false, reason: { kind: 'timeout', message: 'budget spent' } },
+            { manifest: manifest(), rows: [], complete: false, overshared: [], reason: { kind: 'timeout', message: 'budget spent' } },
             'TIMEOUT',
         ],
         [
             'a cap exceeded',
-            { manifest: manifest(), rows: [], complete: false, reason: { kind: 'cap-exceeded', message: 'too big' } },
+            { manifest: manifest(), rows: [], complete: false, overshared: [], reason: { kind: 'cap-exceeded', message: 'too big' } },
             'CAP_EXCEEDED',
         ],
         [
             'a contract violation',
-            { manifest: manifest(), rows: [], complete: false, reason: { kind: 'contract-violation', message: 'bad shape' } },
+            { manifest: manifest(), rows: [], complete: false, overshared: [], reason: { kind: 'contract-violation', message: 'bad shape' } },
             'CONTRACT_VIOLATION',
         ],
         [
             'an SSRF refusal',
-            { manifest: manifest(), rows: [], complete: false, reason: { kind: 'ssrf-blocked', message: 'private address' } },
+            { manifest: manifest(), rows: [], complete: false, overshared: [], reason: { kind: 'ssrf-blocked', message: 'private address' } },
             'SSRF_BLOCKED',
         ],
         [
@@ -352,7 +427,7 @@ describe('every fault yields a snapshot that is not COMPLETE, with a named reaso
                     columns: [...COLUMNS, 'NEW_COL'].map((name) => ({ name, type: 'string' as const, nullable: true })),
                 }),
                 rows,
-                complete: true,
+                complete: true, overshared: [],
             },
             'SCHEMA_DRIFT',
         ],
@@ -378,7 +453,7 @@ describe('every fault yields a snapshot that is not COMPLETE, with a named reaso
         ],
         [
             'no readable manifest',
-            { manifest: null, rows: [], complete: false, reason: { kind: 'contract-violation', message: 'unparseable' } },
+            { manifest: null, rows: [], complete: false, overshared: [], reason: { kind: 'contract-violation', message: 'unparseable' } },
             'ROW_SCHEMA_INVALID',
         ],
     ];
@@ -407,7 +482,7 @@ describe('every fault yields a snapshot that is not COMPLETE, with a named reaso
 
     it('a refusal records PARTIAL on the execution, not ERROR — the run reached a verdict', async () => {
         pullSnapshotMock.mockResolvedValue({
-            manifest: manifest(), rows, complete: false,
+            manifest: manifest(), rows, complete: false, overshared: [],
             reason: { kind: 'torn-snapshot', message: 'pages disagreed' },
         });
         const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
@@ -419,7 +494,7 @@ describe('every fault yields a snapshot that is not COMPLETE, with a named reaso
 
     it('a refusal leaves the snapshot unverifiable rather than falsely verified', async () => {
         pullSnapshotMock.mockResolvedValue({
-            manifest: manifest(), rows, complete: false,
+            manifest: manifest(), rows, complete: false, overshared: [],
             reason: { kind: 'torn-snapshot', message: 'pages disagreed' },
         });
         const result = await runLegacyAccessPull({ tenantId: TENANT, connectionId });
@@ -434,7 +509,7 @@ describe('every fault yields a snapshot that is not COMPLETE, with a named reaso
 describe('authentication failure', () => {
     it('marks the connection credential bad on a 401, which the Test button never does', async () => {
         pullSnapshotMock.mockResolvedValue({
-            manifest: null, rows: [], complete: false,
+            manifest: null, rows: [], complete: false, overshared: [],
             reason: { kind: 'authentication-failed', message: 'rejected' },
         });
         await runLegacyAccessPull({ tenantId: TENANT, connectionId });
@@ -448,7 +523,7 @@ describe('authentication failure', () => {
 
     it('records the auth reason from a FIXED set, never the server own message', async () => {
         pullSnapshotMock.mockResolvedValue({
-            manifest: null, rows: [], complete: false,
+            manifest: null, rows: [], complete: false, overshared: [],
             reason: { kind: 'authentication-failed', message: 'your token sk-live-SHOULD-NOT-APPEAR is bad' },
         });
         await runLegacyAccessPull({ tenantId: TENANT, connectionId });

@@ -1970,6 +1970,11 @@ enum LegacyAccessRefusalReason {
   MAPPING_MISSING
   MAPPING_UNUSABLE
   INTERNAL_ERROR
+  /// The server returned a column the projection excluded AND that column is on
+  /// the never-request denylist. Appended LAST because a bare `ALTER TYPE ... ADD
+  /// VALUE` appends, and `enum-member-order-matches-migrations` checks that the
+  /// schema's order matches what the migrations produce.
+  OVERSHARED_DENIED_COLUMN
 }
 
 /// An account's state in the legacy application, after value mapping.
