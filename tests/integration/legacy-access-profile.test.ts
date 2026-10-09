@@ -62,6 +62,17 @@ beforeAll(async () => {
         update: {},
         create: { id: TENANT, name: 'Profile Tenant', slug: TENANT },
     });
+    // The drift test saves a mapping, which writes a hash-chained audit row
+    // carrying `userId` — an FK to `User`. Seeded HERE rather than relied upon:
+    // this suite passed locally only because a sibling suite had created
+    // `user-1` in the same scratch database and nothing deletes users, so it was
+    // riding on another suite's leftovers. CI's fresh database is the honest
+    // environment, and it failed there (#3332, shard 3/4).
+    await prisma.user.upsert({
+        where: { id: 'user-1' },
+        update: {},
+        create: { id: 'user-1', email: 'profiler@lgpr.test', name: 'Profiler' },
+    });
 });
 
 beforeEach(async () => {
