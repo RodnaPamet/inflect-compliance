@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.171.0",
+  "version": "3.171.1",
   "private": true,
   "license": "BUSL-1.1",
   "workspaces": [
@@ -39,6 +39,7 @@
     "db:check-failed-migration": "node scripts/check-failed-migration.mjs",
     "db:test:catchup": "tsx scripts/catchup-test-db.ts",
     "db:check-schema-drift": "node scripts/check-fresh-db-schema-drift.mjs",
+    "db:test:reap": "tsx scripts/reap-test-databases.ts",
     "db:check-client-fresh": "node scripts/check-prisma-client-fresh.mjs",
     "db:bootstrap-owners": "tsx scripts/bootstrap-tenant-owners.ts",
     "db:backfill-org-widgets": "tsx scripts/backfill-org-dashboard-widgets.ts",

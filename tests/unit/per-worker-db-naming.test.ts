@@ -19,7 +19,12 @@ import { codeOf } from '../helpers/source-blocks';
  */
 import * as path from 'path';
 
-import { tagForRoot, checkoutTag, perWorkerDbName } from '../helpers/db';
+import {
+    tagForRoot,
+    checkoutTag,
+    perWorkerDbName,
+    selectReapableWorkerDbs,
+} from '../helpers/db';
 
 describe('the tag separates checkouts', () => {
     it('differs for different repo roots', () => {
@@ -154,6 +159,85 @@ describe('every site that names a worker DB agrees', () => {
 
     it('the marker carries the names globalSetup created', () => {
         const src = read('tests/setup/globalSetup.ts');
-        expect(src).toMatch(/workerDbs/);
+        // Pinned to the MARKER ASSIGNMENT, not to the identifier anywhere
+        // in the file. `/workerDbs/` matched five places — the
+        // declaration, the push, the marker, the log — so deleting
+        // `workerDbs` from the marker, which is the only thing this test
+        // is named for, left four survivors satisfying it. Adding the
+        // #3356 reap, which passes `workerDbs` to the selector, made that
+        // a sixth survivor and tipped the needle over
+        // `assertion-needle-uniqueness-ratchet`'s 5-position threshold —
+        // which is how a tautology that had been quietly true for months
+        // got noticed.
+        expect(src).toMatch(/marker\s*=\s*\{[^}]*\bworkerDbs\b/);
+    });
+});
+
+/**
+ * Which orphans the reaper is allowed to take (#3356).
+ *
+ * The selection is the dangerous half — a `DROP DATABASE` on a shared
+ * server — so it is a pure function and these are its teeth. The case
+ * that matters most is the second one: when this was measured, ALL 39
+ * checkout tags on the dev server had zero live connections, 12 of them
+ * belonging to checkouts still on disk. Anything that reaps by liveness
+ * alone deletes other people's databases while they are between runs.
+ */
+describe('selecting which per-worker databases to reap', () => {
+    const BASE = 'inflect_test';
+    const MINE = 'aaaaaaaa';
+    const THEIRS = 'bbbbbbbb';
+    const row = (datname: string, conns = 0) => ({ datname, conns });
+
+    it('takes an idle database bearing our own tag', () => {
+        expect(
+            selectReapableWorkerDbs([row(`${BASE}_${MINE}_w9`)], BASE, MINE, []),
+        ).toEqual([`${BASE}_${MINE}_w9`]);
+    });
+
+    it('NEVER takes another checkout tag, idle or not', () => {
+        const rows = [row(`${BASE}_${THEIRS}_w1`), row(`${BASE}_${THEIRS}_w7`, 3)];
+        expect(selectReapableWorkerDbs(rows, BASE, MINE, [])).toEqual([]);
+    });
+
+    it('leaves the databases the current run is about to use', () => {
+        const keep = [`${BASE}_${MINE}_w1`, `${BASE}_${MINE}_w2`];
+        const rows = [...keep.map((n) => row(n)), row(`${BASE}_${MINE}_w3`)];
+        expect(selectReapableWorkerDbs(rows, BASE, MINE, keep)).toEqual([
+            `${BASE}_${MINE}_w3`,
+        ]);
+    });
+
+    it('leaves one of our own that still has a connection', () => {
+        expect(
+            selectReapableWorkerDbs([row(`${BASE}_${MINE}_w4`, 1)], BASE, MINE, []),
+        ).toEqual([]);
+    });
+
+    it('never takes the base database, which has no worker suffix', () => {
+        const rows = [row(BASE), row(`${BASE}_${MINE}`), row(`${BASE}_${MINE}_w`)];
+        expect(selectReapableWorkerDbs(rows, BASE, MINE, [])).toEqual([]);
+    });
+
+    it('never takes a database belonging to a different base name', () => {
+        // The query is `LIKE '<base>%'`, so a longer base sharing our
+        // prefix reaches this function and must not match.
+        const rows = [row(`${BASE}_other_${MINE}_w1`), row(`${BASE}x_${MINE}_w1`)];
+        expect(selectReapableWorkerDbs(rows, BASE, MINE, [])).toEqual([]);
+    });
+
+    it('requires a numeric worker index', () => {
+        const rows = [row(`${BASE}_${MINE}_wx`), row(`${BASE}_${MINE}_w1x`)];
+        expect(selectReapableWorkerDbs(rows, BASE, MINE, [])).toEqual([]);
+    });
+
+    it('matches what perWorkerDbName actually produces, for the real tag', () => {
+        // Guards the two from drifting apart: a scheme change that this
+        // selector did not follow would leave real orphans unreapable
+        // while every synthetic case above still passed.
+        const real = perWorkerDbName(BASE, 5);
+        expect(selectReapableWorkerDbs([row(real)], BASE, checkoutTag(), [])).toEqual([
+            real,
+        ]);
     });
 });
