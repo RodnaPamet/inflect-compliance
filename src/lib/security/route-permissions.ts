@@ -556,6 +556,27 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'than by a second rule that could drift.',
     },
 
+    // ── Entra entitlement discovery (#3329) ─────────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/entra-entitlement(\\/.*)?$`),
+        methods: ['GET'],
+        permission: 'admin.manage',
+        note:
+            'Lists the access packages and assignment policies a grant can be ' +
+            'composed against, so the compose form offers choices instead of two ' +
+            'free-text boxes for opaque GUIDs. READ-ONLY, hence admin.manage and ' +
+            'NOT the admin.tenant_lifecycle its sibling external-write-policy ' +
+            'carries two rules above — that one sets how far an agent may go when ' +
+            'CHANGING a customer system, which is authority of a different class. ' +
+            'Knowing which packages exist grants nothing. GET only, declared ' +
+            'rather than left open, so a future POST under this subtree fails the ' +
+            'coverage guard instead of inheriting a read gate. Deliberately NOT a ' +
+            'third tool on the grant MCP endpoint: that endpoint advertises two ' +
+            'tools and a test asserts the COUNT, because its only intended client ' +
+            'is our own dispatch, which is handed a resolved package id by an ' +
+            'approved template and has no use for discovery.',
+    },
+
     // ── Per-tenant DEK rotation (Epic F.2 follow-up) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/tenant-dek-rotation(\\/.*)?$`),

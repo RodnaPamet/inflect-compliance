@@ -65,6 +65,7 @@
 import { getEntraAccessToken } from './index';
 import { assertEntraObjectId } from './writer';
 import { resilientFetch } from '../../http-resilience';
+import { logger } from '@/lib/observability/logger';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -279,6 +280,81 @@ export function classifyAssignment(
     return end > now.getTime() ? 'live' : 'inactive';
 }
 
+/**
+ * DISCOVERY (#3329). What a human composing a grant has to choose between.
+ *
+ * A grant needs three identifiers and only one of them was discoverable: the
+ * subject comes from the target population (#3299). `accessPackageId` and
+ * `assignmentPolicyId` had no read at all, so a compose form could offer
+ * nothing but two free-text boxes for opaque GUIDs — and because both are
+ * opaque GUIDs, SWAPPING them is undetectable until Graph refuses, while a
+ * wrong-but-valid pair is not refused at all.
+ */
+export interface AccessPackageSummary {
+    readonly id: string;
+    readonly displayName: string | null;
+    readonly description: string | null;
+    /** Hidden packages exist and are assignable; the form should say so. */
+    readonly isHidden: boolean | null;
+}
+
+/** One assignment policy, carrying the package it belongs to. */
+export interface AssignmentPolicySummary {
+    readonly id: string;
+    readonly displayName: string | null;
+    /**
+     * Echoed back from the response, NOT copied from the request.
+     *
+     * This is what makes the swap check real: a form that trusted the id it
+     * asked with would confirm its own input. See
+     * `policyBelongsToPackage`.
+     */
+    readonly accessPackageId: string | null;
+}
+
+/**
+ * A page of discovery results, and whether there were more.
+ *
+ * `truncated` is not decoration. A list silently cut at a page boundary is a
+ * form that cannot offer a package the tenant has, and the operator has no way
+ * to tell that from the package not existing — so the cap is reported as a
+ * fact rather than hidden as an implementation detail.
+ */
+export interface DiscoveryPage<T> {
+    readonly items: readonly T[];
+    readonly truncated: boolean;
+}
+
+/** Page size asked of Graph. */
+const DISCOVERY_PAGE_SIZE = 100;
+/**
+ * How many pages to follow before giving up and saying so.
+ *
+ * Ten pages is 1000 access packages, which is far beyond any tenant this form
+ * is for. The bound exists so a pathological tenant cannot make one form load
+ * walk an unbounded cursor, not because 1000 is a meaningful number.
+ */
+const DISCOVERY_MAX_PAGES = 10;
+
+/**
+ * Does this policy belong to this package? (#3329)
+ *
+ * The cheap check that closes the undetectable-swap case. Only possible once
+ * discovery exists, which is why it lives here rather than in the form: the
+ * form would have to trust its own input, and the whole point is that it
+ * cannot.
+ *
+ * A policy whose `accessPackageId` came back null is NOT treated as belonging.
+ * An absent answer is not a yes — the same direction every other refusal in
+ * this file takes.
+ */
+export function policyBelongsToPackage(
+    policy: AssignmentPolicySummary,
+    accessPackageId: string,
+): boolean {
+    return policy.accessPackageId !== null && policy.accessPackageId === accessPackageId;
+}
+
 function graphErrorCode(status: number, text: string): string {
     // Graph error bodies are `{ error: { code, message } }`, and the CODE is the
     // part worth quoting — the message routinely embeds the object id, which
@@ -323,6 +399,66 @@ export function createEntraEntitlementClient(options: EntitlementClientOptions) 
         });
         const text = res.status === 204 ? '' : await res.text().catch(() => '');
         return { ok: res.ok, status: res.status, text };
+    }
+
+    /**
+     * Follow a Graph collection across pages, bounded, and report truncation.
+     *
+     * ═══ THE nextLink IS A SERVER-SUPPLIED REQUEST TARGET ═══
+     *
+     * Graph's `@odata.nextLink` is an ABSOLUTE url, and this function attaches a
+     * bearer token to whatever it is given. `index.ts` already states the
+     * consequence for its own stored cursor:
+     *
+     *     a tampered stored cursor would otherwise send this request — carrying
+     *     a Graph bearer token — to an arbitrary host.
+     *
+     * So the link is origin-checked and then RE-BUILT: only its path and query
+     * are used, against our own `GRAPH` constant, so the host cannot come from
+     * the response at all. That is the same rule the legacy MCP client follows
+     * for advertised page URIs, and it is stronger than a prefix check alone —
+     * a prefix match still requests the string the far end chose.
+     */
+    async function pagedGet<T>(
+        firstPathAndQuery: string,
+        row: (raw: Record<string, unknown>) => T | null,
+    ): Promise<DiscoveryPage<T>> {
+        const items: T[] = [];
+        let pathAndQuery: string | null = firstPathAndQuery;
+        for (let page = 0; page < DISCOVERY_MAX_PAGES; page += 1) {
+            const res = await graph('GET', pathAndQuery);
+            if (!res.ok) {
+                throw new Error(
+                    `Entra discovery read failed (${graphErrorCode(res.status, res.text)})`,
+                );
+            }
+            const parsed = JSON.parse(res.text || '{}') as {
+                value?: ReadonlyArray<Record<string, unknown>>;
+                '@odata.nextLink'?: unknown;
+            };
+            for (const raw of parsed.value ?? []) {
+                const mapped = row(raw);
+                // A row that cannot be keyed is DROPPED, not carried with a
+                // hole: an entry the form cannot submit is worse than absent,
+                // because the operator would pick it and get a refusal.
+                if (mapped !== null) items.push(mapped);
+            }
+            const next = parsed['@odata.nextLink'];
+            if (typeof next !== 'string' || next === '') {
+                return { items, truncated: false };
+            }
+            if (!next.startsWith(`${GRAPH}/`)) {
+                // Not our host. Stop and SAY SO rather than follow it or
+                // pretend the list is complete.
+                logger.warn('Entra discovery: nextLink is not a Graph url, stopping', {
+                    component: 'entra-entitlement',
+                });
+                return { items, truncated: true };
+            }
+            pathAndQuery = next.slice(GRAPH.length);
+        }
+        // The cap was reached with a cursor still outstanding.
+        return { items, truncated: true };
     }
 
     return {
@@ -468,6 +604,72 @@ export function createEntraEntitlementClient(options: EntitlementClientOptions) 
                 );
             }
             return { requestId: parsed.id };
+        },
+
+        /**
+         * DISCOVERY: the access packages this tenant has (#3329).
+         *
+         * Measured app-only against a licensed tenant:
+         * `GET /identityGovernance/entitlementManagement/accessPackages` -> 200
+         * with the credential this path already uses.
+         *
+         * CATALOGS ARE NOT FETCHED, deliberately. `accessPackage` in Graph
+         * v1.0 carries no `catalogId` scalar — the catalog is a navigation
+         * property, so grouping by it needs `$expand=catalog`, which is NOT in
+         * the set measured live. Building a form grouping on an unmeasured
+         * expand would be an assumption dressed as a feature; the form needs a
+         * package and a policy, and that is what this returns.
+         */
+        async readAccessPackages(): Promise<DiscoveryPage<AccessPackageSummary>> {
+            return pagedGet<AccessPackageSummary>(
+                '/identityGovernance/entitlementManagement/accessPackages'
+                    + `?$top=${DISCOVERY_PAGE_SIZE}&$select=id,displayName,description,isHidden`,
+                (raw) => {
+                    if (typeof raw.id !== 'string' || raw.id === '') return null;
+                    return {
+                        id: raw.id,
+                        displayName: typeof raw.displayName === 'string' ? raw.displayName : null,
+                        description: typeof raw.description === 'string' ? raw.description : null,
+                        isHidden: typeof raw.isHidden === 'boolean' ? raw.isHidden : null,
+                    };
+                },
+            );
+        },
+
+        /**
+         * DISCOVERY: the assignment policies valid for ONE package (#3329).
+         *
+         * Read per package rather than all at once on purpose. The alternative
+         * — fetching every package's policies to build one payload — is an
+         * N+1 against a customer's directory on every form load, where N is
+         * their package count. The form asks for policies when a package is
+         * chosen.
+         *
+         * `accessPackage/id` is `$expand`ed so each policy carries the package
+         * it belongs to, which is what `policyBelongsToPackage` checks. Taking
+         * it from the REQUEST instead would make the check confirm its own
+         * input.
+         */
+        async readAssignmentPolicies(
+            accessPackageId: string,
+        ): Promise<DiscoveryPage<AssignmentPolicySummary>> {
+            const pkg = encodeURIComponent(accessPackageId);
+            return pagedGet<AssignmentPolicySummary>(
+                '/identityGovernance/entitlementManagement/assignmentPolicies'
+                    + `?$top=${DISCOVERY_PAGE_SIZE}`
+                    + `&$filter=accessPackage/id eq '${pkg}'`
+                    + '&$select=id,displayName'
+                    + '&$expand=accessPackage($select=id)',
+                (raw) => {
+                    if (typeof raw.id !== 'string' || raw.id === '') return null;
+                    const ap = raw.accessPackage as { id?: unknown } | null | undefined;
+                    return {
+                        id: raw.id,
+                        displayName: typeof raw.displayName === 'string' ? raw.displayName : null,
+                        accessPackageId: typeof ap?.id === 'string' ? ap.id : null,
+                    };
+                },
+            );
         },
     };
 }
