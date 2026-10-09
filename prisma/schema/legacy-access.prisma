@@ -92,6 +92,8 @@ model LegacyAccessSnapshot {
   @@index([tenantId])
   @@index([tenantId, connectionId, status, pulledAt])
   @@index([tenantId, connectionId, completedAt])
+  resolutions LegacyAccountResolution[]
+
 }
 
 /// One account from one snapshot, in canonical form.
@@ -148,4 +150,114 @@ model LegacyAccount {
   @@index([tenantId, snapshotId, accountKey])
   @@index([tenantId, email])
   @@index([tenantId, employeeNumber])
+}
+
+/// One account's resolution, from one run. IMMUTABLE.
+///
+/// There is deliberately no update seam. A second run over the same snapshot
+/// writes a NEW set of rows against its own execution, and the old set stays as
+/// it was — because "why was this account suggested to that person in March?" is
+/// a question about what the engine saw in March, and an updated row cannot
+/// answer it. The roster moves, links go stale, aliases get confirmed; a
+/// resolution is a record of a judgement under conditions that no longer hold.
+///
+/// `signalsJson`, `candidatesJson` and `vetoesJson` carry the engine's own
+/// evidence, which is what makes a suggestion reviewable rather than an opaque
+/// verdict. They hold identifiers — an account key, an employee number, an email
+/// key — because those ARE the evidence for the strong signals.
+model LegacyAccountResolution {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The run. An `IntegrationExecution` IS the run rather than a sibling table:
+  /// the execution already records when it started, when it finished, what
+  /// triggered it and how it ended, and inventing a second row to mean the same
+  /// thing is how two records of one event come to disagree.
+  executionId String
+  /// The snapshot resolved. Always a COMPLETE one — the usecase refuses
+  /// otherwise, because a resolution over a population nobody can vouch for
+  /// inherits exactly that problem.
+  snapshotId String
+
+  accountKey String
+  outcome    LegacyResolutionOutcome
+  method     LegacyMatchMethod
+  /// Null for every outcome but LINKED, and for LINKED it is the one employee a
+  /// strong unvetoed signal pointed at.
+  employeeId String?
+
+  /// The engine's evidence. Arrays of `{ kind, score, evidence }` and
+  /// `{ employeeId, score, signals, vetoes, strongest }`.
+  signalsJson    Json
+  candidatesJson Json
+  vetoesJson     Json
+  /// System-generated, and the only one the engine writes is
+  /// `service token: <token>` — a token from the connection's own configuration,
+  /// never a cell value.
+  note String?
+
+  createdAt DateTime @default(now())
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id])
+  execution IntegrationExecution  @relation(fields: [executionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  snapshot  LegacyAccessSnapshot  @relation(fields: [snapshotId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One row per account per RUN. The run is in the key, which is what makes a
+  /// second run an addition rather than a collision.
+  @@unique([executionId, accountKey])
+  @@index([tenantId])
+  @@index([tenantId, snapshotId, outcome])
+  @@index([tenantId, employeeId])
+}
+
+/// The durable crosswalk: this legacy account belongs to this employee, because
+/// a person said so.
+///
+/// Written only by Step 4b. Step 3c READS it and nothing else — the engine takes
+/// confirmed aliases as its strongest signal, so a row here is the one thing that
+/// can turn an account into a `LINKED` without any other evidence. That is why a
+/// person has to put it there.
+///
+/// `signalsJson` records what the confirmer was SHOWN, not what is true now. If
+/// the roster has since changed, the question "was this a reasonable thing to
+/// confirm?" is still answerable.
+model LegacyIdentityAlias {
+  id       String @id @default(cuid())
+  tenantId String
+
+  connectionId String
+  accountKey   String
+  employeeId   String
+
+  method LegacyMatchMethod
+  status LegacyAliasStatus @default(ACTIVE)
+
+  /// Who confirmed it, and when. Nullable `confirmedByUserId` because a user row
+  /// can be deleted while the decision it recorded stands — the alias outlives
+  /// the account that made it, the same way `IdentityWriteJournal` outlives the
+  /// link it describes.
+  confirmedByUserId String?
+  confirmedAt       DateTime
+
+  /// What the confirmer was shown. See the model docblock.
+  signalsJson Json
+
+  /// Why it was suspended, when it was. System-generated.
+  suspendedReason String?
+  suspendedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant                @relation(fields: [tenantId], references: [id])
+  connection IntegrationConnection @relation(fields: [connectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One alias per account per connection. A second confirmation for the same
+  /// account is a CHANGE of the existing row, not a rival to it — two live
+  /// aliases disagreeing about one account would make the strongest signal in the
+  /// system ambiguous.
+  @@unique([connectionId, accountKey])
+  @@index([tenantId])
+  @@index([tenantId, connectionId, status])
+  @@index([tenantId, employeeId])
 }

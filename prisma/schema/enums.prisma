@@ -2002,3 +2002,46 @@ enum LegacyAccountType {
   SYSTEM
   UNKNOWN
 }
+
+/// What the engine concluded about one account.
+///
+/// Mirrors `Outcome` in `lib/identity/reconcile/engine.ts`. Only LINKED asserts
+/// an identity, and only a strong deterministic signal held by exactly one
+/// unvetoed candidate produces it — invariant 2.
+enum LegacyResolutionOutcome {
+  LINKED
+  SUGGESTED
+  AMBIGUOUS
+  UNMATCHED
+  NON_PERSON
+}
+
+/// How the engine reached its conclusion.
+///
+/// Mirrors `ResolutionMethod`: the four STRONG signal kinds, then the rules and
+/// the reasons-for-not-linking. Stored so a reviewer reading an old resolution
+/// can tell "nobody matched" from "several matched and I refused to choose" —
+/// outcomes that are both non-links and want different responses.
+enum LegacyMatchMethod {
+  CONFIRMED_ALIAS
+  EMPLOYEE_NUMBER
+  EMAIL_EXACT
+  DIRECTORY_BRIDGE
+  NON_PERSON_RULE
+  REKEYED_PERSON_RULE
+  SUPPORTING_ONLY
+  STRONG_SIGNAL_TIE
+  VETOED
+  NO_STRONG_SIGNAL
+  NO_CANDIDATES
+}
+
+/// Whether a confirmed alias is still in force.
+///
+/// SUSPENDED rather than deleted: the crosswalk is evidence that somebody made a
+/// decision, and deleting it would make a later "who linked this account, and
+/// when?" unanswerable. A suspended alias is not offered to the engine.
+enum LegacyAliasStatus {
+  ACTIVE
+  SUSPENDED
+}

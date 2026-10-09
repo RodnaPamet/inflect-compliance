@@ -204,6 +204,8 @@ model IntegrationConnection {
   oversharingColumns    String[]
   legacyAccessSnapshots LegacyAccessSnapshot[]
 
+  legacyIdentityAliases LegacyIdentityAlias[]
+
 }
 
 model IntegrationExecution {
@@ -232,6 +234,14 @@ model IntegrationExecution {
   @@index([tenantId, controlId])
   @@index([tenantId, status])
   @@index([jobRunId])
+  legacyAccountResolutions LegacyAccountResolution[]
+
+  /// Lets a child row's FK be composite, which makes a cross-tenant pointer
+  /// unrepresentable rather than merely checked. Trivially satisfiable — `id`
+  /// is the primary key, so the pair is unique by construction and no existing
+  /// row can violate the new index.
+  @@unique([id, tenantId])
+
 }
 
 model IntegrationWebhookEvent {

@@ -31,6 +31,8 @@ let _calendarRevoked: ReturnType<ReturnType<typeof getMeter>['createCounter']> |
 let _identityDeprovisioned: Counter | null = null;
 let _deprovisionRefused: Counter | null = null;
 let _identityLinkReconcile: Counter | null = null;
+let _legacyReconcileOutcome: Counter | null = null;
+let _legacyReconcileRefused: Counter | null = null;
 let _leaverPassOutcome: Counter | null = null;
 let _joinerPassOutcome: Counter | null = null;
 let _leaverNotification: Counter | null = null;
@@ -438,6 +440,54 @@ export function recordJoinerPassOutcome(attrs: {
             unit: '1',
         });
     _joinerPassOutcome.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+}
+
+/**
+ * One legacy reconciliation run, counted PER OUTCOME.
+ *
+ * Adds each outcome's count in one call rather than being invoked per account:
+ * a per-account call site would make the counter's total depend on the loop
+ * rather than on the engine's own tally, and the two can disagree precisely when
+ * a resolution is dropped. `EngineMetrics.byOutcome` is the tally the engine
+ * computed, so this emits THAT.
+ *
+ * A zero is emitted for every outcome the run did not produce. That matters for
+ * reading a dashboard: an absent series and a series at zero look identical in
+ * most query languages, and "no account was UNMATCHED this run" is a different
+ * fact from "this run did not report".
+ */
+export function recordLegacyReconcileOutcomes(attrs: {
+    provider: string;
+    byOutcome: Readonly<Record<string, number>>;
+}): void {
+    if (!_legacyReconcileOutcome)
+        _legacyReconcileOutcome = getMeter().createCounter('legacy.reconcile.outcome', {
+            description: 'Legacy access reconciliation results by outcome',
+            unit: '1',
+        });
+    for (const [outcome, count] of Object.entries(attrs.byOutcome)) {
+        _legacyReconcileOutcome.add(count, { provider: attrs.provider, outcome });
+    }
+}
+
+/**
+ * A reconciliation run that refused before resolving anything.
+ *
+ * Separate from the per-outcome counter deliberately: a refusal produces NO
+ * outcomes, so folding it in as a sixth outcome would make the outcome series
+ * sum to something that is not the account count, and a refusal is a fact about
+ * the RUN rather than about any account.
+ */
+export function recordLegacyReconcileRefused(attrs: {
+    provider: string;
+    reason: string;
+}): void {
+    if (!_legacyReconcileRefused)
+        _legacyReconcileRefused = getMeter().createCounter('legacy.reconcile.refused', {
+            description: 'Legacy access reconciliation runs refused, by named reason',
+            unit: '1',
+        });
+    _legacyReconcileRefused.add(1, { provider: attrs.provider, reason: attrs.reason });
 }
 
 export function recordIdentityLinkReconcile(attrs: {

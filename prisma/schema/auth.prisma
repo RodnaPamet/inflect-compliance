@@ -306,6 +306,9 @@ model Tenant {
   legacyAccessSnapshots LegacyAccessSnapshot[]
   legacyAccounts        LegacyAccount[]
 
+  legacyAccountResolutions LegacyAccountResolution[]
+  legacyIdentityAliases    LegacyIdentityAlias[]
+
 }
 
 // Hub-and-spoke organization layer (Epic O-1).
