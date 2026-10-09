@@ -40,7 +40,7 @@ import {
     step4aExtensions,
     SCORER_WEIGHTS,
 } from '@/lib/identity/reconcile/scorers';
-import { CORPUS } from '../fixtures/identity-reconcile/corpus';
+import { CORPUS, engineInputFor } from '../fixtures/identity-reconcile/corpus';
 
 const NOW = '2026-10-08T00:00:00.000Z';
 
@@ -513,10 +513,11 @@ describe('4a — the precision ratchet holds with both scorers wired in', () => 
         for (const c of CORPUS) {
             const roster = c.hr as readonly RosterEmployee[];
             const r = reconcile({
-                accounts: [c.account as CanonicalAccount],
-                roster,
-                directory: c.directory as never,
-                aliases: [],
+                // Through the fixture's own builder. This site had
+                // `aliases: []` hardcoded, which made every alias case in the
+                // corpus an unsatisfiable LINKED — the ratchet below counted it
+                // as a missing link and read as a 4a regression.
+                ...engineInputFor(c),
                 now: NOW,
                 // Both scorers AND both blockers — the scorers are unreachable for a
                 // name-only account without the blockers, which is the gap this step

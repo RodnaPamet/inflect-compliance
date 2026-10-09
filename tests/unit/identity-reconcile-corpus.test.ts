@@ -13,6 +13,10 @@ import {
     type Outcome,
 } from '../fixtures/identity-reconcile/corpus';
 import {
+    STRONG_SIGNAL_KINDS,
+    type StrongSignalKind,
+} from '@/lib/identity/reconcile/engine';
+import {
     normaliseEmail,
     normaliseName,
     normaliseUsername,
@@ -125,13 +129,40 @@ describe('transliteration and similarity never reach LINKED in the corpus', () =
         // where nothing at all was LINKED.
         const linked = CORPUS.filter((c) => c.expected.outcome === 'LINKED');
         expect(linked.length).toBeGreaterThanOrEqual(2);
-        // And each rests on a strong signal: an exact email, a real employee
-        // number, or a fresh unique directory bridge.
+
+        // And each rests on a strong signal. Keyed by `StrongSignalKind` rather
+        // than written as an `||` chain, so the enumeration CANNOT go stale: a
+        // `Record` over the union is exhaustive by type, and a fifth strong
+        // signal is a compile error here rather than a LINKED case this test
+        // quietly rejects.
+        //
+        // It went stale exactly that way once. The chain listed email, employee
+        // number and directory bridge — three of the four — and the first
+        // corpus case to link via a confirmed alias failed this assertion
+        // rather than the engine's. The missing arm read as a bad fixture.
+        const RESTS_ON: Record<StrongSignalKind, (c: CorpusCase) => boolean> = {
+            CONFIRMED_ALIAS: (c) =>
+                (c.aliases ?? []).some((a) => a.accountKey === c.account.accountKey),
+            EMAIL_EXACT: (c) =>
+                c.hr.some((h) => h.workEmail && h.workEmail === c.account.email),
+            EMPLOYEE_NUMBER: (c) =>
+                c.hr.some(
+                    (h) => h.employeeNumber
+                        && normaliseEmployeeNumber(c.account.accountKey) === h.employeeNumber
+                ),
+            DIRECTORY_BRIDGE: (c) =>
+                c.directory.filter(
+                    (d) => d.linkFresh && d.samAccountName === c.account.accountKey
+                ).length === 1,
+        };
+
+        // The denominator, asserted rather than assumed: if the engine grows a
+        // strong kind and somebody widens the Record without thinking, this
+        // still says how many shapes are being checked.
+        expect(Object.keys(RESTS_ON).sort()).toEqual([...STRONG_SIGNAL_KINDS].sort());
+
         for (const c of linked) {
-            const strong =
-                c.hr.some((h) => h.workEmail && h.workEmail === c.account.email)
-                || c.hr.some((h) => h.employeeNumber && normaliseEmployeeNumber(c.account.accountKey) === h.employeeNumber)
-                || c.directory.filter((d) => d.linkFresh && d.samAccountName === c.account.accountKey).length === 1;
+            const strong = Object.values(RESTS_ON).some((holds) => holds(c));
             expect({ id: c.id, strong }).toEqual({ id: c.id, strong: true });
         }
     });

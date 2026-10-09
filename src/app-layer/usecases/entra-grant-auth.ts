@@ -56,8 +56,17 @@ import { prisma } from '@/lib/prisma';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 
-/** The provider id an MCP-server connection carries. */
-export const MCP_SERVER_PROVIDER = 'mcp-server';
+/**
+ * The provider id an MCP-server connection carries.
+ *
+ * RE-EXPORTED from the provider rather than spelled again. It was a second
+ * literal here until #3330, which is a drift risk in the one place that cannot
+ * afford one: if the provider id ever changed, this comparison would silently
+ * stop matching and every grant would refuse `wrong_provider` with nothing
+ * failing in a test.
+ */
+export { MCP_SERVER_PROVIDER_ID as MCP_SERVER_PROVIDER } from '@/app-layer/integrations/providers/mcp-server-provider';
+import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 
 /**
  * Why a caller was refused.
@@ -203,7 +212,7 @@ export async function authenticateGrantCaller(
     if (!row) {
         return { ok: false, refusal: { kind: 'unknown_connection', attributable: false } };
     }
-    if (row.provider !== MCP_SERVER_PROVIDER) {
+    if (row.provider !== MCP_SERVER_PROVIDER_ID) {
         return {
             ok: false,
             refusal: { kind: 'wrong_provider', attributable: true, tenantId: row.tenantId },

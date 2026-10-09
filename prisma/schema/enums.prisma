@@ -2059,6 +2059,10 @@ enum LegacyMatchMethod {
   VETOED
   NO_STRONG_SIGNAL
   NO_CANDIDATES
+  /// A reviewer picked the employee themselves, against the engine's
+  /// suggestion or in its absence. Appended, not inserted: Postgres
+  /// `ADD VALUE` appends and `enum-member-order-matches-migrations` compares.
+  MANUAL
 }
 
 /// Whether a confirmed alias is still in force.
@@ -2069,4 +2073,25 @@ enum LegacyMatchMethod {
 enum LegacyAliasStatus {
   ACTIVE
   SUSPENDED
+}
+
+/// What a reviewer decided an account IS.
+///
+/// Three of Step 4b's six reviewer actions do not produce an employee link at
+/// all, so the alias row needs a discriminator rather than a nullable
+/// `employeeId` whose meaning a reader has to infer:
+///
+///   EMPLOYEE    this account belongs to that person
+///   NON_PERSON  a service account, a shared mailbox, a robot. Needs an OWNER.
+///   EXTERNAL    a real human who is not on the HR roster — a contractor, an
+///               auditor, a partner. Needs a justification AND an expiry,
+///               because "external" is a statement about today.
+///   ORPHAN      nobody can say whose it is. Deliberately NOT the same as
+///               leaving it unreviewed: an orphan has been looked at and found
+///               unattributable, which is a finding rather than a gap.
+enum LegacyAliasClassification {
+  EMPLOYEE
+  NON_PERSON
+  EXTERNAL
+  ORPHAN
 }

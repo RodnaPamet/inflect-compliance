@@ -53,6 +53,12 @@
 import type { LegacyMatchMethod, LegacyResolutionOutcome, Prisma } from '@prisma/client';
 
 import {
+    revalidateAliases,
+    type AliasUnderReview,
+    type AliasVerdict,
+} from '@/lib/identity/reconcile/alias-revalidation';
+
+import {
     SYNC_BOOKKEEPING_TX_OPTIONS,
     SYNC_WRITE_TX_OPTIONS,
 } from '@/app-layer/integrations/sync-transaction';
@@ -62,6 +68,7 @@ import { OBSERVATION_FRESHNESS_MS } from '@/app-layer/usecases/identity-write-ta
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import {
+    recordLegacyAliasSuspensions,
     recordLegacyReconcileOutcomes,
     recordLegacyReconcileRefused,
 } from '@/lib/observability/integration-metrics';
@@ -74,7 +81,6 @@ import {
     // hash is defined over). Importing both unaliased compiles until one of them
     // gains a field.
     type CanonicalAccount as EngineAccount,
-    type ConfirmedAlias,
     type DirectoryAccount,
     type EngineResult,
     type Outcome,
@@ -249,6 +255,25 @@ export async function runLegacyReconcile(
     const aliases = await readAliases(ctx, snapshot.connectionId);
     const convention = await readConvention(ctx, snapshot.connectionId);
 
+    // ── Revalidate the aliases BEFORE resolving ─────────────────────────────
+    //
+    // Order is the whole correctness of this: suspend first, then resolve
+    // against the SURVIVORS. Resolving against everything read and suspending
+    // afterwards would record the account as `CONFIRMED_ALIAS` on the very run
+    // that decided the alias was no longer trustworthy.
+    //
+    // A departure is NOT a trigger. See
+    // `lib/identity/reconcile/alias-revalidation` for why suspending there
+    // would take a leaver's account out of the leaver population and leave it
+    // indistinguishable from an unclassified service account.
+    const revalidation = revalidateAliases({ aliases, accounts, roster });
+    const suspended = await suspendAliases(
+        ctx,
+        snapshot.connectionId,
+        revalidation.suspensions,
+        now
+    );
+
     // Step 4a's scorers and blockers. Passed in rather than imported by the
     // engine, which is what keeps the engine's `LINKED` guarantee a type-level
     // property: a `CandidateScorer` returns `SupportingSignal`, so nothing here
@@ -259,7 +284,7 @@ export async function runLegacyReconcile(
         accounts,
         roster,
         directory,
-        aliases,
+        aliases: revalidation.surviving,
         now: now.toISOString(),
         config: { scorers, blockers },
     });
@@ -301,6 +326,27 @@ export async function runLegacyReconcile(
         provider: LEGACY_MCP_PROVIDER_ID,
         byOutcome: result.metrics.byOutcome,
     });
+
+    // Tallied from the VERDICTS, then reconciled against the rows that actually
+    // moved. A tenant-scoped `updateMany` that matches nothing succeeds, and
+    // under RLS "no such row" and "not visible to this tenant" are the same
+    // return — so a verdict count that exceeds the moved count is the only
+    // signal that something was decided and not applied.
+    if (revalidation.suspensions.length > 0) {
+        const byReason: Record<string, number> = {};
+        for (const s of revalidation.suspensions) {
+            byReason[s.reason as string] = (byReason[s.reason as string] ?? 0) + 1;
+        }
+        recordLegacyAliasSuspensions({ provider: LEGACY_MCP_PROVIDER_ID, byReason });
+
+        if (suspended !== revalidation.suspensions.length) {
+            logger.warn('alias suspensions decided and applied disagree', {
+                executionId,
+                decided: revalidation.suspensions.length,
+                applied: suspended,
+            });
+        }
+    }
 
     logger.info('legacy reconcile complete', {
         component: 'legacy-access',
@@ -453,18 +499,93 @@ async function readDirectory(
     });
 }
 
-/** Active aliases for this connection. READ ONLY in this step — Step 4b writes them. */
+/**
+ * Active aliases for this connection, in the shape revalidation needs.
+ *
+ * `confirmedAt` is selected because it is the baseline for the
+ * `ACCOUNT_RECREATED` trigger — an account whose `createdAt` postdates the
+ * confirmation can only have been remade, since the confirmer was looking at a
+ * snapshot in which it already existed.
+ */
 async function readAliases(
     ctx: RequestContext,
     connectionId: string
-): Promise<readonly ConfirmedAlias[]> {
+): Promise<readonly AliasUnderReview[]> {
     const rows = await runInTenantContext(ctx, (db) =>
         db.legacyIdentityAlias.findMany({
-            where: { tenantId: ctx.tenantId, connectionId, status: 'ACTIVE' },
-            select: { accountKey: true, employeeId: true },
+            where: {
+                tenantId: ctx.tenantId,
+                connectionId,
+                status: 'ACTIVE',
+                // EMPLOYEE only. The other three classifications are statements
+                // about what the account IS — a service account, an external
+                // human, an unattributable login — and none of them links it to
+                // a person on the roster.
+                //
+                // Step 4b part 2 made `employeeId` nullable to hold them, and
+                // this filter is what that nullability cost: without it a
+                // NON_PERSON row reaches the engine as a `ConfirmedAlias` whose
+                // employeeId is null, and the fix that suggests itself at the
+                // mapping step is a cast. The database constraint
+                // `LegacyIdentityAlias_classification_shape` guarantees the
+                // converse — an EMPLOYEE row always HAS one — so after this
+                // filter the non-null assertion below is a fact about the
+                // schema rather than a hope.
+                classification: 'EMPLOYEE',
+            },
+            select: { accountKey: true, employeeId: true, confirmedAt: true },
         })
     );
-    return rows;
+    return rows.map((r) => ({
+        accountKey: r.accountKey,
+        // Guaranteed non-null by the CHECK constraint for classification
+        // EMPLOYEE, which is the only classification this query returns.
+        employeeId: r.employeeId as string,
+        confirmedAt: r.confirmedAt.toISOString(),
+    }));
+}
+
+/**
+ * Suspend the aliases revalidation found doubtful.
+ *
+ * Idempotent by its `where`: it only moves rows that are still `ACTIVE`, so a
+ * retried run cannot overwrite a `suspendedAt` recorded by the first attempt
+ * with a later clock. The reason is a CODE from
+ * {@link SUSPENSION_REASONS}, not prose, because "how often does recreation
+ * happen" has to be answerable from the column.
+ */
+async function suspendAliases(
+    ctx: RequestContext,
+    connectionId: string,
+    suspensions: readonly AliasVerdict[],
+    at: Date
+): Promise<number> {
+    let moved = 0;
+    for (const s of suspensions) {
+        const r = await runInTenantContext(
+            ctx,
+            (db) =>
+                db.legacyIdentityAlias.updateMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        connectionId,
+                        accountKey: s.accountKey,
+                        status: 'ACTIVE',
+                    },
+                    data: {
+                        status: 'SUSPENDED',
+                        suspendedReason: s.reason,
+                        suspendedAt: at,
+                    },
+                }),
+            SYNC_WRITE_TX_OPTIONS
+        );
+        // The COUNT, not the fact that the call returned. A tenant-scoped
+        // update that matches nothing succeeds and changes nothing, and under
+        // RLS that is indistinguishable from a row this tenant cannot see.
+        moved += r.count;
+    }
+    return moved;
 }
 
 /** The adopted username convention, if the connection has one. */
