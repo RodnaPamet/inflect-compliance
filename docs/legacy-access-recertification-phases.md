@@ -12,27 +12,59 @@ No step has started. What exists today — and what is missing — is described 
 the design document's `## Current state (true today)` section; this document does not
 restate it.
 
-| Step | Title | Status | Pull request |
-| --- | --- | --- | --- |
-| 0a | Guard the directory tables against a second writer | Merged | #3247 |
-| 0b | Persist directory login names | Merged | #3273 |
-| 0c | Persist structured HR names and real employee numbers | Merged | #3277 |
-| 1a | Publish the contract and a fake server | Merged | #3257 |
-| 1b | The MCP client | Merged | #3293 |
-| 1c | Register the `legacy-mcp` provider | Open | #3306 |
-| 2a | Snapshot models and a fail-closed pull | Not started | — |
-| 2b | Mapping UI and suggestions | Not started | — |
-| 3a | Normalisation library and labelled corpus | Merged | #3267 |
-| 3b | The deterministic engine and the precision ratchet | Merged | #3286 |
-| 3c | Persist results and the crosswalk | Not started | — |
-| 4a | Naming conventions and similarity | Merged | #3296 |
-| 4b | Review queue and alias revalidation | Not started | — |
-| 5a | Harden the existing access-review flows | Merged | #3272 |
-| 5b | Legacy recertification campaigns | Not started | — |
-| 6a | Register TypeSafe as a proposed sub-processor | Merged | #3246 |
-| 6b | Decision-model client and evaluation harness | Merged | #3288 |
-| 6c | Adjudication in the run, and the review lanes | Not started | — |
-| 6d | Turn it on | Not started | — |
+<!--
+    NO `Status` COLUMN. It used to be here and it was derived data stored beside
+    its own source, which is a shape this repo has already been bitten by — see
+    CLAUDE.md on why the per-class `counts` header was deleted from
+    docs/_status/doc-classification.json.
+
+    Two things went wrong, and the second was worse than the first:
+
+    1. Each step's own pull request set its own row to `Open`, which was true at
+       the moment of writing. MERGING that branch is what made the row false, so
+       the commit that falsified the row was the commit that added it. 5 of 19
+       rows were wrong when this was removed.
+
+    2. Every concurrent step edited the SAME rows, so the table conflicted on
+       nearly every pair — three times in one day — and each resolution had the
+       same shape: both sides were stale snapshots, so the right answer came from
+       neither and every row had to be re-read from GitHub anyway.
+
+    The pull request number is NOT derived — it is the fact. Derive the status
+    from it when you want it:
+
+        gh pr view <N> --json state -q .state
+
+    Or for the whole table at once:
+
+        grep -oE '#[0-9]+' docs/legacy-access-recertification-phases.md \
+          | tr -d '#' | sort -un \
+          | xargs -I{} gh pr view {} --json number,state \
+              -q '"#\(.number) \(.state)"'
+
+    Guarded by tests/guards/recert-phases-no-derived-status.test.ts.
+-->
+| Step | Title | Pull request |
+| --- | --- | --- |
+| 0a | Guard the directory tables against a second writer | #3247 |
+| 0b | Persist directory login names | #3273 |
+| 0c | Persist structured HR names and real employee numbers | #3277 |
+| 1a | Publish the contract and a fake server | #3257 |
+| 1b | The MCP client | #3293 |
+| 1c | Register the `legacy-mcp` provider | #3306 |
+| 2a | Snapshot models and a fail-closed pull | #3318 |
+| 2b | Mapping UI and suggestions | #3332 |
+| 3a | Normalisation library and labelled corpus | #3267 |
+| 3b | The deterministic engine and the precision ratchet | #3286 |
+| 3c | Persist results and the crosswalk | #3338 |
+| 4a | Naming conventions and similarity | #3296 |
+| 4b | Review queue and alias revalidation | #3344 (part 1) |
+| 5a | Harden the existing access-review flows | #3272 |
+| 5b | Legacy recertification campaigns | — |
+| 6a | Register TypeSafe as a proposed sub-processor | #3246 |
+| 6b | Decision-model client and evaluation harness | #3288 |
+| 6c | Adjudication in the run, and the review lanes | — |
+| 6d | Turn it on | — |
 
 ## Roadmap (future direction)
 
