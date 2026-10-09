@@ -195,6 +195,25 @@ describe('an attributable refusal is audited; an unattributable one cannot be', 
         expect(entry.detailsJson).toEqual({ endpoint: 'entra-grant', reason: 'secret_mismatch' });
     });
 
+    it('an OAuth-shadowed connection is audited by that name, not as a mismatch', async () => {
+        // The diagnosability this refusal exists for (#3340). If the trail
+        // said `secret_mismatch`, an operator reading it would go and check a
+        // secret that is correct; the cause is two credentials where only one
+        // is sent, and the row has to say so for anyone to find it.
+        authMock.mockResolvedValue({
+            ok: false,
+            refusal: { kind: 'oauth_shadows_static', attributable: true, tenantId: 'tenant-A' },
+        });
+        await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        expect(auditMock).toHaveBeenCalledTimes(1);
+        const entry = auditMock.mock.calls[0][0] as Record<string, unknown>;
+        expect(entry.action).toBe('AUTHZ_DENIED');
+        expect(entry.detailsJson).toEqual({
+            endpoint: 'entra-grant',
+            reason: 'oauth_shadows_static',
+        });
+    });
+
     it('the audit row carries NO part of the presented credential', async () => {
         authMock.mockResolvedValue({
             ok: false,

@@ -88,6 +88,16 @@ export type GrantAuthRefusal =
     | { readonly kind: 'disabled'; readonly attributable: true; readonly tenantId: string }
     /** Found, enabled, and carries no token to compare against. */
     | { readonly kind: 'no_stored_token'; readonly attributable: true; readonly tenantId: string }
+    /**
+     * Found, enabled, and configured for OAuth — so the stored static secret
+     * is NOT what the dispatch sends, and comparing against it is comparing
+     * two unrelated credentials (#3340).
+     */
+    | {
+          readonly kind: 'oauth_shadows_static';
+          readonly attributable: true;
+          readonly tenantId: string;
+      }
     /** Found, enabled, token present, secret WRONG. The one that matters. */
     | { readonly kind: 'secret_mismatch'; readonly attributable: true; readonly tenantId: string };
 
@@ -160,6 +170,13 @@ export function describeGrantAuthRefusal(r: GrantAuthRefusal): string {
                 'That connection has no authorization secret stored, so there is nothing to '
                 + 'authenticate against. Set one on the connection.'
             );
+        case 'oauth_shadows_static':
+            return (
+                'That connection is configured for OAuth, so the dispatch sends a minted '
+                + 'access token rather than the stored authorization secret. There is nothing '
+                + 'to compare. Remove the OAuth fields or the static secret, whichever this '
+                + 'server does not use.'
+            );
         case 'secret_mismatch':
             return 'The credential is not valid for that connection.';
         default: {
@@ -206,6 +223,7 @@ export async function authenticateGrantCaller(
             name: true,
             provider: true,
             isEnabled: true,
+            configJson: true,
             secretEncrypted: true,
         },
     });
@@ -225,18 +243,10 @@ export async function authenticateGrantCaller(
         };
     }
 
-    let stored = '';
+    let secrets: Record<string, unknown> = {};
     if (row.secretEncrypted) {
         try {
-            const secrets = JSON.parse(decryptField(row.secretEncrypted)) as Record<
-                string,
-                unknown
-            >;
-            // The SAME field the dispatch sends as its Authorization header, so
-            // one value is configured once and both sides read it. A second
-            // field would be two chances to disagree about the same secret.
-            const raw = secrets.authorization;
-            stored = typeof raw === 'string' ? raw.replace(/^Bearer\s+/i, '').trim() : '';
+            secrets = JSON.parse(decryptField(row.secretEncrypted)) as Record<string, unknown>;
         } catch (err) {
             // A decrypt failure is NOT a mismatch. Reporting it as one would
             // tell an operator their token is wrong when their key is.
@@ -252,6 +262,52 @@ export async function authenticateGrantCaller(
             };
         }
     }
+
+    // ── Is this connection even sending the secret we are about to compare? (#3340)
+    //
+    // `authorizationFor` takes its OAuth branch if ANY of four fields is set
+    // and then never reads `secrets.authorization`. So for such a connection
+    // the dispatch sends a minted access token while this function compares
+    // the stored static value: two unrelated credentials, each side correct,
+    // `secret_mismatch` written to the audit trail, and nothing anywhere
+    // naming the cause. #3330's mint refuses to create this state and
+    // `mcp-server-provider.validateConnection` now refuses to save it, but
+    // neither repairs a row that already has both — and this is the point
+    // where that row stops being diagnosable, so it is named here.
+    //
+    // All FOUR fields are checked, across BOTH sources: `tenantId` and
+    // `clientId` live on `configJson` and only `clientSecret` and
+    // `refreshToken` are secrets. An earlier version of this check looked at
+    // secrets alone and missed the one real connection that had the other
+    // shape.
+    const config =
+        typeof row.configJson === 'object' && row.configJson !== null
+        && !Array.isArray(row.configJson)
+            ? (row.configJson as Record<string, unknown>)
+            : {};
+    const filled = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
+    if (
+        filled(config.tenantId)
+        || filled(config.clientId)
+        || filled(secrets.clientSecret)
+        || filled(secrets.refreshToken)
+    ) {
+        return {
+            ok: false,
+            refusal: {
+                kind: 'oauth_shadows_static',
+                attributable: true,
+                tenantId: row.tenantId,
+            },
+        };
+    }
+
+    // The SAME field the dispatch sends as its Authorization header, so one
+    // value is configured once and both sides read it. A second field would be
+    // two chances to disagree about the same secret.
+    const rawStored = secrets.authorization;
+    const stored =
+        typeof rawStored === 'string' ? rawStored.replace(/^Bearer\s+/i, '').trim() : '';
     if (stored === '') {
         return {
             ok: false,

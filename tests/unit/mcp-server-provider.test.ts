@@ -106,6 +106,75 @@ describe('validating a connection', () => {
         expect(initializeMock).not.toHaveBeenCalled();
     });
 
+    /**
+     * Two credentials where only one is ever sent (#3340).
+     *
+     * `authorizationFor` takes its OAuth branch if ANY of four fields is set
+     * and then never reads `secrets.authorization`. Saving both is therefore
+     * saving a connection whose static secret is dead weight — harmless for a
+     * plain tool call, and for the grant endpoint (#3323) the cause of a
+     * permanent, undiagnosable failure: that endpoint authenticates by
+     * comparing the presented bearer against the stored static value, so the
+     * two sides end up comparing unrelated credentials while each behaves
+     * correctly.
+     *
+     * Refused here rather than in the form because the API reaches this and
+     * the form does not cover it.
+     */
+    it.each([
+        ['tenantId on the config', { tenantId: 'a-tenant-guid' }, {}],
+        ['clientId on the config', { clientId: 'an-app-guid' }, {}],
+        // pragma: allowlist nextline secret -- test fixture
+        ['clientSecret in the secrets', {}, { clientSecret: 'a-client-secret' }],
+        // pragma: allowlist nextline secret -- test fixture
+        ['refreshToken in the secrets', {}, { refreshToken: 'a-refresh-token' }],
+    ])(
+        'refuses a static Authorization alongside %s, before reaching the network',
+        async (_label, extraConfig, extraSecrets) => {
+            const r = await provider.validateConnection(
+                { ...CONFIG, ...extraConfig },
+                { authorization: 'Bearer a-pasted-token', ...extraSecrets },
+            );
+
+            expect(r.valid).toBe(false);
+            expect(r.error).toMatch(/both/i);
+            // The point of refusing at save time is that nobody has to
+            // discover this from a live call.
+            expect(initializeMock).not.toHaveBeenCalled();
+        },
+    );
+
+    it('names WHICH OAuth field collided, so the operator knows what to clear', async () => {
+        const r = await provider.validateConnection(
+            { ...CONFIG, tenantId: 'a-tenant-guid' },
+            { authorization: 'Bearer a-pasted-token' },
+        );
+
+        expect(r.error).toContain('tenantId');
+        // Never the credential itself.
+        expect(r.error).not.toContain('a-pasted-token');
+    });
+
+    it('allows a static Authorization on its own', async () => {
+        const r = await provider.validateConnection(CONFIG, {
+            authorization: 'Bearer a-pasted-token',
+        });
+
+        expect(r.valid).toBe(true);
+    });
+
+    it('treats blank OAuth fields as absent, so a form posting every key still saves', async () => {
+        // An integrations form submits '' for the fields left empty. Reading
+        // those as "configured" would refuse every static-secret connection
+        // saved through that form.
+        const r = await provider.validateConnection(
+            { ...CONFIG, tenantId: '', clientId: '   ' },
+            { authorization: 'Bearer a-pasted-token', clientSecret: '' },
+        );
+
+        expect(r.valid).toBe(true);
+    });
+
     it('fails when the catalogue read fails, not just the handshake', async () => {
         // A server that answers `initialize` and then refuses `tools/list`
         // would be reported as fine and found empty. The catalogue read is
