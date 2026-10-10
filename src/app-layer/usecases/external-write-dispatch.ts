@@ -136,6 +136,11 @@ export const ASYNC_DELIVERY_TOOLS: ReadonlySet<string> = new Set([
     // at 07:07:11Z with `state = submitted/Accepted`; the assignment reached
     // `delivered/Fulfilled` at 07:10:20Z, 3m09s later.
     'grant_time_bounded_access',
+    // The withdrawal goes through the SAME `assignmentRequests` pipeline as
+    // the grant, so it is accepted and delivered on the same two clocks
+    // (#3374). Declaring it here is what stops it settling APPLIED on the
+    // strength of a 200 that only means "request taken".
+    'revoke_access_assignment',
 ]);
 
 export interface ExternalWriteDispatchResult {

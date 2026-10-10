@@ -132,7 +132,15 @@ function assignmentIds(result: unknown): ReadonlySet<string> | null {
 
     const ids = new Set<string>();
     for (const a of all) {
-        const id = a && typeof a === 'object' ? (a as { id?: unknown }).id : null;
+        // `assignmentId`, NOT `id`. The serialised shape is
+        // `AccessAssignmentState`, and reading `.id` found nothing in every
+        // real answer — so both sides compared as empty sets, every verdict
+        // was `not_yet`, and NOTHING WOULD EVER HAVE BEEN PROMOTED. The tests
+        // passed because the fixture was written to match this extractor
+        // instead of the type the endpoint actually returns, which is the
+        // "fixture that cannot produce the failing input" trap. Found while
+        // building #3374's inverse verifier against the real interface.
+        const id = a && typeof a === 'object' ? (a as { assignmentId?: unknown }).assignmentId : null;
         if (typeof id === 'string' && id !== '') ids.add(id);
     }
     return ids;
@@ -169,6 +177,38 @@ const entraAssignmentAppeared: DeliveryVerifier = (prior, current) => {
 };
 
 /**
+ * An assignment that WAS there has gone (#3374).
+ *
+ * The exact inverse of `entraAssignmentAppeared`, and it has to be its own
+ * function rather than a flag: "something appeared" and "something vanished"
+ * are different questions about the same two reads, and a shared one with a
+ * direction parameter would be a single place to get both wrong.
+ *
+ * Reads `all`, not `live`, for the same reason the grant's verifier does — and
+ * here the reason is sharper. A withdrawn assignment may still be LISTED by
+ * Graph with `state: expired` rather than disappearing outright; what matters
+ * is that the id the write targeted is no longer in the set. Comparing `live`
+ * would also report success the moment an assignment merely lapsed on its own
+ * schedule, crediting our withdrawal with an expiry that would have happened
+ * anyway.
+ */
+const entraAssignmentDisappeared: DeliveryVerifier = (prior, current) => {
+    const before = assignmentIds(prior);
+    if (before === null) return 'unreadable';
+    const now = assignmentIds(current);
+    if (now === null) return 'unreadable';
+    // Nothing was there to remove. Not 'delivered': an empty prior state means
+    // the write had no subject, and `revokeAccessAssignment` refuses that case
+    // before sending — so reaching here means the row predates that guard or
+    // the read is answering about something else.
+    if (before.size === 0) return 'unreadable';
+    for (const id of before) {
+        if (!now.has(id)) return 'delivered';
+    }
+    return 'not_yet';
+};
+
+/**
  * Advertised tool name -> how to recognise its delivery.
  *
  * Keyed on the ADVERTISED name, matching `ASYNC_DELIVERY_TOOLS`, so the two
@@ -176,6 +216,7 @@ const entraAssignmentAppeared: DeliveryVerifier = (prior, current) => {
  */
 export const DELIVERY_VERIFIERS: ReadonlyMap<string, DeliveryVerifier> = new Map([
     ['grant_time_bounded_access', entraAssignmentAppeared],
+    ['revoke_access_assignment', entraAssignmentDisappeared],
 ]);
 
 export interface ExternalWriteReconcileResult {

@@ -40,6 +40,11 @@ import {
     reconcileAcceptedExternalWrites,
 } from '@/app-layer/usecases/external-write-reconcile';
 import { ASYNC_DELIVERY_TOOLS } from '@/app-layer/usecases/external-write-dispatch';
+// TYPED on purpose. The fixture below used to invent its own `{ id }` shape,
+// which matched the extractor and NOT the endpoint — so the verifier read
+// nothing from every real answer and no test could see it. Importing the real
+// interface makes a field rename a compile error here.
+import type { AccessAssignmentState } from '@/app-layer/integrations/providers/entra-id/entitlement';
 
 const T = 'tenant-x';
 const CONN = 'cmconnaaaaaaaaaaaaaaaaaa';
@@ -62,7 +67,15 @@ const readResult = (ids: string[]) => ({
             type: 'text',
             text: JSON.stringify({
                 assignments: {
-                    all: ids.map((id) => ({ id, state: 'expired', liveness: 'inactive' })),
+                    all: ids.map(
+                        (assignmentId): AccessAssignmentState => ({
+                            assignmentId,
+                            accessPackageId: 'pkg-1',
+                            state: 'expired',
+                            endDateTime: '2026-10-09T13:43:49.973Z',
+                            liveness: 'inactive',
+                        }),
+                    ),
                     live: [],
                 },
             }),

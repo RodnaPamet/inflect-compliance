@@ -68,15 +68,23 @@ const readMock = jest.fn(async (_ctx: unknown, _args: unknown) => ({
     ok: true as const,
     assignments: [] as unknown[],
 }));
+const revokeMock = jest.fn(async (_ctx: unknown, _input: unknown) => ({
+    ok: true as const,
+    requestId: 'req-rev',
+}));
 jest.mock('@/app-layer/usecases/entra-grant-dispatch', () => ({
     ...jest.requireActual('@/app-layer/usecases/entra-grant-dispatch'),
     grantTimeBoundedAccess: (c: unknown, i: unknown, n?: Date) => grantMock(c, i, n),
     readAccessAssignments: (c: unknown, a: unknown) => readMock(c, a),
+    // #3374. This module is PARTIALLY mocked, so a new export has to be added
+    // here too: without it the route reaches `undefined` and fails with
+    // "is not a function" at call time rather than at import.
+    revokeAccessAssignment: (c: unknown, i: unknown) => revokeMock(c, i),
 }));
 
 import { NextRequest } from 'next/server';
 
-import { POST, GRANT_TOOL, READ_TOOL } from '@/app/api/mcp/entra-grant/route';
+import { POST, GRANT_TOOL, READ_TOOL, REVOKE_TOOL } from '@/app/api/mcp/entra-grant/route';
 import { declaresWrite } from '@/lib/mcp/tool-write-classification';
 import { MAX_GRANT_DAYS } from '@/app-layer/integrations/providers/entra-id/entitlement';
 
@@ -268,7 +276,7 @@ describe('an attributable refusal is audited; an unattributable one cannot be', 
 // 3. WHAT IT ADVERTISES
 // ═════════════════════════════════════════════════════════════════════
 
-describe('the catalogue is exactly two tools, correctly classified', () => {
+describe('the catalogue is exactly three tools, correctly classified', () => {
     async function listTools() {
         const res = await call({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
         const body = await res.json();
@@ -279,10 +287,37 @@ describe('the catalogue is exactly two tools, correctly classified', () => {
         }>;
     }
 
-    it('advertises TWO tools and no more', async () => {
+    it('advertises THREE tools and no more', async () => {
+        // Pinned by COUNT and by NAME. #3374 added the withdrawal, and this
+        // assertion is what made that deliberate rather than incidental: a
+        // tool arriving on this endpoint is a new thing a model can be asked
+        // to do against a customer's directory.
         const tools = await listTools();
-        expect(tools).toHaveLength(2);
-        expect(tools.map((t) => t.name).sort()).toEqual([GRANT_TOOL, READ_TOOL].sort());
+        expect(tools).toHaveLength(3);
+        expect(tools.map((t) => t.name).sort()).toEqual(
+            [GRANT_TOOL, REVOKE_TOOL, READ_TOOL].sort(),
+        );
+    });
+
+    it('the withdrawal classifies as a WRITE, and says so DESTRUCTIVELY', async () => {
+        // Both are writes; only one removes access, and `destructiveHint` is
+        // the field a client uses to decide whether to confirm with a human.
+        // The PAIR is the point — a client treating them alike would either
+        // confirm every grant or confirm no withdrawal.
+        const tools = await listTools();
+        const revoke = tools.find((t) => t.name === REVOKE_TOOL)!;
+        expect(declaresWrite(revoke.annotations)).toBe(true);
+        expect(revoke.annotations?.destructiveHint).toBe(true);
+        expect(tools.find((t) => t.name === GRANT_TOOL)!.annotations?.destructiveHint).toBe(false);
+    });
+
+    it("the withdrawal's description names both refusals a caller will hit", async () => {
+        // Pinned material a human accepts. A model told only "ends access now"
+        // will retry a refusal it cannot interpret; these two are the ones it
+        // will actually meet.
+        const revoke = (await listTools()).find((t) => t.name === REVOKE_TOOL)!;
+        expect(revoke.description).toMatch(/no live assignment/i);
+        expect(revoke.description).toMatch(/more than one/i);
     });
 
     it('the grant classifies as a WRITE under the real predicate', async () => {
@@ -296,7 +331,7 @@ describe('the catalogue is exactly two tools, correctly classified', () => {
         expect(read.annotations?.readOnlyHint).toBe(true);
     });
 
-    it('both tools declare readOnlyHint EXPLICITLY, neither by default', async () => {
+    it('every tool declares readOnlyHint EXPLICITLY, none by default', async () => {
         for (const t of await listTools()) {
             expect(t.annotations).toBeDefined();
             expect(Object.hasOwn(t.annotations!, 'readOnlyHint')).toBe(true);

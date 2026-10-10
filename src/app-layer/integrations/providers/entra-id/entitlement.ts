@@ -607,6 +607,74 @@ export function createEntraEntitlementClient(options: EntitlementClientOptions) 
         },
 
         /**
+         * THE OTHER WRITE: ask Entra to end an assignment NOW (#3374).
+         *
+         * ═══ IT TAKES THE ASSIGNMENT ID, NOT THE TRIPLE ═══
+         *
+         * `adminAdd` is addressed by target + package + policy because the
+         * assignment does not exist yet. `adminRemove` is addressed by the
+         * ASSIGNMENT's own id, because by then it does. That asymmetry is
+         * Graph's, not ours, and it is why the caller resolves the id from the
+         * live read rather than passing the same triple twice — see
+         * `revokeAccessAssignment`, which also refuses when there is nothing
+         * live to remove or more than one candidate.
+         *
+         * ═══ NO SCHEDULE, AND THEREFORE NO expiryRefusal ═══
+         *
+         * A removal has no expiration to bound, so none of
+         * `expiryRefusal`'s clauses apply: there is no end date to require, to
+         * parse, to place in the future or to cap at `MAX_GRANT_DAYS`. Sending
+         * a `schedule` here would be asking Entra to schedule a withdrawal,
+         * which is a different feature and not what this is.
+         *
+         * ═══ UNCONFIRMED AGAINST A REAL TENANT ═══
+         *
+         * Stated because it matters: this repo has no `adminRemove` precedent,
+         * and the shape below is taken from Graph's documentation rather than
+         * from a run. #3311 is the standard this path is held to — the
+         * `adminAdd` behaviour was only trusted after a measured grant — and
+         * #3374 carries the same requirement for this verb. Until that run
+         * exists, treat a success here as "Graph accepted the request", which
+         * is all `requestId` ever meant anyway: delivery is asynchronous and
+         * the reconcile pass is what confirms it.
+         */
+        async requestAssignmentRemoval(input: {
+            readonly assignmentId: string;
+            readonly justification?: string;
+        }): Promise<{ requestId: string }> {
+            const res = await graph(
+                'POST',
+                '/identityGovernance/entitlementManagement/assignmentRequests',
+                {
+                    requestType: 'adminRemove',
+                    assignment: { id: input.assignmentId },
+                    ...(input.justification === undefined
+                        ? {}
+                        : { justification: input.justification }),
+                },
+            );
+            if (!res.ok) {
+                throw new Error(
+                    `Entra assignment removal failed (${graphErrorCode(res.status, res.text)})`,
+                );
+            }
+            const parsed = JSON.parse(res.text || '{}') as { id?: unknown };
+            if (typeof parsed.id !== 'string' || parsed.id === '') {
+                // Same reasoning as the grant's: Graph took the request and
+                // gave us nothing to follow up with. The removal may well have
+                // happened, and recording "no id" as "no removal" would be
+                // wrong in the direction that leaves access in place while the
+                // journal says it was withdrawn.
+                throw new Error(
+                    'Entra accepted the removal request but returned no id, so the request '
+                        + 'cannot be tracked. The assignment may have been removed — reconcile '
+                        + 'against readAssignments before retrying.',
+                );
+            }
+            return { requestId: parsed.id };
+        },
+
+        /**
          * DISCOVERY: the access packages this tenant has (#3329).
          *
          * Measured app-only against a licensed tenant:
