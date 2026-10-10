@@ -61,24 +61,14 @@ const REQUIRED_AGREES_PRECISION = 1;
 
 // ─── The record shape ──────────────────────────────────────────────────────
 
-interface RecordedAnswer {
-    readonly caseId: string;
-    readonly option: string;
-    readonly optionProbability: number;
-    readonly personProbability: number;
-}
-
-interface EvaluationRecord {
-    readonly model: string;
-    readonly revision: string;
-    readonly corpusDigest: string;
-    readonly producedAt: string;
-    readonly answers: readonly RecordedAnswer[];
-    readonly thresholds: { readonly agreeAt: number; readonly personAt: number };
-    readonly classSupport: Readonly<Record<string, number>>;
-    readonly precision: { readonly agrees: number };
-    readonly canaries: readonly RecordedAnswer[];
-}
+// MOVED TO `src/` in Step 6c, and imported rather than redeclared.
+//
+// A type defined only in a test cannot be read by production code, and 6c has
+// to read these records to derive a verdict. Two declarations of one shape is
+// the thing that eventually disagrees — and the shape also gained two
+// thresholds in 6c (`nonPersonAt`, `agreeMargin`), which this test must see so
+// it can recompute against them.
+import type { EvaluationRecord, RecordedAnswer } from '@/app-layer/ai/identity-match/evaluation-record';
 
 // ─── Recomputation — the auditor's own arithmetic ───────────────────────────
 

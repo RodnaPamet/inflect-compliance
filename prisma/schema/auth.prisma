@@ -307,6 +307,8 @@ model Tenant {
   legacyAccounts        LegacyAccount[]
 
   legacyAccountResolutions LegacyAccountResolution[]
+
+  legacyMatchVerdicts      LegacyMatchVerdict[]
   legacyIdentityAliases    LegacyIdentityAlias[]
 
 }
