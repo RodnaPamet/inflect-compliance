@@ -355,6 +355,23 @@ model LegacyMatchVerdict {
   /// server and is deliberately not stored here: a verdict row that named
   /// employees would be a second, weaker copy of the resolution's own evidence.
   probabilitiesJson Json?
+  /// The letter-to-employee mapping, so the row explains its own probabilities.
+  ///
+  /// WITHOUT THIS A `PROPOSES` VERDICT IS UNACTIONABLE. `probabilitiesJson` is
+  /// keyed by the SHUFFLED letters actually sent, which is the right audit
+  /// record of what the model was asked — and on its own it says "the model
+  /// picked C" with nothing able to say who C was.
+  ///
+  /// Not re-derivable in practice, although the shuffle is deterministic: the
+  /// permutation is a hash over the account key and each employee id, so
+  /// recomputing it needs the SAME candidate set, and that set is the one
+  /// surviving a budget trim whose size depends on the model. A roster change
+  /// between the run and the review would silently re-letter the row.
+  ///
+  /// "Letters, not ids" is a rule about the PAYLOAD — the mapping never leaves
+  /// Inflect — and this column does not leave Inflect either. The row is
+  /// already classed PII subject in docs/data-retention.md.
+  labellingJson     Json?
   /// P(the subject is a person at all).
   personProbability Float?
   /// The top option's probability, and its gap to the runner-up. Stored rather

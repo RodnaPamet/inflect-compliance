@@ -1,0 +1,12 @@
+-- The letter-to-employee mapping for a stored verdict.
+--
+-- `probabilitiesJson` is keyed by the shuffled letters that were actually sent,
+-- which is the correct audit record of the question the model was asked. On its
+-- own it is not interpretable: a PROPOSES verdict says "the model picked C" and
+-- nothing in the row can say who C was, so the queue cannot offer the pick to a
+-- reviewer and the verdict is unactionable.
+--
+-- Nullable, and that is deliberate rather than convenience: a NON-VERDICT row
+-- carries a reason and no probabilities, so it has no letters to map, and a
+-- row written before a payload could be built never had a labelling at all.
+ALTER TABLE "LegacyMatchVerdict" ADD COLUMN "labellingJson" JSONB;

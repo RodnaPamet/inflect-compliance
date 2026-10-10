@@ -675,7 +675,7 @@ export async function runLegacyReconcileJob(input: {
     readonly triggeredBy?: string;
 }): Promise<ReconcileResult> {
     const ctx = buildSystemContext({ tenantId: input.tenantId, job: 'legacy-reconcile' });
-    return runLegacyReconcile(ctx, {
+    const result = await runLegacyReconcile(ctx, {
         snapshotId: input.snapshotId,
         // 'manual' and not 'job': every caller is an administrator pressing a
         // button, exactly as the pull's is. A 'job' default would be a value
@@ -683,6 +683,47 @@ export async function runLegacyReconcileJob(input: {
         // a human act from a sweep — so a wrong one is a wrong answer to that.
         triggeredBy: input.triggeredBy ?? 'manual',
     });
+
+    // -- Adjudication, AFTER the results are committed ----------------------
+    //
+    // Here and not inside `runLegacyReconcile`, which is what makes "never in
+    // an HTTP request" STRUCTURAL rather than a convention: a request can only
+    // reach the run, and the run cannot reach a model.
+    //
+    // A refusal is not adjudicated. The run wrote no resolutions, so there is
+    // nothing to annotate.
+    //
+    // Deliberately NOT allowed to fail the run. The resolutions are on disk and
+    // adjudication only ever ADDS annotations, so the worst case is a queue that
+    // looks exactly as it would with the mode OFF - the designed fail-closed
+    // state. Letting this throw would discard a completed run.
+    if (result.status === 'RESOLVED' && result.executionId) {
+        try {
+            const { adjudicateResidue } = await import('./legacy-adjudication');
+            const adjudication = await adjudicateResidue({
+                tenantId: input.tenantId,
+                executionId: result.executionId,
+            });
+            if (adjudication.ran) {
+                logger.info('legacy-reconcile: residue adjudicated', {
+                    component: 'legacy-reconcile',
+                    executionId: result.executionId,
+                    considered: adjudication.considered,
+                    written: adjudication.written,
+                    canaryPassed: adjudication.canaryPassed,
+                    skippedNoCandidates: adjudication.skippedNoCandidates,
+                });
+            }
+        } catch (err) {
+            logger.warn('legacy-reconcile: adjudication failed, run stands', {
+                component: 'legacy-reconcile',
+                executionId: result.executionId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+
+    return result;
 }
 
 /**
