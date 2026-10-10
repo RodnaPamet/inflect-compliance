@@ -291,6 +291,107 @@ export async function grantTimeBoundedAccess(
     return { ok: true, requestId: result.requestId };
 }
 
+/**
+ * END AN ASSIGNMENT NOW, rather than waiting for its end date (#3374).
+ *
+ * ═══ WHY THIS EXISTS AS ITS OWN VERB ═══
+ *
+ * #3297 deliberately built no revocation: the goal ended "and expires on its
+ * own", and #3311 measured that Entra does exactly that. What it did not give
+ * anybody is a way to end a grant EARLY — a mistaken grant, a withdrawn
+ * approval, a subject who changed role on Tuesday.
+ *
+ * The tempting shortcut is re-granting with an earlier end date, and it is
+ * closed in two independent ways: whether `adminAdd` replaces rather than adds
+ * is unconfirmed (this file says so above), and `runsLongerThanRequested`
+ * exists precisely to REFUSE a grant shorter than an existing holding. Both of
+ * those are right. Early termination needs its own verb, not a grant wearing
+ * one.
+ *
+ * ═══ THE PRECONDITION IS THE INVERSE OF THE GRANT'S ═══
+ *
+ * `grantTimeBoundedAccess` reads `live` to refuse when the subject ALREADY has
+ * longer access. This reads `live` to refuse when the subject has NONE. Same
+ * field, opposite purpose, and both are about not sending a request whose
+ * outcome nobody could interpret.
+ *
+ * Refusing the no-holding case is not politeness. A removal of something not
+ * held changes nothing at the far end, so the journal row would settle
+ * `ACCEPTED` and the reconcile pass would never observe a disappearance —
+ * leaving a row that says "not yet known" for ever. That is the #3334 defect
+ * reintroduced through a new door, and the cheapest place to stop it is before
+ * the request goes out.
+ *
+ * ═══ AND IT REFUSES MORE THAN ONE RATHER THAN CHOOSING ═══
+ *
+ * A subject can hold one package under two policies, which is two live
+ * assignments and two different things "revoke it" could mean. Picking the
+ * first would be a silent choice about somebody's access, so the refusal names
+ * the count and asks for the assignment to be identified. `adminRemove` is
+ * addressed by assignment id, so there is nothing to guess with.
+ */
+export async function revokeAccessAssignment(
+    ctx: RequestContext,
+    input: {
+        readonly targetId: string;
+        readonly accessPackageId: string;
+        readonly justification?: string;
+    },
+    now: Date = new Date(),
+): Promise<GrantOutcome> {
+    // NO `expiryRefusal`. A removal carries no end date, so every clause of it
+    // — required, parseable, future, within MAX_GRANT_DAYS — is about a field
+    // this operation does not have.
+    const resolved = await resolveEntraEntitlementConnection(ctx);
+    if (resolved.state === 'refused') {
+        return { ok: false, refused: describeEntitlementRefusal(resolved.refusal) };
+    }
+
+    const client = createEntraEntitlementClient({
+        connection: resolved.connection,
+        now: () => now,
+    });
+
+    const prior = await client.readAssignments({
+        targetId: input.targetId,
+        accessPackageId: input.accessPackageId,
+    });
+    if (prior.live.length === 0) {
+        return {
+            ok: false,
+            refused:
+                'That subject holds no live assignment of that access package, so there is '
+                + 'nothing to withdraw and nothing was sent. If their access already lapsed, '
+                + 'the read tool will show it as expired rather than held.',
+        };
+    }
+    if (prior.live.length > 1) {
+        return {
+            ok: false,
+            refused:
+                `That subject holds ${prior.live.length} live assignments of that access `
+                + 'package, probably under different policies, so "revoke it" names more than '
+                + 'one thing. Nothing was sent. Read the assignments and withdraw one by its '
+                + 'own id.',
+        };
+    }
+
+    const result = await client.requestAssignmentRemoval({
+        assignmentId: prior.live[0].assignmentId,
+        ...(input.justification === undefined ? {} : { justification: input.justification }),
+    });
+
+    // NO identifiers, same rule as the grant: the target, package and
+    // assignment ids are directory identifiers `identity-log-identifier-scrub`
+    // keeps out of logs. The request id is ours to quote.
+    logger.info('entra entitlement withdrawal requested', {
+        component: 'entra-grant-dispatch',
+        tenantId: ctx.tenantId,
+        requestId: result.requestId,
+    });
+    return { ok: true, requestId: result.requestId };
+}
+
 export type AssignmentReadOutcome =
     | { readonly ok: true; readonly assignments: AssignmentReadResult }
     | { readonly ok: false; readonly refused: string };

@@ -267,11 +267,17 @@ describe('ASYNC_DELIVERY_TOOLS tracks what the endpoint actually advertises', ()
         const { REPO_ROOT } = require('../helpers/repo-files') as { REPO_ROOT: string };
         for (const rel of routeFiles) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
-            // The grant verb specifically. The READ tool is read-only and never
-            // reaches a journal row, so it is deliberately not required here.
-            const m = /export const GRANT_TOOL = '([^']+)'/.exec(src);
-            expect(m).not.toBeNull();
-            expect(ASYNC_DELIVERY_TOOLS.has(m![1])).toBe(true);
+            // BOTH write verbs. The READ tool is read-only and never reaches a
+            // journal row, so it is deliberately not required here — but
+            // #3374 added a second WRITE, and a check that only knew about the
+            // grant would let the withdrawal settle APPLIED on a 200 that only
+            // means "request taken", which is the exact defect #3324 fixed for
+            // the grant.
+            for (const decl of ['GRANT_TOOL', 'REVOKE_TOOL'] as const) {
+                const m = new RegExp(`export const ${decl} = '([^']+)'`).exec(src);
+                expect(m).not.toBeNull();
+                expect(ASYNC_DELIVERY_TOOLS.has(m![1])).toBe(true);
+            }
         }
     });
 });

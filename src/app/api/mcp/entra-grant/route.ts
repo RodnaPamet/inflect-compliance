@@ -83,12 +83,14 @@ import {
 import {
     grantTimeBoundedAccess,
     readAccessAssignments,
+    revokeAccessAssignment,
     MAX_GRANT_DAYS as MAX_DAYS,
 } from '@/app-layer/usecases/entra-grant-dispatch';
 import type { RequestContext } from '@/app-layer/types';
 
 export const GRANT_TOOL = 'grant_time_bounded_access';
 export const READ_TOOL = 'read_access_assignments';
+export const REVOKE_TOOL = 'revoke_access_assignment';
 
 /**
  * The catalogue. Two tools, and the descriptions are part of the contract.
@@ -133,6 +135,33 @@ const TOOLS: readonly McpToolDescriptor[] = [
         // EXPLICIT false. The read below MUST declare true, and a pair where one
         // side is explicit and the other relies on a default invites a tidy-up.
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    {
+        name: REVOKE_TOOL,
+        description:
+            'End one subject\'s assignment of one access package NOW, instead of waiting for '
+            + 'its end date. Addressed by subject and package, not by assignment id: the '
+            + 'assignment is resolved from the live read. Refused when the subject holds no '
+            + 'live assignment of that package (there is nothing to withdraw) and when they '
+            + 'hold more than one (the instruction names more than one thing).',
+        inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['targetId', 'accessPackageId'],
+            properties: {
+                targetId: { type: 'string', description: "The subject's Entra object id (a GUID)." },
+                accessPackageId: { type: 'string', description: 'The access package id.' },
+                justification: {
+                    type: 'string',
+                    description: 'Recorded on the request for the audit trail.',
+                },
+            },
+        },
+        // `destructiveHint: true` — this one REMOVES access, and that is the
+        // difference the annotation exists to carry. `idempotentHint: true`
+        // unlike the grant: withdrawing an assignment that is already gone is
+        // refused rather than repeated, so a retry cannot compound.
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
     {
         name: READ_TOOL,
@@ -225,6 +254,17 @@ async function callTool(
             // 500 instead of a sentence telling them what to fix.
             endDateTime: new Date(str(args.endDateTime)),
             ...(typeof args.justification === 'string'
+                ? { justification: args.justification }
+                : {}),
+        });
+        return outcome.ok ? ok({ requestId: outcome.requestId }) : refusal(outcome.refused);
+    }
+
+    if (name === REVOKE_TOOL) {
+        const outcome = await revokeAccessAssignment(ctx, {
+            targetId: str(args.targetId),
+            accessPackageId: str(args.accessPackageId),
+            ...(typeof args.justification === 'string' && args.justification.trim() !== ''
                 ? { justification: args.justification }
                 : {}),
         });
