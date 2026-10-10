@@ -50,7 +50,13 @@
  * @module lib/mcp/client
  */
 
-import { safeFetch } from '@/app-layer/automation/webhook-safety';
+import {
+    wirePost,
+    WireCapExceededError,
+    WireEgressError,
+    WireTimeoutError,
+    type WireResponse,
+} from '@/lib/mcp/wire-transport';
 import { log } from '@/lib/observability';
 import {
     SUPPORTED_PROTOCOL_VERSIONS,
@@ -174,45 +180,25 @@ export const DEFAULTS = {
 // ─── The capped reader ─────────────────────────────────────────────────────
 
 /**
- * Read a response body, aborting the moment it exceeds `cap` bytes.
+ * Wire errors onto this client's own types.
  *
- * Returns the decoded text. Throws {@link CapExceededError} without having
- * buffered more than `cap` plus one chunk.
+ * The transport throws three shapes and knows nothing about the contract; each
+ * maps onto the error a caller of THIS client already handles, so the
+ * conversion in #3303 changed no caller.
  */
-async function readCapped(res: Response, cap: number, controller: AbortController): Promise<string> {
-    const declared = Number(res.headers.get('content-length') ?? '');
-    if (Number.isFinite(declared) && declared > cap) {
-        // A free refusal when the server happens to tell the truth. Not the check.
-        controller.abort();
-        throw new CapExceededError('bytes', cap, cap);
+function asLegacyError(e: unknown, budgetMs: number): LegacyMcpClientError {
+    if (e instanceof WireCapExceededError) {
+        return new CapExceededError('bytes', e.cap, e.cap);
     }
-
-    const body = res.body;
-    if (!body) {
-        // No stream to cap. `text()` on an empty/absent body allocates nothing
-        // meaningful, and a missing body is a contract violation downstream.
-        return '';
+    if (e instanceof WireTimeoutError) {
+        return new TimeoutError('request', budgetMs);
     }
-
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let total = 0;
-    let out = '';
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > cap) {
-            // Stop the transfer. Without this the server keeps sending and the
-            // socket keeps costing, even though we have already decided.
-            await reader.cancel().catch(() => undefined);
-            controller.abort();
-            throw new CapExceededError('bytes', cap, cap);
-        }
-        out += decoder.decode(value, { stream: true });
+    if (e instanceof WireEgressError) {
+        // The CAUSE, not the wrapper: `mapEgressError` reads safeFetch's own
+        // error shapes to tell a refused address from a refused redirect.
+        return mapEgressError(e.cause);
     }
-    out += decoder.decode();
-    return out;
+    return mapEgressError(e);
 }
 
 // ─── One JSON-RPC call ─────────────────────────────────────────────────────
@@ -241,12 +227,14 @@ async function rpc(
     params: unknown,
     opts: { notify?: boolean } = {}
 ): Promise<unknown> {
+    // The PRE-FLIGHT deadline stays here rather than deferring to the
+    // transport's own check, because this one reports scope `pull` — the whole
+    // operation's budget is gone, which is a different thing for a caller to
+    // read than one attempt timing out.
     const remaining = ctx.pullDeadlineAt - Date.now();
     if (remaining <= 0) throw new TimeoutError('pull', 0);
 
     const budget = Math.min(ctx.requestTimeoutMs, remaining);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), budget);
 
     const headers: Record<string, string> = {
         'content-type': 'application/json',
@@ -264,23 +252,22 @@ async function rpc(
             : { jsonrpc: '2.0', id: ++rpcId, method, params }
     );
 
-    let res: Response;
+    // EGRESS lives in `wire-transport.ts` (#3303) — one `safeFetch` branch, one
+    // byte cap, one timer that stays live through the body read. Everything
+    // below is this client's own policy, which the transport deliberately does
+    // not decide: the contract's SSE refusal, the status mapping, and the
+    // session handshake.
+    let res: WireResponse;
     try {
-        const init = { method: 'POST', headers, body, signal: controller.signal };
-        // An explicit branch, NOT `ctx.fetchImpl ?? safeFetch`. Two reasons, and
-        // the SSRF sink registry found the first: resolving into an alias means
-        // `safeFetch(` never literally appears in this file, so the registry's
-        // check — "this sink calls safeFetch" — had nothing to match and was
-        // passing on the import alone. The second is for a reader: a branch shows
-        // that exactly one path reaches the network unprotected and that it is the
-        // test seam, where a defaulted alias reads as if both are the same thing.
-        res = ctx.fetchImpl
-            ? await ctx.fetchImpl(ctx.url, init)
-            : await safeFetch(ctx.url, init);
+        res = await wirePost({
+            url: ctx.url,
+            headers,
+            body,
+            timeoutMs: budget,
+            ...(ctx.fetchImpl ? { fetchImpl: ctx.fetchImpl } : {}),
+        });
     } catch (e) {
-        clearTimeout(timer);
-        if (controller.signal.aborted) throw new TimeoutError('request', budget);
-        throw mapEgressError(e);
+        throw asLegacyError(e, budget);
     }
 
     try {
@@ -316,13 +303,23 @@ async function rpc(
         // application/json here would refuse the correct behaviour — so the JSON
         // requirement belongs below this return, applying only where a body is
         // actually read.
-        if (opts.notify) return undefined;
+        if (opts.notify) {
+            // No body to read, so the transport's timer must be released
+            // explicitly — `readBody` is what normally does it.
+            res.discard();
+            return undefined;
+        }
 
         if (!contentType.includes('application/json')) {
             throw new ContractViolationError('content-type', 'expected application/json');
         }
 
-        const text = await readCapped(res, ctx.maxBytes, controller);
+        let text: string;
+        try {
+            text = await res.readBody(ctx.maxBytes);
+        } catch (e) {
+            throw asLegacyError(e, budget);
+        }
 
         let parsed: JsonRpcResponse;
         try {
@@ -340,7 +337,9 @@ async function rpc(
         }
         return parsed.result;
     } finally {
-        clearTimeout(timer);
+        // The transport releases its own timer on `readBody`/`discard`; this
+        // covers the paths that throw before either runs.
+        res.discard();
     }
 }
 

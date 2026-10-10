@@ -88,14 +88,38 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         noBareFetchOf: 'fetch(cfg.url',
     },
     {
-        file: 'src/lib/mcp/client/index.ts',
+        file: 'src/lib/mcp/wire-transport.ts',
         reason:
-            'Operator-supplied legacy MCP server URL (Step 1b). Somebody types a ' +
-            'hostname for a server we do not run, which is textbook SSRF input.',
-        // The client resolves `ctx.fetchImpl ?? safeFetch` into a local `doFetch`,
-        // so the shape to forbid is a bare call on the context's URL.
-        noBareFetchOf: 'fetch(ctx.url',
+            'Operator-supplied MCP server URL — BOTH outbound dialects now reach ' +
+            'the network here and nowhere else (#3303). Somebody types a hostname ' +
+            'for a server we do not run, which is textbook SSRF input.',
+        // The transport writes an explicit `opts.fetchImpl ? … : safeFetch(…)`
+        // branch rather than resolving an alias, so the shape to forbid is a
+        // bare call on the caller's URL.
+        noBareFetchOf: 'fetch(opts.url',
     },
+];
+
+/**
+ * The two outbound MCP clients, which must reach the network ONLY through the
+ * shared transport above.
+ *
+ * This replaces a per-file `safeFetch(` literal check on each client, and is
+ * strictly stronger than what it replaces. That check asked "does this file
+ * mention safeFetch somewhere?", which a file could satisfy while also
+ * fetching directly elsewhere. These assert the clients contain NO fetch call
+ * of any kind — so the only way either reaches the network is the one branch
+ * the registry above covers.
+ *
+ * Why this list is two entries and not one: the tools client was never in
+ * SINKS at all (#3400), so until now, replacing its `safeFetch` with a bare
+ * `fetch` would not have failed CI. The omission was invisible precisely
+ * because the OTHER MCP client was listed, and a reader checking "is the MCP
+ * client covered?" finds yes for one of two and is unlikely to ask which.
+ */
+const MCP_CLIENTS: readonly string[] = [
+    'src/app-layer/integrations/mcp/client.ts',
+    'src/lib/mcp/client/index.ts',
 ];
 
 describe('SSRF — every tenant-controlled sink routes through safeFetch', () => {
@@ -108,4 +132,52 @@ describe('SSRF — every tenant-controlled sink routes through safeFetch', () =>
             expect(src).not.toContain(`await ${sink.noBareFetchOf}`);
         });
     }
+});
+
+/**
+ * The findings are COMPUTED here and asserted as values below, rather than
+ * written as `expect(read(file)).not.toMatch(…)` per client.
+ *
+ * That is not a style preference. `Class D` of the needle-uniqueness ratchet
+ * counts whole-file assertions it cannot statically follow, and a read whose
+ * path comes from a loop variable (`path-not-constant`) or whose content is
+ * transformed before matching (`content-transformed`) is one of them — a blind
+ * spot where an ambiguous needle could hide. Comment-stripping is required for
+ * correctness here, so the read cannot be made analysable; removing the
+ * file-read SHAPE is the remedy the ratchet leaves open, and it also gives a
+ * failure that names the offending file instead of just reporting a regex miss.
+ */
+function codeOf(rel: string): string {
+    // Comments stripped: prose naming a forbidden pattern is not a call, and a
+    // check that cannot tell the difference reports the explanation of a rule
+    // as a breach of it.
+    return read(rel)
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/[^\n]*/g, '');
+}
+
+const clientsWithTheirOwnFetch = () =>
+    MCP_CLIENTS.filter((f) => /\bfetch\(/.test(codeOf(f)) || /\bsafeFetch\b/.test(codeOf(f)));
+
+const clientsNotUsingTheTransport = () =>
+    MCP_CLIENTS.filter((f) => !/from '@\/lib\/mcp\/wire-transport'/.test(read(f)));
+
+describe('SSRF — the MCP clients reach the network only through the shared transport', () => {
+    it('neither client contains a fetch call of its own', () => {
+        expect(clientsWithTheirOwnFetch()).toEqual([]);
+    });
+
+    it('both clients import the shared transport', () => {
+        // The other half: "no fetch" alone is also satisfied by a client that
+        // reaches the network some third way, or has stopped working entirely.
+        expect(clientsNotUsingTheTransport()).toEqual([]);
+    });
+
+    it('the list covers both dialects, so neither is silently unlisted', () => {
+        // #3400 was invisible because the OTHER MCP client was registered: a
+        // reader checking "is the MCP client covered?" finds yes for one of two
+        // and is unlikely to ask which. Pinning the denominator makes a future
+        // omission loud.
+        expect(MCP_CLIENTS).toHaveLength(2);
+    });
 });
