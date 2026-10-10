@@ -72,6 +72,10 @@ import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { SCORER_WEIGHTS } from '@/lib/identity/reconcile/scorers';
 import { isBlindHeld } from '@/lib/legacy-access/blind-sample';
+import {
+    eligibleForBulkRatification,
+    type VerdictClass,
+} from '@/lib/legacy-access/verdict';
 import type { ScoredCandidate } from '@/lib/identity/reconcile/engine';
 import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
@@ -604,6 +608,60 @@ export interface QueueRow {
      * sample exists for happens server-side, after they decide.
      */
     readonly verdict: QueueVerdict | null;
+    /**
+     * May this row be ratified in the `AGREES` bulk lane?
+     *
+     * All five terms of `eligibleForBulkRatification`, and a blind-sampled row
+     * is excluded BECAUSE IT IS BLIND rather than as a side effect of its
+     * verdict being hidden — the eligibility is computed from the raw row, so
+     * the server knows it is an `AGREES` and declines it anyway.
+     *
+     * This leaks nothing about the sample: a blind row reads
+     * `{verdict: null, bulkEligible: false}`, which is exactly what an
+     * unadjudicated row reads.
+     */
+    readonly bulkEligible: boolean;
+}
+
+/**
+ * All five bulk-lane terms, assembled for `eligibleForBulkRatification`.
+ *
+ * Computed from the RAW verdict row rather than the one a reviewer sees, so a
+ * blind-sampled `AGREES` is declined BECAUSE IT IS BLIND. Deriving it from the
+ * hidden verdict would give the same answer today by accident — the hidden row
+ * has no class to match on — and would stop being right the moment anything
+ * else started hiding a verdict.
+ *
+ * A NULL `suggestedRekeyed` reads as RE-KEYED, which is the fail-closed
+ * direction. The column is nullable with no backfill, so every row written
+ * before it existed genuinely does not know the answer; treating "unknown" as
+ * "not re-keyed" would admit exactly those rows to the lane, and unknown is not
+ * a reason to ratify in bulk.
+ */
+function bulkEligibleFor(input: {
+    raw:
+        | { id: string; verdict: string | null }
+        | undefined;
+    suggestedEmployeeId: string | null;
+    candidateIsActive: boolean;
+    hasVeto: boolean;
+    isPrivileged: boolean;
+    suggestedRekeyed: boolean | null;
+}): boolean {
+    const verdict = input.raw?.verdict;
+    if (!verdict) return false;
+    // The lane ratifies the ENGINE's suggestion, so a row without one has no
+    // candidate to ratify however confident the model was.
+    if (!input.suggestedEmployeeId) return false;
+
+    return eligibleForBulkRatification({
+        verdict: verdict as VerdictClass,
+        candidateIsActive: input.candidateIsActive,
+        hasVeto: input.hasVeto,
+        isPrivileged: input.isPrivileged,
+        isRekeyed: input.suggestedRekeyed !== false,
+        blindHeld: isBlindHeld(input.raw!.id),
+    });
 }
 
 /**
@@ -723,7 +781,15 @@ export async function listReconciliationQueue(
                     outcome: { in: ['SUGGESTED', 'AMBIGUOUS', 'UNMATCHED'] },
                 },
                 orderBy: { accountKey: 'asc' },
-                select: { id: true, accountKey: true, outcome: true, candidatesJson: true },
+                select: {
+                    id: true,
+                    accountKey: true,
+                    outcome: true,
+                    candidatesJson: true,
+                    employeeId: true,
+                    vetoesJson: true,
+                    suggestedRekeyed: true,
+                },
             })
         ),
         runInTenantContext(ctx, (db) =>
@@ -768,6 +834,38 @@ export async function listReconciliationQueue(
         if (!verdictByResolution.has(v.resolutionId)) verdictByResolution.set(v.resolutionId, v);
     }
 
+    // The bulk lane's other two terms, one read each for the whole page. The
+    // fourth — "no re-key" — is already on the row, stamped by the run, because
+    // asking it here would read every `Employee` (see the column's docstring).
+    const suggestedIds = [...new Set(rows.map((r) => r.employeeId).filter((id): id is string => !!id))];
+    const activeSuggested = suggestedIds.length
+        ? new Set(
+              (
+                  await runInTenantContext(ctx, (db) =>
+                      db.employee.findMany({
+                          where: { tenantId: ctx.tenantId, id: { in: suggestedIds }, status: 'ACTIVE' },
+                          select: { id: true },
+                      })
+                  )
+              ).map((e) => e.id)
+          )
+        : new Set<string>();
+
+    const privilegedKeys = new Set(
+        (
+            await runInTenantContext(ctx, (db) =>
+                db.legacyAccount.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        accountKey: { in: rows.map((r) => r.accountKey) },
+                        isPrivileged: true,
+                    },
+                    select: { accountKey: true },
+                })
+            )
+        ).map((a) => a.accountKey)
+    );
+
     const out: QueueRow[] = [];
     for (const r of rows) {
         const a = decided.get(r.accountKey);
@@ -776,6 +874,14 @@ export async function listReconciliationQueue(
             outcome: r.outcome,
             candidates: (r.candidatesJson ?? []) as unknown as readonly ScoredCandidate[],
             verdict: showableVerdict(verdictByResolution.get(r.id)),
+            bulkEligible: bulkEligibleFor({
+                raw: verdictByResolution.get(r.id),
+                suggestedEmployeeId: r.employeeId,
+                candidateIsActive: !!r.employeeId && activeSuggested.has(r.employeeId),
+                hasVeto: Array.isArray(r.vetoesJson) && r.vetoesJson.length > 0,
+                isPrivileged: privilegedKeys.has(r.accountKey),
+                suggestedRekeyed: r.suggestedRekeyed,
+            }),
         };
 
         if (!a) {

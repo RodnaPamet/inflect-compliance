@@ -636,3 +636,71 @@ describe('the job entry point', () => {
         expect(viaJob.byOutcome).toEqual(viaCtx.byOutcome);
     });
 });
+
+// ── Step 6c: the re-key term, stamped by the run ────────────────────────────
+//
+// The one bulk-lane term that cannot be asked at read time: `makeRekeyLookup`
+// takes the WHOLE roster, so a queue page would read every `Employee`. Owner
+// decision 2026-10-10 — the job stamps it, where the roster is already in
+// memory and the definition already lives.
+describe('the re-key stamp', () => {
+    it('stamps false for an ordinary active suggestion', async () => {
+        await runLegacyReconcileJob({ tenantId: TENANT, snapshotId });
+
+        const rows = await prisma.legacyAccountResolution.findMany({
+            where: { tenantId: TENANT, employeeId: { not: null } },
+            select: { accountKey: true, suggestedRekeyed: true },
+        });
+        // The negative side first: without it, a stamp that said `true` for
+        // everything would pass the positive case below and take every row out
+        // of the lane for ever — a lane that admits nothing looks like a lane
+        // that is working.
+        expect(rows.length).toBeGreaterThan(0);
+        for (const r of rows) expect(r.suggestedRekeyed).toBe(false);
+    });
+
+    it('stamps NULL when the run suggested nobody', async () => {
+        // No candidate for the term to be about. The queue reads null as NOT
+        // eligible, so the row falls to single review rather than into the lane.
+        await runLegacyReconcileJob({ tenantId: TENANT, snapshotId });
+
+        const unmatched = await prisma.legacyAccountResolution.findMany({
+            where: { tenantId: TENANT, employeeId: null },
+            select: { suggestedRekeyed: true },
+        });
+        expect(unmatched.length).toBeGreaterThan(0);
+        for (const r of unmatched) expect(r.suggestedRekeyed).toBeNull();
+    });
+
+    it('stamps true when the suggested employee is a re-key SUCCESSOR', async () => {
+        // The engine's own definition of a re-key, reused rather than restated:
+        // the predecessor is TERMINATED with an end date, and a same-named
+        // record starts after they left.
+        await prisma.employee.update({
+            where: { id: employeeId },
+            data: { status: 'TERMINATED', endDate: new Date('2026-09-01') },
+        });
+        const successor = await prisma.employee.create({
+            data: {
+                tenantId: TENANT, fullName: 'Jane Smith', givenName: 'Jane',
+                familyName: 'Smith', status: 'ACTIVE',
+                startDate: new Date('2026-09-15'),
+                workEmail: 'jane.smith.2@corp.test',
+            },
+            select: { id: true },
+        });
+
+        await runLegacyReconcileJob({ tenantId: TENANT, snapshotId });
+
+        const stamped = await prisma.legacyAccountResolution.findMany({
+            where: { tenantId: TENANT, employeeId: successor.id },
+            select: { suggestedRekeyed: true },
+        });
+        // SUCCESSORS, not predecessors: a predecessor is TERMINATED by
+        // definition and the lane already requires the candidate to be ACTIVE,
+        // so stamping them would add nothing. What this catches is the live
+        // record of a person split across two HR rows.
+        for (const r of stamped) expect(r.suggestedRekeyed).toBe(true);
+        expect(stamped.length).toBeGreaterThan(0);
+    });
+});

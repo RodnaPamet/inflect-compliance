@@ -89,6 +89,7 @@ import {
     type EngineResult,
     type Outcome,
     type Resolution,
+    makeRekeyLookup,
     type RosterEmployee,
 } from '@/lib/identity/reconcile/engine';
 import { step4aExtensions } from '@/lib/identity/reconcile/scorers';
@@ -255,6 +256,7 @@ export async function runLegacyReconcile(
     // ── Inputs ──────────────────────────────────────────────────────────────
     const accounts = await readAccounts(ctx, snapshot.id);
     const roster = await readRoster(ctx);
+    const rekeySuccessors = rekeySuccessorIds(roster);
     const directory = await readDirectory(ctx, staleBefore);
     const aliases = await readAliases(ctx, snapshot.connectionId);
     const convention = await readConvention(ctx, snapshot.connectionId);
@@ -300,7 +302,9 @@ export async function runLegacyReconcile(
             ctx,
             (db) =>
                 db.legacyAccountResolution.createMany({
-                    data: batch.map((r) => toResolutionRow(ctx.tenantId, executionId, snapshot.id, r)),
+                    data: batch.map((r) =>
+                        toResolutionRow(ctx.tenantId, executionId, snapshot.id, r, rekeySuccessors)
+                    ),
                 }),
             SYNC_WRITE_TX_OPTIONS
         );
@@ -625,7 +629,8 @@ function toResolutionRow(
     tenantId: string,
     executionId: string,
     snapshotId: string,
-    r: Resolution
+    r: Resolution,
+    rekeySuccessors: ReadonlySet<string>
 ): Prisma.LegacyAccountResolutionCreateManyInput {
     return {
         tenantId,
@@ -638,8 +643,36 @@ function toResolutionRow(
         signalsJson: r.signals as unknown as Prisma.InputJsonValue,
         candidatesJson: r.candidates as unknown as Prisma.InputJsonValue,
         vetoesJson: r.vetoes as unknown as Prisma.InputJsonValue,
+        // Null with no suggestion, because there is no candidate for the term to
+        // be about — and the queue reads a null as NOT eligible, so an account
+        // with no suggestion falls out of the bulk lane rather than into it.
+        suggestedRekeyed: r.employeeId === null ? null : rekeySuccessors.has(r.employeeId),
         note: r.note ?? null,
     };
+}
+
+/**
+ * Every employee who is the SUCCESSOR of a re-key.
+ *
+ * The one term of the bulk lane's four that cannot be asked at read time:
+ * `makeRekeyLookup` takes the whole roster, so a queue page would read every
+ * `Employee` row. Computed once here, where the roster is already in memory.
+ *
+ * SUCCESSORS, not predecessors. A predecessor is TERMINATED by definition, and
+ * the lane already requires the candidate to be `ACTIVE` — so including them
+ * would add nothing. What this catches is the live record of a person whose
+ * identity is split across two HR rows, which is exactly the row a person
+ * should look at one at a time.
+ */
+function rekeySuccessorIds(roster: readonly RosterEmployee[]): ReadonlySet<string> {
+    const lookup = makeRekeyLookup(roster);
+    const out = new Set<string>();
+    for (const e of roster) {
+        if (e.status !== 'TERMINATED') continue;
+        const successor = lookup(e);
+        if (successor) out.add(successor.id);
+    }
+    return out;
 }
 
 /** Every outcome the engine can report, so a caller can zero-fill a dashboard. */
