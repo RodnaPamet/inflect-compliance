@@ -1779,6 +1779,43 @@ enum AiResidency {
 ///
 /// A verdict NEVER produces a LINKED, changes an outcome, or writes an alias.
 /// The mode decides whether an opinion is offered, not whether it is acted on.
+/// Step 6c — the review LANE a model verdict puts a row in.
+///
+/// Not a quality score: a destination. The first matching row of the design
+/// document's table wins, and `NOT_A_PERSON` is first so a service account the
+/// model also maps confidently to an employee cannot be bulk ratified as that
+/// employee.
+///
+/// `UNSURE` is not a failure — it is the row exactly as it would be with
+/// adjudication off, which is the fail-closed state and still a queue a person
+/// can clear.
+enum LegacyMatchVerdictClass {
+  NOT_A_PERSON
+  NO_MATCH
+  AGREES
+  PROPOSES
+  UNSURE
+}
+
+/// Step 6c — why no verdict was produced.
+///
+/// Every one of these leaves the queue row identical to the one it would have
+/// with the mode OFF. They are recorded rather than inferred from an absent row
+/// because "nobody asked" and "we asked and the breaker was open" are different
+/// facts, and only the second is a reason to look at the provider.
+enum LegacyMatchNonVerdictReason {
+  NO_PROVIDER
+  NO_EVALUATION
+  MODEL_DRIFT
+  KILL_SWITCH
+  BREAKER_OPEN
+  QUARANTINED
+  OVER_BUDGET
+  TIMEOUT
+  DEADLINE
+  PROVIDER_ERROR
+}
+
 enum LegacyMatchAiMode {
   OFF
   LOCAL_ONLY

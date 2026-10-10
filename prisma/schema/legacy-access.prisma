@@ -202,8 +202,15 @@ model LegacyAccountResolution {
   execution IntegrationExecution  @relation(fields: [executionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   snapshot  LegacyAccessSnapshot  @relation(fields: [snapshotId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
+  /// Step 6c's model opinions about this resolution, one per model revision.
+  verdicts LegacyMatchVerdict[]
+
   /// One row per account per RUN. The run is in the key, which is what makes a
   /// second run an addition rather than a collision.
+  /// Step 6c's verdict table needs a tenant-safe composite FK into this model,
+  /// and `references` must name a unique criterion. The same pattern every
+  /// tenant-scoped child in this subsystem uses.
+  @@unique([id, tenantId])
   @@unique([executionId, accountKey])
   @@index([tenantId])
   @@index([tenantId, snapshotId, outcome])
@@ -307,4 +314,68 @@ model LegacyIdentityAlias {
   /// every cycle for every connection, and without this it scans every alias
   /// the tenant holds.
   @@index([tenantId, classification, expiresAt])
+}
+
+/// Step 6c — one model opinion about one resolution, under one model revision.
+///
+/// IMMUTABLE, and one row per `(resolutionId, modelRevision)`. A re-run under the
+/// same revision is the same question and must not produce a second answer; a
+/// re-run under a NEW revision is a different question and gets its own row, so
+/// "what did revision X say about this account" stays answerable after a model
+/// change.
+///
+/// Every row holds EITHER a verdict with its probabilities OR a non-verdict
+/// reason — never both, never neither. The pair is enforced by
+/// `LegacyMatchVerdict_outcome_shape`: a row claiming both would make the queue
+/// ambiguous about whether a model spoke, and a row claiming neither is a
+/// question nobody asked.
+///
+/// Nothing here can change an outcome or create an alias. The verdict chooses a
+/// review LANE; `lib/legacy-access/verdict.ts` is a pure module that imports no
+/// writer, and a test proves it by loading it with every writer mocked to throw.
+model LegacyMatchVerdict {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The resolution this is an opinion about.
+  resolutionId String
+  /// The model and the EXACT revision the endpoint reported. Exact, because a
+  /// near-match would wave through the vendor-update case the canary exists to
+  /// catch, one step before the canary runs.
+  modelId       String
+  modelRevision String
+
+  /// The lane, when a verdict was produced.
+  verdict LegacyMatchVerdictClass?
+  /// Why not, when one was not.
+  nonVerdictReason LegacyMatchNonVerdictReason?
+
+  /// Per-candidate probabilities as the model returned them, keyed by the
+  /// SHUFFLED letter it was shown. The letter-to-employee mapping stays on the
+  /// server and is deliberately not stored here: a verdict row that named
+  /// employees would be a second, weaker copy of the resolution's own evidence.
+  probabilitiesJson Json?
+  /// P(the subject is a person at all).
+  personProbability Float?
+  /// The top option's probability, and its gap to the runner-up. Stored rather
+  /// than re-derived so the queue can sort and filter without parsing JSON.
+  topProbability Float?
+  topMargin      Float?
+
+  /// Round-trip latency, and the input tokens the provider reported. The token
+  /// count is what `OVER_BUDGET` is judged against.
+  latencyMs   Int?
+  inputTokens Int?
+
+  createdAt DateTime @default(now())
+
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id])
+  resolution LegacyAccountResolution @relation(fields: [resolutionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One answer per question. The revision is in the key, which is what makes a
+  /// model change an addition rather than a collision.
+  @@unique([resolutionId, modelRevision])
+  @@index([tenantId])
+  @@index([tenantId, verdict])
+  @@index([tenantId, nonVerdictReason])
 }

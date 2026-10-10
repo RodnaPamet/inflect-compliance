@@ -1,3 +1,4 @@
+import type { LegacyMatchAiMode } from '@prisma/client';
 /**
  * The provider contract, in its own module so the residency guard can read the
  * factory without the factory importing its own test's mocks.
@@ -34,4 +35,13 @@ export interface DecisionProvider {
  * The effective mode: the stricter of `TenantSecuritySettings.legacyMatchAiMode`
  * and `aiResidency`, computed by the caller.
  */
-export type EffectiveDecisionMode = 'OFF' | 'LOCAL_ONLY' | 'EXTERNAL';
+/**
+ * The mode a provider is selected for.
+ *
+ * ALIASED to the Prisma enum since Step 6c rather than restated as a literal
+ * union. They had identical members, which is exactly the state in which two
+ * declarations drift without anything failing: `effectiveLegacyMatchAiMode`
+ * returns the enum and `getDecisionProvider` consumes this, and TypeScript
+ * accepted the pairing only because the members happened to match.
+ */
+export type EffectiveDecisionMode = LegacyMatchAiMode;

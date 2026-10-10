@@ -30,6 +30,7 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     LegacyAccountResolution: "tests/integration/legacy-reconcile-rls.test.ts",
     LegacyIdentityAlias: "tests/integration/legacy-reconcile-rls.test.ts",
+    LegacyMatchVerdict: "tests/integration/legacy-match-verdict-rls.test.ts",
     LegacyAccessSnapshot: "tests/integration/legacy-access-rls.test.ts",
     LegacyAccount: "tests/integration/legacy-access-rls.test.ts",
     ExternalToolParameterSet:
