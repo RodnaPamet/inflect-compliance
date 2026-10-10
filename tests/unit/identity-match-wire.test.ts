@@ -11,6 +11,7 @@
  */
 
 import {
+    PERSON_STATEMENT,
     JEV_MODEL,
     LAYA_MODEL,
     MATCH_OPTIONS,
@@ -157,7 +158,11 @@ describe('6b wire — the request we send', () => {
 describe('6b wire — the response parser', () => {
     it('accepts the documented shape', () => {
         const parsed = parseSystemOneResponse(validResponse());
-        expect(parsed.answers.match.option).toBe('A');
+        // `match` is optional on the type since the orphan shape landed, and
+        // asserting its PRESENCE here is the point rather than a formality: the
+        // full shape must still carry it, and `expectMatch` defaults to true.
+        expect(parsed.answers.match).toBeDefined();
+        expect(parsed.answers.match?.option).toBe('A');
         expect(parsed.answers.person.probability).toBeCloseTo(0.98);
         expect(parsed.usage.input_tokens).toBe(412);
     });
@@ -243,5 +248,104 @@ describe('6b wire — the response parser', () => {
             expect((e as Error).message).not.toContain('IGNORE PREVIOUS');
             expect((e as Error).message).toContain('failed validation');
         }
+    });
+});
+
+// ── Step 6c: the orphan's request and answer ────────────────────────────────
+describe('6c wire — an orphan is asked the person question alone', () => {
+    const orphanState = {
+        account: {
+            username: 'svc-backup',
+            usernameTokens: ['svc', 'backup'],
+            displayName: 'svc-backup',
+            givenName: null,
+            familyName: null,
+            emailLocalPart: null,
+            department: null,
+            title: null,
+            accountType: 'UNKNOWN',
+            variants: [],
+        },
+        candidates: [],
+    } as const;
+
+    it('omits the match question entirely rather than offering one option', () => {
+        // A `choice` over one option returns P(NONE) = 1 by NORMALISATION, and
+        // `NO_MATCH` read off that annotates every orphan at maximum confidence
+        // from an answer the model had no alternative to.
+        const request = buildMatchRequest(JEV_MODEL, orphanState);
+        expect(request.questions).not.toHaveProperty('match');
+        expect(request.questions).toHaveProperty('person');
+    });
+
+    it('asks the person question with the SAME statement as the full pair', () => {
+        // A `noul` is calibrated against the exact wording it was evaluated on,
+        // so two shapes asking two wordings would be two questions and the
+        // record would answer for whichever it saw.
+        const statementOf = (r: { questions: Readonly<Record<string, unknown>> }): string =>
+            (r.questions.person as { statement: string }).statement;
+        const orphan = buildMatchRequest(JEV_MODEL, orphanState);
+        const full = buildMatchRequest(JEV_MODEL, {
+            ...orphanState,
+            candidates: [
+                {
+                    label: 'A',
+                    givenName: 'A',
+                    middleNames: [],
+                    familyName: 'B',
+                    preferredName: null,
+                    department: null,
+                    title: null,
+                    variants: [],
+                },
+            ],
+        });
+
+        expect(statementOf(orphan)).toBe(statementOf(full));
+        expect(statementOf(orphan)).toBe(PERSON_STATEMENT);
+    });
+
+    it('parses a person-only answer when that is what was asked', () => {
+        const parsed = parseSystemOneResponse(
+            {
+                model: JEV_MODEL,
+                answers: { person: { type: 'noul', probability: 0.04 } },
+                usage: { input_tokens: 90, output_tokens: 2 },
+            },
+            { expectMatch: false },
+        );
+        expect(parsed.answers.match).toBeUndefined();
+        expect(parsed.answers.person.probability).toBeCloseTo(0.04);
+    });
+
+    it('REFUSES a person-only answer to a request that asked both', () => {
+        // The case `match?: optional` on one schema would have accepted: a model
+        // silently declining half the question. Two strict shapes, and the
+        // caller says which it asked.
+        expect(() =>
+            parseSystemOneResponse({
+                model: JEV_MODEL,
+                answers: { person: { type: 'noul', probability: 0.9 } },
+                usage: { input_tokens: 90, output_tokens: 2 },
+            }),
+        ).toThrow(/failed validation/);
+    });
+
+    it('REFUSES a match answer to a person-only request', () => {
+        // The other direction. `.strict()` on the person-only shape is what
+        // catches a model answering a question nobody asked.
+        expect(() =>
+            parseSystemOneResponse(
+                {
+                    model: JEV_MODEL,
+                    answers: {
+                        match: { type: 'choice', option: 'NONE', probabilities: { NONE: 1 } },
+                        person: { type: 'noul', probability: 0.9 },
+                    },
+                    usage: { input_tokens: 90, output_tokens: 2 },
+                },
+                { expectMatch: false },
+            ),
+        ).toThrow(/failed validation/);
     });
 });

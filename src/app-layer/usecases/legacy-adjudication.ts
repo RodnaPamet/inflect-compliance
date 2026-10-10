@@ -46,6 +46,12 @@
  *   a guard hit, per account          -> QUARANTINED
  *   a payload that will not fit       -> OVER_BUDGET
  *
+ * **An ORPHAN is adjudicated, not skipped.** An `UNMATCHED` row with no
+ * candidates is asked the `person` question alone, so only `NOT_A_PERSON` and
+ * `UNSURE` are reachable for it — and `NOT_A_PERSON` is the valuable one: an
+ * account with live access and nobody on the roster is the urgent case, and
+ * whether it is a robot or a person is most of the triage.
+ *
  * **`OFF` writes nothing rather than a row per account.** An undecided account
  * must look exactly as it would with the mode off, and the cheapest way to be
  * certain of that is for there to be no row. Every tenant that never enables
@@ -120,15 +126,6 @@ export interface AdjudicateResidueResult {
     readonly byClass: Readonly<Record<string, number>>;
     readonly byReason: Readonly<Record<string, number>>;
     readonly canaryPassed: boolean;
-    /**
-     * Residue accounts with no candidate at all, which are not adjudicated.
-     *
-     * Reported rather than silent: a run where this is the whole residue looks
-     * identical to a run that adjudicated nothing, and the two mean different
-     * things - the first is a roster that matched nobody, the second is a model
-     * that was never reached.
-     */
-    readonly skippedNoCandidates: number;
 }
 
 const EMPTY: AdjudicateResidueResult = {
@@ -138,7 +135,6 @@ const EMPTY: AdjudicateResidueResult = {
     byClass: {},
     byReason: {},
     canaryPassed: false,
-    skippedNoCandidates: 0,
 };
 
 /** One scored candidate as the engine stored it on the resolution row. */
@@ -233,7 +229,6 @@ export async function adjudicateResidue(
     // ── Build one subject per residue account ─────────────────────────────
     const budget = budgetForModel(provider.modelName);
     const subjects: AdjudicationSubject[] = [];
-    let skippedNoCandidates = 0;
 
     // TWO READS FOR THE WHOLE RESIDUE, not two per account. A thousand-account
     // residue through a per-account read is two thousand queries, and Layer D1
@@ -307,21 +302,6 @@ export async function adjudicateResidue(
             budgetChars: budget,
         });
         if (!built.ok) {
-            // `NO_CANDIDATES` IS NOT A STORABLE REASON, and that is the design
-            // rather than an omission: the ten `NonVerdictReason`s all describe
-            // something that happened to a question somebody asked, and an
-            // account with no candidates was never asked one. Writing a row for
-            // it would mean adding an eleventh reason to the enum for a case the
-            // design deliberately leaves as "the queue as it would be with the
-            // mode OFF".
-            //
-            // So it is SKIPPED - no subject, no row - and counted. The useful
-            // improvement is a person-only question for an orphan, which needs
-            // the wire codec to stop offering a one-option choice; filed.
-            if (built.reason === 'NO_CANDIDATES') {
-                skippedNoCandidates++;
-                continue;
-            }
             subjects.push({ kind: 'refused', resolutionId: row.id, reason: built.reason });
             continue;
         }
@@ -444,7 +424,6 @@ export async function adjudicateResidue(
         byClass,
         byReason,
         canaryPassed: pass.canary.passed,
-        skippedNoCandidates,
     };
 }
 

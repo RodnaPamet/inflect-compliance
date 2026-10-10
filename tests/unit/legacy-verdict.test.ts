@@ -7,6 +7,7 @@
  * fail, and a per-row test cannot see them.
  */
 import {
+    derivePersonOnlyVerdict,
     NONE_OPTION,
     NON_VERDICT_REASONS,
     VERDICT_CLASSES,
@@ -233,5 +234,53 @@ describe('the module cannot reach a writer', () => {
                 require('@/lib/legacy-access/verdict');
             }).not.toThrow();
         });
+    });
+});
+
+// ── Step 6c: the orphan's person-only derivation ────────────────────────────
+//
+// Only two verdicts are reachable, and the reason this is its own function
+// rather than `deriveVerdict` with an empty option list is that the empty list
+// gives the right answer BY ACCIDENT. It would stop doing so the moment
+// somebody computed P(NONE) as `1 - sum(others)` — a reasonable thing to write,
+// and one that would make every orphan a confident NO_MATCH.
+describe('derivePersonOnlyVerdict', () => {
+    const T = { agreeAt: 0.8, personAt: 0.7, nonPersonAt: 0.2, agreeMargin: 0.2 };
+
+    it('is NOT_A_PERSON at or below the non-person threshold', () => {
+        expect(derivePersonOnlyVerdict(0.2, T).verdict).toBe('NOT_A_PERSON');
+        expect(derivePersonOnlyVerdict(0.05, T).verdict).toBe('NOT_A_PERSON');
+    });
+
+    it('is UNSURE just above it', () => {
+        // Both boundary directions, as everywhere else in this file.
+        expect(derivePersonOnlyVerdict(0.201, T).verdict).toBe('UNSURE');
+    });
+
+    it('is UNSURE even when the model is CERTAIN it is a person', () => {
+        // A confident "this IS a person" on an account with nobody on the
+        // roster is the orphan finding itself. The design annotates that; it
+        // does not give it a verdict class, and it must never become a match.
+        expect(derivePersonOnlyVerdict(1, T).verdict).toBe('UNSURE');
+    });
+
+    it.each(['NO_MATCH', 'AGREES', 'PROPOSES'])('can never return %s', (forbidden) => {
+        // The whole population of inputs, at a resolution far finer than the
+        // thresholds. If any probability produced a match-shaped verdict, the
+        // orphan change would have reintroduced the vacuous NO_MATCH it exists
+        // to remove.
+        for (let p = 0; p <= 1.0001; p += 0.005) {
+            expect(derivePersonOnlyVerdict(Math.min(p, 1), T).verdict).not.toBe(forbidden);
+        }
+    });
+
+    it('reports no option, and an INFINITE margin', () => {
+        const v = derivePersonOnlyVerdict(0.9, T);
+        expect(v.topOption).toBeNull();
+        expect(v.topProbability).toBe(0);
+        // Infinity, not zero: there was no runner-up to be ahead of, and zero
+        // would mean "tied with something". Same reading `deriveVerdict` gives
+        // a sole option.
+        expect(v.margin).toBe(Number.POSITIVE_INFINITY);
     });
 });
