@@ -75,6 +75,19 @@ export interface AccessReviewPdfDecisionRow {
     /// Outcome string the closeout executor wrote per row:
     ///   EXECUTED | NO_CHANGE | SKIPPED_STALE | SKIPPED_LAST_OWNER | …
     executionOutcome: string;
+    /**
+     * HOW the account was attributed to a person, for a LEGACY_APP campaign:
+     * CONFIRMED_ALIAS | EMAIL_EXACT | MANUAL | NO_CANDIDATES | …
+     *
+     * Step 5b requires it in the evidence, and the reason is that a legacy
+     * certification rests on an INFERENCE the member flow never makes. An
+     * auditor reading "jsmith was certified as Jane Smith" is entitled to know
+     * whether a person said so or a string-similarity scorer did — those are
+     * different strengths of evidence for the same sentence.
+     *
+     * Absent for the member and connected flows, which have no such step.
+     */
+    resolutionMethod?: string | null;
 }
 
 export interface AccessReviewPdfInput {
@@ -91,6 +104,25 @@ export interface AccessReviewPdfInput {
     closedByEmail: string;
     closedAtIso: string;
     decisions: readonly AccessReviewPdfDecisionRow[];
+    /**
+     * For a LEGACY_APP campaign: what the application reported, and when.
+     *
+     * The payload hash is the point. It is computed over the snapshot's rows at
+     * pull time, so an auditor can re-derive it from the stored rows and prove
+     * the certification was made against THOSE rows and not a later state. The
+     * mapping version says which column-to-field interpretation produced them —
+     * the same bytes under a different mapping are a different claim about who
+     * had access.
+     *
+     * It also enters `computeContentHash(input)`, so the artefact's own hash
+     * covers the provenance rather than merely displaying it.
+     */
+    legacyProvenance?: {
+        snapshotId: string;
+        payloadHash: string;
+        mappingVersion: number;
+        connectionId: string;
+    } | null;
     watermark?: WatermarkMode;
 }
 
@@ -204,17 +236,46 @@ export function generateAccessReviewPdf(
     ]);
     addSpacer(doc);
 
+    // ─── Source provenance, for a legacy application ─────────────
+    //
+    // Before the decisions, not after: an auditor reading this artefact needs to
+    // know WHAT was certified before reading WHO certified it.
+    if (input.legacyProvenance) {
+        addSectionTitle(doc, 'Source snapshot');
+        // A paragraph rather than `addSummaryMetrics`: that helper renders
+        // NUMBERS, and a 64-character hash is the one field here nobody should
+        // see abbreviated into a metric tile.
+        addParagraph(
+            doc,
+            `Certified against snapshot ${input.legacyProvenance.snapshotId} of connection `
+            + `${input.legacyProvenance.connectionId}, interpreted under mapping version `
+            + `${input.legacyProvenance.mappingVersion}. The application's reported rows hash to `
+            + `${input.legacyProvenance.payloadHash}. Re-deriving that hash from the stored rows `
+            + 'proves this certification was made against those rows and not a later state.'
+        );
+        addSpacer(doc);
+    }
+
     // ─── Per-user decision table ─────────────────────────────────
     addSectionTitle(doc, 'Per-user decisions');
 
-    const widths = autoColumnWidths([2.6, 1.0, 1.1, 1.1, 1.0, 2.0]);
+    // The method column appears only where it means something. Adding an empty
+    // column to every member-flow artefact would cost width on every page to
+    // say nothing, and a reader would reasonably wonder what was missing.
+    const showMethod = input.decisions.some((d) => Boolean(d.resolutionMethod));
+    const widths = showMethod
+        ? autoColumnWidths([2.4, 1.0, 1.1, 1.0, 1.0, 1.2, 1.6])
+        : autoColumnWidths([2.6, 1.0, 1.1, 1.1, 1.0, 2.0]);
     const columns: TableColumn[] = [
         { key: 'subject', header: 'Subject', width: widths[0] },
         { key: 'snapshotRole', header: 'Snapshot Role', width: widths[1], align: 'center' },
         { key: 'decision', header: 'Decision', width: widths[2], align: 'center' },
         { key: 'targetRole', header: 'Target Role', width: widths[3], align: 'center' },
         { key: 'outcome', header: 'Outcome', width: widths[4], align: 'center' },
-        { key: 'notes', header: 'Notes', width: widths[5] },
+        ...(showMethod
+            ? [{ key: 'method', header: 'Attributed by', width: widths[5], align: 'center' as const }]
+            : []),
+        { key: 'notes', header: 'Notes', width: widths[showMethod ? 6 : 5] },
     ];
 
     const rows = [...input.decisions]
@@ -227,6 +288,7 @@ export function generateAccessReviewPdf(
             decision: d.decision ?? 'PENDING',
             targetRole: d.modifiedToRole ?? '—',
             outcome: d.executionOutcome,
+            method: d.resolutionMethod ?? '—',
             notes: d.notes ?? '—',
         }));
 

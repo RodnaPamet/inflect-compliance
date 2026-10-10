@@ -270,6 +270,74 @@ export interface CloseConnectedResult {
  * it, so a failed artefact leaves a CLOSED campaign with a null evidence link
  * rather than an un-closed campaign.
  */
+/**
+ * What the remediation task tells the reviewer to do.
+ *
+ * Scope-aware, because the wording is an INSTRUCTION. "Remove this account in
+ * the identity provider" is right for a connected campaign and wrong for a
+ * legacy one: nothing of ours writes to a legacy application — the client has
+ * no write operation at all — and a task implying otherwise invites somebody to
+ * wait for an automation that will never run, which is the worst possible
+ * outcome for a revoke.
+ *
+ * Exported so the wording can be asserted directly. `Task.description` is in
+ * the encryption manifest, so an integration test reading the row back gets
+ * ciphertext — a test that matched the plaintext there would have been
+ * asserting nothing, and one that gave up would leave the most consequential
+ * sentence in the subsystem untested.
+ */
+export function remediationDescription(input: {
+    scope: string;
+    reviewName: string;
+    decision: string | null;
+    subjectRef: string;
+}): string {
+    const head = `Access review "${input.reviewName}" decided ${input.decision} for ${input.subjectRef}.`;
+    return input.scope === 'LEGACY_APP'
+        ? `${head} Make this change IN THE LEGACY APPLICATION ITSELF and then close this task — `
+            + 'Inflect reads that application and never writes to it, so nothing here will '
+            + 'action it for you.'
+        : `${head} Remove or adjust this account in the identity provider, then close this task.`;
+}
+
+/**
+ * The campaign-level provenance, from the subjects' own frozen snapshots.
+ *
+ * Returns null when no subject carries one, which is every CONNECTED_APP
+ * campaign — so the PDF's provenance block and its "Attributed by" column stay
+ * out of artefacts that have nothing to put in them.
+ */
+function legacyProvenanceOf(
+    decisions: readonly { snapshotJson: unknown }[]
+): { snapshotId: string; payloadHash: string; mappingVersion: number; connectionId: string } | null {
+    for (const d of decisions) {
+        const snap = (d.snapshotJson ?? {}) as Record<string, unknown>;
+        const p = snap.provenance as Record<string, unknown> | undefined;
+        if (
+            p
+            && typeof p.snapshotId === 'string'
+            && typeof p.payloadHash === 'string'
+            && typeof p.mappingVersion === 'number'
+            && typeof p.connectionId === 'string'
+        ) {
+            return {
+                snapshotId: p.snapshotId,
+                payloadHash: p.payloadHash,
+                mappingVersion: p.mappingVersion,
+                connectionId: p.connectionId,
+            };
+        }
+    }
+    return null;
+}
+
+/** How the account was attributed to a person, if it was. */
+function resolutionMethodOf(snapshotJson: unknown): string | null {
+    const snap = (snapshotJson ?? {}) as Record<string, unknown>;
+    const r = snap.resolution as Record<string, unknown> | undefined;
+    return r && typeof r.method === 'string' ? r.method : null;
+}
+
 export async function closeConnectedAccessReview(ctx: RequestContext, accessReviewId: string, now: Date = new Date()): Promise<CloseConnectedResult> {
     assertCanAdmin(ctx);
     const phase1 = await runInTenantContext(ctx, async (db) => {
@@ -324,7 +392,12 @@ export async function closeConnectedAccessReview(ctx: RequestContext, accessRevi
                     data: {
                         tenantId: ctx.tenantId,
                         title: `Deprovision access: ${d.subjectRef}`.slice(0, 250),
-                        description: `Access review "${review.name}" decided ${d.decision} for ${d.subjectRef}. Remove or adjust this account in the identity provider, then close this task.`,
+                        description: remediationDescription({
+                            scope: review.scope,
+                            reviewName: review.name,
+                            decision: d.decision,
+                            subjectRef: d.subjectRef,
+                        }),
                         createdByUserId: ctx.userId,
                         source: 'MANUAL',
                     },
@@ -376,6 +449,12 @@ export async function closeConnectedAccessReview(ctx: RequestContext, accessRevi
             createdByEmail: phase1.review.createdBy.email,
             closedByEmail: phase1.closerEmail,
             closedAtIso: now.toISOString(),
+            // Read off the FIRST subject's frozen snapshot rather than re-queried.
+            // Every subject of one campaign carries the same provenance — it was
+            // written from one snapshot at create — and re-reading the snapshot
+            // row here would reintroduce exactly the drift the freeze removed:
+            // the mapping version could have moved since.
+            legacyProvenance: legacyProvenanceOf(phase1.decisions),
             decisions: phase1.decisions.map((d) => {
                 const snap = (d.snapshotJson ?? {}) as Record<string, unknown>;
                 return {
@@ -385,6 +464,10 @@ export async function closeConnectedAccessReview(ctx: RequestContext, accessRevi
                     snapshotMembershipStatus: (snap.mfaEnrolled === true ? 'MFA_ENROLLED' : 'MFA_MISSING') as DirectorySnapshotStatus,
                     decision: d.decision,
                     decidedAtIso: d.decidedAt?.toISOString() ?? null,
+                    // Present only for LEGACY_APP, where the attribution was an
+                    // INFERENCE. `undefined` elsewhere, which is what keeps the
+                    // column out of every member-flow artefact.
+                    resolutionMethod: resolutionMethodOf(d.snapshotJson),
                     // Connected notes are a PLAIN column and
                     // `submitConnectedDecision` writes them through
                     // `sanitizePlainText`, so they are safe to render — unlike
