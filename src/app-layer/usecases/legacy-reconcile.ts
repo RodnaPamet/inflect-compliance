@@ -65,6 +65,10 @@ import {
 import { HRIS_PROVIDERS } from '@/app-layer/integrations/providers/hris';
 import { LEGACY_MCP_PROVIDER_ID } from '@/app-layer/integrations/providers/legacy-mcp';
 import { OBSERVATION_FRESHNESS_MS } from '@/app-layer/usecases/identity-write-target';
+import { buildSystemContext } from '@/app-layer/context-system';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { notFound } from '@/lib/errors/types';
+import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import {
@@ -642,3 +646,89 @@ function toResolutionRow(
 export const RECONCILE_OUTCOMES: readonly Outcome[] = [
     'LINKED', 'SUGGESTED', 'AMBIGUOUS', 'UNMATCHED', 'NON_PERSON',
 ];
+
+
+// ---------------------------------------------------------------------------
+// Giving the run a production caller
+// ---------------------------------------------------------------------------
+
+/**
+ * Reconcile one snapshot from the worker.
+ *
+ * `runLegacyReconcile` takes a `RequestContext` and asserts admin on it, which
+ * is right for the authority it needs and impossible inside a worker - there is
+ * no signed-in person in a job. So this builds a system context, exactly as
+ * `runLegacyAccessPull` does, and the authorization stays on the REQUEST path in
+ * `requestLegacyReconcile` where a real principal exists.
+ *
+ * Added in Step 6c because the run had no production caller AT ALL: no executor,
+ * no route, no schedule, with every importer of `runLegacyReconcile` a test. A
+ * tenant could pull a snapshot and open the review queue and the queue was empty
+ * for ever, because the only writer of `LegacyAccountResolution` was a function
+ * nothing called. Steps 3c, 4a and 4b all sat behind that. See the filed issue -
+ * what made it invisible is that every layer around it had passing tests, and
+ * none of them asks what invokes the thing in production.
+ */
+export async function runLegacyReconcileJob(input: {
+    readonly tenantId: string;
+    readonly snapshotId: string;
+    readonly triggeredBy?: string;
+}): Promise<ReconcileResult> {
+    const ctx = buildSystemContext({ tenantId: input.tenantId, job: 'legacy-reconcile' });
+    return runLegacyReconcile(ctx, {
+        snapshotId: input.snapshotId,
+        // 'manual' and not 'job': every caller is an administrator pressing a
+        // button, exactly as the pull's is. A 'job' default would be a value
+        // nothing produces, and `triggeredBy` is how the integrations page tells
+        // a human act from a sweep — so a wrong one is a wrong answer to that.
+        triggeredBy: input.triggeredBy ?? 'manual',
+    });
+}
+
+/**
+ * Ask for a reconciliation run. Enqueues and returns the job id.
+ *
+ * The snapshot lookup is NOT the security boundary - the job re-reads under
+ * tenant context and would find nothing. It is the difference between a 404 an
+ * administrator can act on and a queued job that records a refusal somewhere
+ * they are not looking, which is the same reasoning `requestLegacyAccessPull`
+ * gives for its connection lookup.
+ */
+export async function requestLegacyReconcile(
+    ctx: RequestContext,
+    snapshotId: string
+): Promise<{ readonly jobId: string | undefined }> {
+    assertCanAdmin(ctx);
+
+    const snapshot = await runInTenantContext(ctx, (db) =>
+        db.legacyAccessSnapshot.findFirst({
+            where: { id: snapshotId, tenantId: ctx.tenantId },
+            select: { id: true, connectionId: true },
+        })
+    );
+    if (!snapshot) throw notFound('Legacy access snapshot not found');
+
+    const job = await enqueue('legacy-reconcile', {
+        tenantId: ctx.tenantId,
+        snapshotId: snapshot.id,
+    });
+
+    await runInTenantContext(ctx, (db) =>
+        logEvent(db, ctx, {
+            entityType: 'LegacyAccessSnapshot',
+            entityId: snapshot.id,
+            action: 'LEGACY_RECONCILE_REQUESTED',
+            details: `Legacy reconciliation requested for snapshot "${snapshot.id}"`,
+            detailsJson: {
+                category: 'custom',
+                event: 'legacy_reconcile_requested',
+                snapshotId: snapshot.id,
+                connectionId: snapshot.connectionId ?? null,
+                jobId: job.id ?? null,
+                requestedByUserId: ctx.userId ?? null,
+            },
+        })
+    );
+
+    return { jobId: job.id };
+}

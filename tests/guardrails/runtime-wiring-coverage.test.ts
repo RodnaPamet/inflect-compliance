@@ -44,6 +44,16 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     // access table, and recertification works from a snapshot somebody CHOSE to
     // take. A nightly sweep would re-read those tables on a cadence nobody
     // consented to, and would produce snapshots no campaign is waiting for.
+    // Step 6c. Deliberately NOT scheduled, for the pull's reason one step on: a
+    // run decides which legacy accounts are claimed to belong to which people,
+    // and the design defers even a scheduled PULL. A nightly reconcile would
+    // re-decide that against a roster nobody re-checked, and a stale roster
+    // mass-produces false orphans and false leavers.
+    'legacy-reconcile': 'Dispatched by POST /api/t/:slug/admin/legacy-access/reconcile, which '
+        + 'enqueues one run for one snapshot. Never reconciled inside a request: a run walks '
+        + 'the whole snapshot against the whole roster and writes one resolution per account, '
+        + 'so an HTTP timeout must not be what decides how much of a population was '
+        + 'reconciled.',
     'legacy-access-pull': 'Dispatched by POST /api/t/:slug/admin/legacy-access/pull, which '
         + 'enqueues one pull for one connection. Never pulled inside a request: the job '
         + 'dials a customer-hosted MCP server, pages until it has the whole table, and '

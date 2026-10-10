@@ -1281,6 +1281,37 @@ executorRegistry.register('legacy-access-pull', async (payload) => {
     });
 });
 
+// Step 6c — legacy-reconcile: reconcile one snapshot against the HR roster.
+// ON-DEMAND only: dispatched by the admin route, never scheduled. See
+// ON_DEMAND_JOBS in tests/guardrails/runtime-wiring-coverage.
+//
+// A JOB rather than a request, for the reason the pull is: a run walks a whole
+// snapshot against the whole roster and writes one resolution per account, and
+// an HTTP timeout must not be what decides how much of a population was
+// reconciled. The usecase builds its own system context — there is no
+// signed-in person inside a worker, and the authorization is on the REQUEST
+// path where one exists.
+executorRegistry.register('legacy-reconcile', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runLegacyReconcileJob } = await import('@/app-layer/usecases/legacy-reconcile');
+    const r = await runLegacyReconcileJob({
+        tenantId: payload.tenantId,
+        snapshotId: payload.snapshotId,
+        triggeredBy: 'manual',
+    });
+    // `resolved` is the processed count and the whole population is the
+    // denominator, so a refusal reports 0 of 0 rather than looking like a run
+    // that found nothing to do.
+    return makeResult('legacy-reconcile', startedAt, startMs, r.resolved, r.resolved, 0, {
+        executionId: r.executionId,
+        snapshotId: r.snapshotId,
+        status: r.status,
+        refusal: r.refusal,
+        byOutcome: r.byOutcome,
+    });
+});
+
 // PR-2 — identity-sync: sync one Okta / Google Workspace connection.
 executorRegistry.register('identity-sync', async (payload) => {
     const startedAt = new Date().toISOString();
