@@ -59,6 +59,56 @@ export interface FlueModelSelection {
     localModel?: string | null;
 }
 
+/**
+ * The `select` clause the posture is read with, and the mapping from that row
+ * to the terms above. #3384 — three consumers read these same three columns
+ * (`flue/driver.ts`, `usecases/risk-suggestions.ts`, `ai/intent/
+ * chooser-for-tenant.ts`), and each used to write the three field renames out
+ * by hand.
+ *
+ * The duplication that mattered was never the query — it was the RENAME.
+ * A fourth column, or a rename, is a silent partial update: a site that keeps
+ * compiling while passing `undefined` for the term it forgot gets the DEFAULT
+ * posture, and `resolveFlueModel` reads an absent `residency` as EXTERNAL. So
+ * the failure mode of a missed site is a LOCAL_ONLY tenant treated as
+ * EXTERNAL, which is the one direction that matters.
+ *
+ * This is a MAPPER and not a reader on purpose. `risk-suggestions.ts` does its
+ * read inside an existing `runInTenantContext(ctx, async (db) => …)`, so a
+ * helper that opened its own context would nest one inside another. Each site
+ * keeps its own read, with whatever `db` it already holds, and shares only the
+ * part that was actually being repeated.
+ *
+ * The returned shape also satisfies `ProviderSelection` in
+ * `ai/risk-assessment`, which mirrors `FlueModelSelection` field for field —
+ * so the one mapper serves both `resolveFlueModel` and `getProvider`.
+ */
+export const RESIDENCY_SELECT = {
+    aiResidency: true,
+    aiLocalBaseUrl: true,
+    aiLocalModel: true,
+} as const;
+
+export function residencyTermsFrom(
+    row:
+        | {
+              readonly aiResidency?: 'EXTERNAL' | 'LOCAL_ONLY' | null;
+              readonly aiLocalBaseUrl?: string | null;
+              readonly aiLocalModel?: string | null;
+          }
+        | null
+        | undefined,
+): FlueModelSelection {
+    // An absent row resolves to `undefined` throughout, which
+    // `resolveFlueModel` and `getProvider` both read as EXTERNAL — the same
+    // default `tenant-security-settings.ts` applies when the row is missing.
+    return {
+        residency: row?.aiResidency,
+        localBaseUrl: row?.aiLocalBaseUrl,
+        localModel: row?.aiLocalModel,
+    };
+}
+
 /** Why a run may not proceed. Each is an operator-actionable configuration gap. */
 export type FlueModelRefusal =
     /** LOCAL_ONLY, and no gateway is configured to be local against. */

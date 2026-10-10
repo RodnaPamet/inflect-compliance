@@ -10,6 +10,10 @@
  * Audit: Every generate/apply/dismiss action is logged with full context.
  */
 import { runInTenantContext } from '@/lib/db-context';
+import {
+    RESIDENCY_SELECT,
+    residencyTermsFrom,
+} from '@/lib/agentic/flue/model-selection';
 import { recordScoreEvent } from './risk-score-events';
 import { logEvent } from '@/app-layer/events/audit';
 import type { RequestContext } from '@/app-layer/types';
@@ -166,13 +170,11 @@ export async function generateRiskSuggestions(
         // LOCAL_ONLY forces a local provider and refuses external inference.
         const secSettings = await db.tenantSecuritySettings.findUnique({
             where: { tenantId: ctx.tenantId },
-            select: { aiResidency: true, aiLocalBaseUrl: true, aiLocalModel: true },
+            select: RESIDENCY_SELECT,
         });
-        const provider = getProvider({
-            residency: secSettings?.aiResidency,
-            localBaseUrl: secSettings?.aiLocalBaseUrl,
-            localModel: secSettings?.aiLocalModel,
-        });
+        // The read stays here, on the `db` this block already holds; only the
+        // mapping is shared (#3384).
+        const provider = getProvider(residencyTermsFrom(secSettings));
         const aiStart = Date.now();
         let output;
         try {

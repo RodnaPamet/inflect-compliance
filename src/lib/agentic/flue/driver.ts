@@ -6,7 +6,11 @@ import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { logger } from '@/lib/observability/logger';
 
 import { planFlueRun, refusalMessage } from './driver-plan';
-import type { FlueModelSelection } from './model-selection';
+import {
+    RESIDENCY_SELECT,
+    residencyTermsFrom,
+    type FlueModelSelection,
+} from './model-selection';
 
 /**
  * The tenant's AI-residency posture — the SAME three columns
@@ -25,14 +29,10 @@ async function residencyTermsFor(ctx: RequestContext): Promise<FlueModelSelectio
     const settings = await runInTenantContext(ctx, (db) =>
         db.tenantSecuritySettings.findUnique({
             where: { tenantId: ctx.tenantId },
-            select: { aiResidency: true, aiLocalBaseUrl: true, aiLocalModel: true },
+            select: RESIDENCY_SELECT,
         }),
     );
-    return {
-        residency: settings?.aiResidency,
-        localBaseUrl: settings?.aiLocalBaseUrl,
-        localModel: settings?.aiLocalModel,
-    };
+    return residencyTermsFrom(settings);
 }
 
 /**
