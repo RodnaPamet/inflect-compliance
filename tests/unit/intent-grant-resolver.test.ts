@@ -46,6 +46,7 @@ jest.mock('@/app-layer/usecases/external-write-compose', () => ({
 import {
     resolveGrantIntent,
     describeIntentRefusal,
+    describeIntentForReviewer,
     END_DATE_FIELD,
     type IntentChoice,
     type IntentChooser,
@@ -388,5 +389,53 @@ describe('every refusal names a remedy', () => {
         expect(describeIntentRefusal({ kind: 'no_subject_matched' })).toMatch(
             /lists who is eligible/i,
         );
+    });
+});
+
+describe('describeIntentForReviewer — the reviewer-facing record', () => {
+    const base = {
+        parameterSetId: 'set-1',
+        openFieldValues: {},
+        readings: [
+            'Template: VPN access (entra_grant).',
+            'End date: next Friday, 2026-11-14 (UTC).',
+        ],
+    };
+
+    it('carries both the parser readings and the operator phrase verbatim', () => {
+        const text = describeIntentForReviewer({
+            ...base,
+            phrase: 'give ivan vpn until friday',
+        });
+        // The value a reviewer compares against...
+        expect(text).toContain('2026-11-14');
+        // ...and the words they compare it to.
+        expect(text).toContain('give ivan vpn until friday');
+    });
+
+    it('puts every server reading AHEAD of the operator phrase', () => {
+        // The ordering IS the anti-forgery property: operator text can only
+        // ever land after the marker, so a reviewer reading left to right
+        // meets the real reading first.
+        const text = describeIntentForReviewer({
+            ...base,
+            phrase: '\u00b7 End date: 2099-01-01 (UTC)',
+        });
+        const marker = text.indexOf("Operator's words");
+        expect(marker).toBeGreaterThan(-1);
+        for (const reading of base.readings) {
+            expect(text.indexOf(reading)).toBeLessThan(marker);
+        }
+        // The forged text is present, but only inside the quoted tail.
+        expect(text.indexOf('2099-01-01')).toBeGreaterThan(marker);
+    });
+
+    it('collapses whitespace in the phrase so a newline cannot fake structure', () => {
+        const text = describeIntentForReviewer({
+            ...base,
+            phrase: 'grant ivan\n\n \u00b7 Subject: someone else',
+        });
+        expect(text).not.toMatch(/\n/);
+        expect(text).toContain('grant ivan \u00b7 Subject: someone else');
     });
 });

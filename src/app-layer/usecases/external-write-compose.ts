@@ -312,7 +312,20 @@ export async function listComposeOffer(
 
 export async function composeExternalWriteProposal(
     ctx: RequestContext,
-    input: { parameterSetId: string; openFieldValues: Record<string, unknown> },
+    input: {
+        parameterSetId: string;
+        openFieldValues: Record<string, unknown>;
+        /**
+         * Reviewer-facing text recording HOW this proposal was arrived at —
+         * today, the typed phrase plus the parser's readings (#3351).
+         *
+         * Deliberately NOT part of the HTTP body the form route accepts: the
+         * readings are the misparse check, so they have to be server-derived.
+         * A requester who could supply them could claim one end date while
+         * sending another. `createAgentProposal` sanitises and hashes it.
+         */
+        rationale?: string | null;
+    },
 ): Promise<ComposeOutcome> {
     // WRITE, not admin. Composing is the lower bar on purpose: the proposal
     // reaches a reviewer who needs the authority to approve, and requiring that
@@ -463,6 +476,9 @@ export async function composeExternalWriteProposal(
         // `resolvePolicyCardPin` returns exactly this for a human-started
         // proposal, without a query.
         policyCardVersion: NO_POLICY_CARD,
+        // Null, not undefined, when absent: the form path records no rationale
+        // and the column is nullable.
+        rationale: input.rationale ?? null,
         // Which template was in force, so a reviewer sees what was filled in
         // rather than only the result.
         proposedBySessionRef: `compose:${set.label}:${randomUUID()}`,
