@@ -99,6 +99,40 @@ export const STATE_BUDGET_CHARS = {
     [LAYA_MODEL]: 1_536,
 } as const;
 
+/**
+ * The model's own token window, in TOKENS, for the post-hoc truncation check.
+ *
+ * Distinct from {@link STATE_BUDGET_CHARS} and not derivable from it. That is a
+ * conservative PRE-flight bound in characters, which is all we can compute
+ * without the vendor's tokeniser. This is the vendor's real limit, and it is
+ * only ever compared against a number the VENDOR reports — `usage.input_tokens`
+ * — so no tokeniser of ours is involved.
+ *
+ * An answer whose reported input tokens REACH the window was computed on input
+ * the vendor may have cut off, and a candidate that fell off the end reads
+ * downstream as a candidate the model rejected. Such an answer is discarded as
+ * `OVER_BUDGET`. At-or-above rather than strictly above: a count that lands
+ * exactly on the limit is the signature of truncation, not of a perfect fit.
+ */
+export const MODEL_TOKEN_WINDOW = {
+    /** "64k tokens per request" — docs.typesafe.ai/models, verified 2026-10-08. */
+    [JEV_MODEL]: 64_000,
+    /** The SHIPPED checkpoint limit, not mmBERT-base's 8,192. See above. */
+    [LAYA_MODEL]: 1_024,
+} as const;
+
+/**
+ * Requests in flight per model, from the design document's table.
+ *
+ * Jev is a hosted API and Laya is one service of ours, so the numbers are about
+ * two different things: a rate a vendor will accept, and a queue depth a single
+ * GPU stays responsive at.
+ */
+export const REQUESTS_IN_FLIGHT = {
+    [JEV_MODEL]: 8,
+    [LAYA_MODEL]: 4,
+} as const;
+
 // ─── Questions we ask ──────────────────────────────────────────────────────
 
 /**

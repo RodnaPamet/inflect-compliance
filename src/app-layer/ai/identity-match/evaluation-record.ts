@@ -44,9 +44,39 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import type { MatchState } from './systemone-wire';
+
 /** One raw model answer from the synthetic adjudication corpus. */
 export interface RecordedAnswer {
     readonly caseId: string;
+    readonly option: string;
+    readonly optionProbability: number;
+    readonly personProbability: number;
+}
+
+/**
+ * One canary: the state to send, and the answer this revision gave it.
+ *
+ * **The STATE is stored here, and it has to be.** The canary runs before each
+ * production batch, so it needs the exact payload to send — and the synthetic
+ * corpus those states come from is a test fixture
+ * (`tests/fixtures/identity-reconcile/adjudication/corpus.ts`), which no module
+ * under `src/` can import. A canary that could only run under Jest would be a
+ * drift detector that never watches production, which is the only place a
+ * vendor swaps a checkpoint behind an unchanged model name.
+ *
+ * A full `MatchState` rather than the corpus case it was built from, so the
+ * canary exercises the PROVIDER and not the payload builder. The builder has its
+ * own suite; what this has to catch is the model answering differently.
+ *
+ * Free to add now because `evaluations/` is empty — there is no committed record
+ * to migrate, which is the same reason the two new thresholds were free in 6c
+ * part 2. It will not be free later.
+ */
+export interface CanaryCase {
+    readonly caseId: string;
+    /** Exactly what gets sent. Synthetic: no real person appears in a record. */
+    readonly state: MatchState;
     readonly option: string;
     readonly optionProbability: number;
     readonly personProbability: number;
@@ -78,7 +108,7 @@ export interface EvaluationRecord {
     readonly thresholds: EvaluationThresholds;
     readonly classSupport: Readonly<Record<string, number>>;
     readonly precision: { readonly agrees: number };
-    readonly canaries: readonly RecordedAnswer[];
+    readonly canaries: readonly CanaryCase[];
 }
 
 /**
