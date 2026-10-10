@@ -113,6 +113,12 @@ export const CONTENT_SOURCE_PROVENANCE = {
     'integration.entra-id': 'THIRD_PARTY_INGESTED',
     'integration.google-workspace': 'THIRD_PARTY_INGESTED',
     'integration.active-directory': 'THIRD_PARTY_INGESTED',
+    // Step 6c. The legacy snapshot's display names, read through an MCP
+    // server the CUSTOMER runs. Named here rather than left to the
+    // fail-closed default because this is the one ingestion path whose
+    // content reaches a model as the SUBJECT of a question, and a reader
+    // asking "what is in the agent's corpus" should find it in this table.
+    'integration.legacy-mcp': 'THIRD_PARTY_INGESTED',
     'integration.workday': 'THIRD_PARTY_INGESTED',
     'integration.bamboohr': 'THIRD_PARTY_INGESTED',
     'webhook.inbound': 'THIRD_PARTY_INGESTED',
