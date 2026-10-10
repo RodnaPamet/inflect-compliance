@@ -17,6 +17,9 @@ import {
     SNAPSHOT_FRESHNESS_MS,
     createLegacyAccessReview,
 } from '@/app-layer/usecases/access-review-legacy';
+import { closeConnectedAccessReview } from '@/app-layer/usecases/access-review-connected';
+import { verifySnapshotPayloadHash } from '@/app-layer/usecases/legacy-access-verify';
+import { computePayloadHash } from '@/lib/legacy-access/canonical';
 
 const prisma: PrismaClient = prismaTestClient();
 const T = 'lar-tenant';
@@ -274,5 +277,158 @@ describe('a created campaign', () => {
                 name: 'nope', connectionId, reviewerUserId: reviewerId,
             })
         ).rejects.toThrow();
+    });
+});
+
+describe('closing a LEGACY_APP campaign', () => {
+    /** Decide every subject so the pending guard does not fire. */
+    async function decideAll(accessReviewId: string, decision: 'CONFIRM' | 'REVOKE') {
+        await prisma.accessReviewConnectedDecision.updateMany({
+            where: { tenantId: T, accessReviewId },
+            data: { decision, decidedAt: new Date(), decidedByUserId: reviewerId },
+        });
+    }
+
+    it('routes through the connected close rather than a third implementation', async () => {
+        await seedHappyPath();
+        const r = await create();
+        await decideAll(r.accessReviewId, 'CONFIRM');
+
+        const closed = await closeConnectedAccessReview(ctx(), r.accessReviewId);
+        expect(closed).toBeTruthy();
+        const review = await prisma.accessReview.findFirstOrThrow({
+            where: { id: r.accessReviewId, tenantId: T },
+        });
+        expect(review.status).toBe('CLOSED');
+    });
+
+    it('a REVOKE raises one task, and closing twice raises no second one', async () => {
+        await seedHappyPath();
+        const r = await create();
+        await decideAll(r.accessReviewId, 'REVOKE');
+
+        await closeConnectedAccessReview(ctx(), r.accessReviewId);
+        const first = await prisma.task.count({ where: { tenantId: T } });
+        expect(first).toBe(1);
+
+        // A second close is refused outright, which is the strongest form of
+        // idempotence available here — but the executedAt stamps are what make
+        // a PARTIAL re-entry safe, so assert the task count either way.
+        await expect(closeConnectedAccessReview(ctx(), r.accessReviewId)).rejects.toThrow();
+        expect(await prisma.task.count({ where: { tenantId: T } })).toBe(first);
+    });
+
+    it("the revoke task tells the reviewer to act in the LEGACY app, not a directory", async () => {
+        // Wording is an instruction. "in the identity provider" would invite
+        // somebody to wait for an automation that will never run — nothing of
+        // ours writes to a legacy application.
+        await seedHappyPath();
+        const r = await create();
+        await decideAll(r.accessReviewId, 'REVOKE');
+        await closeConnectedAccessReview(ctx(), r.accessReviewId);
+
+        // `Task.description` is in the encryption manifest, so the raw client
+        // returns ciphertext. Assert it was WRITTEN and is encrypted here; the
+        // wording itself is asserted against `remediationDescription` in
+        // tests/unit/legacy-findings.test.ts, where it is plaintext.
+        const task = await prisma.task.findFirstOrThrow({ where: { tenantId: T } });
+        expect(task.description).not.toBeNull();
+        expect(task.description).toMatch(/^v\d+:/);
+        expect(task.title).toContain('jsmith');
+    });
+
+    it('the stored payload hash re-derives from the stored rows', async () => {
+        // The hardening item, through the usecase an AUDITOR would use rather
+        // than a re-implementation of the derivation in the test — which would
+        // only prove the test agrees with itself.
+        const accounts = [
+            {
+                accountKey: 'aaa', username: 'aaa', displayName: 'A A', givenName: 'A',
+                familyName: 'A', email: 'a@lar.test', employeeNumber: null,
+                department: 'Finance', title: null, managerRef: null, status: 'ACTIVE' as const,
+                lastLoginAt: new Date('2026-10-01T00:00:00.000Z'), sourceCreatedAt: null,
+                expiresAt: null, entitlements: ['reader'], isPrivileged: false,
+                accountType: 'HUMAN' as const,
+            },
+            {
+                accountKey: 'bbb', username: 'bbb', displayName: 'B B', givenName: 'B',
+                familyName: 'B', email: 'b@lar.test', employeeNumber: null,
+                department: 'Ops', title: null, managerRef: null, status: 'ACTIVE' as const,
+                lastLoginAt: new Date('2026-10-02T00:00:00.000Z'), sourceCreatedAt: null,
+                expiresAt: null, entitlements: [], isPrivileged: true,
+                accountType: 'HUMAN' as const,
+            },
+        ];
+        const realHash = computePayloadHash(accounts as never);
+
+        const snap = await prisma.legacyAccessSnapshot.create({
+            data: {
+                tenantId: T, connectionId, remoteSnapshotId: 'snap-hash',
+                mappingVersion: 7, columnSetFingerprint: 'f'.repeat(64),
+                payloadHash: realHash, rowCount: accounts.length,
+                rowsReceived: accounts.length, status: 'COMPLETE', completedAt: new Date(),
+            },
+        });
+        await prisma.legacyAccount.createMany({
+            data: accounts.map((a) => ({ tenantId: T, snapshotId: snap.id, ...a })),
+        });
+
+        const verdict = await verifySnapshotPayloadHash(ctx('OWNER'), snap.id);
+        // `verified`, and the two hashes equal. Asserting the boolean alone
+        // would pass against a verifier that returned true unconditionally.
+        expect(verdict).toMatchObject({ verified: true, reason: null });
+        expect(verdict.recomputedHash).toBe(realHash);
+        expect(verdict.storedHash).toBe(verdict.recomputedHash);
+        expect(verdict.rowCount).toBe(accounts.length);
+    });
+
+    it('and that same hash reaches the campaign subjects as provenance', async () => {
+        // The join an auditor makes: the artefact's provenance must name the
+        // hash that re-derives, not some other snapshot's.
+        const accounts = [{
+            accountKey: 'ccc', username: 'ccc', displayName: 'C C', givenName: 'C',
+            familyName: 'C', email: 'c@lar.test', employeeNumber: null,
+            department: 'Finance', title: null, managerRef: null, status: 'ACTIVE' as const,
+            lastLoginAt: new Date('2026-10-03T00:00:00.000Z'), sourceCreatedAt: null,
+            expiresAt: null, entitlements: [], isPrivileged: false, accountType: 'HUMAN' as const,
+        }];
+        const realHash = computePayloadHash(accounts as never);
+        const snap = await prisma.legacyAccessSnapshot.create({
+            data: {
+                tenantId: T, connectionId, remoteSnapshotId: 'snap-prov',
+                mappingVersion: 9, columnSetFingerprint: 'f'.repeat(64),
+                payloadHash: realHash, rowCount: 1, rowsReceived: 1,
+                status: 'COMPLETE', completedAt: new Date(),
+            },
+        });
+        await prisma.legacyAccount.createMany({
+            data: accounts.map((a) => ({ tenantId: T, snapshotId: snap.id, ...a })),
+        });
+        const exec = await prisma.integrationExecution.create({
+            data: {
+                tenantId: T, connectionId, status: 'PASSED', provider: 'legacy-mcp',
+                automationKey: 'legacy-mcp.reconcile', executedAt: new Date(), completedAt: new Date(),
+            },
+        });
+        await prisma.legacyAccountResolution.create({
+            data: {
+                tenantId: T, executionId: exec.id, snapshotId: snap.id,
+                accountKey: 'ccc', outcome: 'LINKED', method: 'MANUAL',
+                employeeId, signalsJson: [], candidatesJson: [], vetoesJson: [],
+            },
+        });
+
+        const r = await create({ name: 'hash provenance campaign' });
+        const d = await prisma.accessReviewConnectedDecision.findFirstOrThrow({
+            where: { tenantId: T, accessReviewId: r.accessReviewId },
+        });
+        const prov = (d.snapshotJson as Record<string, unknown>).provenance as Record<string, unknown>;
+        expect(prov.payloadHash).toBe(realHash);
+        expect(prov.mappingVersion).toBe(9);
+        // And the resolution METHOD, which is what the PDF's "Attributed by"
+        // column renders — an auditor is entitled to know whether a person said
+        // so or a similarity scorer did.
+        expect((d.snapshotJson as Record<string, unknown>).resolution)
+            .toMatchObject({ method: 'MANUAL' });
     });
 });

@@ -17,6 +17,7 @@ import {
     type FindingSubject,
     type LegacyFinding,
 } from '@/lib/legacy-access/findings';
+import { remediationDescription } from '@/app-layer/usecases/access-review-connected';
 
 const NOW = new Date('2026-10-10T00:00:00.000Z');
 const LONG_AGO = new Date('2024-01-01T00:00:00.000Z');
@@ -272,5 +273,41 @@ describe('what must NOT be raised', () => {
         // The denominator for every test above: if this were non-empty, the
         // fixtures would not be isolating anything.
         expect(findingsFor(subject(), context())).toEqual([]);
+    });
+});
+
+describe('the remediation task wording is scope-aware', () => {
+    // Here rather than in the integration test because `Task.description` is
+    // encrypted at rest: a test reading the row back gets ciphertext, and the
+    // most consequential sentence in this subsystem would otherwise go
+    // unasserted.
+    it('a LEGACY_APP task says to act in the application, and that we never write', () => {
+        const d = remediationDescription({
+            scope: 'LEGACY_APP', reviewName: 'Q4', decision: 'REVOKE', subjectRef: 'conn:jsmith',
+        });
+        expect(d).toMatch(/LEGACY APPLICATION ITSELF/);
+        expect(d).toMatch(/never writes to it/);
+        // The wrong instruction, explicitly absent. Without this the test would
+        // pass on a description that said both things.
+        expect(d).not.toMatch(/identity provider/);
+    });
+
+    it('a CONNECTED_APP task keeps the directory wording', () => {
+        const d = remediationDescription({
+            scope: 'CONNECTED_APP', reviewName: 'Q4', decision: 'REVOKE', subjectRef: 'okta:u1',
+        });
+        expect(d).toMatch(/identity provider/);
+        expect(d).not.toMatch(/LEGACY APPLICATION/);
+    });
+
+    it('both name the campaign, the decision and the subject', () => {
+        for (const scope of ['LEGACY_APP', 'CONNECTED_APP']) {
+            const d = remediationDescription({
+                scope, reviewName: 'Q4 recert', decision: 'MODIFY', subjectRef: 'conn:abc',
+            });
+            expect(d).toContain('Q4 recert');
+            expect(d).toContain('MODIFY');
+            expect(d).toContain('conn:abc');
+        }
     });
 });
