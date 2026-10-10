@@ -14,6 +14,7 @@
 import { z } from 'zod';
 import { RequestContext } from '../types';
 import { AccessReviewRepository } from '../repositories/AccessReviewRepository';
+import { suggestLegacyEvidenceControls } from './legacy-evidence-controls';
 import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
@@ -270,7 +271,27 @@ export interface CloseConnectedResult {
  * it, so a failed artefact leaves a CLOSED campaign with a null evidence link
  * rather than an un-closed campaign.
  */
-export async function closeConnectedAccessReview(ctx: RequestContext, accessReviewId: string, now: Date = new Date()): Promise<CloseConnectedResult> {
+export async function closeConnectedAccessReview(
+    ctx: RequestContext,
+    accessReviewId: string,
+    now: Date = new Date(),
+    /**
+     * Controls to file the evidence against.
+     *
+     * OMITTED means "the suggested set", not "none" — see
+     * `suggestLegacyEvidenceControls`. Owner decision, 2026-10-10: the choice is
+     * made at CLOSE rather than stored at create, because at close you know
+     * which controls still exist. A control selected at create and deleted
+     * since would fail the link at the worst possible moment, and the brief's
+     * word "creator" is worth less than an artefact that files.
+     *
+     * An EMPTY array is a different instruction: file the evidence against
+     * nothing. That is a legitimate choice for a tenant whose controls do not
+     * map here, and it is distinguishable from the default precisely because
+     * `undefined` and `[]` are not the same value.
+     */
+    evidenceControlIds?: readonly string[]
+): Promise<CloseConnectedResult> {
     assertCanAdmin(ctx);
     const phase1 = await runInTenantContext(ctx, async (db) => {
         const review = await db.accessReview.findFirst({ where: { id: accessReviewId, tenantId: ctx.tenantId }, select: { id: true, name: true, description: true, scope: true, periodStartAt: true, periodEndAt: true, status: true, deletedAt: true, snapshotTruncated: true, reviewer: { select: { email: true } }, createdBy: { select: { email: true } }, tenant: { select: { name: true } } } });
@@ -453,6 +474,78 @@ export async function closeConnectedAccessReview(ctx: RequestContext, accessRevi
             return record.id;
         });
         result.evidenceFileRecordId = fileRecordId;
+
+        // ─── File it against the controls it evidences ──────────────────
+        //
+        // Still phase 2, still outside the transaction, and still inside the
+        // same try: a failed link leaves a CLOSED campaign with its PDF and no
+        // control link, which is recoverable. Rolling the close back because a
+        // control mapping was missing would not be.
+        const chosen = evidenceControlIds
+            ?? (await suggestLegacyEvidenceControls(ctx)).map((c) => c.controlId);
+
+        if (chosen.length > 0) {
+            await runInTenantContext(ctx, async (db) => {
+                const evidence = await db.evidence.create({
+                    data: {
+                        tenantId: ctx.tenantId,
+                        type: 'FILE',
+                        title: `Access review evidence — ${phase1.review.name}`.slice(0, 200),
+                        fileRecordId,
+                        fileName,
+                        fileSize: writeResult.sizeBytes,
+                        category: 'access-review',
+                        // SUBMITTED, not DRAFT: the artefact is final — the
+                        // campaign is closed and the PDF is watermarked FINAL —
+                        // so leaving it DRAFT would put a completed
+                        // certification in a queue of unfinished uploads.
+                        status: 'SUBMITTED',
+                        ownerUserId: ctx.userId,
+                        dateCollected: now,
+                    },
+                });
+                // `skipDuplicates`, against @@unique(tenantId, evidenceId,
+                // controlId). A caller passing the same control twice is a
+                // client mistake, not a reason to fail a close.
+                await db.evidenceControlLink.createMany({
+                    data: chosen.map((controlId) => ({
+                        tenantId: ctx.tenantId,
+                        evidenceId: evidence.id,
+                        controlId,
+                    })),
+                    skipDuplicates: true,
+                });
+                // Counted FROM THE DATABASE. A controlId the tenant does not own
+                // is silently dropped by RLS rather than erroring, so the number
+                // of links that EXIST is the only honest figure to report.
+                const linked = await db.evidenceControlLink.count({
+                    where: { tenantId: ctx.tenantId, evidenceId: evidence.id },
+                });
+                await logEvent(db, ctx, {
+                    entityType: 'Evidence',
+                    entityId: evidence.id,
+                    action: 'ACCESS_REVIEW_EVIDENCE_FILED',
+                    details:
+                        `Access-review evidence for "${phase1.review.name}" filed against `
+                        + `${linked} control(s)`,
+                    detailsJson: {
+                        category: 'custom',
+                        event: 'access_review_evidence_filed',
+                        accessReviewId,
+                        evidenceId: evidence.id,
+                        fileRecordId,
+                        requested: chosen.length,
+                        linked,
+                        // The gap, recorded rather than swallowed: a requested
+                        // control that produced no link is one this tenant does
+                        // not own, and an auditor reading "filed against 2 of 4"
+                        // should be able to see that it was 4 that were asked
+                        // for.
+                        droppedByTenantScope: chosen.length - linked,
+                    },
+                });
+            });
+        }
     } catch (err) {
         // The close has already committed. Leave it closed with a null
         // evidence link and say so loudly; regeneration is a follow-up, and a
