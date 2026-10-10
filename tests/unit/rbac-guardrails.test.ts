@@ -31,10 +31,14 @@ describe('RBAC Guardrail Scans', () => {
         test('admin layout guard exists and uses RequirePermission', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/admin/layout.tsx');
             // Centralized layout guard must use RequirePermission with admin resource
-            expect(content).toMatch(/RequirePermission/);
+            // Needles that name a CONSTRUCT, not an identifier (#3364).
+            // `/RequirePermission/` matched the import, the opening tag and
+            // the closing tag alike, so none of the three was the thing
+            // asserted; `<RequirePermission` names the element.
+            expect(content).toMatch(/<RequirePermission/);
             expect(content).toMatch(/resource="admin"/);
             // Must render ForbiddenPage for unauthorized access
-            expect(content).toMatch(/ForbiddenPage/);
+            expect(content).toMatch(/<ForbiddenPage/);
         });
 
         test('admin/rbac page does NOT have redundant per-page guard (uses layout)', () => {
@@ -51,32 +55,47 @@ describe('RBAC Guardrail Scans', () => {
             // Server component must resolve permissions via ctx.appPermissions (from custom role resolution)
             expect(content).toMatch(/ctx\.appPermissions\.controls/);
             // Must pass appPermissions (including controls) to client island
-            expect(content).toMatch(/appPermissions/);
+            // The ASSIGNMENT, not the word: the identifier appears in the
+            // import, the read and the prop pass (#3364).
+            expect(content).toMatch(/appPermissions\s*=/);
         });
 
         test('controls client island receives and enforces create/edit permissions', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
             // Client island must declare create and edit permission props
-            expect(content).toMatch(/create.*boolean/);
-            expect(content).toMatch(/edit.*boolean/);
+            // The whole prop SHAPE in one needle (#3364). `/edit.*boolean/`
+            // also matched `tasks: { edit: boolean }`, so the controls perms
+            // this test is named for were not the only thing satisfying it.
+            expect(content).toMatch(
+                /controls:\s*\{\s*create:\s*boolean;\s*edit:\s*boolean\s*\}/,
+            );
         });
     });
 
     describe('Audit pack RBAC', () => {
         test('freeze button is wrapped in RequirePermission', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            expect(content).toMatch(/RequirePermission/);
-            expect(content).toMatch(/resource="audits" action="freeze"/);
+            // ONE needle naming the element AND its props (#3364).
+            // `/RequirePermission/` occurred 17 times in this file, and the
+            // separate `resource=`/`action=` needle never asserted that the
+            // pair was on a RequirePermission element at all.
+            expect(content).toMatch(/<RequirePermission resource="audits" action="freeze"/);
         });
 
         test('share button is wrapped in RequirePermission', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            expect(content).toMatch(/resource="audits" action="share"/);
+            // Three share controls, all of which must be wrapped (#3364).
+            expect(
+                content.match(/<RequirePermission resource="audits" action="share"/g),
+            ).toHaveLength(3);
         });
 
         test('clone button is wrapped in RequirePermission', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx');
-            expect(content).toMatch(/resource="audits" action="manage"/);
+            // Four manage controls, all of which must be wrapped (#3364).
+            expect(
+                content.match(/<RequirePermission resource="audits" action="manage"/g),
+            ).toHaveLength(4);
         });
     });
 
@@ -84,9 +103,10 @@ describe('RBAC Guardrail Scans', () => {
         test('policies server page resolves permissions and passes to client island', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/policies/page.tsx');
             // Server component must resolve tenant context (which includes permissions)
-            expect(content).toMatch(/getTenantCtx/);
+            // The CALL, not the import too (#3364).
+            expect(content).toMatch(/getTenantCtx\(\{ tenantSlug \}\)/);
             // Must pass permissions to client island
-            expect(content).toMatch(/permissions/);
+            expect(content).toMatch(/permissions=\{/);
         });
     });
 
@@ -94,9 +114,10 @@ describe('RBAC Guardrail Scans', () => {
         test('risks server page resolves permissions and passes to client island', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/risks/page.tsx');
             // Server component must resolve tenant context (which includes permissions)
-            expect(content).toMatch(/getTenantCtx/);
+            // The CALL, not the import too (#3364).
+            expect(content).toMatch(/getTenantCtx\(\{ tenantSlug \}\)/);
             // Must pass permissions to client island
-            expect(content).toMatch(/permissions/);
+            expect(content).toMatch(/permissions=\{/);
         });
     });
 
@@ -119,16 +140,23 @@ describe('RBAC Guardrail Scans', () => {
     describe('Frameworks page RBAC', () => {
         test('install pack buttons are wrapped in RequirePermission', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx');
-            expect(content).toMatch(/RequirePermission/);
-            expect(content).toMatch(/resource="frameworks" action="install"/);
+            // COUNTED, because there are two install controls and the claim
+            // is that BOTH are wrapped (#3364). A `toMatch` could not tell
+            // "both wrapped" from "one wrapped and one bare", which is the
+            // regression that matters here.
+            expect(
+                content.match(/<RequirePermission resource="frameworks" action="install"/g),
+            ).toHaveLength(2);
         });
     });
 
     describe('Reports RBAC', () => {
         test('reports export buttons are wrapped in RequirePermission', () => {
             const content = readFile('app/t/[tenantSlug]/(app)/reports/ReportsClient.tsx');
-            expect(content).toMatch(/RequirePermission/);
-            expect(content).toMatch(/resource="reports" action="export"/);
+            // COUNTED — three export controls, all of which must be wrapped.
+            expect(
+                content.match(/<RequirePermission resource="reports" action="export"/g),
+            ).toHaveLength(3);
         });
 
         test('SoA export buttons are wrapped in RequirePermission', () => {
@@ -140,8 +168,9 @@ describe('RBAC Guardrail Scans', () => {
             // wrapping the tab-aware buttons; the test still
             // anchors there.
             const content = readFile('app/t/[tenantSlug]/(app)/reports/ReportsClient.tsx');
-            expect(content).toMatch(/RequirePermission/);
-            expect(content).toMatch(/resource="reports" action="export"/);
+            expect(
+                content.match(/<RequirePermission resource="reports" action="export"/g),
+            ).toHaveLength(3);
             // The SoA-specific export anchors must still exist
             // somewhere on the page — assert by id so a future
             // refactor that drops the export entirely fails CI.
@@ -152,8 +181,14 @@ describe('RBAC Guardrail Scans', () => {
     describe('Navigation RBAC', () => {
         test('SidebarNav filters hidden items by permission', () => {
             const content = readFile('components/layout/SidebarNav.tsx');
-            expect(content).toMatch(/usePermissions/);
-            expect(content).toMatch(/visible.*perms\./);
+            // Both nav sections bind it, so COUNT rather than match (#3364):
+            // one section losing its permission read is the regression.
+            expect(content.match(/const perms = usePermissions\(\)/g)).toHaveLength(2);
+            // Every nav entry's `visible` must be computed from `perms`,
+            // so COUNT them rather than finding one (#3364). A new entry
+            // hard-coding `visible: true` is the regression this now catches
+            // and a single match never could.
+            expect(content.match(/visible:\s*perms\./g)).toHaveLength(2);
             expect(content).toMatch(/\.filter\(/);
         });
     });
@@ -161,8 +196,8 @@ describe('RBAC Guardrail Scans', () => {
     describe('Core permission infrastructure', () => {
         test('RequirePermission component exists and uses usePermissions', () => {
             const content = readFile('components/require-permission.tsx');
-            expect(content).toMatch(/usePermissions/);
-            expect(content).toMatch(/hasPermission/);
+            expect(content).toMatch(/usePermissions\(/);
+            expect(content).toMatch(/const hasPermission = permissions\[resource\]\[action\]/);
         });
 
         test('PermissionSet type covers all critical resources', () => {
@@ -175,7 +210,7 @@ describe('RBAC Guardrail Scans', () => {
 
         test('TenantProvider passes appPermissions', () => {
             const content = readFile('app/t/[tenantSlug]/layout.tsx');
-            expect(content).toMatch(/appPermissions/);
+            expect(content).toMatch(/appPermissions: serverCtx\.appPermissions/);
         });
     });
 });

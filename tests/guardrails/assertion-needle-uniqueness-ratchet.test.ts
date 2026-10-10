@@ -530,7 +530,28 @@ const HIGH_MULTIPLICITY = 5;
 //   claim "both are gated" is what is actually checked. Measured on this
 //   branch at **1188**, slack 4, which is the four sites and nothing else.
 //   The remaining 22 are in `rbac-guardrails.test.ts` and stay on #3364.
-const AMBIGUOUS_NEEDLE_BASELINE = 1188;
+//
+//   RE-SEATED 1188 -> 1166 (#3364 complete — the remaining 22, in
+//   `rbac-guardrails.test.ts`). The shape was almost always the same: a needle
+//   naming an IDENTIFIER where the test named a CONSTRUCT, so
+//   `/RequirePermission/` matched the import, the opening tag and the closing
+//   tag indifferently — 17 times in the audit-pack page. `<RequirePermission`
+//   with the resource and action in ONE needle also asserts something the two
+//   separate needles never did: that the pair is on a RequirePermission
+//   element at all.
+//
+//   Where a file genuinely has several identical wrapped controls — three
+//   share, four manage, three report exports, two framework installs, two nav
+//   permission reads — the assertion COUNTS them instead. That is the stronger
+//   claim: a `toMatch` cannot tell "all four wrapped" from "three wrapped and
+//   one bare", which is the regression that matters.
+//
+//   1166 is where this line stood BEFORE #3309. That change raised it to 1192
+//   by making 42 previously-blind reads analysable and exposing 26
+//   pre-existing ambiguous needles; #3364 narrowed all 26. So the detector
+//   improvement is fully paid for: same ceiling, 42 more reads analysed, 40
+//   fewer blind spots.
+const AMBIGUOUS_NEEDLE_BASELINE = 1166;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -647,7 +668,12 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1188;
 //
 //   RE-SEATED 165 -> 169 (#3309). Same instrument change as
 //   AMBIGUOUS_NEEDLE_BASELINE above; the four are in the same two files.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 169;
+//
+//   AND BACK, 169 -> 165 (#3364). Those four were the same `rbac-guardrails`
+//   needles — `/RequirePermission/` alone occurred 17 times in the audit-pack
+//   page — so narrowing them returns this line to exactly where it stood
+//   before #3309, as does the ambiguous baseline above.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
