@@ -1,9 +1,14 @@
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
+import { env } from '@/env';
+import {
+    LEGACY_MATCH_PROCESSOR,
+    TYPESAFE_SUBPROCESSOR_ACTIVE,
+} from '@/lib/legacy-access/adjudication-mode';
 import { badRequest, forbidden } from '@/lib/errors/types';
 import { checkWebhookUrl } from '@/app-layer/automation/webhook-safety';
-import type { AiGuardMode, AiResidency } from '@prisma/client';
+import type { AiGuardMode, AiResidency, LegacyMatchAiMode } from '@prisma/client';
 
 /**
  * Tenant security settings — the WRITE path.
@@ -157,6 +162,7 @@ export interface TenantSecurityConfig {
     hasAuditStreamSecret: boolean;
     aiGuardMode: AiGuardMode;
     aiResidency: AiResidency;
+    legacyMatchAiMode: LegacyMatchAiMode;
     aiLocalBaseUrl: string | null;
     aiLocalModel: string | null;
     mfaFailClosed: boolean;
@@ -186,6 +192,7 @@ export interface TenantSecurityConfigPatch {
     auditStreamSecret?: string | null;
     aiGuardMode?: AiGuardMode;
     aiResidency?: AiResidency;
+    legacyMatchAiMode?: LegacyMatchAiMode;
     aiLocalBaseUrl?: string | null;
     aiLocalModel?: string | null;
     mfaFailClosed?: boolean;
@@ -217,6 +224,7 @@ export async function getTenantSecurityConfig(
                 auditStreamSecretEncrypted: true,
                 aiGuardMode: true,
                 aiResidency: true,
+                legacyMatchAiMode: true,
                 aiLocalBaseUrl: true,
                 aiLocalModel: true,
                 recertificationOwnerUserId: true,
@@ -231,6 +239,7 @@ export async function getTenantSecurityConfig(
             hasAuditStreamSecret: Boolean(row?.auditStreamSecretEncrypted),
             aiGuardMode: row?.aiGuardMode ?? ('BALANCED' as AiGuardMode),
             aiResidency: row?.aiResidency ?? ('EXTERNAL' as AiResidency),
+            legacyMatchAiMode: row?.legacyMatchAiMode ?? ('OFF' as LegacyMatchAiMode),
             aiLocalBaseUrl: row?.aiLocalBaseUrl ?? null,
             aiLocalModel: row?.aiLocalModel ?? null,
             mfaFailClosed: row?.mfaFailClosed ?? false,
@@ -362,7 +371,7 @@ export async function updateTenantSecurityConfig(
         changed.push('auditStreamSecret');
     }
 
-    for (const key of ['aiGuardMode', 'aiResidency', 'mfaFailClosed', 'requireRegisteredAgent'] as const) {
+    for (const key of ['aiGuardMode', 'aiResidency', 'legacyMatchAiMode', 'mfaFailClosed', 'requireRegisteredAgent'] as const) {
         if (patch[key] !== undefined) {
             data[key] = patch[key];
             changed.push(key);
@@ -389,6 +398,7 @@ export async function updateTenantSecurityConfig(
             where: { tenantId: ctx.tenantId },
             select: {
                 aiResidency: true,
+                legacyMatchAiMode: true,
                 aiLocalBaseUrl: true,
                 auditStreamUrl: true,
                 auditStreamSecretEncrypted: true,
@@ -422,6 +432,51 @@ export async function updateTenantSecurityConfig(
             );
         }
 
+        // ── Step 6c: the adjudication mode ─────────────────────────────
+        //
+        // Checked HERE, against the stored row merged with the patch, because
+        // every refusal below is about a COMBINATION. Validating the field on
+        // its own would accept `EXTERNAL` from a tenant whose residency is
+        // already LOCAL_ONLY, and the contradiction would only surface at the
+        // first model call — in a background job, long after the admin who
+        // caused it has closed the page.
+        const nextAiMode = (patch.legacyMatchAiMode
+            ?? before?.legacyMatchAiMode
+            ?? 'OFF') as LegacyMatchAiMode;
+
+        if (nextAiMode === 'LOCAL_ONLY' && !env.LAYA_BASE_URL) {
+            throw badRequest(
+                'legacyMatchAiMode=LOCAL_ONLY requires LAYA_BASE_URL to be configured for '
+                + 'this deployment. It is a DEPLOYMENT value, not a tenant one — a tenant '
+                + 'cannot point the local model somewhere of their choosing — so this '
+                + 'cannot be fixed from the settings page.',
+            );
+        }
+        // THE DEPLOYMENT BLOCK FIRST, then the tenant one. Both can hold at
+        // once, and the order decides what the admin is told to go and fix.
+        //
+        // The sub-processor block is UNCONDITIONAL — no tenant setting overcomes
+        // it — so it is the binding constraint. Reporting the residency reason
+        // first would send somebody to change their residency, which would not
+        // unblock them, and they would come back. Report the thing that is
+        // actually in the way.
+        if (nextAiMode === 'EXTERNAL' && !TYPESAFE_SUBPROCESSOR_ACTIVE) {
+            throw badRequest(
+                'legacyMatchAiMode=EXTERNAL is refused while the external processor is not '
+                + 'an active sub-processor. Turning it on is a DPA change — the processor '
+                + 'and its region have to appear in the sub-processor list before any '
+                + "tenant's data may reach it — and that is not a settings-page decision.",
+            );
+        }
+        if (nextAiMode === 'EXTERNAL' && nextResidency === 'LOCAL_ONLY') {
+            throw badRequest(
+                'legacyMatchAiMode=EXTERNAL is refused under aiResidency=LOCAL_ONLY. The '
+                + 'effective mode is the stricter of the two, so the stored value would '
+                + 'never take effect — and a setting that reads EXTERNAL while behaving as '
+                + 'LOCAL_ONLY is worse than a refusal, because somebody will rely on it.',
+            );
+        }
+
         await db.tenantSecuritySettings.upsert({
             where: { tenantId: ctx.tenantId },
             // The create branch carries ONLY the supplied fields. Everything
@@ -430,6 +485,38 @@ export async function updateTenantSecurityConfig(
             create: { tenantId: ctx.tenantId, ...data },
             update: data,
         });
+
+        // A MODE CHANGE GETS ITS OWN EVENT, naming the destination.
+        //
+        // `SECURITY_SETTINGS_UPDATED` below records field NAMES and no values —
+        // correct for most of this page, and wrong for the one field that
+        // decides whether a customer's data leaves the deployment. "somebody
+        // changed legacyMatchAiMode" is not an answer to "when did our data
+        // start going to a third party, and which one".
+        if (patch.legacyMatchAiMode !== undefined
+            && patch.legacyMatchAiMode !== (before?.legacyMatchAiMode ?? 'OFF')) {
+            await logEvent(db, ctx, {
+                action: 'LEGACY_MATCH_AI_MODE_CHANGED',
+                entityType: 'TenantSecuritySettings',
+                entityId: ctx.tenantId,
+                details:
+                    `Legacy match adjudication mode changed from `
+                    + `${before?.legacyMatchAiMode ?? 'OFF'} to ${nextAiMode}`,
+                detailsJson: {
+                    category: 'entity_lifecycle',
+                    entityName: 'TenantSecuritySettings',
+                    operation: 'update',
+                    before: { legacyMatchAiMode: before?.legacyMatchAiMode ?? 'OFF' },
+                    after: {
+                        legacyMatchAiMode: nextAiMode,
+                        // The processor and its region, so the row answers the
+                        // question somebody will actually ask of it.
+                        processor: LEGACY_MATCH_PROCESSOR[nextAiMode].processor,
+                        processorRegion: LEGACY_MATCH_PROCESSOR[nextAiMode].region,
+                    },
+                },
+            });
+        }
 
         await logEvent(db, ctx, {
             action: 'SECURITY_SETTINGS_UPDATED',
@@ -465,6 +552,7 @@ export async function updateTenantSecurityConfig(
                 auditStreamSecretEncrypted: true,
                 aiGuardMode: true,
                 aiResidency: true,
+                legacyMatchAiMode: true,
                 aiLocalBaseUrl: true,
                 aiLocalModel: true,
                 recertificationOwnerUserId: true,
@@ -479,6 +567,7 @@ export async function updateTenantSecurityConfig(
             hasAuditStreamSecret: Boolean(row?.auditStreamSecretEncrypted),
             aiGuardMode: row?.aiGuardMode ?? ('BALANCED' as AiGuardMode),
             aiResidency: row?.aiResidency ?? ('EXTERNAL' as AiResidency),
+            legacyMatchAiMode: row?.legacyMatchAiMode ?? ('OFF' as LegacyMatchAiMode),
             aiLocalBaseUrl: row?.aiLocalBaseUrl ?? null,
             aiLocalModel: row?.aiLocalModel ?? null,
             mfaFailClosed: row?.mfaFailClosed ?? false,

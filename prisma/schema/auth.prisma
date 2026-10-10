@@ -1505,6 +1505,18 @@ model TenantSecuritySettings {
   /// (else the AI_LOCAL_* env defaults). aiLocalBaseUrl is an internal URL, not
   /// a secret — not encrypted.
   aiResidency                  AiResidency       @default(EXTERNAL)
+  /// Step 6c — model adjudication of the reconciliation residue. OFF by
+  /// default, and written ONLY through `updateTenantSecurityConfig`, which
+  /// refuses the combinations that cannot be honoured: LOCAL_ONLY without
+  /// `LAYA_BASE_URL`, and EXTERNAL either under `aiResidency = LOCAL_ONLY` or
+  /// while `TYPESAFE_SUBPROCESSOR_ACTIVE` is false.
+  ///
+  /// A stored value is NOT sufficient on its own — read it through
+  /// `effectiveLegacyMatchAiMode`, which re-applies residency at USE time. The
+  /// refusals stop a tenant choosing an unhonourable combination; the
+  /// effective-mode function stops a combination BECOMING unhonourable later,
+  /// which is what happens when residency is tightened after the fact.
+  legacyMatchAiMode            LegacyMatchAiMode @default(OFF)
   aiLocalBaseUrl               String?
   aiLocalModel                 String?
   /// Recipients outside the tenant's own membership that scheduled reports may

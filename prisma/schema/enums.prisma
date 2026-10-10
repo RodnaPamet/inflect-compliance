@@ -1764,6 +1764,27 @@ enum AiResidency {
   LOCAL_ONLY
 }
 
+/// Step 6c — whether a tenant lets a model ADJUDICATE the reconciliation
+/// residue, and if so where that model runs.
+///
+/// OFF is the default and the only value that reaches no provider at all. The
+/// other two name a destination rather than a capability, because the question
+/// a customer actually asks is "who sees our data", not "how clever is it".
+///
+/// This is deliberately SEPARATE from `aiResidency`, which governs every other
+/// AI feature. The effective mode is the STRICTER of the two — see
+/// `effectiveLegacyMatchAiMode` — so a tenant who sets LOCAL_ONLY residency for
+/// the product cannot be opted into an external processor by this column alone.
+/// One column governing two questions would make that impossible to express.
+///
+/// A verdict NEVER produces a LINKED, changes an outcome, or writes an alias.
+/// The mode decides whether an opinion is offered, not whether it is acted on.
+enum LegacyMatchAiMode {
+  OFF
+  LOCAL_ONLY
+  EXTERNAL
+}
+
 /// How an Employee was matched to a directory account.
 ///
 /// Recorded on every link so a later disable can state the BASIS of its

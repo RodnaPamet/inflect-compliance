@@ -42,11 +42,15 @@ export const JEV_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 /**
  * Whether TypeSafe is an ACTIVE sub-processor.
  *
- * `false`, and it stays false until the Step 6a notice window has closed and
- * somebody decides. Flipping this is a sub-processor activation, not a
+ * DEFINED in `lib/legacy-access/adjudication-mode.ts` since Step 6c, and
+ * re-exported here so every existing importer keeps working. It moved because
+ * the settings usecase has to read it, and reading it from THIS module would
+ * drag the transport — and therefore the egress stack — into a settings page.
+ *
+ * Still exactly one definition. Flipping it is a sub-processor activation, not a
  * configuration change — see `docs/sub-processors.md`.
  */
-export const TYPESAFE_SUBPROCESSOR_ACTIVE = false;
+export { TYPESAFE_SUBPROCESSOR_ACTIVE } from '@/lib/legacy-access/adjudication-mode';
 
 /** The vendor's documented per-attempt budget for an inline call. */
 export const JEV_TIMEOUT_MS = 3_000;
