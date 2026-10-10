@@ -102,7 +102,14 @@ export const REVOKE_TOOL = 'revoke_access_assignment';
  * operator approved rather than leaving a model to infer that a grant is
  * temporary.
  */
-const TOOLS: readonly McpToolDescriptor[] = [
+/**
+ * EXPORTED so a cross-check can assert against the real object rather than
+ * grep the source (#3351). `ai/intent` fills `endDateTime` by name and needs
+ * to know this schema still requires it; a text scan would also be an
+ * un-analysable whole-file read, which Class D caps for good reason, and would
+ * pass on the word appearing in a comment.
+ */
+export const TOOLS: readonly McpToolDescriptor[] = [
     {
         name: GRANT_TOOL,
         description:
