@@ -29,8 +29,19 @@ import {
     API_MUTATION_LIMIT,
     API_KEY_CREATE_LIMIT,
     EMAIL_DISPATCH_LIMIT,
+    API_READ_LIMIT,
+    INVITE_REDEEM_LIMIT,
+    MFA_VERIFY_LIMIT,
+    MFA_ENROLL_VERIFY_LIMIT,
+    TENANT_INVITE_CREATE_LIMIT,
     clearAllRateLimits,
 } from '@/lib/security/rate-limit-middleware';
+// NOT from the barrel, because the barrel does not re-export it — the only
+// one of the ten it omits. The barrel's own guardrail argues a contributor
+// "must find API_READ_LIMIT there"; the same argument applies here and the
+// gap is noted rather than papered over by importing it from the barrel it
+// is absent from.
+import { TENANT_CREATE_LIMIT } from '@/lib/security/rate-limit';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
@@ -372,6 +383,76 @@ describe('Preset policy sanity', () => {
     it.each(CASES)('%s has a positive windowMs', (_, preset) => {
         expect(preset.windowMs).toBeGreaterThan(0);
     });
+
+    /**
+     * EVERY preset's MAGNITUDE, pinned (#3312).
+     *
+     * The assertions around this one are all relational or positivity —
+     * `maxAttempts > 0`, `windowMs > 0`, `lockoutMs > 0`, mutation ≥ login,
+     * key-create ≤ both. Each is true and none of them bounds a number. So
+     * the whole family survives a uniform weakening: MEASURED by multiplying
+     * every `maxAttempts` by 1000 and setting every `lockoutMs` to 1ms, then
+     * running the three suites that cover these presets — **51 tests, all
+     * green**. A rate limit of 120000 per minute is not a rate limit, and a
+     * 1ms lockout does not lock anybody out.
+     *
+     * Three of these are PUBLISHED to customers — `docs/rate-limiting.md`,
+     * `docs/api-consumer-guide.md` and `docs/security-hardening.md` state the
+     * read (120/min), mutation (60/min) and auth (10/min) budgets — so for
+     * those a change has documents to move with it. The other seven have no
+     * external anchor, and rather than invent an upper bound for each (a
+     * guessed constant is the thing this repo's notes warn about), they are
+     * pinned to what they are. The point is not to prevent tuning: it is that
+     * tuning a security budget should be a deliberate edit with a reviewer,
+     * not a number that can drift by a factor of a thousand in silence.
+     */
+    const MAGNITUDES: Array<[string, typeof LOGIN_LIMIT, number, number, number | undefined]> = [
+        ['LOGIN_LIMIT', LOGIN_LIMIT, 10, 15 * 60 * 1000, 15 * 60 * 1000],
+        ['API_MUTATION_LIMIT', API_MUTATION_LIMIT, 60, 60 * 1000, undefined],
+        ['API_READ_LIMIT', API_READ_LIMIT, 120, 60 * 1000, undefined],
+        ['API_KEY_CREATE_LIMIT', API_KEY_CREATE_LIMIT, 5, 60 * 60 * 1000, 60 * 60 * 1000],
+        ['EMAIL_DISPATCH_LIMIT', EMAIL_DISPATCH_LIMIT, 5, 60 * 60 * 1000, undefined],
+        ['TENANT_CREATE_LIMIT', TENANT_CREATE_LIMIT, 5, 60 * 60 * 1000, 60 * 60 * 1000],
+        [
+            'TENANT_INVITE_CREATE_LIMIT',
+            TENANT_INVITE_CREATE_LIMIT,
+            20,
+            60 * 60 * 1000,
+            undefined,
+        ],
+        ['INVITE_REDEEM_LIMIT', INVITE_REDEEM_LIMIT, 10, 60 * 1000, undefined],
+        ['MFA_VERIFY_LIMIT', MFA_VERIFY_LIMIT, 5, 15 * 60 * 1000, 5 * 60 * 1000],
+        ['MFA_ENROLL_VERIFY_LIMIT', MFA_ENROLL_VERIFY_LIMIT, 10, 15 * 60 * 1000, undefined],
+    ];
+
+    it('the pinned table covers every preset the module exports', () => {
+        // The denominator, asserted. A table that silently stops covering a
+        // preset would leave that one free to drift while reading as though
+        // every preset were pinned — and a new preset added without a row
+        // here is exactly how that happens.
+        const exported = Object.entries(
+            require('@/lib/security/rate-limit') as Record<string, unknown>,
+        )
+            .filter(
+                ([k, v]) =>
+                    /_LIMIT$/.test(k)
+                    && typeof v === 'object'
+                    && v !== null
+                    && 'maxAttempts' in (v as object),
+            )
+            .map(([k]) => k)
+            .sort();
+        expect(MAGNITUDES.map(([n]) => n).sort()).toEqual(exported);
+    });
+
+    it.each(MAGNITUDES)(
+        '%s is exactly its stated budget',
+        (_name, preset, maxAttempts, windowMs, lockoutMs) => {
+            expect(preset.maxAttempts).toBe(maxAttempts);
+            expect(preset.windowMs).toBe(windowMs);
+            expect(preset.lockoutMs).toBe(lockoutMs);
+        },
+    );
 
     it('LOGIN_LIMIT + API_KEY_CREATE_LIMIT have a lockout', () => {
         expect(LOGIN_LIMIT.lockoutMs).toBeGreaterThan(0);
