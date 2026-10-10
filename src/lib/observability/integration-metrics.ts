@@ -470,6 +470,91 @@ export function recordLegacyReconcileOutcomes(attrs: {
     }
 }
 
+let _legacyAdjudicationVerdict: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+let _legacyAdjudicationNonVerdict: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+let _legacyAdjudicationLatency:
+    | ReturnType<ReturnType<typeof getMeter>['createHistogram']>
+    | undefined;
+
+/**
+ * Model verdicts by class, per revision.
+ *
+ * The REVISION is a dimension and not a label of convenience: thresholds live
+ * per revision, so a shift in the AGREES share after a model change is the
+ * signal the blind sample exists to corroborate. Folding revisions together
+ * would average the old model's precision into the new one's.
+ */
+export function recordLegacyAdjudicationVerdicts(attrs: {
+    model: string;
+    revision: string;
+    byClass: Readonly<Record<string, number>>;
+}): void {
+    if (!_legacyAdjudicationVerdict)
+        _legacyAdjudicationVerdict = getMeter().createCounter('legacy.adjudication.verdict', {
+            description: 'Legacy match verdicts by class',
+            unit: '1',
+        });
+    for (const [verdict, count] of Object.entries(attrs.byClass)) {
+        _legacyAdjudicationVerdict.add(count, {
+            model: attrs.model,
+            revision: attrs.revision,
+            verdict,
+        });
+    }
+}
+
+/**
+ * Accounts that got NO verdict, by reason.
+ *
+ * A separate series from the verdicts, for the reason the alias-suspension
+ * counter gives one block up: these are not a sixth verdict class. A run where
+ * every account came back `MODEL_DRIFT` and a run where every account came back
+ * `UNSURE` look identical in a single total and mean opposite things — the first
+ * is a model to go and look at, the second is a model working as designed.
+ *
+ * The reason is the dimension that matters most here. `TIMEOUT` is capacity,
+ * `MODEL_DRIFT` is a canary failure, `QUARANTINED` is a hostile record, and
+ * `NO_EVALUATION` is a deployment that was never going to produce a verdict.
+ */
+export function recordLegacyAdjudicationNonVerdicts(attrs: {
+    model: string;
+    revision: string;
+    byReason: Readonly<Record<string, number>>;
+}): void {
+    if (!_legacyAdjudicationNonVerdict)
+        _legacyAdjudicationNonVerdict = getMeter().createCounter(
+            'legacy.adjudication.non_verdict',
+            { description: 'Legacy match accounts with no verdict, by reason', unit: '1' }
+        );
+    for (const [reason, count] of Object.entries(attrs.byReason)) {
+        _legacyAdjudicationNonVerdict.add(count, {
+            model: attrs.model,
+            revision: attrs.revision,
+            reason,
+        });
+    }
+}
+
+/**
+ * Per-call latency, per model.
+ *
+ * A histogram and not a mean. The pass runs under a 120-second deadline with a
+ * per-call timeout of a few seconds, so what decides whether a residue finishes
+ * is the TAIL — a mean of 200 ms hides the p99 of three seconds that spends the
+ * whole budget on forty accounts.
+ */
+export function recordLegacyAdjudicationLatency(attrs: {
+    model: string;
+    latencyMs: number;
+}): void {
+    if (!_legacyAdjudicationLatency)
+        _legacyAdjudicationLatency = getMeter().createHistogram('legacy.adjudication.latency', {
+            description: 'Legacy match model call latency',
+            unit: 'ms',
+        });
+    _legacyAdjudicationLatency.record(attrs.latencyMs, { model: attrs.model });
+}
+
 let _legacyAliasSuspension: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 
 /**

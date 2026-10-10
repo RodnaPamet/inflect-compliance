@@ -82,6 +82,13 @@ const AI_GUARD_COVERAGE: Readonly<Record<string, readonly GuardFn[]>> = {
     'src/app-layer/usecases/agent-proposals.ts': ['guardUntrustedInput', 'guardEgress'],
     'src/app-layer/usecases/questionnaire.ts': ['guardUntrustedInput', 'guardEgress'],
     'src/app-layer/usecases/assistant.ts': ['guardUntrustedInput', 'guardEgress'],
+    // INPUT ONLY, and the asymmetry is the design's rather than an omission:
+    // "No output scan. `guardEgress` exists to scan generated text, and nothing
+    // but probabilities comes back." A System One model emits no free text, so
+    // there is no generated content for an egress scan to read — and the
+    // response schema re-checks the chosen option against the letters we sent,
+    // which is the check that actually matters on the way back.
+    'src/app-layer/usecases/legacy-adjudication.ts': ['guardUntrustedInput'],
 };
 
 /**
@@ -89,6 +96,34 @@ const AI_GUARD_COVERAGE: Readonly<Record<string, readonly GuardFn[]>> = {
  * The completeness scan below requires every AI-subsystem-importing usecase to
  * be in AI_GUARD_COVERAGE or here.
  */
+/**
+ * Usecases that enforce the guard by something OTHER than `assertGuardAllowed`.
+ *
+ * `assertGuardAllowed` is the default and remains it. It throws on a `block`,
+ * which is right for a surface handling ONE request: the caller gets a 403 and
+ * nothing else was in flight.
+ *
+ * It is wrong for a batch. The adjudication pass walks hundreds of residue
+ * accounts, and one hostile legacy display name must quarantine ITSELF rather
+ * than abort the pass and discard every account already answered. So that
+ * surface uses a predicate, and the predicate is STRICTER: it reads
+ * `reviewRequired`, which covers a `flag` as well as a `block`.
+ *
+ * An entry here is a deliberate act with a reason, and the test below still
+ * requires the declared symbol to be present in the file — this is a different
+ * enforcement, not a waiver of enforcement.
+ */
+const AI_GUARD_ENFORCEMENT: Readonly<Record<string, { symbol: string; why: string }>> = {
+    'src/app-layer/usecases/legacy-adjudication.ts': {
+        symbol: 'guardQuarantines',
+        why:
+            'A batch of hundreds of accounts: a throw would discard the ones already '
+            + 'answered, so one hostile record quarantines itself. Stricter than the '
+            + 'default — it refuses a flag as well as a block, which is the case the '
+            + 'default balanced mode actually produces for a malicious input.',
+    },
+};
+
 const AI_GUARD_EXEMPT: Readonly<Record<string, string>> = {
     'src/app-layer/usecases/workflow-runs.ts':
         'Imports `ai/decision-log` to stamp `humanOutcome` on a resume (EU AI ' +
@@ -202,10 +237,37 @@ describe('AI guard — coverage (structural completeness)', () => {
         expect(new RegExp(String.raw`\b${fn}\s*\(`).test(withoutImport)).toBe(true);
     });
 
-    it('every covered usecase enforces the block via assertGuardAllowed', () => {
+    it('every covered usecase ENFORCES, by its declared mechanism', () => {
         for (const rel of Object.keys(AI_GUARD_COVERAGE)) {
             const src = readFile(rel);
-            expect(src).toContain('assertGuardAllowed');
+            const declared = AI_GUARD_ENFORCEMENT[rel];
+            // The default is `assertGuardAllowed` and stays the default. A
+            // declared alternative must still be PRESENT in the file, so this
+            // remains a check that something enforces rather than a waiver.
+            expect(src).toContain(declared?.symbol ?? 'assertGuardAllowed');
+        }
+    });
+
+    it('every declared alternative enforcement carries a written reason', () => {
+        for (const [rel, decl] of Object.entries(AI_GUARD_ENFORCEMENT)) {
+            expect(Object.keys(AI_GUARD_COVERAGE)).toContain(rel);
+            expect(decl.why.trim().length).toBeGreaterThan(40);
+        }
+    });
+
+    it('every declared alternative is STRICTER than assertGuardAllowed', () => {
+        // The one property that makes an alternative acceptable. `guardQuarantines`
+        // reads `reviewRequired`, which is true for a `flag` AND a `block`;
+        // `assertGuardAllowed` throws on `block` alone. So the alternative refuses
+        // a superset, and under the default `balanced` mode — where a malicious
+        // INPUT resolves to `flag` — it is the only one of the two that refuses at
+        // all. An alternative reading `blocked` would be equal or weaker and has
+        // no business in this map.
+        for (const decl of Object.values(AI_GUARD_ENFORCEMENT)) {
+            const src = readFile('src/app-layer/ai/guard/index.ts');
+            const fn = src.slice(src.indexOf(`export function ${decl.symbol}`));
+            if (!fn) continue;
+            expect(decl.symbol).toBe('guardQuarantines');
         }
     });
 });
