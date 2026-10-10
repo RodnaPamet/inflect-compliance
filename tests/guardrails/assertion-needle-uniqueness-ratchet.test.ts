@@ -520,7 +520,17 @@ const HIGH_MULTIPLICITY = 5;
 //   The alternative to re-seating up was leaving the detector resolving paths
 //   by name collision so the number stayed low, which is the gate-narrow-
 //   enough-to-always-pass failure this suite exists to prevent.
-const AMBIGUOUS_NEEDLE_BASELINE = 1192;
+//
+//   RE-SEATED 1192 -> 1188 (#3364, four of the twenty-six #3309 exposed).
+//   `tenant-dek-rotation-fallback.test.ts`: the DEK-pair fields bounded to
+//   `interfaceBodyOf(src, 'TenantDekPair')` so they stop also matching a local
+//   `let` of the same shape; `resolveTenantDekPair(` split into its
+//   declaration and its awaited call, which names both things the test is for;
+//   and the rotation route's permission asserted per exported handler, so the
+//   claim "both are gated" is what is actually checked. Measured on this
+//   branch at **1188**, slack 4, which is the four sites and nothing else.
+//   The remaining 22 are in `rbac-guardrails.test.ts` and stay on #3364.
+const AMBIGUOUS_NEEDLE_BASELINE = 1188;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
