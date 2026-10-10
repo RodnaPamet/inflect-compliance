@@ -243,6 +243,7 @@ describe('the type refuses the call the clamp catches', () => {
             'integration.entra-id': true,
             'integration.google-workspace': true,
             'integration.active-directory': true,
+            'integration.legacy-mcp': true,
             'integration.workday': true,
             'integration.bamboohr': true,
             'webhook.inbound': true,

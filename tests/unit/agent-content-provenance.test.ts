@@ -51,6 +51,7 @@ const EXPECTED: Array<[string, ContentProvenance]> = [
     ['integration.entra-id', 'THIRD_PARTY_INGESTED'],
     ['integration.google-workspace', 'THIRD_PARTY_INGESTED'],
     ['integration.active-directory', 'THIRD_PARTY_INGESTED'],
+    ['integration.legacy-mcp', 'THIRD_PARTY_INGESTED'],
     ['integration.workday', 'THIRD_PARTY_INGESTED'],
     ['integration.bamboohr', 'THIRD_PARTY_INGESTED'],
     ['webhook.inbound', 'THIRD_PARTY_INGESTED'],
