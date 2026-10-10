@@ -52,7 +52,7 @@
     "test:coverage": "jest --coverage",
     "test:all": "jest && playwright test",
     "pretypecheck": "node scripts/check-prisma-client-fresh.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit",
     "typecheck:ui-boundary": "tsc --noEmit -p packages/ui/tsconfig.json",
     "typecheck:rendered": "tsc --noEmit -p tests/rendered/tsconfig.typecheck.json",
     "lint": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
