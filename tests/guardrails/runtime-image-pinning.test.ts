@@ -103,6 +103,40 @@ interface ImageRef {
     readonly ref: string;
 }
 
+/**
+ * `FROM` lines too, not only Compose `image:` lines.
+ *
+ * Found while writing the Laya Dockerfile for 6d: the first draft of this
+ * pillar covered Compose only, and a `FROM` is the same question about the same
+ * kind of artefact — a base image somebody else publishes, which moves when its
+ * tag moves. Shipping the pillar with that hole would have been shipping a rule
+ * that half-applies.
+ *
+ * The three `FROM node:24-alpine` lines in the application Dockerfile are
+ * covered by `node` in the baseline, so this extension adds no debt; what it
+ * adds is that the NEXT base image has to be pinned or reviewed.
+ */
+export function dockerfileImageRefs(): readonly ImageRef[] {
+    const out: ImageRef[] = [];
+    for (const rel of repoRelativeFiles()) {
+        if (!/(^|\/)Dockerfile($|\.)/.test(rel)) continue;
+        const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+        for (const raw of text.split('\n')) {
+            const line = raw.replace(/\s+#.*$/, '');
+            // `FROM <ref>` or `FROM <ref> AS <stage>`. A stage name as the ref
+            // (`FROM builder`) is an internal reference to an earlier stage, not
+            // an external image — it has no registry, no tag and nothing to pin,
+            // so it is excluded by requiring a tag, a digest or a registry path.
+            const m = /^FROM\s+(\S+)(?:\s+AS\s+\S+)?\s*$/i.exec(line);
+            if (!m) continue;
+            const ref = m[1];
+            if (!/[:@/]/.test(ref)) continue;
+            out.push({ file: rel, ref });
+        }
+    }
+    return out;
+}
+
 export function composeImageRefs(): readonly ImageRef[] {
     const out: ImageRef[] = [];
     for (const rel of repoRelativeFiles()) {
@@ -143,13 +177,28 @@ export function repositoryOf(ref: string): string {
 }
 
 describe('runtime images — a new one is pinned by digest', () => {
-    const refs = composeImageRefs();
+    // The UNION: a Compose `image:` and a Dockerfile `FROM` are the same
+    // question about the same kind of artefact.
+    const refs = [...composeImageRefs(), ...dockerfileImageRefs()];
 
-    it('finds the compose population at all', () => {
+    it('finds BOTH populations at all', () => {
         // The denominator, printed as an assertion. A scan that silently found
-        // nothing would pass every check below.
-        expect(refs.length).toBeGreaterThan(10);
-        expect(new Set(refs.map((r) => r.file)).size).toBeGreaterThan(3);
+        // nothing would pass every check below — and the two halves are
+        // asserted separately, because a union is satisfied by either one.
+        expect(composeImageRefs().length).toBeGreaterThan(10);
+        expect(dockerfileImageRefs().length).toBeGreaterThan(2);
+        expect(new Set(refs.map((r) => r.file)).size).toBeGreaterThan(4);
+    });
+
+    it('does not mistake a build STAGE for an image', () => {
+        // `FROM builder` names an earlier stage in the same file. Counting it
+        // would demand a digest for something that has no registry, and the
+        // noise would be the reason somebody deletes this guard.
+        const fromRefs = dockerfileImageRefs().map((r) => r.ref);
+        expect(fromRefs).not.toContain('builder');
+        expect(fromRefs).not.toContain('deps');
+        // The positive control: the real base images ARE found.
+        expect(fromRefs.some((r) => r.startsWith('node:'))).toBe(true);
     });
 
     it('every image is digest-pinned OR baselined with a reason', () => {

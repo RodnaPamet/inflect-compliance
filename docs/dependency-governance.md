@@ -46,11 +46,16 @@ for a digest pin that no guard could check.
 
 ### The rule
 
-Every `image:` reference in a Compose file this repository tracks must either:
+Every `image:` reference in a Compose file **and every `FROM` in a Dockerfile**
+this repository tracks must either:
 
 - carry a **digest** — `repo@sha256:<64 hex>`, with or without a tag before it; or
 - name its repository in the baseline in
   `tests/guardrails/runtime-image-pinning.test.ts`, with a written reason.
+
+A `FROM` that names an earlier build stage (`FROM builder`) is not an image and
+is excluded — it has no registry and nothing to pin, and counting it would be
+the noise that gets a guard deleted.
 
 ### New images only, and why that is the rule rather than a compromise
 
