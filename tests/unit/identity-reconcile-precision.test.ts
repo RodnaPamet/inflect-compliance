@@ -512,6 +512,66 @@ describe('RQ-3b — a strong signal onto a terminated record suggests, never lin
         expect(res.method).toBe('REKEYED_PERSON_RULE');
     });
 
+    it('labels a leaver with NO successor as such, not as a re-key', () => {
+        // One method was doing duty for two situations. `rekeyedSuccessor`
+        // returns null for a departed record with no namesake — and reporting
+        // `REKEYED_PERSON_RULE` there sent a reviewer looking for a successor
+        // row that does not exist, and made the method uncountable as a metric
+        // ("how many accounts are blocked on a re-key" counted every strong
+        // match on anyone who had left).
+        const r = reconcile({
+            accounts: [account],
+            // The successor is REMOVED. Everything else is identical to the
+            // test above, so the only thing that can move is the label.
+            roster: [terminated],
+            directory: [],
+            aliases: [],
+            now: NOW,
+        });
+        const res = r.resolutions[0];
+
+        expect(res.method).toBe('STRONG_MATCH_ON_LEAVER');
+        // THE OUTCOME IS UNCHANGED, which is the half that matters: a strong
+        // inferred signal on a terminated record still does not link, successor
+        // or not. This is a relabelling, not a behaviour change.
+        expect(res.outcome).toBe('SUGGESTED');
+        // And it points at the record it actually matched, because there is no
+        // successor to point at.
+        expect(res.employeeId).toBe('e-400');
+    });
+
+    it('still says REKEYED_PERSON_RULE when a successor really exists', () => {
+        // The paired positive control. Without it, a change that reported
+        // STRONG_MATCH_ON_LEAVER unconditionally would pass the test above.
+        const r = reconcile({
+            accounts: [account],
+            roster: [terminated, successor],
+            directory: [],
+            aliases: [],
+            now: NOW,
+        });
+        expect(r.resolutions[0].method).toBe('REKEYED_PERSON_RULE');
+    });
+
+    it('does not call an OVERLAPPING namesake a re-key', () => {
+        // Two people with one name, not one person re-keyed: the second tenure
+        // starts before the first ends. `rekeyedSuccessor` returns null, and the
+        // label now says what that means.
+        const overlapping: RosterEmployee = {
+            ...successor,
+            id: 'e-402',
+            startDate: '2020-01-01',
+        };
+        const r = reconcile({
+            accounts: [account],
+            roster: [terminated, overlapping],
+            directory: [],
+            aliases: [],
+            now: NOW,
+        });
+        expect(r.resolutions[0].method).not.toBe('REKEYED_PERSON_RULE');
+    });
+
     it('holds for EVERY strong signal, not just the email it was written for', () => {
         const byNumber = reconcile({
             accounts: [{ accountKey: '004711', displayName: 'Ada Nwosu' }],

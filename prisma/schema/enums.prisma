@@ -2132,7 +2132,15 @@ enum LegacyMatchMethod {
   /// A reviewer picked the employee themselves, against the engine's
   /// suggestion or in its absence. Appended, not inserted: Postgres
   /// `ADD VALUE` appends and `enum-member-order-matches-migrations` compares.
-  MANUAL
+  MANUAL  /// A strong INFERRED signal landed on a departed employee and NO successor
+  /// was found. Distinct from `REKEYED_PERSON_RULE`, which claims a successor
+  /// exists: `rekeyedSuccessor` returns null for a departed record with no
+  /// namesake, for a namesake whose tenure OVERLAPS (two people, not a re-key)
+  /// and for two namesakes (ambiguous, so not one either). Appended.
+  STRONG_MATCH_ON_LEAVER
+  /// A reviewer confirmed the candidate the MODEL proposed, rather than the
+  /// engine's own suggestion or one they picked unaided. Appended.
+  AI_PROPOSED_CONFIRMED
 }
 
 /// Whether a confirmed alias is still in force.

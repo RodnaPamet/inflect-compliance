@@ -360,6 +360,7 @@ export type ResolutionMethod =
     | StrongSignalKind
     | 'NON_PERSON_RULE'
     | 'REKEYED_PERSON_RULE'
+    | 'STRONG_MATCH_ON_LEAVER'
     | 'SUPPORTING_ONLY'
     | 'STRONG_SIGNAL_TIE'
     | 'VETOED'
@@ -1101,7 +1102,21 @@ function decide(
                     ...base,
                     outcome: 'SUGGESTED',
                     employeeId: successor ? successor.id : winner.employeeId,
-                    method: 'REKEYED_PERSON_RULE',
+                    // ONE METHOD WAS DOING DUTY FOR TWO SITUATIONS.
+                    // `rekeyedSuccessor` returns null when the departed record
+                    // has no namesake, when a namesake's tenure OVERLAPS (two
+                    // people, not a re-key) and when there are two namesakes
+                    // (ambiguous, so not a re-key either). Reporting
+                    // `REKEYED_PERSON_RULE` there told a reviewer to go and find
+                    // a successor row that does not exist, and made the method
+                    // useless as a metric dimension - "how many accounts are
+                    // blocked on a re-key" counted every strong match on anyone
+                    // who had left.
+                    //
+                    // The OUTCOME is unchanged in both cases: a strong inferred
+                    // signal on a terminated record does not link, successor or
+                    // not. Only the label is split.
+                    method: successor ? 'REKEYED_PERSON_RULE' : 'STRONG_MATCH_ON_LEAVER',
                     signals: winner.signals,
                 };
             }
