@@ -146,6 +146,15 @@ interface SeenResolution {
      * happens once, in the function that already reads the row.
      */
     readonly modelProposedEmployeeId: string | null;
+    /**
+     * The newest verdict for this resolution, or null.
+     *
+     * Present even when the verdict was BLIND-HELD, unlike
+     * `modelProposedEmployeeId`. The asymmetry is the point: the method must
+     * not credit the model for a pick the reviewer could not see, and the
+     * reference is what makes the blind comparison possible at all.
+     */
+    readonly verdictId: string | null;
 }
 
 /**
@@ -243,6 +252,7 @@ async function readSeenResolution(
         id: latest.id,
         outcome: latest.outcome,
         modelProposedEmployeeId: proposedEmployeeId(verdict),
+        verdictId: verdict?.id ?? null,
         candidates: (latest.candidatesJson ?? []) as unknown as readonly ScoredCandidate[],
         signalsJson: latest.signalsJson,
     };
@@ -305,6 +315,15 @@ interface AliasWrite {
     readonly classification: 'EMPLOYEE' | 'NON_PERSON' | 'EXTERNAL' | 'ORPHAN';
     readonly employeeId: string | null;
     readonly method: 'CONFIRMED_ALIAS' | 'MANUAL' | 'AI_PROPOSED_CONFIRMED';
+    /**
+     * The verdict this decision was made against, or null.
+     *
+     * Recorded for EVERY action that writes an alias, not only a confirm: a
+     * reviewer classifying an adjudicated row as a non-person is also deciding
+     * against a verdict, and "the model said NOT_A_PERSON and so did the human"
+     * is exactly the agreement the blind sample wants to count.
+     */
+    readonly verdictId: string | null;
     readonly ownerUserId: string | null;
     readonly justification: string | null;
     readonly expiresAt: Date | null;
@@ -348,6 +367,7 @@ async function resolveWrite(
                         : 'CONFIRMED_ALIAS',
                 ownerUserId: null,
                 justification: null,
+                verdictId: seen.verdictId,
                 expiresAt: null,
             };
 
@@ -361,6 +381,7 @@ async function resolveWrite(
                 method: 'MANUAL',
                 ownerUserId: null,
                 justification: requireReason(action.justification, 'a manual match'),
+                verdictId: seen.verdictId,
                 expiresAt: null,
             };
         }
@@ -373,6 +394,7 @@ async function resolveWrite(
                 method: 'MANUAL',
                 ownerUserId: action.ownerUserId,
                 justification: requireReason(action.justification, 'NON_PERSON'),
+                verdictId: seen.verdictId,
                 expiresAt: null,
             };
         }
@@ -390,6 +412,7 @@ async function resolveWrite(
                 method: 'MANUAL',
                 ownerUserId: null,
                 justification: requireReason(action.justification, 'EXTERNAL'),
+                verdictId: seen.verdictId,
                 expiresAt: action.expiresAt,
             };
         }
@@ -401,6 +424,7 @@ async function resolveWrite(
                 method: 'MANUAL',
                 ownerUserId: null,
                 justification: requireReason(action.justification, 'ORPHAN'),
+                verdictId: seen.verdictId,
                 expiresAt: null,
             };
     }
@@ -467,6 +491,7 @@ export async function decideLegacyAccount(
                 classification: write.classification,
                 employeeId: write.employeeId,
                 method: write.method,
+                verdictId: write.verdictId,
                 ownerUserId: write.ownerUserId,
                 justification: write.justification,
                 expiresAt: write.expiresAt,
@@ -482,6 +507,7 @@ export async function decideLegacyAccount(
                 classification: write.classification,
                 employeeId: write.employeeId,
                 method: write.method,
+                verdictId: write.verdictId,
                 ownerUserId: write.ownerUserId,
                 justification: write.justification,
                 expiresAt: write.expiresAt,
@@ -512,6 +538,7 @@ export async function decideLegacyAccount(
                 executionId: input.executionId,
                 classification: write.classification,
                 method: write.method,
+                verdictId: write.verdictId,
                 employeeId: write.employeeId,
                 ownerUserId: write.ownerUserId,
                 hasJustification: write.justification !== null,

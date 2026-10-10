@@ -1004,6 +1004,49 @@ describe('Step 6c — confirming the model\'s proposal', () => {
         expect(await methodAfterConfirm('prop-none', exec)).toBe('CONFIRMED_ALIAS');
     });
 
+    it('stores the verdict REFERENCE even for a blind row', async () => {
+        // THE ASYMMETRY, and the reason both halves of this exist. The method
+        // must not credit the model for a pick the reviewer could not see; the
+        // reference is what makes the blind comparison possible at all.
+        // Withholding it would remove the measurement the sample exists to take.
+        const exec = await seed({ accountKey: 'ref-blind', verdict: 'PROPOSES', blind: true });
+        await methodAfterConfirm('ref-blind', exec);
+
+        const alias = await prisma.legacyIdentityAlias.findFirstOrThrow({
+            where: { tenantId: T1, connectionId, accountKey: 'ref-blind' },
+            select: { method: true, verdictId: true },
+        });
+        expect(alias.method).toBe('CONFIRMED_ALIAS');
+        expect(alias.verdictId).not.toBeNull();
+    });
+
+    it('stores the reference for an AGREES ratification', async () => {
+        const exec = await seed({ accountKey: 'ref-agrees', verdict: 'AGREES' });
+        await methodAfterConfirm('ref-agrees', exec);
+
+        const alias = await prisma.legacyIdentityAlias.findFirstOrThrow({
+            where: { tenantId: T1, connectionId, accountKey: 'ref-agrees' },
+            select: { method: true, verdictId: true },
+        });
+        // The engine's method, AND the model's verdict beside it — which is
+        // exactly what the checklist line asks for.
+        expect(alias.method).toBe('CONFIRMED_ALIAS');
+        expect(alias.verdictId).not.toBeNull();
+    });
+
+    it('leaves the reference NULL when no verdict exists', async () => {
+        const exec = await seed({ accountKey: 'ref-none', verdict: null });
+        await methodAfterConfirm('ref-none', exec);
+
+        const alias = await prisma.legacyIdentityAlias.findFirstOrThrow({
+            where: { tenantId: T1, connectionId, accountKey: 'ref-none' },
+            select: { verdictId: true },
+        });
+        // Not an empty string, and not a sentinel: every alias confirmed before
+        // adjudication existed genuinely has no verdict.
+        expect(alias.verdictId).toBeNull();
+    });
+
     it('keeps CONFIRMED_ALIAS for a BLIND-sampled proposal', async () => {
         // The subtle one, and the reason the blind sample works at all: the
         // reviewer was never shown this verdict, so their decision is the
