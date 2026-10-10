@@ -108,7 +108,26 @@ describe('GAP-17 ratchet — preset', () => {
         // early or late, silently, on a text that the assertions below can
         // still find their numbers in — from a NEIGHBOURING preset.
         const block = declarationOf(src, 'API_READ_LIMIT');
-        expect(block).toMatch(/maxAttempts:\s*\d+/);
+        // BOTH axes, because they weaken the gate identically (#3312).
+        //
+        // The comment above correctly says a longer window silently weakens
+        // the gate — and this assertion used to read `/maxAttempts:\s*\d+/`,
+        // which matches 120, 1200 and 120000000 alike. Raising the numerator
+        // is the same weakening as widening the denominator, and the guard
+        // bounded one and not the other. Nothing else catches it either: the
+        // enforcement tests use `API_READ_LIMIT.maxAttempts` as a VARIABLE
+        // (loop bounds, header values), so they adapt to whatever it says and
+        // stay green at any value.
+        //
+        // Pinned rather than merely bounded, because 120/min is a PUBLISHED
+        // figure, not an internal tuning knob: `docs/rate-limiting.md`,
+        // `docs/api-consumer-guide.md` and `docs/security-hardening.md` all
+        // state it to customers, and the preset's own docblock repeats it. So
+        // a change here has three documents to move with it, and failing
+        // loudly is the cheapest way to say so. (The docs cannot be
+        // cross-checked from here: `readDoc` masks prose through `mdCodeOf`
+        // and the figure sits in plain table text, not a code span.)
+        expect(block).toMatch(/maxAttempts:\s*120\b/);
         expect(block).toMatch(/windowMs:\s*60\s*\*\s*1000|windowMs:\s*60000/);
     });
 
