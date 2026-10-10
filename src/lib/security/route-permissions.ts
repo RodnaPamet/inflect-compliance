@@ -115,6 +115,16 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             + 'customer-hosted MCP server and writes a snapshot.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/reconcile$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Starts a reconciliation run over one snapshot. Enqueues only. A run '
+            + 'decides which legacy accounts are claimed to belong to which people, '
+            + 'and a LINKED is acted on by later steps without anybody re-reading '
+            + 'the evidence, so it is not a writer\'s either.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/legacy-access\\/mapping$`),
         methods: ['GET', 'PUT'],
         permission: 'admin.manage',

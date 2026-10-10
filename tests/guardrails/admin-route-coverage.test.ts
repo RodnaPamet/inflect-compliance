@@ -37,6 +37,7 @@ const ADMIN_ONLY_ROUTES = [
     'admin/legacy-access/profile/route.ts',
     'admin/legacy-access/pull/route.ts',
     'admin/legacy-access/mapping/route.ts',
+    'admin/legacy-access/reconcile/route.ts',
     // Legacy reconciliation queue (Step 4b). NOT admin.manage — these carry
     // identity_reconciliation.view / .confirm. Listed here because the file
     // lives under admin/, and this guard's question is "is every admin route

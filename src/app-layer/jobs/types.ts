@@ -800,6 +800,7 @@ export interface JobPayloadMap {
     'compliance-posture-summary': CompliancePostureSummaryPayload;
     'compliance-posture-summary-dispatch': CompliancePostureDispatchPayload;
     'legacy-access-pull': LegacyAccessPullPayload;
+    'legacy-reconcile': LegacyReconcilePayload;
     'identity-sync': IdentitySyncPayload;
     'identity-sync-dispatch': IdentitySyncDispatchPayload;
     'identity-leaver-pass': IdentityLeaverPassPayload;
@@ -905,6 +906,24 @@ export interface IdentitySyncPayload {
 export interface LegacyAccessPullPayload {
     tenantId: string;
     connectionId: string;
+}
+
+/**
+ * One reconciliation run, over one snapshot.
+ *
+ * `snapshotId` and not `connectionId`: a run reconciles a snapshot somebody
+ * CHOSE, and a connection has many. Naming the connection would make the job
+ * pick one — most likely the newest — and "which snapshot was this run about"
+ * is the question every resolution it writes is keyed on.
+ *
+ * On demand for the same reason the pull is. A run decides which legacy
+ * accounts are claimed to belong to which people, and the design defers even a
+ * scheduled PULL; a reconcile on a cadence would re-decide that nightly against
+ * a roster nobody re-checked.
+ */
+export interface LegacyReconcilePayload {
+    tenantId: string;
+    snapshotId: string;
 }
 
 export interface IdentityLeaverPassPayload {
@@ -1022,6 +1041,17 @@ export const JOB_DEFAULTS: Record<JobName, {
     removeOnComplete: number | boolean;
     removeOnFail: number | boolean;
 }> = {
+    'legacy-reconcile': {
+        // NOT retried, same reasoning as the pull it follows. A refusal is
+        // already a PARTIAL execution row carrying a named reason — the snapshot
+        // was not COMPLETE, the roster was not FRESH — and both are conditions a
+        // retry a second later cannot change. Retrying would turn a fact an
+        // administrator needs to read into three identical rows.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1_000 },
+        removeOnComplete: 100,
+        removeOnFail: 100,
+    },
     'legacy-access-pull': {
         // NOT retried, and that is the useful behaviour rather than the lazy one.
         // A refusal already lands as a PARTIAL snapshot carrying a named reason,

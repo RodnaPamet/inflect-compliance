@@ -10,7 +10,11 @@ import { PrismaClient } from '@prisma/client';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { makeRequestContext } from '../helpers/make-context';
-import { runLegacyReconcile, ROSTER_FRESHNESS_MS } from '@/app-layer/usecases/legacy-reconcile';
+import {
+    runLegacyReconcile,
+    runLegacyReconcileJob,
+    ROSTER_FRESHNESS_MS,
+} from '@/app-layer/usecases/legacy-reconcile';
 
 const prisma: PrismaClient = prismaTestClient();
 const TENANT = 'lgrc-tenant';
@@ -576,5 +580,59 @@ describe('Step 4b — alias revalidation', () => {
         // answer "just now".
         expect(second.suspendedAt).toEqual(first.suspendedAt);
         expect(second.suspendedReason).toBe('HR_RECORD_VANISHED');
+    });
+
+});
+
+// ── The job entry point ─────────────────────────────────────────────────────
+//
+// Its own describe, outside the alias fixtures: the two paths are compared
+// under identical state, and a nested describe's beforeEach would change one
+// side of that comparison.
+describe('the job entry point', () => {
+    it('resolves accounts with no RequestContext at all', async () => {
+        // The run asserts admin, and there is no signed-in person inside a
+        // worker — so this is the assertion that the system context it builds
+        // carries the authority the run demands. A context built with narrower
+        // permissions throws here, and the whole production path goes through
+        // this function.
+        const r = await runLegacyReconcileJob({ tenantId: TENANT, snapshotId });
+
+        expect(r.status).toBe('RESOLVED');
+        expect(r.snapshotId).toBe(snapshotId);
+        expect(r.resolved).toBeGreaterThan(0);
+    });
+
+    it('stamps the execution row as a human act', async () => {
+        await runLegacyReconcileJob({ tenantId: TENANT, snapshotId });
+
+        const execution = await prisma.integrationExecution.findFirst({
+            where: { tenantId: TENANT, automationKey: { endsWith: '.reconcile' } },
+            orderBy: { executedAt: 'desc' },
+            select: { triggeredBy: true },
+        });
+        // Every caller is an administrator pressing a button, exactly as the
+        // pull's is. `triggeredBy` is how the integrations page tells a human
+        // act from a sweep.
+        expect(execution?.triggeredBy).toBe('manual');
+    });
+
+    it('agrees with the ctx entry on the same snapshot', async () => {
+        // The two paths must not diverge: one is what every other test in this
+        // file exercises, and the other is what production runs. That pairing is
+        // exactly how a production-only defect hides behind a green suite.
+        //
+        // No clearing between them: resolutions are keyed on
+        // `(executionId, accountKey)`, so a second run ADDS a set rather than
+        // colliding — and `clearRun()` would delete the HRIS sync row that
+        // gate 2 reads, making the second run refuse ROSTER_NOT_FRESH. That is
+        // what the first draft of this test did, and it read as a real
+        // disagreement between the two entry points.
+        const viaCtx = await runLegacyReconcile(ctx(), { snapshotId });
+        const viaJob = await runLegacyReconcileJob({ tenantId: TENANT, snapshotId });
+
+        expect(viaJob.status).toBe(viaCtx.status);
+        expect(viaJob.resolved).toBe(viaCtx.resolved);
+        expect(viaJob.byOutcome).toEqual(viaCtx.byOutcome);
     });
 });
