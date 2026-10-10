@@ -130,18 +130,26 @@ describe('dependency-governance integrity — guard the guards', () => {
         expect(exists(file)).toBe(true);
     });
 
-    it('the governance doc states the four-pillar enforcement model', () => {
+    it('the governance doc states the five-pillar enforcement model', () => {
         // The load-bearing structure of the model — if the doc is
         // hollowed out, this catches it. Narrowed to the section that IS the
         // model; measured raw → section, 1→1, 3→1, 1→1, 10→2.
+        //
+        // FIVE since 2026-10-10: runtime images joined the four npm-tree
+        // pillars. The heading carries the count, which is why adding a pillar
+        // reddens this test — that is the gate working, and the count is kept in
+        // the heading rather than dropped to avoid it, because a reader who
+        // counts four rows under a heading that says five has found a real
+        // problem.
         const pillars = mdSection(
             readMarkdown('docs/dependency-governance.md'),
-            'The four governance pillars',
+            'The five governance pillars',
         );
         expect(pillars).toMatch(/deterministic install/i);
         expect(pillars).toMatch(/strict peer/i);
         expect(pillars).toMatch(/version coherence/i);
         expect(pillars).toMatch(/risk/i);
+        expect(pillars).toMatch(/runtime images/i);
     });
 
     it('the governance doc states the NextAuth stay-on-v4 policy', () => {
