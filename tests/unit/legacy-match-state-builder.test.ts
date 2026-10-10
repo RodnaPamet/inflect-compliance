@@ -421,12 +421,30 @@ describe('the budget trim', () => {
         expect(result.state.candidates).toHaveLength(1);
     });
 
-    it('refuses with NO_CANDIDATES when there are none', () => {
-        const result = buildMatchState({ account: account(), candidates: [], budgetChars: ROOMY });
+    it('BUILDS an orphan payload when there are no candidates', () => {
+        // This used to refuse with `NO_CANDIDATES`, which was never a storable
+        // reason — the ten all describe something that happened to a question
+        // somebody asked, and an orphan was not asked one. Now it is asked the
+        // person question alone, so the state is built with no candidates and
+        // `buildMatchRequest` omits the match question.
+        const result = built({ account: account(), candidates: [], budgetChars: ROOMY });
+
+        expect(result.state.candidates).toHaveLength(0);
+        expect(result.labelling).toEqual([]);
+        // The account half is unchanged — it is the only thing the model has to
+        // judge, so it must still be complete.
+        expect(result.state.account.username).toBe('ivan.ivanov');
+        expect(result.stateChars).toBeGreaterThan(0);
+    });
+
+    it('still refuses an orphan whose ACCOUNT alone will not fit', () => {
+        // The budget still binds. With no candidates to trim there is nothing to
+        // drop, so an account whose own fields exceed the budget is the one case
+        // that can only be `OVER_BUDGET`.
+        const result = buildMatchState({ account: account(), candidates: [], budgetChars: 10 });
         expect(result.ok).toBe(false);
         if (result.ok) throw new Error('unreachable');
-        expect(result.reason).toBe('NO_CANDIDATES');
-        expect(result.stateChars).toBeNull();
+        expect(result.reason).toBe('OVER_BUDGET');
     });
 
     it('reports stateChars as the real serialised size', () => {

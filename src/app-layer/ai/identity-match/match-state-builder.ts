@@ -195,7 +195,14 @@ export interface MatchStateBuilt {
  */
 export interface MatchStateRefused {
     readonly ok: false;
-    readonly reason: 'NO_CANDIDATES' | 'OVER_BUDGET';
+    /**
+     * `OVER_BUDGET` is now the only way to refuse.
+     *
+     * `NO_CANDIDATES` was removed with the orphan change rather than left as an
+     * unreachable member: a union that names an outcome nothing produces sends
+     * the next reader looking for the branch that produces it.
+     */
+    readonly reason: 'OVER_BUDGET';
     /** The size of the smallest state that could be built, when measured. */
     readonly stateChars: number | null;
 }
@@ -358,9 +365,15 @@ function buildCandidate(c: AdjudicationCandidate, label: MatchOption): MatchStat
  * and a disagreement between two runs a real disagreement.
  */
 export function buildMatchState(input: MatchStateInput): MatchStateBuildResult {
-    if (input.candidates.length === 0) {
-        return { ok: false, reason: 'NO_CANDIDATES', stateChars: null };
-    }
+    // AN ORPHAN IS BUILT, NOT REFUSED. With no candidates the state carries the
+    // account alone and `buildMatchRequest` asks the person question by itself —
+    // because a `choice` over one option returns P(NONE) = 1 by normalisation,
+    // and `NO_MATCH` read off that would annotate every orphan at maximum
+    // confidence from an answer the model had no alternative to.
+    //
+    // This used to return `NO_CANDIDATES`, which was never a storable reason:
+    // the ten `NonVerdictReason`s all describe something that happened to a
+    // question somebody asked, and an orphan was not asked one. Now it is.
 
     // A TOTAL order. Score descending, then employee id ascending - a strict
     // `>` comparison alone leaves tied candidates in arrival order, and arrival

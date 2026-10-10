@@ -155,6 +155,17 @@ export type QuestionId = (typeof QUESTION_IDS)[number];
  */
 export const VENDOR_MAX_CHOICE_OPTIONS = 255;
 
+/**
+ * The `person` question's statement, in ONE place.
+ *
+ * Both request shapes ask it — the full pair and the orphan's person-only
+ * request — and a `noul` is calibrated against the exact wording it was
+ * evaluated on. Two copies would be two questions the day somebody improved one
+ * of them, and the evaluation record would answer for whichever it saw.
+ */
+export const PERSON_STATEMENT =
+    'This account is used by one individual, not by a service or a shared, test or system function.';
+
 // ─── Request ───────────────────────────────────────────────────────────────
 
 /**
@@ -224,6 +235,33 @@ export function buildMatchRequest(model: string, state: MatchState): SystemOneRe
 
     const offered: MatchOption[] = [...state.candidates.map((c) => c.label), 'NONE'];
 
+    // ── AN ORPHAN IS ASKED THE PERSON QUESTION ALONE ──────────────────────
+    //
+    // With no candidates the `match` question would offer exactly one option,
+    // `NONE`, and a calibrated `choice` over one option returns P(NONE) = 1 BY
+    // NORMALISATION rather than by judgement. `deriveVerdict` reads `NO_MATCH`
+    // off that probability, so every orphan would be annotated "the answer is
+    // nobody" at maximum confidence — from an answer the model had no
+    // alternative to. An annotation that fires on every row of its class, and
+    // cannot not fire, is worse than none: it reads as corroboration.
+    //
+    // `person` is a separate `noul` and is unaffected, and for an orphan it is
+    // the valuable half: an account with live access and nobody on the roster
+    // is the urgent case, and whether it is a robot or a person is most of the
+    // triage. So the question is asked and the match question is not.
+    if (state.candidates.length === 0) {
+        return {
+            model,
+            state,
+            questions: {
+                person: {
+                    type: 'noul',
+                    statement: PERSON_STATEMENT,
+                },
+            },
+        };
+    }
+
     return {
         model,
         state,
@@ -243,8 +281,7 @@ export function buildMatchRequest(model: string, state: MatchState): SystemOneRe
             },
             person: {
                 type: 'noul',
-                statement:
-                    'This account is used by one individual, not by a service or a shared, test or system function.',
+                statement: PERSON_STATEMENT,
             },
         },
     };
@@ -301,6 +338,20 @@ const usageSchema = z
     })
     .strict();
 
+/**
+ * TWO SHAPES, BOTH `.strict()`, and the caller says which it expects.
+ *
+ * An orphan is asked the `person` question alone, so its answer carries no
+ * `match`. That could have been expressed as one schema with `match` optional,
+ * and it is deliberately not: optional would accept a response with NO match
+ * answer to a request that ASKED one — a model silently declining half the
+ * question — and that is exactly the case a strict parser exists to catch.
+ *
+ * A `z.union` of the two would also have worked and is worse: a full response
+ * with a malformed `match` falls through to the person-only arm, fails there
+ * too, and reports the wrong reason. The caller built the state, so it knows
+ * whether it asked; being told is better than guessing.
+ */
 export const systemOneResponseSchema = z
     .object({
         model: z.string().min(1),
@@ -314,7 +365,28 @@ export const systemOneResponseSchema = z
     })
     .strict();
 
-export type SystemOneResponse = z.infer<typeof systemOneResponseSchema>;
+/** The orphan's answer: `person` and nothing else. */
+export const personOnlyResponseSchema = z
+    .object({
+        model: z.string().min(1),
+        answers: z
+            .object({
+                person: noulAnswerSchema,
+            })
+            .strict(),
+        usage: usageSchema,
+    })
+    .strict();
+
+export type SystemOneResponse = {
+    readonly model: string;
+    readonly answers: {
+        /** ABSENT for an orphan, which was never asked the match question. */
+        readonly match?: z.infer<typeof choiceAnswerSchema>;
+        readonly person: z.infer<typeof noulAnswerSchema>;
+    };
+    readonly usage: z.infer<typeof usageSchema>;
+};
 
 /**
  * Parse a response, or throw.
@@ -323,8 +395,16 @@ export type SystemOneResponse = z.infer<typeof systemOneResponseSchema>;
  * global rule 4: a response we cannot fully validate produces no verdict, and the
  * account stays in the review queue where a person looks at it.
  */
-export function parseSystemOneResponse(raw: unknown): SystemOneResponse {
-    const parsed = systemOneResponseSchema.safeParse(raw);
+export function parseSystemOneResponse(
+    raw: unknown,
+    opts: { readonly expectMatch: boolean } = { expectMatch: true }
+): SystemOneResponse {
+    // The caller built the state, so it knows whether it asked the match
+    // question. Defaulted to `true` so every existing caller is unchanged and a
+    // NEW caller has to think about it — the opposite default would quietly
+    // accept a half-answer to a full request.
+    const schema = opts.expectMatch ? systemOneResponseSchema : personOnlyResponseSchema;
+    const parsed = schema.safeParse(raw);
     if (!parsed.success) {
         // The vendor's payload is NOT echoed into the message. It is attacker-shaped
         // and this message reaches logs; the issue paths are enough to debug with.
@@ -334,18 +414,22 @@ export function parseSystemOneResponse(raw: unknown): SystemOneResponse {
         throw new SystemOneResponseError(where);
     }
 
-    const { answers } = parsed.data;
+    const answers = parsed.data.answers as SystemOneResponse['answers'];
     // The chosen option must be one the probability map also scores. A response
     // that names an option it gave no probability for is internally inconsistent,
     // and a threshold computed from a missing probability is `undefined >= x`,
     // which is false — a silent refusal rather than a loud one.
-    if (!(answers.match.option in answers.match.probabilities)) {
+    //
+    // Guarded on presence rather than asserted: an orphan's answer legitimately
+    // has no `match`, and the strict person-only schema has already refused one
+    // that carries a stray field.
+    if (answers.match && !(answers.match.option in answers.match.probabilities)) {
         throw new SystemOneResponseError(
             `answers.match: chosen option is absent from the probability map`
         );
     }
 
-    return parsed.data;
+    return parsed.data as SystemOneResponse;
 }
 
 export class SystemOneResponseError extends Error {

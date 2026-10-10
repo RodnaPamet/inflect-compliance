@@ -744,7 +744,6 @@ export async function runLegacyReconcileJob(input: {
                     considered: adjudication.considered,
                     written: adjudication.written,
                     canaryPassed: adjudication.canaryPassed,
-                    skippedNoCandidates: adjudication.skippedNoCandidates,
                 });
             }
         } catch (err) {

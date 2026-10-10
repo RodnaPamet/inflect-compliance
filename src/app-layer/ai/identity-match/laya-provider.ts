@@ -69,7 +69,11 @@ export class LayaDecisionProvider implements DecisionProvider {
             nowMs: ctx.nowMs,
             sleep: ctx.sleep,
         });
-        return parseSystemOneResponse(raw);
+        // The STATE says which shape to expect: an orphan was asked the person
+        // question alone, so its answer carries no `match`. Told rather than
+        // guessed — a union of the two schemas would report the wrong reason
+        // for a malformed full response.
+        return parseSystemOneResponse(raw, { expectMatch: state.candidates.length > 0 });
     }
 }
 

@@ -70,6 +70,7 @@
  */
 
 import {
+    derivePersonOnlyVerdict,
     deriveVerdict,
     type DerivedVerdict,
     type NonVerdictReason,
@@ -270,6 +271,10 @@ async function withConcurrency<T>(
 // --- The canary -----------------------------------------------------------
 
 function canaryAgrees(expected: CanaryCase, got: SystemOneResponse): boolean {
+    // A canary case records an option, so its state has candidates and its
+    // answer must carry a match. An answer without one did not reproduce the
+    // record, whatever its person probability says.
+    if (!got.answers.match) return false;
     // The OPTION first. With a different option the two probabilities below
     // describe different quantities, and a drifted model reporting similar
     // confidence for a different answer is the case most worth catching.
@@ -475,6 +480,24 @@ export async function runAdjudicationPass(
                 ? null
                 : (subject.labelling.find((l) => l.employeeId === subject.suggestedEmployeeId)
                       ?.label ?? null);
+
+        // ORPHAN: asked the person question alone, so there is no match answer
+        // to rank. Its own derivation, which can only return NOT_A_PERSON or
+        // UNSURE — see `derivePersonOnlyVerdict` for why that is a separate
+        // function rather than an empty option list.
+        if (!parsed.answers.match) {
+            return {
+                ...base,
+                verdict: derivePersonOnlyVerdict(
+                    parsed.answers.person.probability,
+                    record.thresholds
+                ),
+                reason: null,
+                reportedModel: parsed.model,
+                latencyMs,
+                inputTokens,
+            };
+        }
 
         // The probability MAP becomes the option list `deriveVerdict` ranks. Every
         // scored option is passed, including ones the chosen answer is not: the

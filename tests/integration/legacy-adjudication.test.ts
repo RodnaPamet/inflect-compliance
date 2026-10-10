@@ -353,17 +353,21 @@ describe('the residue', () => {
         expect(ids).toHaveLength(2);
     });
 
-    it('SKIPS an account with no candidates, and says how many', async () => {
-        // `NO_CANDIDATES` is not one of the ten storable reasons, and that is
-        // the design: the ten all describe something that happened to a question
-        // somebody asked, and this account was never asked one.
+    it('ADJUDICATES an orphan, asking the person question alone', async () => {
+        // It used to be skipped, because `NO_CANDIDATES` is not one of the ten
+        // storable reasons. Now it is asked — the match question is omitted
+        // rather than offered as a one-option choice, so only NOT_A_PERSON and
+        // UNSURE are reachable, and NOT_A_PERSON is the valuable one: an
+        // account with live access and nobody on the roster is the urgent case.
         await residue('acct-1', 'UNMATCHED', []);
 
         const r = await adjudicateResidue({ tenantId: TENANT, executionId });
 
-        expect(r.skippedNoCandidates).toBe(1);
-        expect(r.considered).toBe(0);
-        expect(await prisma.legacyMatchVerdict.count({ where: { tenantId: TENANT } })).toBe(0);
+        expect(r.considered).toBe(1);
+        // No record is committed, so it gets NO_EVALUATION rather than a
+        // verdict — the point here is that it is CONSIDERED at all.
+        expect(r.byReason).toEqual({ NO_EVALUATION: 1 });
+        expect(await prisma.legacyMatchVerdict.count({ where: { tenantId: TENANT } })).toBe(1);
     });
 
     it('drops a candidate whose employee row is gone rather than inventing one', async () => {

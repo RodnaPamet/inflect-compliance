@@ -202,6 +202,45 @@ export function deriveVerdict(
  * is. Separate from {@link deriveVerdict} because they are facts the engine and
  * the roster hold, not probabilities.
  */
+/**
+ * The verdict for an account that was asked the PERSON question alone.
+ *
+ * An orphan — `UNMATCHED` with no candidates — is not asked the match question
+ * at all, because a `choice` over one option returns P(NONE) = 1 by
+ * normalisation and `NO_MATCH` read off that would annotate every orphan at
+ * maximum confidence from an answer the model had no alternative to.
+ *
+ * So only two verdicts are reachable here, and they are reachable BY
+ * CONSTRUCTION rather than by an empty option list happening to fall through
+ * `deriveVerdict`. That distinction is the point of this function existing:
+ * passing `options: []` to `deriveVerdict` gives the right answer today, and
+ * would stop doing so the moment somebody computed P(NONE) as
+ * `1 - sum(others)` — which is a reasonable thing to write and would make
+ * every orphan a confident `NO_MATCH`.
+ *
+ * `margin` is `Infinity` because there was no runner-up to be ahead of — the
+ * same reading `deriveVerdict` gives a sole option, and not zero, which would
+ * mean "tied with something".
+ */
+export function derivePersonOnlyVerdict(
+    personProbability: number,
+    thresholds: EvaluationThresholds
+): DerivedVerdict {
+    const base = {
+        topOption: null,
+        topProbability: 0,
+        margin: Number.POSITIVE_INFINITY,
+    } as const;
+
+    if (personProbability <= thresholds.nonPersonAt) {
+        return { verdict: 'NOT_A_PERSON', ...base };
+    }
+    // Everything else is UNSURE. A confident "this IS a person" on an account
+    // with nobody on the roster is the orphan finding itself, and the design
+    // annotates that rather than giving it a verdict class of its own.
+    return { verdict: 'UNSURE', ...base };
+}
+
 export function eligibleForBulkRatification(input: {
     readonly verdict: VerdictClass;
     readonly candidateIsActive: boolean;
