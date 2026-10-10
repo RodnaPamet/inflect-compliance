@@ -33,7 +33,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, interfaceBodyOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -95,14 +95,25 @@ describe('Per-tenant DEK rotation fallback wiring', () => {
 
     test('encryption-middleware.ts resolves both DEKs via resolveTenantDekPair', () => {
         const src = readSource('src/lib/db/encryption-middleware.ts');
-        expect(src).toMatch(
-            /resolveTenantDekPair\s*\(/,
-        );
+        // The DECLARATION and the CALL, separately (#3364). `/resolveTenantDekPair\s*\(/`
+        // matched both and so named neither: deleting the call left the
+        // declaration satisfying it, and a resolver nothing invokes is exactly
+        // the failure this test is for. Asserting both is also stronger than
+        // the one ambiguous needle it replaces.
+        expect(src).toMatch(/async function resolveTenantDekPair\s*\(/);
+        expect(src).toMatch(/await resolveTenantDekPair\s*\(/);
         // The pair shape (primary + previous) is the load-bearing
         // contract — a future refactor that switches back to a single
         // DEK must rewrite this guardrail at the same time.
-        expect(src).toMatch(/primary:\s*Buffer\s*\|\s*null/);
-        expect(src).toMatch(/previous:\s*Buffer\s*\|\s*null/);
+        // Bounded to the INTERFACE, which is the contract this test names
+        // (#3364). Unbounded, each needle also matched a local `let` of the
+        // same shape inside the resolver, so deleting a field from the
+        // interface left the local declaration satisfying the assertion.
+        // Bounding the read takes the site out of the ambiguous population
+        // entirely rather than making the needle longer.
+        const pair = interfaceBodyOf(src, 'TenantDekPair');
+        expect(pair).toMatch(/primary:\s*Buffer\s*\|\s*null/);
+        expect(pair).toMatch(/previous:\s*Buffer\s*\|\s*null/);
     });
 
     test('rotateTenantDek is implemented (not a stub)', () => {
@@ -128,8 +139,16 @@ describe('Per-tenant DEK rotation fallback wiring', () => {
         // tenant, rotate DEK...)". A future refactor that downgrades
         // this to admin.manage would silently let plain ADMINs rotate
         // — which is what the role model says they MAY NOT do.
+        // EVERY exported handler, named individually (#3364). The single
+        // needle matched twice — POST and GET are both gated, which is the
+        // right state — so it could not tell "both gated" from "one gated
+        // and one downgraded", which is the regression the comment above
+        // describes. Two specific needles assert what the prose claims.
         expect(src).toMatch(
-            /requirePermission\s*\(\s*['"]admin\.tenant_lifecycle['"]/g,
+            /export const POST = withApiErrorHandling\(\s*requirePermission\(\s*['"]admin\.tenant_lifecycle['"]/,
+        );
+        expect(src).toMatch(
+            /export const GET = withApiErrorHandling\(\s*requirePermission\(\s*['"]admin\.tenant_lifecycle['"]/,
         );
     });
 });
