@@ -1343,6 +1343,110 @@ cannot see the torn-snapshot failure, which only appears while paging. And
 freshness surface and the leaver pass, so a half-typed token in the Test box would
 otherwise be recorded as the integration being down.
 
+**Snapshots and the fail-closed pull, since Step 2a** (`src/lib/legacy-access/`,
+`usecases/legacy-access-pull.ts`). Seven refusals, and the shape of each is the
+lesson: a pull that cannot vouch for its population says so rather than
+degrading.
+
+- **The payload hash is ordered by `accountKey` ITSELF, not by the serialised
+  line.** Sorting the lines gives the same answer today — `accountKey` happens to
+  sort first among the canonical field names — but that is an accident of the
+  alphabet, and a future field named before it would silently re-order the whole
+  population and change every hash. `tests/.../legacy-access-canonical` holds the
+  reasoning.
+- **`UNKNOWN` is treated as ABSENCE in the contradiction check, not as a value.**
+  Two rows disagreeing `ACTIVE` vs `UNKNOWN` are not contradictory — one of them
+  simply did not answer. Comparing it as a value broke every legitimate
+  long-layout table, and the test that caught it was the step's own.
+- **A denylisted column is refused; an unrequested one is STRIPPED and
+  REPORTED.** The transport cannot know which columns are fatal, because fatality
+  is product policy; the caller decides. See invariant 3 and `OVERSHARED_DENIED_COLUMN`.
+- **A value-set is exposed only when it cannot identify anybody.** `mayExposeValueSet`
+  needs a low distinct count, a minimum row count, a repetition floor AND zero
+  e-mail share — four terms, because any three of them admit a column of 12
+  unique names.
+
+**Resolutions and the crosswalk, since Step 3c** (`usecases/legacy-reconcile.ts`).
+A run's verdicts are immutable: a second run ADDS rows keyed on
+`(executionId, accountKey)` rather than overwriting, so "why was this suggested
+in March?" stays answerable.
+
+- **Three gates, each refusing with a named reason**: the snapshot must be
+  COMPLETE, the HRIS roster must be FRESH, and the directory bridge is checked
+  per link rather than per run. A stale roster mass-produces false orphans and
+  false leavers, which is worse than refusing.
+- **A refusal records `PARTIAL`, never `ERROR`.** `ERROR` means the run broke;
+  `PARTIAL` means it declined. Conflating them makes a deliberate refusal look
+  like an outage on the integrations page.
+- **The freshness constant is imported from `identity-write-target.ts`**, not from
+  the leaver pass — importing the pass would drag the writer factory and both
+  provider writers into this module's graph, and for THIS module that is the
+  wrong direction even with no call site (invariant 1).
+
+**The review queue and alias revalidation, since Step 4b** (`usecases/legacy-reviewer-actions.ts`,
+`reconcile/alias-revalidation.ts`). A `LegacyIdentityAlias` is the only thing
+that can make an account `LINKED` alone, because it records a decision a person
+made.
+
+- **A DEPARTURE NEVER SUSPENDS AN ALIAS.** Four triggers do — recreation, an
+  account postdating employment end, a re-key, a vanished HR record — and leaving
+  is not one of them. With the alias the account is reported as a leaver with live
+  access; without it, it is an `UNMATCHED` row indistinguishable from an
+  unclassified service account, so suspending would delete the one fact that made
+  it urgent. `makeRekeyLookup` is exported from the engine so "re-keyed" has ONE
+  definition; two would eventually disagree in the direction that grants access.
+- **Revalidate, suspend, then resolve against the SURVIVORS.** Resolving against
+  what was read and suspending afterwards records `CONFIRMED_ALIAS` on the very
+  run that stopped trusting the alias.
+- **A decided account leaves the queue, and the queue reads ALIASES to know
+  that.** Three of the six reviewer actions produce no evidence the engine can
+  use, so they resolve `UNMATCHED` for ever; a queue built from resolutions alone
+  asks the reviewer the same question every cycle. A SUSPENDED alias does not
+  suppress — that is the revalidation pass's own output — and an expired
+  `EXTERNAL` returns LABELLED, because it did not become doubtful, it became old.
+- **`confirm` is OWNER+ADMIN, and the usecase reads the GRANULAR key.** For a
+  built-in role that equals `canAdmin`; for a CUSTOM role granting confirm over a
+  READER base it does not, and a coarse check would refuse what `requirePermission`
+  allowed.
+- **Bulk is bounded by `SCORER_WEIGHTS.CONVENTION`** — the largest score any
+  single supporting signal can contribute — so a row qualifies only when its
+  leader is ahead by more than one whole signal, and re-weighting the scorers
+  re-tunes the bound instead of leaving a constant that stops meaning anything.
+
+**Recertification campaigns, since Step 5b** (`usecases/access-review-legacy.ts`,
+`lib/legacy-access/findings.ts`). `LEGACY_APP` reuses
+`AccessReviewConnectedDecision` with `subjectRef` as `connectionId:accountKey`
+and `connectedAccountId` NULL — a third decision model would mean a third
+implementation of reminders, closing and the evidence PDF.
+
+- **FINDINGS ARE A SET, NOT A LABEL.** This is how invariant 5's sibling rule —
+  "no other state ever suppresses a leaver with live access" — is actually held.
+  A single label means something has to win, and the day a privileged dormant
+  leaver arrives two of those three do.
+- **Dormancy speaks only where the POPULATION reports last-login; privilege does
+  the opposite.** An application that carries no `lastLoginAt` would otherwise
+  mark every row dormant, and a finding on every row is a finding on none. But
+  privilege is a positive claim about an entitlement, so absence is NOT evidence
+  for it — a critical badge on every row of a snapshot that cannot answer is
+  worse than silence.
+- **A mover is measured against the last CLOSED campaign only**, and no prior
+  record is a first sighting rather than a move. A value absent on either side is
+  a change to the MAPPING, not to a person.
+- **The subjects are FROZEN at create**, and the test proves it by pulling again
+  and asserting the stored decision is byte-identical.
+- **The evidence carries its provenance** — payload hash, mapping version,
+  resolution method — read off the frozen subjects rather than re-queried, because
+  re-reading at close reintroduces the drift the freeze removed. The hash lets an
+  auditor re-derive from the stored rows through `verifySnapshotPayloadHash`.
+- **SOC 2 suggests `CC6.1`, not the brief's `CC6.2`/`CC6.3`**, because this
+  catalogue has one sub-code per criterion and neither exists. A test asserts that
+  ABSENCE so the substitution is revisited if the catalogue changes. Filed
+  separately; see `legacy-evidence-controls.ts`.
+- **A remediation task for a legacy campaign says to act IN THE APPLICATION**, and
+  says we never write to it. The connected wording — "in the identity provider" —
+  would invite somebody to wait for an automation that cannot exist.
+
+
 
 
 
