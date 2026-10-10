@@ -82,7 +82,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         indent: 4,
         escapeNonAscii: true,
         trailingNewline: true,
-        keyOrderSha: '072de24b0f85b7a8f1f251cef2be8df8619b0cc5d3dcb0934af80bec9e0040c4',
+        // Updated 2026-10-10: one entry added for `laya-image.yml:build-scan-push`,
+        // Step 6d's dispatch-only image publish. The digest moves when a key is
+        // added, which is the point — it makes editing a contended file a
+        // deliberate act recorded in two places rather than one.
+        keyOrderSha: '2cc3759586a5b1ab1423721643689302880a40abbb1f2870ff25460575e312c8',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
