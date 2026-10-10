@@ -71,6 +71,7 @@ import { badRequest, conflict, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { SCORER_WEIGHTS } from '@/lib/identity/reconcile/scorers';
+import { isBlindHeld } from '@/lib/legacy-access/blind-sample';
 import type { ScoredCandidate } from '@/lib/identity/reconcile/engine';
 import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
@@ -564,6 +565,23 @@ export async function bulkConfirmLegacyAccounts(
  */
 export type QueueReason = 'UNDECIDED' | 'EXTERNAL_EXPIRED';
 
+/**
+ * The model's annotation on a queue row, when there is one to show.
+ *
+ * Carries the probabilities AND the labelling, because one without the other is
+ * not readable: the probabilities are keyed by the shuffled letters that were
+ * sent, so `{"C": 0.91}` means nothing until a letter resolves to a person.
+ */
+export interface QueueVerdict {
+    readonly verdict: string;
+    readonly topOption: string | null;
+    readonly topProbability: number | null;
+    readonly topMargin: number | null;
+    /** Letter to employee id, for the letters actually sent. */
+    readonly labelling: Readonly<Record<string, string>>;
+    readonly modelRevision: string;
+}
+
 export interface QueueRow {
     readonly accountKey: string;
     readonly outcome: string;
@@ -571,6 +589,78 @@ export interface QueueRow {
     readonly reason: QueueReason;
     /** For EXTERNAL_EXPIRED: when it lapsed. */
     readonly expiredAt: Date | null;
+    /**
+     * The model's annotation, or null.
+     *
+     * NULL FOR A BLIND-SAMPLED ROW, and that is the whole mechanism. A row in
+     * the sample must be INDISTINGUISHABLE from a row the model said nothing
+     * about — if the API said "this is a blind sample" the reviewer would be
+     * careful exactly where we are measuring, and the number we got back would
+     * describe a careful reviewer rather than a typical one.
+     *
+     * So there is no `blindHeld` field here on purpose. The server knows; the
+     * reviewer sees a row with no verdict, which is the commonest kind of row
+     * anyway (`UNSURE`, `NO_EVALUATION`, a timeout). The comparison that the
+     * sample exists for happens server-side, after they decide.
+     */
+    readonly verdict: QueueVerdict | null;
+}
+
+/**
+ * The verdict a reviewer may see, or null.
+ *
+ * THREE REASONS TO SHOW NOTHING, and they must be indistinguishable from each
+ * other on the wire:
+ *
+ *   - there is no verdict row at all (adjudication off, or never run);
+ *   - the row carries a NON-VERDICT reason, so no model answered;
+ *   - the row is in the BLIND SAMPLE.
+ *
+ * The third is the one that has to look like the other two. If a reviewer could
+ * tell a withheld verdict from an absent one, they would know which rows are
+ * being measured, and the precision we measured would be of a reviewer who knew
+ * they were being watched.
+ *
+ * `UNSURE` is also withheld. It is a real verdict, and showing it would tell a
+ * reviewer the model looked and had no opinion — which is information, but not
+ * information that helps them decide, and it is one more thing to distinguish a
+ * blind row from. The design's `UNSURE` lane is "the queue as it would be
+ * without a model", so this keeps it exactly that.
+ */
+function showableVerdict(
+    row:
+        | {
+              id: string;
+              verdict: string | null;
+              modelRevision: string;
+              topProbability: number | null;
+              topMargin: number | null;
+              probabilitiesJson: unknown;
+              labellingJson: unknown;
+          }
+        | undefined
+): QueueVerdict | null {
+    if (!row || !row.verdict) return null;
+    if (row.verdict === 'UNSURE') return null;
+    if (isBlindHeld(row.id)) return null;
+
+    const labelling =
+        row.labellingJson && typeof row.labellingJson === 'object' && !Array.isArray(row.labellingJson)
+            ? (row.labellingJson as Record<string, string>)
+            : {};
+    const probabilities =
+        row.probabilitiesJson && typeof row.probabilitiesJson === 'object'
+            ? (row.probabilitiesJson as Record<string, unknown>)
+            : {};
+
+    return {
+        verdict: row.verdict,
+        topOption: typeof probabilities.top === 'string' ? probabilities.top : null,
+        topProbability: row.topProbability,
+        topMargin: row.topMargin,
+        labelling,
+        modelRevision: row.modelRevision,
+    };
 }
 
 /**
@@ -633,7 +723,7 @@ export async function listReconciliationQueue(
                     outcome: { in: ['SUGGESTED', 'AMBIGUOUS', 'UNMATCHED'] },
                 },
                 orderBy: { accountKey: 'asc' },
-                select: { accountKey: true, outcome: true, candidatesJson: true },
+                select: { id: true, accountKey: true, outcome: true, candidatesJson: true },
             })
         ),
         runInTenantContext(ctx, (db) =>
@@ -650,6 +740,34 @@ export async function listReconciliationQueue(
 
     const decided = new Map(aliases.map((a) => [a.accountKey, a]));
 
+    // One read for the whole page, not one per row. A verdict is one per
+    // (resolution, revision); the NEWEST is the one to show, because an older
+    // revision's answer has been superseded by a model somebody deliberately
+    // changed to.
+    const verdicts =
+        rows.length === 0
+            ? []
+            : await runInTenantContext(ctx, (db) =>
+                  db.legacyMatchVerdict.findMany({
+                      where: { tenantId: ctx.tenantId, resolutionId: { in: rows.map((r) => r.id) } },
+                      orderBy: { createdAt: 'desc' },
+                      select: {
+                          id: true,
+                          resolutionId: true,
+                          verdict: true,
+                          modelRevision: true,
+                          topProbability: true,
+                          topMargin: true,
+                          probabilitiesJson: true,
+                          labellingJson: true,
+                      },
+                  })
+              );
+    const verdictByResolution = new Map<string, (typeof verdicts)[number]>();
+    for (const v of verdicts) {
+        if (!verdictByResolution.has(v.resolutionId)) verdictByResolution.set(v.resolutionId, v);
+    }
+
     const out: QueueRow[] = [];
     for (const r of rows) {
         const a = decided.get(r.accountKey);
@@ -657,6 +775,7 @@ export async function listReconciliationQueue(
             accountKey: r.accountKey,
             outcome: r.outcome,
             candidates: (r.candidatesJson ?? []) as unknown as readonly ScoredCandidate[],
+            verdict: showableVerdict(verdictByResolution.get(r.id)),
         };
 
         if (!a) {

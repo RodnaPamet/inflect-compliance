@@ -11,6 +11,7 @@ import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { makeRequestContext } from '../helpers/make-context';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { isBlindHeld } from '@/lib/legacy-access/blind-sample';
 import {
     BULK_MAX_ROWS,
     BULK_MIN_MARGIN,
@@ -568,5 +569,216 @@ describe('the queue stops asking once a reviewer has answered', () => {
         });
         expect(a.status).toBe('ACTIVE');
         expect(a.suspendedReason).toBeNull();
+    });
+});
+
+// ── Step 6c: the model's annotation, and the blind sample ───────────────────
+//
+// THE CENTRAL ASSERTION of this block is that a blind-sampled row is
+// INDISTINGUISHABLE on the wire from a row the model said nothing about. If a
+// reviewer could tell the two apart they would know which rows are being
+// measured, and the precision the sample reports would describe a reviewer who
+// knew they were being watched rather than a typical one.
+describe('Step 6c — verdicts on the queue', () => {
+    /** The first id at this index that the sampler does (or does not) withhold. */
+    function idWhere(held: boolean): string {
+        for (let i = 0; i < 500; i++) {
+            const id = `vrd${String(i).padStart(12, '0')}`;
+            if (isBlindHeld(id) === held) return id;
+        }
+        throw new Error(`no id found with blindHeld=${held} — the sampler is degenerate`);
+    }
+
+    async function seedVerdict(opts: {
+        accountKey: string;
+        verdictId: string;
+        verdict: 'AGREES' | 'PROPOSES' | 'UNSURE' | null;
+        reason?: 'NO_EVALUATION';
+    }): Promise<void> {
+        const resolution = await prisma.legacyAccountResolution.findFirstOrThrow({
+            where: { tenantId: T1, accountKey: opts.accountKey },
+            select: { id: true },
+        });
+        await prisma.legacyMatchVerdict.create({
+            data: {
+                id: opts.verdictId,
+                tenantId: T1,
+                resolutionId: resolution.id,
+                modelId: 'laya',
+                modelRevision: 'laya-multilingual',
+                verdict: opts.verdict,
+                nonVerdictReason: opts.reason ?? null,
+                probabilitiesJson: opts.verdict ? { top: 'B' } : undefined,
+                labellingJson: opts.verdict ? { A: 'emp-other', B: employeeId } : undefined,
+                topProbability: opts.verdict ? 0.93 : null,
+                topMargin: opts.verdict ? 0.4 : null,
+            },
+        });
+    }
+
+    // No `beforeEach` here: the suite's own already clears and RE-SEEDS, and a
+    // second `clearOwnRows()` after it deletes the connection every fixture
+    // below needs.
+
+    it('shows a verdict with its probabilities AND its labelling', async () => {
+        // One without the other is unreadable: the probabilities are keyed by
+        // the shuffled letters that were sent, so `{"B": 0.93}` means nothing
+        // until a letter resolves to a person.
+        const exec = await seedResolution({
+            accountKey: 'shown',
+            outcome: 'SUGGESTED',
+            candidates: [{ employeeId, score: 200 }],
+        });
+        await seedVerdict({ accountKey: 'shown', verdictId: idWhere(false), verdict: 'AGREES' });
+
+        const queue = await listReconciliationQueue(ctx(), { executionId: exec, connectionId });
+        const row = queue.find((q) => q.accountKey === 'shown');
+
+        expect(row?.verdict).toMatchObject({
+            verdict: 'AGREES',
+            topOption: 'B',
+            topProbability: 0.93,
+            modelRevision: 'laya-multilingual',
+        });
+        // The letter resolves to the person, which is the whole point of
+        // storing the labelling.
+        expect(row?.verdict?.labelling.B).toBe(employeeId);
+    });
+
+    it('WITHHOLDS a blind-sampled verdict, identically to having none', async () => {
+        const execHeld = await seedResolution({
+            accountKey: 'blind',
+            outcome: 'SUGGESTED',
+            candidates: [{ employeeId, score: 200 }],
+        });
+        await seedVerdict({ accountKey: 'blind', verdictId: idWhere(true), verdict: 'AGREES' });
+
+        const queue = await listReconciliationQueue(ctx(), {
+            executionId: execHeld,
+            connectionId,
+        });
+        const blind = queue.find((q) => q.accountKey === 'blind');
+
+        expect(blind?.verdict).toBeNull();
+    });
+
+    it('is byte-identical to an unadjudicated row', async () => {
+        // The positive control for the assertion above. Two accounts, same
+        // shape, one carrying a withheld AGREES and one carrying no verdict at
+        // all: serialise both rows and require them to differ ONLY in the
+        // account key. Anything else is a tell.
+        const exec = await seedResolution({
+            accountKey: 'blind-2',
+            outcome: 'SUGGESTED',
+            candidates: [{ employeeId, score: 200 }],
+        });
+        await prisma.legacyAccountResolution.create({
+            data: {
+                tenantId: T1,
+                executionId: exec,
+                snapshotId,
+                accountKey: 'plain-2',
+                outcome: 'SUGGESTED',
+                method: 'SUPPORTING_ONLY',
+                employeeId: null,
+                signalsJson: [{ kind: 'SIMILARITY', score: 120, evidence: '0.910' }],
+                candidatesJson: [
+                    { employeeId, score: 200, signals: [], vetoes: [], strongest: 'SUPPORTING' },
+                ],
+                vetoesJson: [],
+            },
+        });
+        await seedVerdict({ accountKey: 'blind-2', verdictId: idWhere(true), verdict: 'AGREES' });
+
+        const queue = await listReconciliationQueue(ctx(), { executionId: exec, connectionId });
+        const blind = queue.find((q) => q.accountKey === 'blind-2');
+        const plain = queue.find((q) => q.accountKey === 'plain-2');
+
+        expect(blind).toBeDefined();
+        expect(plain).toBeDefined();
+        const normalise = (r: typeof blind) => JSON.stringify({ ...r, accountKey: 'X' });
+        expect(normalise(blind)).toBe(normalise(plain));
+    });
+
+    it('withholds UNSURE too, so it is one less thing to tell apart', async () => {
+        // A real verdict, and showing it would say "the model looked and had no
+        // opinion" — information that does not help a reviewer decide, and one
+        // more shape a blind row could be distinguished from. The design's
+        // UNSURE lane is "the queue as it would be without a model".
+        const exec = await seedResolution({
+            accountKey: 'unsure',
+            outcome: 'SUGGESTED',
+            candidates: [{ employeeId, score: 200 }],
+        });
+        await seedVerdict({ accountKey: 'unsure', verdictId: idWhere(false), verdict: 'UNSURE' });
+
+        const queue = await listReconciliationQueue(ctx(), { executionId: exec, connectionId });
+        expect(queue.find((q) => q.accountKey === 'unsure')?.verdict).toBeNull();
+    });
+
+    it('shows nothing for a NON-VERDICT row', async () => {
+        const exec = await seedResolution({
+            accountKey: 'noeval',
+            outcome: 'SUGGESTED',
+            candidates: [{ employeeId, score: 200 }],
+        });
+        await seedVerdict({
+            accountKey: 'noeval',
+            verdictId: idWhere(false),
+            verdict: null,
+            reason: 'NO_EVALUATION',
+        });
+
+        const queue = await listReconciliationQueue(ctx(), { executionId: exec, connectionId });
+        expect(queue.find((q) => q.accountKey === 'noeval')?.verdict).toBeNull();
+    });
+
+    it('shows the NEWEST revision when a row has two', async () => {
+        // An older revision's answer has been superseded by a model somebody
+        // deliberately changed to, so it must not be the one a reviewer reads.
+        const exec = await seedResolution({
+            accountKey: 'two-revs',
+            outcome: 'SUGGESTED',
+            candidates: [{ employeeId, score: 200 }],
+        });
+        const resolution = await prisma.legacyAccountResolution.findFirstOrThrow({
+            where: { tenantId: T1, accountKey: 'two-revs' },
+            select: { id: true },
+        });
+        const old = idWhere(false);
+        await prisma.legacyMatchVerdict.create({
+            data: {
+                id: old,
+                tenantId: T1,
+                resolutionId: resolution.id,
+                modelId: 'laya',
+                modelRevision: 'laya-OLD',
+                verdict: 'PROPOSES',
+                probabilitiesJson: { top: 'A' },
+                labellingJson: { A: employeeId },
+                topProbability: 0.5,
+                createdAt: new Date(Date.now() - 60_000),
+            },
+        });
+        await prisma.legacyMatchVerdict.create({
+            data: {
+                id: `${old}-new`,
+                tenantId: T1,
+                resolutionId: resolution.id,
+                modelId: 'laya',
+                modelRevision: 'laya-NEW',
+                verdict: 'AGREES',
+                probabilitiesJson: { top: 'B' },
+                labellingJson: { B: employeeId },
+                topProbability: 0.97,
+            },
+        });
+
+        const queue = await listReconciliationQueue(ctx(), { executionId: exec, connectionId });
+        const row = queue.find((q) => q.accountKey === 'two-revs');
+        // Only meaningful if the newest id is itself showable; `-new` is a
+        // different digest, so assert what we actually got rather than assuming.
+        if (row?.verdict) expect(row.verdict.modelRevision).toBe('laya-NEW');
+        else expect(isBlindHeld(`${old}-new`)).toBe(true);
     });
 });
