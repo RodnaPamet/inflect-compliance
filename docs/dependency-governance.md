@@ -13,7 +13,7 @@ by a CI guardrail, so the safe path is the default path and a
 regression fails at PR time rather than being discovered in
 production.
 
-## The four governance pillars
+## The five governance pillars
 
 | Pillar | What it guarantees | Enforced by |
 |--------|--------------------|-------------|
@@ -21,6 +21,7 @@ production.
 | **Strict peer resolution** | No `--legacy-peer-deps` anywhere. npm validates the peer graph on every install; an incompatible package fails fast. Accepted mismatches are named individually in the `overrides` block. | `tests/guards/no-legacy-peer-deps.test.ts` |
 | **Framework version coherence** | `next` owns its own `@next/swc-*` platform binaries — the consumer never pins them. Every `@next/swc-*` lockfile entry tracks the resolved `next` version, so all platforms build with matching SWC. | `tests/guards/swc-version-coherence.test.ts` |
 | **Reviewed runtime risk** | Dependencies with CVE-active history or a large blast radius are reviewed package-by-package; the review verdict (section + major floor) is locked. | `tests/guards/dependency-risk-review.test.ts` |
+| **Reviewed runtime images** | A container image this repository references is digest-pinned, or named in a baseline with a written reason. Every image that existed on 2026-10-10 is baselined; the rule binds the next one. | `tests/guardrails/runtime-image-pinning.test.ts` |
 
 A fifth, narrower lock — the **auth-stack pin** — keeps `next-auth`
 on its reviewed major (see the NextAuth policy below):
@@ -30,6 +31,72 @@ All five are themselves guarded by the meta-ratchet
 `tests/guards/dependency-governance-integrity.test.ts` — a
 contributor who deletes or guts any one of them meets a red
 "guard the guards" test.
+
+## Runtime images — the fifth pillar
+
+The first four pillars are all about the **npm tree**. None of them reaches a
+container image, and the questions a reviewer needs answered about one are
+different questions: who publishes it, what is inside it, what happens when it
+moves, and who reviews a bump.
+
+Step 6d of the legacy-access recertification is what surfaced the gap. Adding a
+model-serving image would be the first time this stack runs a third party's
+container **in the path of personal data**, and that step's hardening list asks
+for a digest pin that no guard could check.
+
+### The rule
+
+Every `image:` reference in a Compose file this repository tracks must either:
+
+- carry a **digest** — `repo@sha256:<64 hex>`, with or without a tag before it; or
+- name its repository in the baseline in
+  `tests/guardrails/runtime-image-pinning.test.ts`, with a written reason.
+
+### New images only, and why that is the rule rather than a compromise
+
+Owner decision, 2026-10-10. Zero of the sixteen images referenced here were
+digest-pinned when the pillar was written, so pinning everything would have been
+one pull request that changes how Postgres, PgBouncer, Redis, ClamAV and Caddy
+get updated — and one of the three `:latest` references is the application's
+own, which is `:latest` **by design** because Watchtower watches that tag and is
+the deploy mechanism. A digest there would stop deployments rather than secure
+them.
+
+So the baseline holds what exists and the rule binds what comes next.
+
+### What the baseline key is, and what that buys
+
+The baseline is keyed on the **repository** — everything before the final tag —
+not on the full reference. That is what makes "new images only" mean what it
+says:
+
+| change | result |
+|--------|--------|
+| `postgres:16-alpine` → `postgres:17-alpine` | passes; a tag bump on a known image is the status quo this decision left alone |
+| `ghcr.io/somebody/model-server:latest` added | **fails** until it carries a digest or is reviewed into the baseline |
+| `registry.example:5000/img:1.2` | parsed correctly — a colon after the last `/` is a tag, one before it is a port |
+
+### Adding an image
+
+1. Prefer a **digest**. Then nothing needs a baseline entry and nothing needs
+   reviewing again until somebody changes the digest.
+2. If a digest is wrong for the image — because the tag *is* the mechanism, as
+   with the application's own and Watchtower's — add a baseline entry saying so.
+   The entry is the review: it records that somebody looked at what the image is
+   and who publishes it.
+3. Removing or finally pinning an image means deleting its entry in the same
+   diff. The guard fails on a stale one, like every other exempt map here.
+
+### One thing the guard learned the hard way
+
+Its first draft matched `image:` to end-of-line, and
+`deploy/docker-compose.pipelock.yml` carries
+`image: … :latest # pin to a digest before enabling`. So the one reference
+somebody had already flagged was the one reference the guard could not see. A
+scan that silently drops what it cannot parse reports full coverage of the
+subset it understands — which is the same defect one level up from the gap this
+pillar closes. Trailing comments are stripped before parsing, and a test asserts
+that reference is in the population.
 
 ## The dependency lifecycle — contributor workflow
 
