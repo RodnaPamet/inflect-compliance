@@ -33,11 +33,14 @@
 import fs from 'fs';
 import path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 function readSource(rel: string): string {
     const abs = path.join(REPO_ROOT, rel);
-    return fs.readFileSync(abs, 'utf8');
+    // MASKED at the read seam (#3309 revealed this file was reading raw).
+    return codeOf(fs.readFileSync(abs, 'utf8'));
 }
 
 describe('Per-tenant DEK rotation fallback wiring', () => {

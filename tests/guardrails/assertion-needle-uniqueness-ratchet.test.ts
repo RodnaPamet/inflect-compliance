@@ -495,7 +495,32 @@ const HIGH_MULTIPLICITY = 5;
 //   `workerDbs` from the marker left four survivors satisfying it. Pinned to
 //   the marker assignment, which drops it out of the ambiguous set too.
 //   Measured on this branch at **1166**, not subtracted.
-const AMBIGUOUS_NEEDLE_BASELINE = 1166;
+//
+//   RE-SEATED 1166 -> 1192 (#3309, scope-aware constant resolution).
+//
+//   UPWARD, which this file's entries otherwise never are, and the reason is
+//   that the INSTRUMENT changed rather than the tree. Class D resolved a
+//   whole-file read's path through a FLAT file-wide index of `const` names,
+//   so a local literal was handed out as the value of any same-named
+//   parameter elsewhere in the file — inventing a subject for reads that have
+//   none, and refusing reads it should have resolved. `foldString` now
+//   consults lexical scope (`resolveBinding`) before that index.
+//
+//   Measured over all 2625 test files, both ways:
+//
+//       flat index   reads 5903   unanalysable 1441   ambiguous 1166   5+ 165
+//       lexical      reads 5945   unanalysable 1401   ambiguous 1192   5+ 169
+//
+//   So 42 more reads are analysed, 40 fewer are blind, and the 26 ambiguous
+//   needles that appear are PRE-EXISTING ones those blind reads were hiding —
+//   0 sites stopped being reported, and all 26 fall in exactly two files
+//   (`rbac-guardrails.test.ts` 22, `tenant-dek-rotation-fallback.test.ts` 4).
+//   They are tracked for narrowing in #3364.
+//
+//   The alternative to re-seating up was leaving the detector resolving paths
+//   by name collision so the number stayed low, which is the gate-narrow-
+//   enough-to-always-pass failure this suite exists to prevent.
+const AMBIGUOUS_NEEDLE_BASELINE = 1192;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -609,7 +634,10 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1166;
 //   probe over this file's own `report()` on both the branch and a tree with
 //   only `compliance-digest.ts` reverted, diffed by needle. 29 sites either
 //   side; exactly one count moved.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
+//
+//   RE-SEATED 165 -> 169 (#3309). Same instrument change as
+//   AMBIGUOUS_NEEDLE_BASELINE above; the four are in the same two files.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 169;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -979,7 +1007,12 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
  * Teaching `tests/helpers/assertion-reach.ts` to follow a sliced subject is the
  * standing alternative and would LOWER this ceiling.
  */
-const UNANALYSABLE_READ_BASELINE = 1441;
+//
+//   RE-SEATED 1441 -> 1401 (#3309), DOWNWARD: 40 reads the flat index
+//   could not resolve are now resolved lexically, so they are no longer
+//   blind spots. The same change that raised the two ceilings above
+//   lowered this one, and that is the trade it makes.
+const UNANALYSABLE_READ_BASELINE = 1401;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
@@ -1369,6 +1402,59 @@ describe('Class D — needles that match more than the thing they name', () => {
             const r = analyseClassD([abs]);
             expect(r.analysed).toBe(2);
             expect(r.ambiguous).toHaveLength(0);
+        });
+
+        it('does not fold a PARAMETER to a same-named literal elsewhere in the file (#3309)', () => {
+            // The defect: a flat file-wide index of `const` names handed out
+            // the local literal below as the value of the loop/parameter
+            // `file` used by the read above it, attributing a read to a file
+            // it never touches. The ratchet then failed naming a line the
+            // diff had not touched.
+            const abs = write('name-collision.test.ts', [
+                "const readAt = (file: string) => fs.readFileSync(file, 'utf8');",
+                "it('reads whatever it is handed', () => {",
+                "    for (const file of ['" + commented + "']) {",
+                "        expect(readAt(file)).toContain('model Bundle');",
+                '    }',
+                '});',
+                "it('declares a colliding constant', () => {",
+                "    const file = '" + data + "';",
+                "    expect(fs.readFileSync(file, 'utf8')).toContain('model Bundle');",
+                '});',
+            ]);
+            const r = analyseClassD([abs]);
+            // ONE read is analysable — the `const file = …` one. The loop
+            // variable is not a constant and must stay unanalysable rather
+            // than borrowing the other test's literal. Resolving by name
+            // collision makes this 2, and the second one ambiguous.
+            expect(r.wholeFileReads).toBe(1);
+            expect(r.ambiguous).toHaveLength(1);
+            expect(r.ambiguous[0].site.line).toBe(9);
+        });
+
+        it('lets a reader ARGUMENT outrank both lexical scope and the flat index', () => {
+            // The precedence that the first attempt at #3309 got wrong, and
+            // the error was silent and large: consulting lexical scope before
+            // the substituted argument refuses every `read('x')` in the repo,
+            // measured at 6020 unanalysable reads against a ceiling of 1441.
+            //
+            // Here `rel` is three things at once — a module const, the
+            // reader's parameter, and the argument at the call site. Only the
+            // argument is the answer.
+            const abs = write('arg-outranks.test.ts', [
+                "const rel = '" + commented + "';",
+                "const read = (rel: string) => fs.readFileSync(rel, 'utf8');",
+                "it('a', () => {",
+                "    expect(read('" + data + "')).toContain('model Bundle');",
+                '});',
+                'void rel;',
+            ]);
+            const r = analyseClassD([abs]);
+            expect(r.wholeFileReads).toBe(1);
+            // `data` has `model Bundle` twice; `commented` has it once outside
+            // comments. So the occurrence count says WHICH file was read.
+            expect(r.ambiguous).toHaveLength(1);
+            expect(r.ambiguous[0].occurrences).toBe(2);
         });
 
         it('resolves the per-test `const schema = read(…)` idiom, not just module scope', () => {

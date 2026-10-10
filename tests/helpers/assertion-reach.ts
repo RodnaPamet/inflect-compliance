@@ -886,21 +886,88 @@ export function analyseClassC(absFiles: readonly string[]): ClassCReport {
 
 // ──────────────── Class D — what does the subject read? ─────────────────
 
-/** Constant-fold an expression to a string, given known string constants. */
+/** Shared empty set, so the common call allocates nothing. */
+const EMPTY_SEEN: ReadonlySet<string> = new Set();
+
+/**
+ * Constant-fold an expression to a string.
+ *
+ * An identifier is resolved in THREE steps, and the order is the whole of
+ * #3309:
+ *
+ *   1. `substitutions` — a reader helper's parameter bound to the literal its
+ *      caller passed. AUTHORITATIVE: this is not an inference about the file,
+ *      it is the argument at the call site, and nothing may override it.
+ *   2. LEXICAL scope, via `resolveBinding`.
+ *   3. the flat file index, as a fallback.
+ *
+ * Step 2 is the fix and step 1 is what the first attempt at it broke. The flat
+ * index alone attributes a read to whatever literal shares the identifier's
+ * name ANYWHERE in the file, which is wrong in the one direction that matters:
+ * it invents a subject for a read that has none.
+ *
+ * Measured, in `merge-queue-trigger-coverage.test.ts`. That file has
+ * `function readWorkflow(file: string)` and, in one `it`, a local
+ * `const file = 'queue-candidate-sweep.yml'`. The flat index folded the
+ * PARAMETER to that literal, so reads of OTHER workflows resolved to one they
+ * do not read, pulling an unrelated assertion into the analysable set and its
+ * `/merge_group/` needle into the ambiguous one. The ratchet then failed
+ * naming a line the diff had not touched. Re-creating that collision moves
+ * this file 5 whole-file reads / 1 ambiguous -> 8 / 2 without this change, and
+ * leaves it at 5 / 1 with it.
+ *
+ * `resolveBinding` already returns `null` for exactly the cases the flat index
+ * gets wrong — shadowed by a parameter, declared twice in one scope, a loop
+ * variable — and needs no extra context, because the file is parsed with
+ * `setParentNodes` and an identifier can walk its own scope chain.
+ *
+ * WHY STEP 1 MUST COME FIRST, stated because getting this wrong is silent and
+ * expensive: a reader helper's path expression is written in terms of its
+ * parameter (`read = (rel) => readFileSync(path.join(ROOT, rel))`), and that
+ * parameter IS lexically a parameter. Consulting scope before substitutions
+ * therefore refuses every `read('x')` in the repo — measured at 6020
+ * unanalysable reads against a ceiling of 1441, with the detector failing the
+ * three instances #2246 proved by hand. The substitution is the answer; the
+ * scope walk is only for names the call site did not supply.
+ *
+ * `seen` breaks a reference cycle (`const a = b; const b = a`), which lexical
+ * resolution makes reachable where the flat index could not — it only ever
+ * held already-folded strings.
+ */
 function foldString(
     node: ts.Expression,
     scope: ReadonlyMap<string, string>,
     dirOfFile: string,
+    opts: {
+        readonly substitutions?: ReadonlyMap<string, string>;
+        readonly seen?: ReadonlySet<string>;
+    } = {},
 ): string | null {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
         return node.text;
     }
     if (ts.isIdentifier(node)) {
         if (node.text === '__dirname') return dirOfFile;
+        const supplied = opts.substitutions?.get(node.text);
+        if (supplied !== undefined) return supplied;
+        const seen = opts.seen ?? EMPTY_SEEN;
+        if (!seen.has(node.text)) {
+            const bound = resolveBinding(node.text, node);
+            // `null` is "bound but not usable", and honouring it is the point:
+            // a parameter-shadowed name is NOT a constant, and falling through
+            // to the flat index here is the defect.
+            if (bound === null) return null;
+            if (bound !== undefined) {
+                return foldString(bound, scope, dirOfFile, {
+                    substitutions: opts.substitutions,
+                    seen: new Set([...seen, node.text]),
+                });
+            }
+        }
         return scope.get(node.text) ?? null;
     }
     if (ts.isParenthesizedExpression(node)) {
-        return foldString(node.expression, scope, dirOfFile);
+        return foldString(node.expression, scope, dirOfFile, opts);
     }
     if (
         ts.isCallExpression(node) &&
@@ -912,15 +979,15 @@ function foldString(
         if (fn !== 'join' && fn !== 'resolve') return null;
         const parts: string[] = [];
         for (const a of node.arguments) {
-            const folded = foldString(a, scope, dirOfFile);
+            const folded = foldString(a, scope, dirOfFile, opts);
             if (folded === null) return null;
             parts.push(folded);
         }
         return fn === 'join' ? path.join(...parts) : path.resolve(...parts);
     }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-        const l = foldString(node.left, scope, dirOfFile);
-        const r = foldString(node.right, scope, dirOfFile);
+        const l = foldString(node.left, scope, dirOfFile, opts);
+        const r = foldString(node.right, scope, dirOfFile, opts);
         return l === null || r === null ? null : l + r;
     }
     return null;
@@ -1444,6 +1511,12 @@ const scopeCache = new WeakMap<ts.SourceFile, FileScope>();
  * suite declares once at module scope. A name that folds to two different
  * strings would be a hazard, so the FIRST fold wins and a later redeclaration
  * cannot silently move a path.
+ *
+ * SINCE #3309 this index is the LAST of three steps, not the first — see
+ * `foldString`. It still collects declarations from anywhere in the file,
+ * including inside an `it()`, and that is left wide on purpose: narrowing it
+ * to module scope would drop real anchors declared inside a `describe`, and
+ * consulting lexical scope first already prevents the mis-attribution.
  */
 function foldFileConstants(sf: ts.SourceFile, dir: string): Map<string, string> {
     const declarations: Array<[string, ts.Expression]> = [];
@@ -1595,7 +1668,11 @@ function resolveSubjectCore(
             const reader = scope.readers.get(callee.text);
             if (reader === null) return { kind: 'skipped', reason: 'path-not-constant' };
             if (reader !== undefined) {
-                const inner = new Map(scope.constants);
+                // The parameter is passed as a SUBSTITUTION rather than mixed
+                // into the constants, so it outranks both lexical scope (where
+                // it is merely a parameter) and the flat index (which may hold
+                // an unrelated literal of the same name). See `foldString`.
+                const substitutions = new Map<string, string>();
                 if (reader.paramName !== null) {
                     if (subject.arguments.length === 0) {
                         return { kind: 'skipped', reason: 'path-not-constant' };
@@ -1608,9 +1685,11 @@ function resolveSubjectCore(
                     if (argVal === null) {
                         return { kind: 'skipped', reason: 'path-not-constant' };
                     }
-                    inner.set(reader.paramName, argVal);
+                    substitutions.set(reader.paramName, argVal);
                 }
-                const p = foldString(reader.pathExpr, inner, scope.dir);
+                const p = foldString(reader.pathExpr, scope.constants, scope.dir, {
+                    substitutions,
+                });
                 if (p === null) return { kind: 'skipped', reason: 'path-not-constant' };
                 const read = contentAt(p);
                 if (read.kind !== 'content' || reader.mask === null) return read;

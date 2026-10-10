@@ -10,6 +10,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const SRC = path.resolve(__dirname, '../../src');
 
 function readFile(relativePath: string): string {
@@ -17,7 +19,11 @@ function readFile(relativePath: string): string {
     if (!fs.existsSync(fullPath)) {
         throw new Error(`Expected file not found: ${fullPath}`);
     }
-    return fs.readFileSync(fullPath, 'utf-8');
+    // MASKED at the read seam (#3309 revealed this file was reading raw).
+    // `codeOf` blanks comments and keeps string literals with offsets
+    // preserved, so an assertion cannot be satisfied by a note explaining
+    // code that is no longer there.
+    return codeOf(fs.readFileSync(fullPath, 'utf-8'));
 }
 
 describe('RBAC Guardrail Scans', () => {
