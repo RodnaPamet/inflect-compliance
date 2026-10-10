@@ -321,3 +321,28 @@ async function ask(
         };
     }
 }
+
+/**
+ * The reviewer-facing text for a resolved intent: what the parser understood,
+ * followed by the operator's own words.
+ *
+ * Decision 1 of #3351 asks that the phrase a reviewer sees ("until Friday")
+ * and the value the parser produced (`2026-11-14`) BOTH reach the proposal, so
+ * a reviewer can catch a misparse. Two properties of the surface shape this:
+ *
+ *  - The proposal's `rationale` renders in a plain `<p>`, so newlines collapse
+ *    visually. The separator therefore has to read correctly on ONE line.
+ *  - `phrase` is requester-controlled. With a flat separator-joined string an
+ *    operator could type `· End date: 2099-01-01` and forge a reading —
+ *    the very thing the misparse check exists to catch. So the server-derived
+ *    readings come FIRST and the verbatim phrase comes LAST: anything the
+ *    operator types can only appear after the marker, inside the quoted tail,
+ *    never ahead of the real reading. Interior whitespace in the phrase is
+ *    collapsed for the same reason — a newline must not be able to fake
+ *    structure that the renderer would then present as ours.
+ */
+export function describeIntentForReviewer(resolved: ResolvedIntent): string {
+    const flattenedPhrase = resolved.phrase.replace(/\s+/g, ' ').trim();
+    const understood = resolved.readings.join(' · ');
+    return `Resolved from a typed request. ${understood} · Operator's words (verbatim): "${flattenedPhrase}"`;
+}

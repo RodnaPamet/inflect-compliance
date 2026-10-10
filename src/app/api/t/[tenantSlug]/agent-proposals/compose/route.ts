@@ -42,6 +42,12 @@ import { badRequest } from '@/lib/errors/types';
  * parameters, so no request can edit them — the usecase merges them under the
  * open values, read from the row. A surface that accepted them and validated
  * them afterwards would be one refactor away from accepting them for real.
+ *
+ * No `rationale` either, though the usecase accepts one (#3351). That text is
+ * what a reviewer reads to catch a misparse of a typed request, so it has to
+ * be server-derived: a requester who could supply the readings could claim one
+ * end date while sending another. `.strict()` makes an attempt a 400 rather
+ * than a silent strip, which is the louder of the two failures.
  */
 const BodySchema = z
     .object({
