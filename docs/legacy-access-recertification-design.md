@@ -270,13 +270,91 @@ asks for JSON in the prompt, and parses JSON out of the reply.
   and the risk-assessment Anthropic provider at 30 s.
 - **Four set none:** the risk-assessment local and OpenRouter providers, the
   questionnaire provider and vendor-document extraction.
-- **No code in `src/` calls a typed-decision API.**
+- **Typed-decision calls are a separate path, added by Step 6c.**
+  `src/app-layer/ai/identity-match/` holds the only code that calls a typed-decision
+  API — `POST /v1/systemone`, through `callSystemOne` — and it reaches a model only for
+  a tenant whose `legacyMatchAiMode` is not `OFF`. The default is `OFF`, no deployment
+  sets `LAYA_BASE_URL`, and `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`, so the factory
+  returns a stub that answers nothing. (This line read "no code in `src/` calls a
+  typed-decision API" until 6c, and that is the kind of claim a `living` document has to
+  be corrected rather than left to rot.)
 
 `src/app-layer/ai/decision-log/index.ts` records AI calls in `AiDecisionLog`:
 - `logAiDecision` stores a digest of the sanitised input rather than the input;
 - `recordDecisionOutcome` moves every `PENDING` row sharing a `sessionRef` to
   `ACCEPTED`, `EDITED` or `REJECTED`. The move is one-way, and a database trigger
   enforces that. This is the human-oversight record for Article 14 of the EU AI Act.
+
+### Operating adjudication
+
+The runbook for what Step 6c shipped. The Jev half — activating the sub-processor and
+rotating its key — is under the Roadmap heading, because none of it exists yet.
+
+#### Turning it on, and off
+
+`TenantSecuritySettings.legacyMatchAiMode` is `OFF`, `LOCAL_ONLY` or `EXTERNAL`, and
+defaults to `OFF`. It changes through `updateTenantSecurityConfig` behind
+`admin.manage`, which writes a `LEGACY_MATCH_AI_MODE_CHANGED` audit event naming the
+new mode, the processor and its region — a mode change redirects personal data, and
+none of those three values is a secret.
+
+Three refusals apply at the cross-field point, deployment block first:
+
+| setting | refused when |
+| --- | --- |
+| `EXTERNAL` | `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false` — which it is |
+| `EXTERNAL` | `aiResidency` is `LOCAL_ONLY` |
+| `LOCAL_ONLY` | `LAYA_BASE_URL` is unset |
+
+**Turning it off is the rollback, and it takes effect from the next run.** Adjudication
+happens inside `runLegacyReconcileJob`, after the resolutions are committed, so setting
+`OFF` stops every model call from the next reconciliation — it does not retract the
+verdicts already stored, and it does not need to: a verdict never changed an outcome.
+With `OFF` nothing is written at all, so a queue row is byte-identical to one from a
+deployment that never enabled it.
+
+#### Reading a non-verdict reason
+
+A `LegacyMatchVerdict` row carries either a verdict or one of ten reasons, never both
+and never neither — a CHECK constraint, not a usecase rule. The reason says which thing
+stopped the account, and they are not equally interesting:
+
+| reason | what it means | what to do |
+| --- | --- | --- |
+| `NO_PROVIDER` | the mode is on and the factory returned the stub — `LOCAL_ONLY` with no `LAYA_BASE_URL` | configure the server, or set the mode `OFF` |
+| `NO_EVALUATION` | no committed record for the revision the endpoint reports | produce a record; this is the state of every deployment today |
+| `MODEL_DRIFT` | the canary did not reproduce its recorded answers, or an answer came from a revision the canary never validated | **go and look at the model**; the batch was refused |
+| `KILL_SWITCH` | a platform- or tenant-scope kill is engaged | expected during a drill; otherwise ask who engaged it |
+| `QUARANTINED` | the guard scanned the payload as an injection attempt | read the account's own fields; one hostile record quarantines only itself |
+| `OVER_BUDGET` | the payload would not fit, or the answer's reported input tokens reached the model's window | a candidate the model never saw reads as one it rejected, so the answer is discarded deliberately |
+| `TIMEOUT` / `DEADLINE` | the per-call timeout, or the 120-second run budget | capacity; raise concurrency before raising either, and never raise the deadline silently |
+| `PROVIDER_ERROR` | a transport failure, or a response that failed the schema | the response is not echoed into logs — it is attacker-shaped |
+
+`MODEL_DRIFT` is the one that means something is wrong with the model rather than with
+the deployment or the data. A whole run of `NO_EVALUATION` is the designed state; a
+whole run of `MODEL_DRIFT` is an incident.
+
+#### What a closed `AGREES` lane means
+
+Five per cent of `AGREES` rows are withheld from their reviewer and kept out of bulk
+ratification, chosen by a hash of the verdict id. The reviewer's own decision is then
+compared with the model's pick, and **one disagreement closes the bulk lane for that
+revision for the rest of the cycle.**
+
+A closed lane is not an outage. Every row still reaches a reviewer; they confirm one at
+a time instead of ratifying a page. What it says is that the claim bulk ratification
+rests on — *this model agrees with the engine* — has a counter-example on this tenant's
+own data, which is the only evidence about this tenant that exists.
+
+The gate is derived from the decisions rather than stored, so it cannot disagree with
+them. A reviewer who answered a different question has not disagreed: classifying an
+account as a non-person, an external or an orphan records no employee, and the model was
+asked which person holds the account.
+
+**To reopen it, change the revision.** The sample is keyed on the verdict id, which is
+one per `(resolution, revision)`, so a new revision re-samples and is measured on its
+own. Suppressing the disagreement is not an option the surface offers, and that is
+deliberate.
 
 ## Roadmap (future direction)
 
