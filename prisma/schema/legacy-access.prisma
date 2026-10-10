@@ -298,6 +298,38 @@ model LegacyIdentityAlias {
   /// findings for a reviewer.
   expiresAt DateTime?
 
+  /// The verdict this decision was made against, when one existed.
+  ///
+  /// "What did the model say about the row this person ratified" is a question
+  /// an auditor asks, and without this it is answerable only by guessing which
+  /// run's resolution the alias came from.
+  ///
+  /// A PLAIN COLUMN, DELIBERATELY NOT A FOREIGN KEY, and the reason is a
+  /// lifetime mismatch rather than convenience. An alias is the durable record
+  /// of a person's decision; a verdict is an annotation that cascades away with
+  /// its reconciliation run. No referential action expresses "keep the alias,
+  /// forget the verdict":
+  ///
+  ///   - `Cascade` would delete the DECISION when an annotation is purged;
+  ///   - `Restrict` would make a run un-purgeable because somebody ratified a
+  ///     row in it, so retention would fight the trail;
+  ///   - `SetNull` is what the semantics want and is impossible here — the key
+  ///     would have to be `(verdictId, tenantId)` to stop a cross-tenant
+  ///     reference, and `tenantId` is required, so there is nothing to null.
+  ///
+  /// So a purged verdict leaves the id behind, which is honest: the decision WAS
+  /// made against that verdict, and that stays true after the row is gone.
+  /// Same-tenant correctness is held by RLS and by the single write path, as it
+  /// is for every other id this subsystem stores.
+  ///
+  /// SET EVEN FOR A BLIND-SAMPLED ROW, the opposite of how `method` treats one.
+  /// The method must not credit the model for a pick the reviewer could not
+  /// see; the REFERENCE is what makes the blind comparison possible at all.
+  ///
+  /// Null for every alias confirmed without adjudication, which is all of them
+  /// today.
+  verdictId String?
+
   method LegacyMatchMethod
   status LegacyAliasStatus @default(ACTIVE)
 
@@ -333,6 +365,7 @@ model LegacyIdentityAlias {
   /// every cycle for every connection, and without this it scans every alias
   /// the tenant holds.
   @@index([tenantId, classification, expiresAt])
+  @@index([tenantId, verdictId])
 }
 
 /// Step 6c — one model opinion about one resolution, under one model revision.
