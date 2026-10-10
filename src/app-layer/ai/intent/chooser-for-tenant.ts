@@ -24,13 +24,16 @@
  * two surfaces then agree about a given configuration by construction rather
  * than by coincidence.
  *
- * The three-column read duplicated here is #3384; this is its third site.
+ * The three-column mapping is shared via `residencyTermsFrom` (#3384); the
+ * read itself stays here, because each consumer holds a different `db`.
  */
 import { env } from '@/env';
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db-context';
 import {
     FLUE_PROVIDER_IDS,
+    RESIDENCY_SELECT,
+    residencyTermsFrom,
     resolveFlueModel,
     type FlueModelRefusal,
 } from '@/lib/agentic/flue/model-selection';
@@ -59,15 +62,11 @@ export async function intentChooserForTenant(
     const settings = await runInTenantContext(ctx, (db) =>
         db.tenantSecuritySettings.findUnique({
             where: { tenantId: ctx.tenantId },
-            select: { aiResidency: true, aiLocalBaseUrl: true, aiLocalModel: true },
+            select: RESIDENCY_SELECT,
         }),
     );
 
-    const choice = resolveFlueModel({
-        residency: settings?.aiResidency,
-        localBaseUrl: settings?.aiLocalBaseUrl,
-        localModel: settings?.aiLocalModel,
-    });
+    const choice = resolveFlueModel(residencyTermsFrom(settings));
     if (!choice.ok) return { ok: false, reason: choice.reason };
 
     // An absent settings row resolves to EXTERNAL, the same default
