@@ -8725,7 +8725,17 @@
       "failed": "Nothing was sent. {reason}",
       "loadFailed": "That template's fields could not be loaded. {reason}",
       "noTemplatesTitle": "No approved templates yet",
-      "noTemplatesDesc": "An administrator saves one on the external-tool catalogue before a request can be composed."
+      "noTemplatesDesc": "An administrator saves one on the external-tool catalogue before a request can be composed.",
+      "phraseTitle": "Describe it instead",
+      "phraseIntro": "Type what you want in a sentence. A local model matches it to one of the approved templates above. It still goes to a reviewer, and nothing is sent until they approve it.",
+      "phraseLabel": "What do you want to happen?",
+      "phrasePlaceholder": "e.g. give Ivan the VPN package until Friday",
+      "phraseHint": "Only an approved template and a date it allows. Anything else is refused rather than guessed.",
+      "phraseSubmit": "Read this and compose",
+      "phraseSubmitting": "Reading…",
+      "phraseOrForm": "Or fill the form yourself",
+      "readingsTitle": "What this was understood to mean",
+      "phraseUnavailable": "Nothing was sent. {reason}"
     }
   },
   "securityTesting": {

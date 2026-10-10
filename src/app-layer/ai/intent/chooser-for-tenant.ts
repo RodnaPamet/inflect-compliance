@@ -109,3 +109,52 @@ export async function intentChooserForTenant(
         }),
     };
 }
+
+/**
+ * The operator-facing sentence for an unavailable chooser.
+ *
+ * Each names the ONE action that fixes it, in the voice
+ * `describeIntentRefusal` uses — and each ends by pointing at the form,
+ * because the form is always available and this layer never is on the paths
+ * below. A refusal that left the operator with nothing to do would push them
+ * to retry a configuration gap that retrying cannot close.
+ */
+export function describeIntentChooserRefusal(reason: IntentChooserRefusal): string {
+    switch (reason) {
+        case 'RESIDENCY_NOT_LOCAL_ONLY':
+            return (
+                'Typed requests are only read by a local model, and this workspace is '
+                + 'not set to keep AI processing local. Fill the form instead, or ask an '
+                + 'administrator to set AI residency to local-only.'
+            );
+        case 'LOCAL_GATEWAY_NOT_CONFIGURED':
+            return (
+                'This workspace keeps AI processing local, but no local gateway is '
+                + 'configured on the deployment. Nothing was sent anywhere. Use the form '
+                + 'while an operator configures one.'
+            );
+        case 'LOCAL_GATEWAY_NOT_SERVED':
+            return (
+                'The local gateway named for this workspace is not the one this '
+                + 'deployment serves, so nothing was sent to it. An operator reconciles '
+                + 'the two; the form works meanwhile.'
+            );
+        case 'LOCAL_MODEL_NOT_CONFIGURED':
+            return (
+                'This workspace keeps AI processing local, but no model is named on the '
+                + 'local gateway. Use the form while an operator names one.'
+            );
+        case 'EXTERNAL_CREDENTIAL_NOT_CONFIGURED':
+            // Reachable only via `resolveFlueModel`'s EXTERNAL branch, which this
+            // module refuses anyway — kept so the union stays exhaustive and a new
+            // member of `FlueModelRefusal` is a compile error here.
+            return (
+                'Typed requests are only read by a local model, and this workspace is '
+                + 'not set to keep AI processing local. Fill the form instead.'
+            );
+        default: {
+            const unreachable: never = reason;
+            return unreachable;
+        }
+    }
+}

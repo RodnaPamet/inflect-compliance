@@ -269,6 +269,13 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // compose would turn four eyes into two.
 
     't/[tenantSlug]/agent-proposals/compose/route.ts',
+    // #3351 — the same compose step from a TYPED phrase instead of a filled
+    // form. A sibling path rather than a second POST on the one above, and it
+    // re-implements nothing: it resolves the phrase to a template plus open
+    // values and hands those to the same usecase, which re-checks every value.
+    // Rate limited where its sibling is not, because each accepted call makes
+    // two model calls.
+    't/[tenantSlug]/agent-proposals/compose/intent/route.ts',
     't/[tenantSlug]/agent-proposals/sample-audits/[id]/route.ts',
     't/[tenantSlug]/agent-proposals/sample-audits/route.ts',
     't/[tenantSlug]/agent-receipts/[id]/export/route.ts',
