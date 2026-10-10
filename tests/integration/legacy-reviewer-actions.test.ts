@@ -909,3 +909,109 @@ describe('Step 6c — the AGREES bulk lane', () => {
         expect(blind?.verdict).toBeNull();
     });
 });
+
+// ── Step 6c: AI_PROPOSED_CONFIRMED ──────────────────────────────────────────
+//
+// The only way to measure, from stored rows, how often a reviewer takes the
+// MODEL's alternative over the engine's suggestion. That number is the evidence
+// that `PROPOSES` earns its place, so the four cases that must NOT claim it
+// matter as much as the one that must.
+describe('Step 6c — confirming the model\'s proposal', () => {
+    function vid(held: boolean): string {
+        for (let i = 0; i < 500; i++) {
+            const id = `prop${String(i).padStart(12, '0')}`;
+            if (isBlindHeld(id) === held) return id;
+        }
+        throw new Error('sampler degenerate');
+    }
+
+    async function seed(opts: {
+        accountKey: string;
+        verdict: 'PROPOSES' | 'AGREES' | null;
+        /** Which employee the model's top letter maps to. */
+        picked?: string;
+        blind?: boolean;
+    }): Promise<string> {
+        const exec = await seedResolution({
+            accountKey: opts.accountKey,
+            outcome: 'SUGGESTED',
+            candidates: [{ employeeId, score: 200 }],
+        });
+        if (opts.verdict) {
+            const resolution = await prisma.legacyAccountResolution.findFirstOrThrow({
+                where: { tenantId: T1, accountKey: opts.accountKey },
+                select: { id: true },
+            });
+            await prisma.legacyMatchVerdict.create({
+                data: {
+                    id: vid(opts.blind ?? false),
+                    tenantId: T1,
+                    resolutionId: resolution.id,
+                    modelId: 'laya',
+                    modelRevision: 'laya-multilingual',
+                    verdict: opts.verdict,
+                    probabilitiesJson: { top: 'A' },
+                    labellingJson: { A: opts.picked ?? employeeId },
+                    topProbability: 0.95,
+                },
+            });
+        }
+        return exec;
+    }
+
+    async function methodAfterConfirm(accountKey: string, exec: string): Promise<string> {
+        await decideLegacyAccount(ctx(), {
+            connectionId,
+            executionId: exec,
+            accountKey,
+            action: { kind: 'CONFIRM', employeeId },
+        });
+        const alias = await prisma.legacyIdentityAlias.findFirstOrThrow({
+            where: { tenantId: T1, connectionId, accountKey },
+            select: { method: true },
+        });
+        return alias.method;
+    }
+
+    it('records AI_PROPOSED_CONFIRMED when the reviewer takes the model pick', async () => {
+        const exec = await seed({ accountKey: 'prop-yes', verdict: 'PROPOSES' });
+        expect(await methodAfterConfirm('prop-yes', exec)).toBe('AI_PROPOSED_CONFIRMED');
+    });
+
+    it('keeps CONFIRMED_ALIAS when the model proposed somebody ELSE', async () => {
+        // The reviewer rejected the proposal and picked for themselves. That is
+        // the fact worth storing, and crediting the model here would make the
+        // metric unreadable in the direction that flatters it.
+        const exec = await seed({
+            accountKey: 'prop-other',
+            verdict: 'PROPOSES',
+            picked: otherTenantEmployeeId,
+        });
+        expect(await methodAfterConfirm('prop-other', exec)).toBe('CONFIRMED_ALIAS');
+    });
+
+    it('keeps CONFIRMED_ALIAS for an AGREES verdict', async () => {
+        // AGREES names the ENGINE's own suggestion, so the engine's method is
+        // still the truthful account of how the link was found. Agreement is
+        // not independence — both lean on names — so letting an AGREES claim
+        // the method would credit the model for the engine's work.
+        const exec = await seed({ accountKey: 'prop-agrees', verdict: 'AGREES' });
+        expect(await methodAfterConfirm('prop-agrees', exec)).toBe('CONFIRMED_ALIAS');
+    });
+
+    it('keeps CONFIRMED_ALIAS when there is no verdict at all', async () => {
+        const exec = await seed({ accountKey: 'prop-none', verdict: null });
+        expect(await methodAfterConfirm('prop-none', exec)).toBe('CONFIRMED_ALIAS');
+    });
+
+    it('keeps CONFIRMED_ALIAS for a BLIND-sampled proposal', async () => {
+        // The subtle one, and the reason the blind sample works at all: the
+        // reviewer was never shown this verdict, so their decision is the
+        // independent measurement. Crediting the model for a pick nobody could
+        // see would corrupt the one number that says whether it is right on
+        // this tenant's data — and it would do so silently, because the row
+        // looks exactly like a reviewer agreeing.
+        const exec = await seed({ accountKey: 'prop-blind', verdict: 'PROPOSES', blind: true });
+        expect(await methodAfterConfirm('prop-blind', exec)).toBe('CONFIRMED_ALIAS');
+    });
+});

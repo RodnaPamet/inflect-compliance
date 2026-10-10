@@ -135,6 +135,17 @@ interface SeenResolution {
     readonly outcome: string;
     readonly candidates: readonly ScoredCandidate[];
     readonly signalsJson: Prisma.JsonValue;
+    /**
+     * The employee the MODEL proposed, when it proposed one, or null.
+     *
+     * Only ever set from a `PROPOSES` verdict. An `AGREES` verdict names the
+     * engine's own suggestion, so confirming it is confirming the engine — see
+     * `resolveWrite`'s CONFIRM branch for why that keeps the engine's method.
+     *
+     * Resolved here rather than in the branch so the letter-to-employee lookup
+     * happens once, in the function that already reads the row.
+     */
+    readonly modelProposedEmployeeId: string | null;
 }
 
 /**
@@ -145,6 +156,47 @@ interface SeenResolution {
  * because results are immutable and a second run adds rather than overwrites.
  * Asking the weaker question would never fire.
  */
+/**
+ * The employee a `PROPOSES` verdict named, or null.
+ *
+ * Four ways to be null, and each is a different "no":
+ *
+ *   - no verdict row at all, or a non-verdict reason — nothing was proposed;
+ *   - a verdict that is not `PROPOSES`. `AGREES` names the ENGINE's suggestion
+ *     and `NOT_A_PERSON` / `NO_MATCH` / `UNSURE` name no candidate;
+ *   - a BLIND-SAMPLED verdict. The reviewer was not shown it, so their decision
+ *     is the independent measurement the sample exists to take — crediting the
+ *     model for a pick the reviewer could not see would corrupt the one number
+ *     that says whether the model is right on this tenant's data;
+ *   - a labelling that does not resolve the top letter, which is a row written
+ *     before `labellingJson` existed.
+ */
+function proposedEmployeeId(
+    row:
+        | {
+              id: string;
+              verdict: string | null;
+              probabilitiesJson: Prisma.JsonValue;
+              labellingJson: Prisma.JsonValue;
+          }
+        | null
+): string | null {
+    if (!row || row.verdict !== 'PROPOSES') return null;
+    if (isBlindHeld(row.id)) return null;
+
+    const probs = row.probabilitiesJson;
+    const top =
+        probs && typeof probs === 'object' && !Array.isArray(probs)
+            ? (probs as Record<string, unknown>).top
+            : null;
+    if (typeof top !== 'string') return null;
+
+    const labelling = row.labellingJson;
+    if (!labelling || typeof labelling !== 'object' || Array.isArray(labelling)) return null;
+    const employeeId = (labelling as Record<string, unknown>)[top];
+    return typeof employeeId === 'string' ? employeeId : null;
+}
+
 async function readSeenResolution(
     ctx: RequestContext,
     input: Pick<DecideInput, 'accountKey' | 'executionId'>
@@ -176,9 +228,21 @@ async function readSeenResolution(
         );
     }
 
+    // The newest verdict for this resolution, if adjudication produced one.
+    // One read, after the supersede check above has already refused a stale row
+    // — there is no point resolving a verdict for a decision that cannot stand.
+    const verdict = await runInTenantContext(ctx, (db) =>
+        db.legacyMatchVerdict.findFirst({
+            where: { tenantId: ctx.tenantId, resolutionId: latest.id },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, verdict: true, probabilitiesJson: true, labellingJson: true },
+        })
+    );
+
     return {
         id: latest.id,
         outcome: latest.outcome,
+        modelProposedEmployeeId: proposedEmployeeId(verdict),
         candidates: (latest.candidatesJson ?? []) as unknown as readonly ScoredCandidate[],
         signalsJson: latest.signalsJson,
     };
@@ -240,7 +304,7 @@ function requireScoredCandidate(seen: SeenResolution, employeeId: string): void 
 interface AliasWrite {
     readonly classification: 'EMPLOYEE' | 'NON_PERSON' | 'EXTERNAL' | 'ORPHAN';
     readonly employeeId: string | null;
-    readonly method: 'CONFIRMED_ALIAS' | 'MANUAL';
+    readonly method: 'CONFIRMED_ALIAS' | 'MANUAL' | 'AI_PROPOSED_CONFIRMED';
     readonly ownerUserId: string | null;
     readonly justification: string | null;
     readonly expiresAt: Date | null;
@@ -261,7 +325,27 @@ async function resolveWrite(
             return {
                 classification: 'EMPLOYEE',
                 employeeId: action.employeeId,
-                method: 'CONFIRMED_ALIAS',
+                // `AI_PROPOSED_CONFIRMED` only when the reviewer took the
+                // candidate the MODEL proposed, over the engine's suggestion.
+                //
+                // An `AGREES` verdict keeps `CONFIRMED_ALIAS`, deliberately: it
+                // names the engine's own suggestion, so the engine's method is
+                // still the truthful account of how the link was found and the
+                // model merely agreed. Agreement is not independence — the two
+                // both lean on names — so letting an AGREES claim the method
+                // would credit the model for the engine's work.
+                //
+                // A reviewer who confirmed somebody ELSE also keeps it: they
+                // rejected the proposal, and that is the fact worth storing.
+                //
+                // This is the only way to measure, from stored rows, how often a
+                // reviewer takes the model's alternative. That number is the
+                // evidence that `PROPOSES` earns its place.
+                method:
+                    seen.modelProposedEmployeeId !== null
+                    && seen.modelProposedEmployeeId === action.employeeId
+                        ? 'AI_PROPOSED_CONFIRMED'
+                        : 'CONFIRMED_ALIAS',
                 ownerUserId: null,
                 justification: null,
                 expiresAt: null,
