@@ -1,0 +1,22 @@
+-- Two method labels, appended.
+--
+-- `STRONG_MATCH_ON_LEAVER` splits a label that was doing duty for two
+-- situations: `REKEYED_PERSON_RULE` was reported whether or not a successor was
+-- actually found, so a plain leaver was described as a re-keyed person and the
+-- method could not be used as a metric dimension.
+--
+-- `AI_PROPOSED_CONFIRMED` records a reviewer confirming the candidate the MODEL
+-- proposed, as distinct from the engine's suggestion or an unaided pick.
+--
+-- `IF NOT EXISTS`, NOT a bare `ADD VALUE`. A bare addition took production down
+-- for about 25 hours (#2745/#2746): the value is added outside the surrounding
+-- transaction, so a failed migration leaves the type altered and every retry
+-- fails on the duplicate, restarting the container for ever.
+-- `migration-enum-isolation` is the detector, and the idempotent form is also
+-- what lets these two statements sit in one migration.
+--
+-- APPENDED, never inserted. Postgres `ADD VALUE` appends, and
+-- `enum-member-order-matches-migrations` compares the schema's member order
+-- against the migrations' — inserting in the middle would make the two disagree.
+ALTER TYPE "LegacyMatchMethod" ADD VALUE IF NOT EXISTS 'STRONG_MATCH_ON_LEAVER';
+ALTER TYPE "LegacyMatchMethod" ADD VALUE IF NOT EXISTS 'AI_PROPOSED_CONFIRMED';
