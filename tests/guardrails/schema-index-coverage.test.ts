@@ -444,6 +444,26 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // Step 6c — the model's verdict on one resolution.
+    //
+    // ONE findMany, in `legacy-reviewer-actions.ts::listReconciliationQueue`:
+    // `tenantId` plus `resolutionId: { in: [...] }` for the page's rows, sorted
+    // by `createdAt` descending to take the newest revision per resolution.
+    //
+    // The SELECTIVE predicate is served by the existing
+    // `@@unique([resolutionId, modelRevision])`, which leads on `resolutionId` —
+    // so the `IN` list is an index scan over a bounded page, not a tenant-wide
+    // sweep. A `[tenantId, resolutionId, createdAt]` composite would duplicate
+    // that for no gain.
+    //
+    // The sort needs no index BY CONSTRUCTION, which is the part worth writing
+    // down: the model is one row per `(resolutionId, modelRevision)` and
+    // revisions change by reviewed pull request, so the rows being ordered per
+    // resolution are a handful — one today. If a deployment ever accumulates
+    // many revisions, this entry is the thing to revisit.
+    LegacyMatchVerdict:
+        'Selective predicate served by @@unique([resolutionId, modelRevision]); the sort is over one row per revision.',
+
     // #2861 — the external writes a human approved and the dispatch has not sent.
     //
     // ONE findMany, in `external-write-dispatch.ts`: it filters by `tenantId`
