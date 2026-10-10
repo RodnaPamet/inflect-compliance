@@ -782,3 +782,130 @@ describe('Step 6c — verdicts on the queue', () => {
         else expect(isBlindHeld(`${old}-new`)).toBe(true);
     });
 });
+
+// ── Step 6c: the AGREES bulk lane ───────────────────────────────────────────
+//
+// FIVE TERMS, AND THE MATRIX IS THE TEST. A single happy-path assertion is
+// satisfied by `() => true`; what has to hold is that flipping each term on its
+// own takes the row OUT of the lane. Bulk ratification is a person confirming
+// many rows at once on the strength of a claim about the model, so every term
+// is a reason somebody should have looked at that row individually.
+describe('Step 6c — the AGREES bulk lane', () => {
+    function idWhere(held: boolean): string {
+        for (let i = 0; i < 500; i++) {
+            const id = `bulk${String(i).padStart(12, '0')}`;
+            if (isBlindHeld(id) === held) return id;
+        }
+        throw new Error(`no id found with blindHeld=${held}`);
+    }
+
+    /** A row set up to be eligible, with one term overridable. */
+    async function eligibleRow(over: {
+        accountKey?: string;
+        employeeStatus?: 'ACTIVE' | 'TERMINATED';
+        vetoes?: Record<string, string>[];
+        isPrivileged?: boolean;
+        suggestedRekeyed?: boolean | null;
+        verdict?: 'AGREES' | 'PROPOSES';
+        blind?: boolean;
+        suggested?: boolean;
+    } = {}): Promise<{ executionId: string; accountKey: string }> {
+        const accountKey = over.accountKey ?? 'lane-1';
+        const exec = await prisma.integrationExecution.create({
+            data: {
+                tenantId: T1, connectionId, status: 'PASSED',
+                provider: 'legacy-mcp', automationKey: 'legacy-reconcile',
+                executedAt: new Date(), completedAt: new Date(),
+            },
+        });
+        if (over.employeeStatus === 'TERMINATED') {
+            await prisma.employee.update({
+                where: { id: employeeId },
+                data: { status: 'TERMINATED' },
+            });
+        }
+        await prisma.legacyAccount.create({
+            data: {
+                tenantId: T1, snapshotId, accountKey,
+                username: 'i.ivanov', displayName: 'Ivanov, Ivan',
+                status: 'ACTIVE', accountType: 'HUMAN',
+                isPrivileged: over.isPrivileged ?? false,
+                entitlements: [],
+            },
+        });
+        const resolution = await prisma.legacyAccountResolution.create({
+            data: {
+                tenantId: T1, executionId: exec.id, snapshotId, accountKey,
+                outcome: 'SUGGESTED', method: 'SUPPORTING_ONLY',
+                employeeId: over.suggested === false ? null : employeeId,
+                signalsJson: [],
+                candidatesJson: [
+                    { employeeId, score: 200, signals: [], vetoes: [], strongest: 'SUPPORTING' },
+                ],
+                vetoesJson: over.vetoes ?? [],
+                suggestedRekeyed:
+                    over.suggestedRekeyed === undefined ? false : over.suggestedRekeyed,
+            },
+            select: { id: true },
+        });
+        await prisma.legacyMatchVerdict.create({
+            data: {
+                id: idWhere(over.blind ?? false),
+                tenantId: T1, resolutionId: resolution.id,
+                modelId: 'laya', modelRevision: 'laya-multilingual',
+                verdict: over.verdict ?? 'AGREES',
+                probabilitiesJson: { top: 'A' },
+                labellingJson: { A: employeeId },
+                topProbability: 0.95, topMargin: 0.5,
+            },
+        });
+        return { executionId: exec.id, accountKey };
+    }
+
+    async function eligibility(seeded: { executionId: string; accountKey: string }) {
+        const queue = await listReconciliationQueue(ctx(), {
+            executionId: seeded.executionId,
+            connectionId,
+        });
+        return queue.find((q) => q.accountKey === seeded.accountKey);
+    }
+
+    it('admits a row that clears all five terms', async () => {
+        const row = await eligibility(await eligibleRow());
+        expect(row?.bulkEligible).toBe(true);
+        // And the verdict IS shown for it, which is the other half of the lane:
+        // a reviewer ratifying in bulk is told what they are agreeing with.
+        expect(row?.verdict?.verdict).toBe('AGREES');
+    });
+
+    it.each([
+        ['the candidate is TERMINATED', { employeeStatus: 'TERMINATED' as const }],
+        ['the row has a veto', { vetoes: [{ kind: 'TEMPORAL', evidence: 'x' }] }],
+        ['the account is PRIVILEGED', { isPrivileged: true }],
+        ['the suggestion is a re-key successor', { suggestedRekeyed: true }],
+        ['the verdict is PROPOSES, not AGREES', { verdict: 'PROPOSES' as const }],
+        ['there is no engine suggestion to ratify', { suggested: false }],
+    ])('refuses the lane when %s', async (_label, over) => {
+        const row = await eligibility(await eligibleRow({ accountKey: 'lane-x', ...over }));
+        expect(row?.bulkEligible).toBe(false);
+    });
+
+    it('refuses a row whose re-key term is UNKNOWN', async () => {
+        // The column is nullable with no backfill, so a row written before it
+        // existed genuinely does not know. Treating unknown as "not re-keyed"
+        // would admit exactly those rows, and unknown is not a reason to
+        // ratify in bulk.
+        const row = await eligibility(
+            await eligibleRow({ accountKey: 'lane-null', suggestedRekeyed: null }),
+        );
+        expect(row?.bulkEligible).toBe(false);
+    });
+
+    it('refuses a BLIND AGREES, and gives nothing away doing it', async () => {
+        const blind = await eligibility(await eligibleRow({ accountKey: 'lane-blind', blind: true }));
+        expect(blind?.bulkEligible).toBe(false);
+        // The pair that must be indistinguishable: a withheld AGREES and a row
+        // the model never answered both read {verdict: null, bulkEligible: false}.
+        expect(blind?.verdict).toBeNull();
+    });
+});

@@ -191,6 +191,25 @@ model LegacyAccountResolution {
   signalsJson    Json
   candidatesJson Json
   vetoesJson     Json
+  /// Is the SUGGESTED employee involved in a re-key? Null when there is none.
+  ///
+  /// Stamped by the run, not computed by the reader. `makeRekeyLookup` takes the
+  /// WHOLE roster, so asking this on a queue page would be a full `Employee`
+  /// read on an interactive surface — the shape Layer D of
+  /// `query-shape-guardrails` exists to refuse. The job already holds the roster
+  /// and already builds the lookup, so the cost goes there. Owner decision,
+  /// 2026-10-10.
+  ///
+  /// About the SUGGESTED employee specifically, not a per-candidate map, because
+  /// the `AGREES` bulk lane ratifies exactly that person: `AGREES` means the
+  /// model picked the engine's suggestion, so `employeeId` IS the candidate whose
+  /// eligibility this term is about. A map would be storage for a question the
+  /// lane never asks.
+  ///
+  /// AS-OF THE RUN, like every other field on this row. A re-key that happens
+  /// after the run is not reflected until the next one, and that is correct for
+  /// a lane that ratifies rows as the run resolved them.
+  suggestedRekeyed Boolean?
   /// System-generated, and the only one the engine writes is
   /// `service token: <token>` — a token from the connection's own configuration,
   /// never a cell value.

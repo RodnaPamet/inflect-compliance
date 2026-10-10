@@ -1,0 +1,14 @@
+-- Is the suggested employee involved in a re-key?
+--
+-- Stamped by the reconciliation run rather than computed by the queue:
+-- `makeRekeyLookup` takes the whole roster, so asking this on a queue page is a
+-- full `Employee` read on an interactive surface. The job already holds the
+-- roster. Owner decision, 2026-10-10.
+--
+-- NULLABLE, with no backfill and no default. A row written before this column
+-- existed genuinely does not know the answer, and `NULL` says exactly that —
+-- whereas `DEFAULT false` would assert "not re-keyed" about every historical
+-- row, which is the one answer that lets a row into the bulk lane. The queue
+-- reads a null as NOT eligible, so an un-stamped row falls out of the lane and
+-- back to single review, which is the fail-closed direction.
+ALTER TABLE "LegacyAccountResolution" ADD COLUMN "suggestedRekeyed" BOOLEAN;
