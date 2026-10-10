@@ -5,7 +5,14 @@
  * admin who can author a rule gets a server-side request-forgery primitive
  * against the host's internal network (cloud metadata, Redis, RFC-1918, …).
  *
- * Policy: https only, and the resolved host must be a public address. The
+ * Policy: https only, and the resolved host must be a public address —
+ * EXCEPT on a self-hosted deployment with a CIDR allowlist configured, where
+ * the named ranges become reachable while cloud metadata and loopback stay
+ * refused inside it (#3328, `@/lib/security/egress-allowlist`). Hosted
+ * Inflect is unaffected: the allowlist is inert unless
+ * `getBillingMode() === 'SELFHOSTED'`.
+ *
+ * The
  * literal-host check below blocks the obvious cases synchronously; callers
  * should use `safeFetch` (or `assertPublicAddress`) which additionally
  * resolve DNS and re-check EVERY resolved address to defeat hostnames that
@@ -18,6 +25,8 @@ import { promises as dnsPromises } from 'node:dns';
 // npm-undici dispatcher with Node's BUNDLED undici, and the two are only
 // compatible while their dispatcher-handler interfaces happen to match.
 import { Agent, fetch as undiciFetch } from 'undici';
+
+import { egressAllowlistActive, privateEgressAllowed } from '@/lib/security/egress-allowlist';
 
 const PRIVATE_V4 = [
     /^10\./,
@@ -65,10 +74,23 @@ export function checkWebhookUrl(rawUrl: string): WebhookUrlVerdict {
         return { ok: false, reason: 'only https webhooks are allowed' };
     }
     const host = url.hostname.toLowerCase();
-    if (BLOCKED_HOSTNAMES.has(host) || host.endsWith('.local') || host.endsWith('.internal')) {
+    // The NAMED blocks are unconditional. `metadata.google.internal` also ends
+    // with `.internal`, so it must be caught here rather than by the suffix
+    // rule below, which a self-hosted allowlist relaxes.
+    if (BLOCKED_HOSTNAMES.has(host)) {
         return { ok: false, reason: `blocked host ${host}`, host };
     }
-    if (isPrivateAddress(host)) {
+    // The SUFFIX rule is a name-shaped proxy for "this is probably internal",
+    // and it is exactly what a self-hosted deployment needs to get past: a
+    // customer's MCP server fronting a legacy app is plausibly
+    // `mcp.corp.internal` (#3328). With an allowlist configured the question
+    // becomes the address rather than the name — the host is resolved and
+    // EVERY address checked below — which is a stronger test than the suffix,
+    // not a weaker one. With no allowlist, nothing changes.
+    if (!egressAllowlistActive() && (host.endsWith('.local') || host.endsWith('.internal'))) {
+        return { ok: false, reason: `blocked host ${host}`, host };
+    }
+    if (isPrivateAddress(host) && !privateEgressAllowed(host)) {
         return { ok: false, reason: `private address ${host}`, host };
     }
     return { ok: true, host };
@@ -113,7 +135,15 @@ export async function assertPublicAddress(rawUrl: string): Promise<PublicAddress
         throw new SsrfBlockedError(`no addresses for ${host}`);
     }
     for (const a of addresses) {
-        if (isPrivateAddress(a.address)) {
+        // Still EVERY address, and still at use time. The allowlist widens
+        // which addresses are acceptable; it does not skip the re-resolution
+        // that defeats DNS rebinding, and a name resolving to a private
+        // address OUTSIDE the configured ranges is refused however public the
+        // name looks. `privateEgressAllowed` is false for every failure mode
+        // it has — hosted deployment, unset variable, unparseable entry,
+        // metadata or loopback — so this reads as the original refusal
+        // wherever the allowlist does not positively apply.
+        if (isPrivateAddress(a.address) && !privateEgressAllowed(a.address)) {
             throw new SsrfBlockedError(`${host} resolves to private address ${a.address}`);
         }
     }

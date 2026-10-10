@@ -3,6 +3,7 @@
 // first thing to trigger Zod's CSP-violating `new Function` probe. See
 // src/lib/zod-jitless.ts.
 import '@/lib/zod-jitless';
+import { parseCidr } from "@/lib/security/cidr";
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from '@/lib/security/encryption-constants';
@@ -351,6 +352,42 @@ export const env = createEnv({
         LAYA_BASE_URL: z.string().optional(),
         LAYA_API_KEY: z.string().optional(),
 
+        // ── Private-address egress allowlist, SELF-HOSTED ONLY (#3328) ──
+        //
+        // Comma-separated CIDRs this deployment may reach despite `safeFetch`
+        // refusing private space. The design
+        // (`docs/legacy-access-recertification-design.md`) specifies it as
+        // deployment-level and NEVER tenant-configurable, and that is why it
+        // lives here: there is no tenant column, admin form or API that
+        // reaches it, so widening it is a deployment change rather than
+        // something an `admin.manage` holder can do.
+        //
+        // Inert unless `getBillingMode() === 'SELFHOSTED'`, and cloud metadata
+        // (169.254/16, fe80::/10) and loopback (127/8, ::1, 0/8, ::) stay
+        // refused INSIDE it — `0.0.0.0/0` here still cannot reach
+        // 169.254.169.254. See `@/lib/security/egress-allowlist`.
+        //
+        // Validated for SHAPE here so a typo fails at startup rather than as
+        // a refused fetch hours later. The runtime parser independently drops
+        // anything unparseable, which fails closed.
+        EGRESS_PRIVATE_CIDR_ALLOWLIST: z
+            .string()
+            .optional()
+            .refine(
+                (v) =>
+                    v === undefined
+                    || v
+                        .split(",")
+                        .map((e) => e.trim())
+                        .filter(Boolean)
+                        .every((e) => parseCidr(e) !== null),
+                {
+                    message:
+                        "EGRESS_PRIVATE_CIDR_ALLOWLIST must be a comma-separated list of CIDRs, "
+                        + "e.g. '10.0.0.0/8,192.168.0.0/16' or 'fd00::/8'",
+                },
+            ),
+
         // Audit stream delivery retry (Epic E.2)
         // '0' disables retry (single POST); anything else (or unset) keeps retry on.
         // Kill-switch for debugging a misbehaving SIEM without redeploy.
@@ -485,6 +522,7 @@ export const env = createEnv({
         DATA_ENCRYPTION_KEY_PREVIOUS: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
 
         CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
+        EGRESS_PRIVATE_CIDR_ALLOWLIST: process.env.EGRESS_PRIVATE_CIDR_ALLOWLIST,
         SMTP_HOST: process.env.SMTP_HOST,
         SMTP_PORT: process.env.SMTP_PORT,
         SMTP_USER: process.env.SMTP_USER,

@@ -112,6 +112,11 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     NEXTAUTH_URL: 'deployment URL config',
     NODE_ENV: 'runtime mode',
     CORS_ALLOWED_ORIGINS: 'CORS config',
+    // Deployment-level CIDRs, not a service: it names address RANGES this
+    // install may reach, and the destinations inside them are the operator's
+    // own network (#3328). Nothing is sent to a third party by setting it, so
+    // it is not a sub-processor question.
+    EGRESS_PRIVATE_CIDR_ALLOWLIST: 'self-hosted private-address egress CIDRs',
     STORAGE_PROVIDER: 'storage backend selector (s3 vs local)',
     UPLOAD_DIR: 'local upload path config',
     FILE_STORAGE_ROOT: 'local storage root config',

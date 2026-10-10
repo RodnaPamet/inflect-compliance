@@ -102,6 +102,20 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // variable to satisfy schema validation, contradicting
             // the operating model documented in docs/billing.md.
             if (file.endsWith('billing/entitlements.ts')) continue;
+            // The STRIPE_SECRET_KEY read MOVED here from entitlements.ts above
+            // (#3328) so the SSRF egress guard can ask which deployment this is
+            // without pulling Prisma into `node:dns`-only code. Same read, same
+            // GAP-18 rationale, one file along — not a new exemption.
+            if (file.endsWith('billing/billing-mode.ts')) continue;
+            // The self-hosted private-address CIDR allowlist (#3328). Read raw
+            // rather than through env.ts for two reasons: env.ts VALIDATES this
+            // same variable's shape at startup, so what is read here has already
+            // been checked and a bad value fails the boot rather than reaching
+            // this parser; and the module is imported by `webhook-safety.ts`,
+            // which deliberately carries `node:dns` and `undici` and nothing
+            // else. Every failure mode of the read — unset, unparseable, wrong
+            // deployment mode — resolves to "refuse", so it cannot widen egress.
+            if (file.endsWith('security/egress-allowlist.ts')) continue;
             // ClientProviders gates the Driver.js onboarding-tour
             // auto-trigger via NEXT_PUBLIC_TEST_MODE. NEXT_PUBLIC_*
             // env vars MUST be read via `process.env.NEXT_PUBLIC_*`

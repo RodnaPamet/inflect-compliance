@@ -68,7 +68,14 @@ export type Plan = 'FREE' | 'TRIAL' | 'PRO' | 'ENTERPRISE';
 /**
  * Operating modes — derived from environment, not stored.
  */
-export type BillingMode = 'SAAS' | 'SELFHOSTED';
+// The definition moved to `billing-mode.ts` so the SSRF egress guard can read
+// it without pulling Prisma in (#3328). IMPORTED as well as re-exported:
+// `export { x } from './y'` forwards the name to consumers but does NOT bind
+// it locally, and this module CALLS it (see `getEffectivePlan`). Every
+// existing caller still imports it from here and is unaffected.
+import { getBillingMode, type BillingMode } from './billing-mode';
+
+export { getBillingMode, type BillingMode };
 
 /**
  * Resources that have a per-plan numeric cap. Adding a new entry
@@ -98,18 +105,6 @@ const PLAN_LIMITS: Record<Plan, Record<GatedResource, number | null>> = {
 
 // ─── Mode decision ───────────────────────────────────────────────
 
-/**
- * Read once at module load — billing mode does not change at
- * runtime (you'd have to restart the process to flip it).
- */
-const BILLING_MODE: BillingMode = process.env.STRIPE_SECRET_KEY
-    ? 'SAAS'
-    : 'SELFHOSTED';
-
-export function getBillingMode(): BillingMode {
-    return BILLING_MODE;
-}
-
 // ─── Plan resolution ─────────────────────────────────────────────
 
 /**
@@ -129,7 +124,7 @@ export function getBillingMode(): BillingMode {
  * confusing user-facing failures.
  */
 export async function getEffectivePlan(ctx: RequestContext): Promise<Plan> {
-    if (BILLING_MODE === 'SELFHOSTED') return 'ENTERPRISE';
+    if (getBillingMode() === 'SELFHOSTED') return 'ENTERPRISE';
 
     return runInTenantContext(ctx, async (db) => {
         // BillingAccount is global (not RLS-scoped) so a runtime
