@@ -37,7 +37,17 @@
  * and a model choosing among 255 descriptions is a reliability question nobody
  * here has measured.
  *
- * ═══ UNVERIFIED AGAINST A RUNNING LAYA ═══
+ * VERIFIED AGAINST A REAL LAYA on 2026-10-10 (#3394), built from
+ * `deploy/laya/Dockerfile` and run locally. What that found, and what this file
+ * now encodes:
+ *
+ *   - a choice question REQUIRES `instructions`, and takes `criteria` as a dict
+ *     of label -> description. The earlier `options` array was invented and is
+ *     rejected 422 by the server's own validator;
+ *   - the answer field is `choice`, not `option`;
+ *   - a 20-option set (this file's cap) is accepted: p50 596 ms on CPU, max 719;
+ *     three options, p50 206 ms. Both sit inside `LAYA_TIMEOUT_MS` (2000) with
+ *     margin, so the budget is realistic rather than hopeful.
  *
  * Stated because it matters and because #3311 is this repo's standard for
  * exactly this. The request shape below — in particular a `state` that is not a
@@ -72,11 +82,16 @@ const answerSchema = z
             [INTENT_QUESTION_ID]: z
                 .object({
                     type: z.literal('choice'),
+                    // `choice`, not `option`. Confirmed against a real Laya
+                    // (#3394), whose answer object carries
+                    // `{type, choice, probabilities, confidence,
+                    //   answer_confidence, action, x_jev_confidence}`.
+                    //
                     // Validated against the labels WE declared, not accepted as
                     // given: a proxy that rewrote one, or a model naming a label
                     // we did not offer, must not arrive as an answer this code
                     // then maps to whatever happens to sit at that position.
-                    option: z.enum([...INTENT_OPTION_LABELS, INTENT_NONE]),
+                    choice: z.enum([...INTENT_OPTION_LABELS, INTENT_NONE]),
                 })
                 .passthrough(),
         }),
@@ -124,29 +139,39 @@ export function buildIntentChoiceRequest(
         return { option: label, description: o.label };
     });
 
+    // `criteria`, NOT `options`, and `instructions` is REQUIRED. Both were
+    // wrong until this was run against a real Laya (#3394): the server's own
+    // validator (`agent.py:_check_question`) rejects a choice question with
+    //
+    //     422  question 'intent_choice': no 'instructions'; add the text the
+    //          model should answer
+    //
+    // and documents `criteria` as "a dict of label -> description, or a list of
+    // labels". The earlier shape invented an `options` array, which an injected
+    // transport accepted happily and no real server ever would.
+    const criteria: Record<string, string> = {};
+    for (const o of offered) criteria[o.option] = o.description;
+    criteria[INTENT_NONE] = 'None of the listed options is what the instruction means.';
+
     return {
         labelOf,
         body: {
             model,
-            // OUR state, carrying only the instruction and the offered set.
-            // Nothing else about the tenant goes to the model: it is choosing
-            // between descriptions we wrote, not reasoning about a directory.
+            // OUR state, carrying only the instruction. Nothing else about the
+            // tenant goes to the model: it is choosing between descriptions we
+            // wrote, not reasoning about a directory. Measured at 12
+            // `state_tokens` for a one-line instruction.
             state: {
                 instruction: choice.phrase,
-                question: choice.question,
-                options: offered,
             },
             questions: {
                 [INTENT_QUESTION_ID]: {
                     type: 'choice',
-                    options: [
-                        ...offered,
-                        {
-                            option: INTENT_NONE,
-                            description:
-                                'None of the listed options is what the instruction means.',
-                        },
-                    ],
+                    // The text the model answers. The question we were already
+                    // carrying in `state` belongs here, which is where the
+                    // server looks for it.
+                    instructions: choice.question,
+                    criteria,
                 },
             },
         },
@@ -169,7 +194,7 @@ export function readIntentChoiceAnswer(
     if (!parsed.success) {
         throw new Error(`System One answer did not parse: ${parsed.error.issues[0]?.message}`);
     }
-    const option = parsed.data.answers[INTENT_QUESTION_ID].option;
+    const option = parsed.data.answers[INTENT_QUESTION_ID].choice;
     if (option === INTENT_NONE) return null;
     const id = labelOf.get(option);
     if (id === undefined) {
