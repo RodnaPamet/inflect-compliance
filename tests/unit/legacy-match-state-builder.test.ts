@@ -210,8 +210,8 @@ describe('the payload allowlist', () => {
             budgetChars: ROOMY,
         });
         const request = buildMatchRequest(JEV_MODEL, state);
-        const match = request.questions.match as { options: { option: string }[] };
-        expect(match.options.map((o) => o.option)).toEqual(['A', 'B', 'C', 'NONE']);
+        const match = request.questions.match as { criteria: Record<string, string> };
+        expect(Object.keys(match.criteria)).toEqual(['A', 'B', 'C', 'NONE']);
     });
 });
 
