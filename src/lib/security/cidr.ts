@@ -2,8 +2,8 @@
  * IP address and CIDR parsing. PURE — no environment, no policy, no imports.
  *
  * Split from `egress-allowlist.ts` (#3328) so `src/env.ts` can validate the
- * allowlist's SHAPE at startup without importing anything that reads
- * `process.env.STRIPE_SECRET_KEY`. `env.ts` is reachable from client code, and
+ * allowlist's SHAPE at startup without importing anything that reads the
+ * Stripe secret out of the environment. `env.ts` is reachable from client code, and
  * a client bundle has no business naming a server secret even to find it
  * undefined. The policy — which ranges are never allowlistable, which
  * deployment may use an allowlist at all — stays next to the thing that
