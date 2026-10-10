@@ -37,6 +37,8 @@ import { FormField } from '@/components/ui/form-field';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { Textarea } from '@/components/ui/textarea';
+import { Heading } from '@/components/ui/typography';
 
 interface Template {
     id: string;
@@ -68,6 +70,11 @@ export function ComposeClient({
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+    /** #3351 — the typed entrance, which composes WITHOUT touching the form. */
+    const [phrase, setPhrase] = useState('');
+    const [resolving, setResolving] = useState(false);
+    /** What the parser made of the phrase, shown verbatim as it was recorded. */
+    const [readings, setReadings] = useState<readonly string[] | null>(null);
     /** Which selection is current, so a slow earlier response cannot win. */
     const selectionRef = useRef(0);
 
@@ -167,6 +174,61 @@ export function ComposeClient({
         }
     }, [apiUrl, templateId, values, t]);
 
+    // The typed path. It does NOT fill the form in: it composes directly and
+    // reports what was understood, so the operator sees the parse and the
+    // reviewer sees the same lines on the proposal. A phrase that cannot be
+    // resolved is refused with a sentence, never approximated.
+    const composeFromText = useCallback(async () => {
+        const typed = phrase.trim();
+        if (typed === '') return;
+        setResolving(true);
+        setNotice(null);
+        setReadings(null);
+        try {
+            const res = await fetch(apiUrl('/agent-proposals/compose/intent'), {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ phrase: typed }),
+            });
+            const body = (await res.json().catch(() => null)) as
+                | {
+                      proposalId?: string;
+                      status?: string;
+                      guardVerdict?: string | null;
+                      readings?: string[];
+                      error?: string;
+                  }
+                | null;
+            if (!res.ok) {
+                // The server's sentence, not a generic failure: each refusal
+                // names the one action that fixes it.
+                setNotice({
+                    ok: false,
+                    text: t('compose.phraseUnavailable', {
+                        reason: body?.error ?? String(res.status),
+                    }),
+                });
+                return;
+            }
+            setReadings(body?.readings ?? null);
+            setNotice(
+                body?.status === 'QUARANTINED'
+                    ? {
+                          ok: false,
+                          text: t('compose.quarantined', {
+                              verdict: body?.guardVerdict ?? '—',
+                              id: body?.proposalId ?? '—',
+                          }),
+                      }
+                    : { ok: true, text: t('compose.queued', { id: body?.proposalId ?? '—' }) },
+            );
+        } catch {
+            setNotice({ ok: false, text: t('compose.phraseUnavailable', { reason: '—' }) });
+        } finally {
+            setResolving(false);
+        }
+    }, [apiUrl, phrase, t]);
+
     const chosen = templates.find((x) => x.id === templateId) ?? null;
     // Every open field needs a value, and a field whose candidates could not be
     // resolved blocks submission — offering a disabled picker beside an enabled
@@ -186,6 +248,51 @@ export function ComposeClient({
 
             {!canWrite ? (
                 <InlineNotice variant="info">{t('compose.readOnly')}</InlineNotice>
+            ) : null}
+
+            {canWrite && templates.length > 0 ? (
+                <Card className="space-y-default">
+                    <div className="space-y-1">
+                        <Heading level={2}>{t('compose.phraseTitle')}</Heading>
+                        <p className="text-sm text-content-muted">{t('compose.phraseIntro')}</p>
+                    </div>
+
+                    <FormField label={t('compose.phraseLabel')} hint={t('compose.phraseHint')}>
+                        <Textarea
+                            value={phrase}
+                            onChange={(e) => setPhrase(e.target.value)}
+                            placeholder={t('compose.phrasePlaceholder')}
+                            rows={3}
+                            maxLength={500}
+                            disabled={resolving}
+                        />
+                    </FormField>
+
+                    {readings !== null && readings.length > 0 ? (
+                        <div className="space-y-1">
+                            <p className="text-sm font-medium text-content-default">
+                                {t('compose.readingsTitle')}
+                            </p>
+                            <ul className="list-disc space-y-0.5 pl-5 text-sm text-content-muted">
+                                {readings.map((line) => (
+                                    <li key={line}>{line}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
+
+                    <Button
+                        variant="secondary"
+                        onClick={composeFromText}
+                        disabled={resolving || phrase.trim() === ''}
+                    >
+                        {resolving ? t('compose.phraseSubmitting') : t('compose.phraseSubmit')}
+                    </Button>
+                </Card>
+            ) : null}
+
+            {canWrite && templates.length > 0 ? (
+                <p className="text-sm text-content-muted">{t('compose.phraseOrForm')}</p>
             ) : null}
 
             {templates.length === 0 ? (
