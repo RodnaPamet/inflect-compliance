@@ -78,5 +78,10 @@
         "kind": "never",
         "reason": "Cron-only (09:00 UTC on the 1st of Jan/Apr/Jul/Oct) plus workflow_dispatch for an off-cycle rotation after an exposure or a departure. A pull_request can never reach it, and that is the intent: it opens a rotation issue, so running it on every PR would mint an issue per PR.",
         "coveredBy": "ACCEPTED, NOT COVERED. There is no PR-time equivalent and there should not be \u2014 the job's only effect is creating a GitHub issue, so a failure is visible as an absent issue rather than a broken deploy, and the next quarterly run retries it. The script is idempotent: it searches for an existing issue with the same quarter title before creating one, so a dispatch in the same quarter as the cron does not duplicate. The risk of it silently never running is real but bounded; the mitigation is that a missing quarterly issue is itself the signal."
+    },
+    "laya-image.yml:build-scan-push": {
+        "kind": "never",
+        "reason": "NEVER reachable from a PR: workflow_dispatch is its only trigger, and deliberately. This image is referenced by DIGEST, so a build changes nothing until somebody edits a Compose file to point at the new one \u2014 building on every push would produce a stream of images nobody pinned. A manual publish is the intended cost.",
+        "coveredBy": "Nothing about the published image can regress silently, because nothing consumes it until a Compose file names its digest, and `tests/guardrails/runtime-image-pinning.test.ts` refuses a tag there. The workflow's own correctness \u2014 scan before push, in one job \u2014 is checked on every PR by `tests/guardrails/publish-scans-before-push.test.ts`, which reads the YAML rather than running it."
     }
 }

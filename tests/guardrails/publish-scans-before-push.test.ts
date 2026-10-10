@@ -673,7 +673,15 @@ describe('an image push is gated by a scan that ran before it', () => {
         // The exact list. A publish job that stops being recognised as one —
         // renamed step, new push mechanism — shows up here as a shrinking
         // list rather than as a silently-green ordering check below.
-        expect(sites.map((s) => `${s.workflow}:${s.jobId}`).sort()).toEqual(['ghcr-publish.yml:build-push']);
+        expect(sites.map((s) => `${s.workflow}:${s.jobId}`).sort()).toEqual([
+            // Step 6d. The Laya model server, built by us and pushed by DIGEST.
+            // It is in this list for the same reason the application's publish
+            // is: it pushes an image to a registry, so the scan-before-push
+            // ordering below has to hold for it too — and it does, in one job
+            // on one runner, with the same blocking Trivy gate.
+            'ghcr-publish.yml:build-push',
+            'laya-image.yml:build-scan-push',
+        ].sort());
         expect(() => assertPopulation(sites)).not.toThrow();
     });
 
