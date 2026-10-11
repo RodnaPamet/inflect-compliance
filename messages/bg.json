@@ -7430,7 +7430,8 @@
         "AUDIT": "Одит",
         "INTEGRATION": "Интеграция",
         "EVIDENCE_EXPIRY": "Изтичане на доказателство",
-        "RISK_MONITOR": "Мониторинг на риска"
+        "RISK_MONITOR": "Мониторинг на риска",
+        "GRANT_EXPIRY": "Изтичане на достъп"
       },
       "due": {
         "overdue": "Просрочени",

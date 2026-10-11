@@ -63,6 +63,8 @@
  */
 import { PrismaClient } from '@prisma/client';
 
+import type { RequestContext } from '@/app-layer/types';
+
 import { logger } from '@/lib/observability/logger';
 import { decryptField } from '@/lib/security/encryption';
 import { callTool } from '@/app-layer/integrations/mcp/client';
@@ -74,6 +76,7 @@ import { runInTenantContext } from '@/lib/db-context';
 
 import { promoteAcceptedWrite } from './external-write-journal';
 import { getPriorStateRead } from './external-prior-state-read';
+import { createTask } from './task';
 
 /** One pass is bounded, for the same reason the dispatch batch is. */
 const RECONCILE_BATCH_LIMIT = 50;
@@ -106,7 +109,17 @@ export type DeliveryVerifier = (prior: unknown, current: unknown) => DeliveryVer
  * not get an answer". Collapsing them would turn an unreachable far end into
  * evidence about access.
  */
-function assignmentIds(result: unknown): ReadonlySet<string> | null {
+/**
+ * The MCP tool-result envelope unwrapped to the serialised assignment rows, or
+ * `null` when the answer is not readable at all.
+ *
+ * Factored out of {@link assignmentIds} rather than duplicated: the envelope
+ * walk — error flag, content array, first text part, JSON, `assignments.all` —
+ * is the part both questions share, and the null/empty distinction it protects
+ * is the one that must not be re-derived twice. What differs is only which
+ * field each caller then reads.
+ */
+function assignmentRows(result: unknown): readonly unknown[] | null {
     if (!result || typeof result !== 'object') return null;
     const r = result as { content?: unknown; isError?: unknown };
     if (r.isError === true) return null;
@@ -128,20 +141,39 @@ function assignmentIds(result: unknown): ReadonlySet<string> | null {
         return null;
     }
     const all = (parsed as { assignments?: { all?: unknown } } | null)?.assignments?.all;
-    if (!Array.isArray(all)) return null;
+    return Array.isArray(all) ? all : null;
+}
+
+/**
+ * Each reported assignment's DERIVED liveness, or `null` when unreadable.
+ *
+ * `liveness` and not `state`: `classifyAssignment` is what knows `delivering`
+ * is neither held nor history (#3326), and a second place deriving that would
+ * be the copy that drifts. A row missing the field is `'unknown'`, never
+ * dropped — a row we cannot place must not vanish from a count that decides
+ * whether access is still held.
+ */
+function assignmentLiveness(result: unknown): readonly { liveness: string }[] | null {
+    const rows = assignmentRows(result);
+    if (rows === null) return null;
+    return rows.map((a) => {
+        const liveness = (a as { liveness?: unknown } | null)?.liveness;
+        return { liveness: typeof liveness === 'string' ? liveness : 'unknown' };
+    });
+}
+
+function assignmentIds(result: unknown): ReadonlySet<string> | null {
+    const rows = assignmentRows(result);
+    if (rows === null) return null;
 
     const ids = new Set<string>();
-    for (const a of all) {
+    for (const a of rows) {
         // `assignmentId`, NOT `id`. The serialised shape is
-        // `AccessAssignmentState`, and reading `.id` found nothing in every
-        // real answer — so both sides compared as empty sets, every verdict
-        // was `not_yet`, and NOTHING WOULD EVER HAVE BEEN PROMOTED. The tests
-        // passed because the fixture was written to match this extractor
-        // instead of the type the endpoint actually returns, which is the
-        // "fixture that cannot produce the failing input" trap. Found while
-        // building #3374's inverse verifier against the real interface.
-        const id = a && typeof a === 'object' ? (a as { assignmentId?: unknown }).assignmentId : null;
-        if (typeof id === 'string' && id !== '') ids.add(id);
+        // `AccessAssignmentState`, which has no `id` field at all — reading one
+        // found nothing, compared two empty sets, and returned `not_yet`
+        // forever, promoting nothing (#3334).
+        const id = (a as { assignmentId?: unknown } | null)?.assignmentId;
+        if (typeof id === 'string' && id.trim() !== '') ids.add(id);
     }
     return ids;
 }
@@ -249,6 +281,99 @@ export async function tenantsWithAcceptedExternalWrites(db: PrismaClient): Promi
     return rows.map((r) => r.tenantId);
 }
 
+/**
+ * READ WHAT THE FAR END SAYS NOW, for one journalled write.
+ *
+ * Extracted because two passes need exactly this and the repo has a name for
+ * the alternative: two copies of one predicate, where the one that matters is
+ * the quiet one. `reconcileAcceptedExternalWrites` asks "has it arrived yet"
+ * and `verifyGrantExpiry` asks "has it gone"; everything up to the answer —
+ * resolving the connection, decrypting its credential, finding the PAIRED
+ * prior-state read, and calling it — is the same operation.
+ *
+ * Returns a REASON rather than throwing, because both callers record the reason
+ * on the row and neither should treat "could not ask" as an answer.
+ */
+/**
+ * Exactly the connection fields the read needs, named structurally rather than
+ * by importing a Prisma type: the caller's `select` is the contract, and a
+ * widened select should not silently widen what this function may touch.
+ */
+interface ConnectionForRead {
+    readonly id: string;
+    readonly isEnabled: boolean;
+    readonly configJson: unknown;
+    readonly secretEncrypted: string | null;
+}
+
+type RowStateRead =
+    | {
+          readonly ok: true;
+          readonly args: Record<string, unknown>;
+          readonly prior: unknown;
+          readonly current: unknown;
+      }
+    | { readonly ok: false; readonly reason: string };
+
+async function readJournalRowState(
+    ctx: RequestContext,
+    row: { id: string; toolName: string; connectionId: string | null; argumentsJson: string; priorStateJson: string },
+    connections: Map<string, ConnectionForRead>,
+): Promise<RowStateRead> {
+    const connection = row.connectionId ? connections.get(row.connectionId) : undefined;
+    if (!connection) {
+        return { ok: false, reason: 'the connection is gone or is not an MCP server connection' };
+    }
+    if (!connection.isEnabled) return { ok: false, reason: 'the connection is disabled' };
+
+    const url = (connection.configJson as { url?: unknown } | null)?.url;
+    if (typeof url !== 'string' || !url.trim()) {
+        return { ok: false, reason: 'the connection has no URL' };
+    }
+
+    let authorization: string | undefined;
+    try {
+        const secrets = connection.secretEncrypted
+            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+            : {};
+        authorization = await authorizationFor(
+            connection.id,
+            (connection.configJson ?? {}) as Record<string, unknown>,
+            secrets,
+        );
+    } catch {
+        return { ok: false, reason: 'the connection credentials are unusable' };
+    }
+
+    const pairing = await getPriorStateRead(ctx, row.toolName);
+    if (!pairing) {
+        return { ok: false, reason: 'the prior-state read pairing has been removed' };
+    }
+    const read = parseExternalToolName(pairing.readToolName);
+    if (!read) {
+        return { ok: false, reason: 'the paired prior-state read is not a usable external tool name' };
+    }
+
+    let args: Record<string, unknown>;
+    let prior: unknown;
+    try {
+        args = JSON.parse(row.argumentsJson) as Record<string, unknown>;
+        prior = JSON.parse(row.priorStateJson);
+    } catch {
+        return { ok: false, reason: 'the journalled arguments or prior state will not parse' };
+    }
+
+    try {
+        const current = await callTool({ url: url.trim(), authorization }, read.toolName, args);
+        return { ok: true, args, prior, current };
+    } catch (err) {
+        return {
+            ok: false,
+            reason: `the paired read failed: ${err instanceof Error ? err.message : 'unknown'}`,
+        };
+    }
+}
+
 export async function reconcileAcceptedExternalWrites(input: {
     tenantId: string;
     limit?: number;
@@ -332,64 +457,12 @@ export async function reconcileAcceptedExternalWrites(input: {
             });
         };
 
-        const connection = row.connectionId ? connections.get(row.connectionId) : undefined;
-        if (!connection) {
-            unreadable('the connection is gone or is not an MCP server connection');
+        const read = await readJournalRowState(ctx, row, connections);
+        if (!read.ok) {
+            unreadable(read.reason);
             continue;
         }
-        if (!connection.isEnabled) {
-            unreadable('the connection is disabled');
-            continue;
-        }
-        const url = (connection.configJson as { url?: unknown } | null)?.url;
-        if (typeof url !== 'string' || !url.trim()) {
-            unreadable('the connection has no URL');
-            continue;
-        }
-
-        let authorization: string | undefined;
-        try {
-            const secrets = connection.secretEncrypted
-                ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
-                : {};
-            authorization = await authorizationFor(
-                connection.id,
-                (connection.configJson ?? {}) as Record<string, unknown>,
-                secrets,
-            );
-        } catch {
-            unreadable('the connection credentials are unusable');
-            continue;
-        }
-
-        const pairing = await getPriorStateRead(ctx, row.toolName);
-        if (!pairing) {
-            unreadable('the prior-state read pairing has been removed');
-            continue;
-        }
-        const read = parseExternalToolName(pairing.readToolName);
-        if (!read) {
-            unreadable('the paired prior-state read is not a usable external tool name');
-            continue;
-        }
-
-        let args: Record<string, unknown>;
-        let prior: unknown;
-        try {
-            args = JSON.parse(row.argumentsJson) as Record<string, unknown>;
-            prior = JSON.parse(row.priorStateJson);
-        } catch {
-            unreadable('the journalled arguments or prior state will not parse');
-            continue;
-        }
-
-        let current: unknown;
-        try {
-            current = await callTool({ url: url.trim(), authorization }, read.toolName, args);
-        } catch (err) {
-            unreadable(`the paired read failed: ${err instanceof Error ? err.message : 'unknown'}`);
-            continue;
-        }
+        const { prior, current } = read;
 
         const verdict = verifier(prior, current);
         if (verdict === 'delivered') {
@@ -407,6 +480,303 @@ export async function reconcileAcceptedExternalWrites(input: {
             continue;
         }
         result.notYet += 1;
+    }
+
+    return result;
+}
+
+// ─── #3416: did the grant actually expire? ──────────────────────────────────
+
+/**
+ * Advertised tool -> the argument naming when its grant ends.
+ *
+ * Keyed on the advertised name like {@link DELIVERY_VERIFIERS}, and for the
+ * same reason: a new target is invisible to this sweep until it is listed, and
+ * a test holds the two maps against each other so that is a visible omission
+ * rather than a silent one.
+ */
+export const GRANT_EXPIRY_ARGS: ReadonlyMap<string, string> = new Map([
+    ['grant_time_bounded_access', 'endDateTime'],
+]);
+
+/** What the far end says about a grant whose end date has passed. */
+export type ExpiryVerdict = 'expired' | 'still_live' | 'unreadable';
+
+/**
+ * Is anything still LIVE for the subject and package this row granted?
+ *
+ * NOT `entraAssignmentDisappeared`. That one compares the prior and current id
+ * sets to prove OUR withdrawal landed, and its own docblock says why it cannot
+ * serve here: comparing liveness "would also report success the moment an
+ * assignment merely lapsed on its own schedule, crediting our withdrawal with
+ * an expiry that would have happened anyway". For this sweep the natural lapse
+ * is precisely the thing being observed, so the question is about the CURRENT
+ * state alone and the prior state is irrelevant.
+ *
+ * `liveness` is read rather than `state`, because `classifyAssignment` is what
+ * knows that `delivering` is not held yet and not history either (#3326). A
+ * sweep that read the raw string would have to re-derive that, and the copy
+ * that drifted would be the one granting access.
+ */
+export function expiryVerdict(current: unknown): ExpiryVerdict {
+    const parsed = assignmentLiveness(current);
+    if (parsed === null) return 'unreadable';
+    // No assignment at all is the clearest possible expiry: the thing we
+    // granted is not there.
+    if (parsed.length === 0) return 'expired';
+    // `unknown` is NOT 'expired'. A row the classifier could not place must not
+    // be counted as gone — that is the direction that would quietly close the
+    // case on a grant that is still held.
+    if (parsed.some((a) => a.liveness === 'unknown')) return 'unreadable';
+    if (parsed.some((a) => a.liveness === 'live' || a.liveness === 'pending')) return 'still_live';
+    return 'expired';
+}
+
+export interface GrantExpiryResult {
+    /** Rows past their end date that this pass looked at. */
+    scanned: number;
+    /** Confirmed gone. `expiryVerifiedAt` stamped; never asked again. */
+    confirmedExpired: number;
+    /** STILL LIVE past the end date. A task was raised. */
+    raised: number;
+    /** Already raised on an earlier pass, so no second task. */
+    alreadyRaised: number;
+    /** Could not ask, or could not interpret the answer. Retried next pass. */
+    unreadable: number;
+}
+
+/**
+ * RAISE A TASK: this grant is still live past the date it was meant to end.
+ *
+ * A task rather than a log line, because this is a control that failed. The
+ * product refused to issue a grant longer than the recertification window; if
+ * one is standing anyway, the refusal did not achieve what it was for, and the
+ * only thing that makes that actionable is work assigned to somebody.
+ *
+ * `expiryRaisedAt` is stamped in the SAME call, and is the dedup key — a daily
+ * sweep must raise one task, not one per run. It is deliberately not a
+ * `TaskLink`: `TaskLinkEntityType` has no value for a journal row and
+ * `assertLinkTargetInTenant` requires a real row of a supported model, so the
+ * link-based idempotency `retention-notifications` uses is unavailable here.
+ * The journal id travels in `metadataJson` instead, so the row is still
+ * reachable from the task.
+ *
+ * The description names the SUBJECT and the dates and nothing else from the
+ * payload. A grant's arguments carry a person's directory id, and a task is
+ * read by whoever holds the queue.
+ */
+async function raiseGrantOutlivedWindow(
+    ctx: RequestContext,
+    row: { id: string; advertisedToolName: string; connectionName: string; argumentsJson: string },
+    endDateTime: Date,
+    now: Date,
+): Promise<void> {
+    const overdueDays = Math.floor((now.getTime() - endDateTime.getTime()) / 86_400_000);
+    let targetId: string | null = null;
+    try {
+        const args = JSON.parse(row.argumentsJson) as { targetId?: unknown };
+        targetId = typeof args.targetId === 'string' ? args.targetId : null;
+    } catch {
+        targetId = null;
+    }
+
+    const task = await createTask(ctx, {
+        title: 'A time-bounded grant is still active after its end date',
+        type: 'REMEDIATION',
+        severity: 'HIGH',
+        source: 'GRANT_EXPIRY',
+        description:
+            `A grant made through ${row.connectionName} was due to end on `
+            + `${endDateTime.toISOString()} and the directory still reports it as active`
+            + `${overdueDays > 0 ? `, ${overdueDays} day(s) later` : ''}. `
+            + `Subject: ${targetId ?? 'not recorded'}. `
+            + 'The product refuses a grant longer than the recertification window, so an '
+            + 'assignment standing past its end date means that bound is not holding. '
+            + 'Check the assignment in the directory and end it there if it is still held.',
+        metadataJson: {
+            externalWriteJournalId: row.id,
+            advertisedToolName: row.advertisedToolName,
+            endDateTime: endDateTime.toISOString(),
+            overdueDays,
+        },
+    });
+
+    await runInTenantContext(ctx, (db) =>
+        db.externalWriteJournal.update({
+            where: { id: row.id },
+            data: { expiryRaisedAt: now },
+        }),
+    );
+
+    logger.warn('grant outlived its window', {
+        component: 'usecase',
+        journalId: row.id,
+        taskId: task?.id,
+        overdueDays,
+    });
+}
+
+/**
+ * Tenants holding a delivered grant whose expiry is still unconfirmed.
+ *
+ * The same shape as {@link tenantsWithAcceptedExternalWrites} and for the same
+ * reason: without it the pass would only visit tenants that happened to have
+ * other work, and a tenant whose last grant is quietly outliving its end date
+ * is exactly the population this exists for.
+ */
+export async function tenantsWithUnverifiedGrantExpiry(db: PrismaClient): Promise<string[]> {
+    const rows = await db.externalWriteJournal.groupBy({
+        by: ['tenantId'],
+        where: {
+            outcome: 'APPLIED',
+            advertisedToolName: { in: [...GRANT_EXPIRY_ARGS.keys()] },
+            expiryVerifiedAt: null,
+        },
+    });
+    return rows.map((r) => r.tenantId);
+}
+
+/**
+ * DID THE GRANTS WE MADE ACTUALLY END WHEN THEY SAID THEY WOULD? (#3416)
+ *
+ * ── WHY THIS IS NOT THE DELIVERY RECONCILE WITH A DIFFERENT WHERE ───────────
+ *
+ * The two passes have OPPOSITE polarity, which is why they cannot share a
+ * status. "Has it arrived yet" tolerates `not_yet` indefinitely and retries;
+ * "has it gone" must ESCALATE on a `not_yet` past the end date, because there
+ * the passage of time is the defect rather than the explanation. Folding them
+ * into one would make a grant outliving its window indistinguishable from a
+ * slow delivery — the uniform-failure-shape problem (#3326) again.
+ *
+ * ── WHY IT MATTERS MORE THAN IT LOOKS ───────────────────────────────────────
+ *
+ * `MAX_GRANT_DAYS` is anchored to the `QUARTERLY` recertification interval so
+ * that a grant cannot outlive the review that would catch it. That guarantee
+ * has two halves: refuse a grant longer than the window, and have the grant
+ * actually end. The first is enforced in code. Until this pass, the second was
+ * assumed — the delivery reconcile promotes a row to `APPLIED` BEFORE its end
+ * date, always, and nothing looked at it again.
+ *
+ * ── WHAT IT WILL NOT DO ─────────────────────────────────────────────────────
+ *
+ * Stamp `expiryVerifiedAt` on anything it could not read. An unreadable answer
+ * leaves the row in the population, because the only thing worse than not
+ * checking is a column that says we checked.
+ */
+export async function verifyGrantExpiry(input: {
+    tenantId: string;
+    limit?: number;
+    now?: Date;
+}): Promise<GrantExpiryResult> {
+    const ctx = buildSystemContext({
+        tenantId: input.tenantId,
+        job: 'external-write-expiry',
+    });
+    const take = input.limit ?? RECONCILE_BATCH_LIMIT;
+    const now = input.now ?? new Date();
+
+    const candidates = await runInTenantContext(ctx, (db) =>
+        db.externalWriteJournal.findMany({
+            where: {
+                tenantId: input.tenantId,
+                outcome: 'APPLIED',
+                advertisedToolName: { in: [...GRANT_EXPIRY_ARGS.keys()] },
+                expiryVerifiedAt: null,
+            },
+            // Oldest end dates first, which is the order of how long something
+            // may have been live past its window.
+            orderBy: { attemptedAt: 'asc' },
+            take,
+        }),
+    );
+
+    const result: GrantExpiryResult = {
+        scanned: 0,
+        confirmedExpired: 0,
+        raised: 0,
+        alreadyRaised: 0,
+        unreadable: 0,
+    };
+
+    const connectionIds = [
+        ...new Set(candidates.map((r) => r.connectionId).filter((id): id is string => !!id)),
+    ];
+    const connections = new Map(
+        (
+            await runInTenantContext(ctx, (db) =>
+                db.integrationConnection.findMany({
+                    where: {
+                        id: { in: connectionIds },
+                        tenantId: input.tenantId,
+                        provider: MCP_SERVER_PROVIDER_ID,
+                    },
+                    select: { id: true, isEnabled: true, configJson: true, secretEncrypted: true },
+                }),
+            )
+        ).map((c) => [c.id, c as ConnectionForRead]),
+    );
+
+    for (const row of candidates) {
+        // The end date lives in the journalled arguments, so the SQL above
+        // cannot filter on it. Rows not yet due are skipped without being
+        // counted as scanned: they are not this pass's population.
+        const field = GRANT_EXPIRY_ARGS.get(row.advertisedToolName);
+        if (!field) continue;
+        let endDateTime: Date | null = null;
+        try {
+            const args = JSON.parse(row.argumentsJson) as Record<string, unknown>;
+            const raw = args[field];
+            const parsed = typeof raw === 'string' ? new Date(raw) : null;
+            endDateTime = parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+        } catch {
+            endDateTime = null;
+        }
+        // An unparseable end date is NOT skipped and NOT confirmed. It is a row
+        // claiming a bounded grant whose bound cannot be read, which is a thing
+        // somebody should look at rather than a thing to pass over.
+        if (endDateTime === null) {
+            result.scanned += 1;
+            result.unreadable += 1;
+            continue;
+        }
+        if (endDateTime.getTime() > now.getTime()) continue;
+
+        result.scanned += 1;
+
+        const read = await readJournalRowState(ctx, row, connections);
+        if (!read.ok) {
+            result.unreadable += 1;
+            logger.warn('grant expiry unverified', {
+                component: 'usecase',
+                journalId: row.id,
+                reason: read.reason,
+            });
+            continue;
+        }
+
+        const verdict = expiryVerdict(read.current);
+        if (verdict === 'expired') {
+            await runInTenantContext(ctx, (db) =>
+                db.externalWriteJournal.update({
+                    where: { id: row.id },
+                    data: { expiryVerifiedAt: now },
+                }),
+            );
+            result.confirmedExpired += 1;
+            continue;
+        }
+        if (verdict === 'unreadable') {
+            result.unreadable += 1;
+            continue;
+        }
+
+        // STILL LIVE past its end date.
+        if (row.expiryRaisedAt) {
+            result.alreadyRaised += 1;
+            continue;
+        }
+        await raiseGrantOutlivedWindow(ctx, row, endDateTime, now);
+        result.raised += 1;
     }
 
     return result;

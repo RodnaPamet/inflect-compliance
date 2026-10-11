@@ -440,6 +440,12 @@ enum TaskSource {
   // strings 'kri_breach' / 'risk_appetite_breach').
   RISK_MONITOR
 
+  // #3416 — a time-bounded grant the directory still reports as active after
+  // its end date. Its own member rather than INTEGRATION: this is a CONTROL
+  // THAT FAILED, not routine integration work, and "which tasks came from a
+  // grant outliving its window" is a question an auditor asks directly.
+  GRANT_EXPIRY
+
   // Prisma-level rename (Task* is the canonical subsystem name).
   // @@map pins the physical Postgres type so no ALTER TYPE migration
   // is emitted and a rolling deploy never sees a missing enum type.

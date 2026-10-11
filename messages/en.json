@@ -7430,7 +7430,8 @@
         "AUDIT": "Audit",
         "INTEGRATION": "Integration",
         "EVIDENCE_EXPIRY": "Evidence Expiry",
-        "RISK_MONITOR": "Risk Monitor"
+        "RISK_MONITOR": "Risk Monitor",
+        "GRANT_EXPIRY": "Grant Expiry"
       },
       "due": {
         "overdue": "Overdue",

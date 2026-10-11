@@ -95,6 +95,7 @@ export function taskSourceLabels(t: TLabel): Record<string, string> {
         INTEGRATION: t('filterEnums.source.INTEGRATION'),
         EVIDENCE_EXPIRY: t('filterEnums.source.EVIDENCE_EXPIRY'),
         RISK_MONITOR: t('filterEnums.source.RISK_MONITOR'),
+        GRANT_EXPIRY: t('filterEnums.source.GRANT_EXPIRY'),
     };
 }
 
