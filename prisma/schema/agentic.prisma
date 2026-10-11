@@ -2055,6 +2055,31 @@ model ExternalWriteJournal {
   priorStateJson String
 
   outcome ExternalWriteOutcome @default(PENDING)
+
+  /// WHEN WE CONFIRMED THE GRANT THIS ROW CREATED HAD ACTUALLY GONE (#3416).
+  ///
+  /// Null until confirmed, which is what the expiry sweep selects on. NOT an
+  /// `ExternalWriteOutcome` value: that enum says what happened to our WRITE,
+  /// and the write succeeded — the row is `APPLIED`. Expiry is a later
+  /// lifecycle event of the thing the write created.
+  ///
+  /// Only ever set for a tool whose grant the directory expires on a schedule.
+  /// A row that is still live past its end date stays NULL and raises a task,
+  /// because the whole point is that an unverified expiry must not look
+  /// verified.
+  expiryVerifiedAt DateTime?
+
+  /// WHEN WE RAISED A TASK BECAUSE THIS GRANT WAS STILL LIVE PAST ITS END DATE.
+  ///
+  /// The escalation's dedup key, so a daily sweep raises one task rather than
+  /// one per run. NOT a `TaskLink`: `TaskLinkEntityType` has no value for a
+  /// journal row and `assertLinkTargetInTenant` requires a real row of a
+  /// supported model, so the link-based idempotency `retention-notifications`
+  /// uses is unavailable here.
+  ///
+  /// Stays set once set. It is also the durable record that the product noticed,
+  /// which is the half an auditor asks about.
+  expiryRaisedAt DateTime?
   /// Why a FAILED write failed, or what an INDETERMINATE one was last seen doing.
   detail  String?
 
@@ -2082,6 +2107,10 @@ model ExternalWriteJournal {
   @@index([tenantId, connectionId, attemptedAt])
   /// The sweep: "what is still PENDING or INDETERMINATE and needs a human?"
   @@index([tenantId, outcome])
+  /// #3416 — the expiry sweep's query. `expiryVerifiedAt` is the selective
+  /// term and goes last: a confirmed row leaves the population for good, so
+  /// this index shrinks as the sweep works instead of growing with the journal.
+  @@index([tenantId, advertisedToolName, expiryVerifiedAt], map: "ExternalWriteJournal_expirySweep_idx")
   /// The dwell's evidence query: RECORDED_ONLY rows since a window opened.
   @@index([tenantId, mode, attemptedAt])
   @@index([connectionId])

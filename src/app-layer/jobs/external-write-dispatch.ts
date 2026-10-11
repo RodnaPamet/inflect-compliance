@@ -26,6 +26,9 @@ import {
 import {
     reconcileAcceptedExternalWrites,
     tenantsWithAcceptedExternalWrites,
+    verifyGrantExpiry,
+    tenantsWithUnverifiedGrantExpiry,
+    type GrantExpiryResult,
     type ExternalWriteReconcileResult,
 } from '@/app-layer/usecases/external-write-reconcile';
 
@@ -43,6 +46,16 @@ export interface ExternalWriteDispatchJobResult extends ExternalWriteDispatchRes
      * sent nothing report work it did not do.
      */
     reconcile: ExternalWriteReconcileResult;
+
+    /**
+     * #3416 — did the grants we already delivered actually end?
+     *
+     * Its own field for the reason `reconcile` has one: this answers a THIRD
+     * question, over a different population, with opposite polarity. A
+     * `still_live` here is a control that failed, where a `notYet` there is
+     * only a wait — summing them would hide the one behind the other.
+     */
+    expiry: GrantExpiryResult;
 }
 
 export async function runExternalWriteDispatchJob(
@@ -61,6 +74,12 @@ export async function runExternalWriteDispatchJob(
               ...new Set([
                   ...(await tenantsWithPendingExternalWrites(prisma)),
                   ...(await tenantsWithAcceptedExternalWrites(prisma)),
+                  // And tenants holding a DELIVERED grant whose expiry is still
+                  // unconfirmed. Those rows are `APPLIED`, so neither population
+                  // above contains them — and a tenant whose queue has been empty
+                  // for a quarter is exactly the one whose grant may be quietly
+                  // outliving its window.
+                  ...(await tenantsWithUnverifiedGrantExpiry(prisma)),
               ]),
           ];
 
@@ -72,6 +91,7 @@ export async function runExternalWriteDispatchJob(
         indeterminate: 0,
         accepted: 0,
         reconcile: { scanned: 0, promoted: 0, notYet: 0, unreadable: 0, unverifiable: 0 },
+        expiry: { scanned: 0, confirmedExpired: 0, raised: 0, alreadyRaised: 0, unreadable: 0 },
     };
 
     for (const tenantId of tenants) {
@@ -115,6 +135,27 @@ export async function runExternalWriteDispatchJob(
             // next pass retries. The row stays ACCEPTED either way.
             logger.error('external write reconcile failed for one tenant', {
                 component: 'external-write-reconcile',
+                tenantId,
+                error: (err as Error).message,
+            });
+        }
+
+        // A THIRD separate try, for the reason the second one is separate and
+        // one more besides: this half is the only one that can RAISE work, and
+        // a tenant whose dispatch and reconcile both failed is not a tenant
+        // whose expired grants should go unchecked. Nothing here settles a row
+        // on failure either — an unreadable answer leaves `expiryVerifiedAt`
+        // null, so the next pass asks again.
+        try {
+            const r = await verifyGrantExpiry({ tenantId });
+            total.expiry.scanned += r.scanned;
+            total.expiry.confirmedExpired += r.confirmedExpired;
+            total.expiry.raised += r.raised;
+            total.expiry.alreadyRaised += r.alreadyRaised;
+            total.expiry.unreadable += r.unreadable;
+        } catch (err) {
+            logger.error('grant expiry verification failed for one tenant', {
+                component: 'external-write-expiry',
                 tenantId,
                 error: (err as Error).message,
             });
