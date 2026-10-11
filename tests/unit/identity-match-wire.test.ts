@@ -17,7 +17,7 @@ import {
     MATCH_OPTIONS,
     QUESTION_IDS,
     STATE_BUDGET_CHARS,
-    VENDOR_MAX_CHOICE_OPTIONS,
+    MAX_CHOICE_OPTIONS,
     buildMatchRequest,
     parseSystemOneResponse,
     SystemOneResponseError,
@@ -116,7 +116,10 @@ describe('6b wire — the request we send', () => {
     it('stays far inside the vendor option ceiling', () => {
         // Documented at 255 (docs.typesafe.ai/api). We send six. Asserted because
         // the engine's candidate cap is a separate constant and the two can drift.
-        expect(MATCH_OPTIONS.length).toBeLessThanOrEqual(VENDOR_MAX_CHOICE_OPTIONS);
+        // The BINDING cap (the stricter vendor's), not Jev's 255. The same
+        // request shape goes to both, so bounding on the looser figure would
+        // pass a request Laya refuses with a 413 (#3411).
+        expect(MATCH_OPTIONS.length).toBeLessThanOrEqual(MAX_CHOICE_OPTIONS);
     });
 
     it('sends no field the sub-processor entry excludes', () => {

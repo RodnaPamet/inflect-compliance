@@ -216,16 +216,33 @@ async function main(): Promise<number> {
     console.log(`asking ${model} about ${ADJUDICATION_CORPUS.length} cases…`);
 
     const answers: Answer[] = [];
+    // What the ENDPOINT calls itself, captured from the first answer. The drift
+    // check compares against this rather than `model`, because a real Laya
+    // reports its agent name and not our name for the checkpoint (#3428).
+    let reportedModel: string | null = null;
     for (const c of ADJUDICATION_CORPUS) {
         const res = await provider.adjudicate(stateFor(c), {
             // Generous: this is an offline harness, not an inline pass.
             deadlineAt: Date.now() + 30_000,
         });
+        // A vendor that changed its self-report MID-RUN is drift happening while
+        // we measure, which must not be averaged into a record that then blesses
+        // both. Refused rather than reconciled.
+        if (reportedModel === null) {
+            reportedModel = res.model;
+        } else if (reportedModel !== res.model) {
+            console.error(
+                `NO RECORD WRITTEN. The endpoint reported ${reportedModel} and then `
+                    + `${res.model} within one run, so there is no single checkpoint this `
+                    + 'record could describe.',
+            );
+            process.exit(1);
+        }
         answers.push({
             caseId: c.id,
-            option: res.answers.match.option,
-            optionProbability: res.answers.match.probabilities[res.answers.match.option] ?? 0,
-            personProbability: res.answers.person.probability,
+            option: res.answers.match.choice,
+            optionProbability: res.answers.match.probabilities[res.answers.match.choice] ?? 0,
+            personProbability: res.answers.person.noul,
         });
         process.stdout.write('.');
     }
@@ -276,6 +293,9 @@ async function main(): Promise<number> {
     const record = {
         model,
         revision,
+        // Non-null here: the loop above exits the process if the corpus is empty
+        // of answers, and refuses a mid-run change.
+        reportedModel: reportedModel ?? model,
         corpusDigest: adjudicationCorpusDigest(),
         producedAt: new Date().toISOString(),
         answers,

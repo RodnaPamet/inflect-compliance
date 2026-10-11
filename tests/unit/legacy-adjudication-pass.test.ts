@@ -96,7 +96,16 @@ function canary(over: Partial<CanaryCase> = {}): CanaryCase {
 function record(over: Partial<EvaluationRecord> = {}): EvaluationRecord {
     return {
         model: MODEL,
-        revision: MODEL,
+        // A 12-char hash, as `scripts/eval-identity-match.ts` produces — NOT
+        // the model name. This fixture used to set `revision: MODEL`, which made
+        // the old drift check's `parsed.model !== record.revision` branch look
+        // alive when in production it can never match anything a vendor reports
+        // (#3428).
+        revision: 'a1b2c3d4e5f6',
+        // What the ENDPOINT calls itself. Defaults to the same string the
+        // `answer()` fixture reports, so a test that does not care about drift
+        // does not have to think about it.
+        reportedModel: MODEL,
         corpusDigest: 'sha256:deadbeef',
         producedAt: '2026-10-10T00:00:00.000Z',
         answers: [],
@@ -444,6 +453,38 @@ describe('the revision the ENDPOINT reports decides', () => {
         const result = await pass({ provider: spy.provider });
         expect(result.outcomes.every((o) => o.reason === 'MODEL_DRIFT')).toBe(true);
         expect(result.outcomes[0].reportedModel).toBe('laya-multilingual-v2-surprise');
+    });
+
+    it('ACCEPTS a real Laya, which reports its AGENT name and not our model name', async () => {
+        // The defect this replaces. Measured against a server built from
+        // `deploy/laya/Dockerfile`: we ask for `laya-multilingual` and it
+        // answers `model: "laya-rl-agent"`, naming the checkpoint only inside a
+        // `routing` block. Compared against `record.model`, that is drift for
+        // EVERY response — so the lane produced no verdicts at all while every
+        // component reported healthy (#3428).
+        const result = await pass({
+            provider: spyProvider(() => answer({ model: 'laya-rl-agent' })).provider,
+            record: record({ reportedModel: 'laya-rl-agent' }),
+        });
+        expect(result.outcomes.map((o) => o.reason)).toEqual([null, null]);
+    });
+
+    it('still DRIFTS when the endpoint changes what it calls itself', async () => {
+        // The protection must survive the fix: a vendor swapping the checkpoint
+        // behind the same request is exactly what the canary fingerprinted.
+        const result = await pass({
+            provider: spyProvider(() => answer({ model: 'laya-rl-agent-v2' })).provider,
+            record: record({ reportedModel: 'laya-rl-agent' }),
+        });
+        expect(result.outcomes.every((o) => o.reason === 'MODEL_DRIFT')).toBe(true);
+    });
+
+    it('fails CLOSED on a record that never captured a self-report', async () => {
+        // An older record has no `reportedModel`. Absent must mean drift, not
+        // "accept anything" — this check is the canary's enforcement arm.
+        const { reportedModel: _omitted, ...withoutSelfReport } = record();
+        const result = await pass({ record: withoutSelfReport as EvaluationRecord });
+        expect(result.outcomes.every((o) => o.reason === 'MODEL_DRIFT')).toBe(true);
     });
 
     it('drifts only the accounts that drifted, not the whole batch', async () => {
