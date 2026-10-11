@@ -109,19 +109,51 @@ jobs:
                   # so it has more to scan than the application's.
                   timeout: 15m
 
-            - name: Push, now that it has been scanned
+            # PUSH THE BYTES TRIVY SAW, by tagging the local image — NOT a second
+            # build (#3427).
+            #
+            # This step used to be a second `docker/build-push-action` with
+            # `push: true`. It was named "Push, now that it has been scanned" and
+            # the thing it pushed was not the thing that had been scanned. With no
+            # `cache-from`/`cache-to` anywhere in this workflow, that second build
+            # re-resolved every dependency from scratch — and `laya[serve]` pins
+            # only itself: its torch bound is `torch>=2.0.0`, which resolved to
+            # 2.14.1 in a real build of this image. Anything in that transitive set
+            # publishing a release between the two builds would have put unscanned
+            # packages into the registry under a digest the summary then told an
+            # operator to pin.
+            #
+            # `ghcr-publish.yml` already does it this way, and its step name
+            # ("Push scanned image to GHCR") is accurate. This workflow's docblock
+            # claimed to mirror that file; now it does.
+            - name: Push the scanned image
               id: push
-              uses: docker/build-push-action@v7
-              with:
-                  context: deploy/laya
-                  file: deploy/laya/Dockerfile
-                  push: true
-                  tags: |
-                      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:laya-${{ inputs.package_version }}-${{ inputs.model_revision }}
-                  build-args: |
-                      LAYA_PACKAGE_VERSION=${{ inputs.package_version }}
-                      LAYA_MODEL_REVISION=${{ inputs.model_revision }}
-                  platforms: linux/amd64
+              run: |
+                  set -euo pipefail
+                  SCANNED="${REGISTRY}/${IMAGE_NAME}:local-scan"
+                  TARGET="${REGISTRY}/${IMAGE_NAME}:laya-${{ inputs.package_version }}-${{ inputs.model_revision }}"
+
+                  # The scanned image must actually be in the local daemon. The
+                  # build above used `load: true`; if that ever changes to a
+                  # registry-only export this step would tag a missing image, and
+                  # `docker tag` fails loudly rather than pushing something else.
+                  docker image inspect "$SCANNED" > /dev/null
+
+                  docker tag "$SCANNED" "$TARGET"
+                  docker push "$TARGET"
+
+                  # THE DIGEST OF WHAT WAS PUSHED, read back from the registry
+                  # rather than computed locally — a local image id is not the
+                  # manifest digest an operator pins, and `RepoDigests` is only
+                  # populated after a successful push.
+                  DIGEST=$(docker image inspect "$TARGET" \
+                      --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+                      | grep "^${REGISTRY}/${IMAGE_NAME}@" | head -1 | cut -d@ -f2)
+                  if [ -z "${DIGEST:-}" ]; then
+                      echo "::error::pushed $TARGET but could not read its manifest digest"
+                      exit 1
+                  fi
+                  echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
             # THE DIGEST IS THE OUTPUT OF THIS WORKFLOW. A tag is a moving
             # reference and the governance pillar refuses one for a new image,
