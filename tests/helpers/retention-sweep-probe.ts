@@ -147,3 +147,101 @@ export async function observedSweptModels(): Promise<Set<RetentionColumnModel>> 
     const { probe } = await runProbedSweep(seed, { tenantId: 't1', now, dryRun: true });
     return new Set(probe.queried);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The legacy access snapshot purge (#3317) — a SECOND probe, not an extension
+// of the one above.
+//
+// `purgeLegacyAccessSnapshotsOlderThan` is a different shape from
+// `runRetentionSweep` and the difference is why the first probe cannot be
+// reused: it HARD-deletes rather than soft-deleting, it keys off a CHILD table
+// (`LegacyAccountResolution`) rather than a `retentionUntil` column on the row,
+// and its windows are per-tenant settings rather than one constant. None of the
+// eight `RETENTION_COLUMN_MODELS` has that shape.
+//
+// WHAT THE CROSS-WALK ASKS, AND WHY IT IS NOT "WHICH DELEGATES WERE CALLED".
+// `LegacyAccount` is deleted by CASCADE — the function never touches the
+// `legacyAccount` delegate at all. A probe that recorded called delegates would
+// therefore report the `LegacyAccount` doc row's claim as FALSE while it is
+// true, which is worse than no check: it would push someone to delete a correct
+// row from the retention policy.
+//
+// So the subject is what the function REPORTS destroying: its `PurgeResult[]`
+// is the declaration the job's totals and the operator's attestation are both
+// built from. A `LegacyAccount` result removed from that list is a real
+// regression — the accounts would still be destroyed and would stop being
+// counted anywhere — and this makes the doc row fail with it.
+//
+// The `queried` set is recorded as well, so the assertion cannot pass over a
+// function that returns a result list without looking at anything.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface LegacyPurgeProbe {
+    /** Delegates the purge called, as `model.method`. */
+    readonly calls: string[];
+    /** Model names it reported acting on. */
+    readonly reported: string[];
+}
+
+/**
+ * Runs the legacy snapshot purge against an in-memory client.
+ *
+ * Seeded so that the purge has something to find: one tenant, one snapshot far
+ * enough past both cutoffs, carrying an account count. A probe seeded with
+ * nothing would observe a function that correctly did nothing, and report an
+ * empty set that reads identically to a function that queries nothing.
+ */
+export async function probeLegacyPurge(): Promise<LegacyPurgeProbe> {
+    const { purgeLegacyAccessSnapshotsOlderThan } = await import(
+        '@/app-layer/jobs/data-lifecycle'
+    );
+    const calls: string[] = [];
+    const db = {
+        legacyAccessSnapshot: {
+            groupBy: async () => {
+                calls.push('legacyAccessSnapshot.groupBy');
+                return [{ tenantId: 't1', _count: { _all: 2 } }];
+            },
+            findMany: async () => {
+                calls.push('legacyAccessSnapshot.findMany');
+                return [{ id: 'snap-1', tenantId: 't1', _count: { accounts: 1_200 } }];
+            },
+            deleteMany: async () => {
+                calls.push('legacyAccessSnapshot.deleteMany');
+                return { count: 1 };
+            },
+        },
+        tenantSecuritySettings: {
+            // `findMany`, not `findUnique`: the purge HOISTS this read out of the
+            // tenant loop because `query-shape-guardrails` Layer D1 refuses a
+            // Prisma read inside one. A double still shaped for the per-tenant
+            // call would make this probe pass against a function that no longer
+            // exists in that form.
+            findMany: async () => {
+                calls.push('tenantSecuritySettings.findMany');
+                return []; // no settings rows — the defaults must still apply
+            },
+        },
+        auditLog: {
+            create: async () => {
+                calls.push('auditLog.create');
+                return {};
+            },
+        },
+    };
+
+    const results = await purgeLegacyAccessSnapshotsOlderThan({
+        now: new Date('2026-06-01T00:00:00.000Z'),
+        dryRun: true,
+        db: db as unknown as NonNullable<
+            Parameters<typeof purgeLegacyAccessSnapshotsOlderThan>[0]
+        >['db'],
+    });
+
+    return { calls, reported: results.map((r) => r.model) };
+}
+
+/** The models the legacy purge reports acting on. */
+export async function observedLegacyPurgeModels(): Promise<Set<string>> {
+    return new Set((await probeLegacyPurge()).reported);
+}
