@@ -6,7 +6,15 @@
  * while the constant is false. That table is the point of this file: it is
  * enumerated exhaustively rather than sampled, because the combination that
  * matters is the one nobody thought to write a case for.
+ *
+ * The constant is `true` since 2026-10-11, so the second of those two gates no
+ * longer blocks anything. The residency gate is now the only one that does,
+ * which makes the exhaustive table more load-bearing than when it was written,
+ * not less.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import {
     LEGACY_MATCH_PROCESSOR,
     TYPESAFE_SUBPROCESSOR_ACTIVE,
@@ -79,11 +87,24 @@ describe('the effective mode is the stricter of the two settings', () => {
 });
 
 describe('the sub-processor facts', () => {
-    it('TypeSafe is NOT an active sub-processor', () => {
-        // The Step 6a notice window has not closed. This is the constant whose
-        // flip is a DPA change rather than a configuration one, and a test
-        // asserting its current value is how an accidental flip gets noticed.
-        expect(TYPESAFE_SUBPROCESSOR_ACTIVE).toBe(false);
+    it('TypeSafe IS an active sub-processor, and the register says so too', () => {
+        // Was `expect(TYPESAFE_SUBPROCESSOR_ACTIVE).toBe(false)`. Activated by
+        // owner decision 2026-10-11 with policy steps 2 and 3 not performed —
+        // recorded in the waiver in `docs/sub-processors.md`.
+        //
+        // Asserted against the REGISTER rather than against a literal. A literal
+        // notices a flip and nothing else; the register is the artefact a
+        // customer is shown, and the two disagreeing is the failure that reaches
+        // someone outside this repository. The full agreement check, with its
+        // detector proofs, is
+        // `tests/guardrails/sub-processor-record-agrees-with-code.test.ts`.
+        const register = fs.readFileSync(
+            path.resolve(__dirname, '../../docs/sub-processors.md'), 'utf8');
+        const m = /\*\*Activation status:\*\*\s*(active|proposed-inactive)/.exec(register);
+        // The extraction must have found something: a null match would make the
+        // comparison below vacuous in the direction that passes.
+        expect(m).not.toBeNull();
+        expect(m?.[1]).toBe(TYPESAFE_SUBPROCESSOR_ACTIVE ? 'active' : 'proposed-inactive');
     });
 
     it('is the SAME binding the provider exposes — one definition, not two', async () => {
@@ -105,7 +126,15 @@ describe('the sub-processor facts', () => {
         // row claiming the processor is "" reads as a missing value.
         expect(LEGACY_MATCH_PROCESSOR.OFF.processor).toMatch(/none/i);
         expect(LEGACY_MATCH_PROCESSOR.EXTERNAL.processor).toMatch(/TypeSafe/);
-        expect(LEGACY_MATCH_PROCESSOR.EXTERNAL.region).toBe('EU');
+        // NOT 'EU' — that was #3419. This string is written into the immutable
+        // audit log, so it is compared against the register's Region column
+        // rather than against a literal chosen here. The agreement check with
+        // its detector proofs lives in
+        // `tests/guardrails/sub-processor-record-agrees-with-code.test.ts`; this
+        // one keeps a cheap local assertion that it is a US region, which is
+        // what the transfer impact assessment and the SCCs were written for.
+        expect(LEGACY_MATCH_PROCESSOR.EXTERNAL.region).toMatch(/^US\b/);
+        expect(LEGACY_MATCH_PROCESSOR.EXTERNAL.region).not.toMatch(/EU|Europe/);
     });
 });
 

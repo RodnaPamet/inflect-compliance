@@ -32,7 +32,7 @@ auditor can verify the inventory is accurate, not merely asserted.
 | HaveIBeenPwned | SHA-1 prefix of a chosen password (k-anonymity; no PII) | Password breach check | Global | Volatile (no log) | No (security primitive) |
 | GitHub | Repo metadata (per-tenant integration only) | Repo sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft SharePoint | Document metadata (per-tenant integration only) | Document sync | Global | Token lifetime | Yes (per-tenant opt-in) |
-| TypeSafe AI (Jev) | **Proposed; inactive — nothing is sent today.** On activation, per residue account: the legacy account's username and its tokens, neutralised display name, given and family names, email **local part only**, department, title, account type, and transliteration variants; plus up to five HR candidates' name parts (middle and preferred included) with variants, department and title. Excluded by construction: email domains, employee numbers, dates, employment status, managers, entitlements, privilege flags, unmapped columns | Identity adjudication for legacy access recertification | US (West Coast) | Zero retention, required in the signed DPA | Yes (per tenant; only under `legacyMatchAiMode` = `EXTERNAL`, default `OFF`) |
+| TypeSafe AI (Jev) | **Active since 2026-10-11.** Per residue account: the legacy account's username and its tokens, neutralised display name, given and family names, email **local part only**, department, title, account type, and transliteration variants; plus up to five HR candidates' name parts (middle and preferred included) with variants, department and title. Excluded by construction: email domains, employee numbers, dates, employment status, managers, entitlements, privilege flags, unmapped columns | Identity adjudication for legacy access recertification | US (West Coast) | Zero retention, required in the signed DPA | Yes (per tenant; only under `legacyMatchAiMode` = `EXTERNAL`, default `OFF`) |
 | Okta | Directory account metadata — email, status, MFA/admin flags (per-tenant integration only; read-only pull) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Google Workspace (`google-workspace`) | Directory account metadata — email, status, 2SV/admin flags (per-tenant integration only; read-only pull) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft Entra ID / Azure AD (`entra-id`) | Directory account metadata — email, status, MFA-registration/admin flags, domain federation (per-tenant integration only; read-only Graph pull; also covers on-prem AD synced via Azure AD Connect) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
@@ -203,16 +203,21 @@ Common to both:
 
 ---
 
-### TypeSafe AI (Jev) — identity adjudication for legacy access recertification (proposed, inactive)
+### TypeSafe AI (Jev) — identity adjudication for legacy access recertification (ACTIVE)
 
-**This processor is proposed and inactive. No customer data reaches TypeSafe AI.** Since
-Step 6b the calling module `src/app-layer/ai/identity-match/` EXISTS, so the earlier
-"nothing under `src/` refers to it" no longer holds — what holds instead is stronger and
-is enforced by a test rather than by absence: `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`,
-so the factory cannot return a Jev provider for tenant work. The code is present and
-unreachable.
-Its addition follows [`docs/sub-processor-change-policy.md`](./sub-processor-change-policy.md);
-this entry is step 1 of that policy.
+- **Activation status:** active
+
+**This processor is ACTIVE.** `TYPESAFE_SUBPROCESSOR_ACTIVE` is `true`, so a tenant whose
+`legacyMatchAiMode` is `EXTERNAL` has their legacy-account and candidate name data sent to
+TypeSafe AI for adjudication. The mode defaults to `OFF` and is refused under tenant AI
+residency `LOCAL_ONLY`, so no tenant reaches this path without selecting it.
+
+**Steps 2 and 3 of [`docs/sub-processor-change-policy.md`](./sub-processor-change-policy.md)
+were not performed.** See *Policy progress* below. That is recorded here deliberately
+rather than left as "pending" beside a live integration: a record that disagrees with
+reality is worse than an unflattering one, and
+`tests/guardrails/sub-processor-record-agrees-with-code.test.ts` now fails if the two
+drift apart in either direction.
 
 - **PII shared on activation:** one request per residue account, carrying an allowlisted
   JSON state and two typed questions — a `choice` over up to five candidate letters plus
@@ -233,7 +238,10 @@ this entry is step 1 of that policy.
   person confirms every link.
 - **Transfer:** US West Coast, under **Standard Contractual Clauses**. The vendor holds
   **no EU-US Data Privacy Framework certification**, so the SCCs plus a transfer impact
-  assessment are the sole mechanism.
+  assessment are the sole mechanism. The SCCs are the *instrument* permitting the
+  transfer, not a statement about where the data lands — `LEGACY_MATCH_PROCESSOR`
+  recorded the region as `EU` on that misreading until #3419, and the value is written
+  into the immutable audit log.
 - **Retention:** zero data retention, required in the signed DPA, together with the
   vendor's commitment not to train on customer data.
 - **Operator-optional:** yes, and tenant-optional. `legacyMatchAiMode` defaults to `OFF`.
@@ -244,28 +252,72 @@ this entry is step 1 of that policy.
   [model list](https://docs.typesafe.ai/models), both re-verified 2026-10-08 by Step 6b.
   The verification corrected one row of the design document's vendor table: the model
   identifier is `jev-1.13.0`, not `jev-1.13`.
-- **Codebase:** present since Step 6b, and inert. `src/app-layer/ai/identity-match/`
-  holds the wire codec and `JevDecisionProvider`; the endpoint
-  `https://api.typesafe.ai/v1/systemone` is a **code constant** so no configuration can
-  redirect it; `TYPESAFE_API_KEY` is declared in `src/env.ts` and optional.
-  **`TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`**, and `getDecisionProvider` returns the
-  local provider instead of a Jev one while it is — so no tenant path can obtain this
-  provider, with or without the key set, whatever `legacyMatchAiMode` says. That flag is
-  the code half of step 4 below: activation is flipping it, not setting a variable.
-  Pinned by `tests/guards/ai-residency-enforcement.test.ts` and
-  `tests/unit/identity-match-provider-factory.test.ts`.
+- **Codebase:** `src/app-layer/ai/identity-match/` holds the wire codec and
+  `JevDecisionProvider`; the endpoint `https://api.typesafe.ai/v1/systemone` is a **code
+  constant** so no configuration can redirect it.
+  **`TYPESAFE_SUBPROCESSOR_ACTIVE` is `true`**, so `getDecisionProvider` returns a Jev
+  provider for an `EXTERNAL` tenant *when `TYPESAFE_API_KEY` is also set*. Those are two
+  separate acts and only the second moves data:
+  - the flag is a code constant, changed by a reviewed pull request. On its own it is
+    **inert** — with no key present the factory falls through to the local provider
+    (`src/app-layer/ai/identity-match/index.ts:112-117`), so merging the flip sends
+    nothing anywhere. What it does do is permit a tenant admin to select `EXTERNAL`,
+    which `tenant-security-settings.ts:463` refuses while the flag is false.
+  - `TYPESAFE_API_KEY` is deployment configuration, read once at startup through the
+    validated `env` object. **Setting that key on the host is the act that starts the
+    transfer**, and it needs a restart to take effect.
+
+  Pinned by `tests/guards/ai-residency-enforcement.test.ts` (the gate still precedes the
+  external construction), `tests/unit/identity-match-provider-factory.test.ts` (the
+  active-path behaviour, including that `OFF` and `LOCAL_ONLY` stay local with the key
+  present) and `tests/guardrails/sub-processor-record-agrees-with-code.test.ts` (this
+  entry agrees with the constants).
 
 **Policy progress**
 
 | Step | State |
 |------|-------|
-| 1 — engineering proposes (this entry) | Complete on merge of this pull request |
-| 2 — compliance / legal review | Pending — recorded on the pull request |
-| 3 — customer notice (30 days) | Pending — notice date recorded below |
-| 4 — activation | Pending — requires steps 1–3 complete with no sustained objection |
+| 1 — engineering proposes (this entry) | **Complete** — merged 2026-10-08 in #3246 |
+| 2 — compliance / legal review | **Not performed** — waived 2026-10-11 (see below) |
+| 3 — customer notice (30 days) | **Not sent** — waived 2026-10-11 (see below) |
+| 4 — activation | **Complete** 2026-10-11, with steps 2 and 3 outstanding |
 
-- **Notice sent:** pending.
-- **Objection window closes:** pending — 30 days after the notice date.
+- **Notice sent:** not sent.
+- **Objection window closes:** not applicable — no notice was sent, so no window ran.
+
+**Activation waiver — 2026-10-11**
+
+Activation was authorised by the repository owner on 2026-10-11 with steps 2 and 3
+deliberately not performed. Recorded here because the alternative is a register reading
+"pending" next to a live transfer, which is the one state that would mislead a reader who
+trusted this document.
+
+What specifically did not happen, so nobody has to reconstruct it later:
+
+- **Step 2 (review).** `docs/sub-processor-change-policy.md` requires a compliance/legal
+  review before activation. #3246 — the pull request that added this entry — merged with
+  **zero reviews** and all four of its legal checkboxes unticked. Four sections of
+  `docs/data-processing-agreement-template.md` are marked `[LEGAL REVIEW REQUIRED]` and
+  no legal or compliance function is named anywhere in this repository
+  (`docs/change-management-policy.md` records that as an open policy question).
+  Of the four confirmations step 2 calls for, three are clerical and checkable from the
+  signed DPA; the fourth — whether the SCCs plus a transfer impact assessment are an
+  adequate basis given the vendor holds no DPF certification — requires legal competence
+  that nobody in this repository has been identified as holding. **None of the four were
+  recorded.**
+- **Step 3 (notice).** The policy promises customers 30 days' notice before a new
+  sub-processor begins processing. The notice was never sent and no window ever started.
+  This register previously read "Notice sent: pending", which was accurate at the time
+  and would have become false the moment the flag flipped.
+
+**What a customer asking "were we notified?" should be told:** no. There is no evidence of
+notice either way, because no notice was issued. That is an absence, not a denial, and it
+is recorded here rather than inferred from a silent register.
+
+**Zero retention** remains stated as "required in the signed DPA" above. That requirement
+has **not** been confirmed against an executed DPA in this repository — no signed DPA is
+held here, only the template. Treat the retention row as the commitment sought, not as a
+commitment verified.
 
 ## SaaS mode vs. self-hosted
 
