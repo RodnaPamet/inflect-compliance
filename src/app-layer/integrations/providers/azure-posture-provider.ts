@@ -53,6 +53,9 @@ export class AzurePostureProvider implements ScheduledCheckProvider {
     readonly supportedChecks = ['soc2', 'cis'];
     // P2 — validateConnection only checks field presence (no live Azure call).
     readonly liveValidation = false;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
     readonly setupGuide =
         'Runs Powerpipe on the collector host against an Azure subscription. Register an app (service principal) with the Reader role on the subscription, and provide its tenant id, subscription id, client id + secret. Test connection validates field shape only — it does not call Azure live.';
 

@@ -730,7 +730,7 @@ describe('handleIncomingWebhook — processing failure', () => {
 describe('listAvailableProviders', () => {
     it('categorises a known connector and falls back to "other" for an unmapped one', () => {
         mockListProviders.mockReturnValue([
-            { id: 'okta', displayName: 'Okta', description: 'd', supportedChecks: [], configSchema: {}, liveValidation: true },
+            { id: 'okta', displayName: 'Okta', description: 'd', supportedChecks: [], configSchema: {}, liveValidation: true, mappingVerifiedBy: null },
             { id: 'datadog', displayName: 'Datadog', description: 'd', supportedChecks: [], configSchema: {} },
         ] as never);
 

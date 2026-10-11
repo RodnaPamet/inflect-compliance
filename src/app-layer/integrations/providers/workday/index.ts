@@ -87,6 +87,9 @@ export class WorkdayProvider implements ScheduledCheckProvider, HrisSyncProvider
      * a sync error, which is the wrong time and the wrong person.
      */
     readonly liveValidation = true;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
 
     readonly setupGuide =
         'In Workday, register an API Client for Integrations with the Staffing scope and a redirect URI, then publish the Inflect roster report as a RaaS custom report. Provide the tenant host, tenant name, report path, and the client id + secret. Test connection performs a real token exchange against your tenant.';

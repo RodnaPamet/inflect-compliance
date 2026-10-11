@@ -393,6 +393,14 @@ export class ActiveDirectoryProvider implements ScheduledCheckProvider, Identity
     readonly supportedChecks = [...IDENTITY_CHECKS];
     // validateConnection performs a real LDAPS bind + probe search.
     readonly liveValidation = true;
+    // #2880 — the joiner proving run against the lab DC, which DISPROVED part
+    // of the mapping: a create given a bare `pj151326` produced an account whose
+    // UPN was `pj151326` with `userAccountControl: 512` — created, entitled and
+    // ENABLED, and nobody can sign in as it (`provisioner.ts:301`). Plus the
+    // leaver path disabling a live customer account on 2026-09-12 05:00 UTC,
+    // confirmed account by account in the customer's own portal.
+    readonly mappingVerifiedBy =
+        '#2880 — joiner proving run against the lab DC (found a UPN defect); leaver pass against a live customer directory 2026-09-12';
     readonly setupGuide =
         'Provide an LDAPS URL for a reachable domain controller (ldaps://dc.corp.example.com:636), the search base DN (DC=corp,DC=example,DC=com), and a read-only service-account bind DN + password. The app must be able to reach the DC over TLS (public LDAPS or a VPN/tunnel). On-prem AD exposes no MFA or SSO-federation attribute, so those two checks report Not applicable — use the Entra ID connector for MFA/SSO posture. If your AD is synced to Entra via Azure AD Connect, prefer the Entra ID connector instead.';
 

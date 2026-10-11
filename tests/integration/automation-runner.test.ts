@@ -32,6 +32,7 @@ function createMockProvider(
     return {
         id,
         liveValidation: false,
+        mappingVerifiedBy: null,
         displayName: `${id} Provider`,
         description: `Mock ${id}`,
         supportedChecks: checks,

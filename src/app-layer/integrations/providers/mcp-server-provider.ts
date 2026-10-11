@@ -118,6 +118,9 @@ export class McpServerProvider implements IntegrationProvider {
 
     /** A real `initialize` + `tools/list` happens below, so this is true honestly. */
     readonly liveValidation = true;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
 
     readonly setupGuide =
         'Enter the server\'s HTTPS endpoint and, if it needs one, an Authorization header '

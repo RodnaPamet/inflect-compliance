@@ -29,6 +29,7 @@ function createMockScheduledProvider(id: string, checks: string[]): ScheduledChe
     return {
         id,
         liveValidation: false,
+        mappingVerifiedBy: null,
         displayName: `${id} Provider`,
         description: `Mock ${id} provider`,
         supportedChecks: checks,
@@ -67,6 +68,7 @@ function createMockWebhookProvider(id: string, checks: string[]): WebhookEventPr
     return {
         id,
         liveValidation: false,
+        mappingVerifiedBy: null,
         displayName: `${id} Webhook`,
         description: `Mock ${id} webhook provider`,
         supportedChecks: checks,
@@ -219,6 +221,7 @@ describe('Integration Framework', () => {
             const base: IntegrationProvider = {
                 id: 'base',
                 liveValidation: false,
+                mappingVerifiedBy: null,
                 displayName: 'Base',
                 description: '',
                 supportedChecks: [],
