@@ -278,7 +278,7 @@ function canaryAgrees(expected: CanaryCase, got: SystemOneResponse): boolean {
     // The OPTION first. With a different option the two probabilities below
     // describe different quantities, and a drifted model reporting similar
     // confidence for a different answer is the case most worth catching.
-    if (got.answers.match.option !== expected.option) return false;
+    if (got.answers.match.choice !== expected.option) return false;
 
     const within = (a: number, b: number): boolean =>
         Math.abs(a - b) <= CANARY_TOLERANCE + TOLERANCE_SLACK;
@@ -291,7 +291,7 @@ function canaryAgrees(expected: CanaryCase, got: SystemOneResponse): boolean {
     // with the right confidence but has changed its mind about whether the
     // subject is a person has drifted, and `NOT_A_PERSON` is checked first in
     // the verdict order — so that half decides a lane on its own.
-    return within(got.answers.person.probability, expected.personProbability);
+    return within(got.answers.person.noul, expected.personProbability);
 }
 
 /**
@@ -489,7 +489,7 @@ export async function runAdjudicationPass(
             return {
                 ...base,
                 verdict: derivePersonOnlyVerdict(
-                    parsed.answers.person.probability,
+                    parsed.answers.person.noul,
                     record.thresholds
                 ),
                 reason: null,
@@ -508,7 +508,7 @@ export async function runAdjudicationPass(
             .map(([option, probability]) => ({ option, probability }));
 
         const verdict = deriveVerdict(
-            { options, personProbability: parsed.answers.person.probability },
+            { options, personProbability: parsed.answers.person.noul },
             { suggestedOption },
             record.thresholds,
         );

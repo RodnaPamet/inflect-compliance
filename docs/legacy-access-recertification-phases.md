@@ -1190,7 +1190,13 @@ Deliver per the Definition of done. This step is Significant (a new model egress
 - [ ] Every row of the vendor table has been checked against a vendor reference, or the pull request names the rows still unverified.
 - [ ] Under `LOCAL_ONLY`, no external provider is constructed, whatever the environment says. The residency guard covers the new factory, and its constructor set is pinned.
 - [ ] While `TYPESAFE_SUBPROCESSOR_ACTIVE` is false, no tenant path can obtain a Jev provider.
-- [ ] The response schema rejects an unknown option, an unknown field, a missing usage block and a probability outside [0, 1], each proven by its own test.
+- [ ] The response schema rejects an unknown option, a probability outside [0, 1],
+      and a missing usage block, each proven by its own test. It does NOT reject an
+      unknown FIELD: a real Laya response carries `routing`, four extra keys in
+      `usage` and four on a `choice` answer, and the strict envelope this line
+      originally asked for refused every genuine response (#3407, measured
+      2026-10-10). Refuse an unknown value where we branch on it; ignore an
+      unknown field nothing reads.
 - [ ] The stub never answers, and a test proves no verdict can be derived from it.
 - [ ] A timeout aborts the request, and the single retry never outlives the caller's deadline.
 - [ ] The Jev host is a constant: no configuration can change the URL that `JevDecisionProvider` calls.
@@ -1326,7 +1332,7 @@ process allows it.
    by digest, and the laya-multilingual checkpoint by revision.
 2. Add a laya service to deploy/docker-compose.prod.yml, docker-compose.prod.yml and
    docker-compose.staging.yml. It is on the internal network only, publishes no port,
-   has a health check on GET /v1/models, and has resource limits. Set LAYA_BASE_URL for
+   has a health check on GET /health, and has resource limits. Set LAYA_BASE_URL for
    the app and worker services.
 3. Measure p50 and p95 latency over the adjudication corpus on the production VM's CPU,
    and record the figures in the design document. If a 500-account residue does not

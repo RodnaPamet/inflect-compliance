@@ -35,10 +35,10 @@ ARG LAYA_PACKAGE_VERSION=0.4.2
 ARG LAYA_MODEL_REPO=convaiinnovations/laya-multilingual
 ARG LAYA_MODEL_REVISION=1720e3e3357cfe1e281542e223f8273b0890ca34
 
+# NOTE: HF_HUB_OFFLINE is deliberately NOT here. See the checkpoint layer below.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/opt/laya/hf \
-    HF_HUB_OFFLINE=1 \
     LAYA_HOST=0.0.0.0 \
     LAYA_PORT=8000
 
@@ -68,6 +68,25 @@ RUN python -c "\
 from huggingface_hub import snapshot_download; \
 snapshot_download('${LAYA_MODEL_REPO}', revision='${LAYA_MODEL_REVISION}')" \
  && chown -R laya:laya /opt/laya/hf
+
+# OFFLINE FROM HERE, AND THIS ORDERING IS LOAD-BEARING.
+#
+# The first version of this file set `HF_HUB_OFFLINE=1` in the `ENV` block above,
+# which made the one layer whose job is to reach the Hub the one layer forbidden
+# from doing so. The build failed at the layer directly above with
+# `LocalEntryNotFoundError: ... outgoing traffic has been disabled`, and no
+# `--build-arg` could rescue it, because this is an `ENV` and `--build-arg` only
+# reaches a declared `ARG`.
+#
+# So: the checkpoint is fetched with the network available, and the network is
+# closed afterwards. Both halves are wanted — a container that downloads a model
+# on boot behaves according to whatever the Hub serves that morning, which is the
+# drift the canary exists to catch arriving one layer below where it can see it.
+#
+# DO NOT merge this back into the ENV block above to tidy it. That is exactly the
+# edit that broke it, and `tests/guardrails/dockerfile-offline-ordering.test.ts`
+# now fails if anything disables the network above a layer that fetches.
+ENV HF_HUB_OFFLINE=1
 
 USER laya
 WORKDIR /opt/laya

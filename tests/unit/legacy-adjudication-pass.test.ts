@@ -121,10 +121,10 @@ function answer(over: {
         answers: {
             match: {
                 type: 'choice',
-                option: over.option ?? 'A',
+                choice: over.option ?? 'A',
                 probabilities: over.probabilities ?? { A: 0.9, B: 0.05, NONE: 0.05 },
             },
-            person: { type: 'noul', probability: over.person ?? 0.95 },
+            person: { type: 'noul', noul: over.person ?? 0.95 },
         },
         usage: { input_tokens: over.inputTokens ?? 100, output_tokens: 4 },
     } as SystemOneResponse;

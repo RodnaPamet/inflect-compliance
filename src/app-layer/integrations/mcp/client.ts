@@ -40,7 +40,13 @@
  *
  * This is transport, and transport is all it is.
  */
-import { safeFetch } from '@/app-layer/automation/webhook-safety';
+import {
+    wirePost,
+    WireCapExceededError,
+    WireEgressError,
+    WireTimeoutError,
+    type WireResponse,
+} from '@/lib/mcp/wire-transport';
 import { findInternalSecret } from './egress-scan';
 import {
     LATEST_PROTOCOL_VERSION,
@@ -57,8 +63,15 @@ import {
  * second, a hostile or broken endpoint streams until the process dies, and
  * the failure surfaces as an OOM in a worker rather than as a bad connection.
  *
- * The cap is applied to the BODY WE READ, not to a `Content-Length` header:
- * a header is a claim by the other side and costs nothing to lie about.
+ * The cap is enforced on the BODY WE READ — a streaming count that aborts the
+ * transfer the moment it is exceeded. A declared `Content-Length` above the cap
+ * is ALSO refused, as of #3303, and that is not a contradiction: a header is a
+ * claim by the other side and costs nothing to lie about, so it is allowed to
+ * cause a refusal and never an acceptance. A lying server simply meets the
+ * streaming count instead, which is the actual check.
+ *
+ * Both now live in `lib/mcp/wire-transport.ts`, shared with the legacy-access
+ * client.
  */
 export const MCP_CALL_TIMEOUT_MS = 30_000;
 export const MCP_MAX_RESPONSE_BYTES = 1_000_000;
@@ -71,6 +84,34 @@ export class McpClientError extends Error {
         super(message);
         this.name = 'McpClientError';
     }
+}
+
+/**
+ * Wire errors onto this client's single error type.
+ *
+ * The transport knows nothing about MCP, so each of its three shapes becomes
+ * the sentence a caller of this client already expects. The messages keep the
+ * method name, because that is what makes them actionable in a log, and they
+ * still never include the body — it is attacker-influenced text of unknown
+ * shape.
+ */
+function asMcpClientError(e: unknown, method: string): McpClientError {
+    if (e instanceof McpClientError) return e;
+    if (e instanceof WireCapExceededError) {
+        return new McpClientError(
+            `MCP response exceeded ${e.cap} bytes — refusing to buffer it`,
+        );
+    }
+    if (e instanceof WireTimeoutError) {
+        return new McpClientError(
+            `MCP server did not answer ${method} within ${e.budgetMs}ms (${e.phase})`,
+        );
+    }
+    if (e instanceof WireEgressError) {
+        const why = e.cause instanceof Error ? e.cause.message : String(e.cause);
+        return new McpClientError(`MCP request for ${method} could not be sent: ${why}`);
+    }
+    return new McpClientError(`MCP request for ${method} failed`);
 }
 
 export interface McpClientOptions {
@@ -121,13 +162,20 @@ async function rpc(
 
     const requestId = `ic-${++nextId}`;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    let res: Response;
+    // EGRESS lives in `wire-transport.ts` (#3303): one `safeFetch` branch, one
+    // byte cap, one timer. Two behaviours arrive with the move and are NOT
+    // neutral — the timeout now covers the BODY read, where this client used to
+    // clear its timer the moment the head arrived (so a server dribbling bytes
+    // was bounded only by the cap), and a declared `content-length` above the
+    // cap is refused before any body is read.
+    //
+    // What the transport does NOT decide is the `Accept` header below. This
+    // dialect must accept SSE: the streamable transport lets the SERVER choose,
+    // and Entra's MCP server answers every call that way.
+    let res: WireResponse;
     try {
-        res = await safeFetch(opts.url, {
-            method: 'POST',
+        res = await wirePost({
+            url: opts.url,
             headers: {
                 'Content-Type': 'application/json',
                 // Both, because the 2025-06-18 transport may answer either.
@@ -141,20 +189,27 @@ async function rpc(
                 method,
                 ...(params ? { params } : {}),
             }),
-            signal: controller.signal,
-        } as RequestInit);
-    } finally {
-        clearTimeout(timer);
+            timeoutMs,
+        });
+    } catch (e) {
+        throw asMcpClientError(e, method);
     }
 
     if (!res.ok) {
         const challenge = describeAuthChallenge(res.headers.get('www-authenticate'));
+        // No body will be read on this path, so release the transport's timer.
+        res.discard();
         throw new McpClientError(
             `MCP server answered HTTP ${res.status} to ${method}${challenge ? ` (${challenge})` : ''}`,
         );
     }
 
-    const text = await readBounded(res, maxBytes);
+    let text: string;
+    try {
+        text = await res.readBody(maxBytes);
+    } catch (e) {
+        throw asMcpClientError(e, method);
+    }
 
     // Streamable HTTP lets a server answer a POST with EITHER `application/json`
     // OR `text/event-stream`, and the choice is the SERVER'S. We send an
@@ -227,34 +282,6 @@ function sseReplyTo(body: string, requestId: string): string | null {
     return null;
 }
 
-/**
- * Read at most `maxBytes`, then stop.
- *
- * Streamed rather than `await res.text()`: text() buffers the whole body
- * before anything can look at its size, so a cap applied afterwards has
- * already paid the memory it was there to refuse.
- */
-async function readBounded(res: Response, maxBytes: number): Promise<string> {
-    const reader = res.body?.getReader();
-    if (!reader) return '';
-
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!value) continue;
-        total += value.byteLength;
-        if (total > maxBytes) {
-            await reader.cancel().catch(() => undefined);
-            throw new McpClientError(
-                `MCP response exceeded ${maxBytes} bytes — refusing to buffer it`,
-            );
-        }
-        chunks.push(value);
-    }
-    return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
-}
 
 /** Handshake. Returns the protocol version the server settled on. */
 /**

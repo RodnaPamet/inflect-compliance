@@ -30,19 +30,59 @@ const CHOICE: IntentChoice = {
     ],
 };
 
-const answerBody = (option: string) => ({
-    answers: { [INTENT_QUESTION_ID]: { type: 'choice', option, probabilities: {} } },
-    usage: { inputTokens: 1, outputTokens: 1 },
+/**
+ * The answer shape a REAL Laya returns, captured from one on 2026-10-10
+ * (#3394). Every key was observed, not assumed:
+ *
+ *   answers.intent_choice = { type, choice, probabilities, confidence,
+ *                             answer_confidence, action, x_jev_confidence }
+ *   usage                 = { input_tokens, output_tokens, state_tokens, … }
+ *
+ * The answer field is `choice`, and `usage` is snake_case. This fixture said
+ * `option` and `inputTokens` — which is how the module shipped against an
+ * invented contract: an injected transport echoes back whatever shape the test
+ * imagines, so the suite was green and the first real request would have
+ * thrown.
+ */
+const answerBody = (choice: string) => ({
+    model: 'laya-rl-agent',
+    answers: {
+        [INTENT_QUESTION_ID]: {
+            type: 'choice',
+            choice,
+            probabilities: { [choice]: 0.5587, NONE: 0.4312 },
+            confidence: 0.4659,
+            answer_confidence: 0.5587,
+            action: { act_probability: 1.0 },
+            x_jev_confidence: 0.4116,
+        },
+    },
+    usage: { input_tokens: 92, output_tokens: 0, state_tokens: 12 },
+    routing: {},
 });
 
 describe('the request carries our options, labelled', () => {
-    it('labels options positionally and offers NONE last', () => {
+    it('labels options positionally in criteria, and offers NONE', () => {
+        // `criteria` as a dict of label -> description, which is what the
+        // server's own validator documents. An `options` ARRAY — what this
+        // module sent before #3394 — is rejected 422.
         const { body } = buildIntentChoiceRequest('laya-1', CHOICE);
-        const q = (body as { questions: Record<string, { options: Array<{ option: string; description: string }> }> })
+        const q = (body as {
+            questions: Record<string, { criteria: Record<string, string>; instructions: string }>;
+        }).questions[INTENT_QUESTION_ID];
+        expect(Object.keys(q.criteria)).toEqual(['A', 'B', 'NONE']);
+        expect(q.criteria.A).toBe('Finance package, 30 days');
+        expect(q.criteria.NONE).toMatch(/None of the listed options/);
+    });
+
+    it('carries `instructions`, without which the server answers 422', () => {
+        // Observed verbatim: "question 'intent_choice': no 'instructions';
+        // add the text the model should answer".
+        const { body } = buildIntentChoiceRequest('laya-1', CHOICE);
+        const q = (body as { questions: Record<string, { instructions?: string }> })
             .questions[INTENT_QUESTION_ID];
-        expect(q.options.map((o) => o.option)).toEqual(['A', 'B', 'NONE']);
-        expect(q.options[0].description).toBe('Finance package, 30 days');
-        expect(q.options[2].description).toMatch(/None of the listed options/);
+        expect(typeof q.instructions).toBe('string');
+        expect(q.instructions).toBe(CHOICE.question);
     });
 
     it('sends the instruction and nothing else about the tenant', () => {
@@ -51,7 +91,10 @@ describe('the request carries our options, labelled', () => {
         const { body } = buildIntentChoiceRequest('laya-1', CHOICE);
         const state = (body as { state: Record<string, unknown> }).state;
         expect(state.instruction).toBe(CHOICE.phrase);
-        expect(Object.keys(state).sort()).toEqual(['instruction', 'options', 'question']);
+        // ONLY the instruction. The question moved to `instructions` on the
+        // question itself, which is where the server reads it, and the offered
+        // set lives in `criteria` — so state carries nothing but the phrase.
+        expect(Object.keys(state).sort()).toEqual(['instruction']);
     });
 
     it('REFUSES above the label cap rather than truncating', () => {
@@ -117,7 +160,7 @@ describe('the answer maps back to the option that was offered', () => {
 
     it.each([
         ['an empty object', {}],
-        ['answers without our question id', { answers: { other: { type: 'choice', option: 'A' } } }],
+        ['answers without our question id', { answers: { other: { type: 'choice', choice: 'A' } } }],
         ['the wrong answer type', { answers: { [INTENT_QUESTION_ID]: { type: 'noul', probability: 1 } } }],
         ['null', null],
     ])('THROWS on %s rather than returning something', (_label, raw) => {
