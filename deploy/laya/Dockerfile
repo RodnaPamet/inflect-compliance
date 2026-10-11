@@ -64,10 +64,30 @@ RUN pip install --no-cache-dir "laya[serve]==${LAYA_PACKAGE_VERSION}"
 # at, and "this revision scored this on this corpus" is the whole claim an
 # evaluation record makes — a floating checkpoint makes the record a statement
 # about nothing.
+#
+# AND THE SYMLINK IS NOT A CONVENIENCE — see #3421. `laya-serve` does not read
+# the repo this baked, and nothing can tell it to. `laya/router.py` resolves
+# `multilingual` to `("convaiinnovations/laya", "multilingual")` — the BUNDLE
+# repo — and the `STANDALONE_MODELS` map that names
+# `convaiinnovations/laya-multilingual` is only selected by
+# `Router(standalone_repos=...)`, a keyword `serve.py`'s `build_router()` never
+# passes. So the server asked the Hub for a different repo at revision `main`,
+# got `OfflineModeIsEnabled`, and exited during `create_app()`. The image had
+# never started; the one container that ever served anything here had
+# `HF_HUB_OFFLINE=0` passed at `docker run`, so it worked DESPITE this file.
+#
+# `snapshot_download` RETURNS the resolved directory, so the symlink follows
+# ${LAYA_MODEL_REPO} and ${LAYA_MODEL_REVISION} with no string surgery. That
+# matters: the Hub cache directory name is a transformation of the repo id
+# (`models--convaiinnovations--laya-multilingual`), which `ENV` cannot perform,
+# and a hardcoded path would rot silently the day either ARG changed.
 RUN python -c "\
+import os; \
 from huggingface_hub import snapshot_download; \
-snapshot_download('${LAYA_MODEL_REPO}', revision='${LAYA_MODEL_REVISION}')" \
- && chown -R laya:laya /opt/laya/hf
+p = snapshot_download('${LAYA_MODEL_REPO}', revision='${LAYA_MODEL_REVISION}'); \
+os.symlink(p, '/opt/laya/checkpoint'); \
+print('baked:', p)" \
+ && chown -R laya:laya /opt/laya/hf /opt/laya/checkpoint
 
 # OFFLINE FROM HERE, AND THIS ORDERING IS LOAD-BEARING.
 #
@@ -88,6 +108,25 @@ snapshot_download('${LAYA_MODEL_REPO}', revision='${LAYA_MODEL_REVISION}')" \
 # now fails if anything disables the network above a layer that fetches.
 ENV HF_HUB_OFFLINE=1
 
+# POINT THE SERVER AT WHAT WAS ACTUALLY BAKED (#3421).
+#
+# `LAYA_EXTRA_MODELS` is documented at `laya/serve.py:519-531` for exactly this:
+# a JSON map of checkpoint name to source, where a source may be a Hub repo id
+# OR A LOCAL CHECKPOINT DIRECTORY, and "a name that matches a bundled checkpoint
+# re-points it". The local directory is the right side of that choice — a repo
+# id would still resolve `main`, and this bake writes `snapshots/<sha>/` and
+# leaves `refs/` EMPTY, so there is no `main` to resolve without a network. The
+# directory IS the pin.
+#
+# `LAYA_MODELS` bounds what is preloaded. `serve.py:942` reads
+# `_env_bool("LAYA_PRELOAD", True)` — preload defaults to ON — and
+# `preload_names` is `None` when `LAYA_MODELS` is unset, which preloads ALL
+# THREE checkpoints. Only one is baked. The comment below about `LAYA_PRELOAD=1`
+# had the mechanism right and the DEFAULT wrong: not setting it does not avoid
+# this.
+ENV LAYA_MODELS=multilingual \
+    LAYA_EXTRA_MODELS='{"multilingual":"/opt/laya/checkpoint"}'
+
 USER laya
 WORKDIR /opt/laya
 
@@ -99,12 +138,41 @@ WORKDIR /opt/laya
 # package's own documentation lists `/models`, and that discrepancy is NOT
 # resolved yet — see README.md. It is settled by the first real build, which is
 # also the first moment anything can observe it.
-ARG LAYA_HEALTH_PATH=/v1/models
+# `/health`, OBSERVED. This was `/v1/models` — a path `laya-serve` does not
+# serve — so the probe 404'd on every interval and the container could never
+# report healthy. A local container built from this file logged a failing streak
+# of 352, every entry `curl: (22) ... returned error: 404`, while `/health`
+# returned 200 the whole time (#3420).
+#
+# That matters more than a wrong status badge: `deploy/docker-compose.prod.yml`
+# uses `condition: service_healthy` in four places, so a Laya service written the
+# way every other service here is written would have waited forever for a probe
+# that cannot pass — a deploy that HANGS rather than fails.
+#
+# The full route list of the pinned version, from its own OpenAPI schema:
+#   GET  /health
+#   POST /v1/systemone
+#   POST /v1/systemone/batch
+# Kept as an ARG/ENV pair so an operator can repoint it if a later version moves
+# the route, with the default being what the pinned version actually serves.
+ARG LAYA_HEALTH_PATH=/health
 ENV LAYA_HEALTH_PATH=${LAYA_HEALTH_PATH}
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${LAYA_PORT}${LAYA_HEALTH_PATH}" > /dev/null || exit 1
 
-# `LAYA_PRELOAD=1` would load all three checkpoints; only the multilingual one
-# is baked in, so preloading would reach the network and fail closed under
-# `HF_HUB_OFFLINE`. One checkpoint, loaded on demand.
+# PRELOAD IS ON, DELIBERATELY, and bounded by `LAYA_MODELS` above.
+#
+# This comment used to read "`LAYA_PRELOAD=1` would load all three checkpoints
+# ... one checkpoint, loaded on demand", which had the mechanism right and the
+# default exactly backwards: `serve.py:942` is
+# `_env_bool("LAYA_PRELOAD", True)`, so preload was ALREADY on and `LAYA_MODELS`
+# being unset made `preload_names` `None`, which means all three. That is one of
+# the three reasons the image could not start (#3421).
+#
+# Leaving preload on is the better of the two fixes. The alternative — switching
+# it off and loading on demand — would move the failure from boot to the first
+# real adjudication request, where it arrives as a timeout inside a background
+# job rather than as a container that refuses to come up. A ~1 GB checkpoint
+# loading at boot is also why `HEALTHCHECK` carries `--start-period=120s`:
+# measured, it reports healthy in about 30 seconds.
 CMD ["laya-serve"]

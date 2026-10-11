@@ -29,9 +29,21 @@
  * to group the `ENV`s together and that edit is exactly the bug.
  *
  * It does NOT prove buildability in general — a bad pip pin or a removed apt
- * package would still reach a dispatch unseen. The honest check for that is a
- * path-scoped build on pull requests touching `deploy/laya/**`, which costs
- * runner minutes and is the owner's call.
+ * package would still reach a dispatch unseen.
+ *
+ * THAT GAP IS NOW CLOSED ELSEWHERE, and the sentence that used to sit here
+ * ("the honest check for that is a path-scoped build ... which is the owner's
+ * call") was answered on 2026-10-11: `ci.yml`'s `laya-image` job builds this
+ * Dockerfile on pull requests touching `deploy/laya/**`, starts the container,
+ * and waits for the Dockerfile's own HEALTHCHECK. It had to go further than a
+ * build, because the two defects found after this guard was written were
+ * neither of them build-time failures: #3420 was a HEALTHCHECK pointed at a
+ * path the server does not serve, and #3421 was a server that exits during
+ * `create_app()` because it reads a different repo than the one baked.
+ *
+ * This guard stays, and is not redundant: it runs on every pull request in
+ * seconds and names the ordering class precisely, where the build job runs only
+ * on this path and takes tens of minutes.
  *
  * `--build-arg` is no escape hatch, which is why this is worth a guard rather
  * than a code review note: the flag is an `ENV`, and `--build-arg` only reaches

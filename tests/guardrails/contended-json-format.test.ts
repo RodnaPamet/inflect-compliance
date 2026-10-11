@@ -86,7 +86,13 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Step 6d's dispatch-only image publish. The digest moves when a key is
         // added, which is the point — it makes editing a contended file a
         // deliberate act recorded in two places rather than one.
-        keyOrderSha: '2cc3759586a5b1ab1423721643689302880a40abbb1f2870ff25460575e312c8',
+        //
+        // Updated again 2026-10-11: one entry added for `ci.yml:laya-image`, the
+        // path-scoped PR build of that same image. 72 keys. The file diff is
+        // +6/-1 — five lines of new entry plus one replaced `coveredBy` value —
+        // so the FORMAT half round-tripped untouched and only the key-order
+        // digest moved, which is this pin working as designed.
+        keyOrderSha: '8807272e603fc72615631ff06a465ffb630bb4599ca4afbcc2e80b7f2e398bac',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
