@@ -78,6 +78,68 @@ function partialMocksOf(moduleId: string): string[] {
     return offenders;
 }
 
+/**
+ * #3433 — a FILE that shadows a DIRECTORY barrel must forward all of it.
+ *
+ * `providers/github.ts` sits beside `providers/github/index.ts`. Node resolves
+ * `./providers/github` to the FILE, so the directory barrel is unreachable
+ * through that specifier and the file has to re-export everything the barrel
+ * exports. `github.ts` says exactly that — "ALL exports must be forwarded
+ * here" — and nothing enforced it, so adding `fetchBranchRules` to the barrel
+ * produced `fetchBranchRules is not a function` in a suite that imports the
+ * specifier, with a green `tsc` and a correct-looking barrel.
+ *
+ * Same failure mode as the partial mocks above: a barrel that is a SUBSET of
+ * what callers expect, silently.
+ */
+describe('a file shadowing a directory barrel forwards every export', () => {
+    /** Every `X.ts` in src that has a sibling `X/index.ts`. */
+    const shadowingPairs = (): Array<{ shim: string; barrel: string }> => {
+        const out: Array<{ shim: string; barrel: string }> = [];
+        const walk = (dir: string) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, e.name);
+                if (e.isDirectory()) {
+                    if (fs.existsSync(path.join(full, 'index.ts')) && fs.existsSync(`${full}.ts`)) {
+                        out.push({ shim: `${full}.ts`, barrel: path.join(full, 'index.ts') });
+                    }
+                    walk(full);
+                }
+            }
+        };
+        walk(path.join(ROOT, 'src'));
+        return out;
+    };
+
+    it('finds the population it is about', () => {
+        const pairs = shadowingPairs();
+        // Positive control: an empty sweep would pass the next test vacuously.
+        expect(pairs.length).toBeGreaterThanOrEqual(1);
+        // eslint-disable-next-line no-console
+        console.log(
+            `#3433 — ${pairs.length} file(s) shadow a directory barrel: ` +
+                pairs.map((x) => path.relative(ROOT, x.shim)).join(', '),
+        );
+    });
+
+    it.each(shadowingPairs().map((x) => [path.relative(ROOT, x.shim), x]))(
+        '%s forwards every value export of its barrel',
+        (_label, pair) => {
+            const { shim, barrel } = pair as { shim: string; barrel: string };
+            const barrelExports = valueExportsOf(barrel);
+            const shimExports = valueExportsOf(shim);
+            expect(barrelExports.size).toBeGreaterThan(0);
+            const missing = [...barrelExports].filter((n) => !shimExports.has(n)).sort();
+            // Name them — the runtime error ("X is not a function") names the
+            // symbol but not the reason, and the reason is this file.
+            expect({ shim: path.relative(ROOT, shim), missing }).toEqual({
+                shim: path.relative(ROOT, shim),
+                missing: [],
+            });
+        },
+    );
+});
+
 describe('a guarded barrel is not mocked as a subset', () => {
     it('the list is real: every entry resolves and is actually a barrel', () => {
         // A guarded module that does not resolve, or that exports almost
