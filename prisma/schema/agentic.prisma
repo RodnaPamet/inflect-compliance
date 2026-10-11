@@ -2110,7 +2110,7 @@ model ExternalWriteJournal {
   /// #3416 — the expiry sweep's query. `expiryVerifiedAt` is the selective
   /// term and goes last: a confirmed row leaves the population for good, so
   /// this index shrinks as the sweep works instead of growing with the journal.
-  @@index([tenantId, advertisedToolName, expiryVerifiedAt])
+  @@index([tenantId, advertisedToolName, expiryVerifiedAt], map: "ExternalWriteJournal_expirySweep_idx")
   /// The dwell's evidence query: RECORDED_ONLY rows since a window opened.
   @@index([tenantId, mode, attemptedAt])
   @@index([connectionId])

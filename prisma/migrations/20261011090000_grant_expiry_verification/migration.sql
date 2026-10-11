@@ -13,7 +13,15 @@ ALTER TABLE "ExternalWriteJournal" ADD COLUMN "expiryVerifiedAt" TIMESTAMP(3);
 -- `expiryVerifiedAt` last, because it is the selective term — a confirmed row
 -- leaves the population permanently, so this index shrinks as the sweep works
 -- rather than growing with the journal.
-CREATE INDEX "ExternalWriteJournal_tenantId_advertisedToolName_expiryVerifiedAt_idx"
+-- NAMED EXPLICITLY, AND SHORT ON PURPOSE. The conventional Prisma name for
+-- these three columns is
+-- `ExternalWriteJournal_tenantId_advertisedToolName_expiryVerifiedAt_idx`,
+-- which is 69 characters -- past Postgres's 63-byte identifier limit, so the
+-- server SILENTLY TRUNCATES it and the name in the database then differs from
+-- the one the schema implies. `db:check-schema-drift` fails on exactly that,
+-- and it is the gate that caught it: every Test shard stopped there, before
+-- jest ran at all, which presents as four red shards and no test output.
+CREATE INDEX "ExternalWriteJournal_expirySweep_idx"
     ON "ExternalWriteJournal" ("tenantId", "advertisedToolName", "expiryVerifiedAt");
 
 -- The dedup key for the escalation, and a durable record that we escalated.
