@@ -1561,6 +1561,31 @@ model TenantSecuritySettings {
   /// Null means no automated recertification is raised for this tenant, and
   /// that is REPORTED on the sync's execution row rather than skipped quietly.
   recertificationOwnerUserId   String?
+
+  /// How long a legacy access snapshot survives AFTER THE RUN THAT CONSUMED IT,
+  /// in days. Owner decision on #3317: 90.
+  ///
+  /// The clock is the consuming run, NOT `pulledAt`. A snapshot pulled in March
+  /// and first reconciled in September has a dispute window that opens in
+  /// September — keying off the pull date would delete it the week it became
+  /// relevant. The window exists so a reviewer disputing a link can see the
+  /// account as it was when the suggestion was made, which is the same reason
+  /// `legacyUsernameConvention` keeps `previousTemplate`.
+  legacySnapshotRetentionDays Int @default(90)
+
+  /// How long a legacy access snapshot survives when NOTHING EVER CONSUMED IT.
+  ///
+  /// Its own, shorter bound, because an unconsumed snapshot is the case #3317
+  /// was filed about: a connection that pulls and never reconciles — a mapping
+  /// left half-configured, a campaign never launched — accumulates named
+  /// people's access forever, and no recertification artefact cites it, so
+  /// deleting it costs a re-pull rather than evidence.
+  ///
+  /// 30 is the DEFAULT I CHOSE, not one the decision supplied; #3317 says only
+  /// "probably shorter". It is a tenant setting precisely so that is cheap to
+  /// revise.
+  legacySnapshotUnconsumedRetentionDays Int @default(30)
+
   createdAt                    DateTime          @default(now())
   updatedAt                    DateTime          @updatedAt
   mfaFailClosed                Boolean           @default(false)

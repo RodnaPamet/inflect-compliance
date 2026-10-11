@@ -346,7 +346,7 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     {
         name: 'data-lifecycle',
         pattern: '0 3 * * *',     // daily at 03:00 UTC
-        description: 'Purge soft-deleted records, expired evidence, and run retention sweep',
+        description: 'Purge soft-deleted records, expired evidence, JML identity artefacts and legacy access snapshots past their retention; then run the per-row retention sweep. The legacy-snapshot windows are the tenant settings legacySnapshotRetentionDays and legacySnapshotUnconsumedRetentionDays, never constants in this field — see scheduled-job-description-claims for why a description must not state a per-tenant value.',
         defaultPayload: { dryRun: false },
     },
     {

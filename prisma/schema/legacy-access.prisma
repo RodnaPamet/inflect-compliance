@@ -92,6 +92,12 @@ model LegacyAccessSnapshot {
   @@index([tenantId])
   @@index([tenantId, connectionId, status, pulledAt])
   @@index([tenantId, connectionId, completedAt])
+  /// The retention sweep's unconsumed arm (#3317): `tenantId` + `pulledAt < cutoff`,
+  /// with NO connection or status in the filter — a sweep is not per-connection.
+  /// `[tenantId, connectionId, status, pulledAt]` above cannot serve it: `pulledAt`
+  /// sits fourth, so without the middle two columns only the `tenantId` prefix is
+  /// usable and the scan is tenant-wide. Not a duplicate of that index.
+  @@index([tenantId, pulledAt])
   resolutions LegacyAccountResolution[]
 
 }

@@ -274,6 +274,20 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── Legacy access retention sweep (#3317) ───────────────────────
+    {
+        model: 'LegacyAccessSnapshot',
+        fields: ['tenantId', 'pulledAt'],
+        justification:
+            'jobs/data-lifecycle.ts::purgeLegacyAccessSnapshotsOlderThan scans for snapshots '
+            + 'nothing ever consumed: equality on tenantId, range on pulledAt, and NO '
+            + 'connectionId or status — a retention sweep is not per-connection. The existing '
+            + '[tenantId, connectionId, status, pulledAt] cannot serve that, because pulledAt '
+            + 'sits FOURTH and with the middle two columns absent from the predicate only the '
+            + 'tenantId prefix is usable, making the scan tenant-wide. The sweep runs daily '
+            + 'over every tenant holding snapshots, and the population it scans is largest on '
+            + 'the FIRST run after this ships — exactly when the index matters most.',
+    },
     {
         model: 'LegacyIdentityAlias',
         fields: ['tenantId', 'connectionId', 'status'],
@@ -444,6 +458,21 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // Step #3317 — the retention sweep reads every swept tenant's windows in ONE
+    // query, hoisted out of the tenant loop because `query-shape-guardrails`
+    // Layer D1 refuses a Prisma read inside one.
+    //
+    // `where: { tenantId: { in: tenantIds } }` and nothing else. `tenantId` is
+    // `@unique` on this model, so the IN list is a lookup against that unique
+    // index — one row per entry, no sort, no range. A composite would have
+    // nothing to add to a unique index on the only column in the predicate.
+    //
+    // Worth stating because the model is a SETTINGS table and the instinct is
+    // that settings are read one at a time: here the whole point of the shape is
+    // that they are not.
+    TenantSecuritySettings:
+        'Retention sweep reads one column set for N tenants via tenantId IN; tenantId is '
+        + '@unique so that is a unique-index lookup with no sort and no range scan.',
     // Step 6c — the model's verdict on one resolution.
     //
     // ONE findMany, in `legacy-reviewer-actions.ts::listReconciliationQueue`:

@@ -121,6 +121,16 @@ jest.mock('@/app-layer/jobs/data-lifecycle', () => ({
         { model: 'IdentityWriteJournal', scanned: 0, purged: 0, dryRun: false },
         { model: 'IntegrationExecution', scanned: 0, purged: 0, dryRun: false },
     ]),
+    // #3317's step, and the SAME class of omission as the one above: without
+    // it this factory is a subset again and the executor throws
+    // `purgeLegacyAccessSnapshotsOlderThan is not a function`, reported as a
+    // `success: false` from the wrapper rather than as a missing fixture key.
+    // That is how it was found — a red shard on the pull request that added
+    // the purge, not a red unit test naming the mock.
+    purgeLegacyAccessSnapshotsOlderThan: jest.fn(async () => [
+        { model: 'LegacyAccessSnapshot', scanned: 0, purged: 0, dryRun: false },
+        { model: 'LegacyAccount', scanned: 0, purged: 0, dryRun: false },
+    ]),
     runRetentionSweep: jest.fn(async () => [{ scanned: 0, expired: 0 }]),
 }));
 jest.mock('@/app-layer/jobs/policyReviewReminder', () => ({
@@ -534,5 +544,50 @@ describe('executorRegistry.register — duplicate guard + reset', () => {
         expect(reg.size).toBe(0);
         expect(reg.listRegistered()).toEqual([]);
         expect(reg.has('health-check')).toBe(false);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE FIXTURE GUARDS ITSELF
+//
+// `jest.mock` factories above are hand-maintained SUBSETS of the modules they
+// replace. When a module gains an export that an executor destructures, the
+// factory silently yields `undefined`, the executor throws
+// `… is not a function`, and the wrapper faithfully reports `success: false`.
+//
+// The failure is then reported AGAINST THE CODE UNDER TEST. That has now
+// happened twice on the same module — `purgeIdentityArtefactsOlderThan`
+// (#2843/#2897) and `purgeLegacyAccessSnapshotsOlderThan` (#3317) — and the
+// note beside the first one says exactly why it is expensive: "a defect
+// reported against the code under test rather than against the fixture that
+// caused it".
+//
+// So: compare the factory's keys with the real module's FUNCTION exports and
+// fail naming the missing key. The next person adding a purge gets a message
+// about the fixture instead of a mystified `success: false`.
+//
+// Function exports only. Constants are not destructured by any executor, and a
+// factory that had to track every constant would be a second inventory to keep
+// in step for no benefit.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('the data-lifecycle mock factory covers the module it replaces', () => {
+    it('every function the real module exports is present in the mock', () => {
+        const real = jest.requireActual('@/app-layer/jobs/data-lifecycle') as Record<
+            string, unknown
+        >;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const mocked = require('@/app-layer/jobs/data-lifecycle') as Record<string, unknown>;
+
+        const realFns = Object.keys(real).filter((k) => typeof real[k] === 'function');
+
+        // The denominator beside the result. `requireActual` returning an empty
+        // object — a path typo, a module that failed to load — would make the
+        // comparison below pass over nothing, which is the exact shape of
+        // check this whole block exists to stop.
+        expect(realFns.length).toBeGreaterThanOrEqual(4);
+        expect(realFns).toContain('runRetentionSweep');
+
+        const missing = realFns.filter((k) => typeof mocked[k] !== 'function');
+        expect(missing).toEqual([]);
     });
 });

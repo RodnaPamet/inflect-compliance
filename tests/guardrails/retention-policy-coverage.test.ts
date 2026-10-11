@@ -26,6 +26,8 @@ import path from 'path';
 import {
     RETENTION_COLUMN_MODELS,
     observedSweptModels,
+    observedLegacyPurgeModels,
+    probeLegacyPurge,
 } from '../helpers/retention-sweep-probe';
 import { codeOf } from '../helpers/source-blocks';
 
@@ -126,6 +128,59 @@ describe('data-retention policy doc', () => {
             }
         }
         expect(wrong).toEqual([]);
+    });
+
+    // ── the same accuracy question, asked of the legacy snapshot purge ──
+    //
+    // WHY THIS EXISTS AS A SECOND CROSS-WALK rather than a row in the first:
+    // the `runRetentionSweep` check above ranges over `RETENTION_COLUMN_MODELS`
+    // — the eight models with a `retentionUntil` column — so a function sweeping
+    // anything else got MENTION-checked and nothing more. That is precisely the
+    // hole this guard's docblock describes being burned by once already: "five
+    // rows claimed a `runRetentionSweep` guarantee for models nothing in `src/`
+    // could write, and stayed green for months."
+    //
+    // `purgeLegacyAccessSnapshotsOlderThan` (#3317) destroys DSAR-relevant PII
+    // on a schedule. Its doc rows deserve the accuracy half, not just the
+    // mention half.
+    const LEGACY_PURGE_MODELS = ['LegacyAccessSnapshot', 'LegacyAccount'] as const;
+
+    it('cites the legacy purge on a model row iff the purge reports acting on it', async () => {
+        const reported = await observedLegacyPurgeModels();
+
+        // Sanity, and not a formality: a probe that observed nothing would make
+        // every comparison below vacuous in the direction that passes.
+        expect(reported.size).toBeGreaterThan(0);
+
+        const wrong: string[] = [];
+        for (const model of LEGACY_PURGE_MODELS) {
+            const row = docRow(model);
+            expect(row).not.toBeNull();
+            const claims = row!.includes('purgeLegacyAccessSnapshotsOlderThan');
+            if (claims !== reported.has(model)) {
+                wrong.push(
+                    `${model}: doc ${claims ? 'claims' : 'does not claim'} ` +
+                    `purgeLegacyAccessSnapshotsOlderThan, purge ` +
+                    `${reported.has(model) ? 'does' : 'does not'} report it`,
+                );
+            }
+        }
+        expect(wrong).toEqual([]);
+    });
+
+    it('the legacy purge actually reads the database before reporting', async () => {
+        // Without this, the cross-walk above is satisfiable by a function that
+        // returns a hardcoded result list and queries nothing — which is the
+        // shape of a control that cannot fail. The delegate calls are the
+        // evidence that the reported models came from a lookup.
+        const { calls } = await probeLegacyPurge();
+        expect(calls).toContain('legacyAccessSnapshot.groupBy');
+        expect(calls).toContain('tenantSecuritySettings.findMany');
+        expect(calls).toContain('legacyAccessSnapshot.findMany');
+        // Dry run: it must NOT have destroyed anything or written an attestation
+        // for a destruction that did not happen.
+        expect(calls).not.toContain('legacyAccessSnapshot.deleteMany');
+        expect(calls).not.toContain('auditLog.create');
     });
 });
 
