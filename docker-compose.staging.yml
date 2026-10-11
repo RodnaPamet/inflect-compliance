@@ -99,6 +99,37 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+  # ── Laya (System One) — serves LOCAL_ONLY adjudication ────────
+  #
+  # Step 6d, and the same image the deployed stack runs. Present here so the
+  # LOCAL_ONLY path can be exercised OUTSIDE production — a feature that
+  # exists only in the deployed file is one nobody can test before shipping.
+  #
+  # PINNED BY DIGEST — `runtime-image-pinning` refuses a tag — to the image
+  # the `Laya image` workflow scanned and pushed (#3427).
+  #
+  #   laya[serve]==0.4.2
+  #   convaiinnovations/laya-multilingual @ 1720e3e3357cfe1e281542e223f8273b0890ca34
+  #
+  # IT IS A 6.68 GB PULL, which is worth knowing before `up -d`. Kept
+  # always-on rather than behind a Compose profile because no file in this
+  # repository uses profiles, and `clamav` (382 MB) sets the precedent that a
+  # heavy backing service belongs in every stack. If the pull becomes a
+  # nuisance for local work, `docker compose up -d app worker` still skips it.
+  #
+  # No published port, and no `depends_on` from app or worker — see the
+  # deployed file's comments for both. The HEALTHCHECK is the image's own.
+  laya:
+    image: ghcr.io/rodnapamet/inflect-laya@sha256:cb257565b29f18e2d8ee1f614be09dd53a65f2ad797c187667f0fe11e9457b1c
+    restart: unless-stopped
+    expose:
+      - "8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 4g
+
 
   # ── Next.js App ──
   app:
@@ -119,6 +150,10 @@ services:
     env_file:
       - .env.staging
     environment:
+      # Step 6d — the LOCAL_ONLY adjudication model. A DEPLOYMENT value,
+      # never a tenant one. Its absence is a working state: the factory
+      # serves the stub and the queue fills for a human, so no `:?`.
+      LAYA_BASE_URL: "http://laya:8000"
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:-staging_password_change_me}@pgbouncer:5432/${POSTGRES_DB:-inflect_staging}?schema=public&pgbouncer=true
       DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:-staging_password_change_me}@postgres:5432/${POSTGRES_DB:-inflect_staging}?schema=public
@@ -163,6 +198,10 @@ services:
     env_file:
       - .env.staging
     environment:
+      # Step 6d — the LOCAL_ONLY adjudication model. A DEPLOYMENT value,
+      # never a tenant one. Its absence is a working state: the factory
+      # serves the stub and the queue fills for a human, so no `:?`.
+      LAYA_BASE_URL: "http://laya:8000"
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:-staging_password_change_me}@pgbouncer:5432/${POSTGRES_DB:-inflect_staging}?schema=public&pgbouncer=true
       DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:-staging_password_change_me}@postgres:5432/${POSTGRES_DB:-inflect_staging}?schema=public
