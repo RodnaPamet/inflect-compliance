@@ -66,6 +66,109 @@ describe('trivy job reuses the docker artifact (no rebuild)', () => {
     });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// THE SAME RULE, ACROSS EVERY WORKFLOW THAT SCANS AND PUBLISHES (#3427)
+//
+// The block above is scoped to `ci.yml` — it reads that file's `docker` and
+// `trivy` jobs by name. So the rule it enforces ("whatever Trivy scanned is what
+// ships") was checked in exactly one of the three workflows that build images,
+// and the one that got it wrong was outside the population.
+//
+// `laya-image.yml` scanned a locally-loaded image and then PUBLISHED A SECOND
+// BUILD, under a step named "Push, now that it has been scanned". With no layer
+// cache in that workflow the second build re-resolved every dependency, and
+// `laya[serve]` pins only itself — its torch bound is `torch>=2.0.0`. A release
+// landing in the gap would have put unscanned packages in the registry under the
+// digest the run summary told an operator to pin.
+//
+// WHY `push: true` IS BANNED OUTRIGHT in a Trivy-bearing workflow rather than
+// merely ordered after the scan. Two shapes are possible and both are wrong:
+// push-then-scan gates nothing, because the artefact is in the registry before
+// the scan has an opinion; and scan-then-build-and-push scans a different
+// artefact. `docker tag` + `docker push` of the scanned reference is the only
+// shape where the bytes are provably the same ones, and it is what
+// `ghcr-publish.yml` already does.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('every workflow that scans with Trivy publishes the scanned bytes', () => {
+    const WF_DIR = path.resolve(__dirname, '../../.github/workflows');
+    const files = fs
+        .readdirSync(WF_DIR)
+        .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+        .map((f) => ({ name: f, src: fs.readFileSync(path.join(WF_DIR, f), 'utf-8') }));
+
+    const scanners = files.filter((f) => /aquasecurity\/trivy-action/.test(f.src));
+
+    it('finds the Trivy-bearing workflows at all', () => {
+        // The denominator. A rename of the action, or a readdir that yields
+        // nothing, would make every assertion below pass over an empty set —
+        // which is how the laya workflow sat outside the ci.yml-scoped block
+        // above without anything noticing.
+        expect(files.length).toBeGreaterThanOrEqual(8);
+        expect(scanners.length).toBeGreaterThanOrEqual(2);
+        expect(scanners.map((f) => f.name)).toContain('laya-image.yml');
+        expect(scanners.map((f) => f.name)).toContain('ci.yml');
+    });
+
+    it.each(scanners.map((f) => [f.name] as const))(
+        '%s does not publish via build-push-action push: true',
+        (name) => {
+            const src = scanners.find((f) => f.name === name)!.src;
+            // Comments are stripped so a `#` line DESCRIBING the old shape — this
+            // file is full of them now — cannot fail the assertion. A scar is not
+            // a wound.
+            const code = src
+                .split('\n')
+                .filter((l) => !/^\s*#/.test(l))
+                .join('\n');
+            expect(code).not.toMatch(/^\s*push:\s*true\s*$/m);
+        },
+    );
+
+    it('a workflow that both scans and pushes does so by tagging the scanned image', () => {
+        const publishers = scanners.filter((f) =>
+            /docker push/.test(f.src.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n')),
+        );
+        // ci.yml scans but never pushes (the publish lives in ghcr-publish.yml),
+        // so the publishing subset is smaller than the scanning one — assert the
+        // subset is non-empty rather than assuming every scanner publishes.
+        expect(publishers.length).toBeGreaterThanOrEqual(1);
+        for (const p of publishers) {
+            // The pushed reference must be produced by `docker tag` from
+            // something, not built afresh.
+            expect(p.src).toMatch(/docker tag/);
+        }
+    });
+
+    it('the detector would catch the shape that shipped (regression proof)', () => {
+        // Without this, the assertions above are equally consistent with a regex
+        // that matches nothing — and the whole point of this block is that the
+        // ci.yml-scoped one above looked fine while a sibling workflow was
+        // broken.
+        const bad = [
+            'jobs:',
+            '  publish:',
+            '    steps:',
+            '      - uses: aquasecurity/trivy-action@v0.36.0',
+            '      - uses: docker/build-push-action@v7',
+            '        with:',
+            '          push: true',
+        ].join('\n');
+        const code = bad.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+        expect(code).toMatch(/^\s*push:\s*true\s*$/m);
+
+        // And the fixed shape is NOT caught.
+        const good = [
+            '      - uses: aquasecurity/trivy-action@v0.36.0',
+            '      - name: Push the scanned image',
+            '        run: |',
+            '          docker tag "$SCANNED" "$TARGET"',
+            '          docker push "$TARGET"',
+        ].join('\n');
+        expect(good).not.toMatch(/^\s*push:\s*true\s*$/m);
+        expect(good).toMatch(/docker tag/);
+    });
+});
+
 /**
  * Every Trivy invocation bounds its OWN scan.
  *
