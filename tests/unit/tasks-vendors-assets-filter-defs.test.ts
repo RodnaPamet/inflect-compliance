@@ -68,7 +68,11 @@ const TASK_SEVERITY = ['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 // TP-5 — the universal-inbox source filter offers EXACTLY the
 // TaskSource enum members (RISK_MONITOR added for KRI-breach +
 // risk-appetite-breach spawned tasks).
-const TASK_SOURCE = ['MANUAL', 'TEMPLATE', 'POLICY_REVIEW', 'AUDIT', 'INTEGRATION', 'EVIDENCE_EXPIRY', 'RISK_MONITOR'];
+const TASK_SOURCE = ['MANUAL', 'TEMPLATE', 'POLICY_REVIEW', 'AUDIT', 'INTEGRATION', 'EVIDENCE_EXPIRY', 'RISK_MONITOR',
+    // #3416 — a time-bounded grant the directory still reports as active past
+    // its end date. A control that failed, so its own member rather than
+    // INTEGRATION.
+    'GRANT_EXPIRY'];
 const ASSET_TYPE = ['INFORMATION', 'SYSTEM', 'SERVICE', 'DATA_STORE', 'VENDOR', 'PEOPLE_PROCESS', 'APPLICATION', 'INFRASTRUCTURE', 'PROCESS', 'OTHER'];
 const ASSET_STATUS = ['ACTIVE', 'RETIRED'];
 const ASSET_CRITICALITY = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
