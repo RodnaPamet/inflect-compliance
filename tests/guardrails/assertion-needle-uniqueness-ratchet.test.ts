@@ -551,7 +551,22 @@ const HIGH_MULTIPLICITY = 5;
 //   pre-existing ambiguous needles; #3364 narrowed all 26. So the detector
 //   improvement is fully paid for: same ceiling, 42 more reads analysed, 40
 //   fewer blind spots.
-const AMBIGUOUS_NEEDLE_BASELINE = 1166;
+//
+//   1166 -> 1165 (2026-10-11). `merge-queue-trigger-coverage`'s "the header
+//   documents the lean set" read the WHOLE of ci.yml for a needle its own name
+//   scopes to the header, so any job's inline `── Merge-queue lean set: SKIP ──`
+//   banner satisfied it — deleting the header summary outright would have kept it
+//   green. Narrowed to the header slice, which takes it from five satisfying
+//   positions to one and so leaves both this class and
+//   HIGHLY_AMBIGUOUS_NEEDLE_BASELINE below. Re-seated in the same diff, as the
+//   sentinel requires: a baseline above the live count is headroom a future
+//   regression spends with a green build.
+//
+//   The trigger was adding a job to ci.yml, which pushed that needle from four
+//   occurrences to five and tripped the 5+ ceiling. Worth recording because the
+//   ratchet did not merely object to a number — it named the assertion, and the
+//   assertion was genuinely wrong about its own subject.
+const AMBIGUOUS_NEEDLE_BASELINE = 1165;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

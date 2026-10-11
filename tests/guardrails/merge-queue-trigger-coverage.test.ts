@@ -161,6 +161,13 @@ const QUEUE_SKIPPED_JOBS: Readonly<Record<string, string>> = {
     codeql: 'SAST finds taint/injection patterns, not "PR A renamed what PR B calls". Its analyze ' +
         'step also uploads SARIF, which in a queue run would file a code-scanning analysis against ' +
         'the throwaway gh-readonly-queue ref. Runs on the PR and again on the push to main.',
+    'laya-image': 'Builds AND STARTS the Laya server image — a cold build pulls ~2.4 GB of CUDA ' +
+        'wheels plus a ~1 GB checkpoint, and the container then loads that checkpoint before it can ' +
+        'report healthy. A merge collision cannot produce a wrong ARG default, an inverted layer ' +
+        'order or a server that exits at startup, which are the three classes this job exists for; ' +
+        'and a collision INSIDE one Dockerfile surfaces as a conflict, which blocks the merge on ' +
+        'its own. Its path filter applies to push as well as pull_request, so the post-merge run ' +
+        'happens exactly when the directory changed — which is the only time it can break.',
 };
 
 /** Jobs whose post-merge (`push` to main) run must remain intact. */
@@ -369,8 +376,92 @@ describe('merge queue — the lean gate is not hollowed out', () => {
         expect(QUEUE_ENFORCED_JOBS).toContain('test');
     });
 
-    it('the header documents the lean set so a reader need not diff the jobs', () => {
-        expect(CI).toMatch(/Merge-queue lean set/);
+    it('the HEADER documents the lean set so a reader need not diff the jobs', () => {
+        // NARROWED TO THE HEADER, which is what this test is named for. Against
+        // the whole file the needle was satisfied by any job's own inline
+        // `── Merge-queue lean set: SKIP ──` banner, so deleting the header
+        // summary entirely would have kept it green — and it stood at five
+        // satisfying positions, which `assertion-needle-uniqueness-ratchet`
+        // calls a text search written as an assertion. It is right: the claim
+        // is about ONE place, so the read has to be that place.
+        const header = CI.slice(0, CI.indexOf('\njobs:'));
+        // The slice must have found the boundary: an empty or whole-file header
+        // would make this assertion either always fail or mean nothing.
+        expect(header.length).toBeGreaterThan(500);
+        expect(header.length).toBeLessThan(CI.length);
+        expect(header).toMatch(/Merge-queue lean set/);
+    });
+
+    it('every job that declares a queue SKIP is in QUEUE_SKIPPED_JOBS', () => {
+        // THE GAP THIS CLOSES. `QUEUE_SKIPPED_JOBS` is hand-maintained, and every
+        // assertion above iterates IT rather than the file — so a new job carrying
+        // a `── Merge-queue lean set: SKIP ──` banner and a `!= 'merge_group'`
+        // condition was governed by nothing: no written reason required, no
+        // post-merge reachability checked. The map and the file could drift apart
+        // in silence, which is the same shape as a check that never runs being
+        // scored as a pass.
+        //
+        // WHICH JOB A BANNER BELONGS TO IS DECIDED BY ITS INDENTATION, because the
+        // file uses both placements and they point in OPPOSITE directions:
+        //   `    # ── …` (inside the job body)      -> the job id is ABOVE  (e2e, codeql)
+        //   `  #  ── …` (pre-job comment block)     -> the job id is BELOW  (docker, laya-image)
+        // A one-directional scan gets half of them wrong and, worse, attributes a
+        // banner to a NEIGHBOURING job — which would read as a populated result
+        // rather than as a parse failure.
+        const lines = CI.split('\n');
+        const isJobId = (line: string): string | null =>
+            /^ {2}([a-z][a-z0-9_-]*):\s*$/.exec(line)?.[1] ?? null;
+
+        const declared: string[] = [];
+        lines.forEach((line, i) => {
+            const banner = /^(\s*)#\s*──\s*Merge-queue lean set:\s*SKIP\s*──/.exec(line);
+            if (!banner) return;
+            const insideJob = (banner[1] ?? '').length >= 4;
+            const step = insideJob ? -1 : 1;
+            for (let j = i + step; j >= 0 && j < lines.length; j += step) {
+                const id = isJobId(lines[j] as string);
+                if (id) { declared.push(id); return; }
+            }
+        });
+
+        // The denominator beside the result: a parse that found nothing would pass
+        // the comparison below over two empty sets, and one that found duplicates
+        // would hide a misattribution behind a sort.
+        expect(declared.length).toBeGreaterThanOrEqual(3);
+        expect(new Set(declared).size).toBe(declared.length);
+        expect([...declared].sort()).toEqual(Object.keys(QUEUE_SKIPPED_JOBS).sort());
+    });
+
+    it('the banner-to-job attribution works in BOTH placements (detector proof)', () => {
+        // Without this, the test above passes just as happily with a scan that
+        // only ever looks one way — it would simply attribute two banners to the
+        // wrong jobs, and the map could be edited to match the wrong answer.
+        const both = [
+            '  alpha:',
+            '    name: Alpha',
+            '    # ── Merge-queue lean set: SKIP ──',
+            '    # reason',
+            '',
+            '  # ── Merge-queue lean set: SKIP ──',
+            '  # reason for beta, written above it',
+            '  beta:',
+            '    name: Beta',
+        ].join('\n');
+        const lines = both.split('\n');
+        const isJobId = (line: string): string | null =>
+            /^ {2}([a-z][a-z0-9_-]*):\s*$/.exec(line)?.[1] ?? null;
+        const found: string[] = [];
+        lines.forEach((line, i) => {
+            const banner = /^(\s*)#\s*──\s*Merge-queue lean set:\s*SKIP\s*──/.exec(line);
+            if (!banner) return;
+            const step = (banner[1] ?? '').length >= 4 ? -1 : 1;
+            for (let j = i + step; j >= 0 && j < lines.length; j += step) {
+                const id = isJobId(lines[j] as string);
+                if (id) { found.push(id); return; }
+            }
+        });
+        // alpha from the inside-the-body banner, beta from the one above it.
+        expect(found.sort()).toEqual(['alpha', 'beta']);
     });
 });
 
@@ -415,12 +506,32 @@ describe('merge queue — the quiet breakages', () => {
         );
     });
 
-    it("the changes output defaults to the conservative 'true' when the filter is skipped", () => {
-        // `|| 'true'` errs toward running more, never less. Without it a
-        // queue run reads an empty string and silently under-runs.
-        expect(jobBlock(CI, 'changes')).toMatch(
-            /container:\s*\$\{\{\s*steps\.filter\.outputs\.container\s*\|\|\s*'true'\s*\}\}/,
-        );
+    it("EVERY changes output defaults to the conservative 'true' when the filter is skipped", () => {
+        // `|| 'true'` errs toward running more, never less. Without it a queue
+        // run reads an empty string and silently under-runs.
+        //
+        // GENERALISED from a hardcoded check on `container` alone. The old
+        // version asserted the one output that existed when it was written, so a
+        // second output added without the fallback — which is exactly what
+        // adding `laya` was — passed it without being looked at. The subject is
+        // the RULE, so the test has to range over whatever outputs exist.
+        const block = jobBlock(CI, 'changes');
+        const outputs = [...block.matchAll(/^\s{6}([a-z][a-z0-9_-]*):\s*\$\{\{/gm)]
+            .map((m) => m[1] as string);
+
+        // The denominator beside the result: an extraction that found nothing
+        // would pass the loop below over an empty set, which is the failure this
+        // whole test is about.
+        expect(outputs.length).toBeGreaterThanOrEqual(2);
+        expect(outputs).toContain('container');
+
+        for (const name of outputs) {
+            expect(block).toMatch(
+                new RegExp(
+                    `${name}:\\s*\\$\\{\\{\\s*steps\\.filter\\.outputs\\.${name}\\s*\\|\\|\\s*'true'\\s*\\}\\}`,
+                ),
+            );
+        }
     });
 
     it('ci.yml never cancels in-progress runs (a cancelled queue run ejects the PR)', () => {
