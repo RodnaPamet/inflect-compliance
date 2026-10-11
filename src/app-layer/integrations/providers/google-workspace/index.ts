@@ -116,6 +116,9 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
     // a pass means the domain-wide-delegation grant is live and the impersonated
     // admin is reachable — not merely that the pasted JSON parses.
     readonly liveValidation = true;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
     readonly setupGuide =
         'Create a service account, enable domain-wide delegation, and authorise its client ID in the Admin console for the Directory + (optional) inbound-SSO read-only scopes. Paste the whole service-account key JSON below and the super-admin it impersonates above. Test connection performs a live token exchange and directory read, so it fails if the delegation has been revoked or the scopes are not authorised.';
 

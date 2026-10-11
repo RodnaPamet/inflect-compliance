@@ -31,6 +31,7 @@ function createConfiguredProvider(
     return {
         id,
         liveValidation: false,
+        mappingVerifiedBy: null,
         displayName: `${id} Provider`,
         description: `Test ${id} provider`,
         supportedChecks: ['test_check'],

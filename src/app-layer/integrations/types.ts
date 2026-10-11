@@ -236,6 +236,52 @@ export interface IntegrationProvider {
     readonly liveValidation: boolean;
 
     /**
+     * WHAT RECORDS THAT THIS PROVIDER'S RESPONSE MAPPING MET A LIVE INSTANCE,
+     * or `null` when nothing in this repo records one (#3431).
+     *
+     * A CLAIM ABOUT THE RECORD, NOT ABOUT THE VENDOR. `null` says no live
+     * mapping run is written down here; it does not assert none happened. The
+     * remedy for a wrongly-`null` provider is to name its evidence, which is
+     * the behaviour this field exists to produce.
+     *
+     * ── WHY THIS IS NOT `liveValidation` ────────────────────────────────────
+     *
+     * `liveValidation` answers "is there an external credential to probe", and
+     * the probe it gates is the cheapest authenticated GET a provider can make.
+     * It exercises no write path and no response mapping. A provider can be
+     * `liveValidation: true`, pass Test Connection in front of an operator, and
+     * be wrong about every field it reads or sends.
+     *
+     * That is not hypothetical. The Laya connection would have tested green all
+     * week while every System One request was refused `422` for a missing field
+     * and the answer parser read two keys the vendor does not return (#3394,
+     * #3407). Reachability and contract are independent facts, and only one of
+     * them had a field.
+     *
+     * ── WHY IT IS WORTH A FIELD RATHER THAN A CONVENTION ────────────────────
+     *
+     * Three mappings written from published vendor documentation, each with a
+     * green suite, each wrong on first contact with a live instance:
+     *
+     *     OrangeHRM (#2587)                     5 defects
+     *     identity-match System One (#3407)     5 defects
+     *     `laya-chooser` (#3394)                3 defects
+     *
+     * In every case the fixtures and the code were written from the same
+     * document, so they agreed with each other and not with the endpoint.
+     *
+     * REQUIRED, for the reason `liveValidation` above is required: optional
+     * would mean an undeclared provider reads as unverified BY SILENCE rather
+     * than by decision, and silence is what this field exists to remove. `null`
+     * is a legitimate answer — it is the honest one for most providers today —
+     * but it has to be an answer. For a provider with no external contract at
+     * all (personnel / device / training) say so in the string rather than
+     * leaving `null`, because "nothing to verify" and "nothing recorded" are
+     * different facts.
+     */
+    readonly mappingVerifiedBy: string | null;
+
+    /**
      * Validate that a connection config is correct and credentials work.
      * Called when admin sets up or tests a connection.
      */

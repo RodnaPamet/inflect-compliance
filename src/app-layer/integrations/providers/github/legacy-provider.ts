@@ -240,6 +240,9 @@ export class GitHubProvider implements ScheduledCheckProvider, WebhookEventProvi
      * and told admins their verified connection was shape-only.
      */
     readonly liveValidation = true;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
     readonly displayName = 'GitHub';
     readonly description = 'GitHub repository compliance checks — branch protection, security settings';
     readonly supportedChecks = ['branch_protection'];

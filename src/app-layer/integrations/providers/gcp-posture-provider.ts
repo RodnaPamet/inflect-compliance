@@ -69,6 +69,9 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
     readonly supportedChecks = ['soc2', 'cis'];
     // P2 — validateConnection only parses the SA JSON shape (no live API call).
     readonly liveValidation = false;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
     readonly setupGuide =
         'Runs Powerpipe on the collector host against a GCP project. Create a read-only service account, grant it the security-reviewer role on the project, and paste its key JSON below. Test connection validates the JSON shape only — it does not call GCP live.';
 

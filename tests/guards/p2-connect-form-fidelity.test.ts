@@ -55,6 +55,14 @@ describe('P2 — setup guidance + honest test + internal providers', () => {
         // Required now, so tsc enumerates anyone who forgets.
         expect(types).toMatch(/readonly liveValidation:\s*boolean;/);
         expect(types).not.toMatch(/readonly liveValidation\?/);
+
+        // #3431 — the sibling fact, required for the same reason. `liveValidation`
+        // says a CREDENTIAL is probeable; `mappingVerifiedBy` says whether the
+        // vendor's RESPONSE MAPPING has met a live instance. Optional would mean
+        // an undeclared provider reads as unverified by silence rather than by
+        // decision, which is the thing being removed.
+        expect(types).toMatch(/readonly mappingVerifiedBy:\s*string \| null;/);
+        expect(types).not.toMatch(/readonly mappingVerifiedBy\?/);
         expect(read('src/app-layer/integrations/aws-posture-provider.ts')).toMatch(/liveValidation = true/);
         expect(read('src/app-layer/integrations/providers/azure-posture-provider.ts')).toMatch(/liveValidation = false/);
         expect(page).toMatch(/data-testid="provider-setup-guide"/);

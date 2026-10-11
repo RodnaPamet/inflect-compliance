@@ -103,3 +103,69 @@ describe('integration credential placement', () => {
         }
     });
 });
+
+/**
+ * #3431 — every registered provider answers whether its response MAPPING has met
+ * a live instance.
+ *
+ * SHARES THIS FILE DELIBERATELY. `tests/guards/epic-named-ratchets...` ratchets
+ * the guard-file COUNT downward — the repo is retiring guard files, and adding
+ * one to carry four assertions would push that count up. This file already
+ * enumerates `registry.listProviders()`, which is the population the census
+ * needs, so the assertions live beside it rather than in a file of their own.
+ *
+ * `tsc` already forces the DECLARATION — the field is required on
+ * `IntegrationProvider`. What it cannot say is whether the answer is meaningful.
+ */
+describe('provider mapping verification is declared and meaningful', () => {
+    const providers = registry.listProviders();
+    /** Providers with no external contract at all — they must SAY so, not be null. */
+    const INTERNAL = ['personnel', 'device', 'training'];
+
+    it('the registry is non-trivial, so an empty scan cannot pass', () => {
+        expect(providers.length).toBeGreaterThanOrEqual(10);
+    });
+
+    it('every provider answers, as a string or an explicit null', () => {
+        // The one that caught `aws-posture`, which the sweep's grep missed
+        // because it lives one directory ABOVE `providers/`. The registry is the
+        // population, not the folder.
+        for (const p of providers) {
+            const v = (p as { mappingVerifiedBy?: unknown }).mappingVerifiedBy;
+            expect(v === null || typeof v === 'string').toBe(true);
+        }
+    });
+
+    it('a stated verification cites something chaseable, not a bare claim', () => {
+        for (const p of providers) {
+            const v = (p as { mappingVerifiedBy?: string | null }).mappingVerifiedBy;
+            if (typeof v !== 'string' || INTERNAL.includes(p.id)) continue;
+            expect(v).toMatch(/#\d+|\b20\d{2}-\d{2}-\d{2}\b/);
+        }
+    });
+
+    it('the internal providers say they have no external contract', () => {
+        // Not `null`: "nothing to verify" and "nothing recorded" are different
+        // answers, and `null` is the second.
+        for (const id of INTERNAL) {
+            const p = providers.find((x) => x.id === id);
+            if (!p) continue;
+            const v = (p as { mappingVerifiedBy?: string | null }).mappingVerifiedBy;
+            expect(v).toMatch(/no external contract/i);
+        }
+    });
+
+    it('reports how many providers have no recorded live mapping run', () => {
+        const unrecorded = providers
+            .filter((p) => (p as { mappingVerifiedBy?: string | null }).mappingVerifiedBy === null)
+            .map((p) => p.id);
+        // REPORTED, not ratcheted. Driving this down needs a vendor tenant most
+        // of these do not have, and a gate that cannot go green gets disabled.
+        // eslint-disable-next-line no-console
+        console.log(
+            `#3431 — ${unrecorded.length}/${providers.length} providers have no recorded `
+                + `live mapping run: ${unrecorded.join(', ') || 'none'}`,
+        );
+        expect(Array.isArray(unrecorded)).toBe(true);
+    });
+});

@@ -300,6 +300,9 @@ export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvide
     readonly supportedChecks: string[] = [];
     // P2 — validateConnection only checks field presence (no live BambooHR call).
     readonly liveValidation = false;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
     readonly setupGuide =
         'Generate a BambooHR API key (your profile → API Keys) and provide it with your company subdomain (the part before .bamboohr.com). Test connection validates field shape only — it does not call BambooHR live.';
 

@@ -31,6 +31,7 @@ export class PersonnelProvider implements ScheduledCheckProvider {
     // own Employee / account rows. `validateConnection` returns valid
     // unconditionally, which is honest only because there is nothing to check.
     readonly liveValidation = false;
+    readonly mappingVerifiedBy = 'no external contract — an internal check over product data';
     readonly displayName = 'Personnel';
     readonly description = 'Internal checks over the personnel roster: offboarded access, onboarding SLA, manager coverage.';
     readonly supportedChecks = [...PERSONNEL_CHECKS];

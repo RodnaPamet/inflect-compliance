@@ -158,6 +158,7 @@ export class OrangeHrmProvider
      * that the form was filled in would undermine its one job.
      */
     readonly liveValidation = true;
+    readonly mappingVerifiedBy = '#2587 — the live run DISPROVED the mapping in five places, which is why\n        // the fixture label came off only after it ran';
 
     readonly setupGuide =
         'Stand up an OrangeHRM instance on a ' +

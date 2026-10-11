@@ -376,6 +376,14 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
     readonly supportedChecks = ['soc2', 'cis'];
     // P2 — validateConnection shells `aws sts get-caller-identity` (real probe).
     readonly liveValidation = true;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    //
+    // Found by the census guard, not by the sweep that wrote the other
+    // sixteen: this provider lives one directory ABOVE `providers/`, so a
+    // grep scoped to that directory could not see it. The registry is the
+    // population, not the folder.
+    readonly mappingVerifiedBy = null;
     readonly setupGuide =
         'Runs Powerpipe + the AWS CLI on the collector host — both must be installed there, with `aws configure` set to a read-only role. Pick the benchmark (SOC 2 or CIS) to select which Powerpipe checks run. Test connection performs a live `aws sts get-caller-identity`.';
 

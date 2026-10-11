@@ -53,6 +53,9 @@ export class ServiceNowProvider implements ScheduledCheckProvider {
 
     /** The Test button makes a real authenticated read of the configured table. */
     readonly liveValidation = true;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
 
     readonly setupGuide =
         'Create a dedicated ServiceNow integration user with read access to the change_request table (a scoped read-only role is enough — this connection never writes). Provide the instance host, the table, and how far back each run should look. Test connection performs a real authenticated read of that table, so an integration user without an ACL on it is reported at setup rather than at 05:00.';

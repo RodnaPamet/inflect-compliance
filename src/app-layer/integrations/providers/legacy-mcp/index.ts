@@ -84,6 +84,9 @@ export class LegacyMcpProvider implements IntegrationProvider {
 
     /** A real handshake and manifest read happen below, so this is true honestly. */
     readonly liveValidation = true;
+    // #3431 — nothing in this repo records a live mapping run for this
+    // provider. A claim about the record, not about the vendor.
+    readonly mappingVerifiedBy = null;
 
     readonly setupGuide =
         'Enter the HTTPS endpoint of the MCP server you run in front of the legacy '
