@@ -256,6 +256,7 @@ export function buildMatchRequest(model: string, state: MatchState): SystemOneRe
             questions: {
                 person: {
                     type: 'noul',
+                    instructions: 'Is this account used by one individual?',
                     statement: PERSON_STATEMENT,
                 },
             },
@@ -268,19 +269,31 @@ export function buildMatchRequest(model: string, state: MatchState): SystemOneRe
         questions: {
             match: {
                 type: 'choice',
-                // Only the labels actually present, plus NONE. Offering E when no
-                // E was sent invites a verdict naming a candidate the model never
-                // saw, and the parser could not tell that from a real answer.
-                options: offered.map((label) => ({
-                    option: label,
-                    description:
+                // REQUIRED. A question without it is refused before any
+                // inference happens:
+                //   422  question 'match': no 'instructions'; add the text
+                //        the model should answer
+                instructions: 'Which of the listed people holds this account?',
+                // `criteria`, a dict of label -> description — NOT an
+                // `options` array, which is what this builder sent until
+                // #3407 and which the server's own validator rejects.
+                //
+                // Only the labels actually present, plus NONE. Offering E when
+                // no E was sent invites a verdict naming a candidate the model
+                // never saw, and the parser could not tell that from a real
+                // answer.
+                criteria: Object.fromEntries(
+                    offered.map((label) => [
+                        label,
                         label === 'NONE'
                             ? 'None of the listed people is the holder of this account.'
                             : `Candidate ${label} is the individual who holds this account.`,
-                })),
+                    ]),
+                ),
             },
             person: {
                 type: 'noul',
+                instructions: 'Is this account used by one individual?',
                 statement: PERSON_STATEMENT,
             },
         },
@@ -297,15 +310,25 @@ const probability = z
 /**
  * A `choice` answer.
  *
- * `.strict()` everywhere, and the option keys are re-checked against
- * {@link MATCH_OPTIONS} rather than accepted as given. A vendor that added a
- * seventh option, or a proxy that rewrote one, would otherwise arrive as a verdict
- * naming something this code has no branch for.
+ * The option keys are re-checked against {@link MATCH_OPTIONS} rather than
+ * accepted as given: a vendor that added a seventh option, or a proxy that
+ * rewrote one, would otherwise arrive as a verdict naming something this code
+ * has no branch for. That check is what the strictness here was FOR, and it is
+ * kept — on the enum and on the probability keys, where it guards meaning.
+ *
+ * The OBJECT is no longer `.strict()`, because a real answer carries four more
+ * fields than this ever modelled — `confidence`, `answer_confidence`, `action`,
+ * `x_jev_confidence` (#3407) — and `.strict()` rejected every one of them. A
+ * parser that refuses a response for carrying MORE telemetry than it reads is
+ * not being careful; it is unable to accept the vendor it was written for. The
+ * line between the two: refuse an unknown value where we branch on it, ignore
+ * an unknown field we do not read.
  */
 const choiceAnswerSchema = z
     .object({
         type: z.literal('choice'),
-        option: z.enum(MATCH_OPTIONS),
+        // `choice`, not `option` — observed on a real Laya (#3407).
+        choice: z.enum(MATCH_OPTIONS),
         // `partialRecord`, not `record`: a `record` keyed on an enum is EXHAUSTIVE
         // in Zod 4, and the request offers only the labels actually sent plus
         // NONE — so demanding all six rejected every valid two-candidate
@@ -314,14 +337,17 @@ const choiceAnswerSchema = z
         // arrive as a verdict this code has no branch for.
         probabilities: z.partialRecord(z.enum(MATCH_OPTIONS), probability),
     })
-    .strict();
+    .passthrough();
 
 const noulAnswerSchema = z
     .object({
         type: z.literal('noul'),
-        probability,
+        // `noul`, not `probability`. A real `person` answer carries
+        // `{type, noul, confidence, answer_confidence, action}` (#3407).
+        noul: probability,
     })
-    .strict();
+    // See the note on `choiceAnswerSchema` for why this is not `.strict()`.
+    .passthrough();
 
 /**
  * Usage is REQUIRED, not optional.
@@ -336,10 +362,15 @@ const usageSchema = z
         input_tokens: z.number().int().nonnegative(),
         output_tokens: z.number().int().nonnegative(),
     })
-    .strict();
+    // A real block also carries `state_tokens`, `state_tokens_dropped`,
+    // `truncated` and `truncated_questions` (#3407). The two fields above are
+    // what makes a call METERED, which is the property this schema exists to
+    // require; the rest is accounting we do not read.
+    .passthrough();
 
 /**
- * TWO SHAPES, BOTH `.strict()`, and the caller says which it expects.
+ * TWO SHAPES, and the caller says which it expects. The `answers` object is
+ * `.strict()` in both; the envelope around it is not — see `usageSchema`.
  *
  * An orphan is asked the `person` question alone, so its answer carries no
  * `match`. That could have been expressed as one schema with `match` optional,
@@ -363,7 +394,10 @@ export const systemOneResponseSchema = z
             .strict(),
         usage: usageSchema,
     })
-    .strict();
+    // `routing` is also sent (#3407). The `answers` object below stays strict:
+    // an answer we did not ask for, or a missing half of a question we did, is
+    // exactly what this parser is here to catch.
+    .passthrough();
 
 /** The orphan's answer: `person` and nothing else. */
 export const personOnlyResponseSchema = z
@@ -376,7 +410,10 @@ export const personOnlyResponseSchema = z
             .strict(),
         usage: usageSchema,
     })
-    .strict();
+    // `routing` is also sent (#3407). The `answers` object below stays strict:
+    // an answer we did not ask for, or a missing half of a question we did, is
+    // exactly what this parser is here to catch.
+    .passthrough();
 
 export type SystemOneResponse = {
     readonly model: string;
@@ -423,7 +460,7 @@ export function parseSystemOneResponse(
     // Guarded on presence rather than asserted: an orphan's answer legitimately
     // has no `match`, and the strict person-only schema has already refused one
     // that carries a stray field.
-    if (answers.match && !(answers.match.option in answers.match.probabilities)) {
+    if (answers.match && !(answers.match.choice in answers.match.probabilities)) {
         throw new SystemOneResponseError(
             `answers.match: chosen option is absent from the probability map`
         );
