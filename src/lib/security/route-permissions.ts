@@ -1303,6 +1303,23 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'closeConnectedAccessReview: OWNER + ADMIN.',
     },
     {
+        // BEFORE the decision pattern below, for readability rather than
+        // necessity: `/decisions/X/revoke` cannot match
+        // `^…/decisions/[^/]+$` because `[^/]+` admits no slash, so neither
+        // swallows the other. Kept adjacent because they are one authority.
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/decisions\\/[^/]+\\/revoke$`),
+        methods: ['POST'],
+        permission: 'access_reviews.decide',
+        note:
+            'Resetting a recorded member verdict back to pending (#3269). The ' +
+            'SAME key as recording, deliberately: revoking is the same authority ' +
+            'as having been allowed to record, and the real narrowing is per ' +
+            'CAMPAIGN — revokeDecision refuses anyone who is neither the assigned ' +
+            'reviewer nor canAdmin. A narrower key here would read as a tightening ' +
+            'while making a typo unfixable for exactly the non-admin reviewers the ' +
+            'usecase exists for, returning them to the admin-plus-database path.',
+    },
+    {
         path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/decisions\\/[^/]+$`),
         methods: ['PUT'],
         permission: 'access_reviews.decide',
