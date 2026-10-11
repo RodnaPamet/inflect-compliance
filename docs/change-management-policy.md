@@ -63,10 +63,44 @@ Grounding examples from the last 30 days of `CHANGELOG.md`:
 | Dependency major bump | PR reviewer | Author monitors post-deploy for 24h |
 | Secret rotation | PR reviewer | Security engineer |
 | SCIM / SSO config change | PR reviewer | Security engineer |
+| Sub-processor addition or activation | PR reviewer | Repo owner, recorded on the inventory PR |
 
 The production GitHub Environment approver (the person who clicks "Approve" on the
 gated `deploy-production` job) is recorded separately by GitHub and is part of the
 audit trail below.
+
+### Sub-processors: who confirms which half of step 2
+
+`docs/sub-processor-change-policy.md` step 2 asks compliance / legal to review a new
+sub-processor before it is wired into the product. **These documents refer to "legal" as
+an actor without ever identifying it.** The DPA template calls the signed agreement
+"legal's deliverable" and marks four of its sections `[LEGAL REVIEW REQUIRED]`; there is
+no `CODEOWNERS` file, no row in the matrix above said who approves a sub-processor until
+this one, and every other `DPO` / `legal` mention in `docs/` describes a role at a
+*customer* using the product. So the row above makes the repo owner the approver of
+record, and the review is four confirmations — three of which are clerical:
+
+| | confirmation | who |
+|---|---|---|
+| 1 | The sub-processor's own DPA is **executed**, not drafted | repo owner |
+| 2 | Any retention commitment is **written into that DPA** — a statement on the vendor's product page does not count | repo owner |
+| 3 | **No training on customer data** is committed contractually | repo owner |
+| 4 | The **transfer mechanism** is identified, and where SCCs carry it, a **transfer impact assessment** is on file | needs legal competence |
+
+Rows 1 to 3 are clerical: open the executed agreement and read it. Row 4 is not — a
+transfer impact assessment is a documented assessment of the destination country's
+surveillance law against the data being sent.
+
+**Where a transfer impact assessment is not obtained, the decision to proceed without
+one is recorded on the inventory pull request, naming who accepted the risk.** An
+unticked box is not a decision, and it is the state a sub-processor stalls in: the one
+proposed sub-processor's inventory pull request has carried all four confirmations
+unticked and no review since it merged, because the step was unassigned rather than
+refused.
+
+The 30-day customer notice is a separate gate and is not an approval. It cannot start
+before step 2 is recorded, and its clock runs from the notice date written into the
+inventory entry — not from the inventory pull request merging.
 
 ## Audit trail
 
@@ -163,6 +197,12 @@ They are listed honestly as unresolved; the doc does not pretend to answer them.
 - **Per-tenant canary / pause.** For multi-tenant changes, do we offer
   customer-specific canary or pause capability? (Today: no — changes apply to all
   tenants at deploy time.)
+- **Who is "legal", and transfer impact assessments.** Row 4 of the sub-processor
+  confirmation table, and the `[LEGAL REVIEW REQUIRED]` sections of the DPA template,
+  need competence these documents assume without naming. Is an assessment obtained
+  from outside counsel for each non-adequate destination, or is the risk accepted and
+  recorded? (Today: neither has happened for the one proposed sub-processor, which is
+  why it is still inactive.)
 
 Until each is decided, the operating default is: no contractual customer
 pre-notification beyond the public `CHANGELOG.md`, and no per-tenant canary.

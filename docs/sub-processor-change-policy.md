@@ -17,6 +17,15 @@ practice as the durable policy. The canonical inventory is
    transfer mechanism (SCCs / adequacy / BCRs), and the contractual terms
    (the sub-processor's own DPA). Approval is recorded on the PR.
 
+   **Who that is, concretely:** this repository names no legal or compliance
+   function, so the approver of record is the repo owner — see *Sub-processors:
+   who confirms which half of step 2* in
+   [`docs/change-management-policy.md`](./change-management-policy.md), which
+   splits the four confirmations into the two that are clerical and the two
+   that need legal competence. An unticked box is not a decision; where a
+   transfer impact assessment is not obtained, the decision to proceed without
+   one is recorded on this pull request, naming who accepted the risk.
+
 3. **Customers are notified.** Inflect notifies customers at least
    **30 days** before the sub-processor begins processing customer
    personal data. The notification is a one-pager posted to the public
