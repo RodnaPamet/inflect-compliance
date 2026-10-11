@@ -1,12 +1,17 @@
 /**
- * The factory's two gates, and the properties that make the external path
- * unreachable today.
+ * The factory's two gates, and what each mode can and cannot reach.
  *
- * The environment is mocked so every test can set the WORST case — every
- * credential present, the external mode requested — and still assert that nothing
- * external comes back. A test that proves `LOCAL_ONLY` is safe when no key is
- * configured proves almost nothing; the interesting question is whether a key
- * being present changes the answer.
+ * The external path IS reachable since 2026-10-11 (`TYPESAFE_SUBPROCESSOR_ACTIVE`
+ * is `true`). What this file asserted before that date — that nothing external
+ * comes back whatever the configuration — is no longer true and has been
+ * replaced rather than inverted; see the first describe block.
+ *
+ * The environment is still mocked so every test can set the WORST case — every
+ * credential present, the external mode requested. Before activation that was
+ * how "nothing external comes back" got proved. After activation it is how the
+ * remaining boundary gets proved: `OFF` and `LOCAL_ONLY` must stay local *with a
+ * usable TypeSafe key sitting right there*. A test that proves `LOCAL_ONLY` is
+ * safe when no key is configured still proves almost nothing.
  */
 
 import * as fs from 'node:fs';
@@ -15,9 +20,9 @@ import * as path from 'node:path';
 import { declarationOf } from '../helpers/source-blocks';
 
 const mutableEnv: Record<string, string | undefined> = {
-    // A literal in a mocked env object — no TypeSafe account stands behind it, and
-    // these tests exist precisely to prove a key being PRESENT changes nothing
-    // while the sub-processor is inactive.
+    // A literal in a mocked env object — no TypeSafe account stands behind it.
+    // Since activation its presence DOES change the answer for `EXTERNAL`, which
+    // is the point; what it must still not change is `OFF` and `LOCAL_ONLY`.
     TYPESAFE_API_KEY: 'typesafe-test-key', // pragma: allowlist secret
     LAYA_BASE_URL: 'http://laya.internal:8080',
     LAYA_API_KEY: undefined,
@@ -51,36 +56,62 @@ beforeEach(() => {
     mutableEnv.LAYA_API_KEY = undefined;
 });
 
-describe('6b factory — the sub-processor is registered but INACTIVE', () => {
-    it('TYPESAFE_SUBPROCESSOR_ACTIVE is false', () => {
-        // Flipping this is a sub-processor activation, not a config change. The
-        // whole "no tenant path can obtain Jev" claim rests on this literal.
-        expect(TYPESAFE_SUBPROCESSOR_ACTIVE).toBe(false);
-    });
+describe('6b factory — the sub-processor is ACTIVE (owner decision 2026-10-11)', () => {
+    // These five replace the five that asserted the INACTIVE invariant. They are
+    // deliberately NOT the old assertions with their polarity flipped: two of the
+    // old five protected something that still holds after activation, and those
+    // are kept intact below. What is gone is only the claim that the external
+    // path is unreachable, which stopped being true.
+    //
+    // The literal-pinning test is NOT re-pinned at `true`. See the register
+    // agreement test in
+    // `tests/guardrails/sub-processor-record-agrees-with-code.test.ts`: pinning a
+    // constant against itself notices a flip but cannot notice the register and
+    // the code disagreeing, which is the failure that actually reaches a customer.
 
-    it('EXTERNAL does not yield a Jev provider, even with the key set', () => {
+    it('EXTERNAL with the key set yields Jev — this is what activation means', () => {
         const p = getDecisionProvider('EXTERNAL');
-        expect(p.providerName).not.toBe('jev');
-        expect(p.isExternal).toBe(false);
+        expect(p.providerName).toBe('jev');
+        expect(p.isExternal).toBe(true);
     });
 
-    it('EXTERNAL falls back to the local provider rather than throwing', () => {
-        // A tenant who asked for adjudication gets the privacy-preserving answer
-        // or none — never an error that reads like their configuration is broken.
+    it('EXTERNAL without the key falls back to the local provider rather than throwing', () => {
+        // Unchanged in spirit from the inactive era, and still the reason it is
+        // written this way: a tenant who asked for adjudication gets the
+        // privacy-preserving answer or none, never an error that reads like their
+        // configuration is broken. The flag alone moves no data — the KEY does.
+        mutableEnv.TYPESAFE_API_KEY = undefined;
         expect(getDecisionProvider('EXTERNAL').providerName).toBe('laya');
     });
 
-    it('EXTERNAL with no Laya deployed yields the stub, still not Jev', () => {
+    it('EXTERNAL with neither the key nor a Laya yields the stub', () => {
+        mutableEnv.TYPESAFE_API_KEY = undefined;
         mutableEnv.LAYA_BASE_URL = undefined;
         const p = getDecisionProvider('EXTERNAL');
         expect(p.providerName).toBe('stub');
         expect(p.isExternal).toBe(false);
     });
 
-    it('no mode whatsoever returns an external provider while the flag is false', () => {
-        for (const mode of ['OFF', 'LOCAL_ONLY', 'EXTERNAL'] as const) {
+    it('ONLY EXTERNAL can go external — activation does not widen OFF or LOCAL_ONLY', () => {
+        // The surviving half of 'no mode whatsoever returns an external provider'.
+        // That test's value was never the flag; it was that the MODE decides, and
+        // a present credential does not promote a mode that did not ask for it.
+        // The worst case is set up in beforeEach: key present, Laya present.
+        for (const mode of ['OFF', 'LOCAL_ONLY'] as const) {
             expect(getDecisionProvider(mode).isExternal).toBe(false);
+            expect(getDecisionProvider(mode).providerName).not.toBe('jev');
         }
+        // The positive control. Without it a loop over an empty or mistyped mode
+        // list passes while proving nothing, and a factory that had been broken
+        // into returning the stub for everything would look like a success.
+        expect(getDecisionProvider('EXTERNAL').isExternal).toBe(true);
+    });
+
+    it('the flag is what the gate reads, so the two cannot be reasoned about separately', () => {
+        // Keeps one line of the deleted literal test: that this binding is the
+        // one the factory consults. It asserts the LINK, not the value.
+        expect(typeof TYPESAFE_SUBPROCESSOR_ACTIVE).toBe('boolean');
+        expect(getDecisionProvider('EXTERNAL').isExternal).toBe(TYPESAFE_SUBPROCESSOR_ACTIVE);
     });
 });
 
