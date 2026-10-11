@@ -45,22 +45,44 @@ import { resilientFetch } from '../../http-resilience';
 
 // ─── GitHub API Types ────────────────────────────────────────────────
 
+/**
+ * `GET /repos/{owner}/{repo}/branches/{branch}/protection`.
+ *
+ * EVERY KEY IS OPTIONAL, and that is the correction (#3433). This interface
+ * declared them as `X | null` REQUIRED properties — i.e. it asserted the API
+ * always sends the key and may null it. GitHub does the opposite: it OMITS a key
+ * whose requirement is not configured. Verified against a live repository, whose
+ * 200 response was exactly:
+ *
+ *     {"url":…,"required_signatures":{"enabled":false},
+ *      "enforce_admins":{"enabled":false},"required_linear_history":{…},
+ *      "allow_force_pushes":{"enabled":false},"allow_deletions":{…},
+ *      "block_creations":{…},"required_conversation_resolution":{…},
+ *      "lock_branch":{…},"allow_fork_syncing":{…}}
+ *
+ * — with `required_status_checks` and `required_pull_request_reviews` absent.
+ *
+ * The old shape is why no test could have caught the defect it caused: a fixture
+ * with the key MISSING would not typecheck, so every fixture wrote `null`, and
+ * `!== null` behaved in the suite and only differed against the endpoint. The
+ * type made the failing input inexpressible.
+ */
 export interface GitHubBranchProtection {
     url: string;
-    required_status_checks: {
+    required_status_checks?: {
         strict: boolean;
         contexts: string[];
     } | null;
-    enforce_admins: { enabled: boolean } | null;
-    required_pull_request_reviews: {
+    enforce_admins?: { enabled: boolean } | null;
+    required_pull_request_reviews?: {
         required_approving_review_count: number;
         dismiss_stale_reviews: boolean;
         require_code_owner_reviews: boolean;
     } | null;
-    restrictions: unknown;
-    required_linear_history: { enabled: boolean } | null;
-    allow_force_pushes: { enabled: boolean } | null;
-    allow_deletions: { enabled: boolean } | null;
+    restrictions?: unknown;
+    required_linear_history?: { enabled: boolean } | null;
+    allow_force_pushes?: { enabled: boolean } | null;
+    allow_deletions?: { enabled: boolean } | null;
 }
 
 /**
@@ -151,9 +173,24 @@ export function evaluateBranchProtection(
     }
 
     // Evaluate individual rules
-    const hasReviews = protection.required_pull_request_reviews !== null;
+    //
+    // `!= null` (LOOSE), not `!== null`. GitHub OMITS these keys when the branch
+    // has no such requirement rather than returning `null` — verified against a
+    // live repository (#3433), whose 200 response contained neither key:
+    //
+    //     {"url":…,"required_signatures":{…},"enforce_admins":{"enabled":false},
+    //      "required_linear_history":{…},"allow_force_pushes":{"enabled":false},…}
+    //
+    // With `!==`, `undefined !== null` is TRUE, so an absent requirement read as
+    // a present one. `requiredReviews` survived that by accident — it is
+    // `hasReviews && reviewCount >= 1`, and the `?? 0` on the count made the
+    // verdict right for the wrong reason. `requiredStatusChecks` had no such
+    // second term, so it was wrongly `true` whenever the key was absent: the
+    // evidence record stated a requirement that did not exist, and a repository
+    // WITH reviews and WITHOUT status checks passed the whole control.
+    const hasReviews = protection.required_pull_request_reviews != null;
     const reviewCount = protection.required_pull_request_reviews?.required_approving_review_count ?? 0;
-    const hasStatusChecks = protection.required_status_checks !== null;
+    const hasStatusChecks = protection.required_status_checks != null;
     const enforceAdmins = protection.enforce_admins?.enabled ?? false;
     const allowForcePushes = protection.allow_force_pushes?.enabled ?? false;
     const dismissStaleReviews = protection.required_pull_request_reviews?.dismiss_stale_reviews ?? false;

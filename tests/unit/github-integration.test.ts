@@ -417,6 +417,58 @@ describe('GitHub provider — evaluateBranchProtection (pure function)', () => {
         expect(result.status).toBe('FAILED');
     });
 
+    test('the LIVE shape: omitted keys are absent requirements, not present ones', () => {
+        // Captured verbatim from `GET /repos/{owner}/{repo}/branches/main/protection`
+        // on a real repository (#3433). Note what is NOT here:
+        // `required_status_checks` and `required_pull_request_reviews` are
+        // OMITTED, not null — GitHub drops the key when the requirement is not
+        // configured.
+        //
+        // This fixture could not be written before the type made those keys
+        // optional, which is why the suite was green while the mapping was
+        // wrong: `!== null` read `undefined !== null` as "requirement present".
+        const result = evaluateBranchProtection('acme', 'repo', 'main', {
+            url: 'https://api.github.com/repos/acme/repo/branches/main/protection',
+            enforce_admins: { enabled: false },
+            required_linear_history: { enabled: false },
+            allow_force_pushes: { enabled: false },
+            allow_deletions: { enabled: false },
+        }, 200);
+        expect(result.details.requiredStatusChecks).toBe(false);
+        expect(result.details.requiredReviews).toBe(false);
+        expect(result.status).toBe('FAILED');
+        // `hasReviews` also writes the evidence SUMMARY, and that is the only
+        // place its value is observable on its own — `requiredReviews` is
+        // guarded by `reviewCount >= 1`, so a wrong `hasReviews` is invisible
+        // there. Without this assertion the `required_pull_request_reviews`
+        // half of the fix is untested: reverting it to `!==` reddens nothing.
+        // An absent requirement must read as NOT configured, not as
+        // "0 reviewer(s)" — which states a requirement of zero rather than none.
+        expect(result.summary).toContain('Required reviews: NOT configured');
+        expect(result.summary).toContain('Status checks: NOT required');
+    });
+
+    test('FAILS with reviews configured but status checks OMITTED', () => {
+        // The case the defect actually passed. `requiredReviews` survived by
+        // accident — it is `hasReviews && reviewCount >= 1`, and `?? 0` made the
+        // verdict right for the wrong reason. `requiredStatusChecks` had no such
+        // second term, so an omitted key read as a requirement in force and the
+        // whole control PASSED on a branch with no required checks.
+        const result = evaluateBranchProtection('acme', 'repo', 'main', {
+            url: '',
+            enforce_admins: { enabled: true },
+            required_pull_request_reviews: {
+                required_approving_review_count: 2,
+                dismiss_stale_reviews: true,
+                require_code_owner_reviews: true,
+            },
+            allow_force_pushes: { enabled: false },
+        }, 200);
+        expect(result.details.requiredReviews).toBe(true);
+        expect(result.details.requiredStatusChecks).toBe(false);
+        expect(result.status).toBe('FAILED');
+    });
+
     test('PASSES when reviews AND status checks present', () => {
         const result = evaluateBranchProtection('acme', 'repo', 'main', {
             url: '',
