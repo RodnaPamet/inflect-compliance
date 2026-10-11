@@ -33,9 +33,10 @@
  * would mean the right template is simply absent, and the model would then
  * either answer NONE — a refusal the operator cannot act on, because the
  * template they meant does exist — or pick the nearest of the wrong twenty.
- * Twenty is OUR limit, not the vendor's: `VENDOR_MAX_CHOICE_OPTIONS` is 255,
- * and a model choosing among 255 descriptions is a reliability question nobody
- * here has measured.
+ * Twenty is OUR limit, not the vendor's: `LAYA_MAX_CHOICE_OPTIONS` is 100
+ * (measured — #3411), and a model choosing among a hundred descriptions is a
+ * reliability question nobody here has answered. The vendor's cap bounds what
+ * it will ACCEPT, not what it answers well.
  *
  * VERIFIED AGAINST A REAL LAYA on 2026-10-10 (#3394), built from
  * `deploy/laya/Dockerfile` and run locally. What that found, and what this file

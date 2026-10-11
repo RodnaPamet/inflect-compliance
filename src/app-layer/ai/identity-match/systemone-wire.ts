@@ -148,12 +148,47 @@ export const QUESTION_IDS = ['match', 'person'] as const;
 export type QuestionId = (typeof QUESTION_IDS)[number];
 
 /**
- * The vendor's documented ceiling on a `choice`: "You can have a maximum of 255
- * options per Choice" (docs.typesafe.ai/api). We send six. Asserted rather than
- * assumed, because the candidate cap is a separate constant in the engine and the
- * two could drift.
+ * TWO VENDORS, TWO CEILINGS, AND THEY ARE NOT THE SAME NUMBER (#3411).
+ *
+ * `VENDOR_MAX_CHOICE_OPTIONS` was a single constant carrying Jev's figure while
+ * being named as if it were vendor-neutral, and it lived in a module whose Laya
+ * path is the one that would hit the lower limit.
  */
-export const VENDOR_MAX_CHOICE_OPTIONS = 255;
+
+/**
+ * TypeSafe's documented ceiling: "You can have a maximum of 255 options per
+ * Choice" (docs.typesafe.ai/api).
+ *
+ * DOCUMENTED, NOT MEASURED. No hosted Jev account exists, so nothing has
+ * confirmed this against a live endpoint — unlike its Laya sibling below. A
+ * guard bounding on this number is bounding on a vendor's claim.
+ */
+export const JEV_MAX_CHOICE_OPTIONS = 255;
+
+/**
+ * Laya's ENFORCED ceiling, measured 2026-10-10 against a server built from
+ * `deploy/laya/Dockerfile`:
+ *
+ *     255 options -> 413  too many choice options for 'q' (255 > 100)
+ *      64 options -> 200
+ *
+ * A hundred, not 255. The figure the single constant carried would have been
+ * refused by the vendor it was being applied to.
+ */
+export const LAYA_MAX_CHOICE_OPTIONS = 100;
+
+/**
+ * The ceiling that actually BINDS a request this module builds.
+ *
+ * `buildMatchRequest` serves both vendors — the mode picks the model — so one
+ * request shape must satisfy whichever is stricter. Taking the minimum rather
+ * than naming a number means a future vendor with a tighter cap lowers this by
+ * being added, instead of by somebody remembering to.
+ *
+ * Asserted rather than assumed, because the candidate cap is a separate
+ * constant in the engine and the two could drift.
+ */
+export const MAX_CHOICE_OPTIONS = Math.min(JEV_MAX_CHOICE_OPTIONS, LAYA_MAX_CHOICE_OPTIONS);
 
 /**
  * The `person` question's statement, in ONE place.

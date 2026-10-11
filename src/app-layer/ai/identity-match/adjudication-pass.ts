@@ -444,11 +444,30 @@ export async function runAdjudicationPass(
         const latencyMs = now() - startedAt;
         const inputTokens = parsed.usage.input_tokens;
 
-        // 6. The revision the ENDPOINT reported, not the one we asked for. A
+        // 6. The identity the ENDPOINT reported, not the one we asked for. A
         // vendor serving a different checkpoint behind the same request is what
-        // the canary fingerprinted - so an answer from a revision the canary did
-        // not validate is drift, however well-formed it is.
-        if (parsed.model !== record.revision && parsed.model !== record.model) {
+        // the canary fingerprinted - so an answer from a checkpoint the canary
+        // did not validate is drift, however well-formed it is.
+        //
+        // COMPARED AGAINST `record.reportedModel`, which is what the endpoint
+        // called ITSELF when the record was produced (#3428). It used to compare
+        // against `record.model` and `record.revision`, and neither can ever
+        // match:
+        //
+        //   - `record.model` is OUR name (`laya-multilingual`). A real Laya
+        //     answers `laya-rl-agent` - its agent architecture - and names the
+        //     checkpoint in a `routing` block under a third spelling again. So
+        //     this branch was taken for EVERY response, and the lane produced no
+        //     verdicts at all while every component reported healthy.
+        //   - `record.revision` is a LOCAL hash of `model|corpusDigest`. It
+        //     identifies the record, not the weights, so no vendor could report
+        //     it. That half of the condition was dead from the start.
+        //
+        // Like against like is the only comparison that means anything here: the
+        // endpoint described itself one way when we validated it, and drift is
+        // that description changing. A record with no `reportedModel` fails
+        // CLOSED, which is the direction this check should fail.
+        if (parsed.model !== record.reportedModel) {
             return {
                 ...base,
                 reason: 'MODEL_DRIFT' as const,

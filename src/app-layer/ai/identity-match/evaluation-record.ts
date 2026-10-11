@@ -102,6 +102,30 @@ export interface EvaluationThresholds {
 export interface EvaluationRecord {
     readonly model: string;
     readonly revision: string;
+
+    /**
+     * WHAT THE ENDPOINT CALLED ITSELF when this record was produced (#3428).
+     *
+     * The drift check compares the endpoint's self-report against THIS, not
+     * against `model` or `revision`, because neither can match it:
+     *
+     *   - `model` is OUR name for the checkpoint (`laya-multilingual`), and a
+     *     real Laya answers with `laya-rl-agent` — the agent architecture. The
+     *     checkpoint identity is in its `routing` block, under a third spelling
+     *     again (`convaiinnovations/laya/multilingual`).
+     *   - `revision` is a LOCAL hash of `model|corpusDigest`. It identifies this
+     *     record, not the vendor's weights, so no vendor could ever report it.
+     *
+     * So the only comparison that means anything is like against like: the
+     * endpoint described itself one way when the canary validated it, and drift
+     * is that description changing. Recorded rather than derived, because a
+     * mapping from our names to the vendor's is a guess that goes stale
+     * silently, and this is the canary's enforcement arm.
+     *
+     * Optional so an older record is readable; absent means the check fails
+     * CLOSED, which is the direction it should fail.
+     */
+    readonly reportedModel?: string;
     readonly corpusDigest: string;
     readonly producedAt: string;
     readonly answers: readonly RecordedAnswer[];

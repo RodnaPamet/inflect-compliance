@@ -67,7 +67,9 @@ export {
     systemOneResponseSchema,
     SystemOneResponseError,
     STATE_BUDGET_CHARS,
-    VENDOR_MAX_CHOICE_OPTIONS,
+    JEV_MAX_CHOICE_OPTIONS,
+    LAYA_MAX_CHOICE_OPTIONS,
+    MAX_CHOICE_OPTIONS,
 } from './systemone-wire';
 export type { MatchState, MatchStateAccount, MatchStateCandidate, MatchOption } from './systemone-wire';
 export { callSystemOne, parseRetryAfter, SystemOneTransportError } from './transport';
