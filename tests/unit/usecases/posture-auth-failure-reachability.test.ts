@@ -288,8 +288,8 @@ describe('aws-posture — a run that did NOT complete says nothing about the cre
 // ═══ GCP via the SHARED core — the other collector ═══════════════════
 
 describe('cloud-posture (GCP) — the same two halves through the shared core', () => {
-    const GCP_MAPPED = 'iam_service_account_no_user_managed_key';
-    const gcpAllErrored = powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
+    const GCP_MAPPED = 'iam_service_account_gcp_managed_key';
+    const gcpAllErrored = powerpipeBenchmarkJson('gcp_compliance.benchmark.all_controls', {
         controls: [
             powerpipeErroredControl(`gcp_compliance.control.${GCP_MAPPED}`,
                 'rpc error: code = Unauthenticated desc = request had invalid authentication credentials'),
@@ -321,11 +321,11 @@ describe('cloud-posture (GCP) — the same two halves through the shared core', 
         const db = makeDb();
         collectorRun({
             err: exitedWith(1),
-            stdout: powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
+            stdout: powerpipeBenchmarkJson('gcp_compliance.benchmark.all_controls', {
                 controls: [
                     powerpipeControl(`gcp_compliance.control.${GCP_MAPPED}`, 'ok'),
                     powerpipeControl('gcp_compliance.control.storage_bucket_uniform_access', 'alarm'),
-                    powerpipeErroredControl('gcp_compliance.control.compute_instance_no_public_ip',
+                    powerpipeErroredControl('gcp_compliance.control.compute_instance_with_no_public_ip_addresses',
                         'rpc error: code = Unauthenticated desc = request had invalid authentication credentials'),
                 ],
             }),

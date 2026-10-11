@@ -74,7 +74,7 @@ const BENCH_JSON = powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
 const ARMS = [
     {
         cloud: 'azure-posture' as const,
-        benchmarkId: 'azure_compliance.benchmark.soc_2',
+        benchmarkId: 'azure_compliance.benchmark.all_controls',
         // Distinct ids AND a distinct alarm/ok split, so neither the ids nor
         // the counts can be confused with the other arm's.
         controls: [
@@ -85,7 +85,7 @@ const ARMS = [
     },
     {
         cloud: 'gcp-posture' as const,
-        benchmarkId: 'gcp_compliance.benchmark.soc_2',
+        benchmarkId: 'gcp_compliance.benchmark.all_controls',
         controls: [
             { id: 'gcp_bucket_private', status: 'alarm' as const, title: 'GCP bucket private' },
             { id: 'gcp_sa_key_rotation', status: 'alarm' as const, title: 'GCP SA key rotation' },
@@ -114,7 +114,7 @@ function fakeExec(stdout: string, missing = false) {
 
 describe('runPowerpipeBenchmark', () => {
     it('FAILs when any control alarms; counts land in details', async () => {
-        const r = await runPowerpipeBenchmark({ benchmarkId: 'azure_compliance.benchmark.soc_2', env: process.env, secretValues: [], exec: fakeExec(BENCH_JSON) });
+        const r = await runPowerpipeBenchmark({ benchmarkId: 'azure_compliance.benchmark.all_controls', env: process.env, secretValues: [], exec: fakeExec(BENCH_JSON) });
         expect(r.status).toBe('FAILED');
         expect(r.summaryObj?.counts.total).toBe(3);
         expect(r.summaryObj?.counts.alarm).toBe(1);
@@ -155,8 +155,8 @@ describe('frameworkCodesForControl', () => {
 describe('AzurePostureProvider', () => {
     const provider = new AzurePostureProvider({ exec: fakeExec(BENCH_JSON) });
     it('resolves benchmark ids', () => {
-        expect(AzurePostureProvider.benchmarkId('cis')).toBe('azure_compliance.benchmark.cis_v200');
-        expect(AzurePostureProvider.benchmarkId(undefined)).toBe('azure_compliance.benchmark.soc_2');
+        expect(AzurePostureProvider.benchmarkId('cis')).toBe('azure_compliance.benchmark.all_controls');
+        expect(AzurePostureProvider.benchmarkId(undefined)).toBe('azure_compliance.benchmark.all_controls');
     });
     it('validateConnection requires tenant/sub + client creds', async () => {
         expect((await provider.validateConnection({}, {})).valid).toBe(false);

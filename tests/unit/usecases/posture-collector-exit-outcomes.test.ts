@@ -60,7 +60,7 @@ const NOW = new Date('2026-09-04T03:00:00.000Z');
 /** A control the AWS crosswalk covers, so a PASS on it mints evidence. */
 const AWS_MAPPED = 'iam_root_user_mfa_enabled';
 /** The GCP equivalent. */
-const GCP_MAPPED = 'iam_service_account_no_user_managed_key';
+const GCP_MAPPED = 'iam_service_account_gcp_managed_key';
 
 type Cb = (err: unknown, stdout: string, stderr: string) => void;
 
@@ -330,7 +330,7 @@ describe('cloud-posture — the shared core carries the same outcomes', () => {
         const db = makeDb();
         collectorRun({
             err: exitedWith(1),
-            stdout: powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
+            stdout: powerpipeBenchmarkJson('gcp_compliance.benchmark.all_controls', {
                 controls: [
                     powerpipeControl(`gcp_compliance.control.${GCP_MAPPED}`, 'ok'),
                     powerpipeControl('gcp_compliance.control.storage_bucket_not_publicly_accessible', 'alarm'),
@@ -350,7 +350,7 @@ describe('cloud-posture — the shared core carries the same outcomes', () => {
         const db = makeDb();
         collectorRun({
             err: killedBy('SIGTERM'),
-            stdout: powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
+            stdout: powerpipeBenchmarkJson('gcp_compliance.benchmark.all_controls', {
                 controls: [powerpipeControl(`gcp_compliance.control.${GCP_MAPPED}`, 'ok')],
             }),
         });

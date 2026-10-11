@@ -58,12 +58,12 @@ const SA_KEY = JSON.stringify({
 });
 
 /** A passing control in the REAL wire shape, from the source-cited module. */
-const OK_JSON = powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
+const OK_JSON = powerpipeBenchmarkJson('gcp_compliance.benchmark.all_controls', {
     controls: [powerpipeControl('gcp_compliance.control.iam_ok', 'ok', { title: 'IAM' })],
 });
 
 /** The routine shape: one control alarming, which powerpipe reports as exit 1. */
-const ALARM_JSON = powerpipeBenchmarkJson('gcp_compliance.benchmark.soc_2', {
+const ALARM_JSON = powerpipeBenchmarkJson('gcp_compliance.benchmark.all_controls', {
     controls: [
         powerpipeControl('gcp_compliance.control.iam_ok', 'ok', { title: 'IAM' }),
         powerpipeControl('gcp_compliance.control.bucket_public', 'alarm', { title: 'Bucket' }),
@@ -125,7 +125,7 @@ describe('GcpPostureProvider.runCheck — service-account key file', () => {
         expect(args).toEqual([
             'benchmark',
             'run',
-            'gcp_compliance.benchmark.soc_2',
+            'gcp_compliance.benchmark.all_controls',
             '--output',
             'json',
         ]);
@@ -291,6 +291,6 @@ describe('GcpPostureProvider.runCheck — service-account key file', () => {
         await new GcpPostureProvider().runCheck(
             checkInput({ benchmark: 'cis', serviceAccountJson: SA_KEY }),
         );
-        expect(execFileMock.mock.calls[0][1][2]).toBe('gcp_compliance.benchmark.cis_v200');
+        expect(execFileMock.mock.calls[0][1][2]).toBe('gcp_compliance.benchmark.all_controls');
     });
 });
