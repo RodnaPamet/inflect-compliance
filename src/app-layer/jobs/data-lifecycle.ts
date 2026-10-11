@@ -478,6 +478,264 @@ export async function purgeIdentityArtefactsOlderThan(
  * and copying it into an audit row that outlives the journal retains exactly
  * the personal data this exists to remove.
  */
+/**
+ * Legacy access snapshots, and the identified people inside them (#3317).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHAT THIS DESTROYS, AND WHY IT HAS TO
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `LegacyAccount` holds email, display name, given and family names, username,
+ * employee number, department, title and manager reference for identified
+ * people in a customer's legacy application. `LegacyAccessSnapshot` is
+ * deliberately IMMUTABLE — a changed account is a new row in a new snapshot,
+ * never an update — which is what makes `payloadHash` recomputable months
+ * later, and is also what made the history grow without bound. A connection
+ * pulled daily kept everybody's access forever.
+ *
+ * Owner decision on #3317: a TTL sweep, 90-day default, tenant-settable.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE CLOCK IS THE CONSUMING RUN, NOT `pulledAt`
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A snapshot pulled in March and first reconciled in September has a dispute
+ * window that OPENS in September. Keying off `pulledAt` would delete it the
+ * week it became relevant — which is why the consumed predicate is written
+ * against the resolutions rather than against the snapshot's own dates.
+ *
+ * "Consumed" means `LegacyAccountResolution` rows exist for it, and that is the
+ * only consumption signal there is: the schema has exactly two relations into
+ * `LegacyAccessSnapshot` — `accounts` and `resolutions` — and only four modules
+ * in `src/` touch the delegate at all.
+ *
+ * MAX(resolution.createdAt) is expressed as "no resolution newer than the
+ * cutoff" rather than computed in memory. Same predicate, one query, and it
+ * cannot be wrong about a snapshot with thousands of resolutions.
+ *
+ * It is the LAST consuming run, not the first. A snapshot reconciled twice has
+ * its window reopened by the second run, because the suggestions a reviewer
+ * might dispute are that run's.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AN UNCONSUMED SNAPSHOT STILL AGES OUT, ON A SHORTER CLOCK
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Otherwise a connection that pulls and never reconciles — a mapping left
+ * half-configured, a campaign never launched — accumulates named people
+ * indefinitely, which is the exact case #3317 was filed about. It gets a
+ * shorter bound because NOTHING CITES IT: no recertification artefact points at
+ * a snapshot with no resolutions, so deleting it costs a re-pull rather than
+ * evidence.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A COUPLING WORTH KNOWING ABOUT
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `LegacyAccountResolution` CASCADEs from `IntegrationExecution`, which
+ * `purgeIdentityArtefactsOlderThan` deletes after
+ * DEFAULT_IDENTITY_ARTEFACT_RETENTION_DAYS (730). So the consumption signal is
+ * itself perishable: if that window were ever shortened below the legacy
+ * snapshot window, a CONSUMED snapshot would silently reclassify as unconsumed
+ * and be destroyed on the SHORTER clock, inside its own dispute window.
+ *
+ * 730 against 90 leaves eight times the headroom today. The invariant is
+ * asserted in `tests/integration/legacy-snapshot-retention.test.ts` rather than
+ * left as a comment, because the failure is silent and the two numbers live in
+ * different files.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHAT IT DOES NOT DO
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * It does not purge the accounts while keeping the snapshot row. That was the
+ * third option in #3317 and it is the worst: `verifySnapshotPayloadHash` would
+ * report every stripped snapshot as unverifiable, preserving the APPEARANCE of
+ * integrity evidence while destroying the thing that could verify it. The
+ * accounts go when the snapshot goes, by CASCADE, or neither goes.
+ *
+ * It is also not the DSAR path. Erasure already reaches these tables when a
+ * subject asks; this is the DORMANT case erasure never hears about.
+ */
+export const DEFAULT_LEGACY_SNAPSHOT_RETENTION_DAYS = 90;
+
+/**
+ * The unconsumed bound. 30 is a CHOSEN default, not one the #3317 decision
+ * supplied — it says only "probably shorter". A tenant setting, so revising it
+ * is configuration rather than a release.
+ */
+export const DEFAULT_LEGACY_SNAPSHOT_UNCONSUMED_RETENTION_DAYS = 30;
+
+export interface PurgeLegacySnapshotOptions extends PurgeOptions {
+    /** Overrides the tenant setting. Used by the scheduled job's dry run. */
+    retentionDays?: number;
+    unconsumedRetentionDays?: number;
+}
+
+export async function purgeLegacyAccessSnapshotsOlderThan(
+    options: PurgeLegacySnapshotOptions = {},
+): Promise<PurgeResult[]> {
+    return runJob('purge-legacy-access-snapshots', async () => {
+        const now = options.now ?? new Date();
+        const dryRun = options.dryRun ?? false;
+        const db = options.db ?? defaultPrisma;
+
+        // PER TENANT, for two independent reasons, and the first is not an
+        // optimisation: the windows are TENANT SETTINGS, so there is no single
+        // cutoff to sweep with. The second is the one the identity-artefact
+        // purge records — `AuditLog.tenantId` is required, so a global run that
+        // wrote one attestation could not say whose data it destroyed.
+        const tenantIds = options.tenantId
+            ? [options.tenantId]
+            : (
+                await db.legacyAccessSnapshot.groupBy({
+                    by: ['tenantId'],
+                    _count: { _all: true },
+                })
+            ).map((g) => g.tenantId);
+
+        // ── TWO HOISTED READS, NOT TWO PER TENANT ──
+        //
+        // `query-shape-guardrails` Layer D1 refused the obvious shape (settings
+        // read and snapshot scan inside the tenant loop) and was right to: a
+        // daily job over every tenant with legacy snapshots would issue 2N
+        // queries. The same guard forced the same correction on
+        // `legacy-adjudication.ts`, which is a sign it is the right shape here
+        // rather than a hoop.
+        //
+        // The windows differ per tenant, so the scan cannot use one cutoff pair.
+        // It uses one OR arm PER TENANT instead, each carrying that tenant's own
+        // cutoffs — one round trip whatever the tenant count.
+        const settingsRows = await db.tenantSecuritySettings.findMany({
+            where: { tenantId: { in: tenantIds } },
+            select: {
+                tenantId: true,
+                legacySnapshotRetentionDays: true,
+                legacySnapshotUnconsumedRetentionDays: true,
+            },
+        });
+        const settingsByTenant = new Map(settingsRows.map((r) => [r.tenantId, r]));
+
+        // An explicit option wins, then the tenant setting, then the default. A
+        // tenant with NO settings row has never opened the security page; it must
+        // still be swept, or "no settings" becomes an opt-out of retention nobody
+        // chose.
+        const windowFor = (tenantId: string): { consumed: Date; unconsumed: Date } => {
+            const row = settingsByTenant.get(tenantId);
+            const retentionDays = options.retentionDays
+                ?? row?.legacySnapshotRetentionDays
+                ?? DEFAULT_LEGACY_SNAPSHOT_RETENTION_DAYS;
+            const unconsumedRetentionDays = options.unconsumedRetentionDays
+                ?? row?.legacySnapshotUnconsumedRetentionDays
+                ?? DEFAULT_LEGACY_SNAPSHOT_UNCONSUMED_RETENTION_DAYS;
+            return {
+                consumed: new Date(now.getTime() - retentionDays * 86_400_000),
+                unconsumed: new Date(now.getTime() - unconsumedRetentionDays * 86_400_000),
+            };
+        };
+
+        // The two arms per tenant are DISJOINT by construction (`some` against
+        // `none`), so no snapshot can be selected twice and the counts add.
+        const tenantArms: Prisma.LegacyAccessSnapshotWhereInput[] = tenantIds.map((tenantId) => {
+            const w = windowFor(tenantId);
+            return {
+                tenantId,
+                OR: [
+                    {
+                        // Consumed, and no consuming run is newer than the cutoff
+                        // — i.e. MAX(resolution.createdAt) < cutoff, expressed as
+                        // a relation filter so it is one query rather than a scan
+                        // of every resolution.
+                        resolutions: { some: {} },
+                        NOT: { resolutions: { some: { createdAt: { gte: w.consumed } } } },
+                    },
+                    {
+                        // Never consumed, on its own shorter clock.
+                        resolutions: { none: {} },
+                        pulledAt: { lt: w.unconsumed },
+                    },
+                ],
+            };
+        });
+
+        // The ACCOUNT count is the number this issue is about, and it has to be
+        // read BEFORE the delete because the accounts go by CASCADE — afterwards
+        // there is nothing left to count, and an attestation naming only
+        // snapshots would understate what was destroyed by three or four orders
+        // of magnitude.
+        const doomed = tenantArms.length === 0
+            ? []
+            : await db.legacyAccessSnapshot.findMany({
+                where: { OR: tenantArms },
+                select: { id: true, tenantId: true, _count: { select: { accounts: true } } },
+            });
+
+        const byTenant = new Map<string, { ids: string[]; accounts: number }>();
+        for (const row of doomed) {
+            const entry = byTenant.get(row.tenantId) ?? { ids: [], accounts: 0 };
+            entry.ids.push(row.id);
+            entry.accounts += row._count.accounts;
+            byTenant.set(row.tenantId, entry);
+        }
+
+        const snapshotsTotal = doomed.length;
+        const accountsTotal = doomed.reduce((n, s) => n + s._count.accounts, 0);
+
+        if (!dryRun) {
+            // WRITES per tenant, and that grouping is the attestation rather than
+            // an optimisation: `AuditLog.tenantId` is required, so a single global
+            // delete could not record whose data it destroyed.
+            for (const [tenantId, entry] of byTenant) {
+                const w = windowFor(tenantId);
+                await db.legacyAccessSnapshot.deleteMany({
+                    where: { tenantId, id: { in: entry.ids } },
+                });
+                await writePurgeAttestation(
+                    db, tenantId, 'LegacyAccessSnapshot', entry.ids.length,
+                    options.retentionDays
+                        ?? settingsByTenant.get(tenantId)?.legacySnapshotRetentionDays
+                        ?? DEFAULT_LEGACY_SNAPSHOT_RETENTION_DAYS,
+                    w.consumed,
+                );
+                // A SECOND attestation, for the accounts. They are a different
+                // model with a different retention argument, and the audit row for
+                // a PII destruction should not have to be inferred from a
+                // parent's.
+                await writePurgeAttestation(
+                    db, tenantId, 'LegacyAccount', entry.accounts,
+                    options.unconsumedRetentionDays
+                        ?? settingsByTenant.get(tenantId)?.legacySnapshotUnconsumedRetentionDays
+                        ?? DEFAULT_LEGACY_SNAPSHOT_UNCONSUMED_RETENTION_DAYS,
+                    w.unconsumed,
+                );
+            }
+        }
+
+        logger.info('legacy access snapshot retention purge', {
+            component: 'job',
+            dryRun,
+            tenants: tenantIds.length,
+            snapshots: snapshotsTotal,
+            accounts: accountsTotal,
+        });
+
+        return [
+            {
+                model: 'LegacyAccessSnapshot',
+                scanned: snapshotsTotal,
+                purged: dryRun ? 0 : snapshotsTotal,
+                dryRun,
+            },
+            {
+                model: 'LegacyAccount',
+                scanned: accountsTotal,
+                purged: dryRun ? 0 : accountsTotal,
+                dryRun,
+            },
+        ];
+    });
+}
+
 async function writePurgeAttestation(
     db: typeof defaultPrisma,
     tenantId: string,

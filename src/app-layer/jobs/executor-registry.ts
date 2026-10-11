@@ -426,6 +426,7 @@ executorRegistry.register('data-lifecycle', async (payload) => {
         purgeSoftDeletedOlderThan,
         purgeExpiredEvidenceOlderThan,
         purgeIdentityArtefactsOlderThan,
+        purgeLegacyAccessSnapshotsOlderThan,
         runRetentionSweep,
     } = await import('./data-lifecycle');
 
@@ -441,6 +442,18 @@ executorRegistry.register('data-lifecycle', async (payload) => {
     // `retentionUntil` — see the function's docblock for why they are not in
     // RETENTION_MODELS.
     const identityPurge = await purgeIdentityArtefactsOlderThan({
+        tenantId: payload.tenantId,
+        dryRun: payload.dryRun,
+    });
+    // #3317 — legacy access snapshots and the identified people inside them.
+    // Also pruned by AGE rather than a per-row `retentionUntil`, and for a
+    // sharper reason than the JML artefacts above: the clock is the run that
+    // CONSUMED the snapshot, which lives on a child table, so there is no
+    // column on the row that could carry it.
+    //
+    // BEFORE `purgeSoftDeletedTenants` below, with the rest, and after the
+    // per-row sweeps for the same reason they are ordered that way.
+    const legacySnapshotPurge = await purgeLegacyAccessSnapshotsOlderThan({
         tenantId: payload.tenantId,
         dryRun: payload.dryRun,
     });
@@ -468,18 +481,23 @@ executorRegistry.register('data-lifecycle', async (payload) => {
     const totalScanned = purgeResults.reduce((s, r) => s + r.scanned, 0)
         + evidencePurge.scanned
         + identityPurge.reduce((s, r) => s + r.scanned, 0)
+        + legacySnapshotPurge.reduce((s, r) => s + r.scanned, 0)
         + retentionResults.reduce((s, r) => s + r.scanned, 0)
         + tenantPurge.length;
     const totalActioned = purgeResults.reduce((s, r) => s + r.purged, 0)
         + evidencePurge.purged
         + identityPurge.reduce((s, r) => s + r.purged, 0)
+        + legacySnapshotPurge.reduce((s, r) => s + r.purged, 0)
         + retentionResults.reduce((s, r) => s + r.expired, 0)
         + tenantPurge.reduce((s, r) => s + r.totalRows, 0);
 
     return makeResult(
         'data-lifecycle', startedAt, startMs,
         totalScanned, totalActioned, 0,
-        { purgeResults, evidencePurge, identityPurge, retentionResults, tenantPurge },
+        {
+            purgeResults, evidencePurge, identityPurge, legacySnapshotPurge,
+            retentionResults, tenantPurge,
+        },
     );
 });
 
