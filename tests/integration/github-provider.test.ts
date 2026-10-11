@@ -219,9 +219,13 @@ describe('GitHub Branch Protection Provider', () => {
         });
 
         it('defaults branch to main when not specified', async () => {
-            let calledUrl = '';
+            // Collect ALL urls, not the last one: the check reads classic
+            // protection AND rulesets since #3433, so capturing a single
+            // `calledUrl` silently measured whichever call happened to be
+            // last rather than the one this test is about.
+            const calledUrls: string[] = [];
             const captureFetch: FetchFn = async (url) => {
-                calledUrl = url;
+                calledUrls.push(url);
                 return { status: 200, json: async () => FULL_PROTECTION, ok: true } as Response;
             };
 
@@ -229,7 +233,9 @@ describe('GitHub Branch Protection Provider', () => {
             await provider.runCheck(makeCheckInput({
                 connectionConfig: { owner: 'acme', repo: 'api', token: 'test' },
             }));
-            expect(calledUrl).toContain('/main/protection');
+            expect(calledUrls.some((u) => u.includes('/main/protection'))).toBe(true);
+            // ...and the default branch reaches the rulesets read too.
+            expect(calledUrls.some((u) => u.includes('/rules/branches/main'))).toBe(true);
         });
     });
 

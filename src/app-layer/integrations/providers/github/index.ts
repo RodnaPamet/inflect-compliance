@@ -22,5 +22,5 @@ export { GitHubSyncOrchestrator } from './sync';
 
 // Legacy provider — still used by ProviderRegistry for automationKey routing
 export { GitHubProvider } from './legacy-provider';
-export { fetchBranchProtection, evaluateBranchProtection } from './legacy-provider';
-export type { GitHubBranchProtection } from './legacy-provider';
+export { fetchBranchProtection, fetchBranchRules, evaluateBranchProtection } from './legacy-provider';
+export type { GitHubBranchProtection, GitHubBranchRule } from './legacy-provider';

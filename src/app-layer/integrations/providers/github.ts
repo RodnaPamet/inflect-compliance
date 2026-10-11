@@ -18,8 +18,10 @@ export {
     // Legacy provider
     GitHubProvider,
     fetchBranchProtection,
+    fetchBranchRules,
     evaluateBranchProtection,
     type GitHubBranchProtection,
+    type GitHubBranchRule,
 } from './github/index';
 
 export type { FetchFn } from './github/legacy-provider';
