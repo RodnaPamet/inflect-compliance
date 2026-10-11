@@ -223,7 +223,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
         cliResult({ stdout: benchmarkJson([control('c1', 'ok')]) });
 
         await runPowerpipeBenchmark({
-            benchmarkId: 'azure_compliance.benchmark.soc_2',
+            benchmarkId: 'azure_compliance.benchmark.all_controls',
             env: asEnv({ AZURE_CLIENT_SECRET: SECRET, PATH: '/usr/bin' }),
             secretValues: [SECRET],
         });
@@ -234,7 +234,7 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
         expect(args).toEqual([
             'benchmark',
             'run',
-            'azure_compliance.benchmark.soc_2',
+            'azure_compliance.benchmark.all_controls',
             '--output',
             'json',
         ]);

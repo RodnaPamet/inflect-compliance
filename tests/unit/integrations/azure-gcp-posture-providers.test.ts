@@ -100,19 +100,19 @@ const result = (status: CheckResult['status'], summary = 'sum'): CheckResult => 
 
 describe('AzurePostureProvider.benchmarkId', () => {
     it('maps the two shorthands case-insensitively', () => {
-        expect(AzurePostureProvider.benchmarkId('soc2')).toBe('azure_compliance.benchmark.soc_2');
-        expect(AzurePostureProvider.benchmarkId('cis')).toBe('azure_compliance.benchmark.cis_v200');
-        expect(AzurePostureProvider.benchmarkId('CIS')).toBe('azure_compliance.benchmark.cis_v200');
+        expect(AzurePostureProvider.benchmarkId('soc2')).toBe('azure_compliance.benchmark.all_controls');
+        expect(AzurePostureProvider.benchmarkId('cis')).toBe('azure_compliance.benchmark.all_controls');
+        expect(AzurePostureProvider.benchmarkId('CIS')).toBe('azure_compliance.benchmark.all_controls');
     });
 
     it('falls back to SOC 2 for an absent or unrecognised shorthand', () => {
         // Falling back to SOC 2 (rather than throwing or running nothing) is
         // the deliberate choice; a typo'd config must still produce a run.
         expect(AzurePostureProvider.benchmarkId(undefined)).toBe(
-            'azure_compliance.benchmark.soc_2',
+            'azure_compliance.benchmark.all_controls',
         );
-        expect(AzurePostureProvider.benchmarkId('pci')).toBe('azure_compliance.benchmark.soc_2');
-        expect(AzurePostureProvider.benchmarkId('')).toBe('azure_compliance.benchmark.soc_2');
+        expect(AzurePostureProvider.benchmarkId('pci')).toBe('azure_compliance.benchmark.all_controls');
+        expect(AzurePostureProvider.benchmarkId('')).toBe('azure_compliance.benchmark.all_controls');
     });
 });
 
@@ -266,13 +266,13 @@ describe('AzurePostureProvider.runCheck — benchmark selection + verdict', () =
         await new AzurePostureProvider({ exec }).runCheck(
             checkInput('azure-posture', 'soc2', { benchmark: 'cis' }),
         );
-        expect(calls[0].args[2]).toBe('azure_compliance.benchmark.cis_v200');
+        expect(calls[0].args[2]).toBe('azure_compliance.benchmark.all_controls');
     });
 
     it('falls back to the automationKey check type when no benchmark is configured', async () => {
         const { exec, calls } = recordingExec(OK_JSON);
         await new AzurePostureProvider({ exec }).runCheck(checkInput('azure-posture', 'cis', {}));
-        expect(calls[0].args[2]).toBe('azure_compliance.benchmark.cis_v200');
+        expect(calls[0].args[2]).toBe('azure_compliance.benchmark.all_controls');
     });
 
     it('returns a CheckResult and never leaks the internal summary object', async () => {
@@ -322,14 +322,14 @@ describe('AzurePostureProvider.mapResultToEvidence', () => {
 
 describe('GcpPostureProvider.benchmarkId', () => {
     it('maps the two shorthands case-insensitively', () => {
-        expect(GcpPostureProvider.benchmarkId('soc2')).toBe('gcp_compliance.benchmark.soc_2');
-        expect(GcpPostureProvider.benchmarkId('cis')).toBe('gcp_compliance.benchmark.cis_v200');
-        expect(GcpPostureProvider.benchmarkId('CIS')).toBe('gcp_compliance.benchmark.cis_v200');
+        expect(GcpPostureProvider.benchmarkId('soc2')).toBe('gcp_compliance.benchmark.all_controls');
+        expect(GcpPostureProvider.benchmarkId('cis')).toBe('gcp_compliance.benchmark.all_controls');
+        expect(GcpPostureProvider.benchmarkId('CIS')).toBe('gcp_compliance.benchmark.all_controls');
     });
 
     it('falls back to SOC 2 for an absent or unrecognised shorthand', () => {
-        expect(GcpPostureProvider.benchmarkId(undefined)).toBe('gcp_compliance.benchmark.soc_2');
-        expect(GcpPostureProvider.benchmarkId('pci')).toBe('gcp_compliance.benchmark.soc_2');
+        expect(GcpPostureProvider.benchmarkId(undefined)).toBe('gcp_compliance.benchmark.all_controls');
+        expect(GcpPostureProvider.benchmarkId('pci')).toBe('gcp_compliance.benchmark.all_controls');
     });
 });
 
@@ -493,7 +493,7 @@ describe('GcpPostureProvider.runCheck — with the exec seam injected', () => {
     it('falls back to the automationKey check type when no benchmark is configured', async () => {
         const { exec, calls } = recordingExec(OK_JSON);
         await new GcpPostureProvider({ exec }).runCheck(checkInput('gcp-posture', 'cis', {}));
-        expect(calls[0].args[2]).toBe('gcp_compliance.benchmark.cis_v200');
+        expect(calls[0].args[2]).toBe('gcp_compliance.benchmark.all_controls');
     });
 
     it('returns a CheckResult and never leaks the internal summary object', async () => {

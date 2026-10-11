@@ -28,9 +28,32 @@ export interface GcpPostureConfig {
     projectId?: string;
 }
 
+/**
+ * The Powerpipe benchmark the collector runs. Both shorthands resolve to
+ * `all_controls` (#3434) — deliberately NOT the vendor's own SOC 2 / CIS
+ * benchmarks, and this is the load-bearing comment on that choice.
+ *
+ * A CIS benchmark declares its OWN controls, named for the CIS item
+ * (`cis_v200_6_1`), which merely reuse the shared service query. The control
+ * ids our crosswalk maps are those shared controls, and they live under
+ * `all_controls`. So a `cis_v200` run matched 0 of our 11 ids and minted
+ * ZERO evidence — silently, because an unmapped control is simply skipped.
+ * `soc_2_2017` does use the shared controls, but reaches only 7/11.
+ *
+ * The vendor's badge is not what makes this SOC 2 evidence: the crosswalk in
+ * `src/data/integrations/gcp-posture-control-map.ts` IS the mapping layer
+ * and carries the SOC 2 / NIST CSF codes itself. So run the widest root whose
+ * ids the crosswalk speaks (11/11, 202 controls) and let the crosswalk decide what each
+ * result evidences. Owner decision 2026-10-11.
+ *
+ * The shorthands are kept because `checkType` still carries one; they no
+ * longer select different benchmarks. `tests/guards/aws-posture-connector.test.ts`
+ * asserts every mapped id resolves against the vendored snapshot.
+ */
+const ALL_CONTROLS = 'gcp_compliance.benchmark.all_controls';
 const BENCHMARKS: Record<string, string> = {
-    soc2: 'gcp_compliance.benchmark.soc_2',
-    cis: 'gcp_compliance.benchmark.cis_v200',
+    soc2: ALL_CONTROLS,
+    cis: ALL_CONTROLS,
 };
 
 // Redact private-key blocks + service-account emails from output.

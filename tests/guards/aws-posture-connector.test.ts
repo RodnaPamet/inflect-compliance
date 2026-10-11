@@ -131,6 +131,116 @@ describe('aws-posture — mapping validity', () => {
     });
 });
 
+/**
+ * #3434 — the crosswalks have TWO sides and only one was ever checked.
+ *
+ * The tests above validate the RIGHT-hand side of the AWS map: every SOC 2 /
+ * NIST code it cites resolves to a real IC requirement. Nothing validated the
+ * LEFT-hand side — that a control id names a control the mod actually
+ * declares — and nothing at all validated the GCP and Azure maps, whose only
+ * assertions were `length > 5` and "no prisma import".
+ *
+ * 13 of their 24 ids named nothing real. They were authored from an idea of
+ * what upstream called things ("no mod HCL/SQL transcribed"), and the test
+ * fixtures were built from the same idea, so fixture and code agreed with each
+ * other while neither agreed with the mod. A run would simply match zero
+ * controls and mint zero evidence — a clean, silent, passing nothing.
+ */
+describe('cloud-posture crosswalks — BOTH sides of every mapping', () => {
+    const SNAPSHOT_DIR = 'tests/fixtures/powerpipe-control-ids';
+    /** Clouds whose control-id snapshot is vendored. AWS's mod was not installed. */
+    const SNAPSHOTTED = ['gcp', 'azure'] as const;
+    const MAPS = {
+        aws: '@/data/integrations/aws-posture-control-map',
+        gcp: '@/data/integrations/gcp-posture-control-map',
+        azure: '@/data/integrations/azure-posture-control-map',
+    } as const;
+
+    const mapFor = (cloud: keyof typeof MAPS): Record<string, { soc2: string[]; nistCsf?: string[] }> => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const mod = require(MAPS[cloud]);
+        const key = Object.keys(mod).find((k) => k.endsWith('_POSTURE_CONTROL_MAP'));
+        expect(key).toBeDefined();
+        return mod[key as string];
+    };
+    /**
+     * The controls reachable from the mod's `all_controls` benchmark — the root
+     * the collectors run. Deliberately NOT every DECLARED control: a control
+     * can be declared and never emitted by our run (Azure's
+     * `iam_user_with_owner_permission_on_subscription_mfa_enabled` is declared
+     * but sits only under HIPAA/NIST/PCI), and a declaration-based snapshot
+     * would call that mapping valid.
+     */
+    const upstreamIds = (cloud: string): Set<string> =>
+        new Set(readRaw(`${SNAPSHOT_DIR}/${cloud}.txt`).split('\n').map((l) => l.trim()).filter(Boolean));
+
+    it.each(SNAPSHOTTED)('every %s control id is EMITTED by the benchmark we run', (cloud) => {
+        const up = upstreamIds(cloud);
+        // Positive control: the snapshot must be a real population, not an
+        // empty read that makes every `has()` below vacuously true... which is
+        // the failure shape that would re-hide exactly this defect.
+        expect(up.size).toBeGreaterThan(150);
+        const ids = Object.keys(mapFor(cloud));
+        expect(ids.length).toBeGreaterThan(5);
+        const unresolved = ids.filter((id) => !up.has(id));
+        // Name them: a bare count tells the next reader nothing about which
+        // requirement just lost its evidence source.
+        expect({ cloud, unresolved }).toEqual({ cloud, unresolved: [] });
+    });
+
+    it('the id check can FAIL — a fabricated id is caught', () => {
+        const up = upstreamIds('gcp');
+        expect(up.has('iam_service_account_gcp_managed_key')).toBe(true);
+        // The pre-#3434 spelling. If this ever resolves, the snapshot is wrong.
+        expect(up.has('iam_service_account_no_user_managed_key')).toBe(false);
+    });
+
+    it.each(['gcp', 'azure'] as const)(
+        'every %s SOC 2 / NIST code resolves to a real IC requirement',
+        (cloud) => {
+            const icSoc2 = new Set(
+                (
+                    JSON.parse(readRaw('prisma/fixtures/soc2-control-templates.json')) as {
+                        requirements: Array<{ code: string }>;
+                    }
+                ).requirements.map((r) => r.code),
+            );
+            const icCsf = new Set(
+                [
+                    ...readRaw('src/data/libraries/nist-csf-2.0.yaml').matchAll(
+                        /ref_id:\s*([A-Z]{2}\.[A-Z]{2}-\d+)/g,
+                    ),
+                ].map((m) => m[1]),
+            );
+            expect(icSoc2.size).toBeGreaterThanOrEqual(5);
+            expect(icCsf.size).toBeGreaterThanOrEqual(5);
+            const entries = Object.values(mapFor(cloud));
+            expect(entries.length).toBeGreaterThan(5);
+            const dangling: string[] = [];
+            for (const e of entries) {
+                for (const c of e.soc2) if (!icSoc2.has(c)) dangling.push(c);
+                for (const c of e.nistCsf ?? []) if (!icCsf.has(c)) dangling.push(c);
+            }
+            expect({ cloud, dangling }).toEqual({ cloud, dangling: [] });
+        },
+    );
+
+    it('publishes which clouds the id check actually covers', () => {
+        // A coverage figure names its axis. This one covers 2 of 3 clouds on
+        // the left-hand side; AWS has no vendored snapshot, so its ids remain
+        // unverified — not verified-good.
+        const unsnapshotted = Object.keys(MAPS).filter(
+            (c) => !(SNAPSHOTTED as readonly string[]).includes(c),
+        );
+        expect(unsnapshotted).toEqual(['aws']);
+        // eslint-disable-next-line no-console
+        console.log(
+            `#3434 — control-id resolution covers ${SNAPSHOTTED.length}/${Object.keys(MAPS).length} clouds ` +
+                `(${SNAPSHOTTED.join(', ')}); UNCOVERED: ${unsnapshotted.join(', ')} (mod not vendored)`,
+        );
+    });
+});
+
 describe('aws-posture — evidence provenance', () => {
     const usecase = read(USECASE);
 
