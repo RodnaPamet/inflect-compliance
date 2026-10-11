@@ -231,14 +231,19 @@ export async function fetchBranchProtection(
  * deletions blocked — as having none of it.
  *
  * `rules` distinguishes three states, and the distinction is load-bearing:
- *   - `[]`     no rulesets apply (a real answer)
+ *   - `[]`     no rulesets apply (a real answer, and the default: a caller
+ *              asking only the classic question gets the classic answer)
  *   - `[...]`  these rules are in effect
  *   - `null`   the rulesets endpoint could NOT be read
  *
  * `null` must not read as `[]`. A failed probe means unknown, never zero —
  * otherwise a token lacking the scope to list rulesets silently downgrades
  * every ruleset-protected branch to "unprotected", which is the original
- * defect with a different cause.
+ * defect with a different cause. The default is `[]` rather than `null` so
+ * that classic-only callers are not told rulesets were unreadable when
+ * nobody asked about them; the PRODUCTION path always passes the argument
+ * explicitly, and `p2-github-passes-rulesets` in
+ * `tests/guards/partial-mock-of-a-guarded-barrel.test.ts` enforces that.
  */
 export function evaluateBranchProtection(
     owner: string,
@@ -246,7 +251,7 @@ export function evaluateBranchProtection(
     branch: string,
     protection: GitHubBranchProtection | null,
     apiStatus: number,
-    rules: GitHubBranchRule[] | null = null
+    rules: GitHubBranchRule[] | null = []
 ): CheckResult {
     const repoRef = `${owner}/${repo}:${branch}`;
     const ruleTypes = new Set((rules ?? []).map((r) => r.type));
@@ -266,6 +271,24 @@ export function evaluateBranchProtection(
     // No CLASSIC protection — which is not the same as no protection. A
     // ruleset-only branch lands here with a 404 and may be fully governed.
     if (!protection || apiStatus === 404) {
+        // Nothing is protecting this branch, and we DID look. Keep the
+        // original wording for the original situation — the richer summary
+        // below is for when rulesets are in play or could not be read.
+        if (ruleTypes.size === 0 && !rulesetsUnread) {
+            return {
+                status: 'FAILED',
+                summary: `Branch protection is NOT enabled on ${repoRef}`,
+                details: {
+                    repository: `${owner}/${repo}`,
+                    branch,
+                    protectionEnabled: false,
+                    requiredReviews: false,
+                    requiredStatusChecks: false,
+                    enforceAdmins: false,
+                    allowForcePushes: true,
+                },
+            };
+        }
         const checks = {
             protectionEnabled: rulesetStatusChecks || rulesetReviews || ruleTypes.size > 0,
             requiredReviews: rulesetReviews,
@@ -358,11 +381,18 @@ export function evaluateBranchProtection(
     } else if (ruleTypes.size > 0) {
         summaryParts.push(`Rulesets in effect: ${[...ruleTypes].sort().join(', ')}`);
     }
+    // Keyed on PRESENCE, not on the verdict. A reviews block that exists and
+    // requires ZERO approvals is a different fact from no block at all, and
+    // #3435 turned on exactly that distinction: an absent requirement must not
+    // render as a requirement of zero. Collapsing both to "NOT configured"
+    // would throw that away from the other side.
     summaryParts.push(
         `Required reviews: ${
             checks.requiredReviews
                 ? `${checks.reviewCount || 1} reviewer(s) via ${via(hasReviews && reviewCount >= 1, rulesetReviews)}`
-                : 'NOT configured'
+                : hasReviews
+                  ? `${reviewCount} reviewer(s) — does NOT meet the requirement`
+                  : 'NOT configured'
         }`,
     );
     summaryParts.push(

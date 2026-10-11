@@ -26,6 +26,7 @@ import {
     resolveAliasedModule,
     valueExportsOf,
 } from '../helpers/mock-surface';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -138,6 +139,50 @@ describe('a file shadowing a directory barrel forwards every export', () => {
             });
         },
     );
+});
+
+/**
+ * #3433 — the production path must not rely on `evaluateBranchProtection`'s
+ * default for its ruleset argument.
+ *
+ * The default is `[]`, so a caller that forgets the argument gets the classic
+ * answer with no complaint — which is the defect this fixed. That default
+ * exists for callers legitimately asking only the classic question; the real
+ * check must always pass what it read, including `null` when the read failed.
+ * tsc cannot see the difference between a deliberate omission and a forgotten
+ * one, so it is checked here.
+ */
+describe('p2-github-passes-rulesets', () => {
+    const PROVIDER = 'src/app-layer/integrations/providers/github/legacy-provider.ts';
+
+    /**
+     * MASKED AT THE READ SEAM — Class A. The question is what the CODE does,
+     * and this file is full of prose about `evaluateBranchProtection(...)`
+     * calls: a docblock quoting the call would otherwise satisfy the regex
+     * below and the guard would grade its own comments.
+     */
+    const code = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+
+    it('every production call to evaluateBranchProtection passes rules explicitly', () => {
+        const src = code(PROVIDER);
+        const calls = [...src.matchAll(/evaluateBranchProtection\(([^)]*)\)/g)]
+            // skip the declaration itself
+            .filter((m) => !/^\s*$/.test(m[1]) && !m[1].includes(': '));
+        expect(calls.length).toBeGreaterThanOrEqual(1);
+        for (const c of calls) {
+            const args = c[1].split(',').map((a) => a.trim());
+            expect(args.length).toBe(6);
+            expect(args[5]).toBe('rules');
+        }
+    });
+
+    it('and it reads the rulesets endpoint to have something to pass', () => {
+        const src = code(PROVIDER);
+        expect(src).toMatch(/await fetchBranchRules\(/);
+        // The three-state contract: a failed read must stay distinguishable
+        // from an empty one, or the fix regresses to the original defect.
+        expect(src).toMatch(/const rulesetsUnread = rules === null;/);
+    });
 });
 
 describe('a guarded barrel is not mocked as a subset', () => {
