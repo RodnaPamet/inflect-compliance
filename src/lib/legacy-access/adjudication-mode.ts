@@ -72,7 +72,16 @@ export const LEGACY_MATCH_PROCESSOR: Readonly<
 > = {
     OFF: { processor: 'none — no model is called', region: 'n/a' },
     LOCAL_ONLY: { processor: 'Laya, in-deployment', region: 'the deployment’s own region' },
-    EXTERNAL: { processor: 'TypeSafe (Jev / SystemOne)', region: 'EU' },
+    // 'US (West Coast)', NOT 'EU'. This read 'EU' until #3419, almost certainly
+    // from the design document's "the DPA uses EU Standard Contractual Clauses":
+    // the SCCs are the legal INSTRUMENT permitting the transfer, and they are
+    // needed precisely because the destination is outside the EU. This string is
+    // written into the immutable audit log by `tenant-security-settings.ts`, so a
+    // wrong value cannot be corrected afterwards — only compensated. It must
+    // agree with the Region column of the TypeSafe row in `docs/sub-processors.md`,
+    // and `tests/guardrails/sub-processor-record-agrees-with-code.test.ts` asserts
+    // that agreement rather than pinning this literal against itself.
+    EXTERNAL: { processor: 'TypeSafe (Jev / SystemOne)', region: 'US (West Coast)' },
 };
 
 /**
