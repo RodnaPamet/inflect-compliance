@@ -9034,7 +9034,13 @@
     "hrContradicted": "HR link contradicted by a later sync",
     "truncatedTitle": "Partial coverage.",
     "truncatedBody": "The directory held more accounts than this campaign could snapshot, so these subjects are the first {count} and not the whole population. Closing it evidences that these accounts were reviewed — not that every account was.",
-    "crumbTests": "Tests"
+    "crumbTests": "Tests",
+    "undoVerdict": "Discard",
+    "undoDialogTitle": "Discard the verdict on {email}",
+    "undoExplainer": "The recorded {verdict} will be cleared and this row returns to pending, so a new verdict can be recorded. The snapshot of what the access looked like is kept.",
+    "undoReasonLabel": "Why are you discarding this verdict?",
+    "undoReasonPlaceholder": "Recorded against the wrong person, wrong verdict chosen, …",
+    "undoConfirm": "Discard verdict"
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",

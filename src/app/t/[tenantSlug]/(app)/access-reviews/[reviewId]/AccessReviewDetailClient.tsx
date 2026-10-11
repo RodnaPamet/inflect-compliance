@@ -203,6 +203,7 @@ export function AccessReviewDetailClient({
     // tooltips read the real phrase rather than the generic record one.
     const reviewIds = useEntityListIds(CACHE_KEYS.accessReviews.list());
 
+    const [undoTarget, setUndoTarget] = useState<DecisionRow | null>(null);
     const [activeDecision, setActiveDecision] = useState<{
         row: DecisionRow;
         type: DecisionType;
@@ -284,12 +285,40 @@ export function AccessReviewDetailClient({
                     const d = row.original;
                     if (d.decision) {
                         return (
-                            <StatusBadge variant={DECISION_VARIANT[d.decision]}>
-                                {d.decision}
-                                {d.decision === 'MODIFY' && d.modifiedToRole
-                                    ? ` → ${d.modifiedToRole}`
-                                    : ''}
-                            </StatusBadge>
+                            <div className="flex items-center gap-tight">
+                                <StatusBadge variant={DECISION_VARIANT[d.decision]}>
+                                    {d.decision}
+                                    {d.decision === 'MODIFY' && d.modifiedToRole
+                                        ? ` → ${d.modifiedToRole}`
+                                        : ''}
+                                </StatusBadge>
+                                {/*
+                                  UNDO, NOT "REVOKE" (#3269). `REVOKE` is one of the
+                                  three VERDICTS and it is rendered in the badge
+                                  immediately to the left of this control — it means
+                                  "take this person's access away". The usecase behind
+                                  this button is `revokeDecision`, which means "unwind
+                                  the verdict I recorded". A control labelled Revoke
+                                  sitting beside a REVOKE badge would invite exactly
+                                  the wrong click on exactly the row where it is
+                                  hardest to undo.
+
+                                  Hidden once executed, matching the usecase's own gate:
+                                  a closeout-executed row is an evidentiary fact and
+                                  `revokeDecision` refuses it. Showing a control that
+                                  always fails is worse than showing none.
+                                */}
+                                {canDecide && !d.executedAt ? (
+                                    <button
+                                        type="button"
+                                        className="text-xs text-content-muted underline hover:text-content"
+                                        data-testid={`undo-decision-${d.id}`}
+                                        onClick={() => setUndoTarget(d)}
+                                    >
+                                        {t('undoVerdict')}
+                                    </button>
+                                ) : null}
+                            </div>
                         );
                     }
                     if (canDecide) {
@@ -624,6 +653,18 @@ export function AccessReviewDetailClient({
                 />
             ) : null}
 
+            {undoTarget ? (
+                <UndoVerdictDialog
+                    apiBase={apiBase}
+                    row={undoTarget}
+                    onClose={() => setUndoTarget(null)}
+                    onSuccess={() => {
+                        setUndoTarget(null);
+                        reviewQuery.mutate();
+                    }}
+                />
+            ) : null}
+
             {closing ? (
                 <CloseDialog
                     apiBase={apiBase}
@@ -644,6 +685,118 @@ export function AccessReviewDetailClient({
 }
 
 // ─── Decision dialog ─────────────────────────────────────────────────
+
+/**
+ * Unwind a recorded verdict (#3269).
+ *
+ * `reason` is REQUIRED — 3..2000 characters, enforced by `RevokeDecisionSchema`
+ * at the route. That is not form ceremony: the reason is the whole content of
+ * the `ACCESS_REVIEW_DECISION_REVOKED` audit row, which exists so an auditor
+ * reviewing a campaign can see which verdicts were unwound and why. A revoke
+ * with no reason would leave the trail saying only that something changed.
+ *
+ * So the submit button is disabled below the minimum rather than letting the
+ * route reject it: the reviewer finds out while they are still typing instead of
+ * after a round trip.
+ *
+ * `variant="destructive"`, and that is a claim about the action rather than a
+ * way around the primary-button ceiling. `revokeDecision` nulls `decision`,
+ * `notes`, `decidedAt`, `decidedByUserId` and `modifiedToRole`: a reviewer's
+ * recorded work is erased and the audit row is its only remaining trace. There
+ * is no un-discard — the verdict has to be recorded again from scratch.
+ *
+ * It also has to be primary or destructive and cannot be secondary:
+ * `modal-action-order` requires the LAST button in a footer to be one of those,
+ * so the hand learns one direction across every dialog. Destructive is the
+ * accurate half of that pair here.
+ *
+ * "DISCARD", not "undo" and emphatically not "revoke". `REVOKE` is one of the
+ * three VERDICTS and means "take this person's access away"; it renders in the
+ * badge this control sits beside. Discard is in the canonical destructive verb
+ * list (`destructive-vocabulary`) and describes what happens: the verdict is
+ * abandoned and the row returns to undecided.
+ */
+function UndoVerdictDialog({
+    apiBase,
+    row,
+    onClose,
+    onSuccess,
+}: {
+    apiBase: string;
+    row: DecisionRow;
+    onClose: () => void;
+    onSuccess: () => void;
+}) {
+    const t = useTranslations('accessReviews');
+    const [reason, setReason] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleSubmit = async () => {
+        setSubmitting(true);
+        setError(null);
+        try {
+            const res = await fetch(`${apiBase}/decisions/${row.id}/revoke`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason }),
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || t('submitFailed'));
+            }
+            onSuccess();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : t('unknownError'));
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <Modal showModal={true} setShowModal={(v) => !v && onClose()}>
+            <Modal.Header
+                title={t('undoDialogTitle', { email: row.subjectUser.email })}
+            />
+            <Modal.Body>
+                <div className="space-y-default">
+                    <p className="text-sm text-content-muted">
+                        {t('undoExplainer', { verdict: row.decision ?? '' })}
+                    </p>
+                    <FormField label={t('undoReasonLabel')} required>
+                        <textarea
+                            className="input"
+                            rows={3}
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            placeholder={t('undoReasonPlaceholder')}
+                            data-testid="undo-modal-reason"
+                        />
+                    </FormField>
+                    {error ? (
+                        <p
+                            className="text-sm text-content-error"
+                            data-testid="undo-modal-error"
+                        >
+                            {error}
+                        </p>
+                    ) : null}
+                </div>
+            </Modal.Body>
+            <Modal.Footer>
+                <Button variant="secondary" onClick={onClose}>{t('cancel')}</Button>
+                <Button
+                    variant="destructive"
+                    onClick={() => void handleSubmit()}
+                    disabled={submitting || reason.trim().length < 3}
+                    data-testid="undo-modal-submit"
+                >
+                    {t('undoConfirm')}
+                </Button>
+            </Modal.Footer>
+        </Modal>
+    );
+}
 
 function DecisionDialog({
     apiBase,

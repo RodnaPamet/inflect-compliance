@@ -96,6 +96,9 @@ import type { Role } from '@prisma/client';
 import { getPermissionsForRole, PERMISSION_SCHEMA } from '@/lib/permissions';
 import { computePermissions } from '@/lib/tenant-context';
 import { hasPermission } from '@/lib/security/permission-middleware';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import { resolveRoutePermission } from '@/lib/security/route-permissions';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -180,6 +183,7 @@ describe('Step 5a — every access-review route resolves to its intended key', (
         ['GET', `${T}/r1`, 'access_reviews.view'],
         ['POST', `${T}/r1/close`, 'access_reviews.close'],
         ['PUT', `${T}/r1/decisions/d1`, 'access_reviews.decide'],
+        ['POST', `${T}/r1/decisions/d1/revoke`, 'access_reviews.decide'],
         ['GET', `${T}/r1/connected-decisions`, 'access_reviews.view'],
         ['POST', `${T}/r1/connected-decisions/d1`, 'access_reviews.decide'],
         ['GET', `${T}/r1/evidence`, 'access_reviews.view'],
@@ -187,6 +191,53 @@ describe('Step 5a — every access-review route resolves to its intended key', (
 
     it.each(CASES)('%s %s → %s', (method, path, key) => {
         expect(resolveRoutePermission(path, method)?.permission).toBe(key);
+    });
+
+    it('the table covers EVERY access-reviews route file on disk', () => {
+        // THE GAP THIS CLOSES. `CASES` is hand-maintained and every assertion
+        // above iterates IT, so a new route under `access-reviews/` was governed
+        // by nothing here: no intended key recorded, no ordering checked. The
+        // revoke leaf (#3269) was added and this table did not notice.
+        //
+        // Derived from the route FILES, because the files are what ships. A
+        // route whose directory exists but which exports no handler is not a
+        // route, so the export is what makes a file count.
+        const apiRoot = path.resolve(
+            __dirname, '../../..', 'src/app/api/t/[tenantSlug]/access-reviews',
+        );
+        const found: string[] = [];
+        const walk = (dir: string): void => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) { walk(full); continue; }
+                if (entry.name !== 'route.ts') continue;
+                const src = fs.readFileSync(full, 'utf8');
+                for (const m of src.matchAll(/export const (GET|POST|PUT|PATCH|DELETE)\b/g)) {
+                    // `src/app/api/t/[tenantSlug]/access-reviews/a/b/route.ts`
+                    // -> `/api/t/acme/access-reviews/a/b` with ids substituted.
+                    const rel = path.relative(apiRoot, path.dirname(full));
+                    const segs = rel === '' ? [] : rel.split(path.sep);
+                    found.push(`${m[1]} ${segs.map((x) => (x.startsWith('[') ? 'ID' : x)).join('/')}`);
+                }
+            }
+        };
+        walk(apiRoot);
+
+        // The denominator: a walk that found nothing would pass the comparison
+        // below over two empty sets, which is the failure this test is about.
+        expect(found.length).toBeGreaterThanOrEqual(9);
+
+        // Compare SHAPES, not literal paths — the table writes `r1`/`d1` where
+        // the tree writes `[reviewId]`/`[decisionId]`.
+        const tabled = new Set(
+            CASES.map(([method, p]) => {
+                const tail = p.slice(T.length).replace(/^\//, '');
+                const segs = tail === '' ? [] : tail.split('/');
+                return `${method} ${segs.map((x) => (/^[rd]\d+$/.test(x) ? 'ID' : x)).join('/')}`;
+            }),
+        );
+        const missing = [...new Set(found)].filter((f) => !tabled.has(f)).sort();
+        expect(missing).toEqual([]);
     });
 
     it('the connected CREATE is not swallowed by the detail VIEW pattern', () => {

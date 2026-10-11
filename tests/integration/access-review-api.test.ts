@@ -186,7 +186,16 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
         expect(detailClient).toContain('access-review-download-evidence');
         // Decision flow always goes through the API — never a direct
         // mutation against the row from the page.
-        expect(detailClient).toContain("/decisions/");
+        //
+        // NARROWED from a bare `/decisions/` (#3269). Two endpoints under that
+        // prefix are now fetched — recording a verdict and discarding one — so
+        // the old needle matched twice and named neither. `assertion-needle-
+        // uniqueness-ratchet` flagged it at exactly the threshold; it is right
+        // that a needle matching two different endpoints asserts nothing about
+        // either, and the discard path could be deleted entirely with the
+        // original assertion still green.
+        expect(detailClient).toContain('/decisions/${decision.row.id}');
+        expect(detailClient).toContain('/decisions/${row.id}/revoke');
         expect(detailClient).toContain("/close");
     });
 
