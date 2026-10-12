@@ -164,7 +164,7 @@ beforeEach(() => {
 
 describe('aws-posture — a revoked credential is RECORDED, never accused', () => {
     /** Every control in the `setError` state: the rejected-credential shape. */
-    const allErrored = powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+    const allErrored = powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
         controls: [
             powerpipeErroredControl(AWS_MAPPED, REVOKED_CREDENTIAL),
             powerpipeErroredControl('s3_bucket_versioning_enabled', REVOKED_CREDENTIAL),
@@ -230,10 +230,10 @@ describe('aws-posture — a HEALTHY account with an opt-in-region AuthFailure', 
      * text a revoked credential produces. Breadth — not text — is what tells
      * this apart from the block above, and the `ok` settles it.
      */
-    const healthy = powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+    const healthy = powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
         controls: [
             powerpipeControl(AWS_MAPPED, 'ok'),
-            powerpipeControl('s3_bucket_public_access_blocked', 'alarm'),
+            powerpipeControl('s3_public_access_block_bucket', 'alarm'),
             powerpipeErroredControl('ec2_instance_detailed_monitoring_enabled', OPT_IN_REGION_AUTHFAILURE),
         ],
     });
@@ -272,7 +272,7 @@ describe('aws-posture — a run that did NOT complete says nothing about the cre
         const db = makeDb();
         collectorRun({
             err: Object.assign(new Error('killed'), { signal: 'SIGTERM' }),
-            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
                 controls: [powerpipeErroredControl(AWS_MAPPED, REVOKED_CREDENTIAL)],
             }),
         });

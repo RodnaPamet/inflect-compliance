@@ -227,6 +227,23 @@ export interface IntegrationBundle {
     readonly mapperClass: FieldMapperConstructor;
     /** Sync orchestrator class constructor (optional) */
     readonly orchestratorClass?: new (opts: OrchestratorConstructorOpts) => BaseSyncOrchestrator; // OrchestratorConstructorOpts is intentionally `any` — see its declaration
+    /**
+     * #3432 — has this bundle's response MAPPING ever met the vendor?
+     *
+     * The same claim as `IntegrationProvider.mappingVerifiedBy`, and a claim
+     * about the RECORD rather than about the vendor: `null` means no live
+     * mapping run is on record, which is not the same as "the mapping is
+     * wrong".
+     *
+     * OPTIONAL here on purpose. A bundle whose name is ALSO an
+     * `IntegrationProvider` (github, servicenow) answers through the provider,
+     * and duplicating the string would be two copies of one predicate with the
+     * one that matters being the quiet one. Required only for bundles with NO
+     * provider of the same name — enforced by the census in
+     * `tests/guards/integration-credential-placement.test.ts`, which
+     * enumerates the UNION of both registries.
+     */
+    readonly mappingVerifiedBy?: string | null;
 }
 
 /**
@@ -240,6 +257,8 @@ export interface IntegrationBundleRegistration {
     clientClass: IntegrationClientConstructor;
     mapperClass: FieldMapperConstructor;
     orchestratorClass?: new (opts: OrchestratorConstructorOpts) => BaseSyncOrchestrator; // OrchestratorConstructorOpts is intentionally `any`
+    /** See {@link IntegrationBundle.mappingVerifiedBy} (#3432). */
+    mappingVerifiedBy?: string | null;
 }
 
 /**
@@ -282,6 +301,7 @@ class IntegrationRegistryImpl {
             clientClass,
             mapperClass,
             orchestratorClass: registration.orchestratorClass,
+            mappingVerifiedBy: registration.mappingVerifiedBy,
         };
 
         this.bundles.set(name, bundle);
