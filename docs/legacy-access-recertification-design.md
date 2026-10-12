@@ -327,7 +327,7 @@ stopped the account, and they are not equally interesting:
 | `KILL_SWITCH` | a platform- or tenant-scope kill is engaged | expected during a drill; otherwise ask who engaged it |
 | `QUARANTINED` | the guard scanned the payload as an injection attempt | read the account's own fields; one hostile record quarantines only itself |
 | `OVER_BUDGET` | the payload would not fit, or the answer's reported input tokens reached the model's window | a candidate the model never saw reads as one it rejected, so the answer is discarded deliberately |
-| `TIMEOUT` / `DEADLINE` | the per-call timeout, or the 120-second run budget | capacity; raise concurrency before raising either, and never raise the deadline silently |
+| `TIMEOUT` / `DEADLINE` | the per-call timeout, or the 45-minute run budget | capacity — but **measure before raising concurrency**: on the CPU deployment it adds none and multiplies latency past the timeout (#3450). Never raise the deadline silently |
 | `PROVIDER_ERROR` | a transport failure, or a response that failed the schema | the response is not echoed into logs — it is attacker-shaped |
 
 `MODEL_DRIFT` is the one that means something is wrong with the model rather than with
@@ -687,7 +687,7 @@ it. Where a row differs, the reference wins and this table is corrected.
 | Wire API | `POST /v1/systemone`, carrying `model`, `state` and a map of `questions` | **Measured 2026-10-10** against a server built from `deploy/laya/Dockerfile`: the routes are `GET /health`, `POST /v1/systemone` and `POST /v1/systemone/batch`. There is NO `/v1/models` and no `/models` — both 404. Each question REQUIRES `instructions`, and a `choice` takes its option set as `criteria` (a dict of label → description), not an `options` array |
 | Question types | `choice` — up to 255 described options, with a probability for each; `noul` — the probability that a statement is true; `score` — a level on a 2–10 scale | The three type names hold (`['choice', 'noul', 'score']`, from the server's own error). **The 255 figure is Jev's and does NOT hold for Laya**, which refuses above 100: `413 too many choice options for 'q' (255 > 100)`. 6, 20 and 64 were accepted. A `noul` answer carries its value as `noul`, and a `choice` answer as `choice`. A `score` takes `criteria` as a LIST of level descriptions rather than a 2–10 scale |
 | Version and window | `jev-1.13`: 64k tokens per request, 32k of it for the state plus the longest question | `laya-multilingual`: mmBERT-base, 322M parameters, 1,024 tokens (about 768 for the state), 100+ languages. The English `laya` has 421M parameters and 512 tokens |
-| Latency | 70–500 ms end to end (vendor figure); published p50 figures between about 145 and 275 ms | About 33 ms p50 on a T4 GPU (model card); no published CPU figure. **Measured on a desktop CPU 2026-10-10**, through the product's own chooser: p50 380 ms at 3 options, 878 ms at 20, worst observed 1,208 ms. Step 6d still owes the figures on the production VM's CPU, which may be slower |
+| Latency | 70–500 ms end to end (vendor figure); published p50 figures between about 145 and 275 ms | About 33 ms p50 on a T4 GPU (model card); no published CPU figure. **Measured on a desktop CPU 2026-10-10**, through the product's own chooser: p50 380 ms at 3 options, 878 ms at 20, worst observed 1,208 ms. **Measured on the production VM 2026-10-12** under the Compose service's own limits (1 vCPU of an `e2-highmem-2`, 4 GB), real `buildMatchRequest` shape with five candidates: **p50 7,332 ms, p95 7,727 ms** (n=25, min 7,035, max 7,894). The VM is 8–19× slower than the desktop, which is what one vCPU buys. See #3445 |
 | Data | Hosted on the US West Coast. The DPA uses EU Standard Contractual Clauses, and the vendor is not certified under the EU-US Data Privacy Framework. It does not train on customer data, and offers zero data retention on request to enterprise accounts | Runs on infrastructure we operate; nothing leaves it |
 
 Sources: the [TypeSafe API reference](https://docs.typesafe.ai/api) and the model card
@@ -774,10 +774,11 @@ model revision.
 
 | | Jev | Laya |
 | --- | --- | --- |
-| Per-call timeout | 3 s | 2 s |
-| Requests in flight | 8 | 4 |
-| 500-account residue (arithmetic from published latencies, not a measurement) | About 20 s | About 5 s on a T4 GPU; measured on CPU when deployed |
-| Run deadline | 120 s | 120 s |
+| Per-call timeout | 3 s | 12 s (#3448; was 2 s, which no measured call ever met) |
+| Requests in flight | 8 | **1** (#3450; was 4, a figure the design chose as a GPU queue depth) |
+| 500-account residue | About 20 s (arithmetic from published latencies, not a measurement) | About 5 s on a T4 GPU (vendor figure). **MEASURED on the production VM: 34 minutes** — a real batch at 0.243 accounts/s, not an extrapolation from per-call latency. See the table below. #3445 |
+| Run deadline (one constant, not per model — `RUN_DEADLINE_MS` bounds the pass whichever provider runs) | **45 min** | **45 min** — owner decision 2026-10-12, after 120 s and then 300 s both proved unreachable |
+| Deadline reachable on the deployed hardware? | not measured | **Yes** — a measured 34.3 min against 45 min, 1.31× headroom. The first value of this row that is not a hope |
 
 - **An undecided account keeps a named reason** (a timeout, the deadline, a quarantine,
   drift, the kill switch; the phases document lists them all). It appears exactly as it
@@ -785,6 +786,66 @@ model revision.
   person can clear.
 - **Cost is no constraint.** At the published price, a 500-account run on Jev costs
   under two cents.
+- **Laya on the deployed hardware does not meet either bound, and this is now a
+  measured batch rather than arithmetic over per-call latency (#3445).** Measured
+  2026-10-12 on the production VM against the digest-pinned image, under the Compose
+  service's own limits, posting the real `buildMatchRequest` payload (five candidates,
+  both questions, 1,464 bytes):
+
+  | `cpus` limit | concurrency | throughput | per-call p50 | 500 accounts |
+  | --- | --- | --- | --- | --- |
+  | 1.0 | 1 | 0.233 acct/s | 4,112 ms | 35.8 min |
+  | 1.0 | 4 | **0.243 acct/s** | 16,488 ms | **34.3 min** |
+  | 1.0 | 8 | 0.243 acct/s | 32,708 ms | 34.3 min |
+  | 2.0 | 4 | 0.231 acct/s | 17,449 ms | 36.1 min |
+
+  Three things follow, and none of them was visible from per-call latency alone.
+
+  **Throughput is flat — about 0.24 accounts/s — and moves with neither concurrency nor
+  the CPU limit.** Concurrency multiplies per-call latency almost exactly (1 → 4 → 8
+  gives 4.1 s → 16.5 s → 32.7 s) while delivering the same accounts per second, which is
+  what a saturated single pipeline looks like. Doubling `cpus` to take both of the host's
+  cores changed nothing either, so this is not a core-count problem.
+
+  **The `TIMEOUT` / `DEADLINE` row's advice — *"capacity; raise concurrency before
+  raising either"* — is wrong for this deployment**, and measurably so: raising
+  concurrency adds no capacity here and costs a latency multiplier.
+
+  **Concurrency 4 was actively harmful, and is now 1** (#3450). 16,488 ms exceeds the
+  12 s per-call timeout that #3448 had set from the concurrency-1 figures, so at the
+  configured `REQUESTS_IN_FLIGHT` of 4 every call timed out — the very failure the
+  timeout raise existed to fix. Each constant was defensible alone and they were wrong
+  together, because each was set against a measurement taken at a different concurrency.
+  Concurrency 1 delivers the same throughput with a p50 of 4,112 ms, roughly 3x inside
+  the timeout. A test in `tests/unit/identity-match-provider-factory.test.ts` now
+  requires the timeout to clear the p50 measured *at the configured concurrency*, and
+  refuses a concurrency the table above does not cover at all.
+
+  A correction belongs here, since an earlier draft of this paragraph argued itself out
+  of the right answer. It first said throughput "stays flat" — correct — and was then
+  edited to claim throughput doubles, on the strength of comparing a 7,332 ms per-call
+  p50 from one session against a 14,827 ms figure from another. Percentiles from
+  different sessions are not a throughput measurement; today's concurrency-1 p50 is
+  4,112 ms, not 7,332 ms. The flat-throughput claim was right, the reasoning that
+  replaced it was not, and the only thing that settled it was measuring the batch.
+  The earlier 61-minute figure was likewise an extrapolation and is also wrong: the
+  measured number is 34 minutes.
+
+  The server's unused `POST /v1/systemone/batch` is worse still at 9.2 s per account,
+  since batching amortises on a GPU and not on a CPU.
+
+- **THE RUN DEADLINE IS 45 MINUTES, AND THIS IS THE FIRST VALUE THAT IS MET.** Owner
+  decision of 2026-10-12, recorded here because the phases document's rule is that a
+  change to it never happen silently. The history is short and worth keeping: 120 s as
+  designed, 300 s when 120 s proved about 17x short, and 45 minutes once the batch was
+  measured rather than extrapolated. A 500-account residue needs 0.185 accounts/s to fit
+  45 minutes and the deployed hardware delivers a measured 0.243, so **P6's acceptance
+  criterion is met on CPU** with 1.31x of headroom — no GPU, no change of machine family,
+  no second commitment. The two earlier values were not met for a reason that no amount
+  of tuning addressed: throughput moves with neither concurrency nor the CPU limit, so
+  there was no setting that made them reachable. A GPU would still beat this by two
+  orders of magnitude (vendor figure ~5 s for the whole residue) and remains the option
+  if the bound ever has to be tight rather than merely true.
 
 #### Trust, but verify
 

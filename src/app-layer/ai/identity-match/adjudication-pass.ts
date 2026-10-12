@@ -108,8 +108,33 @@ export const CANARY_TOLERANCE = 0.02;
  */
 const TOLERANCE_SLACK = 1e-9;
 
-/** The whole pass's wall-clock budget, from the design document's table. */
-export const RUN_DEADLINE_MS = 120_000;
+/**
+ * The whole pass's wall-clock budget: 45 minutes.
+ *
+ * 2,700,000 ms since 2026-10-12, by owner decision, and the first value of this
+ * constant that the deployed hardware actually meets. The phases document's rule
+ * is "never raise the deadline silently", so the history belongs here: 120 s as
+ * designed, 300 s when 120 s proved ~17x short, and 45 minutes once the batch was
+ * measured instead of extrapolated.
+ *
+ * MEASURED, not derived (#3445). A real batch on the production VM against the
+ * digest-pinned image under the Compose service's own limits, posting the real
+ * `buildMatchRequest` payload: 0.243 accounts/s, so a 500-account residue takes
+ * 34.3 minutes. 45 minutes clears that by 1.31x.
+ *
+ * WHY IT IS NOT LARGER, AND NOT SMALLER. Throughput does not move with
+ * concurrency (flat across 1, 4 and 8) or with the container's CPU limit
+ * (doubling it changed nothing), so there is no setting that makes a tighter
+ * budget reachable on this box — the earlier 120 s and 300 s values were
+ * unreachable for that reason, not for want of tuning. Equally, headroom past
+ * ~1.3x would stop the deadline doing its job, which is to end a pass that has
+ * stopped making progress rather than to accommodate any duration at all.
+ *
+ * An overrun is still fail-closed: the remaining residue keeps a named
+ * `DEADLINE` reason and appears exactly as it would with the mode `OFF`, which
+ * is a queue a person can clear.
+ */
+export const RUN_DEADLINE_MS = 2_700_000;
 
 // --- Subjects -------------------------------------------------------------
 

@@ -1254,8 +1254,9 @@ create an alias.
    Then, in order:
    - write the run's results;
    - run the canary;
-   - adjudicate the residue with Jev at 8 requests in flight, or Laya at 4, under a
-     120-second deadline.
+   - adjudicate the residue with Jev at 8 requests in flight, or Laya at 1 (#3450 —
+     measured: concurrency adds no throughput on CPU and pushes per-call latency past
+     the timeout), under a 45-minute deadline.
    An answer whose usage.input_tokens reaches the model's window is discarded as
    OVER_BUDGET.
 6. Derive verdicts from the design document's table, using the thresholds in the
@@ -1336,8 +1337,22 @@ process allows it.
    the app and worker services.
 3. Measure p50 and p95 latency over the adjudication corpus on the production VM's CPU,
    and record the figures in the design document. If a 500-account residue does not
-   fit the 120-second deadline, raise the concurrency or add a GPU. Never raise the
+   fit the run deadline, raise the concurrency or add a GPU. Never raise the
    deadline silently.
+
+   **This happened, and here is the record the rule above asks for.** Measured
+   2026-10-12, as a real batch rather than an extrapolation: **0.243 accounts/s, so a
+   500-account residue takes 34 minutes** (#3445). Concurrency is not the remedy this
+   step hoped for, and the measurement is unambiguous about why — throughput is flat at
+   0.24 across concurrency 1, 4 and 8, and flat again when the CPU limit is doubled.
+   Raising concurrency only multiplies per-call latency, to the point where 4 in flight
+   exceeds even the raised per-call timeout (#3450). The batch endpoint is worse still.
+   The owner set the deadline to **45 minutes** on 2026-10-12, after 120 s and then
+   300 s both proved unreachable at any setting this step could tune. 34.3 minutes
+   against 45 is a 1.31× margin, so **this step's criterion is met on CPU** and the
+   checklist item below is ticked. The GPU remedy this step names is not needed for
+   that, though it would still beat this by two orders of magnitude if the bound ever
+   has to be tight rather than merely true.
 4. Produce the Laya evaluation record on the deployed service, using the Step 6b
    harness. Confirm the canary passes before any tenant enables LOCAL_ONLY.
 5. Apply the Compose change to the VM as CLAUDE.md describes: back up the file,
@@ -1366,7 +1381,7 @@ sub-processor activation).
 - [ ] The `laya` service publishes no port and is reachable only on the Compose network.
 - [ ] Its image is pinned by digest and its checkpoint by revision, and the server went through `docs/dependency-governance.md`.
 - [ ] The canary passes against the deployed service, and the evaluation record matches the revision it reports.
-- [ ] The measured CPU latency is recorded, and a 500-account residue fits the deadline.
+- [x] The measured CPU latency is recorded, and a 500-account residue fits the deadline. **Measured 34.3 min against a 45-minute deadline** (#3445), a 1.31x margin, at concurrency 1 (#3450).
 - [ ] `TYPESAFE_SUBPROCESSOR_ACTIVE` flips in a pull request that links the notice and shows that the window closed.
 - [ ] No secret value appears in any log, commit, pull request or command output.
 - [ ] Rollback is proven: setting the mode `OFF` stops every call from the next run, and flipping the constant back refuses `EXTERNAL` again.
