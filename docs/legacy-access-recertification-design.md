@@ -776,9 +776,9 @@ model revision.
 | --- | --- | --- |
 | Per-call timeout | 3 s | 12 s (#3448; was 2 s, which no measured call ever met) |
 | Requests in flight | 8 | 4 |
-| 500-account residue | About 20 s (arithmetic from published latencies, not a measurement) | About 5 s on a T4 GPU (vendor figure). **MEASURED on the production VM: 31–61 minutes** — 500 calls at p50 7,332 ms, the range being concurrency 4 vs 1; see the note below on why this is a range and not a number. See #3445 |
+| 500-account residue | About 20 s (arithmetic from published latencies, not a measurement) | About 5 s on a T4 GPU (vendor figure). **MEASURED on the production VM: 34 minutes** — a real batch at 0.243 accounts/s, not an extrapolation from per-call latency. See the table below. #3445 |
 | Run deadline | 120 s | **300 s** — owner decision 2026-10-12, was 120 s |
-| Deadline reachable on the deployed hardware? | not measured | **No, and raising it did not change that** — still 6–12× over. The per-call timeout is no longer the binding constraint (#3448); throughput is |
+| Deadline reachable on the deployed hardware? | not measured | **No** — 34 min against 300 s is 6.9× over. Throughput is the binding constraint, and it moves with neither concurrency nor CPU |
 
 - **An undecided account keeps a named reason** (a timeout, the deadline, a quarantine,
   drift, the kill switch; the phases document lists them all). It appears exactly as it
@@ -786,27 +786,55 @@ model revision.
   person can clear.
 - **Cost is no constraint.** At the published price, a 500-account run on Jev costs
   under two cents.
-- **Laya on the deployed hardware does not meet either bound, and the remedies this
-  document prescribes were measured rather than assumed (#3445).** The `TIMEOUT` /
-  `DEADLINE` row above says *"capacity; raise concurrency before raising either"*. On the
-  production VM concurrency buys less than it costs: at concurrency 4 the p50 goes from
-  7,332 ms to 14,827 ms (max 29,990), because the work is CPU-bound on one vCPU.
-  **Read that carefully, because an earlier draft of this paragraph did not.** It said
-  throughput "stays flat", and its own figures contradict that: 4 in flight at 14,827 ms
-  is 0.27 accounts/s against 0.136 at concurrency 1, so throughput roughly doubles even
-  as per-call latency doubles. The deeper problem with the old claim is that batch
-  throughput was never measured at all — only per-call latency was, and those are
-  different axes. Hence a range, 31–61 minutes, rather than a number: the low end assumes
-  the concurrency-4 p50 holds across a full batch, the high end assumes it does not.
-  Measuring a real batch would collapse the range and has not been done.
+- **Laya on the deployed hardware does not meet either bound, and this is now a
+  measured batch rather than arithmetic over per-call latency (#3445).** Measured
+  2026-10-12 on the production VM against the digest-pinned image, under the Compose
+  service's own limits, posting the real `buildMatchRequest` payload (five candidates,
+  both questions, 1,464 bytes):
+
+  | `cpus` limit | concurrency | throughput | per-call p50 | 500 accounts |
+  | --- | --- | --- | --- | --- |
+  | 1.0 | 1 | 0.233 acct/s | 4,112 ms | 35.8 min |
+  | 1.0 | 4 | **0.243 acct/s** | 16,488 ms | **34.3 min** |
+  | 1.0 | 8 | 0.243 acct/s | 32,708 ms | 34.3 min |
+  | 2.0 | 4 | 0.231 acct/s | 17,449 ms | 36.1 min |
+
+  Three things follow, and none of them was visible from per-call latency alone.
+
+  **Throughput is flat — about 0.24 accounts/s — and moves with neither concurrency nor
+  the CPU limit.** Concurrency multiplies per-call latency almost exactly (1 → 4 → 8
+  gives 4.1 s → 16.5 s → 32.7 s) while delivering the same accounts per second, which is
+  what a saturated single pipeline looks like. Doubling `cpus` to take both of the host's
+  cores changed nothing either, so this is not a core-count problem.
+
+  **The `TIMEOUT` / `DEADLINE` row's advice — *"capacity; raise concurrency before
+  raising either"* — is wrong for this deployment**, and measurably so: raising
+  concurrency adds no capacity here and costs a latency multiplier.
+
+  **Concurrency 4 is actively harmful**, because 16,488 ms exceeds the 12 s per-call
+  timeout that #3448 set from the concurrency-1 figures. At the configured
+  `REQUESTS_IN_FLIGHT` of 4 the calls time out again, for no throughput gain.
+  Concurrency 1 gives the same throughput with a p50 of 4.1 s, comfortably inside the
+  timeout. See #3450.
+
+  A correction belongs here, since an earlier draft of this paragraph argued itself out
+  of the right answer. It first said throughput "stays flat" — correct — and was then
+  edited to claim throughput doubles, on the strength of comparing a 7,332 ms per-call
+  p50 from one session against a 14,827 ms figure from another. Percentiles from
+  different sessions are not a throughput measurement; today's concurrency-1 p50 is
+  4,112 ms, not 7,332 ms. The flat-throughput claim was right, the reasoning that
+  replaced it was not, and the only thing that settled it was measuring the batch.
+  The earlier 61-minute figure was likewise an extrapolation and is also wrong: the
+  measured number is 34 minutes.
+
   The server's unused `POST /v1/systemone/batch` is worse still at 9.2 s per account,
   since batching amortises on a GPU and not on a CPU.
 
 - **THE RUN DEADLINE WAS RAISED TO 300 s, AND THAT IS NOT A FIX.** Owner decision of
   2026-10-12, written down here because the phases document's rule is that it never
   happen silently. A 500-account residue needs 1.67 accounts/s to fit 300 s; the deployed
-  hardware delivers 0.136–0.27. So **P6's acceptance criterion still fails**, by 6–12×.
-  The raise moved the gap from about 30× to about 6–12×; it did not close it, and the
+  hardware delivers a measured 0.243. So **P6's acceptance criterion still fails**, by
+  6.9×. The raise moved the gap from about 17× to 6.9×; it did not close it, and the
   residue still ends as `DEADLINE` non-verdicts — the fail-closed state, and a queue a
   person can clear. What would close it is a GPU: the vendor figure for a T4 is about 5 s
   for the whole residue, two orders of magnitude inside the new budget. An on-demand T4
