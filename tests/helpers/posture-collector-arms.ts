@@ -91,7 +91,7 @@ export const AWS_POSTURE_ARMS = [
         day: '2026-03-01',
         mapped: 'iam_root_user_mfa_enabled',
         second: 'guardduty_enabled',
-        trailingId: 'inspector_enabled',
+        trailingId: 'inspector_ec2_scanning_enabled',
         trailingCodes: ['CC3.1', 'CC7.1'],
         ctl: 'ctl', ev: 'ev',
         blob: 'cipher-aws-4f21',

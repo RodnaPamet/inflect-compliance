@@ -309,7 +309,7 @@ export interface AwsPostureSecrets {
     externalId?: string;
 }
 export interface AwsPostureConfig {
-    benchmark?: string; // e.g. 'aws_compliance.benchmark.soc_2'
+    benchmark?: string; // shorthand ('soc2' | 'cis'); see benchmarkId — both run all_controls (#3439)
     region?: string;
     accountId?: string;
 }
@@ -402,12 +402,37 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         ],
     };
 
-    /** Map the configJson `benchmark` shorthand to the Powerpipe benchmark id. */
+    /**
+     * Map the configJson `benchmark` shorthand to the Powerpipe benchmark id.
+     *
+     * Both resolve to `all_controls` (#3439), for the reason #3434 established
+     * on GCP and Azure: a CIS benchmark declares its OWN controls, named for
+     * the CIS item, which merely reuse the shared service query. The ids our
+     * crosswalk maps are those shared controls. Measured against
+     * aws-compliance v1.13.1:
+     *
+     *     cis_v300      covers  0/22 mapped ids
+     *     soc_2         covers 15/22
+     *     all_controls  covers 22/22
+     *
+     * Unlike GCP and Azure, AWS's `soc_2` benchmark DOES exist and the two
+     * benchmark ids here were never wrong. It is simply not the right root:
+     * seven of the mapped controls — CloudFormation drift, the inline-admin
+     * policy check, the four Inspector scanners and the S3 bucket-level
+     * public-access block — are not under it, so a SOC run skipped them
+     * silently. A `cis` run matched nothing at all.
+     *
+     * Note this reversed once during the fix: before the control ids were
+     * corrected, `soc_2` covered every id that resolved (12/12), which argued
+     * for keeping it and avoiding all_controls' 679-control run. The corrected
+     * ids changed the answer, so the measurement was re-taken rather than
+     * carried over.
+     */
     static benchmarkId(shorthand: string | undefined): string {
         switch ((shorthand ?? 'soc2').toLowerCase()) {
-            case 'cis': return 'aws_compliance.benchmark.cis_v300';
+            case 'cis':
             case 'soc2':
-            default: return 'aws_compliance.benchmark.soc_2';
+            default: return 'aws_compliance.benchmark.all_controls';
         }
     }
 
