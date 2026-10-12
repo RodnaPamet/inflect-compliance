@@ -241,19 +241,40 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
-    # THE ONLY SERVICE IN THIS FILE WITH LIMITS, and that is the point
-    # rather than an oversight. The VM is an `e2-highmem-2`: TWO vCPUs. CPU
-    # inference will take everything it is given, so an unbounded Laya
-    # starves the request path during a batch — the one failure mode that
-    # would make adjudication look like an app outage.
+    # THE ONLY SERVICE IN THIS FILE WITH LIMITS, and that is the point rather
+    # than an oversight: CPU inference takes everything it is given, so an
+    # unbounded Laya starves the request path during a residue batch — the one
+    # failure mode that would make adjudication look like an app outage.
     #
-    # 1.0 of 2 vCPUs: half the box for adjudication, half kept for app,
-    # worker, postgres and the rest. `REQUESTS_IN_FLIGHT` for Laya is 4, so
-    # a residue batch WILL saturate whatever it is allowed.
+    # 1.0 OF TWO vCPUs, and the number is a consequence of the box rather than
+    # a judgement about the model. The VM is an `e2-highmem-2`. Giving Laya
+    # more than one of two cores starves app, worker and postgres, and
+    # `REQUESTS_IN_FLIGHT` for Laya is 4, so a residue batch will saturate
+    # whatever it is allowed.
     #
-    # 4g against a 322M-parameter model — roughly 1.3 GB of fp32 weights
-    # plus the torch runtime and tokeniser. Bounded rather than tight, so a
-    # longer state cannot OOM-kill it silently.
+    # THE WHOLE CURVE WAS MEASURED ON THIS VM (#3445), and it is recorded here
+    # because it is the argument against the obvious edits. Same image, same
+    # payload, p50 per adjudication with five candidates:
+    #
+    #   1.0 cpu, 2-vCPU host (this one)  7.332 s
+    #   1.0 cpu, 4-vCPU host             5.282 s   <- contention relief alone
+    #   3.0 cpu, 4-vCPU host             2.573 s
+    #   4.0 cpu, 4-vCPU host             2.510 s   <- +33% cpu buys 2.4%
+    #
+    # Two things follow. Raising THIS number without also growing the host is
+    # not available — there is no third core to give. And growing the host is
+    # not a fix either: even 2.510 s exceeds `LAYA_TIMEOUT_MS` (2 s), and the
+    # curve flattens past three cores, so more E2 cores are ruled out by
+    # measurement rather than by opinion. The box was briefly an
+    # `e2-standard-4` to establish this and was reverted.
+    #
+    # So at 7.332 s against a 2 s timeout, EVERY adjudication call on this
+    # hardware times out and the LOCAL_ONLY path returns `TIMEOUT` non-verdicts.
+    # That is the fail-closed state and it is still a queue a person can clear,
+    # but it is not the feature working. #3445 is where that is decided.
+    #
+    # 4g against a 322M-parameter model — roughly 1.3 GB of fp32 weights plus
+    # the torch runtime and tokeniser. Measured peak stays well inside it.
     deploy:
       resources:
         limits:

@@ -124,6 +124,10 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    # 1.0 to match the deployed box (`e2-highmem-2`, two vCPUs) rather than to
+    # tune a laptop — the point of the limit here is that the shape matches
+    # production. The measured curve, and why a bigger number is not the fix,
+    # is in the deployed file's comment and #3445.
     deploy:
       resources:
         limits:
