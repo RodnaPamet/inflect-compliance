@@ -154,14 +154,14 @@ services:
       - "8000"
     networks:
       - internal
-    # 1.0 to match the deployed box (`e2-highmem-2`, two vCPUs) rather than to
+    # 3.0 to match the deployed box (`e2-highmem-4`, four vCPUs) rather than to
     # tune a laptop — the point of the limit here is that the shape matches
-    # production. The measured curve, and why a bigger number is not the fix,
-    # is in the deployed file's comment and #3445.
+    # production. The measured curve, why three is the knee, and why a bigger
+    # number is not the fix are in the deployed file's comment and #3445.
     deploy:
       resources:
         limits:
-          cpus: "1.0"
+          cpus: "3.0"
           memory: 4g
 
 

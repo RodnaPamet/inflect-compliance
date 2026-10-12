@@ -246,39 +246,46 @@ services:
     # unbounded Laya starves the request path during a residue batch — the one
     # failure mode that would make adjudication look like an app outage.
     #
-    # 1.0 OF TWO vCPUs, and the number is a consequence of the box rather than
-    # a judgement about the model. The VM is an `e2-highmem-2`. Giving Laya
-    # more than one of two cores starves app, worker and postgres, and
-    # `REQUESTS_IN_FLIGHT` for Laya is 4, so a residue batch will saturate
-    # whatever it is allowed.
+    # 3.0 OF FOUR vCPUs, and the number is measured rather than reasoned.
+    # CPU inference takes everything it is given, so an unbounded Laya starves
+    # the request path during a residue batch — the one failure mode that would
+    # make adjudication look like an app outage. `REQUESTS_IN_FLIGHT` for Laya
+    # is 4, so a batch WILL saturate whatever it is allowed.
     #
-    # THE WHOLE CURVE WAS MEASURED ON THIS VM (#3445), and it is recorded here
-    # because it is the argument against the obvious edits. Same image, same
-    # payload, p50 per adjudication with five candidates:
+    # THE CURVE, MEASURED ON THIS VM (#3445). Same image, same payload, p50 per
+    # adjudication with five candidates:
     #
-    #   1.0 cpu, 2-vCPU host (this one)  7.332 s
-    #   1.0 cpu, 4-vCPU host             5.282 s   <- contention relief alone
-    #   3.0 cpu, 4-vCPU host             2.573 s
-    #   4.0 cpu, 4-vCPU host             2.510 s   <- +33% cpu buys 2.4%
+    #   1.0 cpu, 2-vCPU host   7.332 s
+    #   1.0 cpu, 4-vCPU host   5.282 s   <- contention relief alone
+    #   3.0 cpu, 4-vCPU host   2.573 s   <- this setting
+    #   4.0 cpu, 4-vCPU host   2.510 s   <- +33% cpu buys 2.4%
     #
-    # Two things follow. Raising THIS number without also growing the host is
-    # not available — there is no third core to give. And growing the host is
-    # not a fix either: even 2.510 s exceeds `LAYA_TIMEOUT_MS` (2 s), and the
-    # curve flattens past three cores, so more E2 cores are ruled out by
-    # measurement rather than by opinion. The box was briefly an
-    # `e2-standard-4` to establish this and was reverted.
+    # Three is the knee: it takes essentially all of the available speed-up and
+    # still leaves a core for app, worker and postgres. Four would starve them
+    # for a 2.4% gain, which is the trade this limit exists to refuse. An
+    # earlier version of this file said 1.0 "half of two vCPUs" — arithmetic
+    # about a box that has since been resized, and it left 4.8 s per account on
+    # the table.
     #
-    # So at 7.332 s against a 2 s timeout, EVERY adjudication call on this
-    # hardware times out and the LOCAL_ONLY path returns `TIMEOUT` non-verdicts.
-    # That is the fail-closed state and it is still a queue a person can clear,
-    # but it is not the feature working. #3445 is where that is decided.
+    # WHY THE HOST IS FOUR vCPUs AND WHAT IT COST: nothing. The commitment
+    # `agrent-inflect-e2-3yr` (GENERAL_PURPOSE_E2, europe-west1, to 2029-09-21)
+    # is for VCPU=4 MEMORY=32768, and `e2-highmem-4` is exactly 4/32768. The
+    # box had been running at half that and the unused half was being paid for
+    # regardless.
+    #
+    # It still does not fix everything: 2.573 s exceeds `LAYA_TIMEOUT_MS` (2 s),
+    # so every call still times out and LOCAL_ONLY still returns `TIMEOUT`
+    # non-verdicts. And more E2 cores are ruled out BY THIS CURVE — the
+    # bottleneck past three is per-core throughput, not core count. #3445 is
+    # where that is decided.
     #
     # 4g against a 322M-parameter model — roughly 1.3 GB of fp32 weights plus
-    # the torch runtime and tokeniser. Measured peak stays well inside it.
+    # the torch runtime and tokeniser. Measured peak stays well inside it, and
+    # the host now has 32 GB, so this is bounded rather than tight.
     deploy:
       resources:
         limits:
-          cpus: "1.0"
+          cpus: "3.0"
           memory: 4g
 
   # ── App (Next.js) — auto-updated by Watchtower ────────────────
