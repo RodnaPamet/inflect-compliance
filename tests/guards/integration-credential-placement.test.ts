@@ -169,3 +169,82 @@ describe('provider mapping verification is declared and meaningful', () => {
         expect(Array.isArray(unrecorded)).toBe(true);
     });
 });
+
+/**
+ * #3432 — the census above enumerates ONE of two registries.
+ *
+ * `IntegrationProvider` classes (`readonly id`) are one population.
+ * `integrationRegistry` client+mapper BUNDLES are another. `github` and
+ * `servicenow` are in both; **`sharepoint` is in the bundles only** — so
+ * #3431's census could not see the integration with the most write surface in
+ * the product (six Graph writes against one or two for every other writer),
+ * and the census read as coverage while that one sat outside it by
+ * construction.
+ *
+ * #3432 proposed deciding first whether SharePoint "should be a provider",
+ * on the grounds that the alternative was a guard enumerating "a registry plus
+ * a hand-maintained list". That premise was wrong, and checking it is what
+ * made this fixable now: `integrationRegistry` is a real registry, enumerable
+ * at runtime exactly like the other. (The issue also reported
+ * `grep -c sharepoint bootstrap.ts -> 0`; it is 3 — the bundle is registered
+ * at `bootstrap.ts:124`.) So the census covers the UNION, and whether
+ * SharePoint should additionally become a provider stays a product question
+ * this no longer blocks on.
+ *
+ * The field is OPTIONAL on a bundle on purpose: a bundle whose name is also a
+ * provider answers through the provider, and requiring both would be two
+ * copies of one predicate. Required here only for bundles with no provider of
+ * the same name.
+ */
+describe('#3432 — the mapping census covers BOTH registries', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { integrationRegistry: bundleRegistry } = require('@/app-layer/integrations/registry');
+    const bundles = (): Array<{ name: string; mappingVerifiedBy?: string | null }> =>
+        bundleRegistry.listBundles();
+    const providerIds = () => new Set(registry.listProviders().map((p) => p.id));
+
+    it('both registries are populated, so an empty scan cannot pass either', () => {
+        expect(bundles().length).toBeGreaterThanOrEqual(3);
+        expect(providerIds().size).toBeGreaterThanOrEqual(15);
+    });
+
+    it('sharepoint is in the bundle registry and NOT in the provider registry', () => {
+        // The specific fact #3432 is about. If SharePoint later registers as a
+        // provider this reddens, which is the moment to simplify this block.
+        const names = bundles().map((b) => b.name);
+        expect(names).toContain('sharepoint');
+        expect([...providerIds()]).not.toContain('sharepoint');
+    });
+
+    it('every bundle with no provider of the same name declares mappingVerifiedBy', () => {
+        const ids = providerIds();
+        const orphans = bundles().filter((b) => !ids.has(b.name));
+        // Positive control: if the orphan set were empty this would pass
+        // vacuously, and the whole point is that it is not empty today.
+        expect(orphans.map((b) => b.name)).toEqual(['sharepoint']);
+        const undeclared = orphans
+            .filter((b) => b.mappingVerifiedBy === undefined)
+            .map((b) => b.name);
+        expect(undeclared).toEqual([]);
+    });
+
+    it('publishes the UNION, so the denominator is the whole write surface', () => {
+        const ids = providerIds();
+        const orphans = bundles().filter((b) => !ids.has(b.name));
+        const unionSize = ids.size + orphans.length;
+        const unrecorded = [
+            ...registry
+                .listProviders()
+                .filter((p) => (p as { mappingVerifiedBy?: string | null }).mappingVerifiedBy === null)
+                .map((p) => p.id),
+            ...orphans.filter((b) => b.mappingVerifiedBy === null).map((b) => b.name),
+        ];
+        // eslint-disable-next-line no-console
+        console.log(
+            `#3432 — union census: ${unrecorded.length}/${unionSize} integrations have no `
+                + `recorded live mapping run (${ids.size} providers + ${orphans.length} bundle-only): `
+                + `${unrecorded.join(', ') || 'none'}`,
+        );
+        expect(unionSize).toBeGreaterThan(registry.listProviders().length);
+    });
+});

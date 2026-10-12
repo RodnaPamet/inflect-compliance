@@ -130,6 +130,18 @@ integrationRegistry.register({
     description: 'SharePoint document libraries — evidence import, policy sync, audit-pack export',
     clientClass: SharePointClient,
     mapperClass: SharePointMapper,
+    // #3432 — SharePoint is the only bundle with no `IntegrationProvider` of
+    // the same name, so #3431's census could not see it, and it has the most
+    // write surface in the product: six Graph writes (file content, item
+    // update, and subscription create/renew/delete) where every other writing
+    // integration has one or two.
+    //
+    // `null` is the honest answer, and it is the finding rather than an
+    // omission: there is no proving-run citation and no labelled fixture. Its
+    // `testConnection` resolves the first allowed site, which confirms
+    // credentials and reach and exercises none of the six writes — the same
+    // distinction `liveValidation` turned out to carry in #3431.
+    mappingVerifiedBy: null,
 });
 
 // ServiceNow — ITSM: change requests as change-management evidence (S1).
