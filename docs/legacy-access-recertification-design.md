@@ -327,7 +327,7 @@ stopped the account, and they are not equally interesting:
 | `KILL_SWITCH` | a platform- or tenant-scope kill is engaged | expected during a drill; otherwise ask who engaged it |
 | `QUARANTINED` | the guard scanned the payload as an injection attempt | read the account's own fields; one hostile record quarantines only itself |
 | `OVER_BUDGET` | the payload would not fit, or the answer's reported input tokens reached the model's window | a candidate the model never saw reads as one it rejected, so the answer is discarded deliberately |
-| `TIMEOUT` / `DEADLINE` | the per-call timeout, or the 120-second run budget | capacity; raise concurrency before raising either, and never raise the deadline silently |
+| `TIMEOUT` / `DEADLINE` | the per-call timeout, or the 45-minute run budget | capacity — but **measure before raising concurrency**: on the CPU deployment it adds none and multiplies latency past the timeout (#3450). Never raise the deadline silently |
 | `PROVIDER_ERROR` | a transport failure, or a response that failed the schema | the response is not echoed into logs — it is attacker-shaped |
 
 `MODEL_DRIFT` is the one that means something is wrong with the model rather than with
@@ -777,7 +777,7 @@ model revision.
 | Per-call timeout | 3 s | 12 s (#3448; was 2 s, which no measured call ever met) |
 | Requests in flight | 8 | **1** (#3450; was 4, a figure the design chose as a GPU queue depth) |
 | 500-account residue | About 20 s (arithmetic from published latencies, not a measurement) | About 5 s on a T4 GPU (vendor figure). **MEASURED on the production VM: 34 minutes** — a real batch at 0.243 accounts/s, not an extrapolation from per-call latency. See the table below. #3445 |
-| Run deadline | 120 s | **45 min** — owner decision 2026-10-12, after 120 s and then 300 s both proved unreachable |
+| Run deadline (one constant, not per model — `RUN_DEADLINE_MS` bounds the pass whichever provider runs) | **45 min** | **45 min** — owner decision 2026-10-12, after 120 s and then 300 s both proved unreachable |
 | Deadline reachable on the deployed hardware? | not measured | **Yes** — a measured 34.3 min against 45 min, 1.31× headroom. The first value of this row that is not a hope |
 
 - **An undecided account keeps a named reason** (a timeout, the deadline, a quarantine,

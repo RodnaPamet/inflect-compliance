@@ -1254,8 +1254,9 @@ create an alias.
    Then, in order:
    - write the run's results;
    - run the canary;
-   - adjudicate the residue with Jev at 8 requests in flight, or Laya at 4, under a
-     120-second deadline.
+   - adjudicate the residue with Jev at 8 requests in flight, or Laya at 1 (#3450 —
+     measured: concurrency adds no throughput on CPU and pushes per-call latency past
+     the timeout), under a 45-minute deadline.
    An answer whose usage.input_tokens reaches the model's window is discarded as
    OVER_BUDGET.
 6. Derive verdicts from the design document's table, using the thresholds in the
@@ -1346,9 +1347,12 @@ process allows it.
    0.24 across concurrency 1, 4 and 8, and flat again when the CPU limit is doubled.
    Raising concurrency only multiplies per-call latency, to the point where 4 in flight
    exceeds even the raised per-call timeout (#3450). The batch endpoint is worse still.
-   The owner raised the deadline to **300 s** on 2026-10-12; it is still 6.9× short and
-   is recorded as a decision rather than a fix. The GPU remedy this step names is the
-   one that would actually meet it.
+   The owner set the deadline to **45 minutes** on 2026-10-12, after 120 s and then
+   300 s both proved unreachable at any setting this step could tune. 34.3 minutes
+   against 45 is a 1.31× margin, so **this step's criterion is met on CPU** and the
+   checklist item below is ticked. The GPU remedy this step names is not needed for
+   that, though it would still beat this by two orders of magnitude if the bound ever
+   has to be tight rather than merely true.
 4. Produce the Laya evaluation record on the deployed service, using the Step 6b
    harness. Confirm the canary passes before any tenant enables LOCAL_ONLY.
 5. Apply the Compose change to the VM as CLAUDE.md describes: back up the file,
