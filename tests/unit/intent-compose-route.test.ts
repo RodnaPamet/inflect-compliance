@@ -49,7 +49,7 @@ jest.mock('@/app-layer/usecases/external-write-compose', () => ({
     describeComposeRefusal: (...a: unknown[]) => describeComposeRefusal(...a),
 }));
 
-import { LAYA_TIMEOUT_MS } from '@/app-layer/ai/identity-match/laya-provider';
+import { LAYA_CHOOSER_TIMEOUT_MS } from '@/app-layer/ai/intent/laya-chooser';
 import { POST } from '@/app/api/t/[tenantSlug]/agent-proposals/compose/intent/route';
 
 function post(body: unknown) {
@@ -130,7 +130,7 @@ describe('POST compose/intent', () => {
         const opts = intentChooserForTenant.mock.calls[0]![1] as { deadlineAt: number };
         // Strictly more than a single call's timeout — a one-call budget would
         // abort the second question mid-resolution.
-        expect(opts.deadlineAt).toBeGreaterThan(before + LAYA_TIMEOUT_MS * 2);
+        expect(opts.deadlineAt).toBeGreaterThan(before + LAYA_CHOOSER_TIMEOUT_MS * 2);
     });
 
     it('returns the resolver refusal as a 409, not a 500', async () => {

@@ -49,7 +49,7 @@ import {
     composeExternalWriteProposal,
     describeComposeRefusal,
 } from '@/app-layer/usecases/external-write-compose';
-import { LAYA_TIMEOUT_MS } from '@/app-layer/ai/identity-match/laya-provider';
+import { LAYA_CHOOSER_TIMEOUT_MS } from '@/app-layer/ai/intent/laya-chooser';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { badRequest } from '@/lib/errors/types';
@@ -57,12 +57,12 @@ import { badRequest } from '@/lib/errors/types';
 /**
  * The ceiling for the whole resolution, derived from what it actually does:
  * `resolveGrantIntent` asks the chooser twice, each call bounded by
- * `LAYA_TIMEOUT_MS`, plus one call's worth of slack for the round trips
+ * `LAYA_CHOOSER_TIMEOUT_MS`, plus one call's worth of slack for the round trips
  * between them. Derived rather than a round number, so a change to either the
  * per-call timeout or the number of questions moves it.
  */
 const INTENT_CHOOSER_CALLS = 2;
-const INTENT_BUDGET_MS = LAYA_TIMEOUT_MS * (INTENT_CHOOSER_CALLS + 1);
+const INTENT_BUDGET_MS = LAYA_CHOOSER_TIMEOUT_MS * (INTENT_CHOOSER_CALLS + 1);
 
 /**
  * Just the phrase.

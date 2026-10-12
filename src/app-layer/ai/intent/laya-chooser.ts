@@ -47,8 +47,8 @@
  *     rejected 422 by the server's own validator;
  *   - the answer field is `choice`, not `option`;
  *   - a 20-option set (this file's cap) is accepted: p50 596 ms on CPU, max 719;
- *     three options, p50 206 ms. Both sit inside `LAYA_TIMEOUT_MS` (2000) with
- *     margin, so the budget is realistic rather than hopeful.
+ *     three options, p50 206 ms. Both sit inside `LAYA_CHOOSER_TIMEOUT_MS`
+ *     (2000) with margin, so the budget is realistic rather than hopeful.
  *
  * Stated because it matters and because #3311 is this repo's standard for
  * exactly this. The request shape below — in particular a `state` that is not a
@@ -62,9 +62,24 @@
 import { z } from 'zod';
 
 import { callSystemOne } from '@/app-layer/ai/identity-match/transport';
-import { LAYA_TIMEOUT_MS } from '@/app-layer/ai/identity-match/laya-provider';
 
 import type { IntentChoice, IntentChooser } from './grant-intent';
+
+/**
+ * 2 s per chooser call — and deliberately NOT adjudication's timeout.
+ *
+ * These two workloads shared one constant until 2026-10-12 and had no business
+ * doing so. Measured on CPU (#3394): a three-option question is p50 206 ms, a
+ * twenty-option one p50 596 ms / max 719 ms. Adjudication with five candidates
+ * is p50 7,332 ms (#3445) — three orders of magnitude of difference behind one
+ * name.
+ *
+ * Raising the shared constant to fit adjudication would have multiplied THIS
+ * path's budget by six, and this path is user-facing: the compose route derives
+ * its whole ceiling from this number, so a hung Laya would have stalled a
+ * request for 36 s instead of 6. Hence the split rather than the raise.
+ */
+export const LAYA_CHOOSER_TIMEOUT_MS = 2_000;
 
 /** Our label alphabet. Twenty is plenty for a picker and well under the 255 cap. */
 export const INTENT_OPTION_LABELS = [
@@ -212,7 +227,7 @@ export function createLayaIntentChooser(opts: LayaChooserOptions): IntentChooser
             const raw = await callSystemOne({
                 url: `${opts.baseUrl.replace(/\/+$/, '')}/v1/systemone`,
                 body,
-                timeoutMs: LAYA_TIMEOUT_MS,
+                timeoutMs: LAYA_CHOOSER_TIMEOUT_MS,
                 deadlineAt: opts.deadlineAt,
                 ...(opts.apiKey ? { headers: { authorization: `Bearer ${opts.apiKey}` } } : {}),
                 ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
