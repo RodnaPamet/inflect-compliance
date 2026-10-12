@@ -622,8 +622,21 @@ describe('requests in flight', () => {
         );
         const subjects = Array.from({ length: 10 }, (_, i) => ready(`r${i}`));
         await pass({ subjects, provider: spy.provider });
-        expect(spy.maxInFlight).toBeLessThanOrEqual(REQUESTS_IN_FLIGHT[LAYA_MODEL]);
-        expect(spy.maxInFlight).toBeGreaterThan(1);
+
+        // EXACTLY the model's figure, where this used to be `<=` plus `> 1`.
+        // Since #3450 Laya's figure is 1, so "greater than 1" could not pass —
+        // but equality is the better assertion regardless: it catches a default
+        // that is too LOW as well as one that is too high, which the old pair
+        // could not.
+        expect(spy.maxInFlight).toBe(REQUESTS_IN_FLIGHT[LAYA_MODEL]);
+        expect(concurrencyForModel(LAYA_MODEL)).toBe(REQUESTS_IN_FLIGHT[LAYA_MODEL]);
+
+        // THE PARALLELISM PROOF MOVED, it was not dropped. The test above
+        // overrides the concurrency to 4 and asserts `maxInFlight > 1`, which is
+        // where the pool's ability to run things at once now has to be proven:
+        // with Laya's figure at 1, THIS test can no longer tell a working pool
+        // from a serial loop, and asserting it here would be a control that
+        // cannot fail.
     });
 });
 

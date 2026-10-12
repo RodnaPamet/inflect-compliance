@@ -41,6 +41,7 @@ import {
     type MatchState,
 } from '@/app-layer/ai/identity-match';
 import { LAYA_CHOOSER_TIMEOUT_MS } from '@/app-layer/ai/intent/laya-chooser';
+import { LAYA_MODEL as WIRE_LAYA_MODEL, REQUESTS_IN_FLIGHT } from '@/app-layer/ai/identity-match/systemone-wire';
 
 const emptyState: MatchState = {
     account: {
@@ -241,5 +242,45 @@ describe('6b factory — the Jev host is a code constant', () => {
         // And it must stay inside the measured 20-option worst case (719 ms)
         // with margin — the reason 2 s was right for this path all along.
         expect(LAYA_CHOOSER_TIMEOUT_MS).toBeGreaterThan(719 * 2);
+    });
+});
+
+describe('6b — the per-call timeout and the configured concurrency must compose (#3450)', () => {
+    /**
+     * MEASURED on the production VM, 2026-10-12: digest-pinned image, the
+     * Compose service's own limits, the real `buildMatchRequest` payload with
+     * five candidates. Per-call p50 against requests in flight.
+     *
+     * Throughput was flat across all three (0.233 / 0.243 / 0.243 acct/s), so
+     * the only thing concurrency changed here was latency.
+     */
+    const MEASURED_P50_MS: Readonly<Record<number, number>> = {
+        1: 4_112,
+        4: 16_488,
+        8: 32_708,
+    };
+
+    it('the timeout clears the p50 measured AT THE CONFIGURED CONCURRENCY, not at 1', () => {
+        const configured = REQUESTS_IN_FLIGHT[WIRE_LAYA_MODEL];
+        const p50 = MEASURED_P50_MS[configured];
+
+        // The table must actually COVER the configured value. Without this the
+        // lookup yields `undefined`, every comparison below becomes NaN, and a
+        // concurrency nobody measured would sail through as a pass.
+        expect(p50).toBeDefined();
+
+        expect(LAYA_TIMEOUT_MS).toBeGreaterThan(p50);
+        // Headroom rather than a hairline pass — a p50 is the middle of the
+        // distribution, so half of real calls are slower than this figure.
+        expect(LAYA_TIMEOUT_MS / p50).toBeGreaterThan(1.5);
+    });
+
+    it('would have rejected the pair that actually shipped — the positive control', () => {
+        // #3448 set the timeout to 12 s from the concurrency-1 figure while
+        // `REQUESTS_IN_FLIGHT` was still 4, where the measured p50 is 16,488 ms.
+        // Each number was defensible alone; together every call timed out. This
+        // asserts the RULE has teeth, without pinning either constant — raising
+        // the timeout to clear 16,488 ms would be a legitimate alternative fix.
+        expect(12_000).toBeLessThan(MEASURED_P50_MS[4]);
     });
 });

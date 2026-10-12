@@ -775,10 +775,10 @@ model revision.
 | | Jev | Laya |
 | --- | --- | --- |
 | Per-call timeout | 3 s | 12 s (#3448; was 2 s, which no measured call ever met) |
-| Requests in flight | 8 | 4 |
+| Requests in flight | 8 | **1** (#3450; was 4, a figure the design chose as a GPU queue depth) |
 | 500-account residue | About 20 s (arithmetic from published latencies, not a measurement) | About 5 s on a T4 GPU (vendor figure). **MEASURED on the production VM: 34 minutes** — a real batch at 0.243 accounts/s, not an extrapolation from per-call latency. See the table below. #3445 |
-| Run deadline | 120 s | **300 s** — owner decision 2026-10-12, was 120 s |
-| Deadline reachable on the deployed hardware? | not measured | **No** — 34 min against 300 s is 6.9× over. Throughput is the binding constraint, and it moves with neither concurrency nor CPU |
+| Run deadline | 120 s | **45 min** — owner decision 2026-10-12, after 120 s and then 300 s both proved unreachable |
+| Deadline reachable on the deployed hardware? | not measured | **Yes** — a measured 34.3 min against 45 min, 1.31× headroom. The first value of this row that is not a hope |
 
 - **An undecided account keeps a named reason** (a timeout, the deadline, a quarantine,
   drift, the kill switch; the phases document lists them all). It appears exactly as it
@@ -811,11 +811,15 @@ model revision.
   raising either"* — is wrong for this deployment**, and measurably so: raising
   concurrency adds no capacity here and costs a latency multiplier.
 
-  **Concurrency 4 is actively harmful**, because 16,488 ms exceeds the 12 s per-call
-  timeout that #3448 set from the concurrency-1 figures. At the configured
-  `REQUESTS_IN_FLIGHT` of 4 the calls time out again, for no throughput gain.
-  Concurrency 1 gives the same throughput with a p50 of 4.1 s, comfortably inside the
-  timeout. See #3450.
+  **Concurrency 4 was actively harmful, and is now 1** (#3450). 16,488 ms exceeds the
+  12 s per-call timeout that #3448 had set from the concurrency-1 figures, so at the
+  configured `REQUESTS_IN_FLIGHT` of 4 every call timed out — the very failure the
+  timeout raise existed to fix. Each constant was defensible alone and they were wrong
+  together, because each was set against a measurement taken at a different concurrency.
+  Concurrency 1 delivers the same throughput with a p50 of 4,112 ms, roughly 3x inside
+  the timeout. A test in `tests/unit/identity-match-provider-factory.test.ts` now
+  requires the timeout to clear the p50 measured *at the configured concurrency*, and
+  refuses a concurrency the table above does not cover at all.
 
   A correction belongs here, since an earlier draft of this paragraph argued itself out
   of the right answer. It first said throughput "stays flat" — correct — and was then
@@ -830,17 +834,18 @@ model revision.
   The server's unused `POST /v1/systemone/batch` is worse still at 9.2 s per account,
   since batching amortises on a GPU and not on a CPU.
 
-- **THE RUN DEADLINE WAS RAISED TO 300 s, AND THAT IS NOT A FIX.** Owner decision of
-  2026-10-12, written down here because the phases document's rule is that it never
-  happen silently. A 500-account residue needs 1.67 accounts/s to fit 300 s; the deployed
-  hardware delivers a measured 0.243. So **P6's acceptance criterion still fails**, by
-  6.9×. The raise moved the gap from about 17× to 6.9×; it did not close it, and the
-  residue still ends as `DEADLINE` non-verdicts — the fail-closed state, and a queue a
-  person can clear. What would close it is a GPU: the vendor figure for a T4 is about 5 s
-  for the whole residue, two orders of magnitude inside the new budget. An on-demand T4
-  started per run is roughly EUR 12/month against roughly EUR 170/month committed, and it
-  requires leaving the E2 family, which takes no accelerators. That remains the owner's
-  call, and #3445 stays open for it.
+- **THE RUN DEADLINE IS 45 MINUTES, AND THIS IS THE FIRST VALUE THAT IS MET.** Owner
+  decision of 2026-10-12, recorded here because the phases document's rule is that a
+  change to it never happen silently. The history is short and worth keeping: 120 s as
+  designed, 300 s when 120 s proved about 17x short, and 45 minutes once the batch was
+  measured rather than extrapolated. A 500-account residue needs 0.185 accounts/s to fit
+  45 minutes and the deployed hardware delivers a measured 0.243, so **P6's acceptance
+  criterion is met on CPU** with 1.31x of headroom — no GPU, no change of machine family,
+  no second commitment. The two earlier values were not met for a reason that no amount
+  of tuning addressed: throughput moves with neither concurrency nor the CPU limit, so
+  there was no setting that made them reachable. A GPU would still beat this by two
+  orders of magnitude (vendor figure ~5 s for the whole residue) and remains the option
+  if the bound ever has to be tight rather than merely true.
 
 #### Trust, but verify
 

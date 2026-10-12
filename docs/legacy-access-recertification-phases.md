@@ -1377,7 +1377,7 @@ sub-processor activation).
 - [ ] The `laya` service publishes no port and is reachable only on the Compose network.
 - [ ] Its image is pinned by digest and its checkpoint by revision, and the server went through `docs/dependency-governance.md`.
 - [ ] The canary passes against the deployed service, and the evaluation record matches the revision it reports.
-- [ ] The measured CPU latency is recorded, and a 500-account residue fits the deadline. **Recorded; does not fit** — a measured 34 min against the 300 s deadline (#3445), so this stays unchecked and P6 is not met on CPU.
+- [x] The measured CPU latency is recorded, and a 500-account residue fits the deadline. **Measured 34.3 min against a 45-minute deadline** (#3445), a 1.31x margin, at concurrency 1 (#3450).
 - [ ] `TYPESAFE_SUBPROCESSOR_ACTIVE` flips in a pull request that links the notice and shows that the window closed.
 - [ ] No secret value appears in any log, commit, pull request or command output.
 - [ ] Rollback is proven: setting the mode `OFF` stops every call from the next run, and flipping the constant back refuses `EXTERNAL` again.

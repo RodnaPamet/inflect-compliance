@@ -109,23 +109,32 @@ export const CANARY_TOLERANCE = 0.02;
 const TOLERANCE_SLACK = 1e-9;
 
 /**
- * The whole pass's wall-clock budget, from the design document's table.
+ * The whole pass's wall-clock budget: 45 minutes.
  *
- * 300 s since 2026-10-12, raised from 120 s by owner decision. Recorded here
- * and not only in the document because the phases document's rule is "never
- * raise the deadline silently", and a constant that moved for a reason should
- * carry the reason.
+ * 2,700,000 ms since 2026-10-12, by owner decision, and the first value of this
+ * constant that the deployed hardware actually meets. The phases document's rule
+ * is "never raise the deadline silently", so the history belongs here: 120 s as
+ * designed, 300 s when 120 s proved ~17x short, and 45 minutes once the batch was
+ * measured instead of extrapolated.
  *
- * IT IS NOT A FIX, and nothing here should be read as one. A 500-account
- * residue needs 1.67 accounts/s to fit 300 s; the deployed VM delivers
- * 0.136-0.27 (p50 7,332 ms per call, concurrency 1 to 4 — #3445). So the
- * residue still overruns this budget by 6-12x and still ends as `DEADLINE`
- * non-verdicts, which is the fail-closed state and a queue a person clears.
- * The raise moved the gap from about 30x to about 6-12x; it did not close it.
- * What would close it is a GPU, where the vendor figure for the whole residue
- * is about 5 s. See #3445.
+ * MEASURED, not derived (#3445). A real batch on the production VM against the
+ * digest-pinned image under the Compose service's own limits, posting the real
+ * `buildMatchRequest` payload: 0.243 accounts/s, so a 500-account residue takes
+ * 34.3 minutes. 45 minutes clears that by 1.31x.
+ *
+ * WHY IT IS NOT LARGER, AND NOT SMALLER. Throughput does not move with
+ * concurrency (flat across 1, 4 and 8) or with the container's CPU limit
+ * (doubling it changed nothing), so there is no setting that makes a tighter
+ * budget reachable on this box — the earlier 120 s and 300 s values were
+ * unreachable for that reason, not for want of tuning. Equally, headroom past
+ * ~1.3x would stop the deadline doing its job, which is to end a pass that has
+ * stopped making progress rather than to accommodate any duration at all.
+ *
+ * An overrun is still fail-closed: the remaining residue keeps a named
+ * `DEADLINE` reason and appears exactly as it would with the mode `OFF`, which
+ * is a queue a person can clear.
  */
-export const RUN_DEADLINE_MS = 300_000;
+export const RUN_DEADLINE_MS = 2_700_000;
 
 // --- Subjects -------------------------------------------------------------
 

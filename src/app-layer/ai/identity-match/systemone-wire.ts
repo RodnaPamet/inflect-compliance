@@ -122,15 +122,37 @@ export const MODEL_TOKEN_WINDOW = {
 } as const;
 
 /**
- * Requests in flight per model, from the design document's table.
+ * Requests in flight per model.
  *
  * Jev is a hosted API and Laya is one service of ours, so the numbers are about
- * two different things: a rate a vendor will accept, and a queue depth a single
- * GPU stays responsive at.
+ * two different things: a rate a vendor will accept, and a queue depth our own
+ * deployment stays responsive at.
+ *
+ * LAYA IS 1, DOWN FROM 4 (#3450), AND THE OLD VALUE'S REASON IS THE LESSON. The
+ * design document chose 4 as "a queue depth a single GPU stays responsive at".
+ * There is no GPU: Laya runs on CPU on a two-vCPU VM, and measurement there
+ * (2026-10-12, digest-pinned image, Compose limits, real `buildMatchRequest`
+ * payload) found concurrency buys nothing and costs a latency multiplier:
+ *
+ *     concurrency   throughput      per-call p50
+ *               1   0.233 acct/s       4,112 ms
+ *               4   0.243 acct/s      16,488 ms
+ *               8   0.243 acct/s      32,708 ms
+ *
+ * Throughput is flat — a saturated single pipeline — so 4 in flight delivered
+ * the same accounts per second with 4x the per-call latency. That was not merely
+ * wasteful: 16,488 ms exceeds `LAYA_TIMEOUT_MS` (12 s), so every call timed out
+ * at the configured concurrency, which is the failure the timeout raise set out
+ * to fix. Doubling the container's CPU limit changed nothing either.
+ *
+ * Raising this again requires re-measuring the p50 AT THE NEW VALUE and checking
+ * it against `LAYA_TIMEOUT_MS`. A test in `legacy-adjudication-pass.test.ts`
+ * enforces exactly that, because these two constants were each defensible alone
+ * and wrong together.
  */
 export const REQUESTS_IN_FLIGHT = {
     [JEV_MODEL]: 8,
-    [LAYA_MODEL]: 4,
+    [LAYA_MODEL]: 1,
 } as const;
 
 // ─── Questions we ask ──────────────────────────────────────────────────────
