@@ -40,6 +40,7 @@ import {
     NoDecisionProviderError,
     type MatchState,
 } from '@/app-layer/ai/identity-match';
+import { LAYA_CHOOSER_TIMEOUT_MS } from '@/app-layer/ai/intent/laya-chooser';
 
 const emptyState: MatchState = {
     account: {
@@ -210,9 +211,35 @@ describe('6b factory — the Jev host is a code constant', () => {
         expect(JEV_MODEL).not.toContain('preview');
     });
 
-    it('gives the local path a tighter timeout than the external one', () => {
-        expect(LAYA_TIMEOUT_MS).toBeLessThan(JEV_TIMEOUT_MS);
+    it('bounds the local path by what the hardware MEASURES, not by how far the packet travels', () => {
+        // REPLACES 'gives the local path a tighter timeout than the external
+        // one'. That invariant read well and measurement refuted it: on the
+        // deployed VM one adjudication is p50 7,332 ms / p95 7,727 ms (#3445),
+        // because it is CPU inference on two shared cores — where Jev's 3 s
+        // buys a round trip to GPU-backed inference. Holding the local path to
+        // 2 s made LOCAL_ONLY return TIMEOUT for every call, which is the
+        // opposite of preferring it.
         expect(JEV_TIMEOUT_MS).toBe(3_000);
-        expect(LAYA_TIMEOUT_MS).toBe(2_000);
+        expect(LAYA_TIMEOUT_MS).toBe(12_000);
+
+        // The property that actually matters, stated against the measurement
+        // rather than against the other provider: it must clear the measured
+        // p95 with real headroom or the provider cannot answer at all.
+        const MEASURED_P95_MS = 7_727;
+        expect(LAYA_TIMEOUT_MS).toBeGreaterThan(MEASURED_P95_MS);
+        expect(LAYA_TIMEOUT_MS / MEASURED_P95_MS).toBeGreaterThan(1.25);
+    });
+
+    it('keeps the intent chooser on its own tight budget, so the raise cannot leak', () => {
+        // The split of 2026-10-12. One constant served adjudication (p50 7.3 s)
+        // and the intent chooser (p50 206 ms for three options, #3394). Raising
+        // the shared value would have taken the USER-FACING compose route's
+        // ceiling from 6 s to 36 s, so the constant was split instead. This
+        // test is what notices them being merged back.
+        expect(LAYA_CHOOSER_TIMEOUT_MS).toBe(2_000);
+        expect(LAYA_CHOOSER_TIMEOUT_MS).toBeLessThan(LAYA_TIMEOUT_MS);
+        // And it must stay inside the measured 20-option worst case (719 ms)
+        // with margin — the reason 2 s was right for this path all along.
+        expect(LAYA_CHOOSER_TIMEOUT_MS).toBeGreaterThan(719 * 2);
     });
 });
