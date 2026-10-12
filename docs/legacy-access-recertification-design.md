@@ -774,11 +774,11 @@ model revision.
 
 | | Jev | Laya |
 | --- | --- | --- |
-| Per-call timeout | 3 s | 2 s |
+| Per-call timeout | 3 s | 12 s (#3448; was 2 s, which no measured call ever met) |
 | Requests in flight | 8 | 4 |
-| 500-account residue | About 20 s (arithmetic from published latencies, not a measurement) | About 5 s on a T4 GPU (vendor figure). **MEASURED on the production VM: about 61 minutes** (500 × 7,332 ms at concurrency 1). See #3445 |
-| Run deadline | 120 s | 120 s |
-| Deadline reachable on the deployed hardware? | not measured | **No.** About 30× over, and every call also exceeds the 2 s per-call timeout |
+| 500-account residue | About 20 s (arithmetic from published latencies, not a measurement) | About 5 s on a T4 GPU (vendor figure). **MEASURED on the production VM: 31–61 minutes** — 500 calls at p50 7,332 ms, the range being concurrency 4 vs 1; see the note below on why this is a range and not a number. See #3445 |
+| Run deadline | 120 s | **300 s** — owner decision 2026-10-12, was 120 s |
+| Deadline reachable on the deployed hardware? | not measured | **No, and raising it did not change that** — still 6–12× over. The per-call timeout is no longer the binding constraint (#3448); throughput is |
 
 - **An undecided account keeps a named reason** (a timeout, the deadline, a quarantine,
   drift, the kill switch; the phases document lists them all). It appears exactly as it
@@ -789,12 +789,30 @@ model revision.
 - **Laya on the deployed hardware does not meet either bound, and the remedies this
   document prescribes were measured rather than assumed (#3445).** The `TIMEOUT` /
   `DEADLINE` row above says *"capacity; raise concurrency before raising either"*. On the
-  production VM, raising concurrency does not raise capacity: at concurrency 4 the p50 goes
-  from 7,332 ms to 14,827 ms (max 29,990) — latency scales with concurrency and throughput
-  stays flat, because the work is CPU-bound on one vCPU. The server's unused
-  `POST /v1/systemone/batch` is worse still at 9.2 s per account, since batching amortises
-  on a GPU and not on a CPU. What remains is hardware or a changed bound, and the choice
-  is the owner's.
+  production VM concurrency buys less than it costs: at concurrency 4 the p50 goes from
+  7,332 ms to 14,827 ms (max 29,990), because the work is CPU-bound on one vCPU.
+  **Read that carefully, because an earlier draft of this paragraph did not.** It said
+  throughput "stays flat", and its own figures contradict that: 4 in flight at 14,827 ms
+  is 0.27 accounts/s against 0.136 at concurrency 1, so throughput roughly doubles even
+  as per-call latency doubles. The deeper problem with the old claim is that batch
+  throughput was never measured at all — only per-call latency was, and those are
+  different axes. Hence a range, 31–61 minutes, rather than a number: the low end assumes
+  the concurrency-4 p50 holds across a full batch, the high end assumes it does not.
+  Measuring a real batch would collapse the range and has not been done.
+  The server's unused `POST /v1/systemone/batch` is worse still at 9.2 s per account,
+  since batching amortises on a GPU and not on a CPU.
+
+- **THE RUN DEADLINE WAS RAISED TO 300 s, AND THAT IS NOT A FIX.** Owner decision of
+  2026-10-12, written down here because the phases document's rule is that it never
+  happen silently. A 500-account residue needs 1.67 accounts/s to fit 300 s; the deployed
+  hardware delivers 0.136–0.27. So **P6's acceptance criterion still fails**, by 6–12×.
+  The raise moved the gap from about 30× to about 6–12×; it did not close it, and the
+  residue still ends as `DEADLINE` non-verdicts — the fail-closed state, and a queue a
+  person can clear. What would close it is a GPU: the vendor figure for a T4 is about 5 s
+  for the whole residue, two orders of magnitude inside the new budget. An on-demand T4
+  started per run is roughly EUR 12/month against roughly EUR 170/month committed, and it
+  requires leaving the E2 family, which takes no accelerators. That remains the owner's
+  call, and #3445 stays open for it.
 
 #### Trust, but verify
 

@@ -108,8 +108,24 @@ export const CANARY_TOLERANCE = 0.02;
  */
 const TOLERANCE_SLACK = 1e-9;
 
-/** The whole pass's wall-clock budget, from the design document's table. */
-export const RUN_DEADLINE_MS = 120_000;
+/**
+ * The whole pass's wall-clock budget, from the design document's table.
+ *
+ * 300 s since 2026-10-12, raised from 120 s by owner decision. Recorded here
+ * and not only in the document because the phases document's rule is "never
+ * raise the deadline silently", and a constant that moved for a reason should
+ * carry the reason.
+ *
+ * IT IS NOT A FIX, and nothing here should be read as one. A 500-account
+ * residue needs 1.67 accounts/s to fit 300 s; the deployed VM delivers
+ * 0.136-0.27 (p50 7,332 ms per call, concurrency 1 to 4 — #3445). So the
+ * residue still overruns this budget by 6-12x and still ends as `DEADLINE`
+ * non-verdicts, which is the fail-closed state and a queue a person clears.
+ * The raise moved the gap from about 30x to about 6-12x; it did not close it.
+ * What would close it is a GPU, where the vendor figure for the whole residue
+ * is about 5 s. See #3445.
+ */
+export const RUN_DEADLINE_MS = 300_000;
 
 // --- Subjects -------------------------------------------------------------
 

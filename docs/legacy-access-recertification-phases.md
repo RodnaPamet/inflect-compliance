@@ -1336,8 +1336,17 @@ process allows it.
    the app and worker services.
 3. Measure p50 and p95 latency over the adjudication corpus on the production VM's CPU,
    and record the figures in the design document. If a 500-account residue does not
-   fit the 120-second deadline, raise the concurrency or add a GPU. Never raise the
+   fit the run deadline, raise the concurrency or add a GPU. Never raise the
    deadline silently.
+
+   **This happened, and here is the record the rule above asks for.** Measured
+   2026-10-12: p50 7,332 ms per call, so a 500-account residue takes 31–61 minutes
+   against a then-120-second deadline (#3445). Concurrency was tried and is not the
+   remedy this document hoped for — at 4 in flight the per-call p50 doubles, so
+   throughput gains about 2× where ~30× was needed, and the batch endpoint is worse
+   still. The owner raised the deadline to **300 s** on 2026-10-12. It is still not
+   enough, by 6–12×, and is recorded as a decision rather than a fix; the GPU remedy
+   this step names is the one that would actually meet it.
 4. Produce the Laya evaluation record on the deployed service, using the Step 6b
    harness. Confirm the canary passes before any tenant enables LOCAL_ONLY.
 5. Apply the Compose change to the VM as CLAUDE.md describes: back up the file,
@@ -1366,7 +1375,7 @@ sub-processor activation).
 - [ ] The `laya` service publishes no port and is reachable only on the Compose network.
 - [ ] Its image is pinned by digest and its checkpoint by revision, and the server went through `docs/dependency-governance.md`.
 - [ ] The canary passes against the deployed service, and the evaluation record matches the revision it reports.
-- [ ] The measured CPU latency is recorded, and a 500-account residue fits the deadline.
+- [ ] The measured CPU latency is recorded, and a 500-account residue fits the deadline. **Recorded; does not fit** — 31–61 min against the 300 s deadline (#3445), so this stays unchecked and P6 is not met on CPU.
 - [ ] `TYPESAFE_SUBPROCESSOR_ACTIVE` flips in a pull request that links the notice and shows that the window closed.
 - [ ] No secret value appears in any log, commit, pull request or command output.
 - [ ] Rollback is proven: setting the mode `OFF` stops every call from the next run, and flipping the constant back refuses `EXTERNAL` again.
