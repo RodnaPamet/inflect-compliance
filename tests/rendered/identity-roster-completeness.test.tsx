@@ -258,6 +258,21 @@ describe('the cap is a page size, not a reachability limit', () => {
 
         fireEvent.change(await openSearch(), { target: { value: 'nobody' } });
 
+        // Wait for the CAUSE before asserting the EFFECT (#3447). The empty
+        // state cannot render until the search request has gone out and come
+        // back empty, and `findByText` alone races that round trip: it polls
+        // for the text on its own 1s budget with nothing tying it to the
+        // request. That held locally and failed 470 suites into a --runInBand
+        // shard, where GC pauses eat the budget (#3320) — i.e. it failed for a
+        // reason that had nothing to do with what it is testing.
+        //
+        // The sibling test above already waits on `rosterCalls()` first; this
+        // one did not. Deliberately NOT a longer timeout, which would leave
+        // the ordering unstated and the budget merely bigger.
+        await waitFor(() => {
+            expect(rosterCalls().some((u) => u.includes('q=nobody'))).toBe(true);
+        });
+
         expect(await screen.findByText(/No accounts match this search/i)).toBeInTheDocument();
         expect(screen.queryByText(/No synced accounts yet/i)).not.toBeInTheDocument();
     });
