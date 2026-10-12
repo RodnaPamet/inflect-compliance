@@ -17,6 +17,7 @@ import {
     GitHubProvider,
     evaluateBranchProtection,
     fetchBranchProtection,
+    fetchBranchRules,
 } from '@/app-layer/integrations/providers/github';
 import type { GitHubConnectionConfig } from '@/app-layer/integrations/providers/github';
 import type { GitHubLocalStore } from '@/app-layer/integrations/providers/github/sync';
@@ -396,7 +397,161 @@ describe('GitHub provider — sync orchestrator', () => {
     });
 });
 
+describe('GitHub provider — fetchBranchRules (#3433)', () => {
+    const resp = (status: number, body: unknown) => ({
+        status,
+        ok: status >= 200 && status < 300,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+    });
+
+    it('404 means NO rulesets apply — an answer, not a failure', async () => {
+        const r = await fetchBranchRules('a', 'b', 'main', 't', (async () => resp(404, {})) as never);
+        expect(r.rules).toEqual([]);
+        expect(r.error).toBeUndefined();
+    });
+
+    it('an auth failure yields null — unknown, never zero', async () => {
+        const r = await fetchBranchRules('a', 'b', 'main', 't', (async () => resp(403, { message: 'Forbidden' })) as never);
+        // The distinction the evaluator depends on: `null`, not `[]`. `[]`
+        // would make a scope-less token read as "nothing is configured".
+        expect(r.rules).toBeNull();
+        expect(r.error).toContain('403');
+    });
+
+    it('a thrown fetch yields null too, not an empty list', async () => {
+        const r = await fetchBranchRules('a', 'b', 'main', 't', (async () => { throw new Error('ECONNRESET'); }) as never);
+        expect(r.rules).toBeNull();
+        expect(r.error).toContain('ECONNRESET');
+    });
+
+    it('reads the rules-in-effect endpoint, not the rulesets list', async () => {
+        let seen = '';
+        await fetchBranchRules('acme', 'repo', 'main', 't', (async (u: string) => { seen = u; return resp(200, []); }) as never);
+        // `/rules/branches/{branch}` returns org+repo rulesets already merged
+        // and filtered to this branch; `/rulesets` would need us to evaluate
+        // ref-name conditions ourselves.
+        expect(seen).toBe('https://api.github.com/repos/acme/repo/rules/branches/main');
+    });
+
+    it('a non-array 200 body does not become a bogus rule list', async () => {
+        const r = await fetchBranchRules('a', 'b', 'main', 't', (async () => resp(200, { message: 'nope' })) as never);
+        expect(r.rules).toEqual([]);
+    });
+});
+
 describe('GitHub provider — evaluateBranchProtection (pure function)', () => {
+    // ─── #3433 defect 2: rulesets ────────────────────────────────────────
+    //
+    // Every fixture below is the response observed against
+    // RodnaPamet/inflect-compliance main on 2026-10-11, not an invention.
+
+    /** The classic endpoint on a ruleset-governed branch: 200, both keys null. */
+    const CLASSIC_NULLS = {
+        url: 'https://api.github.com/repos/acme/repo/branches/main/protection',
+        required_status_checks: null,
+        required_pull_request_reviews: null,
+        enforce_admins: { enabled: false },
+    };
+    /** Ruleset 20952644 "main protection", enforcement active. */
+    const LIVE_RULES = [
+        { type: 'copilot_code_review', ruleset_id: 19449061, ruleset_source_type: 'Repository' },
+        { type: 'deletion', ruleset_id: 20952644, ruleset_source_type: 'Repository' },
+        { type: 'non_fast_forward', ruleset_id: 20952644, ruleset_source_type: 'Repository' },
+        {
+            type: 'required_status_checks',
+            ruleset_id: 20952644,
+            ruleset_source_type: 'Repository',
+            parameters: {
+                do_not_enforce_on_create: true,
+                strict_required_status_checks_policy: false,
+                required_status_checks: [
+                    { context: 'Lint' }, { context: 'Typecheck' }, { context: 'Test' },
+                    { context: 'Build' }, { context: 'Security' }, { context: 'Ratchets' },
+                ],
+            },
+        },
+        { type: 'merge_queue', ruleset_id: 20952644, ruleset_source_type: 'Repository' },
+    ];
+
+    it('THE LIVE CASE: a ruleset requirement is not invisible behind classic nulls', () => {
+        const before = evaluateBranchProtection('acme', 'repo', 'main', CLASSIC_NULLS, 200);
+        // What this reported about our own default branch before the fix.
+        expect(before.details.requiredStatusChecks).toBe(false);
+
+        const after = evaluateBranchProtection('acme', 'repo', 'main', CLASSIC_NULLS, 200, LIVE_RULES);
+        expect(after.details.requiredStatusChecks).toBe(true);
+        // ...and it names the mechanism and the contexts, so a reader knows
+        // where to go to change it.
+        expect(after.summary).toContain('required via ruleset');
+        expect(after.summary).toContain('Lint, Typecheck, Test, Build, Security, Ratchets');
+    });
+
+    it('non_fast_forward blocks force-pushes even when classic protection allows them', () => {
+        const allowed = { ...CLASSIC_NULLS, allow_force_pushes: { enabled: true } };
+        expect(evaluateBranchProtection('acme', 'repo', 'main', allowed, 200).details.allowForcePushes).toBe(true);
+        const merged = evaluateBranchProtection('acme', 'repo', 'main', allowed, 200, LIVE_RULES);
+        expect(merged.details.allowForcePushes).toBe(false);
+        expect(merged.summary).toContain('blocked by ruleset');
+    });
+
+    it('a 404 on classic protection is NOT proof of no protection', () => {
+        // A branch governed solely by a ruleset. Before the fix this reported
+        // "Branch protection is NOT enabled" for a fully governed branch.
+        const r = evaluateBranchProtection('acme', 'repo', 'main', null, 404, LIVE_RULES);
+        expect(r.details.protectionEnabled).toBe(true);
+        expect(r.details.requiredStatusChecks).toBe(true);
+        expect(r.details.allowForcePushes).toBe(false);
+        expect(r.summary).not.toContain('Branch protection is NOT enabled');
+    });
+
+    it('a 404 with NO rulesets really is unprotected', () => {
+        const r = evaluateBranchProtection('acme', 'repo', 'main', null, 404, []);
+        expect(r.details.protectionEnabled).toBe(false);
+        expect(r.details.requiredStatusChecks).toBe(false);
+        expect(r.details.allowForcePushes).toBe(true);
+        expect(r.status).toBe('FAILED');
+    });
+
+    it('UNREADABLE rulesets are unknown, not absent', () => {
+        // `null` is "could not look". It must not read as "nothing there" —
+        // otherwise a token missing the scope silently downgrades every
+        // ruleset-protected branch to unprotected.
+        const r = evaluateBranchProtection('acme', 'repo', 'main', CLASSIC_NULLS, 200, null);
+        expect(r.details.rulesetsUnread).toBe(true);
+        expect(r.summary).toContain('COULD NOT BE READ');
+        // ...and it does NOT claim force-pushes are allowed on the strength of
+        // a read that failed.
+        const r404 = evaluateBranchProtection('acme', 'repo', 'main', null, 404, null);
+        expect(r404.summary).toContain('COULD NOT BE READ');
+    });
+
+    it('a pull_request rule satisfies the review requirement (shape UNOBSERVED)', () => {
+        // Documented but never captured live, so the count is read
+        // defensively: presence of the rule is the requirement.
+        const withPr = [...LIVE_RULES, { type: 'pull_request', ruleset_id: 20952644, parameters: { required_approving_review_count: 2 } }];
+        const r = evaluateBranchProtection('acme', 'repo', 'main', CLASSIC_NULLS, 200, withPr);
+        expect(r.details.requiredReviews).toBe(true);
+        expect(r.details.reviewCount).toBe(2);
+        expect(r.status).toBe('PASSED');
+        // ...and with no parameters sent at all, the rule still counts.
+        const bare = [...LIVE_RULES, { type: 'pull_request', ruleset_id: 20952644 }];
+        expect(evaluateBranchProtection('acme', 'repo', 'main', CLASSIC_NULLS, 200, bare).details.requiredReviews).toBe(true);
+    });
+
+    it('classic requirements are unchanged when no rulesets apply', () => {
+        const classic = {
+            url: 'u',
+            required_status_checks: { strict: true, contexts: ['ci'] },
+            required_pull_request_reviews: { required_approving_review_count: 1, dismiss_stale_reviews: true, require_code_owner_reviews: false },
+            enforce_admins: { enabled: true },
+        };
+        const r = evaluateBranchProtection('acme', 'repo', 'main', classic, 200, []);
+        expect(r.status).toBe('PASSED');
+        expect(r.summary).toContain('via branch protection');
+        expect(r.summary).not.toContain('ruleset');
+    });
+
     test('FAILS when no protection exists', () => {
         const result = evaluateBranchProtection('acme', 'repo', 'main', null, 404);
         expect(result.status).toBe('FAILED');

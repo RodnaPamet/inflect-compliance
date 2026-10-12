@@ -23,15 +23,25 @@ name: DAST (ZAP Full Scan)
 #     A High/Critical alert is NOT deferred: the "Fail on HIGH+" step
 #     below fails the job on one regardless, allowlisted or not.
 #
-# DAST-NON-BLOCKING-UNTIL: 2026-10-11 — the active scan has ~10 runs and
-#   two of them failed on app-boot/runner flake, so its findings baseline
-#   is younger than the nightly's. Six more Sunday runs establish whether
-#   the shared .zap/rules.tsv allowlist holds for actively-mutated
-#   requests; on that date, drop continue-on-error + set fail_action: true
-#   (as the baseline did on 2026-08-29) or move the date with a written
-#   reason. tests/guardrails/dast-workflow-pinning.test.ts compares this
-#   date against the real clock and FAILS once it passes — the deferral
-#   cannot outlive its own deadline unnoticed.
+# BLOCKING SINCE 2026-10-12. The roll-in deferral above expired on
+#   2026-10-11 and the guard failed the next day exactly as designed, which
+#   is how this was noticed. Its condition — "six more Sunday runs establish
+#   whether the shared .zap/rules.tsv allowlist holds for actively-mutated
+#   requests" — was met, so the first of its two sanctioned remedies applies:
+#   continue-on-error dropped, fail_action: true (as the baseline did on
+#   2026-08-29).
+#
+#   Read with care, because the obvious measurement is worthless here: the
+#   RUN conclusion has been `success` every week since 2026-08-09, but
+#   continue-on-error manufactures that green whatever the scan finds. The
+#   discriminating measurement is the ZAP Full Scan STEP's own conclusion,
+#   which a finding above the allowlist turns to `failure` while the job
+#   stays green. Checked on the six most recent runs (2026-09-06 through
+#   2026-10-11): step conclusion `success` in all six, i.e. the action
+#   exited zero and the allowlist held. The two historical failures the
+#   deferral cited were 2026-07-12 and 2026-08-02; there has been none since.
+#
+#   The HIGH+ gate below was never deferred and is unchanged.
 on:
   workflow_dispatch:
   schedule:
@@ -178,11 +188,12 @@ jobs:
 
       # ── ZAP Full (active) scan ──
       - name: ZAP Full Scan
-        # Non-blocking during roll-in (same rationale as the baseline):
-        # action-full-scan exits non-zero on findings and fail_action
-        # alone isn't reliable, so continue-on-error guarantees the run
-        # stays green while findings flow to the Security tab + issue.
-        continue-on-error: true
+        # BLOCKING since 2026-10-12 (the roll-in deferral closed on its own
+        # deadline — see the header). `continue-on-error` is gone and
+        # fail_action is true, so a finding above the .zap/rules.tsv allowlist
+        # now fails this weekly run instead of flowing only to the Security
+        # tab. This workflow has no pull_request trigger, so it gates the
+        # scheduled scan and never a PR.
         uses: zaproxy/action-full-scan@v0.13.0
         with:
           target: 'http://localhost:3006'
@@ -192,7 +203,7 @@ jobs:
           issue_title: 'ZAP Full Scan Findings (weekly)'
           allow_issue_writing: true
           artifact_name: 'zap_full_scan'
-          fail_action: false
+          fail_action: true
 
       # ── HIGH+ gate ──
       # The roll-in deferral above covers Medium and below only. An ACTIVE
