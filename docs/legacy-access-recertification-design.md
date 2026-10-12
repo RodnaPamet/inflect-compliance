@@ -287,8 +287,12 @@ asks for JSON in the prompt, and parses JSON out of the reply.
 
 ### Operating adjudication
 
-The runbook for what Step 6c shipped. The Jev half — activating the sub-processor and
-rotating its key — is under the Roadmap heading, because none of it exists yet.
+The runbook for what Steps 6c and 6d shipped, including the Laya service now running on
+the production VM. The sentence that used to sit here said the Jev half did not exist
+yet; `TYPESAFE_SUBPROCESSOR_ACTIVE` is `true` as of 2026-10-11, so activation has
+happened and key rotation is below rather than deferred. What is still outstanding for
+Jev is operational, not architectural: no `TYPESAFE_API_KEY` is set on the VM, so no
+tenant can reach it today.
 
 #### Turning it on, and off
 
@@ -302,7 +306,7 @@ Three refusals apply at the cross-field point, deployment block first:
 
 | setting | refused when |
 | --- | --- |
-| `EXTERNAL` | `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false` — which it is |
+| `EXTERNAL` | `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false` — **no longer the case**; it is `true` since 2026-10-11, so this refusal no longer fires |
 | `EXTERNAL` | `aiResidency` is `LOCAL_ONLY` |
 | `LOCAL_ONLY` | `LAYA_BASE_URL` is unset |
 
@@ -322,7 +326,7 @@ stopped the account, and they are not equally interesting:
 | reason | what it means | what to do |
 | --- | --- | --- |
 | `NO_PROVIDER` | the mode is on and the factory returned the stub — `LOCAL_ONLY` with no `LAYA_BASE_URL` | configure the server, or set the mode `OFF` |
-| `NO_EVALUATION` | no committed record for the revision the endpoint reports | produce a record; this is the state of every deployment today |
+| `NO_EVALUATION` | no committed record for the revision the endpoint reports | produce a record with `scripts/eval-identity-match.ts`. **No longer the default state for Laya** — a record for `laya-multilingual@52a12780e030` is committed. Still the state for Jev |
 | `MODEL_DRIFT` | the canary did not reproduce its recorded answers, or an answer came from a revision the canary never validated | **go and look at the model**; the batch was refused |
 | `KILL_SWITCH` | a platform- or tenant-scope kill is engaged | expected during a drill; otherwise ask who engaged it |
 | `QUARANTINED` | the guard scanned the payload as an injection attempt | read the account's own fields; one hostile record quarantines only itself |
@@ -333,6 +337,59 @@ stopped the account, and they are not equally interesting:
 `MODEL_DRIFT` is the one that means something is wrong with the model rather than with
 the deployment or the data. A whole run of `NO_EVALUATION` is the designed state; a
 whole run of `MODEL_DRIFT` is an incident.
+
+#### Where Laya runs, and what it actually delivers
+
+One container, `laya`, in the production Compose project. Pinned by digest, serving the
+checkpoint baked at the pinned revision, on the internal network with **no published
+port** — reach it from the host only through the Compose network or an SSH tunnel to the
+container, never a host port, because there is not one.
+
+Three operational facts, all measured on the deployed service rather than inferred:
+
+- **It is deterministic.** Two independent runs of the full corpus against the same
+  container returned identical probabilities to eight decimal places — worst delta
+  `0.00000000` against a canary tolerance of `0.02`. So `MODEL_DRIFT` on this
+  deployment means the model or the checkpoint genuinely changed; it is not noise, and
+  it does not need a retry before being believed.
+- **It answers confidently about one case in nineteen.** On the corpus, a single answer
+  clears `agreeAt` (0.925). That threshold is the lowest at which the model makes no
+  confident *mistake*, so it cannot be relaxed to buy coverage — below it the model is
+  confidently wrong. Expect roughly 5 % of a residue to get an actionable verdict and
+  the rest to reach a person. That is the fail-closed design working, and it is also
+  the honest answer to "how much review does this save".
+- **The endpoint's self-reported revision cannot detect a changed model.** It returns
+  the vendor's hardcoded `laya-rl-agent` whatever checkpoint is loaded. The design's
+  rule — thresholds for the revision the endpoint reports — therefore leans entirely on
+  the **canary** here. There is no second, independent revision check for Laya. Jev is
+  unaffected: `JEV_MODEL` pins `jev-1.13.0` and a hosted API reports a real revision.
+
+#### Rotating the TypeSafe key
+
+`TYPESAFE_API_KEY` lives in `/opt/inflect/.env.prod`, which is host-owned. `apply.sh`
+never writes it and never reads its value — it checks that the NAME is present during
+preflight and nothing more. So rotation is a deliberate act by the owner on the VM, and
+no part of it belongs in this repository.
+
+    1. the owner edits /opt/inflect/.env.prod in place, replacing the value
+    2. recreate the two services that read it:
+         cd /opt/inflect && sudo docker compose --env-file .env --env-file .env.prod \
+           -f docker-compose.prod.yml up -d app worker
+    3. confirm the name is still present and the containers came back:
+         sudo docker exec inflect-app-1 sh -c 'env | grep -c ^TYPESAFE_API_KEY='
+         curl -s -o /dev/null -w '%{http_code}' https://app.inflect.bg/api/readyz
+
+Never echo the value, never pass it on a command line, and never paste it into a pull
+request or an issue. Step 3 asserts on PRESENT/ABSENT, which is all anyone needs.
+
+**ROTATION DEGRADES TO LOCAL RATHER THAN FAILING, AND THAT IS WORTH KNOWING BEFORE YOU
+DO IT.** While the key is absent or wrong, `getDecisionProvider('EXTERNAL')` does not
+throw — it falls back to Laya if `LAYA_BASE_URL` is set, and to the stub otherwise. A
+tenant who asked for `EXTERNAL` therefore keeps getting verdicts through the rotation
+window, from a *different processor*. That is the safe direction (the local model moves
+no data off our infrastructure) and it is deliberate, but it means the verdicts written
+during the window name Laya, not Jev. If the processor on the record matters for the
+period you are rotating in, set those tenants `OFF` first and back afterwards.
 
 #### What a closed `AGREES` lane means
 
