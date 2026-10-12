@@ -245,47 +245,46 @@ services:
     # than an oversight: CPU inference takes everything it is given, so an
     # unbounded Laya starves the request path during a residue batch — the one
     # failure mode that would make adjudication look like an app outage.
+    # `REQUESTS_IN_FLIGHT` for Laya is 4, so a batch WILL saturate whatever it
+    # is allowed.
     #
-    # 3.0 OF FOUR vCPUs, and the number is measured rather than reasoned.
-    # CPU inference takes everything it is given, so an unbounded Laya starves
-    # the request path during a residue batch — the one failure mode that would
-    # make adjudication look like an app outage. `REQUESTS_IN_FLIGHT` for Laya
-    # is 4, so a batch WILL saturate whatever it is allowed.
+    # 1.0 OF TWO vCPUs — half the box, leaving a core for app, worker and
+    # postgres.
     #
     # THE CURVE, MEASURED ON THIS VM (#3445). Same image, same payload, p50 per
     # adjudication with five candidates:
     #
-    #   1.0 cpu, 2-vCPU host   7.332 s
+    #   1.0 cpu, 2-vCPU host   7.332 s   <- this setting
     #   1.0 cpu, 4-vCPU host   5.282 s   <- contention relief alone
-    #   3.0 cpu, 4-vCPU host   2.573 s   <- this setting
+    #   3.0 cpu, 4-vCPU host   2.573 s   <- the knee, on a bigger box
     #   4.0 cpu, 4-vCPU host   2.510 s   <- +33% cpu buys 2.4%
     #
-    # Three is the knee: it takes essentially all of the available speed-up and
-    # still leaves a core for app, worker and postgres. Four would starve them
-    # for a 2.4% gain, which is the trade this limit exists to refuse. An
-    # earlier version of this file said 1.0 "half of two vCPUs" — arithmetic
-    # about a box that has since been resized, and it left 4.8 s per account on
-    # the table.
+    # This is therefore NOT the fastest row measured, and the reason it is the
+    # row in this file is a billing fact, not a technical one:
     #
-    # WHY THE HOST IS FOUR vCPUs AND WHAT IT COST: nothing. The commitment
-    # `agrent-inflect-e2-3yr` (GENERAL_PURPOSE_E2, europe-west1, to 2029-09-21)
-    # is for VCPU=4 MEMORY=32768, and `e2-highmem-4` is exactly 4/32768. The
-    # box had been running at half that and the unused half was being paid for
-    # regardless.
+    # WHY THE HOST IS TWO vCPUs. The commitment `agrent-inflect-e2-3yr`
+    # (GENERAL_PURPOSE_E2, europe-west1, to 2029-09-21) is for VCPU=4
+    # MEMORY=32768, and a commitment is REGIONAL AND SHARED ACROSS INSTANCES —
+    # its name says so. This VM and the `agrent` VM are both E2 in
+    # europe-west1 at 2 vCPU / 16 GiB apiece, which consumes that commitment
+    # EXACTLY. Resizing this box to `e2-highmem-4` on 2026-10-12 took the pair
+    # to 6 vCPU / 48 GiB; the 2 vCPU + 16 GiB above the commitment billed
+    # on-demand at ~EUR 64/month, and it was reverted the same day. A bigger
+    # host here is not free — it costs that, or a second 3-year commitment.
     #
-    # It still does not fix everything: 2.573 s exceeds `LAYA_TIMEOUT_MS` (2 s),
-    # so every call still times out and LOCAL_ONLY still returns `TIMEOUT`
-    # non-verdicts. And more E2 cores are ruled out BY THIS CURVE — the
-    # bottleneck past three is per-core throughput, not core count. #3445 is
-    # where that is decided.
+    # And more CPU is not the lever for #3445 regardless: 7.332 s and 2.573 s
+    # both exceed `LAYA_TIMEOUT_MS` (2 s), so LOCAL_ONLY returns `TIMEOUT`
+    # non-verdicts at every row of that curve. The curve also rules out buying
+    # the way out with E2 cores — past three the bottleneck is per-core
+    # throughput, not core count. #3445 decides what actually changes.
     #
     # 4g against a 322M-parameter model — roughly 1.3 GB of fp32 weights plus
-    # the torch runtime and tokeniser. Measured peak stays well inside it, and
-    # the host now has 32 GB, so this is bounded rather than tight.
+    # the torch runtime and tokeniser. Measured peak stays well inside it on a
+    # 16 GB host, so this is bounded rather than tight.
     deploy:
       resources:
         limits:
-          cpus: "3.0"
+          cpus: "1.0"
           memory: 4g
 
   # ── App (Next.js) — auto-updated by Watchtower ────────────────
