@@ -1,5 +1,5 @@
 {
-  "group_id": "aws_compliance.benchmark.soc_2",
+  "group_id": "aws_compliance.benchmark.all_controls",
   "title": "SOC 2",
   "description": "",
   "tags": {},
@@ -14,7 +14,7 @@
   },
   "groups": [
     {
-      "group_id": "aws_compliance.benchmark.soc_2_cc_6",
+      "group_id": "aws_compliance.benchmark.all_controls_cc_6",
       "title": "CC6 Logical Access",
       "description": "",
       "tags": {},
@@ -69,7 +69,7 @@
               "dimensions": []
             }
           ],
-          "control_id": "aws_compliance.control.s3_bucket_public_access_blocked",
+          "control_id": "aws_compliance.control.s3_public_access_block_bucket",
           "description": "",
           "severity": "medium",
           "tags": {},
@@ -104,7 +104,7 @@
       ]
     },
     {
-      "group_id": "aws_compliance.benchmark.soc_2_cc_7",
+      "group_id": "aws_compliance.benchmark.all_controls_cc_7",
       "title": "CC7 System Operations",
       "description": "",
       "tags": {},

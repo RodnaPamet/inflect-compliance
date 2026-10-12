@@ -148,8 +148,8 @@ describe('aws-posture — mapping validity', () => {
  */
 describe('cloud-posture crosswalks — BOTH sides of every mapping', () => {
     const SNAPSHOT_DIR = 'tests/fixtures/powerpipe-control-ids';
-    /** Clouds whose control-id snapshot is vendored. AWS's mod was not installed. */
-    const SNAPSHOTTED = ['gcp', 'azure'] as const;
+    /** Clouds whose control-id snapshot is vendored. All three, since #3439. */
+    const SNAPSHOTTED = ['gcp', 'azure', 'aws'] as const;
     const MAPS = {
         aws: '@/data/integrations/aws-posture-control-map',
         gcp: '@/data/integrations/gcp-posture-control-map',
@@ -195,7 +195,7 @@ describe('cloud-posture crosswalks — BOTH sides of every mapping', () => {
         expect(up.has('iam_service_account_no_user_managed_key')).toBe(false);
     });
 
-    it.each(['gcp', 'azure'] as const)(
+    it.each(['gcp', 'azure', 'aws'] as const)(
         'every %s SOC 2 / NIST code resolves to a real IC requirement',
         (cloud) => {
             const icSoc2 = new Set(
@@ -226,17 +226,20 @@ describe('cloud-posture crosswalks — BOTH sides of every mapping', () => {
     );
 
     it('publishes which clouds the id check actually covers', () => {
-        // A coverage figure names its axis. This one covers 2 of 3 clouds on
-        // the left-hand side; AWS has no vendored snapshot, so its ids remain
-        // unverified — not verified-good.
+        // A coverage figure names its axis. #3434 shipped this covering 2 of 3
+        // clouds and said so; #3439 vendored the AWS snapshot and closed the
+        // gap. The assertion is on the REMAINDER rather than on the count, so
+        // adding a fourth cloud without a snapshot reddens here instead of
+        // quietly lowering the fraction.
         const unsnapshotted = Object.keys(MAPS).filter(
             (c) => !(SNAPSHOTTED as readonly string[]).includes(c),
         );
-        expect(unsnapshotted).toEqual(['aws']);
+        expect(unsnapshotted).toEqual([]);
         // eslint-disable-next-line no-console
         console.log(
-            `#3434 — control-id resolution covers ${SNAPSHOTTED.length}/${Object.keys(MAPS).length} clouds ` +
-                `(${SNAPSHOTTED.join(', ')}); UNCOVERED: ${unsnapshotted.join(', ')} (mod not vendored)`,
+            `#3439 — control-id resolution covers ${SNAPSHOTTED.length}/${Object.keys(MAPS).length} clouds ` +
+                `(${SNAPSHOTTED.join(', ')})` +
+                (unsnapshotted.length ? `; UNCOVERED: ${unsnapshotted.join(', ')} (mod not vendored)` : '; none uncovered'),
         );
     });
 });

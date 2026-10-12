@@ -26,11 +26,12 @@ license tripwire in `tests/guards/aws-posture-connector.test.ts` stays satisfied
 | --- | --- | --- | --- |
 | `gcp.txt` | `turbot/steampipe-mod-gcp-compliance` | v1.3.2 | 202 controls |
 | `azure.txt` | `turbot/steampipe-mod-azure-compliance` | v2.5.2 | 476 controls |
+| `aws.txt` | `turbot/steampipe-mod-aws-compliance` | v1.13.1 | 679 controls |
 
-`aws.txt` is absent: the AWS mod was not installed when this was captured, so
-the AWS crosswalk's left-hand side is still UNGUARDED. The guard prints which
-clouds it covered — read that denominator rather than assuming it covers all
-three.
+All three clouds are covered as of #3439. The guard still prints which clouds
+it covered — read that denominator rather than assuming, and it asserts the
+UNCOVERED list is empty so a fourth cloud without a snapshot reddens rather
+than quietly lowering the fraction.
 
 ## Refreshing
 

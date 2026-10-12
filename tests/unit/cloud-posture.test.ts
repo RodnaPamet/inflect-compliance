@@ -37,7 +37,7 @@ const readSrc = (rel: string) => codeOf(read(rel));
  * the source-cited fixture module so it cannot drift back into agreeing with
  * whatever the parser happens to expect.
  */
-const BENCH_JSON = powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+const BENCH_JSON = powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
     groups: [
         powerpipeGroup('cc6', {
             controls: [

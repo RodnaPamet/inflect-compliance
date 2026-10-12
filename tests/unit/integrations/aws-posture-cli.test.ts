@@ -70,19 +70,19 @@ beforeEach(() => {
 describe('AwsPostureProvider.benchmarkId', () => {
     it('maps the shorthands, defaulting to soc2', () => {
         expect(AwsPostureProvider.benchmarkId('cis')).toBe(
-            'aws_compliance.benchmark.cis_v300',
+            'aws_compliance.benchmark.all_controls',
         );
         expect(AwsPostureProvider.benchmarkId('soc2')).toBe(
-            'aws_compliance.benchmark.soc_2',
+            'aws_compliance.benchmark.all_controls',
         );
         expect(AwsPostureProvider.benchmarkId('CIS')).toBe(
-            'aws_compliance.benchmark.cis_v300',
+            'aws_compliance.benchmark.all_controls',
         );
         expect(AwsPostureProvider.benchmarkId(undefined)).toBe(
-            'aws_compliance.benchmark.soc_2',
+            'aws_compliance.benchmark.all_controls',
         );
         expect(AwsPostureProvider.benchmarkId('nonsense')).toBe(
-            'aws_compliance.benchmark.soc_2',
+            'aws_compliance.benchmark.all_controls',
         );
     });
 });
@@ -184,7 +184,7 @@ describe('AwsPostureProvider.runCheck — collector invocation', () => {
         expect(args).toEqual([
             'benchmark',
             'run',
-            'aws_compliance.benchmark.soc_2',
+            'aws_compliance.benchmark.all_controls',
             '--output',
             'json',
         ]);
@@ -194,7 +194,7 @@ describe('AwsPostureProvider.runCheck — collector invocation', () => {
         cliResult({ stdout: benchmarkJson([control('c1', 'ok')]) });
         await provider().runCheck(input({ benchmark: 'cis' }) as never);
         expect(execFileMock.mock.calls[0][1][2]).toBe(
-            'aws_compliance.benchmark.cis_v300',
+            'aws_compliance.benchmark.all_controls',
         );
     });
 
@@ -205,7 +205,7 @@ describe('AwsPostureProvider.runCheck — collector invocation', () => {
             connectionConfig: { ...CREDS },
         } as never);
         expect(execFileMock.mock.calls[0][1][2]).toBe(
-            'aws_compliance.benchmark.cis_v300',
+            'aws_compliance.benchmark.all_controls',
         );
     });
 
@@ -238,7 +238,7 @@ describe('AwsPostureProvider.runCheck — fail-closed contracts (H2)', () => {
         expect(res.status).toBe('ERROR');
         expect(res.summary).toBe('Powerpipe CLI not installed on the collector host.');
         expect(res.errorMessage).toContain('powerpipe not installed');
-        expect(res.details).toEqual({ benchmark: 'aws_compliance.benchmark.soc_2' });
+        expect(res.details).toEqual({ benchmark: 'aws_compliance.benchmark.all_controls' });
     });
 
     it('ERRORs on an exit outside {0,1,2} rather than scoring the stdout that survived', async () => {
@@ -270,7 +270,7 @@ describe('AwsPostureProvider.runCheck — fail-closed contracts (H2)', () => {
         expect(res.status).toBe('ERROR');
         expect(res.summary).toBe('Powerpipe collector did not complete the run.');
         expect(res.errorMessage).toContain('arbitrary-stderr-sample');
-        expect(res.details).toEqual({ benchmark: 'aws_compliance.benchmark.soc_2', collectorExitCode: 137 });
+        expect(res.details).toEqual({ benchmark: 'aws_compliance.benchmark.all_controls', collectorExitCode: 137 });
     });
 
     it('exit 1 is parsed and scored — the routine "controls alarmed" outcome', async () => {
@@ -283,7 +283,7 @@ describe('AwsPostureProvider.runCheck — fail-closed contracts (H2)', () => {
 
         expect(res.status).toBe('FAILED');
         expect(res.summary).toBe(
-            'aws_compliance.benchmark.soc_2: 1 ok / 1 alarm / 0 error / 0 skip / 0 unknown of 2',
+            'aws_compliance.benchmark.all_controls: 1 ok / 1 alarm / 0 error / 0 skip / 0 unknown of 2',
         );
         expect(res.details).toMatchObject({
             counts: { ok: 1, alarm: 1, skip: 0, error: 0, unknown: 0, total: 2 },
@@ -431,7 +431,7 @@ describe('AwsPostureProvider.runCheck — verdicts', () => {
         cliResult({ stdout: benchmarkJson([control('a', 'ok')]) });
         const res = await provider().runCheck(input() as never);
         expect(res.details).toMatchObject({
-            benchmark: 'aws_compliance.benchmark.soc_2',
+            benchmark: 'aws_compliance.benchmark.all_controls',
             counts: { ok: 1, alarm: 0, skip: 0, error: 0, total: 1 },
             truncated: false,
         });
@@ -601,7 +601,7 @@ describe('AwsPostureProvider — child-process edge shapes', () => {
         expect(res.summary).toBe('Powerpipe collector did not complete the run.');
         // The signal is reported as a signal. No exit code is invented for it.
         expect(res.details).toEqual({
-            benchmark: 'aws_compliance.benchmark.soc_2',
+            benchmark: 'aws_compliance.benchmark.all_controls',
             collectorSignal: 'SIGKILL',
         });
     });
@@ -624,7 +624,7 @@ describe('AwsPostureProvider — child-process edge shapes', () => {
 
         expect(res.status).toBe('ERROR');
         expect(res.details).toEqual({
-            benchmark: 'aws_compliance.benchmark.soc_2',
+            benchmark: 'aws_compliance.benchmark.all_controls',
             collectorSignal: 'SIGTERM',
             collectorFailure: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
         });

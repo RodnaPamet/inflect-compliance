@@ -125,10 +125,10 @@ beforeEach(() => {
 
 describe('aws-posture — a benchmark that ALARMED reaches the tenant', () => {
     /** The shape every real account produces: something passes, something does not. */
-    const alarming = powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+    const alarming = powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
         controls: [
             powerpipeControl(AWS_MAPPED, 'ok'),
-            powerpipeControl('s3_bucket_public_access_blocked', 'alarm'),
+            powerpipeControl('s3_public_access_block_bucket', 'alarm'),
         ],
     });
 
@@ -164,7 +164,7 @@ describe('aws-posture — a benchmark that ALARMED reaches the tenant', () => {
         expect(created).toHaveLength(1);
         expect(created[0][0].data.category).toBe(`aws-posture:${AWS_MAPPED}`);
         expect(created[0][0].data.content).toContain(AWS_MAPPED);
-        expect(created[0][0].data.content).not.toContain('s3_bucket_public_access_blocked');
+        expect(created[0][0].data.content).not.toContain('s3_public_access_block_bucket');
     });
 
     it('the persisted execution row carries the verdict and the collector exit code', async () => {
@@ -190,7 +190,7 @@ describe('aws-posture — a benchmark that ALARMED reaches the tenant', () => {
         // summary carries no collector diagnostics because there are none.
         const db = makeDb();
         collectorRun({
-            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
                 controls: [powerpipeControl(AWS_MAPPED, 'ok')],
             }),
         });
@@ -205,7 +205,7 @@ describe('aws-posture — a benchmark that ALARMED reaches the tenant', () => {
 
 describe('aws-posture — a run that did NOT complete still yields nothing', () => {
     /** Valid, all-passing JSON: a leak past the gate would show as PASSED + evidence. */
-    const wouldHavePassed = powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+    const wouldHavePassed = powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
         controls: [powerpipeControl(AWS_MAPPED, 'ok')],
     });
 
@@ -254,7 +254,7 @@ describe('aws-posture — exit 2, the collector reporting control errors', () =>
         const db = makeDb();
         collectorRun({
             err: exitedWith(2),
-            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
                 controls: [powerpipeControl(AWS_MAPPED, 'ok'), powerpipeErroredControl('cloudtrail_enabled')],
             }),
         });
@@ -274,10 +274,10 @@ describe('aws-posture — exit 2, the collector reporting control errors', () =>
         const db = makeDb();
         collectorRun({
             err: exitedWith(2),
-            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
                 controls: [
                     powerpipeControl(AWS_MAPPED, 'ok'),
-                    powerpipeControl('s3_bucket_public_access_blocked', 'alarm'),
+                    powerpipeControl('s3_public_access_block_bucket', 'alarm'),
                     powerpipeErroredControl('cloudtrail_enabled'),
                 ],
             }),
@@ -296,7 +296,7 @@ describe('aws-posture — exit 2, the collector reporting control errors', () =>
         const db = makeDb();
         collectorRun({
             err: exitedWith(2),
-            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
+            stdout: powerpipeBenchmarkJson('aws_compliance.benchmark.all_controls', {
                 controls: [powerpipeControl(AWS_MAPPED, 'ok')],
             }),
         });

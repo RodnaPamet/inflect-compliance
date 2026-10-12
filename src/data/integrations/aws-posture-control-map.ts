@@ -46,17 +46,17 @@ export const AWS_POSTURE_CONTROL_MAP: Record<string, AwsPostureControlMapEntry> 
     iam_root_user_mfa_enabled: { label: 'Root account MFA enabled', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
     iam_user_mfa_enabled: { label: 'IAM users have MFA', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
     iam_root_user_no_access_keys: { label: 'No root access keys', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
-    iam_password_policy_strong: { label: 'Strong IAM password policy', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
-    iam_user_no_inline_attached_admin_policy: { label: 'No inline admin policies', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
-    s3_bucket_public_access_blocked: { label: 'S3 public access blocked', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
+    iam_account_password_policy_strong_min_reuse_24: { label: 'Strong IAM password policy', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
+    iam_inline_policy_no_administrative_privileges: { label: 'No inline admin policies', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
+    s3_public_access_block_bucket: { label: 'S3 public access blocked', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
     s3_bucket_default_encryption_enabled: { label: 'S3 default encryption', soc2: ['CC6.1'], nistCsf: ['PR.DS-01'] },
-    ec2_instance_no_public_ip: { label: 'EC2 instances not public', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
+    ec2_instance_not_publicly_accessible: { label: 'EC2 instances not public', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
     rds_db_instance_encryption_at_rest_enabled: { label: 'RDS encryption at rest', soc2: ['CC6.1'], nistCsf: ['PR.DS-01'] },
     vpc_security_group_restrict_ingress_ssh_all: { label: 'SSH not open to the world', soc2: ['CC6.1'], nistCsf: ['PR.AA-01'] },
 
     // ── System operations & monitoring (CC7 / DE.CM) ──
     cloudtrail_multi_region_trail_enabled: { label: 'Multi-region CloudTrail', soc2: ['CC7.1'], nistCsf: ['DE.CM-01'] },
-    cloudtrail_trail_logs_encrypted: { label: 'CloudTrail logs encrypted', soc2: ['CC7.1', 'CC6.1'], nistCsf: ['DE.CM-01', 'PR.DS-01'] },
+    cloudtrail_trail_logs_encrypted_with_kms_cmk: { label: 'CloudTrail logs encrypted', soc2: ['CC7.1', 'CC6.1'], nistCsf: ['DE.CM-01', 'PR.DS-01'] },
     cloudwatch_alarm_action_enabled: { label: 'CloudWatch alarm actions enabled', soc2: ['CC7.1'], nistCsf: ['DE.CM-01'] },
     guardduty_enabled: { label: 'GuardDuty enabled', soc2: ['CC7.1'], nistCsf: ['DE.CM-01'] },
     securityhub_enabled: { label: 'Security Hub enabled', soc2: ['CC7.1'], nistCsf: ['DE.CM-01'] },
@@ -64,10 +64,18 @@ export const AWS_POSTURE_CONTROL_MAP: Record<string, AwsPostureControlMapEntry> 
 
     // ── Change management (CC8 / ID.AM) ──
     config_enabled_all_regions: { label: 'AWS Config recording all regions', soc2: ['CC8.1', 'CC7.1'], nistCsf: ['ID.AM-01', 'DE.CM-01'] },
-    cloudformation_stack_drift_detection: { label: 'CloudFormation drift detection', soc2: ['CC8.1'], nistCsf: ['ID.AM-01'] },
+    cloudformation_stack_drift_detection_check: { label: 'CloudFormation drift detection', soc2: ['CC8.1'], nistCsf: ['ID.AM-01'] },
 
     // ── Risk assessment (CC3 / ID.RA) ──
-    inspector_enabled: { label: 'Amazon Inspector enabled', soc2: ['CC3.1', 'CC7.1'], nistCsf: ['ID.RA-01'] },
+    // `inspector_enabled` named no real control. The mod has no single
+    // "Inspector is enabled" control — it has one per scanner — so the one row
+    // becomes the four scanners. ID.RA-01 ("vulnerabilities in assets are
+    // identified") is satisfied per asset class, and a tenant running only the
+    // EC2 scanner should not evidence the same thing as one running them all.
+    inspector_ec2_scanning_enabled: { label: 'Inspector EC2 scanning enabled', soc2: ['CC3.1', 'CC7.1'], nistCsf: ['ID.RA-01'] },
+    inspector_ecr_scanning_enabled: { label: 'Inspector ECR scanning enabled', soc2: ['CC3.1', 'CC7.1'], nistCsf: ['ID.RA-01'] },
+    inspector_lambda_scanning_enabled: { label: 'Inspector Lambda scanning enabled', soc2: ['CC3.1', 'CC7.1'], nistCsf: ['ID.RA-01'] },
+    inspector_lambda_code_scanning_enabled: { label: 'Inspector Lambda code scanning enabled', soc2: ['CC3.1', 'CC7.1'], nistCsf: ['ID.RA-01'] },
 };
 
 /** All distinct IC requirement codes referenced by the map, per framework (for ratchet resolution). */

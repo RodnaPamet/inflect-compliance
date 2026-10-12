@@ -265,7 +265,7 @@ describe('parsePowerpipeBenchmarkJson', () => {
         const parsed = parsePowerpipeBenchmarkJson(SOC2_SAMPLE);
         expect(parsed.map((c) => `${c.controlId}:${c.status}`)).toEqual([
             'iam_root_user_mfa_enabled:ok',
-            's3_bucket_public_access_blocked:ok',
+            's3_public_access_block_bucket:ok',
             'iam_user_mfa_enabled:alarm',
             'cloudtrail_multi_region_trail_enabled:ok',
             'guardduty_enabled:skip',

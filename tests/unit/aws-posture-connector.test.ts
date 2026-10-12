@@ -25,7 +25,7 @@ describe('aws-posture — Powerpipe JSON parsing', () => {
         const controls = parsePowerpipeBenchmarkJson(FIXTURE);
         const byId = Object.fromEntries(controls.map((c) => [c.controlId, c.status]));
         expect(byId['iam_root_user_mfa_enabled']).toBe('ok');
-        expect(byId['s3_bucket_public_access_blocked']).toBe('ok');
+        expect(byId['s3_public_access_block_bucket']).toBe('ok');
         expect(byId['iam_user_mfa_enabled']).toBe('alarm');
         expect(byId['cloudtrail_multi_region_trail_enabled']).toBe('ok');
         expect(byId['guardduty_enabled']).toBe('skip');
@@ -55,7 +55,7 @@ describe('aws-posture — credential scrubbing', () => {
 
     it('a sensitive identifier in a fixture reason is scrubbed before use', () => {
         const controls = parsePowerpipeBenchmarkJson(FIXTURE);
-        const s3 = controls.find((c) => c.controlId === 's3_bucket_public_access_blocked')!;
+        const s3 = controls.find((c) => c.controlId === 's3_public_access_block_bucket')!;
         // The fixture reason embeds an IAM ARN (account id) — scrubAwsCredentials
         // must redact it before the reason is ever persisted/logged.
         expect(scrubAwsCredentials(s3.reason)).not.toContain('123456789012');
@@ -65,7 +65,7 @@ describe('aws-posture — credential scrubbing', () => {
 describe('aws-posture — bounded summary', () => {
     it('counts by status and stays under the size cap', () => {
         const controls = parsePowerpipeBenchmarkJson(FIXTURE);
-        const summary = summariseBenchmark('aws_compliance.benchmark.soc_2', controls);
+        const summary = summariseBenchmark('aws_compliance.benchmark.all_controls', controls);
         expect(summary.counts).toEqual({ ok: 3, alarm: 1, skip: 1, error: 0, unknown: 0, total: 5 });
         expect(Buffer.byteLength(JSON.stringify(summary))).toBeLessThanOrEqual(RESULT_JSON_MAX_BYTES);
     });
@@ -102,8 +102,8 @@ describe('aws-posture — control map', () => {
 
 describe('aws-posture — benchmark id resolution + wiring', () => {
     it('resolves the shorthand to a Powerpipe benchmark id', () => {
-        expect(AwsPostureProvider.benchmarkId('soc2')).toBe('aws_compliance.benchmark.soc_2');
-        expect(AwsPostureProvider.benchmarkId('cis')).toBe('aws_compliance.benchmark.cis_v300');
-        expect(AwsPostureProvider.benchmarkId(undefined)).toBe('aws_compliance.benchmark.soc_2');
+        expect(AwsPostureProvider.benchmarkId('soc2')).toBe('aws_compliance.benchmark.all_controls');
+        expect(AwsPostureProvider.benchmarkId('cis')).toBe('aws_compliance.benchmark.all_controls');
+        expect(AwsPostureProvider.benchmarkId(undefined)).toBe('aws_compliance.benchmark.all_controls');
     });
 });
