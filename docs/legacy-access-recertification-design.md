@@ -687,7 +687,7 @@ it. Where a row differs, the reference wins and this table is corrected.
 | Wire API | `POST /v1/systemone`, carrying `model`, `state` and a map of `questions` | **Measured 2026-10-10** against a server built from `deploy/laya/Dockerfile`: the routes are `GET /health`, `POST /v1/systemone` and `POST /v1/systemone/batch`. There is NO `/v1/models` and no `/models` — both 404. Each question REQUIRES `instructions`, and a `choice` takes its option set as `criteria` (a dict of label → description), not an `options` array |
 | Question types | `choice` — up to 255 described options, with a probability for each; `noul` — the probability that a statement is true; `score` — a level on a 2–10 scale | The three type names hold (`['choice', 'noul', 'score']`, from the server's own error). **The 255 figure is Jev's and does NOT hold for Laya**, which refuses above 100: `413 too many choice options for 'q' (255 > 100)`. 6, 20 and 64 were accepted. A `noul` answer carries its value as `noul`, and a `choice` answer as `choice`. A `score` takes `criteria` as a LIST of level descriptions rather than a 2–10 scale |
 | Version and window | `jev-1.13`: 64k tokens per request, 32k of it for the state plus the longest question | `laya-multilingual`: mmBERT-base, 322M parameters, 1,024 tokens (about 768 for the state), 100+ languages. The English `laya` has 421M parameters and 512 tokens |
-| Latency | 70–500 ms end to end (vendor figure); published p50 figures between about 145 and 275 ms | About 33 ms p50 on a T4 GPU (model card); no published CPU figure. **Measured on a desktop CPU 2026-10-10**, through the product's own chooser: p50 380 ms at 3 options, 878 ms at 20, worst observed 1,208 ms. Step 6d still owes the figures on the production VM's CPU, which may be slower |
+| Latency | 70–500 ms end to end (vendor figure); published p50 figures between about 145 and 275 ms | About 33 ms p50 on a T4 GPU (model card); no published CPU figure. **Measured on a desktop CPU 2026-10-10**, through the product's own chooser: p50 380 ms at 3 options, 878 ms at 20, worst observed 1,208 ms. **Measured on the production VM 2026-10-12** under the Compose service's own limits (1 vCPU of an `e2-highmem-2`, 4 GB), real `buildMatchRequest` shape with five candidates: **p50 7,332 ms, p95 7,727 ms** (n=25, min 7,035, max 7,894). The VM is 8–19× slower than the desktop, which is what one vCPU buys. See #3445 |
 | Data | Hosted on the US West Coast. The DPA uses EU Standard Contractual Clauses, and the vendor is not certified under the EU-US Data Privacy Framework. It does not train on customer data, and offers zero data retention on request to enterprise accounts | Runs on infrastructure we operate; nothing leaves it |
 
 Sources: the [TypeSafe API reference](https://docs.typesafe.ai/api) and the model card
@@ -776,8 +776,9 @@ model revision.
 | --- | --- | --- |
 | Per-call timeout | 3 s | 2 s |
 | Requests in flight | 8 | 4 |
-| 500-account residue (arithmetic from published latencies, not a measurement) | About 20 s | About 5 s on a T4 GPU; measured on CPU when deployed |
+| 500-account residue | About 20 s (arithmetic from published latencies, not a measurement) | About 5 s on a T4 GPU (vendor figure). **MEASURED on the production VM: about 61 minutes** (500 × 7,332 ms at concurrency 1). See #3445 |
 | Run deadline | 120 s | 120 s |
+| Deadline reachable on the deployed hardware? | not measured | **No.** About 30× over, and every call also exceeds the 2 s per-call timeout |
 
 - **An undecided account keeps a named reason** (a timeout, the deadline, a quarantine,
   drift, the kill switch; the phases document lists them all). It appears exactly as it
@@ -785,6 +786,15 @@ model revision.
   person can clear.
 - **Cost is no constraint.** At the published price, a 500-account run on Jev costs
   under two cents.
+- **Laya on the deployed hardware does not meet either bound, and the remedies this
+  document prescribes were measured rather than assumed (#3445).** The `TIMEOUT` /
+  `DEADLINE` row above says *"capacity; raise concurrency before raising either"*. On the
+  production VM, raising concurrency does not raise capacity: at concurrency 4 the p50 goes
+  from 7,332 ms to 14,827 ms (max 29,990) — latency scales with concurrency and throughput
+  stays flat, because the work is CPU-bound on one vCPU. The server's unused
+  `POST /v1/systemone/batch` is worse still at 9.2 s per account, since batching amortises
+  on a GPU and not on a CPU. What remains is hardware or a changed bound, and the choice
+  is the owner's.
 
 #### Trust, but verify
 
