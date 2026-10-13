@@ -56,6 +56,7 @@ describe('a bound run', () => {
         bindRun('run-bound', {
             tools: [listRisks((a) => called.push(a))],
             modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            skills: [],
         });
         faux.setResponses([
             fauxAssistantMessage([fauxToolCall('list_risks', {})]),
@@ -108,6 +109,7 @@ describe('a bound run', () => {
         bindRun('run-two-turns', {
             tools: [listRisks((a) => called.push(a))],
             modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            skills: [],
         });
         faux.setResponses([
             fauxAssistantMessage([fauxToolCall('list_risks', {})]),
@@ -149,6 +151,7 @@ describe('an UNBOUND run fails closed', () => {
         bindRun('some-other-run', {
             tools: [listRisks((a) => called.push(a))],
             modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            skills: [],
         });
         faux.setResponses([fauxAssistantMessage('I could not act.')]);
 

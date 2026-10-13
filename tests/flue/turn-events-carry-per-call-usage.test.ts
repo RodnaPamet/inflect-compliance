@@ -70,6 +70,7 @@ describe('the runtime reports usage per model call, and `observe()` delivers it'
         bindRun(runId, {
             tools: [listRisks()],
             modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            skills: [],
         });
         // The first call chooses a tool and the second answers, so the two
         // calls cannot report the same numbers — the second's prompt carries

@@ -223,6 +223,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/reports/route.ts',
     't/[tenantSlug]/admin/agents/review-quality/route.ts',
     't/[tenantSlug]/admin/agents/route.ts',
+    // #3470 — the Flue skill corpus behind the Skills tab. Tenant-scoped
+    // but not tenant-specific: the six documents ship with the product and
+    // are identical everywhere. It is gated because WHO MAY SEE what an
+    // agent is taught is a tenant question, and the list exists to answer
+    // "what did the agent know" for an assessor.
+    't/[tenantSlug]/admin/agents/skills/route.ts',
     't/[tenantSlug]/admin/agents/tool-manifests/route.ts',
     // #2860 — saved arguments for an external MCP tool, and the approval a
     // change to one needs. Same tenant-wide class as the manifest pin above:

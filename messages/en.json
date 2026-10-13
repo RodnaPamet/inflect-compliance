@@ -8737,6 +8737,30 @@
       "phraseOrForm": "Or fill the form yourself",
       "readingsTitle": "What this was understood to mean",
       "phraseUnavailable": "Nothing was sent. {reason}"
+    },
+    "skills": {
+      "loadFailed": "Could not load the skill corpus.",
+      "empty": {
+        "title": "No skills are shipped",
+        "description": "The product ships no skill documents, so no workflow can mount one."
+      },
+      "scope": {
+        "title": "The corpus, not this agent's history",
+        "description": "These are the skills the product ships. A run loads only what its workflow definition declares, so this list is what an agent can be taught — not a record of what any one run used."
+      },
+      "catalogCost": "Catalogue cost: {used} of {budget} bytes. Every mounted skill's name and description sit in each system prompt, on every turn; instructions cost nothing until the model activates the skill.",
+      "declaredBy": "Declared by {keys}",
+      "declaredByNone": "No workflow declares it",
+      "field": {
+        "licence": "Licence",
+        "source": "Source",
+        "version": "Version",
+        "onActivation": "On activation"
+      },
+      "bytes": "{n} bytes"
+    },
+    "agentDetail": {
+      "tabSkills": "Skills"
     }
   },
   "securityTesting": {

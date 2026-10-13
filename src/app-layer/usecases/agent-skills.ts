@@ -1,0 +1,55 @@
+/**
+ * What a Flue agent can be taught (#3470), for the read-only Skills tab.
+ *
+ * A projection of the on-disk corpus onto the fields an assessor reads: the
+ * skill, what it is for, where it came from and under what licence. The
+ * instructions themselves are NOT returned — they are prompt text, they are
+ * long, and the tab's question is "what did the agent know", which the name,
+ * description and provenance answer. A reader who wants the procedure reads
+ * the file in the repository, which is the point of keeping them as Markdown.
+ */
+import { loadAllSkills } from '@/lib/agentic/flue/skills';
+import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import type { RequestContext } from '@/app-layer/types';
+
+export interface AgentSkillSummary {
+    name: string;
+    description: string;
+    license: string;
+    /** Provenance from the Agent Skills `metadata` map — may be absent. */
+    sourceRef: string | null;
+    version: string | null;
+    /** Workflow keys whose definition declares this skill. Possibly empty. */
+    declaredBy: string[];
+    /** Bytes this skill costs ONLY when the model activates it. */
+    instructionBytes: number;
+}
+
+export interface AgentSkillsPayload {
+    skills: AgentSkillSummary[];
+    /**
+     * The always-present cost: what every mounted skill adds to every system
+     * prompt on every turn. Surfaced because it is the number that bounds how
+     * many skills a workflow can mount, and it is invisible otherwise.
+     */
+    catalogBytes: number;
+    catalogBudgetBytes: number;
+}
+
+export function listAgentSkills(_ctx: RequestContext): AgentSkillsPayload {
+    const defs = listWorkflowDefinitions();
+    const skills = loadAllSkills();
+    return {
+        skills: skills.map((s) => ({
+            name: s.name,
+            description: s.description,
+            license: s.license,
+            sourceRef: s.metadata.sourceRef ?? null,
+            version: s.metadata.version ?? null,
+            declaredBy: defs.filter((d) => (d.skills ?? []).includes(s.name)).map((d) => d.key).sort(),
+            instructionBytes: Buffer.byteLength(s.instructions, 'utf8'),
+        })),
+        catalogBytes: skills.reduce((n, s) => n + Buffer.byteLength(`${s.name}: ${s.description}\n`, 'utf8'), 0),
+        catalogBudgetBytes: 2_048,
+    };
+}
