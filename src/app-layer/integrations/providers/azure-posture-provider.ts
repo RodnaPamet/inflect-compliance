@@ -78,7 +78,27 @@ export class AzurePostureProvider implements ScheduledCheckProvider {
     readonly liveValidation = false;
     // #3431 — nothing in this repo records a live mapping run for this
     // provider. A claim about the record, not about the vendor.
-    readonly mappingVerifiedBy = null;
+    readonly mappingVerifiedBy =
+        // #3434 — proving run against a live Azure subscription on 2026-10-13.
+        // Powerpipe v1.5.5 + steampipe v2.4.7 + azure plugin v1.16.0, mod
+        // v2.5.2. Three mapped controls run for real and their JSON fed
+        // through THIS product's `parsePowerpipeBenchmarkJson` and crosswalk:
+        // 3/3 resolved. `iam_subscription_owner_max_3` returned real data
+        // (ok, "1 owner(s) associated."); the other two returned zero rows.
+        //
+        // It also confirmed two shapes that were previously source-derived
+        // rather than observed: the live `control_id` is `control.<name>`, NOT
+        // `<mod>.control.<name>` as every fixture spells it — handled by
+        // `shortControlName`'s last-segment fallback rather than its
+        // `.control.` marker — and an empty control really does render
+        // `results: null` beside an all-zero summary.
+        //
+        // SCOPE, precisely: this verifies the MAPPING against the vendor, which
+        // is what this field claims. It did NOT exercise `runPowerpipeBenchmark`
+        // spawning the collector CLI; powerpipe was invoked by hand and its
+        // output fed to the parser. No collector host exists yet (#3458 census:
+        // zero posture connections configured anywhere).
+        '#3434 — live Azure run 2026-10-13: 3/3 mapped controls resolved through the parser and crosswalk';
     readonly setupGuide =
         'Runs Powerpipe on the collector host against an Azure subscription. Register an app (service principal) with the Reader role on the subscription, and provide its tenant id, subscription id, client id + secret. Test connection validates field shape only — it does not call Azure live.';
 

@@ -120,7 +120,22 @@ export class McpServerProvider implements IntegrationProvider {
     readonly liveValidation = true;
     // #3431 — nothing in this repo records a live mapping run for this
     // provider. A claim about the record, not about the vendor.
-    readonly mappingVerifiedBy = null;
+    readonly mappingVerifiedBy =
+        // Proving run 2026-10-13 — `validateConnection` against Microsoft's
+        // Entra MCP gateway (https://mcp.svc.cloud.microsoft/enterprise), a
+        // genuine third-party MCP server, through this product's own code
+        // path. Returned `valid: true`: a real `initialize` + `tools/list`
+        // over `safeFetch`, answered by `Microsoft.Entra.MCP` speaking
+        // protocolVersion 2025-06-18 with capabilities {logging, tools}.
+        //
+        // Two things the run established that no fixture did. The gateway has
+        // its OWN token audience: a `graph.microsoft.com/.default` token is
+        // rejected `401 InvalidAuthenticationToken — Invalid audience`, and
+        // `https://mcp.svc.cloud.microsoft/.default` is accepted. And it
+        // accepts CLIENT CREDENTIALS, which this provider cannot send — see #3467. The run therefore went
+        // through the static `secrets.authorization` branch, so the OAuth
+        // minting path remains unproved against a vendor.
+        'proving run 2026-10-13 — validateConnection against Microsoft Entra MCP returned valid; static-authorization branch only';
 
     readonly setupGuide =
         'Enter the server\'s HTTPS endpoint and, if it needs one, an Authorization header '

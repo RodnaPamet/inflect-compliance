@@ -71,7 +71,29 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
     readonly liveValidation = false;
     // #3431 — nothing in this repo records a live mapping run for this
     // provider. A claim about the record, not about the vendor.
-    readonly mappingVerifiedBy = null;
+    readonly mappingVerifiedBy =
+        // #3434 — proving run against a live GCP project on 2026-10-13.
+        // Powerpipe v1.5.5 + steampipe v2.4.7 + gcp plugin v1.13.1, mod
+        // v1.3.2. Three mapped controls run for real and their JSON fed
+        // through this product's own parser, summariser, verdict and
+        // crosswalk: 3/3 resolved, and between them they exercised ALL THREE
+        // statuses rather than one:
+        //
+        //   alarm  compute_instance_with_no_public_ip_addresses  (2 rows, both
+        //          real VMs carry public IPs — a true positive)
+        //   error  iam_service_account_gcp_managed_key  (results: null; the
+        //          project has Cloud Resource Manager disabled)
+        //   ok     storage_bucket_uniform_access_enabled  (3 rows)
+        //
+        // Aggregate {ok:1, alarm:1, error:1, total:3} graded FAILED, correctly
+        // — an alarm is present — and `noControlObserved` stayed false, which
+        // is right: one errored control is not "nothing was observed".
+        //
+        // SCOPE: this verifies the MAPPING, which is what the field claims. It
+        // did NOT exercise `runPowerpipeBenchmark` spawning the collector CLI;
+        // powerpipe was invoked by hand and its output fed to the parser. No
+        // collector host exists and no posture connection is configured.
+        '#3434 — live GCP run 2026-10-13: 3/3 mapped controls resolved, alarm/error/ok all exercised';
     readonly setupGuide =
         'Runs Powerpipe on the collector host against a GCP project. Create a read-only service account, grant it the security-reviewer role on the project, and paste its key JSON below. Test connection validates the JSON shape only — it does not call GCP live.';
 
