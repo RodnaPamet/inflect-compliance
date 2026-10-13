@@ -133,6 +133,20 @@ describe('integration credential placement', () => {
  * invisible to every existing test, because the endpoints we call today are
  * the ones that tolerate it.
  */
+/**
+ * Does this source text name a Graph API BASE (as opposed to merely the host)?
+ *
+ * Plain containment rather than a regex ON PURPOSE. A regex matching a host
+ * without anchoring is `js/incomplete-url-substring-sanitization` to CodeQL,
+ * which flagged the first version of this file as two high-severity alerts.
+ * The alert is about shape, not intent — nothing here validates a URL, it
+ * scans file text — but the shape is what a scanner reads, and containment
+ * says what is meant more plainly anyway.
+ */
+const GRAPH_API_BASES = ['graph.microsoft.com/v1.0', 'graph.microsoft.com/beta'] as const;
+const namesAGraphApiBase = (code: string): boolean =>
+    GRAPH_API_BASES.some((b) => code.includes(b));
+
 describe('#3458 — Graph requests carry a real Accept-Language', () => {
     const SRC = path.join(ROOT, 'src');
 
@@ -174,7 +188,7 @@ describe('#3458 — Graph requests carry a real Accept-Language', () => {
         for (const f of srcFiles()) {
             if (f.endsWith('graph-headers.ts')) continue;
             const code = codeOf(fs.readFileSync(f, 'utf8'));
-            if (!/graph\.microsoft\.com\/(v1\.0|beta)/.test(code)) continue;
+            if (!namesAGraphApiBase(code)) continue;
             // A Graph caller that writes its own bearer header is a caller that
             // can omit the language header.
             if (/Authorization:\s*`Bearer /.test(code)) offenders.push(path.relative(ROOT, f));
@@ -202,7 +216,7 @@ describe('#3458 — Graph requests carry a real Accept-Language', () => {
             // two files that merely NAME the host (a comment in
             // config-schema.ts, an allowlist entry in http-resilience.ts) carry
             // no `/v1.0` or `/beta`, so the base check already excludes them.
-            if (!/graph\.microsoft\.com\/(v1\.0|beta)/.test(code)) continue;
+            if (!namesAGraphApiBase(code)) continue;
             callers++;
             if (!code.includes('graph-headers')) missing.push(path.relative(ROOT, f));
         }
