@@ -10,6 +10,7 @@ import { RiskAssessmentTab } from './tabs/RiskAssessmentTab';
 import { PolicyCardTab } from './tabs/PolicyCardTab';
 import { ToolsTab } from './tabs/ToolsTab';
 import { CoverageTab } from './tabs/CoverageTab';
+import { SkillsTab } from './tabs/SkillsTab';
 import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
 import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
 import { AgentAmendModal } from './AgentAmendModal';
@@ -68,7 +69,10 @@ export interface AgentDetailPermissions {
     canCloseBreaker: boolean;
 }
 
-const TAB_KEYS = ['overview', 'risk', 'policy', 'tools', 'coverage', 'breaker'] as const;
+// `skills` is the SEVENTH key, not the eighth. The integration plan said
+// eight because it counted the tool-manifest pins as their own tab; they
+// render inside Tools (#3470, finding F11).
+const TAB_KEYS = ['overview', 'risk', 'policy', 'tools', 'skills', 'coverage', 'breaker'] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 /** SUSPENDED and RETIRED are the states an operator is looking FOR. */
@@ -197,6 +201,7 @@ export function AgentDetailClient({
                 // from an operator entitled to read them. The tab gates the
                 // grants section internally instead.
                 { key: 'tools', label: t('agentDetail.tabTools') },
+                { key: 'skills', label: t('agentDetail.tabSkills') },
                 { key: 'coverage', label: t('agentDetail.tabCoverage') },
                 { key: 'breaker', label: t('agentDetail.tabBreaker') },
             ]}
@@ -236,6 +241,7 @@ export function AgentDetailClient({
             {tab === 'tools' && (
                 <ToolsTab {...props} onChanged={refresh} canGrantTools={perms.canGrantTools} />
             )}
+            {tab === 'skills' && <SkillsTab {...props} />}
             {tab === 'coverage' && <CoverageTab {...props} />}
             {tab === 'breaker' && (
                 <CircuitBreakerTab

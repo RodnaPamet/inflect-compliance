@@ -85,6 +85,10 @@ const ADMIN_ONLY_ROUTES = [
     // no tenant, and lives at /api/admin/agent-kill-switch behind
     // PLATFORM_ADMIN_API_KEY.
     'admin/agents/kill-switch/route.ts',
+    // #3470 — the Flue skill corpus behind the Skills tab. Read-only, and
+    // `admin.agent_registry` rather than the per-agent exposure key: a
+    // skill is instruction text delivered to a model and is tenant-wide.
+    'admin/agents/skills/route.ts',
     // Deny-by-default MCP tool exposure — its own key,
     // `admin.agent_tool_exposure`, narrower than the register's.
     'admin/agents/[agentId]/tools/route.ts',

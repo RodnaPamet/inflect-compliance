@@ -20,6 +20,7 @@ import {
     MAX_DESCRIPTION_CHARS,
     type LoadedSkill,
 } from '@/lib/agentic/flue/skills';
+import { listAgentSkills } from '@/app-layer/usecases/agent-skills';
 
 describe('the Flue skill corpus', () => {
     const skills = loadAllSkills();
@@ -153,5 +154,32 @@ describe('resolving a workflow definition\'s declared skills', () => {
     it('a definition mounting everything still pays a bounded per-turn cost', () => {
         const all = loadAllSkills().map((s) => s.name);
         expect(() => resolveSkillsFor(all)).not.toThrow();
+    });
+});
+
+
+describe('the Skills tab payload', () => {
+    it('projects the corpus onto the fields an assessor reads', () => {
+        const payload = listAgentSkills({ tenantId: 't', tenantSlug: 't', userId: 'u' } as never);
+        expect(payload.skills.length).toBeGreaterThanOrEqual(6);
+        const one = payload.skills[0];
+        expect(Object.keys(one).sort()).toEqual([
+            'declaredBy', 'description', 'instructionBytes', 'license', 'name', 'sourceRef', 'version',
+        ]);
+        // The INSTRUCTIONS are deliberately absent: they are prompt text, and
+        // the tab's question is "what did the agent know", which name,
+        // description and provenance answer. The procedure lives in the repo.
+        expect(one).not.toHaveProperty('instructions');
+    });
+
+    it('reports the per-turn catalogue cost beside its budget', () => {
+        const payload = listAgentSkills({ tenantId: 't', tenantSlug: 't', userId: 'u' } as never);
+        expect(payload.catalogBytes).toBeGreaterThan(0);
+        expect(payload.catalogBytes).toBeLessThanOrEqual(payload.catalogBudgetBytes);
+    });
+
+    it('names the workflows that declare each skill, and says so when none do', () => {
+        const payload = listAgentSkills({ tenantId: 't', tenantSlug: 't', userId: 'u' } as never);
+        for (const s of payload.skills) expect(Array.isArray(s.declaredBy)).toBe(true);
     });
 });
