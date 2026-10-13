@@ -195,10 +195,23 @@ export async function startWorkflowRun(
     //
     // `DRIVER_IMPLEMENTED.flue` has been TRUE since #2770 flipped it. This
     // comment said it was false — written when it was, and left behind when it
-    // stopped being — so a reader checking why every run came out `static`
-    // was sent to the wrong term. The answer is `static` because no registered
-    // WorkflowDefinition sets `driver`, and `selectRunDriver` requires the
-    // DEFINITION to request the engine, not merely the deployment to permit it.
+    // stopped being — so a reader checking why every run came out `static` was
+    // sent to the wrong term.
+    //
+    // It then decayed the same way a second time, inside the correction (#3469).
+    // It went on to say the answer was `static` because NO registered
+    // WorkflowDefinition sets `driver`. Two now do — `access-posture` and
+    // `posture-review` both ask for `flue` — so a run on either is no longer
+    // static by that term, and a reader checking why one of them came out
+    // static would again be sent somewhere that is not the reason.
+    //
+    // THREE terms decide it, all fail-closed, and the definition's request is
+    // only the first: `selectRunDriver` requires the DEFINITION to ask for the
+    // engine; `resolveDriverForRun` requires the deployment to permit it (the
+    // env switch AND the per-tenant toggle); and the register must vouch for
+    // the run below. A `static` outcome means one of the three said no, and
+    // which one is the question worth asking — `driverDecision.reason` carries
+    // the answer for the deployment half.
     //
     // The decision is resolved and recorded regardless, and that is deliberate
     // — a seam whose first exercise is the diff that also makes it
@@ -215,8 +228,14 @@ export async function startWorkflowRun(
     // also gets a say, and `selectRunDriver` resolves any disagreement — and
     // any driver with no implementation — back to static. Recording the
     // permitted value as "which engine walked this run" is therefore a claim
-    // about a different thing, and it is true today only because both answers
-    // are always `static`.
+    // about a different thing.
+    //
+    // That used to be harmless "only because both answers are always `static`".
+    // They are not: with `access-posture` and `posture-review` asking for
+    // `flue`, permitted and chosen can now differ on a real run, which is
+    // precisely when conflating them would misreport which engine did the
+    // work. Both are bound separately below and the audit entry takes the
+    // CHOSEN one.
     //
     // Resolved here, before the audit write, because the entry is appended
     // before the walk begins and a hash-chained row cannot be corrected
