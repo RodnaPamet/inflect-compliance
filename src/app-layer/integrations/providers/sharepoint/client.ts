@@ -31,6 +31,7 @@ import type {
     SpDeltaPage,
     SpSubscription,
 } from './types';
+import { graphHeaders } from '@/lib/http/graph-headers';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -66,10 +67,7 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
     }
 
     private get headers(): Record<string, string> {
-        return {
-            Authorization: `Bearer ${this.config.accessToken}`,
-            Accept: 'application/json',
-        };
+        return graphHeaders(this.config.accessToken, { Accept: 'application/json' });
     }
 
     /** GET a Graph URL (absolute or path under /v1.0) and parse JSON. */

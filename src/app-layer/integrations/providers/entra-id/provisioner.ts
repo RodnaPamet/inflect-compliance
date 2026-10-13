@@ -48,6 +48,7 @@ import type {
 } from '../../identity-provisioner';
 import { randomBytes } from 'node:crypto';
 import { resilientFetch } from '../../http-resilience';
+import { graphHeaders } from '@/lib/http/graph-headers';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -112,10 +113,9 @@ export function createEntraIdProvisioner(
         const t = await auth();
         const res = await doFetch(`${GRAPH}${path}`, {
             method,
-            headers: {
-                Authorization: `Bearer ${t}`,
+            headers: graphHeaders(t, {
                 ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-            },
+            }),
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
         const text = res.status === 204 ? '' : await res.text().catch(() => '');
