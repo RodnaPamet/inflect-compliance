@@ -231,3 +231,60 @@ describe('a non-legacy connection renders nothing', () => {
         await waitFor(() => expect(screen.queryByText('profileButton')).not.toBeInTheDocument());
     });
 });
+
+describe('a column NAME from the far end renders as text, never as markup', () => {
+    /**
+     * Step 2b asks that "a column named like an HTML payload stays inert", and
+     * nothing asserted it — the claim rested entirely on React escaping its
+     * children, which is true and was untested.
+     *
+     * It cannot rest on the contract schema instead. `ColumnNameSchema` caps the
+     * length and REJECTS control and invisible characters, but it deliberately
+     * does not reject `<` or `>`: those are legal in a legacy table's column name,
+     * and refusing them would be the mapping UI dictating the customer's schema.
+     * So the untrusted string does reach the component (invariant 3 — legacy data
+     * is untrusted input, rendered only as text), and this is the layer that has
+     * to hold.
+     */
+    const HOSTILE = '<img src=x onerror="window.__legacyXss=1">';
+
+    it('does not become an element, and is shown verbatim instead', async () => {
+        const hostileProfile = {
+            ...PROFILE,
+            columns: [
+                {
+                    profile: { name: HOSTILE, ...stat() },
+                    suggestion: {
+                        column: HOSTILE, suggested: 'accountKey', basis: 'name',
+                        confidence: 0.75, denied: false, note: 'n',
+                    },
+                },
+            ],
+            observedColumns: [HOSTILE],
+        };
+        global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            calls.push({ url, method: init?.method ?? 'GET' });
+            if (url.includes('/admin/legacy-access/profile')) {
+                return { ok: true, status: 200, json: async () => hostileProfile };
+            }
+            if (url.includes('/admin/integrations')) {
+                return {
+                    ok: true, status: 200,
+                    json: async () => [{ id: 'conn_1', provider: 'legacy-mcp' }],
+                };
+            }
+            return { ok: true, status: 200, json: async () => ({}) };
+        }) as unknown as typeof fetch;
+
+        await readColumns();
+
+        // It never became markup, and the handler never ran.
+        expect(document.querySelector('img')).toBeNull();
+        expect((window as unknown as { __legacyXss?: number }).__legacyXss).toBeUndefined();
+        // THE DENOMINATOR: the name IS on screen, so the two assertions above did
+        // not pass by rendering nothing — the same trap the value-set test above
+        // guards with its vocabulary case.
+        expect(screen.getByText(HOSTILE)).toBeInTheDocument();
+    });
+});
