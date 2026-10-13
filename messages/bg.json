@@ -4545,6 +4545,7 @@
       "tabRisk": "Оценка на риска",
       "tabPolicy": "Политика",
       "tabTools": "Инструменти",
+      "tabSkills": "Умения",
       "tabCoverage": "ASI покритие",
       "tabBreaker": "Предпазител",
       "metaAutonomy": "Автономност",
@@ -8758,9 +8759,6 @@
         "onActivation": "При активиране"
       },
       "bytes": "{n} байта"
-    },
-    "agentDetail": {
-      "tabSkills": "Умения"
     }
   },
   "securityTesting": {

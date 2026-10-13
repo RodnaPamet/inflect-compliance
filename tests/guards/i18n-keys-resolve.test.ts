@@ -17,12 +17,25 @@
  *
  * Scope, stated plainly rather than implied:
  *
- *   • Only files with exactly ONE `useTranslations()` / `getTranslations()`
- *     namespace are checked (328 of 373 today). A file that opens two
- *     namespaces makes `t('x')` ambiguous to a static reader, and guessing
- *     would produce false failures. Those 45 files are NOT covered — this is a
- *     real gap, not a rounding error, and closing it needs per-call binding
- *     analysis rather than a regex.
+ *   • A file that opens two namespaces used to be skipped outright, because
+ *     `t('x')` is ambiguous to a static reader and guessing produces false
+ *     failures. That gap SHIPPED A RED MAIN: `AgentDetailClient.tsx` opens
+ *     `admin` and `agents`, so it was in the skipped set, and the Skills tab's
+ *     label was merged under `agents.agentDetail.tabSkills` while the component
+ *     asked for `admin.agentDetail.tabSkills`. The key existed in BOTH locales,
+ *     so every parity check agreed; the page rendered `MISSING_MESSAGE` and the
+ *     only thing that caught it was an E2E spec reading the rendered strings.
+ *
+ *     So the binding analysis the old note called for is now done, and it is
+ *     not a guess: `const <id> = useTranslations('<ns>')` NAMES the binding, so
+ *     `<id>('key')` resolves against that namespace and nothing else. A file
+ *     qualifies only when every namespace it opens is bound to a DISTINCT
+ *     identifier and the declaration count matches the namespace count —
+ *     anything else still falls back, or is still skipped and COUNTED as
+ *     skipped by the test below.
+ *   • Still NOT covered: a file that opens a namespace without binding it to a
+ *     const, or binds two namespaces to the same identifier. The count is
+ *     asserted rather than described, so the gap cannot quietly grow.
  *   • Only LITERAL keys. `t(`${prefix}.${state}`)` cannot be resolved
  *     statically, and template-literal lookups are used deliberately in this
  *     codebase (the circuit-breaker posture badges, for one). Those keys are
@@ -41,6 +54,19 @@ const EN = JSON.parse(fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf8
 const NAMESPACE_RE =
     /useTranslations\(\s*['"]([^'"]+)['"]\s*\)|getTranslations\(\s*['"]([^'"]+)['"]\s*\)/g;
 const CALL_RE = /\bt\(\s*'([A-Za-z0-9_.]+)'/g;
+/**
+ * `const <id> = useTranslations('<ns>')` — the declaration that BINDS an
+ * identifier to a namespace. `await getTranslations(...)` is matched too
+ * because the server components use that form.
+ */
+const DECL_RE =
+    /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:useTranslations|getTranslations)\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+/** Calls on ONE bound identifier, e.g. `tAgents('agentDetail.tabSkills')`. */
+function callsOn(src: string, id: string): string[] {
+    const re = new RegExp(`\\b${id.replace(/\$/g, '\\$')}\\(\\s*'([A-Za-z0-9_.]+)'`, 'g');
+    return [...src.matchAll(re)].map((m) => m[1]);
+}
 
 function stripComments(src: string): string {
     return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -70,31 +96,69 @@ interface Unresolved {
     key: string;
 }
 
-function scan(): { unresolved: Unresolved[]; filesChecked: number; keysChecked: number } {
+interface ScanResult {
+    unresolved: Unresolved[];
+    filesChecked: number;
+    keysChecked: number;
+    /** Files with >1 namespace that binding analysis DID resolve. */
+    multiBound: number;
+    /** Files with >1 namespace still skipped — the remaining gap, counted. */
+    multiSkipped: number;
+}
+
+function scan(): ScanResult {
     const unresolved: Unresolved[] = [];
     let filesChecked = 0;
     let keysChecked = 0;
+    let multiBound = 0;
+    let multiSkipped = 0;
+
+    const record = (file: string, ns: string, key: string) => {
+        // A key ending in `.` is a PREFIX somebody concatenated —
+        // `t('statusOption.' + row.status)`. It is not a key and it never
+        // resolves, so counting it would make the widened scan report three
+        // defects that are not there (measured: exactly these three, all in
+        // VendorsClient). Dynamic lookups are out of scope per the header; a
+        // trailing dot is their one unambiguous signature in a string literal.
+        if (key.endsWith('.') || key.includes('..')) return;
+        keysChecked++;
+        const full = `${ns}.${key}`;
+        if (!resolves(full)) unresolved.push({ file: path.relative(ROOT, file), key: full });
+    };
 
     for (const file of walk(SRC)) {
         const src = stripComments(fs.readFileSync(file, 'utf8'));
         const namespaces = [...src.matchAll(NAMESPACE_RE)].map((m) => m[1] ?? m[2]);
         if (namespaces.length === 0) continue;
-        if (new Set(namespaces).size !== 1) continue; // ambiguous — see header
-        const base = namespaces[0];
-        filesChecked++;
-        for (const m of src.matchAll(CALL_RE)) {
-            keysChecked++;
-            const full = `${base}.${m[1]}`;
-            if (!resolves(full)) {
-                unresolved.push({ file: path.relative(ROOT, file), key: full });
+
+        // BOUND: every namespace this file opens is assigned to its own
+        // identifier, so each call site names its namespace unambiguously.
+        const decls = [...src.matchAll(DECL_RE)].map((m) => ({ id: m[1], ns: m[2] }));
+        const distinct = new Set(decls.map((d) => d.id)).size === decls.length;
+        if (decls.length === namespaces.length && distinct) {
+            filesChecked++;
+            if (new Set(namespaces).size > 1) multiBound++;
+            for (const { id, ns } of decls) {
+                for (const key of callsOn(src, id)) record(file, ns, key);
             }
+            continue;
         }
+
+        // FALLBACK: one namespace, reached some other way (an inline call, a
+        // re-bound `t`). Only `t('…')` is attributable here.
+        if (new Set(namespaces).size === 1) {
+            filesChecked++;
+            for (const m of src.matchAll(CALL_RE)) record(file, namespaces[0], m[1]);
+            continue;
+        }
+
+        multiSkipped++;
     }
-    return { unresolved, filesChecked, keysChecked };
+    return { unresolved, filesChecked, keysChecked, multiBound, multiSkipped };
 }
 
 describe('i18n — every literal t() key resolves in en.json', () => {
-    const { unresolved, filesChecked, keysChecked } = scan();
+    const { unresolved, filesChecked, keysChecked, multiBound, multiSkipped } = scan();
 
     it('the scan actually reached the code it claims to cover', () => {
         // Positive companion. A scan that silently matched nothing would report
@@ -102,6 +166,34 @@ describe('i18n — every literal t() key resolves in en.json', () => {
         // ambiguity that let the missing keys through in the first place.
         expect(filesChecked).toBeGreaterThan(250);
         expect(keysChecked).toBeGreaterThan(4000);
+    });
+
+    it('and the multi-namespace files it used to skip are mostly covered now', () => {
+        // The gap is a NUMBER, not a sentence in the header. 28 of the 53
+        // multi-namespace files bind every namespace to its own identifier and
+        // are now resolved; the other 25 are still skipped, and that figure is
+        // asserted so it cannot quietly grow while the header still claims
+        // "mostly covered".
+        expect(multiBound).toBeGreaterThanOrEqual(28);
+        expect(multiSkipped).toBeLessThanOrEqual(25);
+    });
+
+    it('a per-identifier call is attributed to ITS namespace, not the file\'s first', () => {
+        // The exact shape that shipped a red main: `AgentDetailClient` opens
+        // `admin` as `t` and `agents` as `tAgents`, and the Skills tab label was
+        // merged under the wrong one. Both locales held it, so every parity
+        // check agreed.
+        const bound = stripComments(
+            "const t = useTranslations('admin');\n" +
+            "const tAgents = useTranslations('agents');\n" +
+            "t('agentDetail.tabSkills');\n" +
+            "tAgents('runs.title');\n",
+        );
+        expect(callsOn(bound, 't')).toEqual(['agentDetail.tabSkills']);
+        expect(callsOn(bound, 'tAgents')).toEqual(['runs.title']);
+        // …and the label really does live under `admin`, which is the fix.
+        expect(resolves('admin.agentDetail.tabSkills')).toBe(true);
+        expect(resolves('agents.agentDetail.tabSkills')).toBe(false);
     });
 
     it('resolves a key that is known to exist, and rejects one that is not', () => {

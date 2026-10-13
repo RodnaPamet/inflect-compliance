@@ -4545,6 +4545,7 @@
       "tabRisk": "Risk assessment",
       "tabPolicy": "Policy card",
       "tabTools": "Tools",
+      "tabSkills": "Skills",
       "tabCoverage": "ASI coverage",
       "tabBreaker": "Circuit breaker",
       "metaAutonomy": "Autonomy",
@@ -8758,9 +8759,6 @@
         "onActivation": "On activation"
       },
       "bytes": "{n} bytes"
-    },
-    "agentDetail": {
-      "tabSkills": "Skills"
     }
   },
   "securityTesting": {
