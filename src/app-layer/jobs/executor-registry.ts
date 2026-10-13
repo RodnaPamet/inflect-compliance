@@ -833,6 +833,15 @@ executorRegistry.register('rule-chain-dispatch', async (payload) => {
 });
 
 // ── subflow-dispatch (Visual Rule Editor VR-7) ───────────────────────
+// #3471 — an automation rule invoking a registered agent. Enqueued by
+// `INVOKE_AGENT`; the run itself starts here, on the worker that already has
+// the shutdown drain, because a run may outlive any request.
+executorRegistry.register('agent-invoke-dispatch', async (payload) => {
+    const { runAgentInvokeDispatch } = await import('./agent-invoke-dispatch');
+    const { result } = await runAgentInvokeDispatch({ ...payload, tenantId: payload.tenantId } as never);
+    return result;
+});
+
 executorRegistry.register('subflow-dispatch', async (payload) => {
     const { runSubflowDispatch } = await import('./subflow-dispatcher');
     // Tenant scope: payload.tenantId scopes the entry-rule lookup + the child

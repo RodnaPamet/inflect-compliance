@@ -168,6 +168,8 @@ export async function executeAction(
                 return await fireWebhook(rule, event);
             case 'INVOKE_SUBFLOW':
                 return await invokeSubflow(rule, event);
+            case 'INVOKE_AGENT':
+                return await invokeAgent(rule, event);
             default:
                 return { ok: false, summary: `Unknown action type: ${rule.actionType}` };
         }
@@ -527,6 +529,68 @@ async function fireWebhook(rule: ExecutableRule, event: ActionEvent): Promise<Ac
     } finally {
         clearTimeout(timer);
     }
+}
+
+/**
+ * #3471 — start an agent RUN from a rule.
+ *
+ * ── IT WIDENS NO AUTHORITY, AND THE SHAPE IS WHY ────────────────────────────
+ *
+ * This enqueues; it does not execute. The run is created on the other side by
+ * the dispatch job, under the rule owner's tenant and permission context, and
+ * the agent's tool set stays the intersection the register already computes —
+ * allowlist ∩ key scopes ∩ autonomy ceiling. Nothing here can add a term to
+ * that, because none of the widening inputs are in scope: a rule chooses WHICH
+ * agent runs WHICH workflow, never what either may reach.
+ *
+ * ── THE THIRD REACHABILITY KEY ──────────────────────────────────────────────
+ *
+ * `workflowKey` selects a definition, and only a definition that itself asks
+ * for `driver: 'flue'` runs on the engine (finding F1). So a rule naming a
+ * static workflow starts a static run — which is correct, not a failure, and
+ * the picker should show which engine a choice implies rather than letting an
+ * operator discover it from a run that behaved differently than expected.
+ *
+ * ── RECURSION ──────────────────────────────────────────────────────────────
+ *
+ * Carried exactly as `invokeSubflow` carries it, and for the reason that
+ * comment gives: a rule whose agent run re-fires the same rule recursed without
+ * bound before the sub-flow dispatcher was capped. `__agentInvokeDepth` is
+ * stamped on the data handed forward, so an agent run that triggers a rule that
+ * invokes an agent is depth 2, and the dispatcher refuses above the cap.
+ */
+async function invokeAgent(rule: ExecutableRule, event: ActionEvent): Promise<ActionResult> {
+    const cfg = rule.actionConfigJson as {
+        agentId?: string;
+        workflowKey?: string;
+        inputMapping?: Record<string, string>;
+    };
+    // NAMED REFUSALS, not a single "misconfigured". An operator reading an
+    // execution row needs to know which half is missing.
+    if (!cfg?.agentId) return { ok: false, summary: 'No agent configured' };
+    if (!cfg?.workflowKey) return { ok: false, summary: 'No workflow configured' };
+
+    // WHOSE AUTHORITY the run executes under. Owner decision, 2026-10-13: the
+    // rule owner's permissions, stamped `actorType: 'JOB'` so the audit trail
+    // does not claim a person acted. A rule with no owner has no authority to
+    // inherit and the dispatcher refuses it by name.
+    const currentDepth = Number(event.data?.__agentInvokeDepth ?? 0);
+    await enqueue('agent-invoke-dispatch', {
+        tenantId: event.tenantId,
+        ownerUserId: rule.createdByUserId,
+        agentId: cfg.agentId,
+        workflowKey: cfg.workflowKey,
+        // The TRIGGER EVENT's typed fields, projected by the mapping the rule
+        // declares. Never free text: a mapping names which event field feeds
+        // which input key, so what reaches prompt assembly is bounded by the
+        // event's shape rather than by what someone typed into a rule.
+        inputMapping: cfg.inputMapping ?? {},
+        parentExecutionId: (event.data?.__parentExecutionId as string) ?? '',
+        triggerEvent: event.event,
+        data: event.data ?? {},
+        depth: (Number.isFinite(currentDepth) ? currentDepth : 0) + 1,
+    });
+    return { ok: true, summary: `Enqueued agent run for ${cfg.agentId}` };
 }
 
 async function invokeSubflow(rule: ExecutableRule, event: ActionEvent): Promise<ActionResult> {

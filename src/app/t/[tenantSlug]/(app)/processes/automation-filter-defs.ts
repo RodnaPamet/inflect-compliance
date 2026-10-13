@@ -38,7 +38,8 @@ export type RuleActionKey =
     | 'CREATE_TASK'
     | 'UPDATE_STATUS'
     | 'WEBHOOK'
-    | 'INVOKE_SUBFLOW';
+    | 'INVOKE_SUBFLOW'
+    | 'INVOKE_AGENT';
 
 export const buildRuleStatusLabels = (t: Resolver): Record<RuleStatusKey, string> => ({
     DRAFT: t('ruleStatusLabels.DRAFT'),
@@ -53,6 +54,7 @@ export const buildRuleActionLabels = (t: Resolver): Record<RuleActionKey, string
     UPDATE_STATUS: t('ruleActionLabels.UPDATE_STATUS'),
     WEBHOOK: t('ruleActionLabels.WEBHOOK'),
     INVOKE_SUBFLOW: t('ruleActionLabels.INVOKE_SUBFLOW'),
+    INVOKE_AGENT: t('ruleActionLabels.INVOKE_AGENT'),
 });
 
 /** Trigger-event options derived from the canonical event catalog. */

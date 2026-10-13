@@ -200,6 +200,16 @@ export const CACHE_KEYS = {
         suggestions: () => '/ai/automation-suggestions' as const,
     },
 
+    // ─── Agent register (#3471 — the INVOKE_AGENT action's picker) ───
+    //
+    // The route is permission-gated on `admin.agent_registry`, so a rule
+    // author who cannot read the register gets no options and cannot save an
+    // INVOKE_AGENT rule. That is the intended shape: an agent id nobody can
+    // see is an agent id nobody should be able to type.
+    agents: {
+        list: () => '/admin/agents?status=ACTIVE' as const,
+    },
+
     // ─── Processes / canvas (R25+ · Visual Rule Editor) ──────────
     processes: {
         // VR-10 — cross-map governance meta-graph.

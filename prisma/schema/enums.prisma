@@ -1365,6 +1365,14 @@ enum AutomationActionType {
   // VR-7 — invoke a sub-flow (a self-contained automation group's trigger
   // rule), linking child executions to the parent via parentExecutionId.
   INVOKE_SUBFLOW
+  // #3471 — start an agent RUN from a rule, nesting it under the triggering
+  // execution the same way INVOKE_SUBFLOW nests a group.
+  //
+  // It widens no authority: the run inherits the rule owner's tenant and
+  // permission context, and the agent's tool set stays the intersection of its
+  // allowlist, the key's scopes and the autonomy ceiling. What a rule chooses
+  // is WHICH registered agent runs WHICH workflow, never what either may reach.
+  INVOKE_AGENT
 }
 
 /// Epic G-4 — Access Review Campaigns (SOC 2 CC6.2).

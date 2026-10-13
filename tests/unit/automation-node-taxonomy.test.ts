@@ -25,12 +25,18 @@ describe('automation node taxonomy', () => {
     it('isAutomationNodeKind distinguishes automation from document kinds', () => {
         expect(isAutomationNodeKind('trigger')).toBe(true);
         expect(isAutomationNodeKind('action')).toBe(true);
+        expect(isAutomationNodeKind('agent')).toBe(true);
         expect(isAutomationNodeKind('processStep')).toBe(false);
         expect(isAutomationNodeKind('group')).toBe(false);
     });
 
-    it('AUTOMATION_NODE_ORDER has the four kinds and is NOT in the document order', () => {
-        expect(AUTOMATION_NODE_ORDER).toEqual(['trigger', 'condition', 'action', 'slaGate']);
+    it('AUTOMATION_NODE_ORDER has the five kinds and is NOT in the document order', () => {
+        // `agent` (#3471) sits beside `action`, not inside it: the canvas has to
+        // show that this leaf hands a trigger's fields to a model whose
+        // governance lives on `/agents`, which is also what refuses the fire.
+        expect(AUTOMATION_NODE_ORDER).toEqual([
+            'trigger', 'condition', 'action', 'agent', 'slaGate',
+        ]);
         expect(AUTOMATION_NODE_KINDS).toEqual(AUTOMATION_NODE_ORDER);
         for (const k of AUTOMATION_NODE_ORDER) {
             expect(NODE_TAXONOMY_ORDER).not.toContain(k);

@@ -72,6 +72,13 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     // this job's attempts:1 applied. registerSchedules now passes opts and
     // both paths honour the entry.
     'calendar-push-tenant': 'dispatched by calendar-push-dispatch',
+    // #3471. Deliberately NOT scheduled: the unit is a rule firing, not a
+    // clock. Dispatched by the `INVOKE_AGENT` arm of the automation action
+    // executor, which enqueues one job per rule execution and carries the
+    // recursion depth forward so an agent run that re-fires its own rule
+    // cannot loop.
+    'agent-invoke-dispatch': 'dispatched by the INVOKE_AGENT arm of '
+        + 'app-layer/automation/action-executor.ts, one job per rule execution.',
     // The per-(tenant, provider) half of the leaver pass. Not scheduled on its
     // own: the unit is a directory, not a clock, and the dispatcher is what
     // knows which tenants have one. The job id is deterministic per

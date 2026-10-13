@@ -155,6 +155,57 @@ const cases: Array<{ name: string; detail: RuleDetail }> = [
         },
     },
     {
+        // #3471. The mapping is the part a round-trip can silently flatten: the
+        // builder holds it as `inputKey: eventField` TEXT and must rebuild the
+        // same record, or editing a rule for an unrelated reason quietly drops
+        // the fields the agent is fed.
+        name: 'INVOKE_AGENT with an input mapping',
+        detail: {
+            name: 'Triage new risks',
+            description: null,
+            triggerEvent: 'RISK_CREATED',
+            actionType: 'INVOKE_AGENT',
+            triggerFilterJson: null,
+            actionConfigJson: {
+                agentId: 'agent-1',
+                workflowKey: 'posture-review',
+                inputMapping: { riskId: 'id', severity: 'severity' },
+            },
+            slaWindowMinutes: null,
+            slaBreachActionType: null,
+            slaBreachConfigJson: null,
+            scheduleConfigJson: null,
+            nextRuleId: null,
+            nextRuleDelay: null,
+            elseRuleId: null,
+        },
+    },
+    {
+        // The EMPTY mapping, which is the default a picker leaves behind. A
+        // `parseHeaders` that returned undefined for empty text would pass the
+        // case above and change this one's shape on save.
+        name: 'INVOKE_AGENT with no mapping at all',
+        detail: {
+            name: 'Nightly sweep',
+            description: null,
+            triggerEvent: 'RISK_CREATED',
+            actionType: 'INVOKE_AGENT',
+            triggerFilterJson: null,
+            actionConfigJson: {
+                agentId: 'agent-2',
+                workflowKey: 'audit-prep',
+                inputMapping: {},
+            },
+            slaWindowMinutes: null,
+            slaBreachActionType: null,
+            slaBreachConfigJson: null,
+            scheduleConfigJson: null,
+            nextRuleId: null,
+            nextRuleDelay: null,
+            elseRuleId: null,
+        },
+    },
+    {
         name: 'SCHEDULE trigger with schedule config',
         detail: {
             name: 'Evidence reminder',

@@ -51,6 +51,7 @@ function buildActionLabels(t: AutoTranslate): Record<string, string> {
         UPDATE_STATUS: t('actionUpdateStatus'),
         WEBHOOK: t('actionWebhook'),
         INVOKE_SUBFLOW: t('actionInvokeSubflow'),
+        INVOKE_AGENT: t('actionInvokeAgent'),
     };
 }
 

@@ -44,13 +44,15 @@ describe('a valid endpoint is accepted', () => {
         expect(validateEdgeEndpoint('x', [node('x', kind)])).toBeNull();
     });
 
-    it('covers the ten edge-capable kinds — the population control', () => {
+    it('covers the eleven edge-capable kinds — the population control', () => {
         // If the taxonomy shrank to nothing, every `it.each` above would
         // vanish and this file would pass by having nothing to say.
         const capable = (Object.keys(NODE_TAXONOMY) as ProcessNodeKind[]).filter(
             (k) => NODE_TAXONOMY[k].hasHandles,
         );
-        expect(capable.length).toBe(10);
+        // 10 -> 11: `agent` (#3471), an automation leaf that takes an edge
+        // like every other automation kind.
+        expect(capable.length).toBe(11);
     });
 });
 
