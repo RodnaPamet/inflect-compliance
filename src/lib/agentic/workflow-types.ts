@@ -131,6 +131,20 @@ export interface WorkflowDefinition {
      */
     driver?: 'static' | 'flue';
 
+    /**
+     * WHICH SKILLS this workflow's agent loads (#3470), by Agent Skills name.
+     *
+     * A DECLARATION, like `driver` above, and bounded the same way: the driver
+     * resolves these names against the shipped corpus and refuses an unknown
+     * one, so a definition cannot conjure expertise that is not on disk and
+     * reviewed. Absent means none, which is what every static workflow wants.
+     *
+     * Skills are progressively disclosed — each one mounted costs a catalog
+     * line in EVERY system prompt — so this list is a per-turn cost, not just a
+     * capability. `assertCatalogWithinBudget` bounds it.
+     */
+    skills?: readonly string[];
+
     key: string;
     name: string;
     description: string;

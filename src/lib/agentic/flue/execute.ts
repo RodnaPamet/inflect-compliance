@@ -24,6 +24,7 @@ import { FLUE_USAGE_KEY, InflectAgent, type FlueUsageReport } from './agent';
 import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
+import { resolveSkillsFor } from './skills/resolve';
 import { bindRun, releaseRun } from './run-binding';
 import { resolveKillState, killRefusalMessage, KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
@@ -461,7 +462,14 @@ export async function executeFlueRun(
         },
     }));
 
-    bindRun(runId, { tools, modelSpecifier });
+    // THE SKILLS THIS DEFINITION ASKS FOR, resolved here rather than in the
+    // agent (#3470). `resolveSkillsFor` refuses a name the shipped corpus does
+    // not contain, so a definition cannot conjure expertise that is not on disk
+    // and reviewed — the same shape as the tool set: the agent receives
+    // documents, never the ability to go and find documents.
+    const skills = resolveSkillsFor(def.skills);
+
+    bindRun(runId, { tools, modelSpecifier, skills });
 
     try {
         // BEFORE THE DISPATCH, because the stream is live-only: "the

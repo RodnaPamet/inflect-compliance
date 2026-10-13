@@ -56,6 +56,16 @@ import type { FlueToolDefinition } from './tools-adapter';
  * reach the `finally`, or it would release the incumbent's authority while
  * reporting that it had protected it.
  */
+/**
+ * One resolved skill, as the binding carries it — the Agent Skills fields
+ * `defineSkill` needs, and nothing that could reach the filesystem again.
+ */
+export interface FlueSkillDocument {
+    readonly name: string;
+    readonly description: string;
+    readonly instructions: string;
+}
+
 export interface FlueRunBinding {
     /**
      * The tools this run may reach, ALREADY RESOLVED.
@@ -78,6 +88,21 @@ export interface FlueRunBinding {
      * the app graph out of the ESM boundary entirely.
      */
     tools: readonly FlueToolDefinition[];
+
+    /**
+     * The skills this run loads, ALREADY RESOLVED — the same discipline the
+     * tool set above follows, and for the first of the same two reasons.
+     *
+     * AUTHORITY: the agent function receives documents, not the ability to go
+     * and find documents. It cannot read a seventh skill off disk because the
+     * corpus loader is not in its scope, so no edit inside the agent can widen
+     * what the model is taught.
+     *
+     * Plain data rather than a Flue `SkillReference`: `defineSkill` lives in
+     * `@flue/runtime`, whose only VALUE import in `src/` is the agent module,
+     * so the conversion happens there and the resolution happens here.
+     */
+    skills: readonly FlueSkillDocument[];
     /** `<provider-id>/<model-id>`, already resolved against the tenant's residency. */
     modelSpecifier: string;
 }

@@ -1,4 +1,4 @@
-import { useInitialData, useInstruction, useModel, useResponseFinish, useTool } from '@flue/runtime';
+import { defineSkill, useInitialData, useInstruction, useModel, useResponseFinish, useSkill, useTool } from '@flue/runtime';
 
 import { readRunBinding } from './run-binding';
 
@@ -73,6 +73,23 @@ export function InflectAgent(): void {
     // Node, on the driver's side of the boundary.
     for (const tool of binding.tools) {
         useTool(tool);
+    }
+
+    // THE SKILLS THE DEFINITION ASKED FOR (#3470), already resolved against the
+    // shipped corpus by the driver. `defineSkill` rather than a `SKILL.md`
+    // import because that import is a Vite build-time transform and this app
+    // builds with Next.js — the runtime documents the two as equivalent, and
+    // "packages it into the same shape a SKILL.md import produces".
+    //
+    // Converted HERE because `defineSkill` is a value from `@flue/runtime`, and
+    // this module is the only place in `src/` that may import one. The binding
+    // carries plain documents for exactly that reason.
+    for (const skill of binding.skills) {
+        useSkill(defineSkill({
+            name: skill.name,
+            description: skill.description,
+            instructions: skill.instructions,
+        }));
     }
 
     // ── HOW USAGE GETS BACK TO THE DRIVER ───────────────────────────────────

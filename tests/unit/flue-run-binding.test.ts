@@ -22,6 +22,7 @@ import {
 const binding = (marker: string): FlueRunBinding => ({
     tools: [{ name: marker } as FlueRunBinding['tools'][number]],
     modelSpecifier: 'inflect-local/llama-3.1-70b',
+    skills: [],
 });
 
 afterEach(() => {
