@@ -77,6 +77,36 @@ const listWith = async (
     return p.listAccounts(config);
 };
 
+describe('graphHeaders (#3458)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { graphHeaders, GRAPH_ACCEPT_LANGUAGE } = require('@/lib/http/graph-headers');
+
+    it('always sends a real culture, because `*` is what breaks PIM', () => {
+        // Node's fetch sends `Accept-Language: *` by default and several Graph
+        // backends parse it as a .NET CultureInfo, which throws on `*`:
+        // 400 UnknownError -> CultureNotFoundException. Measured live
+        // 2026-10-13: ten of ten PIM requests went 400 -> 200 on this header.
+        const h = graphHeaders('tok');
+        expect(h['Accept-Language']).toBe(GRAPH_ACCEPT_LANGUAGE);
+        expect(h['Accept-Language']).not.toBe('*');
+        expect(h.Authorization).toBe('Bearer tok');
+    });
+
+    it('does NOT default an Accept — the photo fetch is binary', () => {
+        // `src/auth.ts` reads /me/photos/48x48/$value and sends no Accept.
+        // Defaulting `application/json` here would have broken avatars to fix
+        // PIM, so Accept stays the caller's business.
+        expect(graphHeaders('tok')).not.toHaveProperty('Accept');
+        expect(graphHeaders('tok', { Accept: 'application/json' }).Accept).toBe('application/json');
+    });
+
+    it('lets a caller override anything for one request', () => {
+        const h = graphHeaders('tok', { 'Accept-Language': 'de-DE', 'Content-Type': 'application/json' });
+        expect(h['Accept-Language']).toBe('de-DE');
+        expect(h['Content-Type']).toBe('application/json');
+    });
+});
+
 describe('getEntraAccessToken', () => {
     it('POSTs the client-credentials grant to the tenant token endpoint', async () => {
         const doFetch = jest

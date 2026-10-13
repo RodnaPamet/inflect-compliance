@@ -66,6 +66,7 @@ import { getEntraAccessToken } from './index';
 import { assertEntraObjectId } from './writer';
 import { resilientFetch } from '../../http-resilience';
 import { logger } from '@/lib/observability/logger';
+import { graphHeaders } from '@/lib/http/graph-headers';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -390,11 +391,10 @@ export function createEntraEntitlementClient(options: EntitlementClientOptions) 
         const t = await auth();
         const res = await doFetch(`${GRAPH}${path}`, {
             method,
-            headers: {
-                Authorization: `Bearer ${t}`,
+            headers: graphHeaders(t, {
                 Accept: 'application/json',
                 ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-            },
+            }),
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
         const text = res.status === 204 ? '' : await res.text().catch(() => '');

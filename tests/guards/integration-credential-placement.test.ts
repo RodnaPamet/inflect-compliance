@@ -27,8 +27,14 @@
  * decision per-field and written down, instead of widening the hole for
  * everything that happens to share a substring.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import '@/app-layer/integrations/bootstrap';
 import { registry } from '@/app-layer/integrations/registry';
+import { codeOf } from '../helpers/source-blocks';
+
+/** Repo root, for the source sweeps below. */
+const ROOT = path.resolve(__dirname, '../..');
 
 /**
  * Words that mean "this value authenticates you". Deliberately broad — a false
@@ -101,6 +107,111 @@ describe('integration credential placement', () => {
             expect((p?.configSchema?.configFields ?? []).some((f) => f.key === fieldKey)).toBe(true);
             expect(reason.length).toBeGreaterThan(20);
         }
+    });
+});
+
+/**
+ * #3458 — every Microsoft Graph request goes through `graphHeaders`.
+ *
+ * Node's `fetch` (undici) sends `Accept-Language: *` by default, and several
+ * Graph backends parse that header as a .NET `CultureInfo`. `*` is not a
+ * culture identifier, so those endpoints answer:
+ *
+ *     400 UnknownError  ->  CultureNotFoundException
+ *                           "* is an invalid culture identifier."
+ *
+ * Measured live 2026-10-13: ten of ten PIM requests went 400 -> 200 on the
+ * header alone, with a correctly-scoped token, on v1.0 and beta, bare and
+ * filtered. Not every backend parses it — users, groups, access packages,
+ * roleDefinitions and roleAssignments answer 200 either way — which is
+ * exactly what makes it a tripwire rather than an outage: it waits for the
+ * first call to an affected endpoint and presents as `UnknownError` on a
+ * request that is correct in every visible respect.
+ *
+ * This is a HEADER guard rather than a style rule. The failure is invisible
+ * to tsc, invisible to a code review that does not know the story, and
+ * invisible to every existing test, because the endpoints we call today are
+ * the ones that tolerate it.
+ */
+describe('#3458 — Graph requests carry a real Accept-Language', () => {
+    const SRC = path.join(ROOT, 'src');
+
+    /** Every .ts under src/, so a new caller cannot be added outside the sweep. */
+    const srcFiles = (): string[] => {
+        const out: string[] = [];
+        const walk = (dir: string) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, e.name);
+                if (e.isDirectory()) walk(full);
+                else if (e.name.endsWith('.ts') || e.name.endsWith('.tsx')) out.push(full);
+            }
+        };
+        walk(SRC);
+        return out;
+    };
+
+    const HELPER = 'src/lib/http/graph-headers.ts';
+
+    it('the helper exists and sends a real culture, not a wildcard', () => {
+        // MASKED AT THE READ SEAM — Class A. The helper's own docblock quotes
+        // the wildcard (`* is an invalid culture identifier`) and the header
+        // name repeatedly; an unmasked read would let that prose answer the
+        // questions below about the CODE.
+        const src = codeOf(fs.readFileSync(path.join(ROOT, HELPER), 'utf8'));
+        const m = src.match(/GRAPH_ACCEPT_LANGUAGE = '([^']+)'/);
+        expect(m).not.toBeNull();
+        const value = (m as RegExpMatchArray)[1];
+        // The defect is that `*` is not a culture identifier. A wildcard or an
+        // empty value here reintroduces it verbatim.
+        expect(value).not.toBe('*');
+        expect(value).not.toBe('');
+        expect(value).toMatch(/^[a-z]{2}(-[A-Z]{2})?$/);
+        expect(src).toMatch(/'Accept-Language': GRAPH_ACCEPT_LANGUAGE/);
+    });
+
+    it('no file builds a Graph Authorization header inline', () => {
+        const offenders: string[] = [];
+        for (const f of srcFiles()) {
+            if (f.endsWith('graph-headers.ts')) continue;
+            const code = codeOf(fs.readFileSync(f, 'utf8'));
+            if (!/graph\.microsoft\.com\/(v1\.0|beta)/.test(code)) continue;
+            // A Graph caller that writes its own bearer header is a caller that
+            // can omit the language header.
+            if (/Authorization:\s*`Bearer /.test(code)) offenders.push(path.relative(ROOT, f));
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('every Graph-calling file imports the helper', () => {
+        const missing: string[] = [];
+        let callers = 0;
+        for (const f of srcFiles()) {
+            if (f.endsWith('graph-headers.ts')) continue;
+            const code = codeOf(fs.readFileSync(f, 'utf8'));
+            // An API BASE, not merely the host. The host also appears as OAuth
+            // SCOPE strings — `https://graph.microsoft.com/Sites.Read.All` in
+            // sharepoint/token.ts, which fetches login.microsoftonline.com and
+            // never Graph — plus a placeholder in config-schema.ts and an
+            // allowlist in http-resilience.ts. The first version of this guard
+            // matched the bare host and reported token.ts as an offender.
+            // The base match alone is the predicate. An earlier version also
+            // required a `fetch(`-shaped call, which dropped
+            // sharepoint/client.ts — it issues Graph requests through
+            // `BaseIntegrationClient.request`, so the sweep silently excluded
+            // the integration with the most write surface in the product. The
+            // two files that merely NAME the host (a comment in
+            // config-schema.ts, an allowlist entry in http-resilience.ts) carry
+            // no `/v1.0` or `/beta`, so the base check already excludes them.
+            if (!/graph\.microsoft\.com\/(v1\.0|beta)/.test(code)) continue;
+            callers++;
+            if (!code.includes('graph-headers')) missing.push(path.relative(ROOT, f));
+        }
+        // Positive control: an empty sweep would pass the assertion below
+        // vacuously, and this guard is only worth anything over a real set.
+        expect(callers).toBeGreaterThanOrEqual(7);
+        expect(missing).toEqual([]);
+        // eslint-disable-next-line no-console
+        console.log(`#3458 — ${callers} Graph-calling files, all via graphHeaders`);
     });
 });
 

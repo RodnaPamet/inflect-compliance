@@ -151,6 +151,7 @@ import {
 } from './write-direction';
 import { logger } from '@/lib/observability/logger';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
+import { graphHeaders } from '@/lib/http/graph-headers';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 const LOGIN_BASE = 'https://login.microsoftonline.com';
@@ -1549,7 +1550,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
     private async get(url: string, token: string, id: string): Promise<Response> {
         try {
             return await this.doFetch(url, {
-                headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+                headers: graphHeaders(token, { Accept: 'application/json' }),
             });
         } catch (err) {
             if (!(err instanceof IntegrationAuthError)) throw err;
@@ -1589,8 +1590,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
     private patch(url: string, token: string, body: string): Promise<Response> {
         return this.singleAttemptFetch(url, {
             method: 'PATCH',
-            headers: {
-                Authorization: `Bearer ${token}`,
+            headers: graphHeaders(token, {
                 Accept: 'application/json',
                 // Mandatory. The read paths build `{ Authorization, Accept }`
                 // and reusing that object here gets the request rejected 400 by
@@ -1598,7 +1598,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                 // be a malformed request that changed nothing reading as a
                 // successful disable.
                 'Content-Type': 'application/json',
-            },
+            }),
             body,
         });
     }

@@ -59,6 +59,7 @@ import {
 import { logger } from '@/lib/observability/logger';
 import { fetchOAuthToken } from '../../oauth-token-fetch';
 import { resilientFetch, IntegrationTerminalError } from '../../http-resilience';
+import { graphHeaders } from '@/lib/http/graph-headers';
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
@@ -262,7 +263,7 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
                 ? await this.deps.getAccessToken({ ...config, ...secrets })
                 : await getEntraAccessToken({ ...config, ...secrets }, doFetch);
             const res = await doFetch(`${GRAPH_BASE}/users?$top=1&$select=id`, {
-                headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+                headers: graphHeaders(token, { Accept: 'application/json' }),
             });
             if (!res.ok) return { valid: false, error: `Entra directory ping failed (HTTP ${res.status}).` };
             return { valid: true };
@@ -294,7 +295,7 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
             ? await this.deps.getAccessToken(config)
             : await getEntraAccessToken(config, doFetch);
 
-        const authHeaders = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+        const authHeaders = graphHeaders(token, { Accept: 'application/json' });
         const out: NormalizedIdentityAccount[] = [];
 
         // First page: try with signInActivity; if the tenant can't serve it,
@@ -549,7 +550,7 @@ async function fetchAdminUserIds(
     token: string,
     doFetch: typeof fetch,
 ): Promise<{ ids: Set<string>; complete: boolean }> {
-    const authHeaders = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+    const authHeaders = graphHeaders(token, { Accept: 'application/json' });
     const ids = new Set<string>();
     let complete = true;
 
@@ -611,7 +612,7 @@ interface RegistrationDetail { id?: string; isMfaRegistered?: boolean }
  * Requires AuditLog.Read.All; a 403 propagates and the caller degrades to null.
  */
 async function fetchMfaRegistration(token: string, doFetch: typeof fetch): Promise<Map<string, boolean>> {
-    const authHeaders = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+    const authHeaders = graphHeaders(token, { Accept: 'application/json' });
     const out = new Map<string, boolean>();
     let url: string | null = `${GRAPH_BASE}/reports/authenticationMethods/userRegistrationDetails?$top=${PAGE_SIZE}`;
     while (url) {
@@ -635,7 +636,7 @@ interface GraphDomain { id?: string; authenticationType?: string; isVerified?: b
  * read at all (→ SSO signal stays unknown for every account).
  */
 async function fetchFederatedDomains(token: string, doFetch: typeof fetch): Promise<Map<string, boolean> | null> {
-    const authHeaders = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+    const authHeaders = graphHeaders(token, { Accept: 'application/json' });
     const map = new Map<string, boolean>();
     let url: string | null = `${GRAPH_BASE}/domains`;
     let any = false;

@@ -8,6 +8,8 @@
  * exhaustively unit-testable without network.
  */
 
+import { graphHeaders } from '@/lib/http/graph-headers';
+
 // Typed `microsoft.graph.group` cast on the memberOf collection so Graph
 // returns ONLY security/M365 groups — `/me/memberOf` is heterogeneous and would
 // otherwise mix in directoryRoles + administrativeUnits, whose ids would then
@@ -54,10 +56,7 @@ export async function fetchUserGroupsFromGraph(
         let res: Response;
         try {
             res = await fetchImpl(url, {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    Accept: 'application/json',
-                },
+                headers: graphHeaders(accessToken, { Accept: 'application/json' }),
             });
         } catch {
             return out;
@@ -93,7 +92,7 @@ export async function lookupGroupFromGraph(
     try {
         res = await fetchImpl(
             `${GRAPH_GROUP}/${encodeURIComponent(objectId)}?$select=id,displayName`,
-            { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } },
+            { headers: graphHeaders(accessToken, { Accept: 'application/json' }) },
         );
     } catch {
         return null;

@@ -45,6 +45,7 @@ import { authenticateWithPassword } from '@/lib/auth/credentials';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { graphHeaders } from '@/lib/http/graph-headers';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -331,7 +332,8 @@ const providers: NextAuthOptions['providers'] = [
             try {
                 const response = await fetch(
                     'https://graph.microsoft.com/v1.0/me/photos/48x48/$value',
-                    { headers: { Authorization: `Bearer ${tokens.access_token}` } },
+                    // No `Accept` on purpose — `$value` is binary (#3458).
+                    { headers: graphHeaders(tokens.access_token as string) },
                 );
                 if (response.ok && typeof Buffer !== 'undefined') {
                     const pictureBuffer = await response.arrayBuffer();
