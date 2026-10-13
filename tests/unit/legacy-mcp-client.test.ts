@@ -257,6 +257,102 @@ describe('1b client — every fault fails closed', () => {
         });
     });
 
+    /**
+     * THE PRODUCTION PATH, with no `fetchImpl` — which is the point.
+     *
+     * Every other test in this file injects the fake server through the declared
+     * test seam, so none of them exercises `safeFetch`. The criterion is that the
+     * CLIENT surfaces a refused destination as a typed error, and the only
+     * destination case above is `redirect`, which reaches the rule from the
+     * opposite direction — an allowed host answering with a hostile `Location`.
+     * The scheme and the address families were proven in
+     * `tests/guards/egress-allowlist.test.ts`, about `safeFetch` rather than about
+     * this client, so nothing proved the composition.
+     *
+     * THE KIND ALONE PROVES NOTHING, and that is why the control below exists.
+     * `mapEgressError` ends in a catch-all that maps ANY unrecognised egress
+     * failure to `ssrf-blocked`, so a sandbox with no network satisfies a
+     * kind-only assertion even with the address rules deleted. The discriminating
+     * signal is the REASON: a policy refusal says `address is not public`, and a
+     * mere failure says `egress failed`. The address cases assert the former,
+     * which the control does not satisfy.
+     *
+     * NO SOCKET IS OPENED for the address cases — each is refused on inspection
+     * before connect, measured at 0-2 ms against the control's 66 ms. A hostname
+     * that only RESOLVES to a private address is a different check and lives in
+     * `legacy-mcp-provider.test.ts`.
+     */
+    it.each([
+        ['IPv4 loopback', 'https://127.0.0.1/mcp'],
+        ['IPv6 loopback', 'https://[::1]/mcp'],
+        ['private 10/8', 'https://10.0.0.5/mcp'],
+        ['private 192.168/16', 'https://192.168.1.10/mcp'],
+        ['private 172.16/12', 'https://172.16.0.1/mcp'],
+        ['link-local metadata', 'https://169.254.169.254/mcp'],
+    ])('%s is refused as a POLICY decision, not merely a failure', async (label, url) => {
+        const res = await pullSnapshot({
+            url,
+            token: TOKEN,
+            requestTimeoutMs: 1_000,
+            pullTimeoutMs: 5_000,
+        });
+
+        // Labelled so a failure names WHICH family regressed, not just the first.
+        expect({
+            label,
+            complete: res.complete,
+            kind: res.reason?.kind,
+            // The half the control cannot satisfy.
+            message: res.reason?.message,
+        }).toEqual({
+            label,
+            complete: false,
+            kind: 'ssrf-blocked',
+            message: 'egress refused: address is not public',
+        });
+        // A blocked pull carries no rows, so it cannot be read as an empty
+        // application.
+        expect({ label, rows: res.rows.length }).toEqual({ label, rows: 0 });
+    });
+
+    it('CONTROL: a plain egress failure is indistinguishable by kind, so the kind alone is not the proof', async () => {
+        // An unresolvable public name. Nothing about it is private, yet it yields
+        // the same `kind` as every case above — which is exactly why those assert
+        // the message. If this control ever stops returning `ssrf-blocked`, the
+        // assertions above became stronger than they claim and should be revisited.
+        const res = await pullSnapshot({
+            url: 'https://nonexistent-host-xyz-9281.example/mcp',
+            token: TOKEN,
+            requestTimeoutMs: 1_000,
+            pullTimeoutMs: 5_000,
+        });
+        expect(res.complete).toBe(false);
+        expect(res.reason?.kind).toBe('ssrf-blocked');
+        // Not the policy message. This is the discrimination the tests above rely on.
+        expect(res.reason?.message).not.toBe('egress refused: address is not public');
+    });
+
+    it('http: is refused, but the client cannot say WHY — mapEgressError never reaches its scheme branch', async () => {
+        // Documented rather than asserted as correct: the refusal is real (safeFetch
+        // rejects the scheme before any connect), but `mapEgressError`'s
+        // `scheme not allowed` arm requires the word `scheme` or `protocol` in the
+        // underlying message and the message carries neither, so an `http:` endpoint
+        // reports the same reason as an unrelated network fault. Filed separately.
+        const res = await pullSnapshot({
+            url: 'http://legacy.example.com/mcp',
+            token: TOKEN,
+            requestTimeoutMs: 1_000,
+            pullTimeoutMs: 5_000,
+        });
+        expect({ complete: res.complete, kind: res.reason?.kind }).toEqual({
+            complete: false,
+            kind: 'ssrf-blocked',
+        });
+        // The CURRENT reason, pinned so that fixing the scheme branch turns this
+        // red and whoever fixes it updates the criterion with it.
+        expect(res.reason?.message).toBe('egress refused: egress failed');
+    });
+
     it('slowResponse yields a timeout', async () => {
         // The fake server does not look at `init.signal` — it just resolves late —
         // so an abort cannot surface through it unwrapped, and the first version of
@@ -442,9 +538,6 @@ describe('1b client — the bearer token never escapes', () => {
         const server = createLegacyMcpFakeServer({ faults: { malformedJson: true } });
         const res = await pull(server);
         const err = res.reason!;
-        // Three serialisations, because they do not agree: JSON.stringify drops
-        // non-enumerable fields, String() takes only the message, and the stack
-        // carries whatever was interpolated into it.
         // Three serialisations, because they do not agree: JSON.stringify drops
         // non-enumerable fields, String() takes only the message, and `kind` is
         // the discriminator a caller switches on.
