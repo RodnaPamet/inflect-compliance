@@ -369,10 +369,18 @@ Three operational facts, all measured on the deployed service rather than inferr
   revision gets no record, which is this script's existing behaviour for a model that
   cannot be made safe at any confidence.
 
-  The guard does not compensate: it passes **11 of 13** hostile cases to the model,
-  including three of the corpus's own (#3466). So the honest position is that the
-  capability is deployed, verified, and produces nothing — and that is the correct state
-  while #3466 is open rather than a regression.
+  The guard now catches all thirteen (#3466 — it had passed **11 of 13**, including
+  three of the corpus's own, for as long as the corpus had existed). **The thresholds
+  still gate on hostile cases, by owner decision of 2026-10-13.** Both models are
+  refused by exactly one hostile case each, so excluding them would make both qualify
+  immediately — and that is the trade being declined: a guard is one detector against
+  an adversary who adapts, a threshold that survives a guard miss costs only coverage
+  on a feature with no live traffic, and a threshold chosen without that failure in
+  view turns the next bypass into a confident wrong verdict eligible for bulk
+  ratification.
+
+  So the capability is deployed, verified, and produces nothing. That is the chosen
+  position, not an unresolved bug.
 - **The endpoint's self-reported revision cannot detect a changed model.** It returns
   the vendor's hardcoded `laya-rl-agent` whatever checkpoint is loaded. The design's
   rule — thresholds for the revision the endpoint reports — therefore leans entirely on
