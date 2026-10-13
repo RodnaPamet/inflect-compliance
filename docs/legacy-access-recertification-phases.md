@@ -721,16 +721,16 @@ Deliver per the Definition of done.
 
 **Hardening**
 
-- [ ] Transliteration runs before diacritic folding: under the Streamlined System, `Йордан` becomes `Yordan` and `Николай` becomes `Nikolay`, not `Iordan` and `Nikolai`.
-- [ ] The word-final rule holds: `София` becomes `Sofia` and `Мария` becomes `Maria`.
-- [ ] `normalizeForScan` is never applied to identity data, and a test asserts that `Иванов` survives as a transliteration rather than as `Иbaнob`.
-- [ ] Look-alike folding applies only to tokens that mix scripts.
-- [ ] `emailKey` is unmodified, and its existing tests are untouched and green.
-- [ ] Every function is total. It never throws on empty, huge, control-character or unpaired-surrogate input, and every input is length-capped.
-- [ ] No regular expression backtracks catastrophically. Each is linear by construction, and the pathological inputs finish within a bound measured in operations, not wall-clock time.
-- [ ] Output order is deterministic, so identical input produces identical variant lists.
-- [ ] The corpus is synthetic — no real names, emails or national identifiers — and its header says so.
-- [ ] If a dependency was added, it went through `docs/dependency-governance.md`.
+- [x] Transliteration runs before diacritic folding: under the Streamlined System, `Йордан` becomes `Yordan` and `Николай` becomes `Nikolay`, not `Iordan` and `Nikolai`. **Verified #3480:** an `it.each` asserts `Йордан -> Yordan`, `Николай -> Nikolay` and `Йоана -> Yoana`, and the ORDER has its own control: `и` + U+0306 is the token the table would see if folding ran first, and `и` maps to `i`. So the test names the value that would appear if the order inverted, rather than only the value expected.
+- [x] The word-final rule holds: `София` becomes `Sofia` and `Мария` becomes `Maria`. **Verified #3480:** asserted, with `the rule is word-final, not a blanket ия substitution` beside it so a blanket replacement cannot satisfy the criterion, plus `and the traditional scheme deliberately does NOT contract it` for the other scheme.
+- [x] `normalizeForScan` is never applied to identity data, and a test asserts that `Иванов` survives as a transliteration rather than as `Иbaнob`. **Verified #3480:** `a purely Cyrillic name is transliterated, never folded`, with the two surrounding cases giving the boundary from both sides — `a mixed token gets a folded candidate, because it is a Latin name mistyped` and `a pure Latin token produces only itself`.
+- [x] Look-alike folding applies only to tokens that mix scripts. **Verified #3480:** the same three cases: pure Cyrillic transliterates, pure Latin yields only itself, and only a MIXED token gets a folded candidate.
+- [x] `emailKey` is unmodified, and its existing tests are untouched and green. **Verified #3480:** `key is exactly what emailKey returns`, and the two layers above it are asserted to leave it alone — `+tag stripping is a SEPARATE layer that leaves key untouched` and `domain equivalence likewise — comparison only`. This is the invariant the design document's `da-01` case exists for: a link made on a folded address is one the leaver pass cannot act on.
+- [x] Every function is total. It never throws on empty, huge, control-character or unpaired-surrogate input, and every input is length-capped. **Verified #3480:** an `every function is total` block drives a hostile input list through every function by index, plus `caps its input rather than trusting the caller` and `bounds the token count`.
+- [ ] No regular expression backtracks catastrophically. Each is linear by construction, and the pathological inputs finish within a bound measured in operations, not wall-clock time. **NOT met — #3496.** The test asserts wall-clock `ms < 250`, which is the one thing the criterion excludes: at that ceiling a quadratic regex on a 400-character input can finish inside it on an idle machine, and linear code can exceed it on a runner carrying four shards. The sibling criterion in Step 3b is satisfied properly (`counted not timed`, against `COMPARISON_BUDGET_MULTIPLE`), so the pattern exists in this subsystem — only this one was left on the clock. No catastrophic regex has been demonstrated; what is missing is the evidence, which #3496 proposes pinning statically as "linear by construction".
+- [x] Output order is deterministic, so identical input produces identical variant lists. **Verified #3480:** `identical input gives a byte-identical list`, `order is none, then the law, then traditional`, and `de-duplicates when the schemes agree, keeping the first scheme that produced it` — which is the case where a set-based implementation would silently reorder.
+- [x] The corpus is synthetic — no real names, emails or national identifiers — and its header says so. **Verified #3480:** the fixture header reads `ENTIRELY SYNTHETIC` and spells out the four classes: no real name, no real address, no national identifier, no real employee number.
+- [x] If a dependency was added, it went through `docs/dependency-governance.md`. **Verified #3480:** satisfied VACUOUSLY, and recorded as such rather than left ambiguous: Step 3a added no dependency. Every import in `src/lib/identity/reconcile/` resolves to a local module or an internal `@/lib` path — the Jaro-Winkler implementation is in-house, which is also what lets the published reference values be asserted. The repo's one slugify dependency predates this work and is used by the policy module.
 
 **Exit.** Normalisation reproduces the corpus's expected forms — both transliteration schemes, the `й` and `ё` cases, and mixed-script tokens — and the pathological inputs finish in linear time.
 
@@ -778,16 +778,16 @@ Deliver per the Definition of done.
 
 **Hardening**
 
-- [ ] Auto-link precision on the corpus is 100 %, and a single false `LINKED` fails CI.
-- [ ] An exhaustive table of every combination of medium and weak signals never yields `LINKED`.
-- [ ] An exhaustive test shows that any veto prevents a link to the vetoed candidate.
-- [ ] Two candidates tied on the strongest signal yield `AMBIGUOUS`, never a pick.
-- [ ] Outcomes are unchanged when both the accounts and the roster are shuffled, so no result depends on input order.
-- [ ] The re-keyed rule yields `SUGGESTED` even when the signal onto the terminated record is strong.
-- [ ] A `sAMAccountName` present in two directory connections produces no directory bridge.
-- [ ] At a large synthetic scale, comparisons stay within a stated multiple of the input size, measured by count rather than time.
-- [ ] Identical inputs produce byte-identical output.
-- [ ] The module imports nothing that touches the database.
+- [x] Auto-link precision on the corpus is 100 %, and a single false `LINKED` fails CI. **Verified #3480:** `links nothing the corpus does not expect linked, and reports recall`, floored by `links every case the corpus expects linked, so the gate has a floor` — without which a reconciler that links NOTHING would score perfect precision — and `resolves every account to exactly one outcome`.
+- [x] An exhaustive table of every combination of medium and weak signals never yields `LINKED`. **Verified #3480:** `covers every subset, and the count is stated` (the 127 non-empty subsets of the supporting kinds) and `never yields LINKED, at any score, for one candidate or two`, at score 10,000 each. Paired with `classifies every signal kind, so a new kind cannot default to strong`, which is what stops the exhaustive table going stale when a kind is added.
+- [x] An exhaustive test shows that any veto prevents a link to the vetoed candidate. **Verified #3480:** `every (strong signal × veto) pair refuses to link to the vetoed candidate` — the cross product, not a sample.
+- [x] Two candidates tied on the strongest signal yield `AMBIGUOUS`, never a pick. **Verified #3480:** asserted for both of the tie-able strong signals: `two candidates with the same exact email yield AMBIGUOUS` and `two candidates with the same employee number yield AMBIGUOUS`. A strict `>` tie-break never fires on ties, so this is the assertion that catches a collapse-to-one.
+- [x] Outcomes are unchanged when both the accounts and the roster are shuffled, so no result depends on input order. **Verified #3480:** `is unchanged when accounts AND roster are shuffled, over many seeds` — both sides shuffled, over seeds, comparing a canonicalised serialisation.
+- [x] The re-keyed rule yields `SUGGESTED` even when the signal onto the terminated record is strong. **Verified #3480:** `suggests the successor rather than linking the terminated record`, generalised by `holds for EVERY strong signal, not just the email it was written for`, and bounded by the four cases that must NOT be read as a re-key: no successor, an overlapping namesake, two concurrent namesakes, and a leaver with no successor at all.
+- [x] A `sAMAccountName` present in two directory connections produces no directory bridge. **Verified #3480:** `produces NO bridge when the same sAMAccountName is in two connections`, with `links on one fresh link in one connection (the control)` as the denominator and `produces no bridge from a stale link` as the freshness case.
+- [x] At a large synthetic scale, comparisons stay within a stated multiple of the input size, measured by count rather than time. **Verified #3480:** `stays within COMPARISON_BUDGET_MULTIPLE at scale, counted not timed`, asserting `metrics.comparisons` against a budget derived from the input size and printing the cross product it avoided.
+- [x] Identical inputs produce byte-identical output. **Verified #3480:** `identical inputs produce byte-identical output` compares two serialised runs over the same input.
+- [x] The module imports nothing that touches the database. **Verified #3480:** every import in the module resolves to `./normalise`, `./similarity`, `./conventions`, `./engine`, `@/lib/identity/email-key` or `@/lib/text/invisible-chars`. No Prisma, no repository, no client.
 
 **Exit.** The engine resolves every corpus case to exactly one outcome with a recorded method, produces no false `LINKED`, and gives the same outcomes however its input is ordered.
 
@@ -828,13 +828,13 @@ Deliver per the Definition of done. This step is Significant (schema migration).
 
 **Hardening**
 
-- [ ] A snapshot that is not `COMPLETE` is refused, and no results are written.
-- [ ] A stale or non-`PASSED` HRIS sync refuses the whole run with `NO_FRESH_ROSTER`, and no results are written.
-- [ ] A stale or contradicted directory link is never used as a bridge.
-- [ ] Results are immutable: a second run writes a new set and never updates the old one.
-- [ ] The Step 0a guard stays green; directory tables are only read.
-- [ ] Both new tables meet global rule 6, including a two-tenant test proving a run never reads another tenant's roster, links or aliases.
-- [ ] Each run emits counts per outcome.
+- [x] A snapshot that is not `COMPLETE` is refused, and no results are written. **Verified #3480:** the snapshot is set to `PARTIAL` and the run returns `REFUSED` with `SNAPSHOT_NOT_COMPLETE`, asserting `legacyAccountResolution.count` is 0 — the write check, not only the return value. `refuses an EMPTY snapshot — zero is never complete, one level up` sits beside it, which is invariant 5 applied to this gate.
+- [x] A stale or non-`PASSED` HRIS sync refuses the whole run with `NO_FRESH_ROSTER`, and no results are written. **Verified #3480:** four cases rather than one: stale, fresh-but-not-passed, no sync at all, and `accepts a fresh PASSED sync from ANY supported HRIS provider` as the denominator that stops the gate passing by refusing everything.
+- [x] A stale or contradicted directory link is never used as a bridge. **Verified #3480:** `does NOT cross a STALE link` and `does NOT cross a CONTRADICTED link, however fresh`, with `DOES cross a fresh uncontradicted link — the denominator` naming itself as the control.
+- [x] Results are immutable: a second run writes a new set and never updates the old one. **Verified #3480:** `is keyed per RUN, so a second run ADDS rather than colliding`, and `refuses two rows for one account in ONE run` — the pair that keeps "why was this suggested in March?" answerable.
+- [x] The Step 0a guard stays green; directory tables are only read. **Verified #3480:** `writes NOTHING to the directory tables — invariant 1` asserts it behaviourally at this seam, and the Step 0a structural guard is in the green Ratchets population.
+- [x] Both new tables meet global rule 6, including a two-tenant test proving a run never reads another tenant's roster, links or aliases. **Verified #3480:** `legacy-reconcile-rls.test.ts` carries the two-tenant set: each tenant sees only its own resolutions, the other tenant's row is unreadable, an unbound context reads NOTHING, an INSERT claiming the other tenant is refused, a DELETE of the other tenant's row removes ZERO rows and it survives, and a resolution cannot be attached to the other tenant's snapshot or execution. The zero-row DELETE case matters because RLS makes a forbidden delete silent.
+- [x] Each run emits counts per outcome. **Verified #3480:** `reports counts per outcome`, alongside `records the run as an IntegrationExecution that PASSED` and `stores the EVIDENCE, so a reviewer can see why`.
 - [x] The pull request carries a rollback plan and a risk assessment. Carried in the pull request delivering this step, and repeated here so it outlives the pull request:
 
   **Rollback, cheapest first.** (1) Set the tenant's `legacyMatchAiMode` to `OFF` — takes effect from the next reconciliation run, writes a `LEGACY_MATCH_AI_MODE_CHANGED` audit event, retracts nothing and needs to retract nothing, because a verdict never changed an outcome. (2) To stop the service itself: `cd /opt/inflect && sudo docker compose … stop laya`; `app` and `worker` keep their `LAYA_BASE_URL` and a `LOCAL_ONLY` tenant then gets `PROVIDER_ERROR` non-verdicts, which is fail-closed and still a queue a person clears. (3) To undo the Compose change entirely, the backup `apply.sh` wrote: `sudo cp -a /opt/inflect/docker-compose.prod.yml.bak.20261012-150455 /opt/inflect/docker-compose.prod.yml && … up -d`. (4) To revoke the external path, set `TYPESAFE_SUBPROCESSOR_ACTIVE = false` — mutation-proved above to refuse `EXTERNAL`.
