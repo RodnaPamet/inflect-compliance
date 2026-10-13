@@ -28,6 +28,9 @@
  * `tests/unit/identity-match-provider-factory.test.ts`.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import { PrismaClient } from '@prisma/client';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -231,6 +234,44 @@ afterAll(async () => {
 });
 
 // ── Adjudication off ────────────────────────────────────────────────────────
+
+/**
+ * THE PREMISE THIS SUITE REASONS FROM, MADE EXECUTABLE (#3457).
+ *
+ * The docblock above argues from `evaluations/` being EMPTY: no record means
+ * `NO_EVALUATION` stops every call before a payload is built, so the provider
+ * spy cannot discriminate and the REASONS are the load-bearing assertions. It
+ * also says the spy "becomes load-bearing the day a record lands".
+ *
+ * That day arrived on 2026-10-12 and nothing noticed. A record was committed,
+ * the premise went false, the suite stayed green, and the docblock kept
+ * explaining the behaviour of a world that no longer existed. It was removed
+ * again two days later for an unrelated reason (#3462 — its thresholds were
+ * fitted), which restored the premise by accident rather than by design.
+ *
+ * So the premise is asserted here instead of described above. When a model next
+ * qualifies for a record, THIS fails — loudly, with the instruction — rather
+ * than the reasoning rotting quietly for however long it takes somebody to
+ * re-read a comment.
+ */
+describe('the empty-evaluations premise this suite rests on', () => {
+    const DIR = path.resolve(__dirname, '../../src/app-layer/ai/identity-match/evaluations');
+
+    it('evaluations/ is empty — if this fails, REVISIT the docblock, do not delete this test', () => {
+        const records = fs.existsSync(DIR)
+            ? fs.readdirSync(DIR).filter((f) => f.endsWith('.json'))
+            : [];
+        expect(records).toEqual([]);
+        // The failure message belongs here rather than in a comment, because
+        // whoever sees it will be looking at output and not at source:
+        //   A record now exists. The docblock at the top of this file says the
+        //   provider spy "becomes load-bearing the day a record lands" — that
+        //   is today. Re-run its mutation proof under the new state, decide
+        //   whether the spy now discriminates, and either make it load-bearing
+        //   or write down precisely why it still cannot be. Then update this
+        //   test to pin the new premise.
+    });
+});
 
 describe('adjudication off', () => {
     it('writes NOTHING and calls no provider when the mode is OFF', async () => {
