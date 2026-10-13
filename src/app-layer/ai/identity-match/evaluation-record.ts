@@ -132,6 +132,41 @@ export interface EvaluationRecord {
     readonly thresholds: EvaluationThresholds;
     readonly classSupport: Readonly<Record<string, number>>;
     readonly precision: { readonly agrees: number };
+
+    /**
+     * THE HELD-OUT HALF, and the reason it exists.
+     *
+     * `precision.agrees` above used to be computed over the same 19 cases
+     * `thresholds.agreeAt` was CHOSEN on — the lowest threshold at which the
+     * model made no confident mistake. A threshold selected on a set cannot be
+     * validated on that set, so the figure read 1.0 for every model that got a
+     * record, by construction, and said nothing about data it had not seen.
+     *
+     * Measured (#3462): off-corpus it was 0.571 for Laya and 0.944 for Jev,
+     * while both records claimed 1.0. Laya was confidently linking an RPA robot
+     * and a printer to named individuals at p>0.95, and an `AGREES` verdict is
+     * eligible for bulk ratification.
+     *
+     * So the thresholds are now chosen against the UNION of the corpus and
+     * `HELD_OUT_SET`, and this block records what the held-out half contributed.
+     * `precision.agrees` is consequently a union figure: still 1.0 whenever a
+     * record exists, but now 1.0 over data the threshold was not fitted to,
+     * which is a claim worth making.
+     *
+     * Optional only so a record written before this existed stays readable. A
+     * record without it has a fitted precision figure and should be regenerated
+     * rather than trusted; the record test names which.
+     */
+    readonly heldOut?: {
+        /** Pins the held-out set, as `corpusDigest` pins the corpus. */
+        readonly digest: string;
+        readonly total: number;
+        readonly confident: number;
+        /** Precision on the held-out half alone. 1.0 for any record written now. */
+        readonly precision: number;
+        /** Case ids of any confident mistake. Empty for a record that was written. */
+        readonly mistakes: readonly string[];
+    };
     readonly canaries: readonly CanaryCase[];
 }
 

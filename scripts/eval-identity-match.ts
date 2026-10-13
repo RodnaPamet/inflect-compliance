@@ -69,6 +69,10 @@ import {
     adjudicationCorpusDigest,
     type AdjudicationCase,
 } from '../tests/fixtures/identity-reconcile/adjudication/corpus';
+import {
+    HELD_OUT_SET,
+    heldOutDigest,
+} from '../tests/fixtures/identity-reconcile/adjudication/held-out';
 import type { MatchState } from '../src/app-layer/ai/identity-match/systemone-wire';
 
 const OUT_DIR = path.resolve(__dirname, '../src/app-layer/ai/identity-match/evaluations');
@@ -142,8 +146,28 @@ function stateFor(c: AdjudicationCase): MatchState {
  *
  * Returns null when none is, which is the case that must produce no record.
  */
+/**
+ * Every case a threshold is judged against: the corpus AND the held-out set.
+ *
+ * THE BUG THIS CLOSES. Both derive functions used to scan the ladder against
+ * `ADJUDICATION_CORPUS` alone, and `precision.agrees` was then computed over
+ * that same corpus. So the figure was 1.0 for every model that got a record, by
+ * construction — a threshold chosen as "the lowest with no confident mistake
+ * here" is trivially precise *here*. Measured off-corpus (#3462) it was 0.571
+ * for Laya, which had been confidently linking an RPA robot and a printer to
+ * named individuals at p>0.95.
+ *
+ * Judging the ladder against the union does not make a model better. It makes
+ * the threshold climb until the model is right about what it is confident on,
+ * or — if no rung achieves that — refuses the record, which is the behaviour
+ * this script already had for a model that cannot be made safe at any
+ * confidence. That refusal is now reachable by a model that is confidently
+ * WRONG at the top of the ladder, which is exactly the case #3461 found.
+ */
+const ALL_CASES: readonly AdjudicationCase[] = [...ADJUDICATION_CORPUS, ...HELD_OUT_SET];
+
 function deriveAgreeAt(answers: readonly Answer[]): number | null {
-    const expected = new Map(ADJUDICATION_CORPUS.map((c) => [c.id, c.expected.option]));
+    const expected = new Map(ALL_CASES.map((c) => [c.id, c.expected.option]));
     for (const t of THRESHOLD_LADDER) {
         let confident = 0;
         let wrong = 0;
@@ -163,7 +187,7 @@ function deriveAgreeAt(answers: readonly Answer[]): number | null {
  * The `person` threshold, by the same rule over the boolean question.
  */
 function derivePersonAt(answers: readonly Answer[]): number | null {
-    const expected = new Map(ADJUDICATION_CORPUS.map((c) => [c.id, c.expected.isPerson]));
+    const expected = new Map(ALL_CASES.map((c) => [c.id, c.expected.isPerson]));
     for (const t of THRESHOLD_LADDER) {
         let confident = 0;
         let wrong = 0;
@@ -220,7 +244,7 @@ async function main(): Promise<number> {
     // check compares against this rather than `model`, because a real Laya
     // reports its agent name and not our name for the checkpoint (#3428).
     let reportedModel: string | null = null;
-    for (const c of ADJUDICATION_CORPUS) {
+    for (const c of ALL_CASES) {
         const res = await provider.adjudicate(stateFor(c), {
             // Generous: this is an offline harness, not an inline pass.
             deadlineAt: Date.now() + 30_000,
@@ -251,16 +275,70 @@ async function main(): Promise<number> {
     const agreeAt = deriveAgreeAt(answers);
     const personAt = derivePersonAt(answers);
     if (agreeAt === null || personAt === null) {
+        // Name the cases that blocked it. A model is refused here when it is
+        // confidently WRONG at the top of the ladder, and the operator needs to
+        // know on WHAT — a hostile case points at the quarantine guard, an
+        // ordinary one at the model.
+        const TOP = THRESHOLD_LADDER[THRESHOLD_LADDER.length - 1];
+        const topExpected = new Map(ALL_CASES.map((c) => [c.id, c.expected.option]));
+        const topPerson = new Map(ALL_CASES.map((c) => [c.id, c.expected.isPerson]));
+        // WHICH threshold failed, named separately. One refusal message for two
+        // different failures tells an operator nothing about where to look: a
+        // blocked `agreeAt` is about who the account belongs to, a blocked
+        // `personAt` about whether it belongs to a person at all, and the second
+        // is the one that decides if a shared credential enters a review as an
+        // individual's access.
+        console.error(
+            `\n  agreeAt  ${agreeAt === null ? 'BLOCKED — no rung is precise on the union' : `ok at ${agreeAt}`}`
+        );
+        console.error(
+            `  personAt ${personAt === null ? 'BLOCKED — no rung is precise on the union' : `ok at ${personAt}`}`
+        );
+        const personBlockers = answers
+            .filter((a) => a.personProbability >= TOP || a.personProbability <= 1 - TOP)
+            .filter((a) => (a.personProbability >= TOP) !== topPerson.get(a.caseId));
+        if (personAt === null && personBlockers.length > 0) {
+            console.error(`\nConfidently wrong about PERSON at the top rung (${TOP}):`);
+            for (const b of personBlockers) {
+                const c = ALL_CASES.find((x) => x.id === b.caseId);
+                console.error(
+                    `  ${b.caseId} [${c?.klass}${c?.hostile ? ', HOSTILE' : ''}] noul=${b.personProbability.toFixed(4)} `
+                        + `says ${b.personProbability >= TOP ? 'person' : 'not a person'}, expected `
+                        + `${topPerson.get(b.caseId) ? 'person' : 'not a person'}`
+                );
+            }
+        }
+        const blockers = answers
+            .filter((a) => a.optionProbability >= TOP)
+            .filter((a) => a.option !== topExpected.get(a.caseId));
         console.error(
             'NO RECORD WRITTEN. No threshold on the ladder gives 100% precision with a\n' +
                 'non-empty confident set, so this revision cannot be made safe at any\n' +
                 'confidence. A revision with no record produces no verdicts, which is the\n' +
-                'correct outcome rather than a failure of this script.'
+                'correct outcome rather than a failure of this script.\n' +
+                '\nThresholds are judged against the corpus AND the held-out set, so a\n' +
+                'confident mistake on either blocks the record.'
         );
+        if (blockers.length > 0) {
+            console.error(
+                `\nConfidently wrong about the MATCH at the top rung (${TOP}), `
+                    + 'so no rung can exclude them:'
+            );
+            for (const b of blockers) {
+                const c = ALL_CASES.find((x) => x.id === b.caseId);
+                console.error(
+                    `  ${b.caseId} [${c?.klass}${c?.hostile ? ', HOSTILE' : ''}] said ${b.option} `
+                        + `at p=${b.optionProbability.toFixed(4)}, expected ${topExpected.get(b.caseId)}`
+                );
+            }
+        }
         return 5;
     }
 
-    const expected = new Map(ADJUDICATION_CORPUS.map((c) => [c.id, c.expected.option]));
+    // Precision over the UNION, which is the point: `agreeAt` was chosen against
+    // the same union, so this figure is 1.0 whenever a record is written — but
+    // now 1.0 over data the threshold was not fitted to.
+    const expected = new Map(ALL_CASES.map((c) => [c.id, c.expected.option]));
     let confident = 0;
     let correct = 0;
     for (const a of answers) {
@@ -268,6 +346,25 @@ async function main(): Promise<number> {
         confident += 1;
         if (a.option === expected.get(a.caseId)) correct += 1;
     }
+
+    // The held-out half on its own, so a reader can see what it contributed
+    // rather than taking the union figure on trust.
+    const heldOutIds = new Set(HELD_OUT_SET.map((c) => c.id));
+    const heldOutAnswers = answers.filter((a) => heldOutIds.has(a.caseId));
+    const heldOutConfident = heldOutAnswers.filter((a) => a.optionProbability >= agreeAt);
+    const heldOutMistakes = heldOutConfident
+        .filter((a) => a.option !== expected.get(a.caseId))
+        .map((a) => a.caseId);
+    const heldOut = {
+        digest: heldOutDigest(),
+        total: heldOutAnswers.length,
+        confident: heldOutConfident.length,
+        precision:
+            heldOutConfident.length === 0
+                ? 1
+                : (heldOutConfident.length - heldOutMistakes.length) / heldOutConfident.length,
+        mistakes: heldOutMistakes,
+    };
 
     const classSupport: Record<string, number> = {};
     for (const k of ADJUDICATION_CLASSES) {
@@ -279,6 +376,9 @@ async function main(): Promise<number> {
     const canaries: Answer[] = [];
     for (const k of ADJUDICATION_CLASSES) {
         if (canaries.length >= CANARY_COUNT) break;
+        // From the CORPUS only. A canary is the pre-batch drift check, and the
+        // governed set is the corpus; drawing one from the held-out half would
+        // make the held-out set load-bearing at runtime rather than at review.
         const first = answers.find(
             (a) => ADJUDICATION_CORPUS.find((c) => c.id === a.caseId)?.klass === k
         );
@@ -302,6 +402,7 @@ async function main(): Promise<number> {
         thresholds: { agreeAt, personAt },
         classSupport,
         precision: { agrees: confident === 0 ? 0 : correct / confident },
+        heldOut,
         canaries,
     };
 

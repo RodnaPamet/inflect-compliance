@@ -35,6 +35,8 @@
  *
  * @module tests/fixtures/identity-reconcile/adjudication/held-out
  */
+import { createHash } from 'node:crypto';
+
 import type { AdjudicationCase } from './corpus';
 
 export const HELD_OUT_SET: readonly AdjudicationCase[] = [
@@ -551,3 +553,21 @@ export const HELD_OUT_SET: readonly AdjudicationCase[] = [
         expected: { option: 'A', isPerson: true },
     },
 ];
+
+/**
+ * The same digest discipline the corpus gets, and for the same reason.
+ *
+ * A record's thresholds are now chosen against this set as well as the corpus
+ * (`scripts/eval-identity-match.ts`), so this set is as load-bearing as that
+ * one: editing a case here would change what "safe at this threshold" means
+ * for every committed record. Pinning the digest in the record makes such an
+ * edit fail loudly instead of quietly re-grading a model nobody re-ran.
+ */
+export function heldOutDigest(): string {
+    const material = HELD_OUT_SET.map(
+        (c) => `${c.id}|${c.klass}|${c.expected.option}|${c.expected.isPerson ? 1 : 0}`
+    )
+        .sort()
+        .join('\n');
+    return createHash('sha256').update(material).digest('hex');
+}
