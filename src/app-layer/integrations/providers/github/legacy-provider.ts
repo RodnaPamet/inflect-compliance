@@ -432,7 +432,15 @@ export class GitHubProvider implements ScheduledCheckProvider, WebhookEventProvi
     readonly liveValidation = true;
     // #3431 — nothing in this repo records a live mapping run for this
     // provider. A claim about the record, not about the vendor.
-    readonly mappingVerifiedBy = null;
+    readonly mappingVerifiedBy =
+        // #3433 — proving run against RodnaPamet/inflect-compliance main on
+        // 2026-10-13, through `runCheck` rather than a hand-rolled probe. The
+        // run is what the two fixes were FOR: `requiredStatusChecks` came back
+        // true naming all six ruleset contexts (it read false before the fix),
+        // and `allowForcePushes` false via non_fast_forward (it read true).
+        // The control returned FAILED, correctly — that branch requires no
+        // human approval — so a true negative rather than a mapping defect.
+        '#3433 — runCheck against a live repository 2026-10-13; both defects confirmed fixed against the vendor';
     readonly displayName = 'GitHub';
     readonly description = 'GitHub repository compliance checks — branch protection, security settings';
     readonly supportedChecks = ['branch_protection'];
