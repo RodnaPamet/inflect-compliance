@@ -46,10 +46,22 @@ describe('Automation schema — enum integrity (Prisma ↔ TypeScript)', () => {
         );
     });
 
-    test('AutomationActionType has exactly the 5 expected members', () => {
+    test('AutomationActionType has exactly the 6 expected members', () => {
         expect(Object.keys(AutomationActionType).sort()).toEqual(
-            // VR-7 added INVOKE_SUBFLOW.
-            ['CREATE_TASK', 'INVOKE_SUBFLOW', 'NOTIFY_USER', 'UPDATE_STATUS', 'WEBHOOK'].sort()
+            // VR-7 added INVOKE_SUBFLOW; #3471 added INVOKE_AGENT.
+            //
+            // This reads the GENERATED CLIENT, which is why it is a registration
+            // point the source-reading `automation-action-vocabulary` guard
+            // cannot name: with a stale client it passes for a schema that has
+            // already moved, and regenerating is what makes it speak.
+            [
+                'CREATE_TASK',
+                'INVOKE_AGENT',
+                'INVOKE_SUBFLOW',
+                'NOTIFY_USER',
+                'UPDATE_STATUS',
+                'WEBHOOK',
+            ].sort()
         );
     });
 });

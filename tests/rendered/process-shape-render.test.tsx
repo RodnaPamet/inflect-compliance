@@ -103,7 +103,8 @@ afterEach(cleanup);
 
 describe('the process node shape renders every kind', () => {
     it('the population is the whole taxonomy — an empty sweep proves nothing', () => {
-        expect(KINDS.length).toBe(12);
+        // 12 -> 13: `agent` (#3471), the INVOKE_AGENT leaf.
+        expect(KINDS.length).toBe(13);
     });
 
     it.each(KINDS)('%s renders its label and declares its type', (kind) => {
