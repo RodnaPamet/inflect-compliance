@@ -62,10 +62,27 @@ const CALL_RE = /\bt\(\s*'([A-Za-z0-9_.]+)'/g;
 const DECL_RE =
     /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:useTranslations|getTranslations)\(\s*['"]([^'"]+)['"]\s*\)/g;
 
-/** Calls on ONE bound identifier, e.g. `tAgents('agentDetail.tabSkills')`. */
-function callsOn(src: string, id: string): string[] {
-    const re = new RegExp(`\\b${id.replace(/\$/g, '\\$')}\\(\\s*'([A-Za-z0-9_.]+)'`, 'g');
-    return [...src.matchAll(re)].map((m) => m[1]);
+/**
+ * Every `<callee>('<literal>')` in one file, grouped by callee.
+ *
+ * ONE pass with a static pattern rather than a `new RegExp` per bound
+ * identifier. Building the pattern from the identifier meant escaping it, and
+ * a hand-rolled escape that handles `$` but not `\\` is the
+ * incomplete-escaping shape CodeQL flags — correctly, even though `DECL_RE`
+ * can only ever yield a JS identifier. Not escaping is better than escaping
+ * carefully.
+ *
+ * It matches calls that have nothing to do with i18n (`require('x')`), which
+ * costs nothing: only callees present in the binding map are ever consulted.
+ */
+function callsByCallee(src: string): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\(\s*'([A-Za-z0-9_.]+)'/g)) {
+        const list = out.get(m[1]);
+        if (list) list.push(m[2]);
+        else out.set(m[1], [m[2]]);
+    }
+    return out;
 }
 
 function stripComments(src: string): string {
@@ -138,8 +155,9 @@ function scan(): ScanResult {
         if (decls.length === namespaces.length && distinct) {
             filesChecked++;
             if (new Set(namespaces).size > 1) multiBound++;
+            const byCallee = callsByCallee(src);
             for (const { id, ns } of decls) {
-                for (const key of callsOn(src, id)) record(file, ns, key);
+                for (const key of byCallee.get(id) ?? []) record(file, ns, key);
             }
             continue;
         }
@@ -189,8 +207,13 @@ describe('i18n — every literal t() key resolves in en.json', () => {
             "t('agentDetail.tabSkills');\n" +
             "tAgents('runs.title');\n",
         );
-        expect(callsOn(bound, 't')).toEqual(['agentDetail.tabSkills']);
-        expect(callsOn(bound, 'tAgents')).toEqual(['runs.title']);
+        const byCallee = callsByCallee(bound);
+        expect(byCallee.get('t')).toEqual(['agentDetail.tabSkills']);
+        expect(byCallee.get('tAgents')).toEqual(['runs.title']);
+        // A longer identifier is NOT matched as a shorter one's call: looking up
+        // `t` must not pick up `tAgents(...)`, which is the bug a per-identifier
+        // regex with a loose boundary would have.
+        expect(byCallee.get('t')).not.toContain('runs.title');
         // …and the label really does live under `admin`, which is the fix.
         expect(resolves('admin.agentDetail.tabSkills')).toBe(true);
         expect(resolves('agents.agentDetail.tabSkills')).toBe(false);
