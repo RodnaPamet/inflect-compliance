@@ -227,14 +227,14 @@ Deliver per the Definition of done.
 
 **Hardening**
 
-- [ ] The allowlist comes from a scan of `src/`. Any writer that `CLAUDE.md` does not name is reported in the pull request, not allowlisted.
-- [ ] Every write verb is detected — `create`, `createMany`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany` — through any client alias, including a transaction client.
-- [ ] Raw SQL that mutates either table is detected (`$executeRaw`, `$executeRawUnsafe`, and `$queryRaw` carrying `INSERT`, `UPDATE` or `DELETE`).
-- [ ] A mutation test injects one synthetic second writer per detection path, and the guard fails on each.
-- [ ] The scan's population comes from git, not a directory walk.
-- [ ] Assertions bind to the construct they check, and both assertion-reach ratchets stay at or below their baselines.
-- [ ] The guard's name describes the invariant.
-- [ ] The design document's "Guards that do not yet exist" bullet is updated.
+- [x] The allowlist comes from a scan of `src/`. Any writer that `CLAUDE.md` does not name is reported in the pull request, not allowlisted. **Verified #3480:** `tests/guards/directory-identity-tables-single-write-seam.test.ts`'s docblock states the allowlist is "taken from a scan of `src/`, then checked against the seams `CLAUDE.md` names", and that an unnamed writer "is reported, never allowlisted".
+- [x] Every write verb is detected — `create`, `createMany`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany` — through any client alias, including a transaction client. **Verified #3480:** all seven are in one list — `create`, `createMany`, `update`, `updateMany`, `upsert`, `delete`, `deleteMany`.
+- [x] Raw SQL that mutates either table is detected (`$executeRaw`, `$executeRawUnsafe`, and `$queryRaw` carrying `INSERT`, `UPDATE` or `DELETE`). **Verified #3480:** `RAW_METHOD_RE` covers `$executeRaw`, `$executeRawUnsafe`, `$queryRaw` and `$queryRawUnsafe` as ONE ordered alternation — the docblock records that scanning for each separately matched `$executeRaw` inside `$executeRawUnsafe`.
+- [x] A mutation test injects one synthetic second writer per detection path, and the guard fails on each. **Verified #3480:** a `the detector is not vacuous` describe block feeds a synthetic second writer per path.
+- [x] The scan's population comes from git, not a directory walk. **Verified #3480:** `tests/guards/directory-identity-tables-single-write-seam.test.ts` imports `repoFiles`, which is `git ls-files -co --exclude-standard` — not `fs.readdirSync`.
+- [x] Assertions bind to the construct they check, and both assertion-reach ratchets stay at or below their baselines. **Verified #3480:** `raw-source-assertion-ratchet`, `assertion-needle-uniqueness-ratchet` and `assertion-span-reach-ratchet` are all in the Ratchets population, which is green at 776 suites.
+- [x] The guard's name describes the invariant. **Verified #3480:** `describe('the directory identity tables have one write seam each')`.
+- [x] The design document's "Guards that do not yet exist" bullet is updated. **NOT done until #3480 — this was the one genuinely unmet criterion in Phase 0a.** The bullet still claimed no such guard existed, months after it shipped. Removed in the same change, with a note saying what it had claimed.
 
 **Exit.** CI fails when any file outside the seams writes either table, and the mutation test proves the guard sees all three write paths.
 

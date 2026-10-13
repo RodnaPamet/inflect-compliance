@@ -167,9 +167,16 @@ assertion.
 
 ### Guards that do not yet exist
 
-- **No single-write-seam guard for `IdentityAccountLink` or
-  `ConnectedIdentityAccount`.** The rule is stated in `CLAUDE.md`; only `Employee`
-  has a test enforcing it (`tests/guards/employee-status-single-write-seam.test.ts`).
+> **One bullet was removed from this list on 2026-10-13 (#3480).** It said no
+> single-write-seam guard existed for `IdentityAccountLink` or
+> `ConnectedIdentityAccount` — but
+> `tests/guards/directory-identity-tables-single-write-seam.test.ts` had shipped
+> and does exactly that, across all seven write verbs plus raw SQL, with a
+> synthetic second writer per detection path and a git-derived population. The
+> list claimed a gap that was closed, which is the inverse of the usual
+> staleness and arguably worse: it invites someone to build a guard that exists.
+
+
 - **`tests/guardrails/provider-fail-closed-coverage.test.ts` enumerates only check
   and HRIS providers.** A provider that only syncs is never checked.
 - **`validateProviderConfig` passes an unclassified provider's `configJson` through
