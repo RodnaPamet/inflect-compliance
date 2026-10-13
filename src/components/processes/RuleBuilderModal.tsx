@@ -1217,15 +1217,26 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                     >
                                         <Combobox
                                             options={agentOptions}
-                                            value={form.agent.agentId}
-                                            onChange={(v) =>
-                                                patch({ agent: { ...form.agent, agentId: v } })
+                                            selected={
+                                                agentOptions.find(
+                                                    (o) => o.value === form.agent.agentId,
+                                                ) ?? null
+                                            }
+                                            setSelected={(o) =>
+                                                patch({
+                                                    agent: {
+                                                        ...form.agent,
+                                                        agentId: o?.value ?? '',
+                                                    },
+                                                })
                                             }
                                             placeholder={
                                                 agentOptions.length === 0
                                                     ? t('agentPickerEmpty')
                                                     : t('agentPickerPlaceholder')
                                             }
+                                            forceDropdown
+                                            matchTriggerWidth
                                         />
                                     </FormField>
                                     <FormField
@@ -1235,11 +1246,22 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                     >
                                         <Combobox
                                             options={workflowOptions}
-                                            value={form.agent.workflowKey}
-                                            onChange={(v) =>
-                                                patch({ agent: { ...form.agent, workflowKey: v } })
+                                            selected={
+                                                workflowOptions.find(
+                                                    (o) => o.value === form.agent.workflowKey,
+                                                ) ?? null
+                                            }
+                                            setSelected={(o) =>
+                                                patch({
+                                                    agent: {
+                                                        ...form.agent,
+                                                        workflowKey: o?.value ?? '',
+                                                    },
+                                                })
                                             }
                                             placeholder={t('agentWorkflowPlaceholder')}
+                                            forceDropdown
+                                            matchTriggerWidth
                                         />
                                     </FormField>
                                     <FormField

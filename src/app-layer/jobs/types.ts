@@ -358,6 +358,36 @@ export interface RuleChainDispatchPayload {
     depth: number;
 }
 
+/**
+ * #3471 — the `INVOKE_AGENT` action's payload: start ONE workflow run for one
+ * registered agent, under the rule owner's authority.
+ *
+ * Declared here rather than in the job module because `JobPayloadMap` is what
+ * makes `enqueue('agent-invoke-dispatch', …)` typecheck at the call site — a
+ * payload defined only beside its executor is a payload the queue cannot see.
+ */
+export interface AgentInvokeDispatchPayload {
+    tenantId: string;
+    /**
+     * The rule's author, whose permissions the run executes under.
+     *
+     * Nullable because `AutomationRule.createdByUserId` is — a rule can outlive
+     * the account that wrote it. There is then no authority to inherit, and the
+     * dispatcher refuses rather than reaching for a default.
+     */
+    ownerUserId: string | null;
+    agentId: string;
+    workflowKey: string;
+    /** INPUT KEY -> EVENT FIELD NAME. Never free text. */
+    inputMapping: Record<string, string>;
+    /** The execution that fired the rule (lineage). */
+    parentExecutionId: string;
+    triggerEvent: string;
+    data: Record<string, unknown>;
+    /** Recursion depth, mirroring `SubflowDispatchPayload.depth`. */
+    depth?: number;
+}
+
 /** VR-7 — sub-flow invocation: run a sub-flow group's entry rule, linked to
  * the invoking execution via parentExecutionId. */
 export interface SubflowDispatchPayload {
@@ -775,6 +805,7 @@ export interface JobPayloadMap {
     'agent-run-reaper': AgentRunReaperPayload;
     'rule-chain-dispatch': RuleChainDispatchPayload;
     'subflow-dispatch': SubflowDispatchPayload;
+    'agent-invoke-dispatch': AgentInvokeDispatchPayload;
     'schedule-trigger-sweep': ScheduleTriggerSweepPayload;
     'compliance-digest': ComplianceDigestPayload;
     'automation-event-dispatch': AutomationEventDispatchPayload;
@@ -1288,6 +1319,15 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 1000,
     },
     'subflow-dispatch': {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 500,
+        removeOnFail: 1000,
+    },
+    // #3471. Same shape as the sub-flow dispatcher it mirrors, for the same
+    // reason: a refusal is a RETURN, so the only thing retries can mean here is
+    // that the enqueue or the run start itself failed.
+    'agent-invoke-dispatch': {
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 500,

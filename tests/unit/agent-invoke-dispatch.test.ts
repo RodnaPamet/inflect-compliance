@@ -22,14 +22,25 @@ jest.mock('@/lib/prisma', () => ({
 jest.mock('@/lib/observability/job-runner', () => ({
     runJob: jest.fn(async (_n: string, fn: () => any) => fn()),
 }));
+// The REAL `TenantContext` shape: the slug lives on `tenant`, not at the top
+// level. A flatter double passed for a while against code that read
+// `tenant.tenantSlug` — a field no context has — so the mock was asserting the
+// bug rather than the contract.
 jest.mock('@/lib/tenant-context', () => ({
     resolveTenantContext: jest.fn(async () => ({
-        tenantSlug: 't1', role: 'ADMIN',
+        tenant: { id: 't1', slug: 'tenant-one' },
+        role: 'ADMIN',
         permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
         appPermissions: {},
     })),
 }));
-const startWorkflowRun = jest.fn(async () => ({ runId: 'run-1', status: 'COMPLETED', stepFailures: 0 }));
+const startWorkflowRun = jest.fn(
+    async (_ctx: unknown, _workflowKey: string, _input: unknown) => ({
+        runId: 'run-1',
+        status: 'COMPLETED',
+        stepFailures: 0,
+    }),
+);
 const resolveKillState = jest.fn(async () => null as unknown);
 const readBreakerLatch = jest.fn(async () => null as unknown);
 jest.mock('@/lib/agentic/kill-switch', () => ({ resolveKillState }));
@@ -41,6 +52,16 @@ import { prisma } from '@/lib/prisma';
 import { resolveTenantContext } from '@/lib/tenant-context';
 
 const mockPrisma = prisma as any;
+
+/**
+ * The operator-facing summary off the job's own result row.
+ *
+ * `JobRunResult` has no `summary` field — the text lives in `details`, which is
+ * what the job log keeps. Reading it through one helper means a shape change
+ * breaks here once rather than in every case below.
+ */
+const summaryOf = (result: unknown) =>
+    (result as { details?: { summary?: string } }).details?.summary;
 
 const payload = (over: Record<string, unknown> = {}) => ({
     tenantId: 't1',
@@ -75,6 +96,31 @@ describe('an automation rule invoking an agent', () => {
         // …and the attribution is the job's. Both facts, kept apart.
         expect(ctx.actorType).toBe('JOB');
         expect(ctx.agentId).toBe('agent-1');
+        // Read off the resolved context, not the payload: a run whose ctx
+        // carries no slug fails later and elsewhere.
+        expect(ctx.tenantSlug).toBe('tenant-one');
+    });
+
+    it('returns the run id, so the rule execution can link to the run', async () => {
+        // The dispatcher used to return only a result and a refusal, and the
+        // started run was unreachable from the rule that caused it.
+        const { runId, result } = await runAgentInvokeDispatch(payload() as never);
+        expect(runId).toBe('run-1');
+        expect(summaryOf(result)).toContain('wf-1');
+    });
+
+    it('counts a refusal as a SKIPPED item, not a failed job', async () => {
+        // A misconfigured rule is not an infrastructure fault. If a refusal were
+        // `success: false` the job would read as broken in every dashboard that
+        // counts job failures, and a retry would re-refuse three times.
+        mockPrisma.registeredAgent.findFirst.mockResolvedValue(null);
+        const { result } = await runAgentInvokeDispatch(payload() as never);
+        const r = result as unknown as {
+            success: boolean; itemsActioned: number; itemsSkipped: number;
+        };
+        expect(r.success).toBe(true);
+        expect(r.itemsActioned).toBe(0);
+        expect(r.itemsSkipped).toBe(1);
     });
 
     it('projects ONLY the mapped trigger fields into the run input', async () => {
@@ -103,7 +149,7 @@ describe('an automation rule invoking an agent', () => {
         // retry and turn one bad rule into sustained queue pressure. The job
         // returns a summary naming the refusal, so an operator reading the
         // execution row learns which term failed.
-        expect((result as unknown as { summary: string }).summary).toContain(expected);
+        expect(summaryOf(result)).toContain(expected);
     });
 
     it('refuses a rule with no owner rather than reaching for a default', async () => {
@@ -145,7 +191,7 @@ describe('an automation rule invoking an agent', () => {
         expect(startWorkflowRun).not.toHaveBeenCalled();
         // The scope, because lifting a TENANT switch and lifting a PLATFORM one
         // are two different conversations with two different people.
-        expect((result as unknown as { summary: string }).summary).toContain('TENANT');
+        expect(summaryOf(result)).toContain('TENANT');
     });
 
     it('refuses a LATCHED breaker — the stop nothing else on this path makes', async () => {

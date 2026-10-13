@@ -31,7 +31,7 @@ import { resolveTenantContext } from '@/lib/tenant-context';
 import { resolveKillState } from '@/lib/agentic/kill-switch';
 import { readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
 import type { RequestContext } from '@/app-layer/types';
-import type { JobRunResult } from './types';
+import type { JobRunResult, AgentInvokeDispatchPayload } from './types';
 
 /**
  * The trigger event's TYPED fields, projected by the mapping the rule declares.
@@ -62,26 +62,7 @@ function projectInput(payload: AgentInvokeDispatchPayload): Record<string, unkno
  */
 export const MAX_AGENT_INVOKE_DEPTH = 5;
 
-export interface AgentInvokeDispatchPayload {
-    tenantId: string;
-    /**
-     * The rule's author, whose permissions the run executes under.
-     *
-     * Nullable because `AutomationRule.createdByUserId` is — a rule can outlive
-     * the account that wrote it. There is then no authority to inherit, and the
-     * dispatcher refuses rather than reaching for a default: a run that silently
-     * picked some other principal would be an automation with permissions
-     * nobody granted it.
-     */
-    ownerUserId: string | null;
-    agentId: string;
-    workflowKey: string;
-    inputMapping: Record<string, string>;
-    parentExecutionId: string;
-    triggerEvent: string;
-    data: Record<string, unknown>;
-    depth?: number;
-}
+export type { AgentInvokeDispatchPayload } from './types';
 
 /** Why an invoke was refused. Each value is a DIFFERENT operator action. */
 export type AgentInvokeRefusal =
@@ -95,11 +76,31 @@ export type AgentInvokeRefusal =
 
 export async function runAgentInvokeDispatch(
     payload: AgentInvokeDispatchPayload,
-): Promise<{ result: JobRunResult; refusal: AgentInvokeRefusal | null }> {
+): Promise<{ result: JobRunResult; runId: string | null; refusal: AgentInvokeRefusal | null }> {
     let refusal: AgentInvokeRefusal | null = null;
-    const result = await runJob('agent-invoke-dispatch', async () => {
+    const out = await runJob('agent-invoke-dispatch', async () => {
+        const startedAt = new Date().toISOString();
+        const startMs = performance.now();
         const { tenantId, agentId, workflowKey } = payload;
         const depth = payload.depth ?? 1;
+
+        /**
+         * The job's own result row, built the way `subflow-dispatcher` builds
+         * its own: a refusal is a SUCCESSFUL run that actioned nothing, not a
+         * failure. `itemsSkipped` is what separates the two in the job log.
+         */
+        const done = (summary: string, dispatched = false): JobRunResult => ({
+            jobName: 'agent-invoke-dispatch',
+            jobRunId: crypto.randomUUID(),
+            success: true,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            durationMs: Math.round(performance.now() - startMs),
+            itemsScanned: 1,
+            itemsActioned: dispatched ? 1 : 0,
+            itemsSkipped: dispatched ? 0 : 1,
+            details: { agentId, workflowKey, depth, dispatched, summary },
+        });
 
         /**
          * ONE sink for every refusal, and the cause is a field rather than a
@@ -117,7 +118,7 @@ export async function runAgentInvokeDispatch(
             logger.warn('agent-invoke: refused', {
                 component: 'automation', tenantId, agentId, refusal: why, depth,
             });
-            return { ok: true, summary: `Refused: ${detail ?? why}` };
+            return { result: done(`Refused: ${detail ?? why}`), runId: null };
         };
 
         if (depth > MAX_AGENT_INVOKE_DEPTH) {
@@ -178,7 +179,7 @@ export async function runAgentInvokeDispatch(
             userId: payload.ownerUserId,
             actorType: 'JOB',
             tenantId,
-            tenantSlug: tenant.tenantSlug,
+            tenantSlug: tenant.tenant.slug,
             role: tenant.role,
             permissions: tenant.permissions,
             appPermissions: tenant.appPermissions,
@@ -190,7 +191,10 @@ export async function runAgentInvokeDispatch(
         logger.info('agent-invoke: dispatched', {
             component: 'automation', tenantId, agentId, workflowKey, depth, runId: started.runId,
         });
-        return { ok: true, summary: `Started ${workflowKey} for agent ${agentId}` };
+        return {
+            result: done(`Started ${workflowKey} for agent ${agentId}`, true),
+            runId: started.runId,
+        };
     });
-    return { result, refusal };
+    return { ...out, refusal };
 }
