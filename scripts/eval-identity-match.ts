@@ -163,6 +163,27 @@ function stateFor(c: AdjudicationCase): MatchState {
  * this script already had for a model that cannot be made safe at any
  * confidence. That refusal is now reachable by a model that is confidently
  * WRONG at the top of the ladder, which is exactly the case #3461 found.
+ *
+ * ‾‾‾ HOSTILE CASES GATE THIS DELIBERATELY. OWNER DECISION 2026-10-13 ‾‾‾
+ *
+ * Both models are currently refused by exactly ONE hostile case each — Laya's
+ * `personAt` by `ho-pi-05`, Jev's `agreeAt` by `ho-pi-02` — and since #3466 the
+ * guard quarantines every hostile case in both sets before any model call. So
+ * the obvious question is whether hostile cases should gate a threshold at all,
+ * given the model will not see them in production.
+ *
+ * The answer is YES, and the reason is the guard's own history rather than a
+ * principle: eleven of thirteen hostile cases reached the model until #3466,
+ * and three of those were the governed corpus's own, leaking for as long as the
+ * corpus had existed. A guard is one detector against an adversary who adapts.
+ * A threshold that stays safe when the guard misses costs only coverage, on a
+ * feature with no live traffic; a threshold chosen without that failure in view
+ * turns the next guard bypass into a confident wrong verdict that is eligible
+ * for bulk ratification.
+ *
+ * So BOTH MODELS HAVE NO RECORD, adjudication produces nothing, and that is the
+ * chosen position rather than an unresolved bug. Revisit it by excluding
+ * `c.hostile` from `ALL_CASES` — one line — if the trade is ever worth making.
  */
 const ALL_CASES: readonly AdjudicationCase[] = [...ADJUDICATION_CORPUS, ...HELD_OUT_SET];
 
