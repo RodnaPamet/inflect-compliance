@@ -116,6 +116,7 @@ import {
     isAgenticFatal,
 } from '@/lib/agentic/failure-isolation';
 import type { RequestContext } from '@/app-layer/types';
+import { guardUntrustedInput, assertNoReviewRequired } from '@/app-layer/ai/guard';
 
 // ─── Public API ─────────────────────────────────────────────────────
 
@@ -140,6 +141,41 @@ export interface StartWorkflowResult {
  * callers require write permission. Executes synchronously until completion or
  * the first HUMAN_CHECKPOINT.
  */
+/**
+ * The STRING VALUES of a run input, joined — what an injection scanner should
+ * read.
+ *
+ * Values only. Keys and JSON punctuation are developer-controlled and never
+ * reach the model as content, so `JSON.stringify` would hand the scanner
+ * material no prompt ever contains and score it as though it did.
+ *
+ * The same shape as `guardSubject` in `ai/identity-match/match-state-builder`,
+ * deliberately NOT imported: that one is typed to `MatchState` and belongs to
+ * a different domain, and widening its surface for a second caller is how a
+ * helper becomes a shared dependency nobody owns — the argument
+ * `entra-id/entitlement.ts` makes about `graphErrorCode` duplicating
+ * `provisioner.ts`'s `bodyOf`. If a third caller appears, lift it to the guard
+ * module, which is where "flatten a payload for scanning" belongs.
+ */
+function scannableInput(input: Record<string, unknown>): string {
+    const out: string[] = [];
+    const walk = (node: unknown): void => {
+        if (typeof node === 'string') {
+            out.push(node);
+            return;
+        }
+        if (Array.isArray(node)) {
+            for (const item of node) walk(item);
+            return;
+        }
+        if (node !== null && typeof node === 'object') {
+            for (const value of Object.values(node)) walk(value);
+        }
+    };
+    walk(input);
+    return out.join('\n');
+}
+
 export async function startWorkflowRun(
     ctx: RequestContext,
     workflowKey: string,
@@ -171,6 +207,42 @@ export async function startWorkflowRun(
     // them until somebody sets one: a NULL column short-circuits before the
     // aggregate runs.
     await assertWithinMonthlyBudget(ctx);
+
+    // PRE-FLIGHT: the run's own input, scanned for prompt injection (#3468).
+    //
+    // Residual F5 of the Flue integration plan. Point 04 sandwiched every model
+    // call — `guardUntrustedInput` on tenant content before prompt assembly,
+    // `guardEgress` on model output and on proposed tool args — and the one
+    // path it never covered was the input the run is STARTED with, which
+    // reaches prompt assembly with nothing between it and the model.
+    //
+    // ── WHY BOTH ARMS REFUSE HERE, WHERE POINT 04 PARKS ────────────────────
+    //
+    // Mid-run, `flag` forces AWAITING_APPROVAL: the run exists, so parking it
+    // is the natural move and a human decides. At the START there is nothing
+    // to park. Creating a RUNNING row for input we have already decided to
+    // distrust, purely so it can be parked, would invert this function's own
+    // rule — the budget check above says a refusal after the row exists is "a
+    // refusal wearing the costume of an outage". So both arms refuse, before
+    // the row, and the caller gets a typed `forbidden` naming the rule ids.
+    //
+    // `assertNoReviewRequired` covers `flag` AND `block` (`reviewRequired` is
+    // true for both), which is the same composition `usecases/assistant.ts`
+    // applies to a user's question at its own door.
+    //
+    // ── WHAT THIS DOES NOT PROVE ──────────────────────────────────────────
+    //
+    // That the scanner catches any particular shape. #3466 measures the
+    // injection scanner passing 11 of 13 hostile cases, three of them the
+    // corpus's own, and that is the 6d lane's to fix. This is the WIRING: the
+    // run's input now reaches the scanner and a non-clean verdict stops the
+    // run from being created. A green test here is not evidence the guard is
+    // accurate, and the test says so in as many words.
+    assertNoReviewRequired(
+        await guardUntrustedInput(ctx, scannableInput(input), {
+            source: `workflow-run-input:${workflowKey}`,
+        }),
+    );
 
     const context: WorkflowContext = { input, outputs: {} };
 
