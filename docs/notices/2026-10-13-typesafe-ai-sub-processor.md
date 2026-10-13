@@ -56,16 +56,17 @@ the SCCs are the mechanism.
 
 ## Retention
 
-Inflect **requires zero retention** of this data by TypeSafe AI — the content of
-a request is not kept after the response is returned.
+Inflect **requires zero retention** of this data by TypeSafe AI: the content of a
+request is not to be kept after the response is returned. That requirement is
+contractual, and **the data processing agreement carrying it is being executed.**
 
-> **To whoever issues this:** as of drafting, that requirement is stated in our
-> sub-processor register as *"required in the signed DPA"*, and the executed DPA
-> is **not** held in this repository — only the template. Either execute the DPA
-> before issuing this notice, or change the sentence above to say the
-> requirement is contractual and being executed. Do not tell a customer it is
-> verified while it is not. See `docs/sub-processors.md`, the note following the
-> TypeSafe detail section.
+We have not confirmed it against a countersigned agreement, so we are telling
+you what we require rather than what we have verified. When the
+agreement is executed we will say so on the public sub-processor list, and the
+register entry will stop reading "required" and start reading "confirmed".
+
+If that distinction matters to your own assessment, the feature stays `OFF`
+until you decide otherwise — see *Is it on for you?* above.
 
 ## Your right to object
 
@@ -89,8 +90,19 @@ recertification works without any model.
 
 This section is not part of the customer-facing notice. Delete it before posting.
 
-1. **The DPA.** See the Retention note above. This is the one sentence in the
-   notice that currently claims more than the register supports.
+1. **The DPA — SETTLED 2026-10-13: the sentence was softened rather than the
+   agreement executed first.** The Retention section now says the requirement is
+   contractual and the agreement is being executed, and states plainly that it
+   has not been confirmed against a countersigned copy. That matches the
+   register, whose note says the row is "the commitment sought, not a commitment
+   verified".
+
+   **What this costs, so nobody is surprised later:** a customer reading this
+   knows the retention term is unverified, which is a weaker thing to say than
+   the register's row implies on its own. When the DPA is executed, update
+   `docs/sub-processors.md` so the row reads *confirmed* rather than *required*,
+   and post the follow-up the Retention section promises. Until then the promise
+   in this notice is the honest ceiling.
 
 2. **The ordering, and why this is still in time.** The policy requires notice
    at least 30 days before the sub-processor begins processing customer personal
