@@ -456,10 +456,10 @@ Deliver per the Definition of done. This step is Significant (new egress path).
 
 **Hardening**
 
-- [ ] Production code cannot bypass `safeFetch`:
-  - the client is added to `SINKS` in `tests/guards/ssrf-egress-coverage.test.ts`;
-  - a structural rule fails if code under `src/` passes an injected fetch to the client;
-  - the same rule fails if code in `src/lib/mcp/client/` calls `fetch` or `resilientFetch` directly.
+- [x] Production code cannot bypass `safeFetch`:
+  - ~~the client is added to `SINKS`~~ — **satisfied differently, and better (#3480).** The SINK is `src/lib/mcp/wire-transport.ts`, the single place either dialect reaches the network; the clients sit in `MCP_CLIENTS`, which asserts they contain NO fetch call at all AND import the transport, and pins the list at two so neither dialect goes unlisted (the omission #3400 found was invisible because the *other* client was registered). A `SINKS` entry only asks whether a file mentions `safeFetch` somewhere, which a file can satisfy while fetching directly elsewhere. This criterion's wording describes the weaker mechanism it replaced.
+  - a structural rule fails if code under `src/` passes an injected fetch to the client — **verified:** `tests/unit/legacy-mcp-client.test.ts:559`, `no file under src/ passes fetchImpl to the client`.
+  - the same rule fails if code in `src/lib/mcp/client/` calls `fetch` or `resilientFetch` directly — **NOT enforced until #3480.** The pattern was `/\bfetch\(/` plus a `safeFetch` literal, and the leading `\b` means it matched neither `resilientFetch(` nor `boundedFetch(`. Both reach the network without address filtering: `resilientFetch`'s inner is `boundedFetch`, which bounds size and time and redacts query strings for logs, and does no private/loopback/link-local/metadata checks at all. So the rule was stated in this criterion AND in the client's own docblock while only half of it was enforced. The pattern is name-agnostic now and mutation-proved against `fetch(`, `resilientFetch(` and `boundedFetch(`.
 - [ ] Redirects, `http:`, and private, loopback, link-local and metadata addresses are refused. `safeFetch` supplies this; a test proves the client surfaces each as a typed error.
 - [ ] The `initialize` body carries `capabilities: {}` exactly.
 - [ ] No `tools/*` request is ever sent, proven by the fake server's request log while it advertises tools.

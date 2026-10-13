@@ -156,8 +156,34 @@ function codeOf(rel: string): string {
         .replace(/\/\/[^\n]*/g, '');
 }
 
-const clientsWithTheirOwnFetch = () =>
-    MCP_CLIENTS.filter((f) => /\bfetch\(/.test(codeOf(f)) || /\bsafeFetch\b/.test(codeOf(f)));
+/**
+ * ANY identifier ending in `fetch`, not a list of the two we thought of.
+ *
+ * The previous form was `/\bfetch\(/ || /\bsafeFetch\b/`, and `\b` before
+ * `fetch` means neither matches `resilientFetch(` — the leading `\b` requires a
+ * non-word character before `f`, and `t` is a word character. So a client
+ * calling `resilientFetch(url)` passed this guard (#3480).
+ *
+ * That was not hypothetical cover for a harmless alias. `resilientFetch` is
+ * `createResilientFetch()`, whose inner is `boundedFetch` — which bounds size
+ * and time and redacts query strings for logging, and does NO address
+ * filtering: no private, loopback, link-local or metadata checks anywhere in
+ * `bounded-fetch.ts`. Reaching the network through it is reaching it without
+ * SSRF protection, on an operator-supplied hostname.
+ *
+ * The rule was also already WRITTEN DOWN in two places that this guard did not
+ * enforce — Phase 1's hardening criterion says the rule must fail on `fetch`
+ * **or `resilientFetch`**, and the client's own docblock says the same. Two
+ * statements of a rule and one half-implementation of it.
+ *
+ * So the pattern is name-agnostic now. `boundedFetch`, `resilientFetch`, a
+ * future `retryingFetch` and a bare `fetch` all match, because what makes any
+ * of them unsafe here is reaching the network at all from a file whose only
+ * sanctioned path is the shared transport.
+ */
+const ANY_FETCH_CALL = /\w*fetch\s*\(/i;
+
+const clientsWithTheirOwnFetch = () => MCP_CLIENTS.filter((f) => ANY_FETCH_CALL.test(codeOf(f)));
 
 const clientsNotUsingTheTransport = () =>
     MCP_CLIENTS.filter((f) => !/from '@\/lib\/mcp\/wire-transport'/.test(read(f)));
@@ -171,6 +197,30 @@ describe('SSRF — the MCP clients reach the network only through the shared tra
         // The other half: "no fetch" alone is also satisfied by a client that
         // reaches the network some third way, or has stopped working entirely.
         expect(clientsNotUsingTheTransport()).toEqual([]);
+    });
+
+    it('the pattern catches every fetch alias, not the two we thought of', () => {
+        // #3480's finding, pinned. The old pattern was `\bfetch\(` plus a
+        // `safeFetch` literal; `resilientFetch(` matched neither, and
+        // `resilientFetch` does no address filtering. Asserted on synthetic
+        // source so a clean run over the real clients means something.
+        for (const call of [
+            'await fetch(opts.url)',
+            'await safeFetch(opts.url)',
+            'await resilientFetch(opts.url)',
+            'await boundedFetch(opts.url)',
+            'const r = retryingFetch(u)',
+        ]) {
+            expect({ call, caught: ANY_FETCH_CALL.test(call) }).toEqual({ call, caught: true });
+        }
+        // And the negative control: the guard must not fire on source that
+        // merely IMPORTS the transport, which is what the clients do.
+        for (const ok of [
+            "import { mcpRequest } from '@/lib/mcp/wire-transport';",
+            'const res = await mcpRequest(opts);',
+        ]) {
+            expect({ ok, caught: ANY_FETCH_CALL.test(ok) }).toEqual({ ok, caught: false });
+        }
     });
 
     it('the list covers both dialects, so neither is silently unlisted', () => {

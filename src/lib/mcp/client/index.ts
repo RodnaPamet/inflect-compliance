@@ -19,12 +19,21 @@
  * The URL is operator-supplied: somebody types a hostname for a server we do not
  * run. That is textbook SSRF input, so the DNS-pinned, redirect-refusing,
  * private-address-refusing `safeFetch` is the only egress path, and
- * `tests/guards/ssrf-egress-coverage.test.ts` lists this module as a sink.
+ * `tests/guards/ssrf-egress-coverage.test.ts` covers this module — though NOT
+ * as a `SINKS` entry, which is what this line used to claim (#3480). The sink
+ * is `src/lib/mcp/wire-transport.ts`, the one place either dialect reaches the
+ * network; this file is in `MCP_CLIENTS`, which asserts something stronger —
+ * that it contains NO fetch call of any kind and imports the transport. A
+ * `SINKS` entry only asks whether a file mentions `safeFetch` somewhere, which
+ * a file can satisfy while fetching directly elsewhere.
  *
  * `fetchImpl` is a TEST SEAM and nothing else. Production callers pass no options
  * object at all, or one without it; a structural rule in the client's own test
- * fails if any file under `src/` supplies one, and fails if this directory calls
- * `fetch` or `resilientFetch` directly. The seam exists because the thirteen
+ * fails if any file under `src/` supplies one (`legacy-mcp-client.test.ts`), and
+ * fails if this directory calls `fetch`, `resilientFetch` or any other
+ * `*fetch(` — the guard's pattern is name-agnostic since #3480, when it turned
+ * out `\bfetch\(` matched neither `resilientFetch(` nor `boundedFetch(` and
+ * this very sentence had been stating a rule only half of which was enforced. The seam exists because the thirteen
  * faults are easier to express as a function than as a server, and it is the kind
  * of convenience that quietly becomes a bypass if nothing watches it.
  *
