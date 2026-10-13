@@ -336,6 +336,18 @@ jobs:
               - 'package-lock.json'
               - 'next.config.*'
               - 'deploy/**'
+              # EXCLUDED, and this is the #3418 fix. `deploy/**` above belongs
+              # here for the compose files and deploy scripts, which are part of
+              # the application image's story. `deploy/laya/**` is not: it is a
+              # DIFFERENT image with its own `laya-image` job. When a laya-only
+              # change tripped `deploy/**`, the `Docker Build` check ran for
+              # 19m51s, went GREEN, and had opened the ROOT Dockerfile rather
+              # than the one the pull request changed. A reviewer seeing a green
+              # check named `Docker Build` on a Dockerfile fix has every reason
+              # to read it as "the Dockerfile builds". An absent check is at
+              # least visibly absent; that one was reached, green, and aimed one
+              # level off.
+              - '!deploy/laya/**'
               - 'prisma/**'
               # Root file — `prisma/**` does NOT match it, and the CLI reads it
               # at container start to find the datasource URL.
@@ -2528,6 +2540,12 @@ jobs:
         continue-on-error: true
         with:
           context: .
+          # NAMED EXPLICITLY (#3418). `build-push-action` defaults to
+          # `./Dockerfile`, and that implicit default is how this job came to
+          # build a different file from the one a pull request had changed while
+          # reporting a green check called `Docker Build`. The subject of a
+          # check should be readable from the check.
+          file: Dockerfile
           push: false
           tags: inflect-compliance:ci-${{ github.sha }}
           cache-from: type=gha
@@ -2555,6 +2573,11 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          # NAMED EXPLICITLY (#3418). `build-push-action` defaults to
+          # `./Dockerfile`; an implicit default is how a sibling job came to
+          # build a different file from the one a pull request had changed while
+          # reporting a green check. The subject of a build belongs in the build.
+          file: Dockerfile
           push: false
           tags: inflect-compliance:ci-${{ github.sha }}
           cache-to: type=gha,mode=max,ignore-error=true
