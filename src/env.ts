@@ -339,9 +339,21 @@ export const env = createEnv({
         // legacy identity adjudication. The HOST is a code constant in
         // src/app-layer/ai/identity-match/jev-provider.ts; only the key is
         // configuration, so no env var can redirect where this provider posts.
-        // TypeSafe is a PROPOSED, INACTIVE sub-processor (docs/sub-processors.md)
-        // and TYPESAFE_SUBPROCESSOR_ACTIVE is false, so setting this key does NOT
-        // make the provider reachable for tenant work.
+        // TYPESAFE IS AN ACTIVE SUB-PROCESSOR since 2026-10-11
+        // (docs/sub-processors.md), and TYPESAFE_SUBPROCESSOR_ACTIVE is `true`.
+        // SETTING THIS KEY THEREFORE HAS EFFECT: a tenant whose
+        // `legacyMatchAiMode` is `EXTERNAL`, and whose `aiResidency` does not
+        // narrow it to `LOCAL_ONLY`, reaches Jev and personal data leaves this
+        // deployment for the US. The mode defaults to `OFF`, so no tenant does
+        // so by accident — but the key is no longer inert.
+        //
+        // This comment said the opposite until 2026-10-13, for two days after
+        // activation: "TypeSafe is a PROPOSED, INACTIVE sub-processor ... so
+        // setting this key does NOT make the provider reachable for tenant
+        // work". Every clause of that was true when written and false when
+        // read, which is the failure mode a safety argument has — it does not
+        // break, it expires. Guarded now by
+        // `tests/guards/subprocessor-prose-agrees-with-constant.test.ts`.
         TYPESAFE_API_KEY: z.string().optional(),
         // Laya — Convai Innovations' open-weights System One model, running on
         // infrastructure WE operate. Deployment configuration only: no tenant
