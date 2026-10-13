@@ -49,6 +49,7 @@ import { BambooHrProvider, type NormalizedEmployee } from '@/app-layer/integrati
 import { readWorkdayRoster, type WorkdayRosterConfig } from '@/app-layer/integrations/providers/workday/roster';
 import { REPO_ROOT } from '../helpers/repo-files';
 import { functionBodyOf } from '../helpers/source-blocks';
+import { normaliseHrisText } from '@/app-layer/usecases/hris-sync';
 
 /** The exact projection the provider must ask BambooHR for. */
 const EXPECTED_REPORT_FIELDS = [
@@ -203,10 +204,42 @@ describe('the handle is persisted on the Employee row by the existing seam', () 
     const runHrisSync = functionBodyOf(usecase, 'runHrisSync');
 
     it('writes hrisRecordId in both arms of the upsert', () => {
-        const occurrences = runHrisSync.split('hrisRecordId: e.hrisRecordId ?? null').length - 1;
+        // THE LITERAL MOVED ONCE (#3480) and this is what that costs. It was
+        // `hrisRecordId: e.hrisRecordId ?? null` until Step 0c's "capped and
+        // control-stripped" criterion was actually implemented, at which point
+        // this count went to 0 while the column was still written in both arms
+        // — a needle losing its thread, not a regression. The exact-literal
+        // discipline above is deliberate and worth keeping, so the literal is
+        // re-pointed rather than loosened into a pattern; it is now STRONGER,
+        // because matching it proves the value goes through the normaliser as
+        // well as that both arms name the column.
+        const occurrences = runHrisSync.split('hrisRecordId: normaliseHrisText(e.hrisRecordId)').length - 1;
         // Two: `create` and `update`. One arm only would leave the handle
         // permanently null for every employee that already existed.
         expect(occurrences).toBe(2);
+    });
+
+    it('every Step 0c column goes through the normaliser, in both arms', () => {
+        // Pins the #3480 fix. The seven columns Step 0c added were written
+        // verbatim, against that step's own hardening criterion; without this
+        // assertion a revert would be invisible.
+        for (const col of [
+            'hrisRecordId', 'givenName', 'familyName', 'middleName',
+            'preferredName', 'legalName', 'employeeNumber',
+        ]) {
+            const n = runHrisSync.split(`${col}: normaliseHrisText(e.${col})`).length - 1;
+            expect({ col, arms: n }).toEqual({ col, arms: 2 });
+        }
+    });
+
+    it('fullName and externalId are NOT normalised, and that is load-bearing', () => {
+        // The joiner pass builds mailbox addresses from `fullName` byte for
+        // byte, and Step 0c's hardening requires it unchanged — pinned by the
+        // `REGRESSION - fullName is still ...` tests in structured-hr-names.
+        // Capping it would be a silent change to a join key.
+        expect(runHrisSync.includes('fullName: normaliseHrisText')).toBe(false);
+        expect(runHrisSync.includes('externalId: normaliseHrisText')).toBe(false);
+        expect(runHrisSync.includes('fullName: e.fullName')).toBe(true);
     });
 
     it('never substitutes another column for a missing handle', () => {
@@ -322,5 +355,40 @@ describe('EMPTY-SELECTION CONTROL', () => {
         // row, and why this control is part of the suite rather than a note.
         expect(employees.every((e) => e.hrisRecordId !== null && e.hrisRecordId !== e.workEmail)).toBe(true);
         expect(employees.every((e) => e.externalId === 'anything at all')).toBe(true);
+    });
+});
+
+describe('Step 0c hardening — untrusted HRIS text is capped and control-stripped (#3480)', () => {
+    // The hardening criterion asked for this and nothing did it: the seven
+    // columns Step 0c added were written to the row verbatim.
+    it('strips C0/C1 control characters', () => {
+        expect(normaliseHrisText('EMP\u0007-7\u001b')).toBe('EMP-7');
+    });
+
+    it('strips the invisible set the shared util owns', () => {
+        // Zero-width space and a bidi override: two employee numbers differing
+        // only by one of these would present identically to a reviewer.
+        expect(normaliseHrisText('EMP\u200b-7\u202e')).toBe('EMP-7');
+    });
+
+    it('caps at 256 characters', () => {
+        expect(normaliseHrisText('x'.repeat(300))).toHaveLength(256);
+    });
+
+    it('returns null for empty-after-stripping, never an empty string', () => {
+        // `''` would read downstream as "the HRIS asserts a blank value" where
+        // null reads as "it asserts none", and last-write-wins depends on the
+        // difference.
+        expect(normaliseHrisText('\u0000\u200b   ')).toBeNull();
+        expect(normaliseHrisText(null)).toBeNull();
+        expect(normaliseHrisText(undefined)).toBeNull();
+    });
+
+    it('passes an ordinary value through byte-identically', () => {
+        // The negative control: a normaliser that mangled real values would
+        // pass every assertion above.
+        for (const v of ['EMP-7', 'Ада', "O'Brien", 'Kovacheva-Petrova', '4021']) {
+            expect(normaliseHrisText(v)).toBe(v);
+        }
     });
 });
