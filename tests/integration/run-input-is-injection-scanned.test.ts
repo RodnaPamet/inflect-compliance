@@ -70,9 +70,12 @@ describeFn('a run started with a prompt-injection payload in its input', () => {
         });
         registerWorkflow({
             key: WF,
-            title: 'injection scan fixture',
-            steps: [{ kind: 'SYNTHESIS', label: 'noop' }],
-        } as Parameters<typeof registerWorkflow>[0]);
+            name: 'injection scan fixture',
+            description: 'one synthesis step; the run never needs to do anything',
+            steps: [
+                { kind: 'SYNTHESIS', label: 'noop', synthesize: () => ({ text: 'ok' }) },
+            ],
+        });
     }, 60_000);
 
     afterAll(async () => {
