@@ -314,15 +314,23 @@ What specifically did not happen, so nobody has to reconstruct it later:
 notice either way, because no notice was issued. That is an absence, not a denial, and it
 is recorded here rather than inferred from a silent register.
 
-**A notice is now DRAFTED and awaiting issue** —
+**A notice was ISSUED on 2026-10-13** —
 [`docs/notices/2026-10-13-typesafe-ai-sub-processor.md`](./notices/2026-10-13-typesafe-ai-sub-processor.md).
-It is not sent, so nothing above changes yet and no objection window is running.
-Two things are settled in that file rather than here: the retention sentence
-must not claim more than the next paragraph supports, and the apparent ordering
-problem (flag flipped 2026-10-11, notice drafted later) is answered by the fact
-that **no customer personal data has reached TypeSafe** — adjudication refuses
-with `NO_EVALUATION` before any provider call and `evaluations/` is empty, so
-processing has not begun.
+Posted to this public list; the objection window closes **2026-11-12**.
+
+**The email leg was not performed, because there were no customers to email.**
+The policy's email requirement protects the objection right of an EXISTING
+customer whose data is about to reach a new processor, and on 2026-10-13 the
+deployment had no live customer tenants — the eleven rows in production are the
+owner's own and test fixtures. So the window runs against this public list
+alone. That is recorded rather than smoothed over: "emailed every customer" and
+"there were no customers" are different postures and only one is true. A
+customer onboarded after that date receives this list as it then stands, which
+is the ordinary path and not a notice event.
+
+So the answer above changes on 2026-11-12, not before: step 3 is **performed in
+part** from 2026-10-13, and complete once the window closes with no sustained
+objection. Step 2 remains **not performed**.
 
 **Zero retention** remains stated as "required in the signed DPA" above. That requirement
 has **not** been confirmed against an executed DPA in this repository — no signed DPA is

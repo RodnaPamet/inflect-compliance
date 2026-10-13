@@ -1,13 +1,7 @@
 # Sub-processor notice — TypeSafe AI (Jev)
 
-<!-- docs-accuracy-allow: the doc's whole subject is a notice awaiting issue; removing "not yet" would make it claim it was sent -->
-> **STATUS: DRAFTED, NOT YET ISSUED.** Replace `<ISSUE DATE>` below with the date
-> this is posted and emailed, and the objection window closes 30 days after it.
-> Until then no clock is running. See the end of this file for the two things to
-> settle before sending.
-
-**Issued:** `<ISSUE DATE>`
-**Objection window closes:** `<ISSUE DATE + 30 days>`
+**Issued:** 2026-10-13
+**Objection window closes:** 2026-11-12
 
 ## What is changing
 
@@ -70,9 +64,9 @@ until you decide otherwise — see *Is it on for you?* above.
 
 ## Your right to object
 
-You may object on reasonable data-protection grounds within **30 days** of the
-issue date above. Write to the contact on your contract or reply to the email
-carrying this notice.
+You may object on reasonable data-protection grounds by
+**2026-11-12**. Write to **ivo@inflect.bg**, or to the contact on your
+contract.
 
 If you object, the feature stays `OFF` for your tenant. Objecting costs you
 nothing: the default is already off, and the rest of legacy access
@@ -86,32 +80,34 @@ recertification works without any model.
 
 ---
 
-## Before sending — two things, for the issuer only
+## How this notice was issued
 
-This section is not part of the customer-facing notice. Delete it before posting.
+Recorded here rather than inferred, because the sub-processor register points at
+this file as the evidence that step 3 of
+`docs/sub-processor-change-policy.md` completed.
 
-1. **The DPA — SETTLED 2026-10-13: the sentence was softened rather than the
-   agreement executed first.** The Retention section now says the requirement is
-   contractual and the agreement is being executed, and states plainly that it
-   has not been confirmed against a countersigned copy. That matches the
-   register, whose note says the row is "the commitment sought, not a commitment
-   verified".
+- **Posted** to the public sub-processor list on **2026-10-13** — this file,
+  on `main`, in a public repository, linked from `docs/sub-processors.md`.
+- **Emailed to customers: NOT DONE, because there were none.** The policy's email
+  leg protects the objection right of an EXISTING customer whose data is about to
+  reach a new processor. On 2026-10-13 the deployment had no live customer
+  tenants — the eleven rows in production are the owner's own and test fixtures.
+  So no primary contact existed to write to, and the objection window below runs
+  against the public list alone. A customer onboarded after this date receives the
+  sub-processor list as it then stands, which is the ordinary path and not a
+  notice event.
 
-   **What this costs, so nobody is surprised later:** a customer reading this
-   knows the retention term is unverified, which is a weaker thing to say than
-   the register's row implies on its own. When the DPA is executed, update
-   `docs/sub-processors.md` so the row reads *confirmed* rather than *required*,
-   and post the follow-up the Retention section promises. Until then the promise
-   in this notice is the honest ceiling.
-
-2. **The ordering, and why this is still in time.** The policy requires notice
-   at least 30 days before the sub-processor begins processing customer personal
-   data. `TYPESAFE_SUBPROCESSOR_ACTIVE` was flipped on 2026-10-11 and an API key
-   was installed on the host on 2026-10-13, which looks like activation preceded
-   notice. **No customer personal data has reached TypeSafe AI.** Adjudication
-   refuses with `NO_EVALUATION` before any provider call unless a committed
-   evaluation record exists for the model revision, and
-   `src/app-layer/ai/identity-match/evaluations/` is empty — TypeSafe has no
-   record, because its thresholds failed the held-out gate (#3462, #3464). So
-   processing has not begun and this notice still precedes it. That is worth
-   stating if a customer asks why the flag flipped first.
+  Stated plainly because "emailed every customer" and "there were no customers"
+  are different compliance postures, and only one of them is true.
+- **Retention is the one term this notice does not verify.** It says the
+  requirement is contractual and the agreement is being executed. When the DPA is
+  countersigned, update `docs/sub-processors.md` so the row reads *confirmed*
+  rather than *required*, and post the follow-up the Retention section promises.
+- **The flag preceded the notice, and no data moved.**
+  `TYPESAFE_SUBPROCESSOR_ACTIVE` flipped on 2026-10-11 and an API key was
+  installed on 2026-10-13. No customer personal data has reached TypeSafe:
+  adjudication refuses with `NO_EVALUATION` before any provider call unless a
+  committed evaluation record exists for the model revision, and
+  `src/app-layer/ai/identity-match/evaluations/` is empty — TypeSafe has no record
+  because its thresholds failed the held-out gate (#3462, #3464). Processing has
+  not begun, so this notice precedes it.
