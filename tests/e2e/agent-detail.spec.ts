@@ -14,9 +14,9 @@
  *   1. the register renders, and an agent nobody has assessed appears there as
  *      "Unscored" — never as a tier, never as a dash. NULL means deny;
  *   2. the detail page opens for that agent and names it;
- *   3. all SIX governing tabs are present, in order, and selecting one swaps
- *      the panel beneath. A tab bar whose panel does not move is six labels
- *      over one screen, and five of the six surfaces would still be curl-only;
+ *   3. all SEVEN tabs are present, in order, and selecting one swaps the
+ *      panel beneath. A tab bar whose panel does not move is seven labels
+ *      over one screen, and six of the seven surfaces would still be curl-only;
  *   4. the kill switch sits in the page HEADER for an operator holding
  *      `admin.agent_kill_switch`, and pressing it opens the dialog that
  *      commits it. This is the assertion the page exists for — the control
@@ -50,7 +50,7 @@ import { test, expect } from './fixtures';
 import { safeGoto, waitForHydration } from './e2e-utils';
 
 /**
- * The six tabs, exactly as `AgentDetailClient` declares them and `en.json`
+ * The seven tabs, exactly as `AgentDetailClient` declares them and `en.json`
  * words them. Asserted as an ordered list rather than one-by-one so a tab that
  * silently disappears — the policy card is `disabled`, not hidden, precisely
  * because "a missing tab says the product does not have it" — fails here.
@@ -60,6 +60,11 @@ const TAB_LABELS = [
     'Risk assessment',
     'Policy card',
     'Tools',
+    // #3482 added this tab. Its label was filed under `agents.agentDetail`
+    // while the page reads `admin.agentDetail`, so the tab showed its raw key,
+    // `admin.agentDetail.tabSkills`, and this list, still six long, failed on
+    // every pull request.
+    'Skills',
     'ASI coverage',
     'Circuit breaker',
 ];
@@ -118,7 +123,7 @@ async function registerAgent(
 }
 
 test.describe('Agent detail page', () => {
-    test('register → agent detail: six tabs, the kill switch, and back', async ({
+    test('register → agent detail: seven tabs, the kill switch, and back', async ({
         authedPage: page,
         isolatedTenant,
     }) => {
@@ -251,7 +256,7 @@ test.describe('Agent detail page', () => {
             await expect(dialog).toHaveCount(0, { timeout: 10_000 });
         });
 
-        await test.step('six tabs, and selecting one swaps the panel', async () => {
+        await test.step('seven tabs, and selecting one swaps the panel', async () => {
             const tabs = main.getByRole('tablist').getByRole('tab');
             await expect(tabs).toHaveText(TAB_LABELS, { timeout: 20_000 });
 
