@@ -98,7 +98,14 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         indent: 4,
         escapeNonAscii: false,
         trailingNewline: true,
-        keyOrderSha: '31b3ab9eed4b779dd8b5e968f2146eb9e40d69f2c979e43195c9506d51b4e2c4',
+        // Moved 2026-10-13 by ADDING one entry (the TypeSafe customer notice),
+        // not by reordering: the file is sorted and the new key landed in its
+        // sorted position, so the diff is three lines. Recorded here because
+        // this pin cannot tell an addition from a `sort_keys` rewrite — and the
+        // first attempt at that edit WAS the rewrite this pin exists for, a
+        // `json.dumps(indent=2, sort_keys-style)` that changed 831 lines while
+        // the file still parsed.
+        keyOrderSha: '9804f3beb07a4a43daa2ac581d94fc166cfb881ed89acbecf15c4e1ed068c00b',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
