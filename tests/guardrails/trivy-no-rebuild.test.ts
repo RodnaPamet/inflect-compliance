@@ -14,6 +14,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import * as yaml from 'js-yaml';
+
 const CI_YML = path.resolve(__dirname, '../../.github/workflows/ci.yml');
 
 /**
@@ -266,5 +268,163 @@ describe('every trivy-action invocation sets its own scan timeout', () => {
             '          exit-code: "1"',
         ].join('\n');
         expect(/^\s*timeout:\s*["']?\d+m/m.test(planted)).toBe(false);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Every image build names the Dockerfile it builds (#3418)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `docker/build-push-action` defaults `file:` to `./Dockerfile`. `ci.yml`'s
+// `Docker Build` job relied on that default, and `deploy/**` was in the path
+// filter gating it — so a pull request changing ONLY `deploy/laya/Dockerfile`
+// ran that job for 19m51s, went GREEN, and had opened the ROOT Dockerfile. The
+// pull request's whole purpose was fixing a Dockerfile that had no successful
+// build path at all.
+//
+// A reviewer seeing a green check named `Docker Build` on a Dockerfile fix has
+// every reason to read it as "the Dockerfile builds". An absent check is at
+// least visibly ABSENT; that one was reached, green, and aimed one level off,
+// which is worse because it reads as evidence.
+//
+// WHY THE KEY AND NOT JUST THE FILTER. The filter was narrowed too
+// (`!deploy/laya/**`), asserted below. But a filter says WHEN a job runs and
+// this defect was about WHAT it built. The second Dockerfile in this repository
+// is what exposed it; the third will not announce itself.
+//
+// WHY THIS LIVES HERE rather than in its own file: `no-epic-named-ratchets`
+// holds a DOWNWARD ratchet on the guard-file count, and its comment says that
+// renaming a guard to dodge the denominator would be gaming the measure. Adding
+// a file to assert a property of the workflows this file already parses would
+// push that count the wrong way for no gain.
+
+interface BuildStep {
+    readonly file: string;
+    readonly job: string;
+    readonly step: string;
+    readonly fileKey: string | null;
+}
+
+/**
+ * Every `docker/build-push-action` step, from the PARSED document.
+ *
+ * Parsed rather than scanned, and the first draft is why: it matched `uses:` at
+ * line start, missed `- uses:` written inline, and so its own synthetic
+ * fixtures matched nothing while three assertions "passed" over an empty set.
+ * A structural question wants a parser.
+ */
+export function dockerBuildSteps(text: string, file: string): readonly BuildStep[] {
+    const doc = yaml.load(text) as {
+        jobs?: Record<string, { steps?: Array<Record<string, unknown>> }>;
+    } | null;
+    const out: BuildStep[] = [];
+    for (const [job, body] of Object.entries(doc?.jobs ?? {})) {
+        for (const step of body?.steps ?? []) {
+            const uses = typeof step.uses === 'string' ? step.uses : '';
+            if (!uses.startsWith('docker/build-push-action@')) continue;
+            const withBlock = (step.with ?? {}) as Record<string, unknown>;
+            out.push({
+                file,
+                job,
+                step: typeof step.name === 'string' ? step.name : uses,
+                fileKey: typeof withBlock.file === 'string' ? withBlock.file : null,
+            });
+        }
+    }
+    return out;
+}
+
+describe('every image build names the Dockerfile it builds (#3418)', () => {
+    const WF = path.resolve(__dirname, '../../.github/workflows');
+    const files = fs.readdirSync(WF).filter((f) => /\.ya?ml$/.test(f));
+
+    it('finds the workflow population at all', () => {
+        // The denominator beside the result: an empty scan passes everything
+        // below over nothing.
+        expect(files.length).toBeGreaterThanOrEqual(3);
+        expect(files).toContain('ci.yml');
+    });
+
+    it('every build-push-action step sets `file:` explicitly', () => {
+        const steps = files.flatMap((f) =>
+            dockerBuildSteps(fs.readFileSync(path.join(WF, f), 'utf-8'), f),
+        );
+        // There must BE builds to check.
+        expect(steps.length).toBeGreaterThanOrEqual(4);
+        expect(
+            steps
+                .filter((s) => s.fileKey === null)
+                .map((s) => `${s.file} job \`${s.job}\` step \`${s.step}\` has no \`file:\``),
+        ).toEqual([]);
+    });
+
+    it("ci.yml's container filter excludes deploy/laya, which has its own job", () => {
+        const ci = fs.readFileSync(path.join(WF, 'ci.yml'), 'utf-8');
+        const block = ci.slice(ci.indexOf('container:'), ci.indexOf("'prisma/**'"));
+        expect(block).toContain("'deploy/**'");
+        expect(block).toContain("'!deploy/laya/**'");
+        // ORDER matters to paths-filter: a negation must follow the pattern it
+        // narrows, or it excludes nothing.
+        expect(block.indexOf("'!deploy/laya/**'")).toBeGreaterThan(block.indexOf("'deploy/**'"));
+    });
+
+    describe('detector proof — synthetic documents, so a clean run means something', () => {
+        const wrap = (steps: string): string => `jobs:\n  build:\n    steps:\n${steps}`;
+
+        it('flags a step relying on the default', () => {
+            const found = dockerBuildSteps(
+                wrap(
+                    '      - name: Build\n'
+                        + '        uses: docker/build-push-action@v7\n'
+                        + '        with:\n'
+                        + '          context: .\n',
+                ),
+                'synthetic',
+            );
+            expect(found).toHaveLength(1);
+            expect(found[0].fileKey).toBeNull();
+        });
+
+        it('accepts a step that names its file', () => {
+            const found = dockerBuildSteps(
+                wrap(
+                    '      - uses: docker/build-push-action@v7\n'
+                        + '        with:\n'
+                        + '          file: deploy/laya/Dockerfile\n',
+                ),
+                'synthetic',
+            );
+            expect(found[0].fileKey).toBe('deploy/laya/Dockerfile');
+        });
+
+        it('a commented-out file: key does NOT satisfy it', () => {
+            const found = dockerBuildSteps(
+                wrap(
+                    '      - uses: docker/build-push-action@v7\n'
+                        + '        with:\n'
+                        + '          # file: Dockerfile  <- we should add this\n'
+                        + '          context: .\n',
+                ),
+                'synthetic',
+            );
+            expect(found[0].fileKey).toBeNull();
+        });
+
+        it('does not let one step satisfy the next', () => {
+            const found = dockerBuildSteps(
+                wrap(
+                    '      - uses: docker/build-push-action@v7\n'
+                        + '        with:\n'
+                        + '          file: Dockerfile\n'
+                        + '      - uses: docker/build-push-action@v7\n'
+                        + '        with:\n'
+                        + '          context: .\n',
+                ),
+                'synthetic',
+            );
+            expect(found).toHaveLength(2);
+            expect(found[0].fileKey).toBe('Dockerfile');
+            expect(found[1].fileKey).toBeNull();
+        });
     });
 });
