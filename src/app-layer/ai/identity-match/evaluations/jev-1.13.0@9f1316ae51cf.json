@@ -1,0 +1,163 @@
+{
+  "model": "jev-1.13.0",
+  "revision": "9f1316ae51cf",
+  "reportedModel": "jev-1.13.0",
+  "corpusDigest": "e04a9818cecca801a4b3617df0a99c6d8efd5940ee699dc3000d7ccac09a8e99",
+  "producedAt": "2026-10-13T11:54:33.792Z",
+  "answers": [
+    {
+      "caseId": "no-01",
+      "option": "A",
+      "optionProbability": 1,
+      "personProbability": 0.85
+    },
+    {
+      "caseId": "no-02",
+      "option": "A",
+      "optionProbability": 0.98,
+      "personProbability": 0.85
+    },
+    {
+      "caseId": "no-03",
+      "option": "A",
+      "optionProbability": 1,
+      "personProbability": 0.68
+    },
+    {
+      "caseId": "no-04",
+      "option": "NONE",
+      "optionProbability": 1,
+      "personProbability": 0.68
+    },
+    {
+      "caseId": "tr-01",
+      "option": "A",
+      "optionProbability": 1,
+      "personProbability": 0.77
+    },
+    {
+      "caseId": "tr-02",
+      "option": "A",
+      "optionProbability": 0.97,
+      "personProbability": 0.54
+    },
+    {
+      "caseId": "tr-03",
+      "option": "A",
+      "optionProbability": 0.99,
+      "personProbability": 0.85
+    },
+    {
+      "caseId": "tr-04",
+      "option": "A",
+      "optionProbability": 1,
+      "personProbability": 0.76
+    },
+    {
+      "caseId": "sd-01",
+      "option": "B",
+      "optionProbability": 1,
+      "personProbability": 0.72
+    },
+    {
+      "caseId": "sd-02",
+      "option": "NONE",
+      "optionProbability": 0.57,
+      "personProbability": 0.54
+    },
+    {
+      "caseId": "sd-03",
+      "option": "C",
+      "optionProbability": 1,
+      "personProbability": 0.65
+    },
+    {
+      "caseId": "sa-01",
+      "option": "A",
+      "optionProbability": 0.93,
+      "personProbability": 0.58
+    },
+    {
+      "caseId": "sa-02",
+      "option": "A",
+      "optionProbability": 0.83,
+      "personProbability": 0.42
+    },
+    {
+      "caseId": "sa-03",
+      "option": "A",
+      "optionProbability": 1,
+      "personProbability": 0.89
+    },
+    {
+      "caseId": "sa-04",
+      "option": "A",
+      "optionProbability": 0.97,
+      "personProbability": 0.75
+    },
+    {
+      "caseId": "pi-01",
+      "option": "A",
+      "optionProbability": 0.5,
+      "personProbability": 0.52
+    },
+    {
+      "caseId": "pi-02",
+      "option": "B",
+      "optionProbability": 0.92,
+      "personProbability": 0.6
+    },
+    {
+      "caseId": "pi-03",
+      "option": "A",
+      "optionProbability": 0.8,
+      "personProbability": 0.76
+    },
+    {
+      "caseId": "pi-04",
+      "option": "A",
+      "optionProbability": 0.53,
+      "personProbability": 0.34
+    }
+  ],
+  "thresholds": {
+    "agreeAt": 0.975,
+    "personAt": 0.8
+  },
+  "classSupport": {
+    "name-only": 4,
+    "transliteration": 4,
+    "same-name-different-department": 3,
+    "service-account-looking-human": 4,
+    "prompt-injection": 4
+  },
+  "precision": {
+    "agrees": 1
+  },
+  "canaries": [
+    {
+      "caseId": "no-01",
+      "option": "A",
+      "optionProbability": 1,
+      "personProbability": 0.85
+    },
+    {
+      "caseId": "tr-01",
+      "option": "A",
+      "optionProbability": 1,
+      "personProbability": 0.77
+    },
+    {
+      "caseId": "sd-01",
+      "option": "B",
+      "optionProbability": 1,
+      "personProbability": 0.72
+    },
+    {
+      "caseId": "sa-01",
+      "option": "A",
+      "optionProbability": 0.93,
+      "personProbability": 0.58
+    }
+  ]
+}
