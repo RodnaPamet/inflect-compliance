@@ -314,13 +314,13 @@ What specifically did not happen, so nobody has to reconstruct it later:
 notice either way, because no notice was issued. That is an absence, not a denial, and it
 is recorded here rather than inferred from a silent register.
 
-**A notice was ISSUED on 2026-10-13** —
+**A notice was ISSUED on 2026-10-14** —
 [`docs/notices/2026-10-13-typesafe-ai-sub-processor.md`](./notices/2026-10-13-typesafe-ai-sub-processor.md).
-Posted to this public list; the objection window closes **2026-11-12**.
+Posted to this public list; the objection window closes **2026-11-13**.
 
 **The email leg was not performed, because there were no customers to email.**
 The policy's email requirement protects the objection right of an EXISTING
-customer whose data is about to reach a new processor, and on 2026-10-13 the
+customer whose data is about to reach a new processor, and on 2026-10-14 the
 deployment had no live customer tenants — the eleven rows in production are the
 owner's own and test fixtures. So the window runs against this public list
 alone. That is recorded rather than smoothed over: "emailed every customer" and
@@ -328,8 +328,8 @@ alone. That is recorded rather than smoothed over: "emailed every customer" and
 customer onboarded after that date receives this list as it then stands, which
 is the ordinary path and not a notice event.
 
-So the answer above changes on 2026-11-12, not before: step 3 is **performed in
-part** from 2026-10-13, and complete once the window closes with no sustained
+So the answer above changes on 2026-11-13, not before: step 3 is **performed in
+part** from 2026-10-14, and complete once the window closes with no sustained
 objection. Step 2 remains **not performed**.
 
 **Zero retention** remains stated as "required in the signed DPA" above. That requirement

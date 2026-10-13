@@ -1,7 +1,13 @@
 # Sub-processor notice — TypeSafe AI (Jev)
 
-**Issued:** 2026-10-13
-**Objection window closes:** 2026-11-12
+<!-- The filename carries 2026-10-13, the date this was drafted. The
+     ISSUE date below is authoritative and is 2026-10-14: the draft was
+     finished late on the 13th and an unrelated flaky E2E spec held the
+     merge past midnight. Renaming the file would break the register
+     link for no gain; a date in a filename is not a claim. -->
+
+**Issued:** 2026-10-14
+**Objection window closes:** 2026-11-13
 
 ## What is changing
 
@@ -65,7 +71,7 @@ until you decide otherwise — see *Is it on for you?* above.
 ## Your right to object
 
 You may object on reasonable data-protection grounds by
-**2026-11-12**. Write to **ivo@inflect.bg**, or to the contact on your
+**2026-11-13**. Write to **ivo@inflect.bg**, or to the contact on your
 contract.
 
 If you object, the feature stays `OFF` for your tenant. Objecting costs you
@@ -86,11 +92,11 @@ Recorded here rather than inferred, because the sub-processor register points at
 this file as the evidence that step 3 of
 `docs/sub-processor-change-policy.md` completed.
 
-- **Posted** to the public sub-processor list on **2026-10-13** — this file,
+- **Posted** to the public sub-processor list on **2026-10-14** — this file,
   on `main`, in a public repository, linked from `docs/sub-processors.md`.
 - **Emailed to customers: NOT DONE, because there were none.** The policy's email
   leg protects the objection right of an EXISTING customer whose data is about to
-  reach a new processor. On 2026-10-13 the deployment had no live customer
+  reach a new processor. On 2026-10-14 the deployment had no live customer
   tenants — the eleven rows in production are the owner's own and test fixtures.
   So no primary contact existed to write to, and the objection window below runs
   against the public list alone. A customer onboarded after this date receives the
