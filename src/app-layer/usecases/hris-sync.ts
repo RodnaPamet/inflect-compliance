@@ -46,6 +46,7 @@ import {
 import '../integrations/bootstrap'; // populate the provider registry in THIS module graph (see usecases/integrations)
 import { registry } from '../integrations/registry';
 import { isHrisSyncProvider, isHrisProviderId, type HrisSyncProvider, type NormalizedEmployee } from '../integrations/providers/hris';
+import { stripInvisible } from '@/lib/text/invisible-chars';
 
 function makeSystemCtx(tenantId: string): RequestContext {
     return buildSystemContext({ tenantId, job: 'hris-sync' });
@@ -315,6 +316,42 @@ async function raiseRoleChangeRecertification(
         });
         return denied ? 'OWNER_CANNOT_CREATE_TASKS' : 'FAILED';
     }
+}
+
+/**
+ * Untrusted HRIS text, capped and control-stripped — Step 0c hardening.
+ *
+ * The six name parts, `employeeNumber` and `hrisRecordId` arrive from a
+ * customer's HR system and were written to the row verbatim. Step 0c's
+ * hardening list asks for them to be length-capped with control characters
+ * stripped before storage, and nothing did it (#3480).
+ *
+ * COMPOSED RATHER THAN COPIED. `stripInvisible` already owns the
+ * zero-width / bidi / soft-hyphen / BOM set, and duplicating a
+ * security-relevant character list is how two copies drift. What it does NOT
+ * cover is C0/C1, which is most of what "control characters" means here, so
+ * that half is added rather than the whole list rewritten.
+ *
+ * Empty after stripping becomes `null`, not `''`: an empty string would read
+ * downstream as "the HRIS asserts a blank value" where null reads as "it
+ * asserts none", and the whole point of the last-write-wins rule below is that
+ * a withdrawn value clears rather than lingers.
+ *
+ * WHAT IS DELIBERATELY NOT PASSED THROUGH THIS. `fullName` and `externalId`
+ * must stay BYTE-IDENTICAL — the joiner pass builds mailbox addresses from
+ * `fullName`, and Step 0c's own hardening list requires it unchanged, pinned by
+ * the `REGRESSION - fullName is still ...` tests. Capping it here would be a
+ * silent behaviour change to a join key. `department` and `jobTitle` predate
+ * Step 0c and are left to their own step.
+ */
+const HRIS_TEXT_MAX = 256;
+const HRIS_C0_C1 = /[\x00-\x1F\x7F-\x9F]/g;
+
+export function normaliseHrisText(value: string | null | undefined): string | null {
+    if (value == null) return null;
+    const stripped = stripInvisible(value).replace(HRIS_C0_C1, '').trim();
+    if (stripped === '') return null;
+    return stripped.slice(0, HRIS_TEXT_MAX);
 }
 
 export async function runHrisSync(input: {
@@ -605,8 +642,8 @@ export async function runHrisSync(input: {
                     // mailbox addresses from `fullName`.
                     await db.employee.upsert({
                         where: { tenantId_workEmail: { tenantId: ctx.tenantId, workEmail: e.workEmail } },
-                        create: { tenantId: ctx.tenantId, externalId: e.externalId, hrisRecordId: e.hrisRecordId ?? null, fullName: e.fullName, givenName: e.givenName ?? null, familyName: e.familyName ?? null, middleName: e.middleName ?? null, preferredName: e.preferredName ?? null, legalName: e.legalName ?? null, employeeNumber: e.employeeNumber ?? null, workEmail: e.workEmail, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
-                        update: { externalId: e.externalId, hrisRecordId: e.hrisRecordId ?? null, fullName: e.fullName, givenName: e.givenName ?? null, familyName: e.familyName ?? null, middleName: e.middleName ?? null, preferredName: e.preferredName ?? null, legalName: e.legalName ?? null, employeeNumber: e.employeeNumber ?? null, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
+                        create: { tenantId: ctx.tenantId, externalId: e.externalId, hrisRecordId: normaliseHrisText(e.hrisRecordId), fullName: e.fullName, givenName: normaliseHrisText(e.givenName), familyName: normaliseHrisText(e.familyName), middleName: normaliseHrisText(e.middleName), preferredName: normaliseHrisText(e.preferredName), legalName: normaliseHrisText(e.legalName), employeeNumber: normaliseHrisText(e.employeeNumber), workEmail: e.workEmail, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
+                        update: { externalId: e.externalId, hrisRecordId: normaliseHrisText(e.hrisRecordId), fullName: e.fullName, givenName: normaliseHrisText(e.givenName), familyName: normaliseHrisText(e.familyName), middleName: normaliseHrisText(e.middleName), preferredName: normaliseHrisText(e.preferredName), legalName: normaliseHrisText(e.legalName), employeeNumber: normaliseHrisText(e.employeeNumber), status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
                     });
                     n += 1;
                 }
