@@ -314,6 +314,16 @@ What specifically did not happen, so nobody has to reconstruct it later:
 notice either way, because no notice was issued. That is an absence, not a denial, and it
 is recorded here rather than inferred from a silent register.
 
+**A notice is now DRAFTED and awaiting issue** —
+[`docs/notices/2026-10-13-typesafe-ai-sub-processor.md`](./notices/2026-10-13-typesafe-ai-sub-processor.md).
+It is not sent, so nothing above changes yet and no objection window is running.
+Two things are settled in that file rather than here: the retention sentence
+must not claim more than the next paragraph supports, and the apparent ordering
+problem (flag flipped 2026-10-11, notice drafted later) is answered by the fact
+that **no customer personal data has reached TypeSafe** — adjudication refuses
+with `NO_EVALUATION` before any provider call and `evaluations/` is empty, so
+processing has not begun.
+
 **Zero retention** remains stated as "required in the signed DPA" above. That requirement
 has **not** been confirmed against an executed DPA in this repository — no signed DPA is
 held here, only the template. Treat the retention row as the commitment sought, not as a
