@@ -23,6 +23,7 @@
 import { metrics } from '@opentelemetry/api';
 import { NAV_PUSH_RETRY_METRIC } from './client-telemetry';
 import { log } from './logger';
+import { normalizeVitalRoute } from './vital-route';
 
 const METER_NAME = 'inflect-web-vitals';
 
@@ -87,34 +88,16 @@ export function isKnownVital(name: string): boolean {
 }
 
 /**
- * Collapse a page pathname to a bounded route label:
- *   `/t/acme/controls/ckxyz...`  →  `/t/[tenant]/controls/[id]`
- *   `/t/acme/dashboard`          →  `/t/[tenant]/dashboard`
- * Keeps metric/label cardinality finite regardless of tenant count or row ids.
+ * MOVED to `./vital-route` (#3547) and re-exported here, so every existing
+ * importer and the Edge middleware share ONE normaliser.
+ *
+ * The denominator for these beacons is counted in middleware, which runs on
+ * the Edge runtime and can import neither `@opentelemetry/api` nor the Node
+ * logger this module uses. Two copies of the regex was the alternative: the
+ * entire value of the denominator is that it carries the SAME label as the
+ * numerator, and two copies are two things that drift apart.
  */
-const ID_SEGMENT =
-    /^(c[a-z0-9]{20,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+)$/i;
-
-export function normalizeVitalRoute(pathname: string): string {
-    const path = (pathname || '/').split('?')[0].split('#')[0];
-    const parts = path.split('/');
-    const out: string[] = [];
-    for (const seg of parts) {
-        if (seg === '') {
-            out.push(seg);
-            continue;
-        }
-        // The segment immediately after `/t/` is the tenant slug.
-        if (out[out.length - 1] === 't') {
-            out.push('[tenant]');
-            continue;
-        }
-        out.push(ID_SEGMENT.test(seg) ? '[id]' : seg);
-    }
-    let route = out.join('/') || '/';
-    if (route.length > 1 && route.endsWith('/')) route = route.slice(0, -1);
-    return route;
-}
+export { normalizeVitalRoute } from './vital-route';
 
 // One histogram per metric name, lazily created. CLS is a unitless score;
 // every other vital is milliseconds — so they must NOT share a histogram
