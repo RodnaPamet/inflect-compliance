@@ -367,7 +367,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/ui/TreeView.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/TruncationBanner.tsx': 1, // no-intl, 1 jsx
     'src/components/ui/ai-assist-rail.tsx': 5, // no-intl, 2 jsx + 3 prop
-    'src/components/ui/date-picker/date-picker.tsx': 2, // no-intl, 1 jsx + 1 prop
     'src/components/ui/date-picker/date-range-picker.tsx': 3, // no-intl, 1 jsx + 2 prop
     'src/components/ui/filter/filter-list.tsx': 3, // no-intl, 2 jsx + 1 prop
     'src/components/ui/filter/filter-select.tsx': 2, // no-intl, 1 jsx + 1 prop
