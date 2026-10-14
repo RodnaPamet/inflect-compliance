@@ -82,6 +82,36 @@ jobs:
             });
             const existing = open.find((i) => i.title === TITLE);
 
+            // ── THE STATE THIS NOTICE CARRIES BETWEEN RUNS (#3540) ──
+            //
+            // Before #3540 every red run added a "Still failing" comment, so one
+            // outage put five identical ones on #3534 and the issue's own history
+            // stopped being readable. A comment is worth making when something
+            // CHANGED; a sixth run failing the same way is not news.
+            //
+            // Suppressing those comments would LOSE information on its own — five
+            // comments did at least say five runs had failed — so the marker
+            // carries a consecutive-run count, and the body states it. The store
+            // is the issue body this workflow rewrites every run, so there is no
+            // external state to go stale.
+            //
+            // A missing or unparseable marker returns null, and null is read
+            // everywhere below as "cannot prove it is unchanged", which comments.
+            // Defaulting the other way would swallow the first comment after this
+            // ships, and every comment after a human edits the body.
+            const MARKER = /<!-- ci-notice: (.*?) -->/;
+            const readMarker = (issue) => {
+              const m = MARKER.exec(issue?.body ?? '');
+              if (!m) return null;
+              try {
+                const parsed = JSON.parse(m[1]);
+                return parsed && typeof parsed.jobs === 'string' ? parsed : null;
+              } catch {
+                return null;
+              }
+            };
+            const prev = existing ? readMarker(existing) : null;
+
             // ── main went green: close the notice, if there is one ──
             if (run.conclusion === 'success') {
               if (!existing) return;
@@ -91,7 +121,14 @@ jobs:
                   `Closed automatically: \`main\` is green again.`,
                   '',
                   `Cleared by [run ${run.id}](${run.html_url}) on \`${run.head_sha.slice(0, 8)}\`.`,
-                ].join('\n'),
+                  // Only when the marker survived — the payoff for storing the
+                  // count is being able to say what the outage actually cost.
+                  prev
+                    ? `It had failed ${prev.runs} consecutive run${prev.runs === 1 ? '' : 's'} since \`${prev.since}\`.`
+                    : null,
+                ]
+                  .filter((line) => line !== null)
+                  .join('\n'),
               });
               await github.rest.issues.update({
                 owner, repo, issue_number: existing.number, state: 'closed',
@@ -123,6 +160,26 @@ jobs:
               /^Test \(shard \d+\/\d+\)$/.test(name);
             const blockedPr = bad.some((j) => isRequired(j.name));
 
+            // ── THE FAILING SET, AS ONE COMPARABLE STRING (#3540) ──
+            //
+            // Sorted and de-duplicated, so the order the API happens to return
+            // jobs in cannot fake a change. `>` is stripped because this string
+            // is stored inside an HTML comment: a literal `-->` in a job name
+            // would terminate the marker early and corrupt the body. Two job
+            // names differing ONLY by a `>` then produce the same fingerprint,
+            // which costs one missed comment and cannot corrupt anything.
+            const fingerprint =
+              [...new Set(bad.map((j) => j.name))]
+                .sort()
+                .join(' | ')
+                .replace(/>/g, '') || '(no failing job named)';
+
+            const unchanged = prev !== null && prev.jobs === fingerprint;
+            const runs = unchanged ? (Number(prev.runs) || 1) + 1 : 1;
+            const since = unchanged
+              ? String(prev.since ?? run.head_sha.slice(0, 8))
+              : run.head_sha.slice(0, 8);
+
             const body = [
               `\`main\` failed CI. This issue is opened and updated automatically, and closes`,
               `itself when \`main\` next passes.`,
@@ -149,19 +206,40 @@ jobs:
                     'required check is green" rule was satisfied. That is the gap #3505 records',
                     'and this notice exists to close.',
                   ].join('\n'),
+              '',
+              // What the suppressed comments used to convey. Without this line,
+              // commenting less would mean saying less.
+              runs === 1
+                ? `First run to fail with this job set.`
+                : `**${runs} consecutive runs** have failed with this job set, since \`${since}\`.`,
+              '',
+              // Invisible in rendered Markdown, and the only thing that carries
+              // state from one run to the next.
+              `<!-- ci-notice: ${JSON.stringify({ jobs: fingerprint, runs, since })} -->`,
             ].join('\n');
 
             if (existing) {
               // Updated in place rather than stacking one issue per red run.
               // A notifier that opens duplicates trains people to ignore it —
               // the same reasoning `override-freshness.yml` records.
+              // The body is rewritten EVERY run — it carries the latest run
+              // link, the commit and the count, and it is the marker's store.
+              // Only the comment is conditional.
               await github.rest.issues.update({
                 owner, repo, issue_number: existing.number, body,
               });
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: existing.number,
-                body: `Still failing: [run ${run.id}](${run.html_url}) on \`${run.head_sha.slice(0, 8)}\` — ${bad.map((j) => `\`${j.name}\``).join(', ') || 'no failing job named'}.`,
-              });
+              if (!unchanged) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: existing.number,
+                  body: [
+                    prev === null
+                      ? `Failing jobs: \`${fingerprint}\`.`
+                      : `Failing jobs CHANGED — was \`${prev.jobs}\`, now \`${fingerprint}\`.`,
+                    '',
+                    `[run ${run.id}](${run.html_url}) on \`${run.head_sha.slice(0, 8)}\`.`,
+                  ].join('\n'),
+                });
+              }
             } else {
               await github.rest.issues.create({
                 owner, repo, title: TITLE, body, labels: LABELS,
