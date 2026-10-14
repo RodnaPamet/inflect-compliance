@@ -289,3 +289,118 @@ describe('DataTable whole-row clip — append does not stall the gesture', () =>
         expect(observerConstructions).toBe(constructionsAfterMount);
     });
 });
+
+/**
+ * The clip has to leave room for the sticky header, because the header lives
+ * INSIDE the element the clip sizes (#3524).
+ *
+ * WHY THIS IS A RENDERED TEST AND NOT AN E2E ONE. The defect is arithmetic —
+ * `floor(availH / rowH)` over a container whose first `headerH` pixels belong
+ * to a `sticky top-0` header — and it is reachable here by stubbing the three
+ * numbers the measurement reads. The E2E specs that CAUGHT it (three agent
+ * specs clicking a row) take 3.6 minutes each to fail and name a `<th>`
+ * intercepting pointer events, which says where the click landed and not why
+ * the row was under the header.
+ *
+ * The stubs are per-ELEMENT rather than on the prototype, so the read-counting
+ * tests above keep seeing `thead.offsetHeight === 0` and their assertions stay
+ * about what they claim to be about.
+ */
+describe('DataTable whole-row clip — the sticky header costs rows (#3524)', () => {
+    /** Matches the prototype stub installed in `beforeAll`. */
+    const ROW_H = 40;
+    /**
+     * The REAL header height, measured rather than assumed: `py-2.5` is 20px,
+     * `text-xs` sets a 16px line-height (and tailwind-merge drops the cell's
+     * earlier `leading-6`, which is why the header and the cell differ), plus
+     * `border-b` 1px. The ~45px figure elsewhere in `table.tsx` is the CELL.
+     */
+    const HEADER_H = 37;
+    const ALLOC_H = 300;
+
+    /**
+     * @param contentH tbody's scrollHeight. Defaults to far more than the
+     *   allocation so the clip engages; pass exactly `ALLOC_H` to sit on the
+     *   boundary where the ROWS fit and the rows-plus-header do not.
+     */
+    function measureWithStickyHeader(contentH = 40 * ROW_H) {
+        const { container, rerender } = renderTable(40);
+
+        // wrapper > table > thead/tbody. Structural rather than class-based:
+        // the wrapper is whatever the `<table>` sits in, which is what the
+        // measurement itself uses.
+        const table = container.querySelector('table') as HTMLElement;
+        const wrapper = table.parentElement as HTMLElement;
+        const card = wrapper.parentElement as HTMLElement;
+        const alloc = card.parentElement as HTMLElement;
+        const thead = container.querySelector('thead') as HTMLElement;
+        const tbody = container.querySelector('tbody') as HTMLElement;
+
+        Object.defineProperty(thead, 'offsetHeight', {
+            configurable: true,
+            get: () => HEADER_H,
+        });
+        Object.defineProperty(tbody, 'scrollHeight', {
+            configurable: true,
+            get: () => contentH,
+        });
+        Object.defineProperty(alloc, 'clientHeight', {
+            configurable: true,
+            get: () => ALLOC_H,
+        });
+
+        // Re-measure with the stubs in place: the first pass ran at mount,
+        // before they existed. A row-count change re-runs the layout effect,
+        // which measures synchronously.
+        act(() => rerenderTable(rerender, 41));
+        flushFrame();
+
+        // `''` when no clip was applied — distinguished from a number by the
+        // caller, because "no clip" is one of the outcomes under test.
+        return wrapper.style.maxHeight === ''
+            ? null
+            : Number.parseFloat(wrapper.style.maxHeight);
+    }
+
+    it('sizes the wrapper to the header plus whole rows, never cutting one under it', () => {
+        const maxHeight = measureWithStickyHeader() as number;
+
+        // 37 + floor((300 - 37) / 40) * 40 = 37 + 6*40 = 277.
+        //
+        // The buggy arithmetic gave floor(300/40) * 40 = 280, which leaves
+        // 280 - 37 = 243px for rows — six whole ones and 3px of a seventh. That
+        // seventh row is the one a click cannot reach, because the header covers
+        // the rest of it while it stays visible, enabled and stable.
+        //
+        // Asserted as an object so a failure prints the room left for rows
+        // beside the height, rather than one number with no way to see why it
+        // is wrong.
+        expect({
+            maxHeight,
+            roomForRows: maxHeight - HEADER_H,
+            wholeRows: (maxHeight - HEADER_H) / ROW_H,
+        }).toEqual({ maxHeight: 277, roomForRows: 240, wholeRows: 6 });
+    });
+
+    it('leaves a WHOLE number of rows under the header — the property, not the arithmetic', () => {
+        // The invariant itself, stated so it survives a change to any of the
+        // three constants above. `280` fails this at 243 % 40 = 3.
+        const maxHeight = measureWithStickyHeader() as number;
+        expect((maxHeight - HEADER_H) % ROW_H).toBe(0);
+    });
+
+    it('clips when the ROWS fit but the rows plus the header do not', () => {
+        // THE BOUNDARY the "it all fits, no clip" early return used to get
+        // wrong. `contentH === availH` means the rows alone exactly fill the
+        // allocation — so the old check (`contentH <= availH`) took the early
+        // return and applied NO clip, leaving the wrapper 300px tall with 37 of
+        // them held by the sticky header. The last row is then cut by exactly
+        // the header height with nothing clamping it, which is the same
+        // unclickable row as the case above, reached by the other branch.
+        //
+        // Written because reverting the `+ headerH` on that comparison left the
+        // two tests above green: the fix had a half nothing executed.
+        const maxHeight = measureWithStickyHeader(ALLOC_H);
+        expect(maxHeight).toBe(277);
+    });
+});

@@ -153,6 +153,7 @@ test.describe('the agent register, reached from the sidebar', () => {
         await test.step('a single click on the row opens that agent', async () => {
             const row = main.getByRole('row').filter({ hasText: agentName });
             await expect(row).toBeVisible({ timeout: 20_000 });
+
             // A click, not a `goto`: a goto would pass even if the register
             // offered no route to the detail page, which is the state that
             // shipped before the row action landed.
