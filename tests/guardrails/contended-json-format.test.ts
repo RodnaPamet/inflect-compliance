@@ -100,7 +100,23 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // job had to be registered rather than fixed: it is the one job in the
         // repo that is unreachable from a pull request ON PURPOSE, since its
         // whole function is to react to a run that has already merged.
-        keyOrderSha: '329a1645445970a3de24eee7880a563d831f27d5afc01e2a17cfdf7309677953',
+        //
+        // And again, hours later: TWO entries REMOVED — `ci.yml:laya-image` and
+        // `laya-image.yml:build-scan-push` — because the Laya image estate was
+        // retired (owner decision, same day). 19 keys down to 17.
+        //
+        // The two edits CONFLICTED on this line, which is the pin working as
+        // designed and worth recording as the worked example: both branches were
+        // green alone, both moved the digest, and git cannot merge two different
+        // hashes. Resolving it meant re-applying the deletion to the version of
+        // the registry that already carried the addition and recomputing — not
+        // picking a side, which would have left the file and the digest
+        // describing different documents.
+        //
+        // First time this pin has recorded a DELETION rather than an addition.
+        // The digest cannot tell the two apart, which is why the reason is
+        // written rather than inferred from the count.
+        keyOrderSha: '9a128ccc17c47e44174e1a55357a6d503444c200a45cb223562181c0284fa1bc',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

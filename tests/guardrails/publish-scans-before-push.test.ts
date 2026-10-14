@@ -674,13 +674,20 @@ describe('an image push is gated by a scan that ran before it', () => {
         // renamed step, new push mechanism — shows up here as a shrinking
         // list rather than as a silently-green ordering check below.
         expect(sites.map((s) => `${s.workflow}:${s.jobId}`).sort()).toEqual([
-            // Step 6d. The Laya model server, built by us and pushed by DIGEST.
-            // It is in this list for the same reason the application's publish
-            // is: it pushes an image to a registry, so the scan-before-push
-            // ordering below has to hold for it too — and it does, in one job
-            // on one runner, with the same blocking Trivy gate.
+            // ONE SITE, and it was two until 2026-10-14.
+            // `laya-image.yml:build-scan-push` — Step 6d's model-server publish,
+            // which pushed by digest with the same blocking Trivy gate — was
+            // deleted when the owner retired the Laya estate.
+            //
+            // A one-member list is worth a second look rather than a shrug,
+            // because this assertion's whole job is to notice a publish site
+            // that stops being RECOGNISED as one. It still does that: a renamed
+            // step or a new push mechanism in `ghcr-publish.yml` empties the
+            // list and fails here. What it can no longer do is notice the
+            // difference between "the other site was deleted" and "the other
+            // site stopped being recognised", which is why the deletion is
+            // written down.
             'ghcr-publish.yml:build-push',
-            'laya-image.yml:build-scan-push',
         ].sort());
         expect(() => assertPopulation(sites)).not.toThrow();
     });
