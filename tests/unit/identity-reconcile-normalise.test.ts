@@ -17,6 +17,12 @@ import {
 } from '@/lib/identity/reconcile/normalise';
 import { emailKey } from '@/lib/identity/email-key';
 
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
+
+import { REPO_ROOT } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
+
 const of = (token: string, scheme: string): string | undefined =>
     translitVariants(token).find((v) => v.scheme === scheme)?.value;
 
@@ -283,12 +289,24 @@ describe('every function is total', () => {
     });
 
     /**
-     * Bounded in OPERATIONS, not wall-clock. A millisecond budget on a machine
-     * shared with other sessions is a flake; a step count is a property of the
-     * matcher. The pathological inputs are the shapes that make a naive nested
-     * quantifier backtrack: unbalanced brackets, long runs, repeated delimiters.
+     * A SMOKE TEST, and labelled as one since #3496.
+     *
+     * The docblock here used to read "Bounded in OPERATIONS, not wall-clock. A
+     * millisecond budget on a machine shared with other sessions is a flake; a
+     * step count is a property of the matcher" — and then asserted milliseconds.
+     * The principle was right and the code did the opposite, which is how the
+     * Step 3a criterion came to be reported as met for months.
+     *
+     * The ceiling fails in both directions. 250 ms is generous enough that a
+     * QUADRATIC matcher on a 400-character input finishes inside it on an idle
+     * machine, and tight enough that LINEAR code can exceed it on a runner
+     * carrying four Jest shards. So this case stays, because driving real
+     * pathological strings through the real functions is worth having, but it is
+     * no longer the evidence for the criterion. That is the structural check
+     * below, which is machine-independent and fires on the edit that introduces
+     * the risk rather than on a slow afternoon.
      */
-    it('finishes pathological input without catastrophic backtracking', () => {
+    it('finishes pathological input (smoke only — the structural check is below)', () => {
         const pathological = [
             '('.repeat(400),
             `${'('.repeat(200)}a${')'.repeat(1)}`,
@@ -307,5 +325,165 @@ describe('every function is total', () => {
             // without being a timing assertion in the flaky sense.
             expect(ms).toBeLessThan(250);
         }
+    });
+});
+
+/**
+ * LINEAR BY CONSTRUCTION — the half of the Step 3a criterion a clock cannot buy.
+ *
+ * The criterion asks that "each is linear by construction, and the pathological
+ * inputs finish within a bound measured in operations, not wall-clock time".
+ * This is the first clause, checked structurally, and it is machine-independent:
+ * the same source gives the same answer on an idle laptop and a loaded runner.
+ *
+ * WHAT IT DETECTS, and only this: a quantified GROUP whose body either carries an
+ * unbounded quantifier — `(a+)+`, `(a*)*`, `(\w+\s?)*` — or is an alternation
+ * with exactly duplicate branches, `(a|a)*`, where every position has two
+ * indistinguishable ways to match. Those are the classic catastrophic shapes,
+ * they are the ones that recur, and they are what a careless "tidy the regex"
+ * edit introduces. An exponential matcher almost always looks like one of them.
+ *
+ * WHAT IT DOES NOT DETECT, stated so nobody reads a green run as a proof of
+ * linearity: adjacent unbounded quantifiers over overlapping classes (`\w+\d+`,
+ * polynomial rather than exponential), alternation branches that OVERLAP without
+ * being identical (`(a|ab)*` — deciding that needs an automaton, not a string
+ * comparison), a catastrophic pattern assembled at runtime through
+ * `new RegExp(...)`, and anything imported from another module.
+ * The population is the regex LITERALS in this one file, and the count is
+ * asserted so a scan that stopped matching cannot pass over nothing.
+ *
+ * Comments are stripped first. A prose example of a bad pattern in a docblock —
+ * including the ones in this very comment — must not trip the check: a scar is
+ * not a wound.
+ */
+describe('3a — every regex in normalise.ts is linear by construction', () => {
+    const SOURCE = path.join(REPO_ROOT, 'src/lib/identity/reconcile/normalise.ts');
+
+    /** Regex literals, comments removed. */
+    function regexLiterals(src: string): readonly string[] {
+        const code = codeOf(src);
+        const out: string[] = [];
+        // A literal starts at `/` and ends at an unescaped `/`, with character
+        // classes treated as opaque so a `/` inside `[...]` does not end it.
+        for (let i = 0; i < code.length; i += 1) {
+            if (code[i] !== '/') continue;
+            // Skip anything that is plainly division or a path in a string.
+            const prev = code.slice(0, i).trimEnd().slice(-1);
+            if (/[\w)\]]/.test(prev)) continue;
+            let j = i + 1;
+            let inClass = false;
+            let closed = false;
+            for (; j < code.length; j += 1) {
+                const c = code[j];
+                if (c === '\\') { j += 1; continue; }
+                if (c === '\n') break;
+                if (inClass) { if (c === ']') inClass = false; continue; }
+                if (c === '[') { inClass = true; continue; }
+                if (c === '/') { closed = true; break; }
+            }
+            if (!closed || j === i + 1) continue;
+            out.push(code.slice(i + 1, j));
+            i = j;
+        }
+        return out;
+    }
+
+    /**
+     * A quantified group whose body carries an unbounded quantifier.
+     *
+     * Bounded inner quantifiers are fine and deliberately permitted —
+     * `(?:[0-9]{1,4})+` cannot blow up, and `normalise.ts` uses bounded repeats
+     * throughout precisely so it does not have to.
+     */
+    function nestedQuantifiers(pattern: string): readonly string[] {
+        const bad: string[] = [];
+        for (let i = 0; i < pattern.length; i += 1) {
+            if (pattern[i] !== '(') continue;
+            if (pattern[i - 1] === '\\') continue;
+            // Find this group's matching close paren.
+            let depth = 0;
+            let close = -1;
+            let inClass = false;
+            for (let j = i; j < pattern.length; j += 1) {
+                const c = pattern[j];
+                if (c === '\\') { j += 1; continue; }
+                if (inClass) { if (c === ']') inClass = false; continue; }
+                if (c === '[') { inClass = true; continue; }
+                if (c === '(') depth += 1;
+                else if (c === ')') { depth -= 1; if (depth === 0) { close = j; break; } }
+            }
+            if (close === -1) continue;
+            const after = pattern.slice(close + 1);
+            const groupIsQuantified = /^(?:[*+]|\{\s*\d*\s*,\s*\}?)/.test(after);
+            if (!groupIsQuantified) continue;
+            const body = pattern.slice(i + 1, close);
+            // An UNBOUNDED quantifier inside the body: `*`, `+`, or `{n,}`.
+            const bodyHasUnbounded = /(?<!\\)[*+]|\{\s*\d+\s*,\s*\}/.test(body);
+            // Or an alternation with EXACTLY DUPLICATE branches: `(a|a)*`. Every
+            // position then has two indistinguishable ways to match, which is the
+            // same explosion by a different route. Only exact duplicates — real
+            // overlap (`(a|ab)*`) needs an automaton, and the header says so.
+            const branches = body.replace(/^\?:/, '').split('|');
+            const duplicateBranch =
+                branches.length > 1 && new Set(branches).size !== branches.length;
+            if (bodyHasUnbounded || duplicateBranch) bad.push(pattern.slice(i, close + 2));
+        }
+        return bad;
+    }
+
+    const LITERALS = regexLiterals(readFileSync(SOURCE, 'utf8'));
+
+    it('finds the regex population at all', () => {
+        // The denominator beside the result. A literal scanner that stopped
+        // matching would pass the assertion below over an empty list.
+        expect(LITERALS.length).toBeGreaterThanOrEqual(8);
+    });
+
+    it('no regex nests an unbounded quantifier inside a quantified group', () => {
+        const offenders = LITERALS.flatMap((lit) =>
+            nestedQuantifiers(lit).map((frag) => `/${lit}/ -> ${frag}`),
+        );
+        expect(offenders).toEqual([]);
+    });
+
+    describe('detector proof — on synthetic patterns, so a clean run means something', () => {
+        it.each([
+            ['(a+)+', 'the textbook case'],
+            ['(a*)*', 'the same with a star'],
+            ['(\\w+\\s?)*', 'the shape that bites real validators'],
+            ['(a|a)*b', 'overlapping alternation under a star'],
+        ])('flags %s — %s', (pattern) => {
+            expect(nestedQuantifiers(pattern).length).toBeGreaterThan(0);
+        });
+
+        it.each([
+            ['[A-Za-z]{0,8}0*([0-9]{1,32})', 'adjacent quantifiers, no nesting'],
+            ['^(.*?[^0-9])([0-9]{1,4})$', 'the real employee-number pattern'],
+            ['\\(([^()]{0,120})\\)', 'the real parenthetical pattern'],
+            ['(?:[0-9]{1,4})+', 'a BOUNDED inner quantifier is permitted'],
+            ['[.,]', 'no group at all'],
+        ])('accepts %s — %s', (pattern) => {
+            expect(nestedQuantifiers(pattern)).toEqual([]);
+        });
+
+        it('does NOT claim to catch overlapping-but-distinct branches', () => {
+            // `(a|ab)*` is catastrophic and this check does not see it. Asserted
+            // rather than left to the header, so the limit is a fact the suite
+            // holds instead of a caveat somebody may not read.
+            expect(nestedQuantifiers('(a|ab)*')).toEqual([]);
+        });
+
+        it('extracts literals without being fooled by a comment', () => {
+            // The prose in this file names `(a+)+` several times. If the
+            // extractor read comments, the check would fail on its own docblock.
+            const src = [
+                '// a comment mentioning /(a+)+/ which must not be extracted',
+                '/** and a docblock with /(x*)*/ in it */',
+                'const good = /[A-Za-z]{1,8}/;',
+            ].join('\n');
+            const lits = regexLiterals(src);
+            expect(lits).toContain('[A-Za-z]{1,8}');
+            expect(lits.some((l) => l.includes('a+'))).toBe(false);
+        });
     });
 });
