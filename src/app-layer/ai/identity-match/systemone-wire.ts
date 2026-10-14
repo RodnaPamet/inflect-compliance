@@ -189,7 +189,8 @@ export const JEV_MAX_CHOICE_OPTIONS = 255;
 
 /**
  * Laya's ENFORCED ceiling, measured 2026-10-10 against a server built from
- * `deploy/laya/Dockerfile`:
+ * `deploy/laya/Dockerfile` (deleted 2026-10-14 with the Laya estate; the
+ * measurement stands as a record of what that server enforced):
  *
  *     255 options -> 413  too many choice options for 'q' (255 > 100)
  *      64 options -> 200

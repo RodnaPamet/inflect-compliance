@@ -268,13 +268,28 @@ describe('structural — the 6b decision factory constructs nothing external bef
      * constructions legitimately appear earlier in the file. Anything else
      * constructed there is external by definition.
      */
-    const NON_EXTERNAL = ['LocalDecisionProvider', 'LayaDecisionProvider', 'StubDecisionProvider'];
+    // `LayaDecisionProvider` left this list on 2026-10-14 with the Laya estate.
+    // `LocalDecisionProvider` has never been constructed by the factory at all —
+    // it is kept because the list is an ALLOWLIST of names that may appear
+    // before the guard line, and a name that is absent from the source costs
+    // nothing while a name wrongly missing from here would read as a finding.
+    const NON_EXTERNAL = ['LocalDecisionProvider', 'StubDecisionProvider'];
 
     /**
      * The pinned set. A fourth provider fails this until somebody classifies it,
      * which is exactly when the "may LOCAL_ONLY reach it?" decision is due.
      */
-    const PINNED_CONSTRUCTORS = ['JevDecisionProvider', 'LayaDecisionProvider', 'StubDecisionProvider'];
+    // TWO, not three, since 2026-10-14: `LayaDecisionProvider` was deleted when
+    // the owner retired the Laya estate. `JevDecisionProvider` STAYS — it is
+    // constructed on a branch that `TYPESAFE_SUBPROCESSOR_ACTIVE === false`
+    // makes unreachable, which is the withdrawal's design and not an oversight.
+    //
+    // The pin is doing more work than usual while that is true. With no local
+    // model, the factory returns the same stub on four of its five paths, so
+    // nothing OBSERVABLE distinguishes a correct factory from one that ignores
+    // its argument — see the note in `identity-match-provider-factory.test.ts`.
+    // This file reads the SOURCE, so it still can.
+    const PINNED_CONSTRUCTORS = ['JevDecisionProvider', 'StubDecisionProvider'];
 
     function constructedProviders(source: string): string[] {
         const names = [...source.matchAll(/new\s+(\w*DecisionProvider)\b/g)].map((m) => m[1]);

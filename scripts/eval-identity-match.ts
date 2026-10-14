@@ -34,8 +34,9 @@
  *
  * ── Usage ───────────────────────────────────────────────────────────────────
  *
- *   # against a Laya server we run
- *   LAYA_BASE_URL=http://laya.internal:8080 npx tsx scripts/eval-identity-match.ts --provider laya
+ *   # `--provider laya` existed until 2026-10-14. The Laya estate was retired,
+ *   # so `jev` is the only provider this harness can reach — and it refuses
+ *   # until TypeSafe is an ACTIVE sub-processor, which it is not.
  *
  *   # against TypeSafe (requires the sub-processor to be ACTIVE)
  *   TYPESAFE_API_KEY=... npx tsx scripts/eval-identity-match.ts --provider jev
@@ -60,8 +61,7 @@ import {
     JevDecisionProvider,
     TYPESAFE_SUBPROCESSOR_ACTIVE,
 } from '../src/app-layer/ai/identity-match/jev-provider';
-import { LayaDecisionProvider } from '../src/app-layer/ai/identity-match/laya-provider';
-import { JEV_MODEL, LAYA_MODEL } from '../src/app-layer/ai/identity-match/systemone-wire';
+import { JEV_MODEL } from '../src/app-layer/ai/identity-match/systemone-wire';
 import type { DecisionProvider } from '../src/app-layer/ai/identity-match/types';
 import {
     ADJUDICATION_CORPUS,
@@ -225,13 +225,18 @@ function derivePersonAt(answers: readonly Answer[]): number | null {
 }
 
 async function main(): Promise<number> {
+    // `--provider laya` was accepted until 2026-10-14 and is now an error
+    // rather than a silently-ignored argument: the Laya estate was retired on
+    // the owner's decision, so there is no local endpoint to evaluate. An
+    // unrecognised value exits 2 with the usage line, which is what a caller
+    // reaching for the old flag sees.
     const providerArg = process.argv[process.argv.indexOf('--provider') + 1];
-    if (providerArg !== 'jev' && providerArg !== 'laya') {
-        console.error('usage: eval-identity-match.ts --provider <jev|laya>');
+    if (providerArg !== 'jev') {
+        console.error('usage: eval-identity-match.ts --provider <jev>');
         return 2;
     }
 
-    if (providerArg === 'jev' && !TYPESAFE_SUBPROCESSOR_ACTIVE) {
+    if (!TYPESAFE_SUBPROCESSOR_ACTIVE) {
         console.error(
             'REFUSING: TypeSafe is a proposed, INACTIVE sub-processor. Producing a record sends\n' +
                 'the corpus to a third party, which the notice window has to close first.\n' +
@@ -240,24 +245,14 @@ async function main(): Promise<number> {
         return 3;
     }
 
-    let provider: DecisionProvider;
-    if (providerArg === 'laya') {
-        const baseUrl = process.env.LAYA_BASE_URL;
-        if (!baseUrl) {
-            console.error('no Laya endpoint is configured; set LAYA_BASE_URL');
-            return 4;
-        }
-        provider = new LayaDecisionProvider(baseUrl, process.env.LAYA_API_KEY);
-    } else {
-        const key = process.env.TYPESAFE_API_KEY;
-        if (!key) {
-            console.error('no TypeSafe credential is configured; set TYPESAFE_API_KEY');
-            return 4;
-        }
-        provider = new JevDecisionProvider(key);
+    const key = process.env.TYPESAFE_API_KEY;
+    if (!key) {
+        console.error('no TypeSafe credential is configured; set TYPESAFE_API_KEY');
+        return 4;
     }
+    const provider: DecisionProvider = new JevDecisionProvider(key);
 
-    const model = providerArg === 'laya' ? LAYA_MODEL : JEV_MODEL;
+    const model = JEV_MODEL;
     console.log(`asking ${model} about ${ADJUDICATION_CORPUS.length} cases…`);
 
     const answers: Answer[] = [];

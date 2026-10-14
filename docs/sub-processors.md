@@ -214,7 +214,7 @@ provider or the stub for every mode and no tenant path can obtain a Jev provider
 
 **It was active from 2026-10-11 to 2026-10-14, and it processed nothing in that window.**
 That is a measurement, not a presumption: `LegacyMatchVerdict` holds **0 rows** in
-production. The path was reachable — `LAYA_BASE_URL` was configured and a tenant could have
+production. The path was reachable at the time — `LAYA_BASE_URL` was configured and a tenant could have
 selected `EXTERNAL` — and it produced no verdicts because no evaluation record was ever
 committed, so the gate refused every batch as `NO_EVALUATION`.
 
@@ -272,8 +272,12 @@ drift apart in either direction.
   vendor's commitment not to train on customer data.
 - **Operator-optional:** yes, and tenant-optional. `legacyMatchAiMode` defaults to `OFF`.
   Selecting `EXTERNAL` is refused under tenant AI residency `LOCAL_ONLY`.
-- **Local alternative:** a tenant choosing `LOCAL_ONLY` is served by Laya on
-  infrastructure the operator runs. Laya is **not** a sub-processor and has no entry here.
+- **Local alternative:** there is none as of 2026-10-14. A tenant choosing
+  `LOCAL_ONLY` used to be served by Laya on infrastructure the operator runs; the
+  owner retired that estate and `LOCAL_ONLY` is now refused at the settings
+  boundary, so the only accepted mode is `OFF`. Laya was **never** a sub-processor
+  and had no entry here — open weights on our own infrastructure, with no personal
+  data leaving it — which is why its removal changes nothing in this register.
 - **Vendor pages:** [API reference](https://docs.typesafe.ai/api) and
   [model list](https://docs.typesafe.ai/models), both re-verified 2026-10-08 by Step 6b.
   The verification corrected one row of the design document's vendor table: the model

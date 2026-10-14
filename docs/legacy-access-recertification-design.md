@@ -234,10 +234,17 @@ Two properties are worth knowing before extending it:
   response to a tightened precision rule, so the gate asserts no false link plus a
   floor — the three expected links individually — because a precision-only ratchet is
   passed trivially by an engine that links nothing.
-### The decision-model client exists, and the external half is switched off
+### The decision-model client exists, and BOTH halves are switched off
+
+> **Updated 2026-10-14.** This heading said "the external half is switched off".
+> Both halves are off now: TypeSafe was withdrawn as a proposed sub-processor
+> (so the external branch is unreachable while `TYPESAFE_SUBPROCESSOR_ACTIVE` is
+> `false`) and the local provider was deleted with the Laya estate. The factory
+> returns the refusing stub on every path. The provider count below is **two**,
+> not three.
 
 `src/app-layer/ai/identity-match/` (Step 6b) holds one wire codec for the System One
-protocol and three providers: `JevDecisionProvider` (TypeSafe, hosted),
+protocol and two providers: `JevDecisionProvider` (TypeSafe, hosted),
 `LayaDecisionProvider` (open weights, our infrastructure) and a stub that answers
 nothing. `getDecisionProvider` picks between them.
 
@@ -346,6 +353,29 @@ the deployment or the data. A whole run of `NO_EVALUATION` is the designed state
 whole run of `MODEL_DRIFT` is an incident.
 
 #### Where Laya runs, and what it actually delivers
+
+> **RETIRED 2026-10-14 — owner decision.** Laya no longer runs anywhere. The
+> container was removed from `deploy/docker-compose.prod.yml` and stopped on the
+> VM; the image, its Dockerfile, its publish workflow and the `laya-image` CI job
+> were deleted; `laya-provider.ts` and the `LAYA_BASE_URL` / `LAYA_API_KEY`
+> declarations are gone. `buildLocalProvider` returns the refusing stub for every
+> caller, and `legacyMatchAiMode = LOCAL_ONLY` is now refused outright at the
+> settings boundary rather than gated on a deployment variable.
+>
+> **Why, in one sentence with the number that decided it:** appending text
+> carrying *no identity information* changed the match decision in **39 of 69
+> cases (57 %)**, every one of them onto the first offered candidate, 24 of them
+> abandoning the `NONE` refusal, with reported confidence rising in 57 of 69
+> (#3490). A model that answers from prompt length is not one a person can be
+> asked to review the output of, and held-out precision was 0.571.
+>
+> **Everything below is kept as a RECORD, not a description.** It is accurate
+> about what was measured while the service ran, and those measurements are the
+> reason the decision could be made at all — in particular the determinism
+> result, which is what made the canary trustworthy and therefore made the
+> length-sensitivity finding attributable to the prompt rather than to noise.
+> Identity matching runs on the deterministic engine (Steps 3b and 4a), which
+> this change does not touch.
 
 One container, `laya`, in the production Compose project. Pinned by digest, serving the
 checkpoint baked at the pinned revision, on the internal network with **no published
@@ -746,6 +776,19 @@ that a person confirms, and that difference keeps the two positions consistent:
 
 ### Model adjudication — Jev external, Laya local (optional, per tenant)
 
+> **NEITHER IS AVAILABLE as of 2026-10-14.** Jev is unreachable (TypeSafe
+> withdrawn, no executed DPA, and an open injection finding it obeys at
+> p=1.0000 — #3461) and Laya is deleted (#3490: it answered from prompt length).
+> A tenant can set `legacyMatchAiMode` only to `OFF`; `LOCAL_ONLY` is refused at
+> the settings boundary and `EXTERNAL` by the sub-processor constant.
+>
+> The section stands as the design, because the owner's ruling was to **widen the
+> deterministic layer instead** rather than to abandon adjudication as an idea —
+> and because the invariants below (a person confirms every link; a model may
+> never produce `LINKED` alone) are what any future model would have to satisfy.
+> `LegacyMatchVerdict` has held **zero rows in production, ever**, so nothing
+> downstream depends on this having run.
+
 The deterministic stages leave a residue: accounts that are `SUGGESTED` on medium or
 weak evidence, and accounts that are `UNMATCHED`. A tenant that opts in gets a model's
 verdict on every residue account **before the review queue opens**. The model decides
@@ -771,7 +814,7 @@ it. Where a row differs, the reference wins and this table is corrected.
 | | Jev — TypeSafe AI | Laya — Convai Innovations |
 | --- | --- | --- |
 | Delivery | Hosted API, generally available since 2026-09-20 | Open weights under Apache-2.0; no hosted API |
-| Wire API | `POST /v1/systemone`, carrying `model`, `state` and a map of `questions` | **Measured 2026-10-10** against a server built from `deploy/laya/Dockerfile`: the routes are `GET /health`, `POST /v1/systemone` and `POST /v1/systemone/batch`. There is NO `/v1/models` and no `/models` — both 404. Each question REQUIRES `instructions`, and a `choice` takes its option set as `criteria` (a dict of label → description), not an `options` array |
+| Wire API | `POST /v1/systemone`, carrying `model`, `state` and a map of `questions` | **Measured 2026-10-10** against a server built from `deploy/laya/Dockerfile` (deleted 2026-10-14 — see "Where Laya runs"): the routes are `GET /health`, `POST /v1/systemone` and `POST /v1/systemone/batch`. There is NO `/v1/models` and no `/models` — both 404. Each question REQUIRES `instructions`, and a `choice` takes its option set as `criteria` (a dict of label → description), not an `options` array |
 | Question types | `choice` — up to 255 described options, with a probability for each; `noul` — the probability that a statement is true; `score` — a level on a 2–10 scale | The three type names hold (`['choice', 'noul', 'score']`, from the server's own error). **The 255 figure is Jev's and does NOT hold for Laya**, which refuses above 100: `413 too many choice options for 'q' (255 > 100)`. 6, 20 and 64 were accepted. A `noul` answer carries its value as `noul`, and a `choice` answer as `choice`. A `score` takes `criteria` as a LIST of level descriptions rather than a 2–10 scale |
 | Version and window | `jev-1.13`: 64k tokens per request, 32k of it for the state plus the longest question | `laya-multilingual`: mmBERT-base, 322M parameters, 1,024 tokens (about 768 for the state), 100+ languages. The English `laya` has 421M parameters and 512 tokens |
 | Latency | 70–500 ms end to end (vendor figure); published p50 figures between about 145 and 275 ms | About 33 ms p50 on a T4 GPU (model card); no published CPU figure. **Measured on a desktop CPU 2026-10-10**, through the product's own chooser: p50 380 ms at 3 options, 878 ms at 20, worst observed 1,208 ms. **Measured on the production VM 2026-10-12** under the Compose service's own limits (1 vCPU of an `e2-highmem-2`, 4 GB), real `buildMatchRequest` shape with five candidates: **p50 7,332 ms, p95 7,727 ms** (n=25, min 7,035, max 7,894). The VM is 8–19× slower than the desktop, which is what one vCPU buys. See #3445 |

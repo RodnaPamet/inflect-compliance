@@ -34,14 +34,11 @@ import {
     TYPESAFE_SUBPROCESSOR_ACTIVE,
     JEV_ENDPOINT,
     JEV_MODEL,
-    LAYA_MODEL,
     JEV_TIMEOUT_MS,
-    LAYA_TIMEOUT_MS,
     NoDecisionProviderError,
     type MatchState,
 } from '@/app-layer/ai/identity-match';
 import { LAYA_CHOOSER_TIMEOUT_MS } from '@/app-layer/ai/intent/laya-chooser';
-import { LAYA_MODEL as WIRE_LAYA_MODEL, REQUESTS_IN_FLIGHT } from '@/app-layer/ai/identity-match/systemone-wire';
 
 const emptyState: MatchState = {
     account: {
@@ -54,8 +51,10 @@ const emptyState: MatchState = {
 
 beforeEach(() => {
     mutableEnv.TYPESAFE_API_KEY = 'typesafe-test-key'; // pragma: allowlist secret
-    mutableEnv.LAYA_BASE_URL = 'http://laya.internal:8080';
-    mutableEnv.LAYA_API_KEY = undefined;
+    // `LAYA_BASE_URL` / `LAYA_API_KEY` were set here until 2026-10-14. They are
+    // no longer declared on `env` at all — the Laya estate was retired — so
+    // setting them on the mock would configure a variable nothing reads, which
+    // is worse than not setting it: it reads as a live knob.
 });
 
 describe('6b factory — the sub-processor is WITHDRAWN (owner decision 2026-10-14)', () => {
@@ -81,21 +80,17 @@ describe('6b factory — the sub-processor is WITHDRAWN (owner decision 2026-10-
         expect(p.isExternal).toBe(false);
     });
 
-    it('EXTERNAL without the key falls back to the local provider rather than throwing', () => {
+    it('EXTERNAL without the key falls back to the stub rather than throwing', () => {
         // Unchanged in spirit from the inactive era, and still the reason it is
         // written this way: a tenant who asked for adjudication gets the
         // privacy-preserving answer or none, never an error that reads like their
         // configuration is broken. The flag alone moves no data — the KEY does.
+        //
+        // The fallback WAS the local provider and is now the stub, because the
+        // local provider was retired. The property is the same one: no mode
+        // throws, and no mode reaches a third party.
         mutableEnv.TYPESAFE_API_KEY = undefined;
-        expect(getDecisionProvider('EXTERNAL').providerName).toBe('laya');
-    });
-
-    it('EXTERNAL with neither the key nor a Laya yields the stub', () => {
-        mutableEnv.TYPESAFE_API_KEY = undefined;
-        mutableEnv.LAYA_BASE_URL = undefined;
-        const p = getDecisionProvider('EXTERNAL');
-        expect(p.providerName).toBe('stub');
-        expect(p.isExternal).toBe(false);
+        expect(getDecisionProvider('EXTERNAL').providerName).toBe('stub');
     });
 
     it('NO mode goes external now, and the mode is still what the factory reads', () => {
@@ -105,21 +100,39 @@ describe('6b factory — the sub-processor is WITHDRAWN (owner decision 2026-10-
             expect(getDecisionProvider(mode).providerName).not.toBe('jev');
         }
 
-        // THE POSITIVE CONTROL HAD TO CHANGE, and the old one is worth recording
-        // because its replacement is weaker in one way and stronger in another.
+        // ── THERE IS NO POSITIVE CONTROL LEFT, AND SAYING SO IS THE POINT ──
         //
-        // It used to be `getDecisionProvider('EXTERNAL').isExternal === true` —
-        // which proved the loop was not vacuous by showing the factory COULD
-        // return something external. With the sub-processor withdrawn no mode
-        // can, so that control is unavailable: it would now assert the very
-        // thing the withdrawal removed.
+        // This comment has now been rewritten twice by the same mechanism, so
+        // the mechanism is the thing to read rather than either conclusion.
         //
-        // What is left is discrimination. If the factory had been broken into
-        // returning one provider for everything, the loop above would pass while
-        // proving nothing at all — so the control is that two modes still give
-        // DIFFERENT answers, which no constant-returning stub can fake.
+        // Originally the control was `getDecisionProvider('EXTERNAL').isExternal
+        // === true`: it proved the loop above was not vacuous by showing the
+        // factory COULD return something external. Withdrawing the sub-processor
+        // removed that, so it was replaced by a DISCRIMINATION control — `OFF`
+        // gives `stub` and `LOCAL_ONLY` gives `laya`, two different answers,
+        // which no constant-returning factory can fake.
+        //
+        // Retiring the Laya estate on 2026-10-14 removed that one too. Every
+        // mode now returns the stub, so the loop above is satisfied by a factory
+        // that ignores its argument entirely, and NOTHING IN THIS FILE CAN TELL
+        // THE DIFFERENCE. That is not a reason to delete the loop — the property
+        // it states is still the property we want — but it is a reason not to
+        // read a green run here as evidence about the factory's structure.
+        //
+        // What carries that evidence instead, and where to look when this file
+        // passes and you want to know whether it means anything:
+        //
+        //   · `tests/guards/ai-residency-enforcement.test.ts` reads the factory's
+        //     SOURCE: the LOCAL_ONLY branch must RETURN before any external
+        //     provider is constructed, and the constructor set is pinned. That is
+        //     a structural claim, so it survives every provider coinciding.
+        //   · the flag-link test below asserts `isExternal` tracks
+        //     `TYPESAFE_SUBPROCESSOR_ACTIVE`, which is the binding that would
+        //     have to change for any of this to move.
+        //
+        // A model returning here restores a discrimination control, and this
+        // comment is the note to whoever does it.
         expect(getDecisionProvider('OFF').providerName).toBe('stub');
-        expect(getDecisionProvider('LOCAL_ONLY').providerName).toBe('laya');
     });
 
     it('the flag is what the gate reads, so the two cannot be reasoned about separately', () => {
@@ -135,23 +148,23 @@ describe('6b factory — residency', () => {
         expect(getDecisionProvider('OFF').providerName).toBe('stub');
     });
 
-    it('LOCAL_ONLY yields Laya when one is deployed', () => {
+    it('LOCAL_ONLY yields the stub — there is no local model to yield', () => {
+        // This replaces two tests that distinguished "a Laya is deployed" from
+        // "none is", a distinction `env` can no longer express. The surviving
+        // claim is the one that was always the important half: LOCAL_ONLY never
+        // falls through to anything external, whatever else is configured.
         const p = getDecisionProvider('LOCAL_ONLY');
-        expect(p.providerName).toBe('laya');
-        expect(p.modelName).toBe(LAYA_MODEL);
+        expect(p.providerName).toBe('stub');
         expect(p.isExternal).toBe(false);
-    });
-
-    it('LOCAL_ONLY yields the stub when no Laya is deployed — never an external fallback', () => {
-        mutableEnv.LAYA_BASE_URL = undefined;
-        expect(getDecisionProvider('LOCAL_ONLY').providerName).toBe('stub');
     });
 
     it('LOCAL_ONLY ignores TYPESAFE_API_KEY entirely', () => {
         mutableEnv.TYPESAFE_API_KEY = 'a-very-real-key'; // pragma: allowlist secret
-        mutableEnv.LAYA_BASE_URL = undefined;
-        // The worst case: external credential present, no local server. Still stub.
-        expect(getDecisionProvider('LOCAL_ONLY').providerName).toBe('stub');
+        // The worst case left: the external credential is present and the mode
+        // asks for local. Still the stub, and still not external.
+        const p = getDecisionProvider('LOCAL_ONLY');
+        expect(p.providerName).toBe('stub');
+        expect(p.isExternal).toBe(false);
     });
 });
 
@@ -160,7 +173,6 @@ describe('6b factory — the stub answers nothing, ever', () => {
         // A neutral answer would still be a verdict, recorded as the model's
         // opinion, and an evaluation record over stub answers would describe a
         // model nobody ran.
-        mutableEnv.LAYA_BASE_URL = undefined;
         const p = getDecisionProvider('OFF');
         await expect(p.adjudicate(emptyState, { deadlineAt: Date.now() + 1000 })).rejects.toBeInstanceOf(
             NoDecisionProviderError
@@ -225,23 +237,28 @@ describe('6b factory — the Jev host is a code constant', () => {
         expect(JEV_MODEL).not.toContain('preview');
     });
 
-    it('bounds the local path by what the hardware MEASURES, not by how far the packet travels', () => {
-        // REPLACES 'gives the local path a tighter timeout than the external
-        // one'. That invariant read well and measurement refuted it: on the
-        // deployed VM one adjudication is p50 7,332 ms / p95 7,727 ms (#3445),
-        // because it is CPU inference on two shared cores — where Jev's 3 s
-        // buys a round trip to GPU-backed inference. Holding the local path to
-        // 2 s made LOCAL_ONLY return TIMEOUT for every call, which is the
-        // opposite of preferring it.
+    /*
+     * REMOVED 2026-10-14: `bounds the local path by what the hardware MEASURES,
+     * not by how far the packet travels`.
+     *
+     * Its subject was `LAYA_TIMEOUT_MS`, which lived in `laya-provider.ts` and
+     * went with it when the owner retired the Laya estate. There is no local
+     * provider to give a budget to, so the assertion had nothing left to bound —
+     * it is not a weakened check, it is a deleted one, which is why it is
+     * recorded here.
+     *
+     * The measurement it stood on is worth preserving, because it is the thing
+     * that refuted the plausible version of this rule. The original invariant
+     * was "the local path gets a TIGHTER timeout than the external one", which
+     * reads well and is wrong: on the deployed VM one adjudication measured p50
+     * 7,332 ms / p95 7,727 ms (#3445), because it was CPU inference on two
+     * shared cores, where Jev's 3 s buys a round trip to GPU-backed inference.
+     * Holding the local path to 2 s made LOCAL_ONLY return TIMEOUT for every
+     * call — the opposite of preferring it. If a local model is ever
+     * reinstated, that is the shape of the mistake to avoid.
+     */
+    it('keeps the external budget where the round trip puts it', () => {
         expect(JEV_TIMEOUT_MS).toBe(3_000);
-        expect(LAYA_TIMEOUT_MS).toBe(12_000);
-
-        // The property that actually matters, stated against the measurement
-        // rather than against the other provider: it must clear the measured
-        // p95 with real headroom or the provider cannot answer at all.
-        const MEASURED_P95_MS = 7_727;
-        expect(LAYA_TIMEOUT_MS).toBeGreaterThan(MEASURED_P95_MS);
-        expect(LAYA_TIMEOUT_MS / MEASURED_P95_MS).toBeGreaterThan(1.25);
     });
 
     it('keeps the intent chooser on its own tight budget, so the raise cannot leak', () => {
@@ -251,49 +268,37 @@ describe('6b factory — the Jev host is a code constant', () => {
         // ceiling from 6 s to 36 s, so the constant was split instead. This
         // test is what notices them being merged back.
         expect(LAYA_CHOOSER_TIMEOUT_MS).toBe(2_000);
-        expect(LAYA_CHOOSER_TIMEOUT_MS).toBeLessThan(LAYA_TIMEOUT_MS);
-        // And it must stay inside the measured 20-option worst case (719 ms)
-        // with margin — the reason 2 s was right for this path all along.
+        // The `< LAYA_TIMEOUT_MS` half went with the adjudication constant on
+        // 2026-10-14. The two cannot be merged back now — there is nothing to
+        // merge this into — so what is left is the bound that stands on its own
+        // measurement, which was always the stronger half.
+        //
+        // It must stay inside the measured 20-option worst case (719 ms) with
+        // margin — the reason 2 s was right for this path all along.
         expect(LAYA_CHOOSER_TIMEOUT_MS).toBeGreaterThan(719 * 2);
     });
 });
 
-describe('6b — the per-call timeout and the configured concurrency must compose (#3450)', () => {
-    /**
-     * MEASURED on the production VM, 2026-10-12: digest-pinned image, the
-     * Compose service's own limits, the real `buildMatchRequest` payload with
-     * five candidates. Per-call p50 against requests in flight.
-     *
-     * Throughput was flat across all three (0.233 / 0.243 / 0.243 acct/s), so
-     * the only thing concurrency changed here was latency.
-     */
-    const MEASURED_P50_MS: Readonly<Record<number, number>> = {
-        1: 4_112,
-        4: 16_488,
-        8: 32_708,
-    };
-
-    it('the timeout clears the p50 measured AT THE CONFIGURED CONCURRENCY, not at 1', () => {
-        const configured = REQUESTS_IN_FLIGHT[WIRE_LAYA_MODEL];
-        const p50 = MEASURED_P50_MS[configured];
-
-        // The table must actually COVER the configured value. Without this the
-        // lookup yields `undefined`, every comparison below becomes NaN, and a
-        // concurrency nobody measured would sail through as a pass.
-        expect(p50).toBeDefined();
-
-        expect(LAYA_TIMEOUT_MS).toBeGreaterThan(p50);
-        // Headroom rather than a hairline pass — a p50 is the middle of the
-        // distribution, so half of real calls are slower than this figure.
-        expect(LAYA_TIMEOUT_MS / p50).toBeGreaterThan(1.5);
-    });
-
-    it('would have rejected the pair that actually shipped — the positive control', () => {
-        // #3448 set the timeout to 12 s from the concurrency-1 figure while
-        // `REQUESTS_IN_FLIGHT` was still 4, where the measured p50 is 16,488 ms.
-        // Each number was defensible alone; together every call timed out. This
-        // asserts the RULE has teeth, without pinning either constant — raising
-        // the timeout to clear 16,488 ms would be a legitimate alternative fix.
-        expect(12_000).toBeLessThan(MEASURED_P50_MS[4]);
-    });
-});
+/*
+ * REMOVED 2026-10-14: `6b — the per-call timeout and the configured concurrency
+ * must compose (#3450)`.
+ *
+ * Every assertion in it related `LAYA_TIMEOUT_MS` to `REQUESTS_IN_FLIGHT`, and
+ * the first of those is gone with `laya-provider.ts`. `REQUESTS_IN_FLIGHT`
+ * REMAINS and is still read by `adjudication-pass.ts`, so the concurrency half
+ * of the pair is live; it is the per-call budget that no longer exists.
+ *
+ * WHAT IT PROVED, because the shape recurs and is not obvious: two constants can
+ * each be defensible alone and broken together. #3448 set the timeout to 12 s
+ * from the concurrency-1 figure while `REQUESTS_IN_FLIGHT` was still 4, where
+ * the measured p50 is 16,488 ms — so every call timed out. The test took its p50
+ * from the table AT THE CONFIGURED CONCURRENCY rather than at 1, asserted the
+ * table actually covered that value (otherwise the lookup is `undefined`, every
+ * comparison becomes NaN, and an unmeasured concurrency sails through), and
+ * carried a positive control that would have rejected the pair that shipped.
+ *
+ * The measurements, kept because they cost a VM afternoon: p50 4,112 ms at
+ * concurrency 1, 16,488 ms at 4, 32,708 ms at 8, with throughput flat across all
+ * three (0.233 / 0.243 / 0.243 accounts per second) — so concurrency bought
+ * latency and nothing else.
+ */

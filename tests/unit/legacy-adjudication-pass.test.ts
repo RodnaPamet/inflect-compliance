@@ -630,7 +630,8 @@ describe('the revision the ENDPOINT reports decides', () => {
 
     it('ACCEPTS a real Laya, which reports its AGENT name and not our model name', async () => {
         // The defect this replaces. Measured against a server built from
-        // `deploy/laya/Dockerfile`: we ask for `laya-multilingual` and it
+        // `deploy/laya/Dockerfile` (deleted 2026-10-14): we asked for
+        // `laya-multilingual` and it
         // answers `model: "laya-rl-agent"`, naming the checkpoint only inside a
         // `routing` block. Compared against `record.model`, that is drift for
         // EVERY response — so the lane produced no verdicts at all while every
