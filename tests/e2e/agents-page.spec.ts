@@ -153,6 +153,55 @@ test.describe('the agent register, reached from the sidebar', () => {
         await test.step('a single click on the row opens that agent', async () => {
             const row = main.getByRole('row').filter({ hasText: agentName });
             await expect(row).toBeVisible({ timeout: 20_000 });
+
+            // ── TEMPORARY DIAGNOSTIC (#3524) — remove with the fix ──
+            //
+            // This click has failed in CI for every run since #3518, and three
+            // fixes aimed at it have missed. Each diagnosis came from reading
+            // the Playwright call log, which names the element that intercepted
+            // the click but not WHERE the click point was — and the interceptors
+            // are mutually inconsistent: `<main>`, the sticky `<thead>`, and
+            // three elements from the 180px `<aside>` SIDEBAR, which is nowhere
+            // near a row inside `<main>`.
+            //
+            // So this prints the geometry instead of inferring it: the point
+            // Playwright will test, what `elementFromPoint` actually returns
+            // there, and the rects of every container in the chain. One CI run
+            // of this is worth more than a fourth guess. The artifact that would
+            // have answered it is 4.2 GB, which is why the log has to carry it.
+            const box = await row.boundingBox();
+            const geometry = await page.evaluate((b) => {
+                const r = (sel: string) => {
+                    const el = document.querySelector(sel);
+                    if (!el) return null;
+                    const q = el.getBoundingClientRect();
+                    return [Math.round(q.x), Math.round(q.y), Math.round(q.width), Math.round(q.height)];
+                };
+                const name = (el: Element | null) =>
+                    el
+                        ? `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}` +
+                          `[${String((el as HTMLElement).className || '').slice(0, 70)}]`
+                        : null;
+                const cx = b ? Math.round(b.x + b.width / 2) : -1;
+                const cy = b ? Math.round(b.y + b.height / 2) : -1;
+                return {
+                    rowBox: b ? [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)] : null,
+                    point: [cx, cy],
+                    elementAtPoint: name(document.elementFromPoint(cx, cy)),
+                    // The chain, outermost first. A rect with height ~0 or a
+                    // point outside one of these is the answer.
+                    viewport: [window.innerWidth, window.innerHeight],
+                    pageScroll: [Math.round(window.scrollX), Math.round(window.scrollY)],
+                    aside: r('aside'),
+                    main: r('main'),
+                    mainScrollTop: Math.round(document.querySelector('main')?.scrollTop ?? -1),
+                    listBody: r('[data-list-page-body]'),
+                    table: r('#agents-table'),
+                    thead: r('#agents-table thead'),
+                    firstRow: r('#agents-table tbody tr'),
+                };
+            }, box);
+            console.log(`[#3524 diagnostic] ${JSON.stringify(geometry)}`);
             // A click, not a `goto`: a goto would pass even if the register
             // offered no route to the detail page, which is the state that
             // shipped before the row action landed.
