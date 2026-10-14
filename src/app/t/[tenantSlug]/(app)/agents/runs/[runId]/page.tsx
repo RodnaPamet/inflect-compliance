@@ -101,6 +101,10 @@ export default async function AgentRunDetailPage({
                 completedAt: run.completedAt ? run.completedAt.toISOString() : null,
                 summary: run.summary,
                 errorMessage: run.errorMessage,
+                // THE CAUSE (#3537). Projected explicitly like every other
+                // field here — the usecase returns the whole row and the whole
+                // row is not something to hand a browser.
+                parentExecutionId: run.parentExecutionId,
             }}
             steps={steps}
         />

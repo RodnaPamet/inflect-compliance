@@ -91,6 +91,7 @@ const RUN: RunHeader = {
     completedAt: '2026-09-01T10:04:00.000Z',
     summary: null,
     errorMessage: null,
+    parentExecutionId: null
 };
 
 function step(over: Partial<RunStepRow> = {}): RunStepRow {
@@ -629,5 +630,31 @@ describe('the two Flue step kinds claim only what they did', () => {
         // thing worth asking about, because nobody expected it to have one.
         renderDetail([step({ seq: 0, kind: 'PROPOSE', costTokens: 7 })]);
         expect(screen.getByText(D.stepTokens.replace('{count}', '7'))).toBeInTheDocument();
+    });
+});
+
+/**
+ * #3537 — the page says WHAT caused the run, not only under whose authority it
+ * ran.
+ *
+ * An automation-started run's `startedByUserId` is the rule's OWNER, so the
+ * header named a person for work a rule scheduled. These two cases are the
+ * whole claim: the line appears when there is a cause, and stays absent when
+ * there is not — a run a person genuinely started must not grow a sentence
+ * saying a rule did.
+ */
+describe('what caused the run', () => {
+    it('names the automation execution when a rule caused it', () => {
+        renderDetail([step()], { ...RUN, parentExecutionId: 'exec-xyz' });
+        const line = screen.getByTestId('run-caused-by');
+        expect(line).toHaveTextContent('exec-xyz');
+        // …and says why the name above is not the cause, because that is the
+        // confusion the line exists to remove.
+        expect(line).toHaveTextContent(/rule owner/i);
+    });
+
+    it('says nothing when nothing caused it', () => {
+        renderDetail([step()], { ...RUN, parentExecutionId: null });
+        expect(screen.queryByTestId('run-caused-by')).toBeNull();
     });
 });
