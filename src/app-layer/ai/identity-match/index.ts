@@ -29,16 +29,29 @@
  *
  * 1. The effective mode must be `EXTERNAL` — the stricter of the tenant's
  *    `legacyMatchAiMode` and its `aiResidency`, computed by the caller.
- * 2. `TYPESAFE_SUBPROCESSOR_ACTIVE` must be true, and it is false.
+ * 2. `TYPESAFE_SUBPROCESSOR_ACTIVE` must be true, AND IT IS TRUE since #3409
+ *    (2026-10-11).
  *
- * The second is not redundant. Step 6a registered TypeSafe as a *proposed,
- * inactive* sub-processor, and a customer notice window has to close before that
- * changes. A tenant could set `EXTERNAL` today — the setting exists — and gate 2
- * is what makes that setting inert rather than a way to start sending personal
- * data to a third party ahead of the notice. Falling back to the local path (and
- * then the stub) rather than throwing is deliberate: a tenant who asked for
- * adjudication gets the privacy-preserving answer or no answer, never an error
- * that reads like a bug in their configuration.
+ * So gate 2 no longer stops anything, and gate 1 is what governs: a tenant whose
+ * effective mode is `EXTERNAL` reaches Jev and personal data leaves this
+ * deployment. The mode defaults to `OFF` and `aiResidency = LOCAL_ONLY` narrows
+ * it, so this is a deliberate per-tenant choice rather than a default.
+ *
+ * Gate 2 is kept rather than deleted, and the reason is the direction it fails
+ * in: it is the one switch that makes the external path unreachable for EVERY
+ * tenant at once, in a reviewed diff, if the sub-processor relationship ends.
+ * Deleting it because it currently passes would remove the brake while leaving
+ * the road.
+ *
+ * Until #3409 this read "and it is false", and this docblock went on saying so
+ * for two days afterwards — which inverted the one fact a reader comes here for.
+ * `tests/guards/subprocessor-prose-agrees-with-constant.test.ts` now fails on
+ * prose in `src/` that states a value the constant does not have.
+ *
+ * Falling back to the local path (and then the stub) rather than throwing is
+ * deliberate: a tenant who asked for adjudication gets the privacy-preserving
+ * answer or no answer, never an error that reads like a bug in their
+ * configuration.
  *
  * @module app-layer/ai/identity-match
  */

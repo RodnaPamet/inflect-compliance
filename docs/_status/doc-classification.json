@@ -251,6 +251,9 @@
         "docs/new-subsystem-checklist.md": {
             "class": "authoritative"
         },
+        "docs/notices/2026-10-13-typesafe-ai-sub-processor.md": {
+            "class": "authoritative"
+        },
         "docs/observability-reliability.md": {
             "class": "authoritative"
         },

@@ -11,13 +11,20 @@
  * the sub-processor register would be describing a destination the code no longer
  * uses. `tests/guards/ai-residency-enforcement.test.ts` asserts the constant.
  *
- * **It is inert until somebody activates the sub-processor.**
- * {@link TYPESAFE_SUBPROCESSOR_ACTIVE} is `false`, and
- * `getDecisionProvider` refuses to return this provider for tenant work while it
- * is. Step 6a registered TypeSafe as *proposed, inactive*; a customer notice
- * window has to close before that changes. The flag is the code half of that
- * commitment — the register alone would be a document contradicted by a running
- * request.
+ * **IT IS NO LONGER INERT.** {@link TYPESAFE_SUBPROCESSOR_ACTIVE} is `true`
+ * since #3409 (2026-10-11), so `getDecisionProvider` WILL return this provider
+ * for tenant work once the effective mode is `EXTERNAL`. What stands between a
+ * tenant and a real request is now the mode alone — `legacyMatchAiMode`,
+ * defaulting to `OFF`, narrowed by `aiResidency` — and not this flag.
+ *
+ * Step 6a registered TypeSafe as *proposed, inactive* and a customer notice
+ * window had to close before that changed; that is the history, not the state.
+ * The flag remains the code half of the commitment: the register alone would be
+ * a document contradicted by a running request, and it now agrees with one.
+ *
+ * This docblock asserted `false` for two days after the flip. The claim is
+ * guarded now — `tests/guards/subprocessor-prose-agrees-with-constant.test.ts`
+ * fails when prose in `src/` states a value the constant does not have.
  *
  * @module app-layer/ai/identity-match/jev-provider
  */

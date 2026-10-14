@@ -179,6 +179,114 @@ describe('the sub-processor register agrees with the code', () => {
     });
 });
 
+/**
+ * Prose in `src/` may not state a value the constant does not have.
+ *
+ * The register and the constant were already checked against each other above.
+ * Nothing checked the SENTENCES, and on 2026-10-11 the constant flipped to
+ * `true` while three places in `src/` went on saying it was `false`:
+ *
+ *   - `src/env.ts`, beside `TYPESAFE_API_KEY`: "TypeSafe is a PROPOSED,
+ *     INACTIVE sub-processor ... so setting this key does NOT make the provider
+ *     reachable for tenant work."
+ *   - `jev-provider.ts`: "It is inert until somebody activates the
+ *     sub-processor. TYPESAFE_SUBPROCESSOR_ACTIVE is `false`."
+ *   - `identity-match/index.ts`: "must be true, and it is false."
+ *
+ * Each was true when written. None broke. They expired, and they expired in the
+ * direction that matters: all three tell a reader the external path is inert,
+ * when it is live and gated only by a per-tenant mode. An operator deciding
+ * whether installing the key has consequences, or auditing what leaves the
+ * deployment, gets the wrong answer from the most authoritative-looking place.
+ *
+ * WHY A LINE-SCOPED CLAIM RATHER THAN A WORD SEARCH. "inactive" and "proposed"
+ * appear legitimately as HISTORY — "Step 6a registered TypeSafe as proposed,
+ * inactive" is a true sentence about the past and must stay sayable, as must a
+ * quotation of the very claim this guard exists for. So the subject is narrow: a
+ * line naming the constant AND asserting a boolean of it. A scar is not a wound.
+ */
+describe('prose in src/ agrees with TYPESAFE_SUBPROCESSOR_ACTIVE', () => {
+    /** Lines that name the constant and assert a value for it. */
+    function assertedValues(src: string): readonly boolean[] {
+        const out: boolean[] = [];
+        for (const line of src.split('\n')) {
+            if (!line.includes('TYPESAFE_SUBPROCESSOR_ACTIVE')) continue;
+            // The assertion forms actually used in this repo, and only those:
+            // "is false", "is `true`", "must be true, and it is false".
+            const after = line.slice(line.indexOf('TYPESAFE_SUBPROCESSOR_ACTIVE'));
+            const saysFalse = /\bis\s+`?false`?/i.test(after) || /and it is false/i.test(after);
+            const saysTrue = /\bis\s+`?true`?/i.test(after) || /and it is true/i.test(after);
+            if (saysFalse && !saysTrue) out.push(false);
+            else if (saysTrue && !saysFalse) out.push(true);
+        }
+        return out;
+    }
+
+    const SOURCES = [
+        'src/env.ts',
+        'src/app-layer/ai/identity-match/jev-provider.ts',
+        'src/app-layer/ai/identity-match/index.ts',
+        'src/lib/legacy-access/adjudication-mode.ts',
+        'src/app-layer/usecases/tenant-security-settings.ts',
+    ] as const;
+
+    it('reads a non-empty population, so a clean run is not an empty one', () => {
+        // The denominator beside the result: if these files stopped naming the
+        // constant, the assertion below would pass over nothing.
+        const claims = SOURCES.flatMap((rel) =>
+            assertedValues(fs.readFileSync(path.join(ROOT, rel), 'utf8')),
+        );
+        expect(claims.length).toBeGreaterThan(0);
+    });
+
+    it('every stated value matches the constant', () => {
+        const wrong: string[] = [];
+        for (const rel of SOURCES) {
+            for (const stated of assertedValues(fs.readFileSync(path.join(ROOT, rel), 'utf8'))) {
+                if (stated !== TYPESAFE_SUBPROCESSOR_ACTIVE) {
+                    wrong.push(`${rel}: prose says ${stated}, constant is ${TYPESAFE_SUBPROCESSOR_ACTIVE}`);
+                }
+            }
+        }
+        expect(wrong).toEqual([]);
+    });
+
+    describe('detector proof — on synthetic sources', () => {
+        it('catches the exact sentence that shipped', () => {
+            const bad = ' * {@link TYPESAFE_SUBPROCESSOR_ACTIVE} is `false`, and so the path is inert.';
+            expect(assertedValues(bad)).toEqual([false]);
+        });
+
+        it('catches the other shipped form', () => {
+            const bad = ' * 2. `TYPESAFE_SUBPROCESSOR_ACTIVE` must be true, and it is false.';
+            expect(assertedValues(bad)).toEqual([false]);
+        });
+
+        it('reads a true claim as true', () => {
+            const good = ' * {@link TYPESAFE_SUBPROCESSOR_ACTIVE} is `true` since #3409.';
+            expect(assertedValues(good)).toEqual([true]);
+        });
+
+        it('says NOTHING about history that names no value', () => {
+            // Must stay sayable: this is a true sentence about Step 6a.
+            const history = ' * Step 6a registered TypeSafe as *proposed, inactive*; a notice window closed.';
+            expect(assertedValues(history)).toEqual([]);
+        });
+
+        it('says nothing about a QUOTATION of the stale claim', () => {
+            // The fix for this class cites the old wording. A word search would
+            // flag the citation and make the lesson unwritable.
+            const quoted = ' * Until #3409 this read "and it is false", which inverted the one fact.';
+            expect(assertedValues(quoted)).toEqual([]);
+        });
+
+        it('ignores a line that names the constant without asserting a value', () => {
+            const neutral = 'import { TYPESAFE_SUBPROCESSOR_ACTIVE } from "@/lib/legacy-access/adjudication-mode";';
+            expect(assertedValues(neutral)).toEqual([]);
+        });
+    });
+});
+
 describe('detector proof — on synthetic registers, so a clean run means something', () => {
     const row = (region: string) =>
         `| TypeSafe AI (Jev) | data | purpose | ${region} | Zero retention | Yes |`;
