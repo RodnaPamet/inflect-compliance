@@ -168,6 +168,43 @@ describe('EntityListPage — the banner is outside the clamped body (#3524)', ()
         expect(container.contains(banner!)).toBe(true);
     });
 
+    it('the table is the FIRST thing in the clamped body — the general rule', () => {
+        // THE BANNER WAS THE INSTANCE; THIS IS THE CLASS. Anything with natural
+        // height rendered above `<DataTable fillBody>` inside the clamped,
+        // `overflow-hidden` body takes its height first and leaves the table the
+        // remainder — which is how a 394px body ended up giving the table 34px
+        // against its own 37px sticky header, pushing the first row below the
+        // fold where no click can reach it.
+        //
+        // The test above would not catch a NEW slot added above the table: it
+        // names the banner. This one asks the question the defect actually
+        // turns on — is the table first? — so a future `notice`, `summary` or
+        // `toolbar` slot inserted into the body fails here rather than in an
+        // E2E run three weeks later.
+        //
+        // Asserted on the first ELEMENT child, not on a class or an id, because
+        // the property is positional and nothing else about the markup matters.
+        const { container } = render(
+            <EntityListPage
+                header={{ title: 'Things' }}
+                banner={<div data-testid="b">notice</div>}
+                table={{
+                    'data-testid': 'things-table',
+                    data: [],
+                    columns: [],
+                    getRowId: () => 'x',
+                }}
+            />,
+        );
+        const body = container.querySelector('[data-list-page-body]');
+        expect(body).not.toBeNull();
+        const first = body!.firstElementChild;
+        expect(first).not.toBeNull();
+        // The DataTable renders its wrapper with the `data-testid` it is given,
+        // which IS the id setter for this primitive — see the GUIDE.
+        expect(first!.getAttribute('data-testid')).toBe('things-table');
+    });
+
     it('still renders the banner when there are no filters and no kpis', () => {
         // The slot it moved into was gated on `(filters || kpis)`. A page that
         // passes only a banner would have lost it entirely — which is the way
