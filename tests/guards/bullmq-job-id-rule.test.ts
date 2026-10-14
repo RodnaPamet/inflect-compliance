@@ -38,31 +38,70 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 
 import { repoFiles, repoRelative } from '../helpers/repo-files';
 import { codeOf } from '../helpers/source-blocks';
 import { dispatchJobId, isValidBullMqJobId, scheduledJobId } from '@/app-layer/jobs/fan-out';
 
-const ROOT = path.resolve(__dirname, '../..');
-
 describe('our predicate still matches the installed BullMQ (#3554)', () => {
-    // Read from `node_modules` deliberately. The rule belongs to the library,
-    // not to us, and the only honest way to stay in step with it is to look at
-    // the copy that will actually run. In CI that copy is installed from the
-    // lockfile, which makes CI the authority.
-    const JOB_JS = 'node_modules/bullmq/dist/cjs/classes/job.js';
-    const jobJsPath = path.join(ROOT, JOB_JS);
+    // ASKED OF NODE, NOT SPELLED. The first cut of this file joined the repo
+    // root to a literal `node_modules/...` path, and
+    // `dependency-paths-are-resolved` rejected it — correctly, and for a better
+    // reason than the one I would have given:
+    //
+    //   a literal string join does no upward walk, so such a path exists only
+    //   in a checkout that owns its install. A `.claude/worktrees/<id>/`
+    //   checkout has no `node_modules` of its own, so these fail — OR, WORSE,
+    //   SKIP THEMSELVES GREEN BEHIND AN `existsSync` GUARD — for worktree users
+    //   while passing in CI.
+    //
+    // That second clause described this file exactly: it read the source
+    // through `existsSync(p) ? read(p) : ''`, so in a worktree every needle
+    // below would have matched nothing and PASSED, and the one thing this guard
+    // exists to notice — BullMQ changing its rule — would have gone unnoticed
+    // in precisely the checkouts most sessions run in.
+    //
+    // `require.resolve` walks up, honours the package's `exports` map, and
+    // THROWS when the file is absent rather than yielding a falsy default. The
+    // throw is the feature: a guard that cannot find its subject must fail,
+    // not pass quietly.
+    const jobJsPath = require.resolve('bullmq/dist/cjs/classes/job.js');
+    // MASKED, and this file is the reason the rule exists rather than an
+    // incidental application of it. `raw-source-assertion-ratchet` holds that
+    // an assertion over unmasked source can be satisfied by a COMMENT, so
+    // "delete the code, keep the note explaining it" is a green diff — and the
+    // very lines this guard reads are:
+    //
+    //     // TODO: replace this check in next breaking check with include(':')
+    //     // By using split we are still keeping compatibility with old
+    //     // repeatable jobs
+    //     if (jobId.includes(':') && jobId.split(':').length !== 3) { throw }
+    //
+    // A note saying the check is going, sitting directly above the check. If
+    // BullMQ removed the `if` and left the comment, an unmasked read would
+    // still find `include(':')` in the prose and this guard would report that
+    // the rule is unchanged — the precise inversion it exists to prevent.
+    //
+    // `codeOf` blanks comments, keeps string literals (so the thrown message
+    // is still matchable) and preserves offsets.
+    const src = codeOf(fs.readFileSync(jobJsPath, 'utf8'));
 
-    it('ships the file this rule is read out of', () => {
-        // Without this, every assertion below would pass over an empty string
-        // if the path ever moved — the failure mode where a guard silently
-        // stops guarding.
-        expect(fs.existsSync(jobJsPath)).toBe(true);
-        expect(fs.readFileSync(jobJsPath, 'utf8').length).toBeGreaterThan(1000);
+    it('reads a real, substantial copy of the library source', () => {
+        // The denominator for every needle below. An empty read now throws, but
+        // a TRUNCATED one would satisfy some needles and not others, which is
+        // harder to diagnose than a hard failure.
+        expect(src.length).toBeGreaterThan(1000);
+        expect(jobJsPath).toContain('bullmq');
     });
 
-    const src = fs.existsSync(jobJsPath) ? fs.readFileSync(jobJsPath, 'utf8') : '';
+    it('is reading CODE, not prose — the TODO above the check is masked out', () => {
+        // The mask, proved rather than trusted. BullMQ's own comment contains
+        // `include(':')`, one character from the needle below it, so a mask
+        // that silently stopped working would not be visible in any other
+        // assertion here.
+        expect(src).not.toContain('next breaking check');
+        expect(src).toContain("'Custom Id cannot contain :'");
+    });
 
     it('still rejects on exactly the condition we mirror', () => {
         // The shape, not the formatting: minified or re-emitted output changes
