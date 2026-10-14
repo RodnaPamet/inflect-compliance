@@ -64,11 +64,35 @@ export interface WebhookActionConfig {
     secretRef?: string;
 }
 
+/**
+ * #3541 — the config an `INVOKE_AGENT` rule carries.
+ *
+ * Added because the canvas bridge now creates these stubs, and the create
+ * input's union refused the shape. Worth noting what that union was: FOUR
+ * config types against SIX action-type enum values — `INVOKE_SUBFLOW` has
+ * never had one either, and its executor reads
+ * `rule.actionConfigJson as { targetGroupId?: string }` at the call site
+ * instead. This adds the agent half rather than both, because the subflow half
+ * is somebody else's lane and a drive-by change to a shape its executor
+ * already casts would be a change with no test asking for it.
+ *
+ * `inputMapping` is INPUT KEY -> EVENT FIELD NAME, never free text — the bound
+ * on what can reach prompt assembly is the trigger event's own shape, and
+ * whatever arrives is injection-scanned at the door by `startWorkflowRun`
+ * (#3468).
+ */
+export interface InvokeAgentActionConfig {
+    agentId: string;
+    workflowKey: string;
+    inputMapping?: Record<string, string>;
+}
+
 export type AutomationActionConfig =
     | { type: 'NOTIFY_USER'; config: NotifyUserActionConfig }
     | { type: 'CREATE_TASK'; config: CreateTaskActionConfig }
     | { type: 'UPDATE_STATUS'; config: UpdateStatusActionConfig }
-    | { type: 'WEBHOOK'; config: WebhookActionConfig };
+    | { type: 'WEBHOOK'; config: WebhookActionConfig }
+    | { type: 'INVOKE_AGENT'; config: InvokeAgentActionConfig };
 
 // ─── Filter expression (DSL v2, Epic 4) ────────────────────────────────
 //
@@ -154,7 +178,13 @@ export interface CreateAutomationRuleInput extends AutomationRuleSlaInput {
         | NotifyUserActionConfig
         | CreateTaskActionConfig
         | UpdateStatusActionConfig
-        | WebhookActionConfig;
+        | WebhookActionConfig
+        // #3541. A canvas `agent` node's stub is an INVOKE_AGENT rule with an
+        // EMPTY config — `agentId` and `workflowKey` are `min(1)` in the zod
+        // schema, so an empty object is refused the moment somebody tries to
+        // ENABLE it, which is exactly when it should be refused. Hence
+        // `Partial`: the stub is legal to create and illegal to enable.
+        | Partial<InvokeAgentActionConfig>;
     status?: AutomationRuleStatus;
     priority?: number;
 }
