@@ -176,14 +176,19 @@ describe('Epic 19 Coherence: dashboard structure', () => {
         fs.readFileSync(path.join(ROOT, 'infra/dashboards/grafana-api-slos.json'), 'utf-8')
     );
 
-    it('should have exactly 14 data panels (11 API/health + 3 job)', () => {
+    it('should have exactly 16 data panels (11 API/health + 3 job + 2 agentic)', () => {
+        // 14 -> 16: the two agentic run-shape histograms (#3484). They are
+        // PANELS and not alerts deliberately — "runs got longer" is a trend to
+        // look at, not a page, and the three agentic alerts send an operator
+        // here to make exactly that distinction.
         const panels = dashboard.panels.filter((p: { type: string }) => p.type !== 'row');
-        expect(panels.length).toBe(14);
+        expect(panels.length).toBe(16);
     });
 
-    it('should have 5 row dividers', () => {
+    it('should have 6 row dividers', () => {
+        // 6th: "Agentic run shape" (#3484).
         const rows = dashboard.panels.filter((p: { type: string }) => p.type === 'row');
-        expect(rows.length).toBe(5);
+        expect(rows.length).toBe(6);
     });
 
     it('should have unique panel IDs across all panels', () => {
@@ -259,13 +264,33 @@ describe('Epic 19 Coherence: alert rules', () => {
         'AgenticFanOutHalted',
     ];
 
+    // AGENTIC RUN HEALTH (#3484). A FOURTH tier, and the classification is the
+    // point rather than tidiness: these are not SLO-tracking (no API SLO is
+    // involved and they do not link the SLO board), not infrastructure health
+    // (no queue, pool, cache or certificate), and not security-control
+    // integrity — that tier fires when a control STOPS applying, whereas a
+    // guard block here is the control working. They are the health of agentic
+    // WORK: is it finishing, is it being stopped, is it accumulating.
+    const AGENTIC_RUN_ALERT_NAMES = [
+        'AgenticRunFailureRateWarning',
+        'AgenticGuardBlocksRising',
+        'AgenticRunsInFlightSustained',
+        'AgenticRunsStartedNotSettling',
+    ];
+
     const ALL_ALERT_NAMES = [
         ...SLO_ALERT_NAMES,
         ...INFRA_ALERT_NAMES,
         ...SECURITY_ALERT_NAMES,
+        ...AGENTIC_RUN_ALERT_NAMES,
     ];
 
-    it('should define exactly 17 alert rules (9 SLO + 7 infra + 1 security)', () => {
+    it('defines exactly as many alert rules as the four tiers name', () => {
+        // The title used to read "exactly 17 (9 SLO + 7 infra + 1 security)"
+        // while the registry held 21 — the security tier had grown by four and
+        // the prose had not. The assertion was always derived from the arrays,
+        // so only the SENTENCE was wrong, which is the quiet kind: a reader
+        // trusting it would have thought four alerts did not exist.
         const alertCount = (alertContent.match(/- alert:/g) || []).length;
         expect(alertCount).toBe(ALL_ALERT_NAMES.length);
     });
@@ -276,10 +301,13 @@ describe('Epic 19 Coherence: alert rules', () => {
         }
     });
 
-    it('should have 9 alert groups', () => {
+    it('should have 10 alert groups', () => {
         // 9th group: inflect.security_controls — see SECURITY_ALERT_NAMES.
+        // 10th: inflect.agentic_runs (#3484) — its own group rather than four
+        // more rules inside security_controls, because a guard block is a
+        // control WORKING and that tier is for a control that stopped.
         const groupCount = (alertContent.match(/- name: inflect\./g) || []).length;
-        expect(groupCount).toBe(9);
+        expect(groupCount).toBe(10);
     });
 
     it('every alert should have service: inflect-compliance label', () => {

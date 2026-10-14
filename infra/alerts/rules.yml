@@ -664,3 +664,152 @@ groups:
                failed" from "this sweep must not continue".
             2. Members behind a halt are not retried by the same tick; the next
                scheduled run reaches them.
+
+  # ── AGENTIC RUN HEALTH (#3484) ────────────────────────────────────────
+  #
+  # A FOURTH tier, and the classification is the point rather than tidiness.
+  # These are not SLO-tracking (no API SLO is involved and they do not link the
+  # SLO board), they are not infrastructure health (no queue, pool, cache or
+  # certificate), and they are not security-control integrity — that tier fires
+  # when a control STOPS applying, whereas a guard block here is the control
+  # working. They are the health of agentic WORK: is it finishing, is it being
+  # stopped, is it accumulating.
+  #
+  # Plan point 10 asked for started/completed/failed counters, step and token
+  # histograms, a guard-block counter and a runs-in-flight gauge. These alerts
+  # are what makes those numbers reach somebody; the histograms are dashboard
+  # material rather than alert material, because "runs got longer" is a trend
+  # to look at and not a page.
+  #
+  # RATES, not totals. A tenant that runs more agents has more failures in
+  # absolute terms and is not less healthy for it; the share is the signal.
+  - name: inflect.agentic_runs
+    rules:
+      # Warning: more than a quarter of settled runs are failing.
+      #
+      # The denominator is guarded (`> 0`), the shape every rule above uses: a
+      # deployment with no agentic traffic must not divide by zero and page.
+      - alert: AgenticRunFailureRateWarning
+        expr: |
+          (
+            sum(rate(agent_run_settled_total{outcome="failed"}[15m]))
+            /
+            (sum(rate(agent_run_settled_total[15m])) > 0)
+          ) > 0.25
+        for: 15m
+        labels:
+          severity: warning
+          service: inflect-compliance
+        annotations:
+          summary: "Over 25% of agentic runs are failing ({{ $value | humanizePercentage }})"
+          description: |
+            A run reaches FAILED when its walk threw, or when the reaper settled it
+            as having no executor. The second shape means a deploy stranded runs,
+            which looks identical in this series and is NOT a model problem — check
+            the deployment timeline first.
+
+            Runbook:
+            1. /agents/runs — the run list, newest first, with the error message
+               each failure settled with.
+            2. `agent_run_settled_total{outcome="aborted"}` is the OTHER
+               non-completion and is deliberately separate: an abort was something
+               stopping the run on purpose (a guard block or a kill switch), not a
+               failure to be fixed.
+            3. The per-tenant breakdown is not in this series — labels carry no
+               tenant id on purpose. Use trace attributes or the governance pack's
+               `runs.failed`.
+
+      # Warning: the content guard is stopping agentic traffic.
+      #
+      # A QUARANTINED verdict means nothing was committed, so this is not a data
+      # incident — it is either an agent reaching for something it should not, or
+      # a guard rule that is too broad for a tenant's content. Both need a human.
+      - alert: AgenticGuardBlocksRising
+        expr: |
+          increase(agent_guard_blocks_total{guard_verdict="QUARANTINED"}[1h]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          service: inflect-compliance
+        annotations:
+          summary: "The content guard blocked more than 5 agentic runs in an hour"
+          description: |
+            FLAGGED verdicts are a separate label value and are NOT counted here:
+            those parked a run for human review, which is the control working as
+            intended and shows up as a reviewer queue rather than an incident.
+
+            Runbook:
+            1. The run's error message names the rule ids that fired; the content
+               that matched them is deliberately not recorded anywhere.
+            2. Three blocks in a window latch an agent's circuit breaker
+               (GUARD_BLOCK_TRIP_THRESHOLD), so a sustained rise here is usually
+               followed by AgenticCircuitBreakerTripped.
+
+      # Warning: runs are accumulating in flight.
+      #
+      # `agent_runs_in_flight` is a PER-PROCESS gauge summed by the collector, so
+      # this is the deployment-wide number of runs being executed right now. A
+      # sustained high value with a flat completion rate is the shape of runs
+      # that started and are not finishing.
+      - alert: AgenticRunsInFlightSustained
+        expr: |
+          sum(agent_runs_in_flight) > 20
+        for: 30m
+        labels:
+          severity: warning
+          service: inflect-compliance
+        annotations:
+          summary: "More than 20 agentic runs in flight for 30 minutes"
+          description: |
+            This gauge counts runs a worker process is EXECUTING. Runs parked at a
+            human checkpoint are not here — they are AWAITING_APPROVAL and the
+            governance pack reports them as `runs.awaiting_approval`, so a
+            reviewer backlog does not trigger this.
+
+            Runbook:
+            1. The per-tenant concurrent-run cap
+               (TenantSecuritySettings.agentMaxConcurrentRuns) bounds how many a
+               single tenant can start; a deployment-wide number this high with no
+               tenant near its cap means many tenants at once.
+            2. `agent_run_steps` on the dashboard says whether runs are taking more
+               steps than usual, which distinguishes "slower runs" from "more runs".
+
+      # Warning: runs are starting and not settling.
+      #
+      # THE ONE THAT USES `agent_run_started`. Every other series here counts an
+      # ending; this compares the two, and the gap is the figure that says runs
+      # are going missing rather than failing — a settled run, whatever its
+      # outcome, has been accounted for.
+      #
+      # A standing gap is normal and this does not fire on it: runs legitimately
+      # sit at a human checkpoint, and those have started without settling. The
+      # alert is on the RATE DIFFERENCE being sustained, which a steady queue of
+      # checkpoints does not produce — it produces a gap that stops growing.
+      - alert: AgenticRunsStartedNotSettling
+        expr: |
+          (
+            sum(rate(agent_run_started_total[30m]))
+            - sum(rate(agent_run_settled_total[30m]))
+          ) > 0.05
+        for: 1h
+        labels:
+          severity: warning
+          service: inflect-compliance
+        annotations:
+          summary: "Agentic runs have been starting faster than they settle for an hour"
+          description: |
+            A run settles on COMPLETED, FAILED or ABORTED. It does NOT settle when
+            it parks at a human checkpoint or is paused by a deploy, so a reviewer
+            backlog and a rolling restart both widen this gap legitimately — which
+            is why the threshold is on a sustained rate difference and not on the
+            gap itself.
+
+            Runbook:
+            1. `agent_runs_in_flight` says whether the unsettled runs are being
+               EXECUTED right now or are parked. Parked runs are not in that gauge.
+            2. The governance pack's `runs.awaiting_approval` and `runs.paused` are
+               the per-status counts, unwindowed, and distinguish "waiting on a
+               person" from "waiting on nothing".
+            3. A run that threw past its walk is counted as settled-failed at the
+               driver seam, so a crash loop shows up as a failure rate rather than
+               as this gap.
