@@ -175,6 +175,23 @@ describe('DatePicker — single-date', () => {
         void queryByTestId;
     });
 
+    it('opens at the chosen day\'s month, not today\'s (projectZ #382)', () => {
+        // A day years from any test run's "today", so the month on screen
+        // can only be the selection's.
+        const { container, getByTestId } = render(
+            <DatePicker value={new Date(Date.UTC(2019, 1, 12))} />,
+        );
+        const trigger = container.querySelector(
+            '[data-date-picker-trigger]',
+        ) as HTMLButtonElement;
+        act(() => {
+            fireEvent.click(trigger);
+        });
+        const calendar = getByTestId('calendar');
+        expect(calendar.querySelector('[data-day="2019-02-12"]')).not.toBeNull();
+        expect(calendar.querySelector('[data-day="2019-02-12"] button')).not.toBeNull();
+    });
+
     it('controlled value renders the formatted date in the trigger', () => {
         const { container } = render(
             <DatePicker value={new Date(Date.UTC(2026, 3, 15))} />,
