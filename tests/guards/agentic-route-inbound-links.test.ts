@@ -280,13 +280,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // compose would turn four eyes into two.
 
     't/[tenantSlug]/agent-proposals/compose/route.ts',
-    // #3351 — the same compose step from a TYPED phrase instead of a filled
-    // form. A sibling path rather than a second POST on the one above, and it
-    // re-implements nothing: it resolves the phrase to a template plus open
-    // values and hands those to the same usecase, which re-checks every value.
-    // Rate limited where its sibling is not, because each accepted call makes
-    // two model calls.
-    't/[tenantSlug]/agent-proposals/compose/intent/route.ts',
+    // REMOVED 2026-10-14 (#3528): the TYPED-PHRASE compose route. The intent
+    // layer behind it had never run in production — `AI_LOCAL_BASE_URL` was
+    // never set, so every call refused `LOCAL_GATEWAY_NOT_CONFIGURED` — and the
+    // owner retired it rather than stand up a gateway for it. The form-driven
+    // sibling above is the live path and is unchanged.
     't/[tenantSlug]/agent-proposals/sample-audits/[id]/route.ts',
     't/[tenantSlug]/agent-proposals/sample-audits/route.ts',
     't/[tenantSlug]/agent-receipts/[id]/export/route.ts',
