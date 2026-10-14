@@ -21,6 +21,8 @@
  *      the title link breaks row uniformity. The ratchet scans for
  *      the prior Policies-style anti-pattern.
  */
+import { twMerge } from 'tailwind-merge';
+
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -73,15 +75,28 @@ describe('DataTable uniform row height (R12-PR2)', () => {
      * visible, enabled and stable; the header merely sits on top of it and takes
      * the click. Nothing throws. In the E2E run that found this, Playwright
      * reported the intercepting `<th>` 373 times in a single attempt and then
-     * timed out at 180s, and three specs failed that way with 213 passing.
+     * timed out at 180s — three specs failed that way, 213 passed.
      *
-     * ASSERTED AS AN INEQUALITY, not as a literal. `scroll-pt-[45px]` written as
-     * a string would pass while somebody changed `py-2.5` to `py-4` and made the
-     * header taller than the padding — the exact way the previous attempt went
-     * wrong. That one was `scroll-pt-[37px]` against a 45px header: 8px short,
-     * recorded in `table.tsx`'s own comment, and then removed along with the
-     * scroll-snap it was grouped with. So both numbers are DERIVED from the
-     * classes that produce them and compared.
+     * THE HEIGHT IS RESOLVED WITH `twMerge`, NOT GUESSED FROM THE SOURCE, and
+     * that is the whole point of this test's shape. The first version of it read
+     * the file for `/leading-6/` and multiplied — which was wrong twice over:
+     * `leading-6` occurs twice in this file (the shared cell base and the
+     * footer), so a boolean `.test()` could not tell which it had found; and the
+     * header does not end up with `leading-6` AT ALL. `cn` is
+     * `twMerge(clsx(...))`, Tailwind's `text-*` utilities set line-height as well
+     * as font-size, and tailwind-merge therefore DROPS an earlier `leading-6`
+     * when the th adds `text-xs`. The merged class is
+     *
+     *     py-2.5 text-left whitespace-nowrap … sticky top-0 z-20 group/th text-xs …
+     *
+     * with no leading class, which matches the rendered `<th>` in the E2E log
+     * exactly. So the header is `py-2.5` (20px) + text-xs's 16px line-height +
+     * `border-b` (1px) = 37px, and the ~45px figure in `table.tsx`'s older
+     * comment is the CELL height (text-sm/leading-6), not the header's.
+     *
+     * Which also means the long-removed `scroll-pt-[37px]` was RIGHT for this
+     * header, and the note calling it "8px short" was comparing against the
+     * wrong element.
      */
     test('the scroll container clears the sticky header it scrolls rows under', () => {
         const src = codeOf(fs.readFileSync(
@@ -89,28 +104,58 @@ describe('DataTable uniform row height (R12-PR2)', () => {
             'utf-8',
         ));
 
-        // The header must actually be sticky, or there is nothing to clear and
-        // this test would pass over a changed design without saying so.
-        expect(src).toMatch(/sticky\s+top-0/);
+        // BOUNDED READS of the two specific literals, not whole-file needles.
+        // The shared cell base is the one carrying the py/text/leading triplet;
+        // the header's own additions are the literal carrying `sticky top-0`.
+        const baseLit = /"(py-2\.5 text-left[^"]*)"/.exec(src);
+        const thLit = /"(sticky top-0[^"]*)"/.exec(src);
+        const thFont = /"(text-xs[^"]*)"/.exec(src);
+        expect(baseLit).not.toBeNull();
+        expect(thLit).not.toBeNull();
+        expect(thFont).not.toBeNull();
 
-        // Header height, from the classes that set it. Tailwind: py-N is
-        // N*0.25rem per side, leading-N is N*0.25rem, border-b is 1px.
-        const headerPadY = /py-2\.5/.test(src) ? 2.5 * 4 * 2 : NaN;
-        const headerLeading = /leading-6/.test(src) ? 6 * 4 : NaN;
-        expect(Number.isNaN(headerPadY)).toBe(false);
-        expect(Number.isNaN(headerLeading)).toBe(false);
-        const headerHeight = headerPadY + headerLeading + 1; // + border-b
+        // Resolved by the SAME function production uses, so this test cannot
+        // disagree with the browser about which utilities survive.
+        const merged = twMerge(baseLit![1], 'border-l border-b px-4', thLit![1], thFont![1]);
 
-        // The scroll padding actually present on the scrolling region.
+        // The header must still be sticky, or there is nothing to clear and this
+        // test would pass over a changed design without saying so.
+        expect(merged).toMatch(/\bsticky\b/);
+        expect(merged).toMatch(/\btop-0\b/);
+
+        // Height, from what actually survives the merge.
+        const padM = /\bpy-(\d+(?:\.\d+)?)\b/.exec(merged);
+        expect(padM).not.toBeNull();
+        const padY = Number(padM![1]) * 4 * 2; // Tailwind: py-N = N*0.25rem per side
+
+        // Line-height: an explicit `leading-N` if one survives, otherwise the
+        // one implied by the surviving font-size utility.
+        const leadM = /\bleading-(\d+)\b/.exec(merged);
+        const FONT_LINE_HEIGHT: Record<string, number> = {
+            'text-xs': 16, 'text-sm': 20, 'text-base': 24, 'text-lg': 28,
+        };
+        const fontM = /\btext-(xs|sm|base|lg)\b/.exec(merged);
+        const lineHeight = leadM
+            ? Number(leadM[1]) * 4
+            : FONT_LINE_HEIGHT[`text-${fontM?.[1]}`];
+        expect(lineHeight).toBeGreaterThan(0);
+
+        const headerHeight = padY + lineHeight + 1; // + border-b
+
+        // What the scrolling region actually declares.
         const m = /scroll-pt-\[(\d+)px\]/.exec(src);
         expect(m).not.toBeNull();
         const scrollPad = Number(m![1]);
 
-        expect({ scrollPad, headerHeight }).toEqual({
-            scrollPad: expect.any(Number),
-            headerHeight: 45,
-        });
-        expect(scrollPad).toBeGreaterThanOrEqual(headerHeight);
+        // THE INEQUALITY is the assertion. A literal would pass while somebody
+        // made the header taller than its padding — which is exactly how the
+        // 37px version came to be described as short.
+        expect({ scrollPad, headerHeight, clears: scrollPad >= headerHeight })
+            .toEqual({ scrollPad, headerHeight, clears: true });
+
+        // And the inputs are pinned, so a change to either recomputes rather
+        // than silently shifting the floor under the inequality.
+        expect({ padY, lineHeight }).toEqual({ padY: 20, lineHeight: 16 });
     });
 
     test('no entity list page renders a multi-line title cell via block-level description', () => {

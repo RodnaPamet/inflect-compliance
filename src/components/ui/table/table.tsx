@@ -1315,31 +1315,46 @@ export function Table<T extends TableRowData>({
               "overscroll-contain",
               // SCROLL PADDING FOR THE STICKY HEADER (#3524).
               //
-              // Without it, anything that scrolls a row into view parks that
-              // row flush against the container's top edge — which is UNDER the
-              // `sticky top-0 z-20` header cells. The header then swallows the
+              // Without it, anything that scrolls a row into view parks that row
+              // flush against this container's top edge — which is UNDER the
+              // `sticky top-0 z-20` header cells. The header then takes the
               // click, and because the row is genuinely visible, enabled and
-              // stable, nothing reports an error: the click simply retries until
-              // it gives up. Playwright named the intercepting element 373 times
-              // in one attempt before the test timed out.
+              // stable, nothing reports an error: the click just retries until it
+              // gives up. Playwright named the intercepting `<th>` 373 times in
+              // one attempt before timing out at 180s.
               //
-              // 45px is the real header height and the comment above says so:
-              // `py-2.5` (20px) + `leading-6` (24px) + `border-b` (1px). The th
-              // is `whitespace-nowrap`, so it cannot grow to two lines and make
-              // this short.
+              // THE HEADER IS 37px, NOT THE ~45px THE COMMENT ABOVE SAYS. That
+              // figure is the CELL height and the two differ, which is worth
+              // spelling out because the arithmetic is not local to either:
               //
-              // THIS IS A RESTORATION, NOT A NEW IDEA. A `scroll-pt-[37px]` used
-              // to live here as part of the scroll-snap setup. The snap was
-              // removed for grabbing through momentum scrolls — correctly — and
-              // the scroll padding went with it, even though it was serving a
-              // second purpose that had nothing to do with snapping. The note
-              // above already records that 37px was 8px short of the header; the
-              // bug that surfaced in #3524 is the same misalignment with the
-              // padding at zero instead of 37.
+              //   `cn` is `twMerge(clsx(...))`. The th composes the shared cell
+              //   base (`py-2.5 text-left text-sm leading-6 …`) and then adds
+              //   `text-xs`. Tailwind's `text-*` utilities set line-height as
+              //   well as font-size, so tailwind-merge DROPS the earlier
+              //   `leading-6`. The merged class carries no leading utility at
+              //   all — verified against the rendered `<th>` in the E2E log,
+              //   which matches character for character — so the line box is
+              //   text-xs's 16px:
               //
-              // Why the CONTAINER and not `scroll-mt` on each row: this applies
-              // to every scroll-into-view in the region — keyboard navigation and
-              // anchor targets as well as a programmatic click — and it is one
+              //     py-2.5 (20px) + 16px + border-b (1px) = 37px
+              //
+              // Which means the long-removed `scroll-pt-[37px]` was RIGHT for
+              // this header, and the note above calling it "8px short" was
+              // measuring the cell. The bug was never a wrong value; it was the
+              // value being deleted along with the scroll-snap it happened to
+              // sit beside, for a purpose that had nothing to do with snapping.
+              //
+              // 45px IS DELIBERATE SLACK, not a recomputation: 37px of header
+              // plus 8px. A scrolled row sitting 8px below the header costs
+              // nothing visually, and it means a one-off border or rounding
+              // change cannot reintroduce a click-eating overlap in production
+              // before CI says so. `datatable-row-height-uniform` resolves the
+              // real height with `twMerge` and asserts this clears it, so the
+              // floor is enforced rather than assumed.
+              //
+              // Why the CONTAINER and not `scroll-mt` on each row: this covers
+              // every scroll-into-view in the region — keyboard navigation and
+              // anchor targets as well as a programmatic click — in one
               // declaration rather than one per row.
               "scroll-pt-[45px]",
               scrollWrapperClassName,
