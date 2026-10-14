@@ -202,6 +202,11 @@ export function DatePicker({
                         <CalendarPrimitive
                             mode="single"
                             selected={toRDPSingle(selected)}
+                            // Open at the chosen day's month. The calendar
+                            // starts at today's otherwise, so a field holding
+                            // a day in another month opened somewhere else and
+                            // the day was not on screen (projectZ #382).
+                            defaultMonth={toRDPSingle(selected)}
                             onSelect={handleSelect}
                             disabled={disabledDays}
                             showYearNavigation={showYearNavigation}
