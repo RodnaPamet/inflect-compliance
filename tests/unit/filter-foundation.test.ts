@@ -172,8 +172,12 @@ describe('AnimatedSizeContainer — foundational animated container', () => {
     });
 
     it('uses useResizeObserver from the shared hooks module (no bespoke copy)', () => {
-        expect(src).toMatch(/useResizeObserver/);
-        expect(src).toMatch(/from ['"]\.\/hooks['"]/);
+        // Imported by its own module rather than through the hooks barrel
+        // (projectZ #336); either way it is the shared hook, not a copy.
+        expect(src).toMatch(
+            /import \{ useResizeObserver \} from ['"]@inflect\/ui\/components\/ui\/hooks\/use-resize-observer['"]/,
+        );
+        expect(src).not.toMatch(/function useResizeObserver/);
     });
 
     it('is the container that filter-list consumes (no duplicate implementation)', () => {
