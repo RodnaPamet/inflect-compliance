@@ -158,14 +158,14 @@ export const CORPUS: readonly CorpusCase[] = [
     {
         id: 'in-01',
         category: 'initials',
-        why: 'An initial is a weak signal: `J Jones` matches both Jamie and Jordan Jones, so the engine must refuse to pick.',
+        why: 'An initial is a weak signal: `J Jones` matches both Jamie and Jordan Jones, so the engine must refuse to pick — and UNMATCHED is how it refuses. This case expected AMBIGUOUS until #3550: both readings refuse to pick, so the prose above never actually chose between them, and the engine had always returned UNMATCHED. Owner decision 2026-10-15: AMBIGUOUS is a positive claim — *it is one of these two* — that score 0 with no signals cannot support, and the reviewer loses nothing, because the queue sends candidates for UNMATCHED rows too and the UI gates on candidates.length rather than on outcome. Reserving the AMBIGUOUS badge for real conflicting evidence is what keeps it worth reading.',
         account: { accountKey: 'jjones2', displayName: 'J Jones' },
         hr: [
             active('e-100', 'Jamie Jones', { givenName: 'Jamie', familyName: 'Jones' }),
             active('e-102', 'Jordan Jones', { givenName: 'Jordan', familyName: 'Jones' }),
         ],
         directory: [],
-        expected: { outcome: 'AMBIGUOUS', employeeId: null },
+        expected: { outcome: 'UNMATCHED', employeeId: null },
         normalForms: { nameGiven: 'J', nameFamily: 'Jones' },
     },
 
