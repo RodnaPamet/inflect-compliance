@@ -92,7 +92,15 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // +6/-1 — five lines of new entry plus one replaced `coveredBy` value —
         // so the FORMAT half round-tripped untouched and only the key-order
         // digest moved, which is this pin working as designed.
-        keyOrderSha: '8807272e603fc72615631ff06a465ffb630bb4599ca4afbcc2e80b7f2e398bac',
+        //
+        // Updated again 2026-10-14: one entry added for
+        // `main-ci-failure-notice.yml:notice` (#3505) — the `workflow_run` job
+        // that opens an issue when a run on `main` fails. The diff is +5/-0, a
+        // pure append, so again only this digest moved. Worth noting WHY that
+        // job had to be registered rather than fixed: it is the one job in the
+        // repo that is unreachable from a pull request ON PURPOSE, since its
+        // whole function is to react to a run that has already merged.
+        keyOrderSha: '329a1645445970a3de24eee7880a563d831f27d5afc01e2a17cfdf7309677953',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
