@@ -25,11 +25,54 @@
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
 import { AutomationRuleRepository } from '../automation';
+import type { CreateAutomationRuleInput } from '../automation/types';
+import type { AutomationActionType } from '@prisma/client';
 import { assertCanManageAutomation } from '../automation/policies';
 import { assertNoChainCycle } from '../usecases/automation-rules';
 import { logEvent } from '../events/audit';
 
-const ACTION_KIND = 'action';
+/**
+ * THE NODE KINDS THAT OWN A RULE (#3541).
+ *
+ * A SET, not a constant, and the set is the fix. This was
+ * `const ACTION_KIND = 'action'` in two queries and one filter, so when #3471
+ * added `agent` as a fifth automation kind — palette entry, taxonomy metadata,
+ * canvas renderer — the bridge did not learn about it. An operator could drag
+ * an Agent node on, save, and the node owned nothing: no stub rule, no
+ * `dataJson.ruleId`, nothing for the inspector to open. It rendered, which is
+ * what made it look finished.
+ *
+ * `trigger`, `condition` and `slaGate` are deliberately absent and stay
+ * absent. They FEED a rule rather than owning one — the inspector edits the
+ * owning rule directly (VR-4) — which is the model this file's header
+ * describes, and widening the set to them would create a rule per trigger node
+ * and break that model rather than extend it.
+ */
+export const RULE_OWNING_KINDS: ReadonlySet<string> = new Set(['action', 'agent']);
+
+/**
+ * The stub a NEW rule-owning node gets, by kind.
+ *
+ * Both are DRAFT and unconfigured on purpose: a node that created an ENABLED
+ * rule would start firing on the next matching event because somebody dragged
+ * a shape onto a canvas. The action type differs because that is the one thing
+ * the KIND already decided — an `agent` node exists to invoke an agent, and
+ * defaulting it to `NOTIFY_USER` would make the operator's first job undoing
+ * the default.
+ *
+ * `INVOKE_AGENT`'s config is empty rather than carrying a placeholder agent id:
+ * `agentId` and `workflowKey` are `z.string().min(1)`, so an empty object is
+ * refused by the schema the moment somebody tries to ENABLE the rule, which is
+ * exactly when it should be refused. A fabricated id would pass that check and
+ * fail at dispatch with `agent_not_found` instead.
+ */
+export const STUB_BY_KIND: Record<
+    string,
+    { actionType: AutomationActionType; actionConfig: CreateAutomationRuleInput['actionConfig'] }
+> = {
+    action: { actionType: 'NOTIFY_USER', actionConfig: { userIds: [], message: '' } },
+    agent: { actionType: 'INVOKE_AGENT', actionConfig: {} },
+};
 const CHAIN_EDGE_KIND = 'chain-delay';
 const PASS_EDGE_KIND = 'condition-pass';
 const FAIL_EDGE_KIND = 'condition-fail';
@@ -68,7 +111,7 @@ export async function syncCanvasToRules(
     processMapId: string,
 ): Promise<SyncResult> {
     const nodes = (await db.processNode.findMany({
-        where: { processMapId, tenantId: ctx.tenantId, nodeType: ACTION_KIND },
+        where: { processMapId, tenantId: ctx.tenantId, nodeType: { in: [...RULE_OWNING_KINDS] } },
         select: { nodeKey: true, nodeType: true, label: true, dataJson: true },
     })) as GraphNode[];
     const edges = (await db.processEdge.findMany({
@@ -125,11 +168,20 @@ export async function syncCanvasToRules(
         }
         // Create a stub rule. Default trigger/action are placeholders the
         // user refines via the inspector. NO geometry is written here.
+        //
+        // The ACTION TYPE comes from the node's KIND (#3541): an `agent` node
+        // exists to invoke an agent, so defaulting it to `NOTIFY_USER` would
+        // make the operator's first job undoing the default. The fallback is
+        // the action stub, so a sixth rule-owning kind added to the set
+        // without a stub gets the old behaviour rather than a crash — and the
+        // test below asserts the two sets agree, so that fallback is a safety
+        // net rather than a silent default.
+        const stub = STUB_BY_KIND[node.nodeType] ?? STUB_BY_KIND.action;
         const rule = await AutomationRuleRepository.create(db, ctx, {
             name: `Canvas rule · ${node.nodeKey}`,
             triggerEvent: 'RISK_CREATED',
-            actionType: 'NOTIFY_USER',
-            actionConfig: { userIds: [], message: '' },
+            actionType: stub.actionType,
+            actionConfig: stub.actionConfig,
             status: 'DRAFT',
         });
         rulesCreated++;
@@ -220,7 +272,7 @@ export async function hydrateCanvasFromRules<T extends GraphNode>(
     nodes: T[],
 ): Promise<Array<T & { dataJson: Record<string, unknown> }>> {
     const ruleIds = nodes
-        .filter((n) => n.nodeType === ACTION_KIND)
+        .filter((n) => RULE_OWNING_KINDS.has(n.nodeType))
         .map((n) => ruleIdOf(n))
         .filter((id): id is string => !!id);
 
