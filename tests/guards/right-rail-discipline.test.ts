@@ -133,9 +133,10 @@ describe('Right-rail list-page aside discipline (Phase 2)', () => {
     it('ListPageShell.Body renders the aside as a real <aside> with the canonical test-id', () => {
         const src = read(LIST_SHELL_PATH);
         // a11y: a real <aside aria-label> so the column is announced
-        // as a distinct region.
+        // as a distinct region. The name is translated (`common.ui`,
+        // projectZ #400), so it is an expression, not a literal.
         expect(src).toMatch(
-            /<aside[\s\S]*?aria-label=["'][^"']+["'][\s\S]*?data-testid=["']list-page-aside["']/,
+            /<aside[\s\S]*?aria-label=\{t\(['"]listRailRight['"]\)\}[\s\S]*?data-testid=["']list-page-aside["']/,
         );
     });
 
