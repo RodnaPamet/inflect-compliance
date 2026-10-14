@@ -339,13 +339,17 @@ export const env = createEnv({
         // legacy identity adjudication. The HOST is a code constant in
         // src/app-layer/ai/identity-match/jev-provider.ts; only the key is
         // configuration, so no env var can redirect where this provider posts.
-        // TYPESAFE IS AN ACTIVE SUB-PROCESSOR since 2026-10-11
-        // (docs/sub-processors.md), and TYPESAFE_SUBPROCESSOR_ACTIVE is `true`.
-        // SETTING THIS KEY THEREFORE HAS EFFECT: a tenant whose
-        // `legacyMatchAiMode` is `EXTERNAL`, and whose `aiResidency` does not
-        // narrow it to `LOCAL_ONLY`, reaches Jev and personal data leaves this
-        // deployment for the US. The mode defaults to `OFF`, so no tenant does
-        // so by accident — but the key is no longer inert.
+        // TYPESAFE IS WITHDRAWN as a sub-processor (2026-10-14), and
+        // TYPESAFE_SUBPROCESSOR_ACTIVE is `false`. SETTING THIS KEY ACHIEVES
+        // NOTHING: `getDecisionProvider` returns the local provider or the stub
+        // for every mode, so no tenant path can reach Jev whatever the column
+        // says. The key is kept declared rather than deleted so a deployment
+        // that still carries it fails validation nowhere — but it is inert.
+        //
+        // It was briefly LIVE: active from 2026-10-11 (#3409) to 2026-10-14,
+        // during which the path was reachable and produced ZERO verdicts
+        // (`LegacyMatchVerdict` = 0 rows in production), because no evaluation
+        // record was ever committed and the gate refuses `NO_EVALUATION`.
         //
         // This comment said the opposite until 2026-10-13, for two days after
         // activation: "TypeSafe is a PROPOSED, INACTIVE sub-processor ... so

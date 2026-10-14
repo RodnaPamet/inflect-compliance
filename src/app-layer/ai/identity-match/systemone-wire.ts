@@ -56,7 +56,7 @@ import { z } from 'zod';
  * the same pull request.
  *
  * Worth knowing why that mattered more than a typo normally would: while
- * `TYPESAFE_SUBPROCESSOR_ACTIVE` is false no tenant path can obtain this provider,
+ * the sub-processor is inactive no tenant path can obtain this provider,
  * so a wrong model string would have failed nothing until the day somebody
  * activated the sub-processor — a latent error with a release date.
  *

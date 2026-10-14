@@ -87,10 +87,14 @@ describe('the effective mode is the stricter of the two settings', () => {
 });
 
 describe('the sub-processor facts', () => {
-    it('TypeSafe IS an active sub-processor, and the register says so too', () => {
-        // Was `expect(TYPESAFE_SUBPROCESSOR_ACTIVE).toBe(false)`. Activated by
-        // owner decision 2026-10-11 with policy steps 2 and 3 not performed —
-        // recorded in the waiver in `docs/sub-processors.md`.
+    it('the register agrees with the constant, whichever way it is set', () => {
+        // The NAME is deliberately about the agreement rather than about the
+        // value, because the value has now moved twice: `false` until #3409,
+        // `true` from 2026-10-11, `false` again from the withdrawal on
+        // 2026-10-14. A name like "TypeSafe IS an active sub-processor" was
+        // accurate for three days and then asserted something untrue of the
+        // tree it ran in — and a test name is what a reader trusts without
+        // opening the body.
         //
         // Asserted against the REGISTER rather than against a literal. A literal
         // notices a flip and nothing else; the register is the artefact a

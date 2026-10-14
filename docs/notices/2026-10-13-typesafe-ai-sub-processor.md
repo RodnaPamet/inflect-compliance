@@ -9,6 +9,28 @@
 **Issued:** 2026-10-14
 **Objection window closes:** 2026-11-13
 
+---
+
+> ## WITHDRAWN — 2026-10-14
+>
+> **This notice is superseded. TypeSafe AI is not a sub-processor and receives no
+> data.** It was withdrawn on the same day this notice was issued, so the
+> objection window above never ran to its close and no objection can be needed.
+>
+> Nothing was sent to TypeSafe AI while the path was active: the feature produced
+> **zero** adjudications in production. It was withdrawn because it delivered
+> nothing measurable while carrying a transfer of personal data to the United
+> States, and because the on-premises model that would have avoided that transfer
+> did not perform well enough to use.
+>
+> The notice text is kept below rather than deleted, unchanged. A notice that
+> announced a processing activity is a record of what you were told, and editing
+> it to match a later decision would remove the only evidence of the
+> announcement. Read it as history, not as a description of what happens today.
+>
+> If you have a question about what was processed in that window, the answer is
+> nothing, and `docs/sub-processors.md` carries the measurement behind that.
+
 ## What is changing
 
 Inflect intends to use **TypeSafe AI** as a sub-processor for one optional

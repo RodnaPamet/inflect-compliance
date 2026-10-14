@@ -11,20 +11,21 @@
  * the sub-processor register would be describing a destination the code no longer
  * uses. `tests/guards/ai-residency-enforcement.test.ts` asserts the constant.
  *
- * **IT IS NO LONGER INERT.** {@link TYPESAFE_SUBPROCESSOR_ACTIVE} is `true`
- * since #3409 (2026-10-11), so `getDecisionProvider` WILL return this provider
- * for tenant work once the effective mode is `EXTERNAL`. What stands between a
- * tenant and a real request is now the mode alone — `legacyMatchAiMode`,
- * defaulting to `OFF`, narrowed by `aiResidency` — and not this flag.
+ * **IT IS INERT AGAIN, AND THIS TIME BY A DECISION RATHER THAN A WINDOW.**
+ * {@link TYPESAFE_SUBPROCESSOR_ACTIVE} is `false` since 2026-10-14, so
+ * `getDecisionProvider` refuses to return this provider for tenant work however
+ * a tenant sets its mode.
  *
- * Step 6a registered TypeSafe as *proposed, inactive* and a customer notice
- * window had to close before that changed; that is the history, not the state.
- * The flag remains the code half of the commitment: the register alone would be
- * a document contradicted by a running request, and it now agrees with one.
+ * The whole history, because the flag has now moved twice: Step 6a registered
+ * TypeSafe as *proposed, inactive*; #3409 activated it on 2026-10-11 with the
+ * legal review and the customer notice deliberately skipped; and on 2026-10-14
+ * the owner withdrew it, on the evidence that the path had produced ZERO
+ * verdicts in production while carrying a US transfer, a DPA obligation and an
+ * open injection finding (#3461).
  *
- * This docblock asserted `false` for two days after the flip. The claim is
- * guarded now — `tests/guards/subprocessor-prose-agrees-with-constant.test.ts`
- * fails when prose in `src/` states a value the constant does not have.
+ * The provider is kept rather than deleted so the withdrawal is one constant
+ * away from reversible, and so the register continues to describe code that
+ * exists. Deleting it is a separate decision about ~9,600 lines.
  *
  * @module app-layer/ai/identity-match/jev-provider
  */

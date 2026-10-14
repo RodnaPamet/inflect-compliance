@@ -32,7 +32,7 @@ auditor can verify the inventory is accurate, not merely asserted.
 | HaveIBeenPwned | SHA-1 prefix of a chosen password (k-anonymity; no PII) | Password breach check | Global | Volatile (no log) | No (security primitive) |
 | GitHub | Repo metadata (per-tenant integration only) | Repo sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft SharePoint | Document metadata (per-tenant integration only) | Document sync | Global | Token lifetime | Yes (per-tenant opt-in) |
-| TypeSafe AI (Jev) | **Active since 2026-10-11.** Per residue account: the legacy account's username and its tokens, neutralised display name, given and family names, email **local part only**, department, title, account type, and transliteration variants; plus up to five HR candidates' name parts (middle and preferred included) with variants, department and title. Excluded by construction: email domains, employee numbers, dates, employment status, managers, entitlements, privilege flags, unmapped columns | Identity adjudication for legacy access recertification | US (West Coast) | Zero retention, required in the signed DPA | Yes (per tenant; only under `legacyMatchAiMode` = `EXTERNAL`, default `OFF`) |
+| TypeSafe AI (Jev) | **WITHDRAWN 2026-10-14 — no data reaches it.** Was active 2026-10-11 to 2026-10-14 and processed nothing in that window (`LegacyMatchVerdict` = 0 rows). Would have shared, per residue account: the legacy account's username and its tokens, neutralised display name, given and family names, email **local part only**, department, title, account type, and transliteration variants; plus up to five HR candidates' name parts (middle and preferred included) with variants, department and title. Excluded by construction: email domains, employee numbers, dates, employment status, managers, entitlements, privilege flags, unmapped columns | Identity adjudication for legacy access recertification | US (West Coast) | Zero retention, required in the signed DPA | **No — unreachable.** `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`, so no value of `legacyMatchAiMode` reaches it |
 | Okta | Directory account metadata — email, status, MFA/admin flags (per-tenant integration only; read-only pull) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Google Workspace (`google-workspace`) | Directory account metadata — email, status, 2SV/admin flags (per-tenant integration only; read-only pull) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft Entra ID / Azure AD (`entra-id`) | Directory account metadata — email, status, MFA-registration/admin flags, domain federation (per-tenant integration only; read-only Graph pull; also covers on-prem AD synced via Azure AD Connect) | Identity posture sync | Global | Token lifetime | Yes (per-tenant opt-in) |
@@ -203,14 +203,40 @@ Common to both:
 
 ---
 
-### TypeSafe AI (Jev) — identity adjudication for legacy access recertification (ACTIVE)
+### TypeSafe AI (Jev) — identity adjudication for legacy access recertification (WITHDRAWN)
 
-- **Activation status:** active
+- **Activation status:** proposed-inactive (withdrawn 2026-10-14)
 
-**This processor is ACTIVE.** `TYPESAFE_SUBPROCESSOR_ACTIVE` is `true`, so a tenant whose
-`legacyMatchAiMode` is `EXTERNAL` has their legacy-account and candidate name data sent to
-TypeSafe AI for adjudication. The mode defaults to `OFF` and is refused under tenant AI
-residency `LOCAL_ONLY`, so no tenant reaches this path without selecting it.
+**This processor is WITHDRAWN and no data reaches it.**
+`TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`, so `getDecisionProvider` returns the local
+provider or the stub for every mode and no tenant path can obtain a Jev provider whatever
+`legacyMatchAiMode` is set to.
+
+**It was active from 2026-10-11 to 2026-10-14, and it processed nothing in that window.**
+That is a measurement, not a presumption: `LegacyMatchVerdict` holds **0 rows** in
+production. The path was reachable — `LAYA_BASE_URL` was configured and a tenant could have
+selected `EXTERNAL` — and it produced no verdicts because no evaluation record was ever
+committed, so the gate refused every batch as `NO_EVALUATION`.
+
+**Why it was withdrawn rather than completed.** The owner's decision on 2026-10-14, on the
+balance of what the relationship cost against what it delivered:
+
+- it delivered **nothing measurable** — zero verdicts, ever;
+- it cost a **US transfer** of legacy-account and candidate name data, a DPA obligation
+  that was never discharged (no executed DPA is held here), a compliance review that was
+  waived rather than performed, and a customer-notice window that had to be run;
+- the model that would have made it useful on-premises instead measured **0.571 held-out
+  precision** and answers that track prompt LENGTH rather than content (#3490), so the
+  local alternative did not rescue the feature either;
+- an open prompt-injection finding against the vendor remains unresolved (#3461).
+
+Withdrawing closes steps 2 and 3 by removing their subject rather than by completing them,
+which is the honest way to describe it: **the obligations did not get discharged, they
+stopped applying.**
+
+The code is kept rather than deleted, so this entry continues to describe something that
+exists and the decision is one constant away from reversible. Deleting the ~9,600 lines of
+adjudication path is a separate decision.
 
 **Steps 2 and 3 of [`docs/sub-processor-change-policy.md`](./sub-processor-change-policy.md)
 were not performed.** See *Policy progress* below. That is recorded here deliberately
@@ -278,11 +304,16 @@ drift apart in either direction.
 | Step | State |
 |------|-------|
 | 1 — engineering proposes (this entry) | **Complete** — merged 2026-10-08 in #3246 |
-| 2 — compliance / legal review | **Not performed** — waived 2026-10-11 (see below) |
-| 3 — customer notice (30 days) | **Not sent** — waived 2026-10-11 (see below) |
-| 4 — activation | **Complete** 2026-10-11, with steps 2 and 3 outstanding |
+| 2 — compliance / legal review | **Never performed** — waived 2026-10-11, then MOOT from 2026-10-14 |
+| 3 — customer notice (30 days) | **Issued 2026-10-14**, window would have closed 2026-11-13; MOOT from 2026-10-14 |
+| 4 — activation | **Reversed** — active 2026-10-11, **withdrawn 2026-10-14** |
 
-- **Notice sent:** not sent.
+- **Notice sent:** a notice was issued to the public list on 2026-10-14
+  ([`docs/notices/2026-10-13-typesafe-ai-sub-processor.md`](./notices/2026-10-13-typesafe-ai-sub-processor.md)),
+  and the processor was withdrawn the same day. The notice is superseded rather than
+  completed: it announced a processor that no longer receives data. No customer was emailed,
+  because there were no customer tenants to email — the eleven rows in production are the
+  owner's own and test fixtures.
 - **Objection window closes:** not applicable — no notice was sent, so no window ran.
 
 **Activation waiver — 2026-10-11**

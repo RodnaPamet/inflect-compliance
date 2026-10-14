@@ -195,23 +195,29 @@ describe('deploy/docker-compose.prod.yml — the deployable set is complete', ()
 });
 
 describe('deploy compose — pipelock stays in the opt-in overlay', () => {
-    it('the canonical file defines exactly the nine services production runs', () => {
-        // `laya` added 2026-10-11 (step 6d). An EXACT list rather than a
-        // superset check, which is why adding a service has to come through
-        // here: the regression this guard exists for is a service that cannot
-        // start being left in the file, and `pipelock` proved Docker answers a
-        // missing bind-mount by creating an empty directory, so nothing fails
-        // until `up`. A new entry therefore gets read by somebody.
+    it('the canonical file defines exactly the eight services production runs', () => {
+        // An EXACT list rather than a superset check, which is why adding a
+        // service has to come through here: the regression this guard exists for
+        // is a service that cannot start being left in the file, and `pipelock`
+        // proved Docker answers a missing bind-mount by creating an empty
+        // directory, so nothing fails until `up`. A new entry therefore gets
+        // read by somebody.
         //
-        // `laya` has no bind mount and no env file of its own, so it has
-        // neither failure mode — it is digest-pinned and self-contained. What
-        // it does have is a 6.68 GB pull, which is why it is named here rather
-        // than arriving unannounced in a deploy.
+        // `laya` was added 2026-10-11 (step 6d) and REMOVED 2026-10-14, which is
+        // the same scrutiny working in the other direction. It held 1.9 GiB of
+        // RAM and ~5% of two vCPUs continuously while serving nothing —
+        // `LegacyMatchVerdict` was 0 rows in production for its entire life,
+        // because no evaluation record was ever committed and the adjudication
+        // gate refuses `NO_EVALUATION`. Its image, Dockerfile, build workflow
+        // and pinning guard all stay in the repository, so restoring it is an
+        // entry here rather than a rebuild.
+        //
+        // NOTE FOR WHOEVER RESTORES IT: the 6.68 GB pull is why it was named
+        // here in the first place, and that cost returns with it.
         expect(serviceNames(read(CANONICAL)).sort()).toEqual([
             'app',
             'caddy',
             'clamav',
-            'laya',
             'pgbouncer',
             'postgres',
             'redis',
