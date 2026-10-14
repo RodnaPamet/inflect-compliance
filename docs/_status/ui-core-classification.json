@@ -175,9 +175,9 @@
   "reason": "An evidence-register gallery view: the row type, the badges, the retention/review fields and the name are all the evidence domain. Also carries a domain import and untranslated English."
  },
  "src/components/ui/FileDropzone.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Declares itself \"generic, reusable\" and \"does NOT know about the evidence API\" — yet imports from an evidence module and ships a screen's worth of untranslated English. The single most valuable MIXED file in my slice: the shape is right, the coupling is all extractable."
+  "reason": "Re-audited for projectZ #428. Every string reads from `common.upload` (prompt, rejections, row labels, status), the byte formatter comes from the import-free `@/lib/format-bytes`, and the drag-active icon is `text-content-brand`. No domain import, no brand-as-text, no storage key, and no product vocabulary left in its comments."
  },
  "src/components/ui/FrameworkBuilder.tsx": {
   "classification": "COUPLED",
@@ -727,12 +727,12 @@
  "src/components/ui/file-icon-resolver.ts": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "Pure extension/MIME → icon mapping, correctly extracted for node tests. Both couplings are removable: the labels want a catalog key, the domainKind hint wants a neutral name."
+  "reason": "Pure extension/MIME → icon mapping, correctly extracted for node tests. The labels now have a catalog key (`kind`, which `FileTypeIcon` translates), but the English `label` is still returned and rendered by callers that read it directly; the `domainKind` hint keeps its row-kind values."
  },
  "src/components/ui/file-type-icon.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A 51-line render shim over the resolver. It is the sink that turns the resolver's English labels into an aria-label (L45 `aria-label={label}`), but the literals live in file-icon-resolver.ts, so I record the copy finding there and the domain surface here."
+  "reason": "Re-audited for projectZ #428. The icon's accessible name is now `common.fileKinds.<kind>`, read from the resolver's `kind` key, so the English `label` no longer reaches the DOM through this shim; its docstring names no product surface."
  },
  "src/components/ui/filter/edit-filters-button.tsx": {
   "classification": "GENERIC",

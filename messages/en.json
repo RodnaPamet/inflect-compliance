@@ -224,6 +224,34 @@
       "dashboard": "Loading dashboard",
       "details": "Loading details",
       "settings": "Loading settings"
+    },
+    "upload": {
+      "dropzone": "Upload files",
+      "promptMany": "Drag and drop files or click to browse",
+      "promptOne": "Drag and drop a file or click to browse",
+      "typeRejected": "{name}: file type not accepted",
+      "tooLarge": "{name}: exceeds {mb} MB limit",
+      "cancel": "Cancel upload of {name}",
+      "remove": "Remove {name} from list",
+      "progress": "Upload progress for {name}",
+      "clearCompleted": "Clear completed ({count})",
+      "queued": "Queued",
+      "uploading": "Uploading…",
+      "uploaded": "Uploaded",
+      "cancelled": "Cancelled",
+      "failed": "Failed"
+    },
+    "fileKinds": {
+      "link": "Link",
+      "text": "Text",
+      "image": "Image",
+      "pdf": "PDF",
+      "csv": "CSV",
+      "spreadsheet": "Spreadsheet",
+      "document": "Document",
+      "json": "JSON",
+      "archive": "Archive",
+      "file": "File"
     }
   },
   "login": {

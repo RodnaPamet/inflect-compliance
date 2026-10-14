@@ -119,14 +119,19 @@ const CEILINGS: Record<CouplingKind, { max: number; allowance: number }> = {
     // read the full argument, including the two it deliberately did NOT add, in
     // `NEUTRAL_LIB`'s own docstring.
     //
-    // 34 is not a floor: the cheapest remaining real inversion is MEASURED and
+    // 34 -> 33: `ui/FileDropzone.tsx` imported its byte formatter from
+    // `@/lib/evidence-upload-limits`. The formatter moved to `@/lib/format-bytes`
+    // (zero imports, now in `NEUTRAL_LIB`) and the evidence module re-exports it,
+    // so the drop zone holds no domain edge (projectZ #428).
+    //
+    // 33 is not a floor: the cheapest remaining real inversion is MEASURED and
     // recorded rather than taken. `ui/TruncationBanner.tsx` imports
     // `@/lib/list-backfill-cap` for ONE thing — the default of its existing
     // `cap?: number` prop — so making `cap` required inverts the edge with no
     // new mechanism. Its price is 10 call sites under `src/app/t/[tenantSlug]`
     // that pass `truncated` and nothing else, which is why it is a batch of its
     // own rather than a rider on this one.
-    'domain-import': { max: 34, allowance: 1 },
+    'domain-import': { max: 33, allowance: 1 },
     // Re-seated 16 -> 10 by #3096, which replaced the brand fill token with
     // `text-content-brand` in the six files where it painted real rendered
     // TEXT and so owed WCAG 1.4.3's 4.5:1 (badge, checklist-gear-button,
@@ -136,12 +141,17 @@ const CEILINGS: Record<CouplingKind, { max: number; allowance: number }> = {
     // which owes 1.4.11's 3:1 and already clears it: six chart files painting
     // SVG fill/stroke through `currentColor` (charts/areas, charts/bars,
     // charts/time-series-chart, mini-area-chart, progress-circle,
-    // dashboard-widgets/ChartRenderer), three `aria-hidden` icons
-    // (layout/org-workspace-switcher, layout/tenant-switcher, FileDropzone),
-    // and radio-group's border plus checked indicator. Recolouring any of
-    // them would change charts and icons for no accessibility gain, so 10 is
-    // the floor this kind is expected to sit at.
-    'brand-as-text': { max: 10, allowance: 1 },
+    // dashboard-widgets/ChartRenderer), two `aria-hidden` icons
+    // (layout/org-workspace-switcher, layout/tenant-switcher), and
+    // radio-group's border plus checked indicator. Recolouring any of them
+    // would change charts and icons for no accessibility gain, so 9 is the
+    // floor this kind is expected to sit at.
+    //
+    // 10 -> 9: FileDropzone's drag-active upload icon was the third icon. It
+    // is `text-content-brand` now, not for contrast but so the file passes a
+    // downstream consumer's check that bans brand fills as text outright
+    // (projectZ #428); the icon's colour moves one step, in drag state only.
+    'brand-as-text': { max: 9, allowance: 1 },
     'storage-key': { max: 1, allowance: 0 },
 };
 
