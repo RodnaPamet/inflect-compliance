@@ -74,6 +74,18 @@ const AGENTIC_PATH_GLOBS_LIVE = [
     'src/lib/mcp/**/*.ts',
     'src/app/api/mcp/**/*.ts',
     'src/app/api/t/*/agent-proposals/**/*.ts',
+    // THE RUN LEDGER'S OWN API, which this list did not cover (#3472). The
+    // proposals surface was here from the start and `agent-runs` never was,
+    // yet `GET /agent-runs/:id` serves the run WITH every step — the rows
+    // carrying `inputJson` and `outputJson`, the two columns encrypted at rest
+    // precisely because of what they hold. An agentic route a prompt could
+    // reach a log line through was outside the one rule that looks for that.
+    //
+    // Measured before adding, so this is a widening and not a hope: the four
+    // routes that already existed contain no sink at all, so the rule reports
+    // nothing new about them and the denominator moves only by what #3472
+    // added. The point is the NEXT log line somebody writes there.
+    'src/app/api/t/*/agent-runs/**/*.ts',
     'src/app-layer/usecases/agent-*.ts',
     'src/app-layer/usecases/workflow-*.ts',
     'src/app-layer/services/agent-*.ts',

@@ -526,6 +526,16 @@ function lookupExclusion(
 
 const PRIVILEGED_ROUTES = discoverPrivilegedRoutes();
 
+/**
+ * EVERY route file under `src/app/api`, for the orphan check only.
+ *
+ * A superset of `PRIVILEGED_ROUTES` by construction — see the orphan test for
+ * why that test needs it and why no other test may use it.
+ */
+const ALL_API_ROUTES = walkRouteFiles(
+    path.resolve(REPO_ROOT, 'src/app/api'),
+).sort();
+
 // ─── Tests ───────────────────────────────────────────────────────────
 
 describe('Epic C.1 — API permission coverage guardrail', () => {
@@ -713,10 +723,26 @@ describe('Epic C.1 — API permission coverage guardrail', () => {
         // Catches dead rules left over after a route is moved or
         // deleted. A rule that matches nothing silently weakens the
         // map's coverage signal.
+        //
+        // THE POPULATION IS THE WHOLE API TREE, not `PRIVILEGED_ROUTES`.
+        //
+        // The question this test asks is "does a route by that name EXIST?",
+        // and existence does not depend on privilege. Asking it against the
+        // privileged subset reported a rule as dead for the opposite reason —
+        // #3472 added `requirePermission` to the agent-run SSE tail, which is a
+        // gate STRONGER than its `getTenantCtx` siblings, and recorded it here;
+        // the rule matched a live route that simply is not under
+        // `PRIVILEGED_ROOTS`. A guard that fails a rule for being written about
+        // the wrong directory pushes the next author toward deleting the record
+        // rather than keeping it, which is the opposite of what this map is for.
+        //
+        // Narrowing is still caught: `PRIVILEGED_ROUTES` is what every OTHER
+        // test in this file ranges over, and a privileged route missing its
+        // `requirePermission` wrapper or its rule fails there, not here.
         const orphans: string[] = [];
 
         for (const rule of ROUTE_PERMISSIONS) {
-            const matchesSomething = PRIVILEGED_ROUTES.some((file) =>
+            const matchesSomething = ALL_API_ROUTES.some((file) =>
                 rule.path.test(fileToPathname(file)),
             );
             if (!matchesSomething) {

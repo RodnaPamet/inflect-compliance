@@ -10,57 +10,21 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
+import type { RunStepFeedRow } from '@/lib/agentic/run-step-projection';
 
-export interface RunStepRow {
-    id: string;
-    seq: number;
-    kind: string;
-    status: string;
-    /** The tool that ran, or — on a failed step, which records none — the one the definition declared. */
-    tool: string | null;
-    /**
-     * The data rung that tool reaches, derived on the server from the tool
-     * catalogue. Null when the step names no tool: a synthesis or a checkpoint
-     * reaches no tenant data by construction, and a chip there would imply a
-     * rung was evaluated when none was.
-     */
-    scope: string | null;
-    /**
-     * What the guard said about this step. NULL means no guard ran, which is
-     * a different fact from `CLEAN` — only tool calls are scanned.
-     */
-    guardVerdict: string | null;
-    /** Stable rule ids that fired. Empty on a clean verdict. */
-    guardRuleIds: readonly string[];
-    /** Tokens THIS step spent; null on the kinds that spend none. */
-    costTokens: number | null;
-    /** From the definition; `WorkflowStep` has no label column. */
-    label: string | null;
-    at: string;
-    actorUserId: string | null;
-    inputJson: string | null;
-    outputJson: string | null;
-    /**
-     * The `(tenantId, inputDigest)` key of this step's EU AI Act Art 12 row,
-     * or null when the step produced none.
-     *
-     * Null for every static-driver step, every tool call, and every run that
-     * predates the digest being recorded — a link is offered only where there
-     * is a row to open.
-     */
-    decisionDigest: string | null;
-    /**
-     * The proposals this step queued. Possibly several — one `buildItems` can
-     * produce many — which is why `AgentProposal.stepSeq` carries no unique
-     * constraint.
-     */
-    proposals: ReadonlyArray<{
-        id: string;
-        kind: string;
-        status: string;
-        guardVerdict: string;
-    }>;
-}
+/**
+ * ONE definition, in the usecase that produces it.
+ *
+ * This file used to declare the shape and `page.tsx` used to build it, so the
+ * two agreed by being written together. With the projection shared by the
+ * paged feed route and the live tail (#3472) that stops being true: a field
+ * added to the row here and not to the projection would typecheck as an
+ * optional-free structural match in neither direction, and a field added
+ * there would silently never render. A type ALIAS cannot drift.
+ *
+ * `import type`, so nothing from the app layer reaches the client bundle.
+ */
+export type RunStepRow = RunStepFeedRow;
 
 export interface RunHeader {
     id: string;
