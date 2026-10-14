@@ -438,6 +438,108 @@ export const METRIC_DEFINITIONS = {
                 'produce both',
         ],
     },
+    // ── RUNS BY STATUS (#3484, point 10's third outstanding item) ────
+    //
+    // The surface map marked `/agents/reports` open for "guard-block counts,
+    // token spend, runs by status". Two of the three landed before this:
+    // `incidents.guard_blocks` above, and spend through
+    // `evaluateMonthlyBudgetForRun`. Runs by status was the one left.
+    //
+    // SIX MEASURES AND NOT ONE MAP, because the pack's measure vocabulary is
+    // flat by design: every figure carries its own population, its own
+    // includes and its own excludes, and a `Record<status, number>` would
+    // carry one description for six different questions. It also makes each
+    // one individually citable from a finding.
+    //
+    // The terminal three are OVER_WINDOW and the live three are AS_OF_GENERATION,
+    // and that distinction is the whole reason this is not one number. "How
+    // many runs failed last quarter" and "how many are stuck awaiting approval
+    // right now" are different questions, and a single snapshot answers
+    // neither: a completed run leaves the live count the moment it finishes,
+    // so a snapshot of COMPLETED is a count of runs that happen to have
+    // finished since the last sweep.
+    'runs.completed': {
+        id: 'runs.completed',
+        label: 'Runs completed',
+        population: 'WorkflowRun rows that reached COMPLETED, started inside the window',
+        moment: 'OVER_WINDOW',
+        includes: ['runs started by a person and runs started by an automation rule'],
+        excludes: [
+            'runs still in flight, which are counted by the three AT_GENERATION ' +
+                'measures below',
+            'runs started before the window, however they ended — the window is ' +
+                'on startedAt, so a quarter reports the runs it began',
+        ],
+    },
+    'runs.failed': {
+        id: 'runs.failed',
+        label: 'Runs failed',
+        population: 'WorkflowRun rows that reached FAILED, started inside the window',
+        moment: 'OVER_WINDOW',
+        includes: [
+            'runs the reaper settled as having no executor — a deploy that ' +
+                'stranded a run looks like a failure here, which is honest: it ' +
+                'did not complete',
+        ],
+        excludes: [
+            'runs ABORTED by a guard block or a kill, counted separately — the ' +
+                'cause is different and so is what an operator does about it',
+        ],
+    },
+    'runs.aborted': {
+        id: 'runs.aborted',
+        label: 'Runs aborted',
+        population: 'WorkflowRun rows that reached ABORTED, started inside the window',
+        moment: 'OVER_WINDOW',
+        includes: [
+            'runs a guard BLOCKED, runs a kill switch stopped, and runs an ' +
+                'operator aborted by hand',
+        ],
+        excludes: [
+            'runs that FAILED, which nothing stopped deliberately',
+            'the reason for each abort; this is a count, and the trail carries ' +
+                'the cause per run',
+        ],
+    },
+    'runs.in_flight': {
+        id: 'runs.in_flight',
+        label: 'Runs in flight now',
+        population: 'WorkflowRun rows in RUNNING, at the moment the pack was generated',
+        moment: 'AS_OF_GENERATION',
+        includes: ['runs this deployment is executing and runs stranded by a deploy'],
+        excludes: [
+            'runs AWAITING_APPROVAL or PAUSED, which are in flight in the ' +
+                'concurrent-run cap\'s sense but are waiting on a person rather ' +
+                'than executing — those are their own measures',
+        ],
+    },
+    'runs.awaiting_approval': {
+        id: 'runs.awaiting_approval',
+        label: 'Runs awaiting approval',
+        population:
+            'WorkflowRun rows in AWAITING_APPROVAL, at the moment the pack was generated',
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'runs parked at a human checkpoint, and runs a guard FLAGGED for ' +
+                'review',
+        ],
+        excludes: [
+            'runs whose approval window has EXPIRED but whose status has not ' +
+                'moved; the status is what this counts, and expiry is a ' +
+                'separate question the approval-window measures answer',
+        ],
+    },
+    'runs.paused': {
+        id: 'runs.paused',
+        label: 'Runs paused',
+        population: 'WorkflowRun rows in PAUSED, at the moment the pack was generated',
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'runs a SIGTERM paused on the way out of a deploy, which is the ' +
+                'state that makes them resumable rather than reaped',
+        ],
+        excludes: ['runs awaiting a person, which are their own measure above'],
+    },
     'incidents.kill_engagements': {
         id: 'incidents.kill_engagements',
         label: 'Kill switches engaged',

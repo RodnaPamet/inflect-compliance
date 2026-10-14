@@ -614,6 +614,22 @@ export interface DrillHistoryRow {
  * which is the fail-closed direction — a drill nobody has classified must not
  * be able to buy the pack's strongest claim before somebody classifies it.
  */
+/**
+ * One status's count out of a `groupBy` result (#3484).
+ *
+ * ZERO for a status the group does not contain, which is the right answer: a
+ * tenant with no failed run has zero failures, and `measured(0)` is a
+ * measurement where an absent key would read as "not assessed" — two things
+ * `Measure` keeps apart on purpose. Returning `undefined` and letting the
+ * caller decide would put that decision at six call sites.
+ */
+function runCount(
+    rows: ReadonlyArray<{ status: string; _count: { _all: number } }>,
+    status: string,
+): number {
+    return rows.find((r) => r.status === status)?._count._all ?? 0;
+}
+
 const MEASURING_DRILL_OUTCOMES: readonly string[] = ['PASSED', 'FAILED'];
 
 export interface BreakerTripRow {
@@ -661,6 +677,35 @@ export async function buildIncidentHistoryReport(
             ctx.tenantId,
             window.since,
         );
+        // RUNS BY STATUS (#3484). Six figures from TWO `groupBy` queries
+        // rather than six counts: one grouped scan per question, and the
+        // question differs by MOMENT — three terminal statuses over the
+        // window, three live statuses as of now.
+        //
+        // Grouped and not counted one status at a time because a count per
+        // status is six round trips for one table, and because a status the
+        // enum gains later shows up in the group rather than being silently
+        // dropped by a list of six `where`s.
+        const [runsInWindow, runsNow] = await Promise.all([
+            db.workflowRun.groupBy({
+                by: ['status'],
+                where: { tenantId: ctx.tenantId, startedAt: { gte: window.since } },
+                _count: { _all: true },
+            }),
+            // NO window: "how many are awaiting approval right now" is a fact
+            // about now, the same reason `inForceRows` above is unwindowed. A
+            // live count read off the window would miss every run that began
+            // before it and is still waiting — which on a quarterly pack is
+            // most of the stuck ones.
+            db.workflowRun.groupBy({
+                by: ['status'],
+                where: {
+                    tenantId: ctx.tenantId,
+                    status: { in: ['RUNNING', 'AWAITING_APPROVAL', 'PAUSED'] },
+                },
+                _count: { _all: true },
+            }),
+        ]);
         const [killRows, inForceRows, drillRows, breakerRows, agentRows] = await Promise.all([
             db.agentKillSwitch.findMany({
                 where: { tenantId: ctx.tenantId, engagedAt: { gte: window.since } },
@@ -702,7 +747,10 @@ export async function buildIncidentHistoryReport(
                 select: { id: true, name: true },
             }),
         ]);
-        return { killRows, inForceRows, drillRows, breakerRows, agentRows, guardBlocks };
+        return {
+            killRows, inForceRows, drillRows, breakerRows, agentRows,
+            guardBlocks, runsInWindow, runsNow,
+        };
     });
 
     const nameById = new Map(loaded.agentRows.map((a) => [a.id, a.name]));
@@ -786,6 +834,18 @@ export async function buildIncidentHistoryReport(
             // stopped that produced no proposal at all — by the same rule the
             // circuit breaker latches on.
             'incidents.guard_blocks': measured(loaded.guardBlocks),
+            // RUNS BY STATUS. `?? 0` and not an omission: a tenant with no
+            // FAILED run in the window has ZERO failures, which is a
+            // measurement, where an absent key would read as "not assessed"
+            // and `Measure` keeps those apart on purpose.
+            'runs.completed': measured(runCount(loaded.runsInWindow, 'COMPLETED')),
+            'runs.failed': measured(runCount(loaded.runsInWindow, 'FAILED')),
+            'runs.aborted': measured(runCount(loaded.runsInWindow, 'ABORTED')),
+            'runs.in_flight': measured(runCount(loaded.runsNow, 'RUNNING')),
+            'runs.awaiting_approval': measured(
+                runCount(loaded.runsNow, 'AWAITING_APPROVAL'),
+            ),
+            'runs.paused': measured(runCount(loaded.runsNow, 'PAUSED')),
             'incidents.kill_engagements': measured(kills.length),
             'incidents.drill_canary_engagements': measured(drillCanaryKills.length),
             'incidents.kills_in_force_now': measured(inForceReal.length),

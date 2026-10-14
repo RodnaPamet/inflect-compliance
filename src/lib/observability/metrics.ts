@@ -1358,3 +1358,173 @@ export function recordAgentRunCapHalt(attrs: { cap: string; source: string }): v
 export function recordAgentRunCapUtilisation(attrs: { cap: string; percent: number }): void {
     getAgentRunCapUtilisation().record(attrs.percent, { cap: attrs.cap });
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// AGENTIC RUN METRICS — #3484, plan point 10's first outstanding item
+//
+// "Emit OTel metrics: started/completed/failed counters, step + token
+// histograms, guard-block counter, runs-in-flight gauge."
+//
+// HAND-ROLLED HERE, on the existing pipeline. `flue/telemetry.ts` emits SPANS
+// and does so correctly on the shared tracer — `grep -nE "counter|histogram|
+// gauge"` over that file returned nothing. A span tells you about one run; the
+// gauge and the counters answer "how many are in flight right now" and "how
+// often does the guard block", which no trace query answers cheaply.
+//
+// `@flue/opentelemetry` is NOT a dependency and does not become one:
+// `tests/guards/flue-refused-capabilities.test.ts` names `@flue/runtime` as
+// "the one permitted" package, so adding a second would be a change to that
+// policy rather than a dependency bump. The fit map already recorded the
+// resolution — "blocked by the one-package allowlist (F3); hand-rolled
+// instead" — and this is that.
+//
+// LABELS ARE BOUNDED AND CARRY NO TENANT ID, the rule this module states for
+// the repository metrics above: use span attributes for tenant-aware
+// debugging, because a tenant label multiplies every series by the customer
+// count. `driver` is two values and `outcome` is three.
+// ════════════════════════════════════════════════════════════════════════
+
+let _agentRunStarted: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _agentRunSettled: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _agentGuardBlocks: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _agentRunSteps: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
+let _agentRunTokens: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
+
+function getAgentRunStarted() {
+    if (!_agentRunStarted) {
+        _agentRunStarted = getMeter().createCounter('agent.run.started', {
+            description: 'Agentic runs started',
+            unit: '1',
+        });
+    }
+    return _agentRunStarted;
+}
+
+function getAgentRunSettled() {
+    if (!_agentRunSettled) {
+        // ONE counter with an `outcome` label rather than three counters.
+        // Three would let a dashboard compute a completion RATE only by
+        // knowing all three names, and would make a fourth outcome a
+        // deployment-time schema change rather than a new label value.
+        _agentRunSettled = getMeter().createCounter('agent.run.settled', {
+            description: 'Agentic runs that reached a terminal status, by outcome',
+            unit: '1',
+        });
+    }
+    return _agentRunSettled;
+}
+
+function getAgentGuardBlocks() {
+    if (!_agentGuardBlocks) {
+        _agentGuardBlocks = getMeter().createCounter('agent.guard.blocks', {
+            description: 'Agentic runs stopped or flagged by the content guard, by verdict',
+            unit: '1',
+        });
+    }
+    return _agentGuardBlocks;
+}
+
+function getAgentRunSteps() {
+    if (!_agentRunSteps) {
+        _agentRunSteps = getMeter().createHistogram('agent.run.steps', {
+            description: 'Steps recorded per agentic run',
+            unit: '1',
+        });
+    }
+    return _agentRunSteps;
+}
+
+function getAgentRunTokens() {
+    if (!_agentRunTokens) {
+        _agentRunTokens = getMeter().createHistogram('agent.run.tokens', {
+            description: 'Tokens charged per agentic run',
+            unit: '1',
+        });
+    }
+    return _agentRunTokens;
+}
+
+/** One agentic run started. `driver` is STATIC or FLUE — two values. */
+export function recordAgentRunStarted(attrs: { driver: string }): void {
+    getAgentRunStarted().add(1, { 'agent.driver': attrs.driver });
+}
+
+/**
+ * One agentic run reached a terminal status.
+ *
+ * The STEP and TOKEN histograms are recorded here rather than per step, so one
+ * run contributes one observation to each: a per-step record would make the
+ * distribution a distribution of steps, not of runs, and "how long is a run"
+ * is the question being asked.
+ *
+ * `steps`/`tokens` are omitted rather than zeroed when unknown. A run whose
+ * token usage the engine never reported and a run that genuinely spent nothing
+ * are different facts, and zero in a histogram is an observation.
+ */
+export function recordAgentRunSettled(attrs: {
+    driver: string;
+    outcome: 'completed' | 'failed' | 'aborted';
+    steps?: number | null;
+    tokens?: number | null;
+}): void {
+    const labels = { 'agent.driver': attrs.driver, outcome: attrs.outcome };
+    getAgentRunSettled().add(1, labels);
+    if (typeof attrs.steps === 'number') getAgentRunSteps().record(attrs.steps, labels);
+    if (typeof attrs.tokens === 'number') getAgentRunTokens().record(attrs.tokens, labels);
+}
+
+/**
+ * The content guard stopped or flagged a run.
+ *
+ * `verdict` separates QUARANTINED (stopped, nothing committed) from FLAGGED
+ * (parked for review). Collapsing them would hide the difference between a
+ * tenant whose agents are being blocked and one whose reviewers have a queue,
+ * which are different operational problems.
+ */
+export function recordAgentGuardBlock(attrs: { verdict: string }): void {
+    getAgentGuardBlocks().add(1, { 'guard.verdict': attrs.verdict });
+}
+
+// ─── RUNS-IN-FLIGHT GAUGE — observable, per process ────────────────────
+
+let _agentRunsInFlightStarted = false;
+
+/**
+ * Start reporting how many agentic runs THIS PROCESS is executing.
+ *
+ * PER-PROCESS, and that is correct for a gauge rather than a limitation: the
+ * collector sums across pods, and the only honest per-pod source is the
+ * in-memory registry `in-flight-runs.ts` keeps — the module whose own header
+ * explains that no query distinguishes "my run" from "another pod's run",
+ * because the distinction is not in the database.
+ *
+ * A database count would answer a different question (every pod's runs, plus
+ * the ones stranded by a deploy) and would put a query on the collector's
+ * scrape interval. The governance pack reports that figure instead, as
+ * `runs.in_flight` AS_OF_GENERATION, where paying for a query is appropriate.
+ *
+ * Idempotent, and the callback never throws: a gauge that threw at scrape time
+ * would cost the whole export, not just this series.
+ */
+export function startAgentRunsInFlightReporting(getCountFn: () => number): void {
+    if (_agentRunsInFlightStarted) return;
+    _agentRunsInFlightStarted = true;
+
+    const gauge = getMeter().createObservableGauge('agent.runs.in_flight', {
+        description: 'Agentic runs this process is currently executing',
+        unit: '1',
+    });
+    gauge.addCallback((result) => {
+        try {
+            result.observe(getCountFn());
+        } catch {
+            // The registry is unavailable — report nothing rather than failing
+            // the export for every other instrument in the batch.
+        }
+    });
+}
+
+/** Reset the in-flight gauge flag (testing only). @internal */
+export function _resetAgentRunsInFlightGaugeForTesting(): void {
+    _agentRunsInFlightStarted = false;
+}

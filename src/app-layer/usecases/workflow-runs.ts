@@ -82,6 +82,10 @@ import {
     assertConcurrencyUnderLock,
 } from '@/lib/agentic/run-concurrency-policy';
 import { trackInFlightRun, untrackInFlightRun } from '@/lib/agentic/in-flight-runs';
+import {
+    recordAgentRunStarted,
+    recordAgentRunSettled,
+} from '@/lib/observability/metrics';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
 import { recordDecisionOutcome } from '@/app-layer/ai/decision-log';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
@@ -856,13 +860,89 @@ async function executeFrom(
     // WHICH ENGINE, resolved here rather than inside the walk. The definition's
     // request is intersected with what the deployment permits, and any
     // disagreement resolves to static — see `selectRunDriver`.
-    const { run } = selectRunDriver(def, permittedDriver);
+    // ONE call, both facts. It was two — one for `run` and one for the label —
+    // which this file's own comment at the resolution site argues against:
+    // `selectRunDriver` is pure, so asking twice cannot disagree, but a reader
+    // has to prove that to themselves and the second call is free to drift
+    // onto a different argument. It also made
+    // `assertion-needle-uniqueness-ratchet` red, correctly: a second
+    // occurrence turns any whole-file `toMatch(/selectRunDriver/)` into a
+    // needle that two positions satisfy.
+    const { run, driver } = selectRunDriver(def, permittedDriver);
+    const driverLabel = driver === 'flue' ? 'FLUE' : 'STATIC';
+
+    // THE ONE SEAM BOTH ENGINES PASS THROUGH (#3484). The static driver and
+    // Flue each settle their own runs — four `status: 'COMPLETED'` sites
+    // between them, plus the halt paths — so instrumenting the drivers would
+    // mean the same counter at six call sites, and the seventh would be the
+    // one somebody forgot. This function already brackets the walk for the
+    // in-flight registry, which is exactly the lifecycle the counters measure.
+    recordAgentRunStarted({ driver: driverLabel });
 
     trackInFlightRun(runId);
     try {
-        return await run(ctx, runId, def, fromSeq, runStartMs);
+        const outcome = await run(ctx, runId, def, fromSeq, runStartMs);
+        await recordRunSettlementMetrics(ctx, runId, driverLabel, outcome.status);
+        return outcome;
+    } catch (err) {
+        // A THROW IS A FAILED RUN for metric purposes, and it has to be
+        // counted here: the settlement path that writes FAILED is reached by
+        // `failRun` from the CALLER, so a throw that propagated past this
+        // function would otherwise count a start with no settlement — and a
+        // started-minus-settled gap is the first thing an operator reads as a
+        // leak.
+        recordAgentRunSettled({ driver: driverLabel, outcome: 'failed' });
+        throw err;
     } finally {
         untrackInFlightRun(runId);
+    }
+}
+
+/**
+ * Record the step and token histograms for a run that reached a terminal
+ * status, and nothing for one that merely paused.
+ *
+ * ONE QUERY, at run end. `RunDriverOutcome` carries `stepFailures` and not the
+ * step count or the token total, so the figures come from the row — and a run
+ * end is the right place to pay for a read, unlike the per-step path.
+ *
+ * NEVER THROWS. A metric is not worth failing a settled run over: the run has
+ * already completed and the caller is about to return it.
+ */
+async function recordRunSettlementMetrics(
+    ctx: RequestContext,
+    runId: string,
+    driver: string,
+    status: string,
+): Promise<void> {
+    const outcome =
+        status === 'COMPLETED' ? 'completed'
+        : status === 'FAILED' ? 'failed'
+        : status === 'ABORTED' ? 'aborted'
+        : null;
+    // AWAITING_APPROVAL and PAUSED are not settlements. Counting them would
+    // make "settled" mean "stopped for now", and the started-minus-settled gap
+    // — the figure that says how many runs are outstanding — would read zero
+    // while a queue of them waited on people.
+    if (outcome === null) return;
+    try {
+        const row = await runInTenantContext(ctx, (db) =>
+            db.workflowRun.findFirst({
+                where: { id: runId, tenantId: ctx.tenantId },
+                select: { stepCount: true, costTokens: true },
+            }),
+        );
+        recordAgentRunSettled({
+            driver,
+            outcome,
+            steps: row?.stepCount ?? null,
+            tokens: row?.costTokens ?? null,
+        });
+    } catch {
+        // The read failed. Count the settlement anyway — the outcome is the
+        // figure that matters, and dropping it to protect two histograms would
+        // leave the counter wrong in the direction that looks like a leak.
+        recordAgentRunSettled({ driver, outcome });
     }
 }
 

@@ -41,6 +41,7 @@
  * and a stage that throws would skip the ones after it.
  */
 import { logger } from '@/lib/observability/logger';
+import { startAgentRunsInFlightReporting } from '@/lib/observability/metrics';
 import { runInGlobalContext } from '@/lib/db-context';
 
 /**
@@ -68,6 +69,22 @@ export function untrackInFlightRun(runId: string): void {
 }
 
 /** A snapshot, for the drain and for tests. Never the live set. */
+/**
+ * THE RUNS-IN-FLIGHT GAUGE (#3484), started from the module that owns the
+ * number.
+ *
+ * Here rather than at an entrypoint because this registry is the only honest
+ * per-process source — see this file's own header on why no query
+ * distinguishes "my run" from "another pod's". The gauge is observable, so
+ * registering the callback costs nothing until the collector scrapes, and
+ * `startAgentRunsInFlightReporting` is idempotent.
+ *
+ * Module-init side effect, deliberately: the alternative is an entrypoint that
+ * has to remember, and a gauge nobody started reports nothing while looking
+ * exactly like a gauge that reports zero.
+ */
+startAgentRunsInFlightReporting(() => inFlight.size);
+
 export function inFlightRunIds(): string[] {
     return [...inFlight];
 }

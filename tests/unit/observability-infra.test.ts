@@ -335,10 +335,30 @@ describe('SLO / dashboard / alert alignment', () => {
 
         // SLO doc says error rate > 1% warning, > 5% critical
         expect(slo).toContain('error rate > 0.1%');
-        expect(alerts).toContain('0.01'); // 1% as decimal
-
         expect(slo).toContain('error rate > 0.5%');
-        expect(alerts).toContain('0.05'); // 5% as decimal
+
+        // READ THE TWO ALERTS, not the whole file.
+        //
+        // This was `expect(alerts).toContain('0.01')` and
+        // `toContain('0.05')` over all of `rules.yml`, which any threshold
+        // anywhere in any rule satisfied — and something did:
+        // `AgenticRunsStartedNotSettling` (#3484) introduced a second `0.05`
+        // and `assertion-needle-uniqueness-ratchet` went red, correctly. The
+        // assertion could not tell "the error-rate critical alert mirrors the
+        // SLO" from "some alert somewhere mentions 0.05", which is the whole
+        // claim it is named for.
+        //
+        // Scoped to each alert's own `expr` instead. Deleting the threshold
+        // from `ApiErrorRateCritical` now fails here; adding an unrelated rule
+        // that happens to use the same number does not.
+        const exprOf = (alertName: string): string => {
+            const at = alerts.indexOf(`- alert: ${alertName}`);
+            expect(at).toBeGreaterThan(-1);
+            const next = alerts.indexOf('- alert:', at + 1);
+            return alerts.slice(at, next === -1 ? undefined : next);
+        };
+        expect(exprOf('ApiErrorRateWarning')).toContain('0.01'); // 1% as decimal
+        expect(exprOf('ApiErrorRateCritical')).toContain('0.05'); // 5% as decimal
     });
 
     it('should have a matching OTel Collector config', () => {

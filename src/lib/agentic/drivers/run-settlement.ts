@@ -1,6 +1,7 @@
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { appendAuditEntry } from '@/lib/audit';
+import { recordAgentGuardBlock } from '@/lib/observability/metrics';
 import type { RunCapHalt } from '@/lib/agentic/run-caps';
 import { recordAgentRunCapHalt } from '@/lib/observability/metrics';
 
@@ -118,6 +119,13 @@ export async function haltRunAtGuard(
         ...(blocked ? { completedAt: new Date() } : {}),
         errorMessage: message,
     });
+    // THE GUARD-BLOCK COUNTER (#3484), at the one place a block settles a run.
+    // The verdict is a label rather than two counters: QUARANTINED (stopped,
+    // nothing committed) and FLAGGED (parked for review) are different
+    // operational problems — agents being blocked versus reviewers with a
+    // queue — and one counter with a label lets a dashboard read either
+    // without knowing both names.
+    recordAgentGuardBlock({ verdict });
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
