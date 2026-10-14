@@ -307,7 +307,7 @@ export function EntityListPage<TRow extends TableRowData>(
                 />
             </ListPageShell.Header>
 
-            {(filters || kpis) && (
+            {(filters || kpis || banner) && (
                 <ListPageShell.Filters className="space-y-section">
                     {kpis}
                     {filters && (
@@ -321,11 +321,48 @@ export function EntityListPage<TRow extends TableRowData>(
                             leading={filters.toolbarLeading}
                         />
                     )}
+                    {/* ── THE BANNER IS SHRINK-0 CHROME, NOT TABLE CONTENT (#3524) ──
+                        It used to render inside `<ListPageShell.Body>`, above
+                        the `<DataTable fillBody>`. The body is the
+                        VIEWPORT-CLAMPED region with `overflow-hidden`, and
+                        `fillBody` makes the table `flex-1` inside it — so a
+                        banner there takes its natural height FIRST and the
+                        table gets the remainder.
+
+                        MEASURED on `/agents` at 1280x720, with three notice
+                        panels in the banner:
+
+                          listBody   y303  394px tall
+                          table      y663   34px tall   <- the remainder
+                          thead      y664   37px        <- taller than its box
+                          row        y701   61px        <- y701..762
+                          viewport         720px
+                          click point      (774, 731)   -> OFF SCREEN
+                          elementFromPoint null
+
+                        The row is pushed past the fold, so the click point
+                        Playwright computes has nothing at it and the hit test
+                        can never pass. The row is still "visible, enabled and
+                        stable" because it has a real box. #3518 added the third
+                        panel; the arithmetic was waiting for it.
+
+                        Moved to the END of this slot, which is `flex-shrink-0`
+                        and sits outside the clamp, so the clamped region
+                        belongs to the table alone. The rendered ORDER is
+                        unchanged -- kpis, filters, banner, table -- because
+                        this is the last child here and the table is the first
+                        child of the body. `kpis` was already in this slot for
+                        the same reason.
+
+                        It also makes the whole-row clip honest: that
+                        measurement reads `[data-list-page-body]`'s
+                        clientHeight as the table's allocation, which is only
+                        true once nothing else is competing for it. */}
+                    {banner}
                 </ListPageShell.Filters>
             )}
 
             <ListPageShell.Body aside={aside} leftRail={leftRail}>
-                {banner}
                 <DataTable<TRow>
                     fillBody={table.fillBody ?? true}
                     {...table}

@@ -29,6 +29,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { DataTable, createColumns } from '@/components/ui/table/data-table';
+import { EntityListPage } from '@/components/layout/EntityListPage';
 
 describe('ListPageShell — slot contract', () => {
     it('root carries the data-list-page-shell hook + flex-column chain', () => {
@@ -117,6 +118,73 @@ describe('ListPageShell — slot contract', () => {
         );
         expect(getByText('HEAD').tagName).toBe('HEADER');
         expect(getByText('FOOT').tagName).toBe('FOOTER');
+    });
+});
+
+/**
+ * The banner is chrome, not table content (#3524).
+ *
+ * `EntityListPage` used to render `banner` inside `<ListPageShell.Body>`, above
+ * the `<DataTable fillBody>`. The body is the viewport-clamped region with
+ * `overflow-hidden`, and `fillBody` makes the table `flex-1` inside it — so a
+ * banner there takes its natural height first and the table gets whatever is
+ * left. Measured on `/agents` at 1280x720 with three notice panels: the body was
+ * 394px, the table's box 34px, its own sticky header 37px, and the first row
+ * landed at y701..762 against a 720px viewport. Playwright's click point came
+ * out at (774, 731) — off screen — so `elementFromPoint` returned `null` and no
+ * hit test could ever pass, while the row stayed "visible, enabled and stable"
+ * because it still had a real box.
+ *
+ * Asserted STRUCTURALLY rather than by measuring, because jsdom has no layout:
+ * the question "is the banner inside the clamped region?" is answerable from the
+ * tree, and it is the question that matters. A test that tried to assert
+ * heights here would assert zeros.
+ */
+describe('EntityListPage — the banner is outside the clamped body (#3524)', () => {
+    it('renders the banner OUTSIDE [data-list-page-body], and the table inside it', () => {
+        const { container } = render(
+            <EntityListPage
+                header={{ title: 'Things' }}
+                banner={<div data-testid="the-banner">notice</div>}
+                table={{
+                    'data-testid': 'things-table',
+                    data: [],
+                    columns: [],
+                    getRowId: () => 'x',
+                }}
+            />,
+        );
+
+        const body = container.querySelector('[data-list-page-body]');
+        expect(body).not.toBeNull();
+
+        const banner = container.querySelector('[data-testid="the-banner"]');
+        expect(banner).not.toBeNull();
+
+        // The assertion, both halves. The positive half alone would pass if the
+        // banner vanished altogether, and the negative half alone would pass if
+        // the body stopped existing — so the pair is what pins it.
+        expect(body!.contains(banner!)).toBe(false);
+        expect(container.contains(banner!)).toBe(true);
+    });
+
+    it('still renders the banner when there are no filters and no kpis', () => {
+        // The slot it moved into was gated on `(filters || kpis)`. A page that
+        // passes only a banner would have lost it entirely — which is the way
+        // this change could have silently deleted a notice surface.
+        const { getByTestId } = render(
+            <EntityListPage
+                header={{ title: 'Things' }}
+                banner={<div data-testid="lonely-banner">notice</div>}
+                table={{
+                    'data-testid': 'things-table',
+                    data: [],
+                    columns: [],
+                    getRowId: () => 'x',
+                }}
+            />,
+        );
+        expect(getByTestId('lonely-banner')).toBeInTheDocument();
     });
 });
 
