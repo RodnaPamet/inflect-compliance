@@ -149,9 +149,9 @@ export interface ModalProps extends VariantProps<typeof modalContentVariants> {
     /** Render a floating close button on desktop. Default: true. */
     showCloseButton?: boolean;
     /**
-     * Opt out of Radix's open/close auto-focus. On the desktop Dialog that is
-     * both halves; on the phone drawer, which vaul already keeps from moving
-     * focus in, it is the return to the opener on close.
+     * Opt out of the open/close auto-focus, both halves, on both surfaces:
+     * the desktop Dialog (Radix's own) and the phone drawer (focus into the
+     * sheet on open, back to the opener on close).
      *
      * The default — Radix's own behaviour — is what a dialog owes a keyboard
      * user: focus moves into the dialog on open and returns to the trigger on
@@ -227,8 +227,30 @@ function ModalRoot({
                 ? document.activeElement
                 : null;
         // On the drawer, vaul then prevents the open half itself unless its
-        // Root gets `autoFocus`; that is vaul's call and left alone here.
+        // Root gets `autoFocus`: see enterSheet below.
         if (preventAutoFocus) event.preventDefault();
+    };
+    // ─── The phone sheet takes focus ITSELF on open ─────────────────────
+    //
+    // vaul prevents Radix's open auto-focus unless its Root gets `autoFocus`,
+    // and on a phone it has a reason: Radix would focus the first field, and
+    // the keyboard would rise over a sheet that has only just opened. But what
+    // vaul leaves instead is no focus move at all. Focus stays on the opener,
+    // behind the overlay: a screen reader is never told a dialog opened, and a
+    // paired keyboard's next Tab walks the page underneath. That is the open
+    // half of the contract above, still broken on every phone (projectZ #308).
+    //
+    // So focus goes to the sheet itself. Radix gives the content tabIndex -1,
+    // so it can hold focus without being a tab stop: focus is inside the
+    // dialog, its title is announced, no keyboard is raised, and the next Tab
+    // lands on the first control. A caller that does want Radix's first-field
+    // focus passes `drawerRootProps={{ autoFocus: true }}`; vaul then leaves
+    // the event alone and Radix moves on from here.
+    const enterSheet = (event: Event) => {
+        recordOpener(event);
+        if (preventAutoFocus) return;
+        const sheet = event.currentTarget;
+        if (sheet instanceof HTMLElement) sheet.focus({ preventScroll: true });
     };
     const restoreOpener = (event: Event) => {
         // Not simply "let Radix do it". Radix's own onCloseAutoFocus
@@ -289,9 +311,9 @@ function ModalRoot({
                         className="fixed inset-0 z-50 bg-bg-overlay backdrop-blur"
                     />
                     <Drawer.Content
-                        // Back to the opener on close, as on desktop: see
-                        // recordOpener / restoreOpener above.
-                        onOpenAutoFocus={recordOpener}
+                        // Into the sheet on open, back to the opener on
+                        // close: see enterSheet / restoreOpener above.
+                        onOpenAutoFocus={enterSheet}
                         onCloseAutoFocus={restoreOpener}
                         onPointerDownOutside={(e) => {
                             if (
@@ -308,7 +330,10 @@ function ModalRoot({
                         // what is actually visible. See use-keyboard-inset.ts.
                         style={keyboardAvoidanceStyle(keyboard)}
                         className={cn(
-                            "fixed bottom-0 left-0 right-0 z-50 flex flex-col",
+                            // outline-none: the sheet holds focus on open
+                            // (enterSheet) and is not a control; a ring around
+                            // the whole sheet would say otherwise.
+                            "fixed bottom-0 left-0 right-0 z-50 flex flex-col outline-none",
                             // Mobile drawer shares the desktop modal's
                             // focal-glow texture (background + border +
                             // glass edge) for parity — replaces the flat

@@ -209,6 +209,96 @@ function pass(over: Partial<Parameters<typeof runAdjudicationPass>[0]> = {}) {
     });
 }
 
+/**
+ * An option the request never offered.
+ *
+ * The codec validates every probability key against the SIX-letter option enum,
+ * which is the vendor's vocabulary rather than this request's. An account with
+ * two candidates offers A, B and NONE; `E` is schema-valid and refers to nobody.
+ *
+ * Measured before the check existed, with the canary reproducing its recorded
+ * answer so the batch was not refused for drift:
+ *
+ *     reason:  null
+ *     verdict: { verdict: 'PROPOSES', topOption: 'E',
+ *                topProbability: 0.99, margin: 0.985 }
+ *
+ * A stored, confident proposal naming a letter that maps to no candidate — and a
+ * margin of 0.985 reporting the one real candidate, at 0.005, as decisively
+ * beaten.
+ */
+describe('an option outside the labels offered for this account', () => {
+    /** Answers the canary correctly, so only the tenant payload is in question. */
+    function canaryCleanThen(reply: SystemOneResponse): Spy {
+        return spyProvider((tag) => (tag === 'canary' ? answer() : reply));
+    }
+
+    it('discards the answer as PROVIDER_ERROR rather than ranking the letter', async () => {
+        const spy = canaryCleanThen(
+            answer({ option: 'E', probabilities: { E: 0.99, A: 0.005, NONE: 0.005 } }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBe('PROVIDER_ERROR');
+        expect(result.outcomes[0].verdict).toBeNull();
+        // The payload WAS sent — this is not the pass declining to ask. The
+        // refusal is about the answer, which is the distinction a reason alone
+        // does not carry.
+        expect(spy.seen).toEqual(['canary', 'r1']);
+    });
+
+    it('discards it even when the unoffered letter is NOT the winner', async () => {
+        // Whole-answer discard, not a filter. A model answering about options it
+        // was not given is not one whose other numbers should be trusted here,
+        // and silently dropping `E` would change the margin A is judged on.
+        const spy = canaryCleanThen(
+            answer({ option: 'A', probabilities: { A: 0.9, E: 0.05, NONE: 0.05 } }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBe('PROVIDER_ERROR');
+        expect(result.outcomes[0].verdict).toBeNull();
+    });
+
+    it('accepts NONE, which is always offered', async () => {
+        const spy = canaryCleanThen(
+            answer({ option: 'NONE', probabilities: { NONE: 0.9, A: 0.05, B: 0.05 } }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBeNull();
+        expect(result.outcomes[0].verdict?.topOption).toBe('NONE');
+    });
+
+    it('THE CONTROL — an answer entirely within the offered letters still passes', async () => {
+        // Without this, a check that refused everything would satisfy the two
+        // assertions above and look like a fix.
+        const spy = canaryCleanThen(
+            answer({ option: 'A', probabilities: { A: 0.9, B: 0.05, NONE: 0.05 } }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBeNull();
+        expect(result.outcomes[0].verdict?.topOption).toBe('A');
+    });
+
+    it('offers only the letters in THIS account labelling, not a fixed set', async () => {
+        // A one-candidate account offers A and NONE. B is unoffered HERE even
+        // though it is offered for the two-candidate fixture above — so the check
+        // has to read the subject rather than a constant.
+        const oneCandidate = ready('r1', {
+            labelling: [{ label: 'A', employeeId: 'emp-r1-A' }],
+            suggestedEmployeeId: 'emp-r1-A',
+        });
+        const spy = canaryCleanThen(
+            answer({ option: 'B', probabilities: { B: 0.9, A: 0.05, NONE: 0.05 } }),
+        );
+        const result = await pass({ subjects: [oneCandidate], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBe('PROVIDER_ERROR');
+    });
+});
+
 // --- One outcome per subject ---------------------------------------------
 
 describe('one outcome per subject, in input order', () => {

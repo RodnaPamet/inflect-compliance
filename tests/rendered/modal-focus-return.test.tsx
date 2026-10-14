@@ -126,6 +126,62 @@ describe('<Modal /> — focus moves in and comes back', () => {
  * confirm on a phone was thrown back to the top of the page. Measured in
  * projectZ at 393 px on a confirm opened from a calendar booking.
  */
+describe('<Modal /> as a phone drawer — focus moves in', () => {
+    /**
+     * vaul keeps Radix from focusing the first field when a sheet opens, so
+     * the keyboard does not rise over it. What it left instead was no focus
+     * move at all: focus stayed on the opener, behind the overlay. Measured in
+     * projectZ (#308): after opening a sheet, document.activeElement was still
+     * the opener, so a screen reader announced nothing and Tab walked the page
+     * underneath.
+     */
+    it('moves focus to the sheet itself: inside the dialog, and not on a field', async () => {
+        const user = userEvent.setup();
+        render(<Harness surface="drawer" />);
+
+        const opener = screen.getByRole('button', { name: 'opener' });
+        await user.click(opener);
+
+        const sheet = screen.getByRole('dialog');
+        expect(sheet).toHaveAttribute('data-vaul-drawer');
+        // The sheet, not the first field: focusing an input would raise the
+        // phone's keyboard over a sheet that has only just opened.
+        expect(sheet).toHaveFocus();
+        expect(screen.getByLabelText('name')).not.toHaveFocus();
+        expect(opener).not.toHaveFocus();
+    });
+
+    it('the next Tab lands on the first control in the sheet, not on the page behind', async () => {
+        const user = userEvent.setup();
+        render(<Harness surface="drawer" />);
+        await user.click(screen.getByRole('button', { name: 'opener' }));
+
+        await user.tab();
+        expect(screen.getByLabelText('name')).toHaveFocus();
+    });
+
+    it('holds focus without being a tab stop or drawing a ring around itself', async () => {
+        const user = userEvent.setup();
+        render(<Harness surface="drawer" />);
+        await user.click(screen.getByRole('button', { name: 'opener' }));
+
+        const sheet = screen.getByRole('dialog');
+        expect(sheet).toHaveAttribute('tabindex', '-1');
+        expect(sheet.className).toMatch(/(^|\s)outline-none(\s|$)/);
+    });
+
+    it('preventAutoFocus opts out of this half too: focus stays on the opener', async () => {
+        const user = userEvent.setup();
+        render(<Harness surface="drawer" preventAutoFocus />);
+
+        const opener = screen.getByRole('button', { name: 'opener' });
+        await user.click(opener);
+
+        expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(false);
+        expect(opener).toHaveFocus();
+    });
+});
+
 describe('<Modal /> as a phone drawer — focus comes back', () => {
     it('renders the drawer surface (no floating close button)', async () => {
         const user = userEvent.setup();
