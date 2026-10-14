@@ -210,21 +210,111 @@ function pass(over: Partial<Parameters<typeof runAdjudicationPass>[0]> = {}) {
 }
 
 /**
+ * An option the request never offered.
+ *
+ * The codec validates every probability key against the SIX-letter option enum,
+ * which is the vendor's vocabulary rather than this request's. An account with
+ * two candidates offers A, B and NONE; `E` is schema-valid and refers to nobody.
+ *
+ * Measured before the check existed, with the canary reproducing its recorded
+ * answer so the batch was not refused for drift:
+ *
+ *     reason:  null
+ *     verdict: { verdict: 'PROPOSES', topOption: 'E',
+ *                topProbability: 0.99, margin: 0.985 }
+ *
+ * A stored, confident proposal naming a letter that maps to no candidate — and a
+ * margin of 0.985 reporting the one real candidate, at 0.005, as decisively
+ * beaten.
+ */
+describe('an option outside the labels offered for this account', () => {
+    /** Answers the canary correctly, so only the tenant payload is in question. */
+    function canaryCleanThen(reply: SystemOneResponse): Spy {
+        return spyProvider((tag) => (tag === 'canary' ? answer() : reply));
+    }
+
+    it('discards the answer as PROVIDER_ERROR rather than ranking the letter', async () => {
+        const spy = canaryCleanThen(
+            answer({ option: 'E', probabilities: { E: 0.99, A: 0.005, NONE: 0.005 } }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBe('PROVIDER_ERROR');
+        expect(result.outcomes[0].verdict).toBeNull();
+        // The payload WAS sent — this is not the pass declining to ask. The
+        // refusal is about the answer, which is the distinction a reason alone
+        // does not carry.
+        expect(spy.seen).toEqual(['canary', 'r1']);
+    });
+
+    it('discards it even when the unoffered letter is NOT the winner', async () => {
+        // Whole-answer discard, not a filter. A model answering about options it
+        // was not given is not one whose other numbers should be trusted here,
+        // and silently dropping `E` would change the margin A is judged on.
+        const spy = canaryCleanThen(
+            answer({ option: 'A', probabilities: { A: 0.9, E: 0.05, NONE: 0.05 } }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBe('PROVIDER_ERROR');
+        expect(result.outcomes[0].verdict).toBeNull();
+    });
+
+    it('accepts NONE, which is always offered', async () => {
+        const spy = canaryCleanThen(
+            answer({ option: 'NONE', probabilities: { NONE: 0.9, A: 0.05, B: 0.05 } }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBeNull();
+        expect(result.outcomes[0].verdict?.topOption).toBe('NONE');
+    });
+
+    it('THE CONTROL — an answer entirely within the offered letters still passes', async () => {
+        // Without this, a check that refused everything would satisfy the two
+        // assertions above and look like a fix.
+        const spy = canaryCleanThen(
+            answer({ option: 'A', probabilities: { A: 0.9, B: 0.05, NONE: 0.05 } }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBeNull();
+        expect(result.outcomes[0].verdict?.topOption).toBe('A');
+    });
+
+    it('offers only the letters in THIS account labelling, not a fixed set', async () => {
+        // A one-candidate account offers A and NONE. B is unoffered HERE even
+        // though it is offered for the two-candidate fixture above — so the check
+        // has to read the subject rather than a constant.
+        const oneCandidate = ready('r1', {
+            labelling: [{ label: 'A', employeeId: 'emp-r1-A' }],
+            suggestedEmployeeId: 'emp-r1-A',
+        });
+        const spy = canaryCleanThen(
+            answer({ option: 'B', probabilities: { B: 0.9, A: 0.05, NONE: 0.05 } }),
+        );
+        const result = await pass({ subjects: [oneCandidate], provider: spy.provider });
+
+        expect(result.outcomes[0].reason).toBe('PROVIDER_ERROR');
+    });
+});
+
+/**
  * The vendor's own truncation report (#3488).
  *
- * Until 2026-10-14 the schema parsed `truncated`, `state_tokens_dropped`,
- * `truncated_questions` and `state_tokens` and threw them away under a comment
- * calling them "accounting we do not read", while the check downstream described
- * itself as reading "the vendor's own accounting" and in fact compared
- * `input_tokens` to a constant of ours. The server's answer was on the wire and
- * nothing looked at it.
+ * The schema parsed `truncated`, `state_tokens_dropped`, `truncated_questions`
+ * and `state_tokens` and threw them away under a comment calling them
+ * "accounting we do not read", while the check downstream described itself as
+ * reading "the vendor's own accounting" and in fact compared `input_tokens` to a
+ * constant of ours. The server's answer was on the wire and nothing looked at it.
  *
  * Every case below keeps `input_tokens` WELL BELOW the window, so the proxy
  * cannot fire and only the vendor's report is under test. Without that, each
  * would pass for the wrong reason.
  */
 describe('truncation the vendor reports, with input_tokens below the window', () => {
-    function canaryCleanThen(reply: SystemOneResponse): Spy {
+    /** Answers the canary correctly, so only the tenant payload is in question. */
+    function cleanCanary(reply: SystemOneResponse): Spy {
         return spyProvider((tag) => (tag === 'canary' ? answer() : reply));
     }
 
@@ -238,14 +328,14 @@ describe('truncation the vendor reports, with input_tokens below the window', ()
     }
 
     it('truncated: true is OVER_BUDGET', async () => {
-        const spy = canaryCleanThen(withUsage({ truncated: true }));
+        const spy = cleanCanary(withUsage({ truncated: true }));
         const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
         expect(result.outcomes[0].reason).toBe('OVER_BUDGET');
         expect(result.outcomes[0].verdict).toBeNull();
     });
 
     it('state_tokens_dropped above zero is OVER_BUDGET', async () => {
-        const spy = canaryCleanThen(withUsage({ state_tokens_dropped: 7 }));
+        const spy = cleanCanary(withUsage({ state_tokens_dropped: 7 }));
         const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
         expect(result.outcomes[0].reason).toBe('OVER_BUDGET');
     });
@@ -253,7 +343,7 @@ describe('truncation the vendor reports, with input_tokens below the window', ()
     it('a non-empty truncated_questions is OVER_BUDGET', async () => {
         // The question list is the one signal that names WHAT was lost, and a
         // dropped question means an answer about something we did not ask.
-        const spy = canaryCleanThen(withUsage({ truncated_questions: ['person'] }));
+        const spy = cleanCanary(withUsage({ truncated_questions: ['person'] }));
         const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
         expect(result.outcomes[0].reason).toBe('OVER_BUDGET');
     });
@@ -261,8 +351,13 @@ describe('truncation the vendor reports, with input_tokens below the window', ()
     it('truncated: false with zero dropped is ACCEPTED — the control', async () => {
         // Without this, a check that refused every response carrying a `usage`
         // key at all would satisfy the three assertions above.
-        const spy = canaryCleanThen(
-            withUsage({ truncated: false, state_tokens_dropped: 0, truncated_questions: [], state_tokens: 430 }),
+        const spy = cleanCanary(
+            withUsage({
+                truncated: false,
+                state_tokens_dropped: 0,
+                truncated_questions: [],
+                state_tokens: 430,
+            }),
         );
         const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
         expect(result.outcomes[0].reason).toBeNull();
@@ -273,7 +368,7 @@ describe('truncation the vendor reports, with input_tokens below the window', ()
         // Absence means "this server does not report truncation", which is not
         // "something was truncated". Refusing here would reject every conforming
         // server that omits the optional block.
-        const spy = canaryCleanThen(answer({ inputTokens: 100 }));
+        const spy = cleanCanary(answer({ inputTokens: 100 }));
         const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
         expect(result.outcomes[0].reason).toBeNull();
     });
@@ -281,7 +376,7 @@ describe('truncation the vendor reports, with input_tokens below the window', ()
     it('the PROXY still fires on its own, with no vendor report at all', async () => {
         // The other half of the OR, kept because a vendor that under-reports is
         // what the proxy is for.
-        const spy = canaryCleanThen(answer({ inputTokens: 100_000 }));
+        const spy = cleanCanary(answer({ inputTokens: 100_000 }));
         const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
         expect(result.outcomes[0].reason).toBe('OVER_BUDGET');
     });

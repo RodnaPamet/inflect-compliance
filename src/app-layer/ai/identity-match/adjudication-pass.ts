@@ -72,6 +72,7 @@
 import {
     derivePersonOnlyVerdict,
     deriveVerdict,
+    NONE_OPTION,
     type DerivedVerdict,
     type NonVerdictReason,
 } from '@/lib/legacy-access/verdict';
@@ -577,6 +578,42 @@ export async function runAdjudicationPass(
         const options = Object.entries(parsed.answers.match.probabilities)
             .filter((e): e is [string, number] => typeof e[1] === 'number')
             .map(([option, probability]) => ({ option, probability }));
+
+        // EVERY OPTION MUST BE ONE WE OFFERED FOR THIS ACCOUNT.
+        //
+        // The codec checks each key against the six-letter enum, which is the
+        // vendor's option vocabulary and not this request's. An account with two
+        // candidates offers A, B and NONE; a model answering `E` is schema-valid
+        // and refers to nobody. Measured before this check existed: with the
+        // canary reproducing its recorded answer, `E` at 0.99 produced a stored
+        // `PROPOSES` with `topOption: 'E'` and a margin of 0.985 — a confident
+        // proposal pointing at no candidate, which also reported the real
+        // candidate at 0.005 as decisively beaten.
+        //
+        // DISCARDED WHOLE, not filtered. Dropping the unoffered keys and ranking
+        // the rest would silently repair a malformed answer and change the margin
+        // it is judged on; a model that answers about options it was not given is
+        // not a model whose other numbers should be trusted for this account.
+        //
+        // `PROVIDER_ERROR` rather than a new reason: the ten `NonVerdictReason`s
+        // are a Prisma enum, and `ALTER TYPE` mid-rolling-deploy fails reads on
+        // still-running old containers with SQLSTATE 42704 — the lesson the
+        // `WorkItem*` pins and the retired `PROPOSE` rung both record. The
+        // meaning fits as it stands: the provider's answer is unusable.
+        const offered = new Set<string>([
+            ...subject.labelling.map((l) => l.label),
+            NONE_OPTION,
+        ]);
+        const unoffered = options.map((o) => o.option).filter((o) => !offered.has(o));
+        if (unoffered.length > 0) {
+            return {
+                ...base,
+                reason: 'PROVIDER_ERROR' as const,
+                reportedModel: parsed.model,
+                latencyMs,
+                inputTokens,
+            };
+        }
 
         const verdict = deriveVerdict(
             { options, personProbability: parsed.answers.person.noul },
