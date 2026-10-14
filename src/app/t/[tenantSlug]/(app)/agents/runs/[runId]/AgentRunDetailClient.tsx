@@ -1,11 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Button } from '@/components/ui/button';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
@@ -120,6 +122,127 @@ function Payload({ label, json }: { label: string; json: string | null }) {
  * pattern it bans. These guards read comments, so a comment naming a primitive
  * is a comment claiming to use it.
  */
+/**
+ * STEP THROUGH A RUN, one step at a time (#3472, plan point 08's scrubber).
+ *
+ * ── WHY IT LIVES HERE AND NOT ON THE CANVAS ─────────────────────────────────
+ *
+ * The plan asks for "a timeline scrubber so a completed run can be stepped
+ * through node-by-node". A run's steps index a workflow DEFINITION's step
+ * array, which is code — the canvas holds one node per automation RULE, so
+ * there is no step-to-node mapping to scrub along. The ledger is where the
+ * steps are, so this is where stepping through them belongs; the canvas shows
+ * the run's state on its agent node instead (#3548).
+ *
+ * ── NO FETCHING ─────────────────────────────────────────────────────────────
+ *
+ * The page is server-rendered with every step already in hand, so scrubbing is
+ * pure selection over data that is present. A scrubber that fetched per step
+ * would add a spinner to an interaction whose whole point is to be immediate,
+ * and the bounded feed (#3514) exists for the surfaces that cannot hold the
+ * whole ledger.
+ *
+ * ── SELECTION IS ADDITIVE, NOT A FILTER ─────────────────────────────────────
+ *
+ * Every step stays rendered and the selected one is EMPHASISED. Hiding the
+ * others would make the scrubber the only way to read the run — worse for
+ * anyone scanning, and it would break the `#step-N` anchors the decisions page
+ * links into. So the control is an affordance over the list rather than a
+ * replacement for it.
+ */
+function TimelineScrubber({
+    steps,
+    selectedSeq,
+    onSelect,
+}: {
+    steps: RunStepRow[];
+    selectedSeq: number | null;
+    onSelect: (seq: number | null) => void;
+}) {
+    const t = useTranslations('agents');
+    // The POSITION in the rendered list, not the step's own `seq`. A Flue run's
+    // `seq` counts steps RECORDED and a static run's indexes the definition, so
+    // neither is guaranteed contiguous — stepping by `seq ± 1` would skip or
+    // stall on a gap. The list order is the thing an operator is stepping
+    // through.
+    const index = selectedSeq === null ? -1 : steps.findIndex((s) => s.seq === selectedSeq);
+    // NOTHING SELECTED is not "at the end". `atLast` read
+    // `index === -1 || …`, which disabled NEXT in the initial state and made
+    // the scrubber unusable until somebody clicked a disabled button — caught
+    // by its own rendered test on the first run.
+    //
+    // The semantics, stated: with nothing selected, PREV is disabled and NEXT
+    // selects the first step. That is "stepping forward through a run", which
+    // is what an operator opens this for; making PREV jump to the last step
+    // instead would be a second, unsignposted entry point.
+    const atFirst = index <= 0;
+    const atLast = index !== -1 && index >= steps.length - 1;
+
+    const go = (delta: number) => {
+        const next = index === -1 ? 0 : index + delta;
+        if (next < 0 || next >= steps.length) return;
+        onSelect(steps[next].seq);
+    };
+
+    return (
+        <div
+            className="flex flex-wrap items-center gap-tight"
+            data-testid="run-scrubber"
+            // A GROUP, so a screen reader announces the three controls as one
+            // thing rather than three loose buttons in a card.
+            role="group"
+            aria-label={t('runs.detail.scrubber.label')}
+            onKeyDown={(e) => {
+                // Arrow keys, because stepping through a sequence with a mouse
+                // is the slower half of the interaction. Scoped to this group
+                // so they do not fight the page's own scrolling.
+                if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+                if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+            }}
+        >
+            <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => go(-1)}
+                disabled={atFirst}
+                data-testid="run-scrubber-prev"
+            >
+                {t('runs.detail.scrubber.prev')}
+            </Button>
+            <span className="text-sm tabular-nums text-content-muted" data-testid="run-scrubber-position">
+                {index === -1
+                    ? t('runs.detail.scrubber.none', { total: steps.length })
+                    : t('runs.detail.scrubber.position', {
+                          position: index + 1,
+                          total: steps.length,
+                      })}
+            </span>
+            <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => go(1)}
+                disabled={atLast}
+                data-testid="run-scrubber-next"
+            >
+                {t('runs.detail.scrubber.next')}
+            </Button>
+            {/* CLEARING IS A CONTROL, not an absence. Without it, selecting a
+                step is a one-way door: an operator who wants the unemphasised
+                list back would have to reload the page. */}
+            {index !== -1 && (
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onSelect(null)}
+                    data-testid="run-scrubber-clear"
+                >
+                    {t('runs.detail.scrubber.clear')}
+                </Button>
+            )}
+        </div>
+    );
+}
+
 export function AgentRunDetailClient({
     tenantSlug,
     run,
@@ -131,6 +254,11 @@ export function AgentRunDetailClient({
 }) {
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
+    // NULL is the initial state, and that is deliberate: the page's first paint
+    // is the whole timeline with nothing singled out, which is what somebody
+    // arriving from a link wants. Defaulting to step 1 would emphasise a step
+    // nobody asked about.
+    const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
 
     return (
         <EntityDetailLayout
@@ -220,12 +348,28 @@ export function AgentRunDetailClient({
                         description={t('runs.detail.emptyDesc')}
                     />
                 ) : (
-                    <ol id="run-step-timeline" className="space-y-default">
+                    <>
+                        <TimelineScrubber
+                            steps={steps}
+                            selectedSeq={selectedSeq}
+                            onSelect={setSelectedSeq}
+                        />
+                        <ol id="run-step-timeline" className="space-y-default">
                         {steps.map((s) => (
                             <li
                                 key={s.id}
                                 id={`step-${s.seq}`}
-                                className={cn(cardVariants({ density: 'comfortable' }), 'space-y-tight')}
+                                className={cn(
+                                    cardVariants({ density: 'comfortable' }),
+                                    'space-y-tight',
+                                    // EMPHASIS, not isolation — every step stays
+                                    // rendered. Appended last so the ring wins
+                                    // over the card's own border.
+                                    s.seq === selectedSeq && 'ring-2 ring-brand-default',
+                                )}
+                                // The selection as a FACT a test can read, not a
+                                // Tailwind ring string a redesign may reword.
+                                data-selected={s.seq === selectedSeq ? 'true' : undefined}
                             >
                                 <div className="flex flex-wrap items-center gap-tight">
                                     <span className="text-xs tabular-nums text-content-subtle">
@@ -356,7 +500,8 @@ export function AgentRunDetailClient({
                                 )}
                             </li>
                         ))}
-                    </ol>
+                        </ol>
+                    </>
                 )}
             </div>
         </EntityDetailLayout>
