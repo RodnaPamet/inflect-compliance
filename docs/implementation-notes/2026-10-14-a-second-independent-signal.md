@@ -29,7 +29,7 @@ This is the larger half of the design. The kind annotates; it never decides.
 
 | property | how it is held, not merely intended |
 | --- | --- |
-| changes **no outcome** | `SIGNAL_STRENGTH.DEPARTMENT_MATCH = 'SUPPORTING'`, and `identity-reconcile-precision` enumerates the whole supporting union at score 10,000. Its assertion is `2 ** SUPPORTING_SIGNAL_KINDS.length - 1`, **derived rather than hardcoded**, so adding the kind extended the proof from 127 subsets to 255 with no edit |
+| changes **no outcome** | `SIGNAL_STRENGTH.DEPARTMENT_MATCH = 'SUPPORTING'`, which the engine's outcome rule honours structurally. **See the correction at the foot of this note:** the exhaustive subset test this originally cited as the proof does not execute, and the real evidence is a direct measurement |
 | cannot widen a shortlist | it is a **scorer**. Scorers run per candidate the blocker already produced and cannot create one. As a blocker it would make every member of Finance a candidate for every other |
 | cannot break a tie alone | two candidates in the same department both receive it — asserted on candidate scores directly |
 | **absence is not a match** | two blank departments are not colleagues. Scoring them as such would corroborate every weak name match in a source system that leaves the field empty, which is most of them |
@@ -64,7 +64,7 @@ here so nobody reads the merged PR as "12 rows improved".
 
 | mutation | result |
 | --- | --- |
-| reclassify the kind `STRONG` | **3 tests fail**, incl. the exhaustive subset proof |
+| reclassify the kind `STRONG` | **3 tests fail** — the `STRONG_SIGNAL_KINDS` equality and `strengthOf` assertions, which do execute. NOT the exhaustive subset proof, which does not; see the correction below |
 | raise the weight above the bulk bound | 1 fails |
 | let absence count as a match | **9 fail** |
 
@@ -98,3 +98,59 @@ check had counted my own shell), regenerating took the client from 43 to 94
 occurrences of the field and `tsc --noEmit` went from 9 errors to **zero**.
 `main`'s schema carries `parentExecutionId` on *both* `AutomationExecution` and
 `WorkflowRun`, so regenerating from main costs no peer anything.
+
+
+---
+
+## Correction, 2026-10-15 — the proof cited above does not execute (#3559)
+
+**This note and the commit message both overstate the evidence, and the commit
+subject cannot be fixed without rewriting `main`'s history. This section is the
+authority.**
+
+The claim was that `identity-reconcile-precision`'s `RQ-3b — supporting signals
+cannot link, exhaustively` block proves a `SUPPORTING` kind can never link, and
+that its derived assertion (`2 ** SUPPORTING_SIGNAL_KINDS.length - 1`) extended
+that proof from 127 subsets to 255 when `DEPARTMENT_MATCH` was added.
+
+**The derivation is real. The test it extends runs over zero candidates.**
+Measured by replicating its exact inputs and counting:
+
+```
+subsets=127  evaluated=254  TOTAL_CANDIDATES=0  SCORER_CALLS=0
+```
+
+The engine creates no candidate for a name-only account, and that block passes
+`config: { scorers: [scorer] }` with **no** `blockers`. Scorers run per existing
+candidate, so with none the scorer is never invoked and its 10,000-point signals
+never exist. `expect(linked).toEqual([])` passes on an empty array for reasons
+unrelated to the claim, and the `evaluated` floor that was meant to prevent
+exactly this counts `reconcile` **calls**, which happen regardless.
+
+### What this does and does not change
+
+**The claim is true, and is now verified directly.** Supplying a blocker so a
+candidate exists and running the same shape:
+
+```
+all 7 supporting kinds @ 10,000 each  ->  score 70,000, outcome SUGGESTED
+```
+
+Not `LINKED`. The engine's outcome rule reaches `LINKED` only from an unvetoed
+STRONG signal, which is structural rather than threshold-based. So
+`DEPARTMENT_MATCH` cannot link, and nothing in #3552 is unsafe.
+
+What was wrong is the **strength of evidence offered for it**: a proof was
+cited as load-bearing without checking that it executes — in a PR whose whole
+argument is that properties should be held rather than asserted.
+
+### How it was found, which is the transferable part
+
+Writing the #3550 positive control. A constructed two-candidate tie kept
+returning `NO_CANDIDATES`, which looked like a harness mistake of mine; the
+engine was right and the input shape I had copied — from this very block — was
+the fault. **A test that has always passed can have always been empty**, and the
+tell was a second test, written independently, failing on the same shape.
+
+Tracked as #3559. Its fix supplies a blocker and replaces the call-count floor
+with one on scorer invocations.
