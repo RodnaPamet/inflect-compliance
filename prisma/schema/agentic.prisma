@@ -443,6 +443,30 @@ model WorkflowRun {
   /// backfills it, so it cannot be NOT NULL at ALTER time. A NULL means
   /// "pre-register", not "any agent".
   agentId           String?
+  /// WHICH AUTOMATION-RULE FIRING CAUSED THIS RUN (#3537).
+  ///
+  /// NULL for a human-started run and for an MCP-credential-started one: they
+  /// have no parent, and inventing one would put a fiction in the column.
+  ///
+  /// CAUSE, not authority. `startedByUserId` on an automation-started run is
+  /// the rule's OWNER — the run executes under their permissions and is
+  /// stamped `actorType: 'JOB'` so the trail does not claim a person acted —
+  /// which is correct attribution and says nothing about what caused the run.
+  /// Without this column an operator read a person's name for work a rule
+  /// scheduled.
+  ///
+  /// NO FOREIGN KEY, deliberately. `AutomationExecution` rows are pruned on a
+  /// retention schedule, and a run that outlives its execution must keep the
+  /// id rather than be cascade-deleted or nulled — the same argument
+  /// `AiDecisionLog` makes about carrying no `runId`: two tables answering to
+  /// different retention rules join on a value, not on a constraint.
+  ///
+  /// It is also the only EXACT binding from the process canvas to this ledger.
+  /// A canvas node carries `dataJson.ruleId`, so node -> rule -> executions ->
+  /// runs resolves precisely, where joining on `(agentId, workflowKey)` does
+  /// not: two rules may invoke the same agent on the same workflow, and a
+  /// human may start the same workflow for the same agent.
+  parentExecutionId String?
   /// WHICH VERSION OF THE AGENT'S POLICY CARD WAS IN FORCE when this run was
   /// admitted. Same three states and the same write-once trigger as
   /// `AgentProposal.policyCardVersion` above — see that comment.
@@ -489,6 +513,8 @@ model WorkflowRun {
 
   @@index([tenantId, status, startedAt])
   @@index([tenantId, agentId])
+  /// The canvas query: every run one rule firing started, for one tenant.
+  @@index([tenantId, parentExecutionId])
 
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres

@@ -60,13 +60,11 @@ import {
     TYPESAFE_SUBPROCESSOR_ACTIVE,
     typesafeApiKey,
 } from './jev-provider';
-import { LayaDecisionProvider, layaConfig } from './laya-provider';
 import { StubDecisionProvider } from './stub-provider';
 import type { DecisionProvider, EffectiveDecisionMode } from './types';
 
 export { JEV_ENDPOINT, JEV_TIMEOUT_MS } from './jev-provider';
 export { TYPESAFE_SUBPROCESSOR_ACTIVE };
-export { LAYA_TIMEOUT_MS } from './laya-provider';
 export { NoDecisionProviderError } from './stub-provider';
 export type { DecisionProvider, DecisionCallContext, EffectiveDecisionMode } from './types';
 export {
@@ -87,16 +85,31 @@ export type { MatchState, MatchStateAccount, MatchStateCandidate, MatchOption } 
 export { callSystemOne, parseRetryAfter, SystemOneTransportError } from './transport';
 
 /**
- * The local arm: Laya when a base URL is deployed, the stub otherwise.
+ * The local arm: the stub, and ONLY the stub, since 2026-10-14.
  *
- * Declared above {@link getDecisionProvider} so its constructions legitimately
- * appear earlier in the file — the residency guard allows exactly these two names
- * before the guard line, and treats anything else constructed there as a finding.
+ * It read `layaConfig()` and returned a `LayaDecisionProvider` when a base URL
+ * was deployed. The Laya estate was retired on the owner's decision, so there is
+ * no local model to construct and this returns the refusing stub for every
+ * caller.
+ *
+ * KEPT AS A FUNCTION rather than inlined at its three call sites, and that is
+ * deliberate. `getDecisionProvider` takes four decisions before it reaches an
+ * external provider — OFF, the LOCAL_ONLY residency guard, the sub-processor
+ * flag, and the credential — and three of them now return the same thing.
+ * Collapsing them because the values coincide would delete the structure that
+ * makes the residency property READABLE, and `ai-residency-enforcement` asserts
+ * that structure: the LOCAL_ONLY branch must RETURN before anything external is
+ * constructed. The module header says not to simplify that branch away on the
+ * grounds that another check already covers it. This is that situation, arrived
+ * at from the other direction.
+ *
+ * Declared above {@link getDecisionProvider} so the one construction here
+ * legitimately appears earlier in the file — the residency guard allows exactly
+ * the non-external names before the guard line, and treats anything else
+ * constructed there as a finding.
  */
 function buildLocalProvider(): DecisionProvider {
-    const { baseUrl, apiKey } = layaConfig();
-    if (!baseUrl) return new StubDecisionProvider();
-    return new LayaDecisionProvider(baseUrl, apiKey);
+    return new StubDecisionProvider();
 }
 
 /**

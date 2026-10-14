@@ -79,18 +79,126 @@ function unnonced(scripts: ScriptInfo[]): ScriptInfo[] {
     );
 }
 
+/**
+ * The scripts THE SERVER EMITTED, parsed out of the raw HTML.
+ *
+ * ── WHY THE HTML AND NOT THE DOM (#3506) ────────────────────────────────────
+ *
+ * The DOM-based assertion below this was flaky, and the measured failures say
+ * why. Two runs on 2026-10-14 reported FOUR and then THREE unnonced scripts,
+ * one URL common to both, every one of them a `/_next/static/chunks/*.js`. A
+ * count that changes between runs of the same build is a count of something
+ * being ADDED while the test samples — Next's router injects chunks as it
+ * hydrates and prefetches.
+ *
+ * And a runtime-injected script legitimately carries NO nonce. That is what
+ * `'strict-dynamic'` is for: trust propagates from an already-trusted script to
+ * the scripts it creates, so requiring a nonce on those asserts something the
+ * CSP does not require and the browser does not check.
+ *
+ * ── WHY THIS IS NOT THE URL EXCLUSION IT LOOKS LIKE ─────────────────────────
+ *
+ * The obvious fix — skip `/_next/static/chunks/*.js` — would disable this spec
+ * for its OWN bug class. The 2026-05-14 production regression was exactly that
+ * shape: one `_next/static/chunks/*.js` tag RENDERED without a nonce on every
+ * authenticated page, which `strict-dynamic` then blocked. It was blocked
+ * precisely because it was parser-inserted rather than created by trusted
+ * script, and that is the line this helper draws.
+ *
+ * So the partition is by ORIGIN, not by URL: a tag in the server's HTML must
+ * carry a nonce, whatever it points at. A script only in the DOM was created at
+ * runtime and is covered by `strict-dynamic` instead.
+ *
+ * ── IT IS ALSO THE DISCRIMINATOR #3506 ASKED FOR ────────────────────────────
+ *
+ * The issue named two readings — a racing test, or a nonce genuinely missing
+ * sometimes — and said nothing separated them. This does, and WITHOUT needing
+ * me to be right about which one applies: if those chunk URLs turn out to be in
+ * the server HTML after all, they are still asserted here and this still fails.
+ * The restructure moves the question from "did it flake?" to "which set was it
+ * in?", which the failure output now prints.
+ *
+ * Parsed with a regex rather than a DOM parse because the whole point is to
+ * read the bytes the server sent, before anything executes. `page.request`
+ * shares the browser context's cookie jar, so this is the same authenticated
+ * response the page itself got.
+ */
+async function serverEmittedScripts(
+    page: import('@playwright/test').Page,
+    url: string,
+): Promise<ScriptInfo[]> {
+    const res = await page.request.get(url);
+    expect(res.ok(), `GET ${url} for the raw HTML: ${res.status()}`).toBe(true);
+    const html = await res.text();
+    return [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => {
+        const tag = m[0];
+        const src = /\bsrc="([^"]*)"/i.exec(tag)?.[1] ?? null;
+        return {
+            src,
+            type: /\btype="([^"]*)"/i.exec(tag)?.[1] ?? null,
+            hasNonce: /\bnonce="[^"]*"/i.test(tag),
+            snippet: (src ?? tag).slice(0, 90),
+        };
+    });
+}
+
 test.describe('CSP nonce coverage on authenticated pages', () => {
-    test('every executable script on the dashboard carries a nonce', async ({ page }) => {
+    test('every script the SERVER EMITS on the dashboard carries a nonce', async ({ page }) => {
         const slug = await loginAndGetTenant(page);
         await safeGoto(page, `/t/${slug}/dashboard`);
 
-        const scripts = await collectScripts(page);
+        const emitted = await serverEmittedScripts(page, `/t/${slug}/dashboard`);
 
         // Sanity: a page with no scripts would pass vacuously, and the app
         // renders dozens. The original bug was ONE unnonced tag out of 55.
-        expect(scripts.length).toBeGreaterThan(5);
+        expect(emitted.length).toBeGreaterThan(5);
 
-        expect(unnonced(scripts).map((s) => s.snippet)).toEqual([]);
+        expect(unnonced(emitted).map((s) => s.snippet)).toEqual([]);
+    });
+
+    test('and the runtime-injected ones are reported, not asserted — the partition is visible', async ({
+        page,
+    }) => {
+        // THE HALF THAT KEEPS THE CHANGE HONEST. Narrowing the assertion above
+        // to server-emitted scripts is only safe while two things hold, and
+        // both are checked rather than assumed:
+        //
+        //   1. `'strict-dynamic'` is in the CSP — pinned by the last test in
+        //      this file, which is what makes an unnonced RUNTIME script allowed
+        //      and an unnonced PARSER-INSERTED one blocked.
+        //   2. The runtime set is not where the server's own tags went. If the
+        //      nonce plumbing broke by moving tags out of the HTML, the
+        //      server-emitted count would collapse and the test above would fail
+        //      on its `> 5` floor rather than passing over an empty set.
+        //
+        // So this test asserts the SHAPE of the partition and prints it. It does
+        // not assert that runtime scripts carry nonces, because under
+        // strict-dynamic they need not.
+        const slug = await loginAndGetTenant(page);
+        await safeGoto(page, `/t/${slug}/dashboard`);
+
+        const inDom = await collectScripts(page);
+        const emitted = await serverEmittedScripts(page, `/t/${slug}/dashboard`);
+        const emittedSrcs = new Set(emitted.map((s) => s.src).filter(Boolean));
+        const runtimeOnly = inDom.filter((s) => s.src && !emittedSrcs.has(s.src));
+
+        // The DOM must be a SUPERSET of what the server sent — if it is not, the
+        // two reads are not describing the same page and nothing below means
+        // anything.
+        expect({
+            domCount: inDom.length >= emitted.length,
+            emittedCount: emitted.length > 5,
+        }).toEqual({ domCount: true, emittedCount: true });
+
+        // Printed, not asserted: this is the set #3506's flake lived in. Four
+        // then three on two runs of the same build, all `_next/static/chunks`.
+        console.log(
+            `[csp-nonce] server-emitted ${emitted.length}, dom ${inDom.length}, ` +
+                `runtime-only ${runtimeOnly.length}` +
+                (runtimeOnly.length
+                    ? ` — unnonced among them: ${unnonced(runtimeOnly).length}`
+                    : ''),
+        );
     });
 
     test('and on a data-heavy list page, where the chunk split differs', async ({ page }) => {
@@ -100,9 +208,9 @@ test.describe('CSP nonce coverage on authenticated pages', () => {
         const slug = await loginAndGetTenant(page);
         await safeGoto(page, `/t/${slug}/controls`);
 
-        const scripts = await collectScripts(page);
-        expect(scripts.length).toBeGreaterThan(5);
-        expect(unnonced(scripts).map((s) => s.snippet)).toEqual([]);
+        const emitted = await serverEmittedScripts(page, `/t/${slug}/controls`);
+        expect(emitted.length).toBeGreaterThan(5);
+        expect(unnonced(emitted).map((s) => s.snippet)).toEqual([]);
     });
 
     test('the CSP header itself still requires a nonce, so the assertions above mean something', async ({ page }) => {

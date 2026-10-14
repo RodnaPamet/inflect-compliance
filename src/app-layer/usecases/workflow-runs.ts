@@ -188,6 +188,18 @@ export async function startWorkflowRun(
     ctx: RequestContext,
     workflowKey: string,
     input: Record<string, unknown> = {},
+    opts: {
+        /**
+         * The `AutomationExecution` that fired the rule that caused this run
+         * (#3537). Omitted for a human- or credential-started run, which has
+         * no parent — and inventing one would put a fiction in the column.
+         *
+         * A separate options bag rather than a fourth positional: `input` is
+         * already a defaulted object, and a fifth caller passing the cause in
+         * the input's place is a mistake the compiler cannot see.
+         */
+        parentExecutionId?: string | null;
+    } = {},
 ): Promise<StartWorkflowResult> {
     if (ctx.apiKeyId) {
         enforceMcpCapability(ctx, 'orchestrate');
@@ -394,6 +406,7 @@ export async function startWorkflowRun(
     // before the row exists because it is write-once at the database.
     const run = await createSealedRun(
         ctx, workflowKey, context, policyCardVersion, chosenDriver, concurrencyCap,
+        opts.parentExecutionId ?? null,
     );
 
     await appendAuditEntry({
@@ -1009,6 +1022,15 @@ async function createSealedRun(
      * check below returns immediately.
      */
     concurrencyCap: number | null,
+    /**
+     * WHAT CAUSED THIS RUN (#3537), or null when nothing did.
+     *
+     * Written in the CREATE rather than updated afterwards, for the reason the
+     * two columns beside it give: a run that crashes mid-step still has to be
+     * able to say what caused it, and an UPDATE after the walk is a write that
+     * a crash skips.
+     */
+    parentExecutionId: string | null,
 ): Promise<{ id: string }> {
     try {
         return await runInTenantContext(ctx, async (db) => {
@@ -1041,6 +1063,10 @@ async function createSealedRun(
                     // write-once at the database, so the row must arrive
                     // carrying it.
                     policyCardVersion,
+                // CAUSE, beside the authority. `startedByUserId` above is the
+                // rule OWNER on an automation-started run, which is correct
+                // attribution and not causation — see the column's docstring.
+                parentExecutionId,
                     // …and on WHICH ENGINE. Written in the CREATE rather than
                     // updated after the walk: a run that crashes mid-step still
                     // has to be able to say what was executing it.

@@ -39,7 +39,8 @@
  * it will ACCEPT, not what it answers well.
  *
  * VERIFIED AGAINST A REAL LAYA on 2026-10-10 (#3394), built from
- * `deploy/laya/Dockerfile` and run locally. What that found, and what this file
+ * `deploy/laya/Dockerfile` — deleted 2026-10-14, so this cannot be re-run as
+ * written — and run locally. What that found, and what this file
  * now encodes:
  *
  *   - a choice question REQUIRES `instructions`, and takes `criteria` as a dict
