@@ -199,6 +199,7 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // driver, and its log sinks went with it. Both files appear because both
     // still log: the usecase for run lifecycle, the driver for each step.
     'src/lib/agentic/drivers/static-driver.ts — identifier bound elsewhere',
+    'src/lib/agentic/run-concurrency-policy.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
     // RELOCATION, not a new hole. `haltRunAtCap` was extracted from the static
     // driver into the shared settlement module when a second engine arrived —
@@ -662,7 +663,20 @@ const SINK_FLOOR = 30;
 // the dispatcher never touches `payload.data` except through `projectInput`,
 // whose output goes to `startWorkflowRun` and never to a log line.
 // 186 is this branch's live count, measured on a tree with no unmerged paths.
-const MEASURED_HOLES = 186;
+// 186 -> 189: THE CONCURRENT-RUN CAP (#3484). Three holes across four new
+// sinks in one file — an `err.message` on the settings read, and the audit
+// row's `previousCap` / `cap`, both integers.
+//
+// The two refusal warns contribute NO hole at all, which is worth stating
+// because it is the shape this file keeps asking for: every field at those
+// sinks is either a literal or `verdict.cap` / `verdict.inFlight`, a member
+// expression the rule resolves. The audit row's two are locals, and they are
+// the integers an incident review reads to tell a tightening from a widening.
+//
+// Nothing here reads a prompt: the cap counts rows by status and never opens
+// one. 189 is this branch's live count, measured on a tree with no unmerged
+// paths.
+const MEASURED_HOLES = 189;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -695,7 +709,12 @@ const MEASURED_HOLES = 186;
 // refusal warn and the one dispatched info. Raising the denominator TIGHTENS
 // `HOLES_PER_SINK_CEILING`, which is the direction this pair is meant to move.
 // Still my own contribution only: the live count on this branch is 111.
-const MEASURED_SINKS = 104;
+// 104 -> 108: the four sinks #3484 adds — the settings-read warn, the two
+// refusal warns (the early one and the one under the start lock) and the audit
+// append. Raising the denominator by more than the numerator TIGHTENS
+// `HOLES_PER_SINK_CEILING`, which is the direction this pair is meant to move.
+// The live count on this branch is 115.
+const MEASURED_SINKS = 108;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

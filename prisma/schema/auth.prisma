@@ -1493,6 +1493,24 @@ model TenantSecuritySettings {
   /// A CHECK refuses a negative value: a limit whose surprising value is the
   /// permissive one is how a typo becomes a bypass.
   agentMonthlyTokenBudget      Int?
+  /// HOW MANY AGENTIC RUNS MAY EXECUTE AT ONCE for this tenant. NULL = no cap,
+  /// which is every tenant until somebody sets one.
+  ///
+  /// A SECOND axis, not a second spelling of the budget. The budget bounds
+  /// SPEND OVER A MONTH; nothing bounded SIMULTANEITY, so a tenant inside its
+  /// budget could start runs until the worker pool was the limit — and the
+  /// pool is shared across tenants, which makes one tenant's burst everybody
+  /// else's queue depth.
+  ///
+  /// Counted over the statuses a run can still progress from
+  /// (RUNNING / PENDING / PAUSED / AWAITING_APPROVAL), because a cap that
+  /// counted terminal runs would refuse a tenant for work that finished.
+  /// See `src/lib/agentic/run-concurrency.ts`.
+  ///
+  /// A CHECK refuses a negative value, and 0 is LEGAL and means "no agentic
+  /// run may start" — a deliberate, readable way to stop a tenant's agents
+  /// without engaging a kill switch.
+  agentMaxConcurrentRuns       Int?
   /// When the current DRY_RUN period began, per direction. The gate to
   /// AUTOMATIC reads this: dry-run is time-boxed and mandatory, so a tenant
   /// cannot enable unattended writes the same afternoon it enables the feature.

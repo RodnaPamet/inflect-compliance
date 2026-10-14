@@ -77,6 +77,10 @@ import {
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import { assertWithinMonthlyBudget } from '@/lib/agentic/monthly-budget-policy';
+import {
+    assertWithinConcurrencyCap,
+    assertConcurrencyUnderLock,
+} from '@/lib/agentic/run-concurrency-policy';
 import { trackInFlightRun, untrackInFlightRun } from '@/lib/agentic/in-flight-runs';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
 import { recordDecisionOutcome } from '@/app-layer/ai/decision-log';
@@ -207,6 +211,26 @@ export async function startWorkflowRun(
     // them until somebody sets one: a NULL column short-circuits before the
     // aggregate runs.
     await assertWithinMonthlyBudget(ctx);
+
+    // THE SECOND AXIS: how many runs may execute AT ONCE (#3484).
+    //
+    // The budget above bounds spend over a MONTH, and ten runs at once cost it
+    // the same as ten runs over ten hours — so a tenant well inside its budget
+    // could start runs until the BullMQ worker pool was the limit, and that
+    // pool is shared across tenants. One tenant's burst was everybody else's
+    // queue depth.
+    //
+    // This is the EARLY, cheap refusal; it is not the exact one. Two requests
+    // that both read "2 in flight, cap 3" both pass here. The exact gate is
+    // `assertConcurrencyUnderLock`, inside the transaction that inserts the
+    // run row, where a per-tenant advisory lock serialises concurrent starts —
+    // see that function's header for why a concurrency cap cannot accept the
+    // overshoot the monthly budget deliberately tolerates.
+    //
+    // No-ops for every tenant that has not configured a cap, which is all of
+    // them until somebody sets one: a NULL column short-circuits before the
+    // count runs.
+    const concurrencyCap = (await assertWithinConcurrencyCap(ctx)).cap;
 
     // PRE-FLIGHT: the run's own input, scanned for prompt injection (#3468).
     //
@@ -364,7 +388,9 @@ export async function startWorkflowRun(
     // The pin is passed IN rather than resolved inside: `createSealedRun` owns
     // the seal, not the authority question, and the pin has to be resolved
     // before the row exists because it is write-once at the database.
-    const run = await createSealedRun(ctx, workflowKey, context, policyCardVersion, chosenDriver);
+    const run = await createSealedRun(
+        ctx, workflowKey, context, policyCardVersion, chosenDriver, concurrencyCap,
+    );
 
     await appendAuditEntry({
         tenantId: ctx.tenantId,
@@ -874,9 +900,24 @@ async function createSealedRun(
     context: WorkflowContext,
     policyCardVersion: number,
     driver: AgentDriver,
+    /**
+     * The tenant's concurrent-run cap, already read by the early check at the
+     * top of `startWorkflowRun`. Passed in rather than re-read: the value
+     * cannot have changed in the microseconds between, and a second settings
+     * query on the hot path buys nothing. `null` means no cap and the exact
+     * check below returns immediately.
+     */
+    concurrencyCap: number | null,
 ): Promise<{ id: string }> {
     try {
         return await runInTenantContext(ctx, async (db) => {
+            // THE EXACT CONCURRENCY GATE, inside this transaction and BEFORE
+            // the insert (#3484). A refusal therefore rolls back and leaves no
+            // row — which is the same rule this function's own header states
+            // about the budget: a refusal after the row exists leaves a
+            // RUNNING run nothing will ever advance, and the settlement sweep
+            // later reaps it as a crashed executor.
+            await assertConcurrencyUnderLock(db, ctx, concurrencyCap);
             const created = await db.workflowRun.create({
                 data: {
                     tenantId: ctx.tenantId,

@@ -84,6 +84,10 @@ const ADMIN_ONLY_ROUTES = [
     // delegable without admitting. The PLATFORM scope is not here at all: it has
     // no tenant, and lives at /api/admin/agent-kill-switch behind
     // PLATFORM_ADMIN_API_KEY.
+    // #3484 — the per-tenant concurrent-run cap. `admin.agent_registry`, not
+    // the kill key: a cap bounds how much NEW work may start and stops
+    // nothing already running.
+    'admin/agents/concurrency/route.ts',
     'admin/agents/kill-switch/route.ts',
     // #3470 — the Flue skill corpus behind the Skills tab. Read-only, and
     // `admin.agent_registry` rather than the per-agent exposure key: a
