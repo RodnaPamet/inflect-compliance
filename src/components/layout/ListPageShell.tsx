@@ -13,8 +13,8 @@
  *
  *   <ListPageShell>
  *     <ListPageShell.Header>
- *       <h1>Risks</h1>
- *       <p>{count} risks identified</p>
+ *       <h1>{t('title')}</h1>
+ *       <p>{t('count', { count })}</p>
  *     </ListPageShell.Header>
  *     <ListPageShell.Filters>
  *       <FilterToolbar ... />
@@ -42,6 +42,7 @@
  * use the shell. Open to dropping the slots if they remain unused
  * after a release.
  */
+import { useTranslations } from 'next-intl';
 import { ReactNode } from 'react';
 import { cn } from '@inflect/ui/lib/cn';
 
@@ -116,6 +117,10 @@ function ListPageShellBody({
     aside,
     leftRail,
 }: ListPageShellBodyProps) {
+    // The rails' landmark names are read in the viewer's locale: a screen
+    // reader announcing "Orientation" on a Bulgarian page is the bug
+    // projectZ #400 found.
+    const t = useTranslations('common.ui');
     // No aside, no left rail — the prior single-column body,
     // unchanged. The `data-list-page-body` marker stays on this
     // div: DataTable's whole-row clip useEffect walks up to find
@@ -149,7 +154,7 @@ function ListPageShellBody({
             {leftRail && (
                 <aside
                     className="flex-shrink-0 xl:self-start"
-                    aria-label="Orientation"
+                    aria-label={t('listRailLeft')}
                     data-testid="list-page-left-rail"
                 >
                     {leftRail}
@@ -172,7 +177,7 @@ function ListPageShellBody({
                     // own `overflow-y-auto` content scrolls, instead of the
                     // panel growing past the fold and getting clipped.
                     className="flex-shrink-0 xl:self-stretch xl:min-h-0"
-                    aria-label="Context"
+                    aria-label={t('listRailRight')}
                     data-testid="list-page-aside"
                 >
                     {aside}

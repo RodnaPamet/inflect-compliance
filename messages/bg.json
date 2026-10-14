@@ -135,7 +135,9 @@
       "uploading": "Качване…",
       "openPdf": "Отвори PDF",
       "openPdfNamed": "Отвори PDF: {title}",
-      "loadingIndicator": "Зареждане"
+      "loadingIndicator": "Зареждане",
+      "listRailLeft": "Ориентиране",
+      "listRailRight": "Контекст"
     },
     "calendar": {
       "prevYear": "Към предходната година",
