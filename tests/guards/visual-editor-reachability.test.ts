@@ -66,14 +66,22 @@ describe('visual editor reachability', () => {
         */
         expect(read(WORKSPACE)).toMatch(/<CanvasOverlayProvider/);
         /*
-            The CALL, not the bare name. `useNodeOverlayStatus` appears twice in
-            that file once comments are masked — the import and the call — and an
-            import with no call is precisely the state this assertion exists to
+            The CALL, not the bare name: the hook appears twice in that file
+            once comments are masked — the import and the call — and an import
+            with no call is precisely the state this assertion exists to
             reject. The Class D needle ratchet caught the first version of this
             line for that reason, at +1 over its ceiling.
+
+            THE HOOK WAS RENAMED, not removed (#3546). The node reads
+            `useNodeOverlayState` now, because it needs the stuck COUNT and not
+            only the status — `useNodeOverlayStatus` survives as the narrow
+            read and is still covered by its own provider test. The CLAIM here
+            is unchanged: the node reaches the overlay context. A rotted
+            citation proves the citation moved, not that the claim stopped
+            holding.
         */
         expect(read('src/components/processes/tldraw/ProcessNodeShapeUtil.tsx')).toMatch(
-            /useNodeOverlayStatus\(/,
+            /useNodeOverlayState\(/,
         );
     });
 

@@ -186,14 +186,28 @@ describe('the process node shape renders every kind', () => {
 describe('a node paints its rule\'s live execution state', () => {
     const RUNNING_RULE = 'rule-running-9';
     const FAILED_RULE = 'rule-failed-4';
+    const STUCK_RULE = 'rule-stuck-7';
 
     beforeEach(() => {
+        /*
+            THE REAL RESPONSE SHAPE (#3546). This fixture used to put the
+            running row under a `running` key — a field `listLiveExecutions`
+            has never returned. The reducer read it, so the fabricated fixture
+            and the fabricated reducer agreed with each other and neither
+            agreed with the endpoint.
+
+            `recent` is every execution newest-first, RUNNING ones included,
+            which is how a running rule's node has always been painted in
+            production. `stuck` is the array the endpoint actually fills for
+            an execution past that rule's own `slaWindowMinutes`.
+        */
         useTenantSWR.mockReturnValue({
             data: {
-                running: [
-                    { ruleId: RUNNING_RULE, status: 'RUNNING', createdAt: '2026-10-02T00:00:00Z' },
+                stuck: [
+                    { ruleId: STUCK_RULE, status: 'RUNNING', createdAt: '2026-10-02T00:00:00Z' },
                 ],
                 recent: [
+                    { ruleId: RUNNING_RULE, status: 'RUNNING', createdAt: '2026-10-02T00:00:00Z' },
                     { ruleId: FAILED_RULE, status: 'FAILED', createdAt: '2026-10-02T00:00:00Z' },
                 ],
             },
@@ -221,6 +235,57 @@ describe('a node paints its rule\'s live execution state', () => {
         renderInRunMode({ ruleId: FAILED_RULE });
         expect(node()).toHaveAttribute('data-overlay-status', 'FAILED');
         expect(node().className).toContain('ring-content-error');
+    });
+
+    it('paints STUCK distinctly — a hung rule must not look healthy (#3546)', () => {
+        /*
+            The user-visible half of the defect. `stuck` is computed per
+            execution against that rule's own `slaWindowMinutes` — it cannot be
+            one SQL predicate, which is why the usecase filters in memory — and
+            the overlay ignored it, so on the canvas a hung rule's node was
+            indistinguishable from a healthy running one while `MonitorTab`
+            badged the same execution from the same response.
+        */
+        renderInRunMode({ ruleId: STUCK_RULE });
+        expect(node()).toHaveAttribute('data-overlay-status', 'STUCK');
+        // The class too, because the attribute is for tests and the class is
+        // what an operator sees.
+        expect(node().className).toContain('ring-content-warning');
+        // NOT pulsing: a stuck execution is the one state where nothing is
+        // happening, so RUNNING's animation would say the opposite.
+        expect(node().className).not.toContain('animate-pulse');
+    });
+
+    it('counts SIMULTANEOUS stuck executions, above one only', () => {
+        /*
+            `count` existed and was read by nothing (#3546): written by the
+            dead `running` branch, consumed by no surface — the "wired is not
+            delivered" shape. It has a consumer now, and the threshold is the
+            point: "1 stuck execution" is what the ring already says, so a
+            badge repeating it is noise. Above 1 it is a DIFFERENT fact — the
+            rule wedges every time it fires rather than having one wedged run,
+            and those have different remedies.
+        */
+        useTenantSWR.mockReturnValue({
+            data: {
+                stuck: [
+                    { ruleId: STUCK_RULE, status: 'RUNNING', createdAt: '2026-10-02T00:00:00Z' },
+                    { ruleId: STUCK_RULE, status: 'RUNNING', createdAt: '2026-10-02T00:01:00Z' },
+                    { ruleId: STUCK_RULE, status: 'RUNNING', createdAt: '2026-10-02T00:02:00Z' },
+                ],
+                recent: [],
+            },
+        });
+        renderInRunMode({ ruleId: STUCK_RULE });
+        expect(node()).toHaveAttribute('data-overlay-stuck-count', '3');
+        expect(node()).toHaveTextContent('×3');
+    });
+
+    it('shows NO count for a single stuck execution', () => {
+        // The ring already says it; a "×1" badge would be the same fact twice.
+        renderInRunMode({ ruleId: STUCK_RULE });
+        expect(node()).toHaveAttribute('data-overlay-status', 'STUCK');
+        expect(node()).not.toHaveAttribute('data-overlay-stuck-count');
     });
 
     it('leaves a node whose rule is NOT in the response unpainted', () => {

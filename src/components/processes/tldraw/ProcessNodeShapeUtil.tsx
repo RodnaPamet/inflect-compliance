@@ -58,7 +58,7 @@ import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-rig
 import { isCollapsedFromDataJson } from './drill-scope-host';
 import {
     overlayClassFor,
-    useNodeOverlayStatus,
+    useNodeOverlayState,
     useNodeAgentRun,
     awaitsAHuman,
 } from '@/lib/processes/canvas-execution-overlay';
@@ -216,7 +216,7 @@ export class ProcessNodeShapeUtil extends ShapeUtil<ProcessNodeShape> {
      * Rendered through a named function component, NOT inline.
      *
      * `component()` is a method on a `ShapeUtil`, and the body now reads React
-     * context (`useNodeOverlayStatus`). A hook in a class method is outside what
+     * context (`useNodeOverlayState`). A hook in a class method is outside what
      * `react-hooks/rules-of-hooks` can verify — tldraw does invoke this during a
      * render, so it would work, but "works and cannot be checked" is how a
      * conditional hook gets added later with nothing to catch it.
@@ -321,7 +321,7 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
 
         Read UNCONDITIONALLY, which is what keeps the hook rules satisfiable:
         without a `CanvasOverlayProvider` above this the context holds an empty
-        map, `useNodeOverlayStatus` returns undefined, and `overlayClassFor`
+        map, `useNodeOverlayState` returns undefined, and `overlayClassFor`
         returns `''`. So a node still renders in isolation in a test and under
         SSR — the overlay module's header states that as a design property, and
         gating the hook on run mode would break it.
@@ -332,8 +332,21 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
         provider with a populated map.
     */
     const ruleId = ruleIdFromDataJson(shape.props.dataJson);
-    const overlayStatus = useNodeOverlayStatus(ruleId);
+    const overlayState = useNodeOverlayState(ruleId);
+    const overlayStatus = overlayState?.status;
     const overlayClass = overlayClassFor(overlayStatus);
+    /*
+        HOW MANY are stuck, when more than one is (#3546).
+
+        Shown only above 1, because "1 stuck execution" is what the STUCK ring
+        already says and a badge repeating it is noise on a canvas. Above 1 it
+        is a different fact: the rule wedges every time it fires rather than
+        having one wedged run, and those have different remedies.
+    */
+    const stuckCount =
+        overlayStatus === 'STUCK' && overlayState && overlayState.count > 1
+            ? overlayState.count
+            : null;
 
     /*
         #3472 — what this node's latest agentic RUN is doing.
@@ -379,6 +392,7 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
             // presentation detail a redesign may reword; the status is the
             // fact, and it is what a test should be able to read.
             data-overlay-status={overlayStatus}
+            data-overlay-stuck-count={stuckCount ?? undefined}
             // The RUN's status as a fact a test can read, beside the
             // execution's. Absent when this node has no run, which is every
             // node that is not an agent.
@@ -396,6 +410,16 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                 <span className="truncate text-sm font-medium text-content-emphasis">
                     {shape.props.label}
                 </span>
+                {/* The COUNT, beside the label rather than below it: it
+                    qualifies the ring, and the line below is the agent run's. */}
+                {stuckCount !== null && (
+                    <span
+                        className="shrink-0 text-xs font-medium text-content-warning"
+                        data-testid={`process-node-stuck-${shape.props.nodeKey || shape.id}`}
+                    >
+                        ×{stuckCount}
+                    </span>
+                )}
             </div>
             {shape.props.subtitle ? (
                 <span className="truncate text-xs text-content-muted">

@@ -20,13 +20,25 @@
 import { render, renderHook, screen } from '@testing-library/react';
 import * as React from 'react';
 
+/**
+ * The two arrays `listLiveExecutions` returns (#3546).
+ *
+ * This said `running` / `recent` — and `running` is a field the endpoint has
+ * never returned, so the mock, the reducer and two other test files all
+ * described the same non-existent response and agreed with each other.
+ *
+ * Still a local shape rather than the derived one the overlay now uses: the
+ * mock's job is to stand in for the WIRE, and spelling only the two fields the
+ * provider reads keeps these fixtures legible. The derived type in the module
+ * is what stops the NAMES drifting again.
+ */
 interface LiveRow {
     ruleId: string;
     status: string;
     createdAt: string;
 }
 interface LiveResponse {
-    running: LiveRow[];
+    stuck: LiveRow[];
     recent: LiveRow[];
 }
 
@@ -92,17 +104,30 @@ describe('useNodeOverlayStatus', () => {
         expect(result.current).toBeUndefined();
     });
 
-    it('projects the running status onto the node that owns the rule', () => {
+    it('projects the status onto the node that owns the rule', () => {
+        /*
+            THE THIRD FIXTURE THAT CONSTRUCTED `running` (#3546).
+
+            `listLiveExecutions` returns `{ stuck, recent }` and never a
+            `running` key, so this fixture — like the reducer it exercised and
+            the two other test files that built the same shape — described a
+            response the endpoint has never produced. All three agreed with
+            each other and none agreed with the API.
+
+            `recent` is every execution newest-first, RUNNING ones included,
+            which is how a running rule's node has always been painted in
+            production; `stuck` is what the endpoint fills for an execution
+            past that rule's own deadline.
+        */
         mockSWR.mockReturnValue({
             data: {
-                running: [
+                stuck: [],
+                recent: [
                     {
                         ruleId: 'rule-1',
                         status: 'RUNNING',
                         createdAt: '2026-06-08T00:00:00Z',
                     },
-                ],
-                recent: [
                     {
                         ruleId: 'rule-2',
                         status: 'FAILED',

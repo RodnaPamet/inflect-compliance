@@ -25,7 +25,22 @@ describe('VR-6 — execution overlay', () => {
     it('the overlay is distributed via context (no per-node tenant SWR)', () => {
         const src = read('src/lib/processes/canvas-execution-overlay.tsx');
         expect(src).toMatch(/CanvasOverlayProvider/);
-        expect(src).toMatch(/useNodeOverlayStatus/);
+        // THE EXPORTS, by name, one unique match each.
+        //
+        // This was `toMatch(/useNodeOverlayState/)` with a comment saying
+        // "either read satisfies this" — which is precisely the ambiguity
+        // `assertion-needle-uniqueness-ratchet` objects to, and it went red:
+        // the bare name appears twice in the module (the definition, and the
+        // call inside the narrow wrapper), so two positions satisfied a needle
+        // that was about neither in particular.
+        //
+        // Naming both exports is also the stronger claim. The module's job is
+        // to expose a node-side read over the context, and it exposes TWO —
+        // the full state for the node that needs the stuck count, and the
+        // narrow status for callers that do not. A substring could not tell
+        // "both are exported" from "one is, and the other is mentioned".
+        expect(src).toMatch(/export function useNodeOverlayState\(/);
+        expect(src).toMatch(/export function useNodeOverlayStatus\(/);
 
         // EVERY subscription IS POLLED, counted rather than existence-checked.
         //
@@ -88,8 +103,11 @@ describe('VR-6 — execution overlay', () => {
         const util = read('src/components/processes/tldraw/ProcessNodeShapeUtil.tsx');
         const workspace = read('src/components/processes/TldrawProcessWorkspace.tsx');
 
-        // The node reads the CONTEXT…
-        expect(util).toMatch(/useNodeOverlayStatus\(/);
+        // The node reads the CONTEXT… through `useNodeOverlayState` since
+        // #3546, because it needs the stuck COUNT and not only the status.
+        // `useNodeOverlayStatus` remains the narrow read for callers that want
+        // just a status, and has its own provider test.
+        expect(util).toMatch(/useNodeOverlayState\(/);
         expect(util).toMatch(/overlayClassFor\(/);
         // …and the workspace provides it, gated so the poll cannot run on a
         // document map. `enabled={isRunMode}` and not `enabled` bare: an
