@@ -161,13 +161,10 @@ const QUEUE_SKIPPED_JOBS: Readonly<Record<string, string>> = {
     codeql: 'SAST finds taint/injection patterns, not "PR A renamed what PR B calls". Its analyze ' +
         'step also uploads SARIF, which in a queue run would file a code-scanning analysis against ' +
         'the throwaway gh-readonly-queue ref. Runs on the PR and again on the push to main.',
-    'laya-image': 'Builds AND STARTS the Laya server image — a cold build pulls ~2.4 GB of CUDA ' +
-        'wheels plus a ~1 GB checkpoint, and the container then loads that checkpoint before it can ' +
-        'report healthy. A merge collision cannot produce a wrong ARG default, an inverted layer ' +
-        'order or a server that exits at startup, which are the three classes this job exists for; ' +
-        'and a collision INSIDE one Dockerfile surfaces as a conflict, which blocks the merge on ' +
-        'its own. Its path filter applies to push as well as pull_request, so the post-merge run ' +
-        'happens exactly when the directory changed — which is the only time it can break.',
+    // REMOVED 2026-10-14: `laya-image`. The job was deleted with the Laya
+    // estate, and a stale entry here is not inert — the sibling "no entry names
+    // a job that no longer exists" check reads this map as the authority on
+    // which jobs are deliberately queue-exempt.
 };
 
 /** Jobs whose post-merge (`push` to main) run must remain intact. */
@@ -404,7 +401,7 @@ describe('merge queue — the lean gate is not hollowed out', () => {
         // WHICH JOB A BANNER BELONGS TO IS DECIDED BY ITS INDENTATION, because the
         // file uses both placements and they point in OPPOSITE directions:
         //   `    # ── …` (inside the job body)      -> the job id is ABOVE  (e2e, codeql)
-        //   `  #  ── …` (pre-job comment block)     -> the job id is BELOW  (docker, laya-image)
+        //   `  #  ── …` (pre-job comment block)     -> the job id is BELOW  (docker)
         // A one-directional scan gets half of them wrong and, worse, attributes a
         // banner to a NEIGHBOURING job — which would read as a populated result
         // rather than as a parse failure.
@@ -522,7 +519,21 @@ describe('merge queue — the quiet breakages', () => {
         // The denominator beside the result: an extraction that found nothing
         // would pass the loop below over an empty set, which is the failure this
         // whole test is about.
-        expect(outputs.length).toBeGreaterThanOrEqual(2);
+        //
+        // LOWERED FROM 2 TO 1 ON 2026-10-14, and this is the awkward case the
+        // floor is for, so it gets a reason rather than a quiet edit. The second
+        // output was `laya`, removed with the Laya estate, so the `changes` job
+        // is back to the single `container` output it had when this test was
+        // first written against that one output by name.
+        //
+        // The generalisation is NOT reverted with it. The defect it fixed was
+        // asserting the one output that happened to exist, so that a second one
+        // added later — which is exactly what `laya` was — passed unexamined.
+        // That is a property of the RULE, and the rule has to range over
+        // whatever outputs exist whether there are one or five of them. A floor
+        // of 1 plus the named member below is what keeps an empty extraction
+        // from passing; it is not a claim that one output is the right number.
+        expect(outputs.length).toBeGreaterThanOrEqual(1);
         expect(outputs).toContain('container');
 
         for (const name of outputs) {

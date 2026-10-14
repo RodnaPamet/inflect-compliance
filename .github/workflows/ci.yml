@@ -308,12 +308,6 @@ jobs:
       # own explicit condition, so today this fallback is belt-and-braces
       # for any FUTURE consumer of this output.)
       container: ${{ steps.filter.outputs.container || 'true' }}
-      # The Laya server image, which is a DIFFERENT Dockerfile from the one
-      # `container` guards. `container` includes `deploy/**`, so a change here
-      # already triggers `Docker Build` — but that job builds the ROOT
-      # Dockerfile (no `file:` key, `context: .`), so its green says nothing
-      # about this image and reads like it does (#3418).
-      laya: ${{ steps.filter.outputs.laya || 'true' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -322,12 +316,6 @@ jobs:
         id: filter
         with:
           filters: |
-            laya:
-              # The build context IS this directory, so nothing outside it can
-              # change the image. Narrow on purpose: the job it gates is a real
-              # image build, and a filter that fired on unrelated paths would be
-              # the #3418 mistake again in the other direction.
-              - 'deploy/laya/**'
             container:
               - 'Dockerfile'
               - 'Dockerfile.*'
@@ -336,18 +324,15 @@ jobs:
               - 'package-lock.json'
               - 'next.config.*'
               - 'deploy/**'
-              # EXCLUDED, and this is the #3418 fix. `deploy/**` above belongs
-              # here for the compose files and deploy scripts, which are part of
-              # the application image's story. `deploy/laya/**` is not: it is a
-              # DIFFERENT image with its own `laya-image` job. When a laya-only
-              # change tripped `deploy/**`, the `Docker Build` check ran for
-              # 19m51s, went GREEN, and had opened the ROOT Dockerfile rather
-              # than the one the pull request changed. A reviewer seeing a green
-              # check named `Docker Build` on a Dockerfile fix has every reason
-              # to read it as "the Dockerfile builds". An absent check is at
-              # least visibly absent; that one was reached, green, and aimed one
-              # level off.
-              - '!deploy/laya/**'
+              # NOTE: `deploy/laya/**` used to be EXCLUDED here, because it was a
+              # different image with its own `laya-image` job (#3418 — a
+              # laya-only change tripped `deploy/**`, ran `Docker Build` for
+              # 19m51s, went green, and had opened the ROOT Dockerfile rather
+              # than the one the pull request changed). The directory and that
+              # job are both gone, so the exclusion went with them. The lesson
+              # it recorded has not: a check named for one artefact, reached and
+              # green over another, is worse than an absent check, because an
+              # absent one is visibly absent.
               - 'prisma/**'
               # Root file — `prisma/**` does NOT match it, and the CLI reads it
               # at container start to find the datasource URL.
@@ -2778,168 +2763,3 @@ jobs:
         # or fail the job loudly. Silent upload failures were
         # showing up as "Code scanning configuration error" banners
         # on the Security tab without breaking CI.
-
-  # ═══════════════════════════════════════════════════════════════
-  #  LAYA IMAGE BUILD — path-scoped, PR-time, build AND RUN
-  #
-  #  WHY THIS EXISTS. `deploy/laya/Dockerfile` shipped with two defects that
-  #  no check could see, because nothing ever built or ran this image:
-  #    - #3415: `HF_HUB_OFFLINE=1` four layers above the `RUN` that calls
-  #      `snapshot_download`, so the image had no successful build path at all.
-  #    - #3420: `HEALTHCHECK` probing `/v1/models`, a path `laya-serve` does
-  #      not serve. A local container logged 352 consecutive 404s. With
-  #      `condition: service_healthy` — which `docker-compose.prod.yml` uses in
-  #      four places — that is a deploy that HANGS rather than fails.
-  #
-  #  Both reached `main` while `Docker Build` went green on the very pull
-  #  requests that touched this file, because `deploy/**` is in the `container`
-  #  filter but that job builds the ROOT Dockerfile (#3418). An absent check is
-  #  visibly absent; a check aimed one level off is not.
-  #
-  #  WHY IT RUNS THE CONTAINER AND DOES NOT ONLY BUILD IT. `docker build` would
-  #  not have caught #3420 — `HEALTHCHECK` is not executed at build time — and
-  #  would not catch a broken `torch` install either, since that fails at
-  #  `from_pretrained`, not at `pip install` (#3417). Build-only would close the
-  #  smaller half of the gap and read as though it closed both.
-  #
-  #  AND WHY IT READS `docker inspect`'s HEALTH STATUS rather than curling the
-  #  endpoint itself. Curling `/health` from the runner proves the SERVER works.
-  #  It says nothing about whether the Dockerfile's own probe is pointed at a
-  #  real path — which was the entire defect. The subject of this check has to
-  #  be the HEALTHCHECK instruction, so the only honest reading is the status
-  #  Docker derives from running it.
-  #
-  #  ── Merge-queue lean set: SKIP ──
-  #  Same trade and same reasoning as `Docker Build`: a merge collision does not
-  #  produce a wrong `ARG` default or an inverted layer order, and this is an
-  #  expensive job. A collision inside one Dockerfile surfaces as a CONFLICT,
-  #  which blocks the merge on its own.
-  #
-  #  COST. Honest estimate rather than a measured one: the dispatch workflow
-  #  carries a 60-minute timeout and the image pulls ~2.4 GB of CUDA wheels it
-  #  cannot use (#3417) plus a ~1 GB checkpoint, so a cold build is the dominant
-  #  term. The `gha` cache should make repeat runs on an unchanged base fast,
-  #  and editing a layer correctly invalidates everything below it — including
-  #  the checkpoint layer, which is what keeps #3415 catchable. The real number
-  #  will be whatever the first run reports; the timeout is set to leave room
-  #  rather than to predict it.
-  # ═══════════════════════════════════════════════════════════════
-  laya-image:
-    name: Laya image build
-    needs: [changes]
-    # NARROWER THAN `Docker Build`'S CONDITION, deliberately. Copying that job's
-    # shape verbatim —
-    #   github.event_name != 'pull_request' || needs.changes.outputs.laya == 'true'
-    # — makes the path filter apply to pull requests ONLY, so every push to main
-    # would build this image whether or not anything under `deploy/laya/` changed.
-    # For the application image that is wanted: it publishes on every push and the
-    # CVE surface moves under it. This image is referenced by digest, is not
-    # published by this job, and cannot change unless its own directory does —
-    # the build context IS that directory. So the filter applies to both events.
-    if: ${{ github.event_name != 'merge_group' && needs.changes.outputs.laya == 'true' }}
-    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 45
-
-    steps:
-      - uses: actions/checkout@v7
-
-      # Same reclamation as Docker Build (issue #1005). This image needs it
-      # more: the CUDA wheels and the checkpoint are several gigabytes before
-      # any layer of ours.
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force 2>/dev/null || true
-          df -h /
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      # `load: true`, no push. The publishing path is `laya-image.yml`, which is
-      # workflow_dispatch-only and deliberately so — this job must not produce a
-      # registry artefact nobody pinned.
-      #
-      # Build args are LEFT AT THEIR DOCKERFILE DEFAULTS on purpose. The
-      # dispatch workflow passes them explicitly because a publish is identified
-      # by the pair it contains; here the subject under test IS the defaults,
-      # and passing them would mean a wrong default could never fail this job.
-      - name: Build the image
-        uses: docker/build-push-action@v7
-        with:
-          context: deploy/laya
-          file: deploy/laya/Dockerfile
-          push: false
-          load: true
-          tags: inflect-laya:ci-${{ github.sha }}
-          cache-from: type=gha,scope=laya
-          cache-to: type=gha,mode=max,scope=laya,ignore-error=true
-          platforms: linux/amd64
-
-      - name: Start it, and wait for ITS OWN healthcheck to pass
-        run: |
-          set -euo pipefail
-          docker run -d --name laya-ci -p 127.0.0.1:8000:8000 "inflect-laya:ci-${{ github.sha }}"
-
-          # The Dockerfile declares --start-period=120s --interval=30s
-          # --retries=3, so a wrong path sits in `starting` for 120s and only
-          # then needs 3 failures to reach `unhealthy`. Budget past that: a
-          # 240-second ceiling is the first moment "still starting" is
-          # distinguishable from "slow to load a 322M-parameter checkpoint".
-          #
-          # TIMEOUT IS A FAILURE, not a pass. `starting` at the deadline is the
-          # exact state a wrong probe path produces, so treating it as
-          # inconclusive-but-fine would reintroduce #3420 with a green tick.
-          deadline=$((SECONDS + 240))
-          status=starting
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            status=$(docker inspect --format '{{.State.Health.Status}}' laya-ci 2>/dev/null || echo gone)
-            echo "  health=$status  t=${SECONDS}s"
-            case "$status" in
-              healthy)   break ;;
-              unhealthy|gone) break ;;
-            esac
-            sleep 10
-          done
-
-          if [ "$status" != "healthy" ]; then
-            echo "::error::container health is '$status' after ${SECONDS}s (expected 'healthy')"
-            echo "── healthcheck log ──"
-            docker inspect --format '{{range .State.Health.Log}}exit={{.ExitCode}} {{.Output}}{{end}}' laya-ci || true
-            echo "── container log (tail) ──"
-            docker logs --tail 80 laya-ci || true
-            exit 1
-          fi
-          echo "container reported healthy after ${SECONDS}s"
-
-      # The server must still serve the path the CLIENT posts to. `laya-provider.ts`
-      # builds `${baseUrl}/v1/systemone`, so a vendor release that moved or renamed
-      # that route would leave a healthy container the application cannot talk to —
-      # a failure the healthcheck above cannot see, because `/health` would still
-      # answer.
-      - name: The route the client posts to is the route the server serves
-        run: |
-          set -euo pipefail
-          curl -fsS --max-time 20 http://127.0.0.1:8000/openapi.json > /tmp/laya-openapi.json
-          python3 - /tmp/laya-openapi.json <<'PY'
-          import json, sys
-          paths = json.load(open(sys.argv[1])).get("paths", {})
-          print("served routes:")
-          for route, ops in sorted(paths.items()):
-              print("  ", " ".join(m.upper() for m in ops), route)
-          # The denominator beside the result: an empty schema would satisfy
-          # nothing below, but it would report "not served" for a server that
-          # simply failed to describe itself, sending the next person to the
-          # wrong file.
-          if not paths:
-              sys.exit("::error::the OpenAPI schema lists no paths at all")
-          required = "/v1/systemone"
-          if required not in paths:
-              sys.exit("::error::%s is not served; laya-provider.ts posts to it" % required)
-          if "post" not in paths[required]:
-              sys.exit("::error::%s exists but accepts no POST" % required)
-          print("ok: POST %s is served" % required)
-          PY
-
-      - name: Stop it
-        if: always()
-        run: docker rm -f laya-ci 2>/dev/null || true

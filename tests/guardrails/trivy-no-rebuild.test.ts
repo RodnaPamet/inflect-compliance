@@ -107,7 +107,11 @@ describe('every workflow that scans with Trivy publishes the scanned bytes', () 
         // above without anything noticing.
         expect(files.length).toBeGreaterThanOrEqual(8);
         expect(scanners.length).toBeGreaterThanOrEqual(2);
-        expect(scanners.map((f) => f.name)).toContain('laya-image.yml');
+        // `laya-image.yml` was here until 2026-10-14 and was deleted with the
+        // Laya estate. `ghcr-publish.yml` is asserted instead rather than
+        // dropping the membership check altogether: an assertion over a set with
+        // no named member is satisfied by any set, including an empty one.
+        expect(scanners.map((f) => f.name)).toContain('ghcr-publish.yml');
         expect(scanners.map((f) => f.name)).toContain('ci.yml');
     });
 
@@ -288,9 +292,13 @@ describe('every trivy-action invocation sets its own scan timeout', () => {
 // which is worse because it reads as evidence.
 //
 // WHY THE KEY AND NOT JUST THE FILTER. The filter was narrowed too
-// (`!deploy/laya/**`), asserted below. But a filter says WHEN a job runs and
-// this defect was about WHAT it built. The second Dockerfile in this repository
-// is what exposed it; the third will not announce itself.
+// (`!deploy/laya/**`), and that half was asserted here until 2026-10-14, when
+// the directory, its job and the exclusion were deleted with the Laya estate —
+// see the note at the removed test. The `file:` key assertion is the half that
+// SURVIVES a deletion, and the distinction is the point: a filter says WHEN a
+// job runs, this defect was about WHAT it built. The second Dockerfile in this
+// repository is what exposed it; the third will not announce itself, and there
+// is no second one at the moment.
 //
 // WHY THIS LIVES HERE rather than in its own file: `no-epic-named-ratchets`
 // holds a DOWNWARD ratchet on the guard-file count, and its comment says that
@@ -358,15 +366,22 @@ describe('every image build names the Dockerfile it builds (#3418)', () => {
         ).toEqual([]);
     });
 
-    it("ci.yml's container filter excludes deploy/laya, which has its own job", () => {
-        const ci = fs.readFileSync(path.join(WF, 'ci.yml'), 'utf-8');
-        const block = ci.slice(ci.indexOf('container:'), ci.indexOf("'prisma/**'"));
-        expect(block).toContain("'deploy/**'");
-        expect(block).toContain("'!deploy/laya/**'");
-        // ORDER matters to paths-filter: a negation must follow the pattern it
-        // narrows, or it excludes nothing.
-        expect(block.indexOf("'!deploy/laya/**'")).toBeGreaterThan(block.indexOf("'deploy/**'"));
-    });
+    // REMOVED 2026-10-14: `ci.yml's container filter excludes deploy/laya, which
+    // has its own job`. The directory, the job and the exclusion were all
+    // deleted when the owner retired the Laya estate, so the assertion had no
+    // subject left. It is recorded here rather than silently dropped because
+    // this is a guard file and a vanished assertion is the thing guards exist to
+    // prevent.
+    //
+    // The property it protected — a negation must FOLLOW the pattern it narrows,
+    // or `paths-filter` excludes nothing — has no live instance now. The
+    // `container` filter carries no negations at all. If one returns, that
+    // ordering rule returns with it.
+    //
+    // What does NOT go away is the `file:` key assertion above, and the comment
+    // block at the top says why: a filter says WHEN a job runs, and the #3418
+    // defect was about WHAT it built. That half still has a live subject (the
+    // root Dockerfile) and still fires.
 
     describe('detector proof — synthetic documents, so a clean run means something', () => {
         const wrap = (steps: string): string => `jobs:\n  build:\n    steps:\n${steps}`;
@@ -390,11 +405,11 @@ describe('every image build names the Dockerfile it builds (#3418)', () => {
                 wrap(
                     '      - uses: docker/build-push-action@v7\n'
                         + '        with:\n'
-                        + '          file: deploy/laya/Dockerfile\n',
+                        + '          file: deploy/example/Dockerfile\n',
                 ),
                 'synthetic',
             );
-            expect(found[0].fileKey).toBe('deploy/laya/Dockerfile');
+            expect(found[0].fileKey).toBe('deploy/example/Dockerfile');
         });
 
         it('a commented-out file: key does NOT satisfy it', () => {

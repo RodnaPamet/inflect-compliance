@@ -92,7 +92,16 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // +6/-1 — five lines of new entry plus one replaced `coveredBy` value —
         // so the FORMAT half round-tripped untouched and only the key-order
         // digest moved, which is this pin working as designed.
-        keyOrderSha: '8807272e603fc72615631ff06a465ffb630bb4599ca4afbcc2e80b7f2e398bac',
+        //
+        // Updated again 2026-10-14: TWO entries REMOVED — `ci.yml:laya-image`
+        // and `laya-image.yml:build-scan-push` — because the Laya image estate
+        // was retired (owner decision, same day). Both halves of the pin did
+        // their job here: the FORMAT check confirmed the removal is -10/+0 with
+        // no reflow of the sixteen entries left, and this digest is the only
+        // other line that moved. First time this pin has recorded a DELETION
+        // rather than an addition; the digest cannot tell the two apart, which
+        // is why the reason is written rather than inferred from the count.
+        keyOrderSha: '072de24b0f85b7a8f1f251cef2be8df8619b0cc5d3dcb0934af80bec9e0040c4',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

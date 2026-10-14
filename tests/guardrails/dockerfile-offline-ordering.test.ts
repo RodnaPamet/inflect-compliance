@@ -31,15 +31,20 @@
  * It does NOT prove buildability in general — a bad pip pin or a removed apt
  * package would still reach a dispatch unseen.
  *
- * THAT GAP IS NOW CLOSED ELSEWHERE, and the sentence that used to sit here
- * ("the honest check for that is a path-scoped build ... which is the owner's
- * call") was answered on 2026-10-11: `ci.yml`'s `laya-image` job builds this
- * Dockerfile on pull requests touching `deploy/laya/**`, starts the container,
- * and waits for the Dockerfile's own HEALTHCHECK. It had to go further than a
- * build, because the two defects found after this guard was written were
- * neither of them build-time failures: #3420 was a HEALTHCHECK pointed at a
- * path the server does not serve, and #3421 was a server that exits during
- * `create_app()` because it reads a different repo than the one baked.
+ * THE SUBJECT IS GONE AS OF 2026-10-14. `deploy/laya/Dockerfile` and the
+ * `laya-image` job that built it were deleted when the owner retired the Laya
+ * estate, so everything above is now HISTORY rather than a description of
+ * something this guard watches. Kept because the rule is general and the
+ * detector is proved on synthetics — see the population test for what that does
+ * and does not buy.
+ *
+ * The gap this paragraph used to report as closed is therefore open again, and
+ * in a way that no longer matters: nothing in the repo builds a Dockerfile that
+ * fetches at build time. The two defects worth remembering, because they are
+ * what a static guard could not see, were neither of them build-time failures —
+ * #3420 was a HEALTHCHECK pointed at a path the server does not serve, and
+ * #3421 was a server that exits during `create_app()` because it reads a
+ * different repo than the one baked.
  *
  * This guard stays, and is not redundant: it runs on every pull request in
  * seconds and names the ordering class precisely, where the build job runs only
@@ -177,8 +182,24 @@ describe('Dockerfiles — nothing disables the network above a layer that fetche
     it('finds the Dockerfile population at all', () => {
         // The denominator beside the result: a scan that found nothing would
         // pass the assertion below over an empty set.
-        expect(files.length).toBeGreaterThanOrEqual(2);
-        expect(files).toContain('deploy/laya/Dockerfile');
+        //
+        // IT WAS 2, AND THE SUBJECT OF THIS GUARD WAS THE OTHER ONE.
+        // `deploy/laya/Dockerfile` — the file whose `HF_HUB_OFFLINE=1` ordering
+        // bug this guard exists for — was deleted with the Laya estate on
+        // 2026-10-14. Say the consequence plainly rather than quietly lowering
+        // a floor: NO DOCKERFILE IN THE REPO SETS AN OFFLINE FLAG TODAY, so the
+        // live half of this guard currently passes over a population with
+        // nothing to find.
+        //
+        // It is kept rather than deleted for two reasons that are about the
+        // NEXT Dockerfile, not this one. The detector is proved against
+        // synthetic Dockerfiles below, so it can still express the failure it
+        // names — which is what separates a dormant guard from a dead one. And
+        // the edit that causes the bug is the tempting one (group the `ENV`s
+        // together), so the day somebody adds a fetching layer is the day this
+        // earns its keep again.
+        expect(files.length).toBeGreaterThanOrEqual(1);
+        expect(files).toContain('Dockerfile');
     });
 
     it('no Dockerfile sets an offline flag above a fetch', () => {
