@@ -8,7 +8,7 @@ import {
   forwardRef,
   useRef,
 } from "react";
-import { useResizeObserver } from "./hooks";
+import { useResizeObserver } from "@inflect/ui/components/ui/hooks/use-resize-observer";
 
 const defaultTransition = { type: "spring" as const, duration: 0.3 };
 

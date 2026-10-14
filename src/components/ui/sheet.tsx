@@ -30,7 +30,7 @@ import { useTranslations } from "next-intl";
 import { ComponentProps, type HTMLAttributes, type ReactNode } from "react";
 import { ContentProps, type DialogProps, Drawer } from "vaul";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
-import { useMediaQuery } from "./hooks";
+import { useMediaQuery } from "@inflect/ui/components/ui/hooks/use-media-query";
 import { OverlayDepthProvider } from "./overlay-depth";
 import { ProgressiveBlur } from "./progressive-blur";
 import { Tooltip } from "./tooltip";
