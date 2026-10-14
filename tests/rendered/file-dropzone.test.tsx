@@ -65,6 +65,14 @@ describe('<FileDropzone>', () => {
         ).toBeInTheDocument();
     });
 
+    it('keeps the file input out of the role="button" area (no nested interactive control)', () => {
+        render(<FileDropzone onUpload={async () => undefined} />);
+        const zone = screen.getByTestId('file-dropzone');
+        expect(zone.getAttribute('role')).toBe('button');
+        expect(zone.querySelector('input')).toBeNull();
+        expect(screen.getByTestId('file-dropzone-input').tagName).toBe('INPUT');
+    });
+
     it('forwards inputId to the hidden <input type=file>', () => {
         render(
             <FileDropzone inputId="my-file-input" onUpload={async () => undefined} />,
