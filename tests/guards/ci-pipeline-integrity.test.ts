@@ -290,21 +290,28 @@ describe('CI/CD pipeline-integrity — the E2E build does not share a box with i
  * updated in place, naming the failed jobs. These assertions hold the two
  * properties that decide whether it works at all.
  */
-describe('a failed main run is reported (#3505)', () => {
-    const NOTICE = '.github/workflows/main-ci-failure-notice.yml';
+// Hoisted out of the describe below so the #3540 block reuses the SAME parse.
+// Re-deriving it there would add a second whole-file read to this file, and the
+// Class D needle-uniqueness ratchet runs at zero drift allowance.
+const NOTICE = '.github/workflows/main-ci-failure-notice.yml';
 
-    const notice = yaml.load(read(NOTICE)) as {
-        name?: string;
-        on?: Record<string, { workflows?: string[]; branches?: string[] }>;
-        true?: Record<string, { workflows?: string[]; branches?: string[] }>;
-        permissions?: Record<string, string>;
-        concurrency?: { 'cancel-in-progress'?: boolean };
-        jobs: Record<string, { steps: { uses?: string; with?: { script?: string } }[] }>;
-    };
-    // `on:` is YAML 1.1's `true`. js-yaml resolves the bare key to a boolean, so
-    // reading `.on` alone returns undefined and every assertion below would pass
-    // over nothing.
-    const triggers = notice.on ?? notice.true ?? {};
+const notice = yaml.load(read(NOTICE)) as {
+    name?: string;
+    on?: Record<string, { workflows?: string[]; branches?: string[] }>;
+    true?: Record<string, { workflows?: string[]; branches?: string[] }>;
+    permissions?: Record<string, string>;
+    concurrency?: { 'cancel-in-progress'?: boolean };
+    jobs: Record<string, { steps: { uses?: string; with?: { script?: string } }[] }>;
+};
+// `on:` is YAML 1.1's `true`. js-yaml resolves the bare key to a boolean, so
+// reading `.on` alone returns undefined and every assertion below would pass
+// over nothing.
+const triggers = notice.on ?? notice.true ?? {};
+
+/** The step body — JavaScript inside a YAML block scalar. */
+const script = notice.jobs.notice.steps.map((st) => st.with?.script ?? '').join('\n');
+
+describe('a failed main run is reported (#3505)', () => {
 
     it('triggers on the workflow NAME that ci.yml actually declares', () => {
         // THE ASSERTION THAT CANNOT GO STALE. A `workflow_run` filter matches a
@@ -337,8 +344,6 @@ describe('a failed main run is reported (#3505)', () => {
         expect(notice.concurrency?.['cancel-in-progress']).toBe(false);
     });
 
-    // The step body — JavaScript inside a YAML block scalar.
-    //
     // EVERY NEEDLE BELOW NAMES ONE CALL'S OWN ARGUMENT rather than the API
     // method, and that is not stylistic. The obvious spellings are ambiguous
     // against this very script, which is the Class D defect the
@@ -358,7 +363,6 @@ describe('a failed main run is reported (#3505)', () => {
     // `braceBlockAfter` cannot lex the nested template literal on the "Still
     // failing" line, so the anchor search runs off. A needle that only the
     // named call satisfies gets there without a lexer.
-    const script = notice.jobs.notice.steps.map((st) => st.with?.script ?? '').join('\n');
 
     it('CLOSES the issue on green, not just opens it on red', () => {
         // The half that keeps this from becoming noise. An automated issue that
@@ -389,5 +393,292 @@ describe('a failed main run is reported (#3505)', () => {
         // subject is not a for-of binding, which the Class D analyser cannot
         // resolve and therefore counts as a blind spot.
         expect(uses.filter((u) => !/@v\d+$/.test(u ?? ''))).toEqual([]);
+    });
+});
+
+/**
+ * #3540 — the notice comments only when the failing set CHANGED.
+ *
+ * The notifier worked on its first outage and was immediately too loud: five
+ * identical "Still failing" comments on #3534, one per red run, for one cause.
+ * An issue whose history is five copies of the same line is an issue people
+ * stop reading, which is the failure mode #3505 set out to avoid.
+ *
+ * SUPPRESSING THOSE COMMENTS LOSES INFORMATION ON ITS OWN — five comments did
+ * at least say five runs had failed — so the fix also has to put that number
+ * somewhere, and the assertions below hold both halves.
+ *
+ * THESE TESTS RUN THE SCRIPT. Every other assertion in this file greps the
+ * workflow's text, which is the right instrument for "does it trigger on the
+ * name ci.yml declares" and the wrong one here: the property is *how many
+ * times it calls createComment across two runs*, and no needle can see that.
+ * The script is lifted out of the YAML and executed against a recording double
+ * of `github`, so what is asserted is the behaviour and not a spelling.
+ *
+ * `new Function` is confined to this file deliberately. Both guards that ban
+ * in-process evaluation — `csp-script-guardrails` and `tool-execution-is-bounded`
+ * — scope their populations `under: 'src'`, which was checked rather than
+ * assumed before this was written; neither covers `tests/`.
+ */
+describe('the notice comments only when the failing set changes (#3540)', () => {
+    interface Job {
+        readonly name: string;
+        readonly conclusion: string;
+        readonly html_url: string;
+    }
+    interface Call {
+        readonly kind: 'create' | 'update' | 'comment';
+        readonly body: string;
+    }
+    interface Marker {
+        readonly jobs: string;
+        readonly runs: number;
+        readonly since: string;
+    }
+
+    const SHA = 'deadbeefcafe';
+    const job = (name: string): Job => ({
+        name,
+        conclusion: 'failure',
+        html_url: `https://example.invalid/j/${name}`,
+    });
+    const markerFor = (m: Marker) => `<!-- ci-notice: ${JSON.stringify(m)} -->`;
+
+    /** The marker the script LEFT, read back the way the next run reads it. */
+    const markerIn = (body: string): Marker | null => {
+        const m = /<!-- ci-notice: (.*?) -->/.exec(body);
+        return m ? (JSON.parse(m[1]) as Marker) : null;
+    };
+
+    const compiled = new Function(
+        'github',
+        'context',
+        'core',
+        `return (async () => {\n${script}\n})()`,
+    ) as (github: unknown, context: unknown, core: unknown) => Promise<void>;
+
+    async function runNotice(opts: {
+        conclusion?: string;
+        jobs?: readonly Job[];
+        issueBody?: string | null;
+    }): Promise<readonly Call[]> {
+        const { conclusion = 'failure', jobs = [], issueBody = null } = opts;
+        const calls: Call[] = [];
+        // `null` means no open notice exists; a string means one does, with that
+        // body — which is the only place the script's between-run state lives.
+        const issue =
+            issueBody === null
+                ? null
+                : { number: 7, title: 'main CI is failing', body: issueBody };
+
+        const record = (kind: Call['kind']) => async (arg: { body?: string }) => {
+            calls.push({ kind, body: arg.body ?? '' });
+            return { data: { number: 7 } };
+        };
+        const github = {
+            paginate: async (
+                method: (p: unknown) => Promise<{ data: unknown[] }>,
+                params: unknown,
+            ) => (await method(params)).data,
+            rest: {
+                issues: {
+                    listForRepo: async () => ({ data: issue ? [issue] : [] }),
+                    create: record('create'),
+                    update: record('update'),
+                    createComment: record('comment'),
+                },
+                actions: {
+                    listJobsForWorkflowRun: async () => ({ data: jobs }),
+                },
+            },
+        };
+        const context = {
+            repo: { owner: 'o', repo: 'r' },
+            payload: {
+                workflow_run: {
+                    id: 42,
+                    html_url: 'https://example.invalid/42',
+                    head_sha: SHA,
+                    conclusion,
+                },
+            },
+        };
+        await compiled(github, context, {});
+        return calls;
+    }
+
+    const kinds = (calls: readonly Call[]) => calls.map((c) => c.kind);
+    const commentsIn = (calls: readonly Call[]) => calls.filter((c) => c.kind === 'comment');
+
+    it('says nothing new when the SAME jobs fail again — the #3540 regression', () => {
+        // The assertion the issue exists for. One comment per red run is what
+        // put five identical lines on #3534.
+        return runNotice({
+            jobs: [job('E2E')],
+            issueBody: markerFor({ jobs: 'E2E', runs: 1, since: 'aaaaaaaa' }),
+        }).then((calls) => {
+            expect(commentsIn(calls)).toEqual([]);
+        });
+    });
+
+    it('still rewrites the body on that silent run, so its state cannot go stale', () => {
+        // The body carries the latest run link, the commit, the count AND the
+        // marker. Skipping the update along with the comment would freeze the
+        // issue on the first run's commit and stop the counter dead — which is
+        // the obvious way to implement "comment less" and is wrong.
+        return runNotice({
+            jobs: [job('E2E')],
+            issueBody: markerFor({ jobs: 'E2E', runs: 1, since: 'aaaaaaaa' }),
+        }).then((calls) => {
+            expect(kinds(calls)).toEqual(['update']);
+            expect(markerIn(calls[0].body)).toEqual({
+                jobs: 'E2E',
+                runs: 2,
+                // PRESERVED, not restamped: the count is only meaningful
+                // alongside the commit the streak started at.
+                since: 'aaaaaaaa',
+            });
+        });
+    });
+
+    it('comments when the failing set changes, naming what it was and what it is', () => {
+        // A reader who sees one comment needs the delta in it; going to the run
+        // log to diff two job lists is the work the notice is meant to save.
+        return runNotice({
+            jobs: [job('Build'), job('E2E')],
+            issueBody: markerFor({ jobs: 'E2E', runs: 3, since: 'aaaaaaaa' }),
+        }).then((calls) => {
+            const comments = commentsIn(calls);
+            expect(comments).toHaveLength(1);
+            expect(comments[0].body).toContain('was `E2E`');
+            expect(comments[0].body).toContain('now `Build | E2E`');
+            // A different cause starts a new streak at the commit that showed it.
+            expect(markerIn(calls[0].body)).toEqual({
+                jobs: 'Build | E2E',
+                runs: 1,
+                since: SHA.slice(0, 8),
+            });
+        });
+    });
+
+    it('cannot be fooled into "changed" by the order the API returns jobs in', () => {
+        // The failing set is a SET. `listJobsForWorkflowRun` makes no ordering
+        // promise, and an unsorted join would comment on every run while
+        // claiming the set changed — louder than the behaviour it replaced, and
+        // lying about why.
+        return runNotice({
+            jobs: [job('E2E'), job('Build')],
+            issueBody: markerFor({ jobs: 'Build | E2E', runs: 2, since: 'aaaaaaaa' }),
+        }).then((calls) => {
+            expect(commentsIn(calls)).toEqual([]);
+            expect(markerIn(calls[0].body)?.runs).toBe(3);
+        });
+    });
+
+    it('comments when it CANNOT prove the set is unchanged', () => {
+        // An issue with no marker is the state every notice is in the moment
+        // this ships, and the state any human edit can restore. Reading an
+        // absent marker as "unchanged" would silence the notice exactly when it
+        // has the least idea what is going on — so absence comments.
+        return runNotice({
+            jobs: [job('E2E')],
+            issueBody: 'a body a person wrote, with no marker in it',
+        }).then((calls) => {
+            expect(commentsIn(calls)).toHaveLength(1);
+            expect(commentsIn(calls)[0].body).toContain('Failing jobs: `E2E`');
+        });
+    });
+
+    it('comments when the marker is present but unparseable', () => {
+        // Same reasoning, different cause: a truncated or hand-mangled marker
+        // is not evidence of anything. The parse is in a try/catch precisely so
+        // this lands on "comment" rather than throwing the step red.
+        return runNotice({
+            jobs: [job('E2E')],
+            issueBody: '<!-- ci-notice: {not json -->',
+        }).then((calls) => {
+            expect(commentsIn(calls)).toHaveLength(1);
+        });
+    });
+
+    it('states the consecutive-run count in the body, which is what the comments used to say', () => {
+        // The half that keeps commenting-less from meaning saying-less. Without
+        // this line a reader cannot tell a one-run blip from an all-day outage,
+        // and before #3540 the comment count told them.
+        return runNotice({
+            jobs: [job('E2E')],
+            issueBody: markerFor({ jobs: 'E2E', runs: 4, since: 'aaaaaaaa' }),
+        }).then((calls) => {
+            expect(calls[0].body).toContain('**5 consecutive runs**');
+            expect(calls[0].body).toContain('aaaaaaaa');
+        });
+    });
+
+    it('reports what the outage cost when it closes itself on green', () => {
+        // The payoff for storing a count rather than only a fingerprint. The
+        // close is also asserted here, because a comment without the close is
+        // the stale-issue failure #3505 names.
+        return runNotice({
+            conclusion: 'success',
+            issueBody: markerFor({ jobs: 'E2E', runs: 5, since: 'aaaaaaaa' }),
+        }).then((calls) => {
+            expect(kinds(calls)).toEqual(['comment', 'update']);
+            expect(calls[0].body).toContain('failed 5 consecutive runs since `aaaaaaaa`');
+        });
+    });
+
+    it('closes cleanly when the marker is missing, rather than saying "undefined runs"', () => {
+        // The first green after this ships meets an issue opened without a
+        // marker. A template that interpolates a null `prev` would publish
+        // "failed undefined consecutive runs" — so the line is omitted, not
+        // defaulted.
+        return runNotice({ conclusion: 'success', issueBody: 'older notice, no marker' }).then(
+            (calls) => {
+                expect(kinds(calls)).toEqual(['comment', 'update']);
+                expect(calls[0].body).not.toContain('undefined');
+                expect(calls[0].body).not.toContain('consecutive');
+            },
+        );
+    });
+
+    it('cannot have its marker corrupted by a `>` in a job name', () => {
+        // The marker is an HTML comment, and job names are text this repo does
+        // not fully control. A literal `-->` inside one would terminate the
+        // marker early, and everything after it — including the real fingerprint
+        // — would render into the issue body as visible garbage.
+        return runNotice({ jobs: [job('Test --> prod')] }).then((calls) => {
+            expect(kinds(calls)).toEqual(['create']);
+            const body = calls[0].body;
+            // Exactly one marker, and it round-trips.
+            expect((body.match(/<!-- ci-notice: /g) ?? []).length).toBe(1);
+            expect(markerIn(body)).toEqual({
+                jobs: 'Test -- prod',
+                runs: 1,
+                since: SHA.slice(0, 8),
+            });
+        });
+    });
+
+    it('opens the first notice without a comment, and never comments on a closed one', () => {
+        // Two paths that must stay silent for different reasons: the opening
+        // body already says everything a comment would, and a green run with no
+        // open issue has nothing to say to anyone.
+        return Promise.all([
+            runNotice({ jobs: [job('E2E')] }),
+            runNotice({ conclusion: 'success', issueBody: null }),
+        ]).then(([opened, greenNoIssue]) => {
+            expect(kinds(opened)).toEqual(['create']);
+            expect(kinds(greenNoIssue)).toEqual([]);
+        });
+    });
+
+    it('leaves a usable fingerprint when the run failed with no failing job', () => {
+        // A run can fail with every job green — a setup or billing failure. The
+        // fingerprint must still be a stable, non-empty string, or the empty
+        // one would compare equal to a missing marker's and the two distinct
+        // states would collapse.
+        return runNotice({ jobs: [] }).then((calls) => {
+            expect(markerIn(calls[0].body)?.jobs).toBe('(no failing job named)');
+        });
     });
 });
