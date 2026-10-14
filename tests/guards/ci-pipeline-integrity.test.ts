@@ -271,3 +271,123 @@ describe('CI/CD pipeline-integrity — the E2E build does not share a box with i
         expect(steps.some((s) => String(s.run ?? '').includes('next build'))).toBe(false);
     });
 });
+
+/**
+ * A FAILED `main` RUN REACHES SOMEBODY (#3505).
+ *
+ * The gap this closes is not that `main` broke — it is that nothing said so.
+ * Twice on 2026-10-14 a red `main` was discovered only because a human asked:
+ * E2E sat red for four consecutive runs in the morning, was fixed, and went red
+ * again hours later.
+ *
+ * Both of those merges followed the rules. The standing instruction is to merge
+ * when every REQUIRED check is green, `E2E` is deliberately not required, and a
+ * pull request with a failing optional job reads `UNSTABLE` — which is also what
+ * a healthy one with a skipped optional job reads. The signal that something is
+ * wrong was indistinguishable from the signal that nothing is.
+ *
+ * `main-ci-failure-notice.yml` makes it visible rather than blocking: one issue,
+ * updated in place, naming the failed jobs. These assertions hold the two
+ * properties that decide whether it works at all.
+ */
+describe('a failed main run is reported (#3505)', () => {
+    const NOTICE = '.github/workflows/main-ci-failure-notice.yml';
+
+    const notice = yaml.load(read(NOTICE)) as {
+        name?: string;
+        on?: Record<string, { workflows?: string[]; branches?: string[] }>;
+        true?: Record<string, { workflows?: string[]; branches?: string[] }>;
+        permissions?: Record<string, string>;
+        concurrency?: { 'cancel-in-progress'?: boolean };
+        jobs: Record<string, { steps: { uses?: string; with?: { script?: string } }[] }>;
+    };
+    // `on:` is YAML 1.1's `true`. js-yaml resolves the bare key to a boolean, so
+    // reading `.on` alone returns undefined and every assertion below would pass
+    // over nothing.
+    const triggers = notice.on ?? notice.true ?? {};
+
+    it('triggers on the workflow NAME that ci.yml actually declares', () => {
+        // THE ASSERTION THAT CANNOT GO STALE. A `workflow_run` filter matches a
+        // workflow's `name`, not its filename, so renaming `ci.yml`'s `name:`
+        // silently stops this notifier — it would simply never fire again, which
+        // is the exact failure it exists to prevent and the hardest kind to
+        // notice. Derived from `ci.yml` rather than written as a literal in two
+        // places.
+        const ciName = (yaml.load(read('.github/workflows/ci.yml')) as { name?: string }).name;
+        expect(typeof ciName).toBe('string');
+        expect(triggers.workflow_run?.workflows).toEqual([ciName]);
+    });
+
+    it('watches main, and only main', () => {
+        expect(triggers.workflow_run?.branches).toEqual(['main']);
+    });
+
+    it('can write an issue and read the run it is reporting on', () => {
+        // `issues: write` to file it; `actions: read` to list the jobs. Without
+        // the second it could only say "CI failed", which is the unactionable
+        // version of this notice.
+        expect(notice.permissions?.issues).toBe('write');
+        expect(notice.permissions?.actions).toBe('read');
+    });
+
+    it('does not cancel a run in progress, so no conclusion is dropped', () => {
+        // Each run carries a different conclusion to record. Cancelling the
+        // loser would drop either the failure that opens the issue or the
+        // success that closes it.
+        expect(notice.concurrency?.['cancel-in-progress']).toBe(false);
+    });
+
+    // The step body — JavaScript inside a YAML block scalar.
+    //
+    // EVERY NEEDLE BELOW NAMES ONE CALL'S OWN ARGUMENT rather than the API
+    // method, and that is not stylistic. The obvious spellings are ambiguous
+    // against this very script, which is the Class D defect the
+    // needle-uniqueness ratchet exists to find, and the first cut of this
+    // describe block had it twice:
+    //
+    //   · `issues.update` occurs TWICE — once to close on green, once to
+    //     re-body the open issue — so a bare needle is satisfied by whichever
+    //     one survives, and deleting the close left the test green.
+    //   · `issues.create` is a PREFIX of `issues.createComment`, which occurs
+    //     twice more, so that needle had three satisfying positions and
+    //     deleting the only real `create` left two standing.
+    //
+    // `state: 'closed'`, `issue_number: existing.number, body,` and
+    // `title: TITLE` each occur exactly once, in the call they describe.
+    // Bounding the read to the branch was the other option and was tried:
+    // `braceBlockAfter` cannot lex the nested template literal on the "Still
+    // failing" line, so the anchor search runs off. A needle that only the
+    // named call satisfies gets there without a lexer.
+    const script = notice.jobs.notice.steps.map((st) => st.with?.script ?? '').join('\n');
+
+    it('CLOSES the issue on green, not just opens it on red', () => {
+        // The half that keeps this from becoming noise. An automated issue that
+        // only ever opens is one people learn to scroll past, and a stale "main
+        // is failing" issue sitting over a green main is worse than none —
+        // it teaches the reader that the notice means nothing.
+        expect(script).toMatch(/conclusion === 'success'/);
+        expect(script).toMatch(/state: 'closed'/);
+    });
+
+    it('names the failed JOBS rather than only the run', () => {
+        expect(script).toMatch(/listJobsForWorkflowRun/);
+    });
+
+    it('updates one issue in place rather than opening one per failure', () => {
+        // A notifier that opens a duplicate per red run trains people to ignore
+        // it. Both halves are asserted: the update carries the existing issue's
+        // number, and there is exactly one path that opens a new one.
+        expect(script).toMatch(/issue_number: existing\.number, body,/);
+        expect(script).toMatch(/title: TITLE/);
+    });
+
+    it('pins its action to a major version, like every other workflow here', () => {
+        const uses = notice.jobs.notice.steps.map((st) => st.uses).filter(Boolean);
+        expect(uses.length).toBeGreaterThan(0);
+        // Filtered rather than asserted in a loop, so the failure NAMES the
+        // unpinned action instead of stopping at the first one — and so the
+        // subject is not a for-of binding, which the Class D analyser cannot
+        // resolve and therefore counts as a blind spot.
+        expect(uses.filter((u) => !/@v\d+$/.test(u ?? ''))).toEqual([]);
+    });
+});

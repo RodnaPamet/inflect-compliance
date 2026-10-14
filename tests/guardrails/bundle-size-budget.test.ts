@@ -126,7 +126,14 @@ const BUDGETS_KB: Record<string, number> = {
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
     // route) took it just past 645. The copy has to come from somewhere.
-    'controls': 650,
+    // Raised 650 → 655 by projectZ #336 (primitives import each icon and hook
+    // by its module, not through the barrels). Measured with two local
+    // `next build --webpack` runs of the same tree, with and without that
+    // change: 105 of 172 routes got smaller (/forgot-password, /reset-password
+    // and /account/* by about 44 KB each), 64 got larger by at most 3.6 KB,
+    // where webpack regrouped the shared chunks those modules land in. This
+    // route was one of the 64, 647.4 → 651.0 KB.
+    'controls': 655,
     // Catch-all for any other tenant page.
     // measured max 637.5 KB — /t/[tenantSlug]/(app)/policies/[policyId]/page (96 routes)
     'tenant-default': 670,

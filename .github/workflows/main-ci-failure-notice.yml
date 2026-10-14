@@ -1,0 +1,169 @@
+# ───────────────────────────────────────────────────────────────
+#  Main CI failure notice (#3505)
+#
+#  A failed `ci.yml` run on `main` had NO notification path. Nothing
+#  watched it, so a red main was discovered when a human happened to
+#  ask — twice in one day on 2026-10-14:
+#
+#    • E2E sat red for FOUR consecutive runs in the morning (a missing
+#      i18n key crashing the agent detail page, plus a six-against-seven
+#      tab list), fixed in #3499 and #3503;
+#    • it went red again hours later on #3518, with three agent specs
+#      timing out, and again nobody was told.
+#
+#  WHY THE EXISTING RULES DID NOT CATCH IT, because that is the gap and
+#  not an oversight by whoever merged. The standing instruction is to
+#  merge when every REQUIRED check is green, and both of those merges
+#  satisfied it: `E2E` is deliberately not a required status check, so
+#  `mergeStateStatus` reads `UNSTABLE` — which is also what it reads for
+#  a perfectly healthy pull request carrying a skipped optional job.
+#  The signal that something is wrong is indistinguishable from the
+#  signal that nothing is.
+#
+#  SO THIS DOES NOT MAKE E2E BLOCKING. Making it required would hang
+#  every merge in the repo on a suite that boots a full stack, and
+#  `merge-queue-trigger-coverage` records what that costs. It makes a
+#  red main VISIBLE instead: one issue, updated in place, naming the
+#  jobs that failed.
+#
+#  IT CLOSES ITSELF ON GREEN, which is the half that keeps it from
+#  becoming noise. An automated issue that only ever opens is one people
+#  learn to scroll past; this one is closed by the first `main` run that
+#  passes, with a line saying which run cleared it.
+#
+#  NO `merge_group:` TRIGGER, and that is correct rather than an
+#  omission: `merge-queue-trigger-coverage` requires one of every
+#  workflow with a `pull_request` trigger, because those produce check
+#  contexts the queue waits on. This produces none — it reacts to a
+#  completed run and writes an issue.
+# ───────────────────────────────────────────────────────────────
+name: Main CI failure notice
+
+on:
+  workflow_run:
+    # By NAME, which is `ci.yml`'s `name: CI`. A `workflow_run` filter
+    # matches the workflow's name rather than its filename, so renaming
+    # that workflow silently stops this one — which is why
+    # `ci-pipeline-integrity` asserts the two agree.
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+  # Needed to list the run's jobs — the whole point is naming which
+  # failed, and `conclusion` alone does not say.
+  actions: read
+
+concurrency:
+  # One at a time, and NOT cancel-in-progress: each run has a different
+  # conclusion to record, and cancelling the loser would drop either the
+  # failure that opens the issue or the success that closes it.
+  group: main-ci-failure-notice
+  cancel-in-progress: false
+
+jobs:
+  notice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Open, update or close the main-CI issue
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const TITLE = 'main CI is failing';
+            const LABELS = ['ci', 'automated'];
+
+            const { owner, repo } = context.repo;
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'ci',
+            });
+            const existing = open.find((i) => i.title === TITLE);
+
+            // ── main went green: close the notice, if there is one ──
+            if (run.conclusion === 'success') {
+              if (!existing) return;
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: [
+                  `Closed automatically: \`main\` is green again.`,
+                  '',
+                  `Cleared by [run ${run.id}](${run.html_url}) on \`${run.head_sha.slice(0, 8)}\`.`,
+                ].join('\n'),
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, state: 'closed',
+              });
+              return;
+            }
+
+            // Anything that is not success and not a clean cancellation is
+            // worth telling somebody about. `cancelled` is excluded because a
+            // superseded queue run cancels normally and says nothing about main.
+            if (run.conclusion === 'cancelled' || run.conclusion === 'skipped') return;
+
+            // ── WHICH JOBS FAILED. `conclusion` alone is not actionable. ──
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner, repo, run_id: run.id, per_page: 100,
+            });
+            const bad = jobs.filter(
+              (j) => j.conclusion && !['success', 'skipped', 'neutral'].includes(j.conclusion),
+            );
+
+            // The six required status checks, by name. Naming them lets the
+            // issue say whether this failure would have blocked a pull request
+            // — and if it would NOT have, that is the explanation for why
+            // nobody was told until now.
+            const REQUIRED = ['Lint', 'Typecheck', 'Test', 'Build', 'Security', 'Ratchets'];
+            const isRequired = (name) =>
+              REQUIRED.includes(name) ||
+              // Shards roll up into the `Test` summary context.
+              /^Test \(shard \d+\/\d+\)$/.test(name);
+            const blockedPr = bad.some((j) => isRequired(j.name));
+
+            const body = [
+              `\`main\` failed CI. This issue is opened and updated automatically, and closes`,
+              `itself when \`main\` next passes.`,
+              '',
+              `**Run:** [${run.id}](${run.html_url}) · commit \`${run.head_sha.slice(0, 8)}\``,
+              `**Conclusion:** \`${run.conclusion}\``,
+              '',
+              '| Failed job | Required check? |',
+              '|---|---|',
+              ...(bad.length
+                ? bad.map((j) => `| [${j.name}](${j.html_url}) | ${isRequired(j.name) ? 'yes' : 'no'} |`)
+                : ['| _the run failed with no failing job — look at the run itself_ | — |']),
+              '',
+              blockedPr
+                ? [
+                    'At least one REQUIRED check failed, so a pull request in this state would',
+                    'have been blocked. That this reached `main` is worth understanding on its',
+                    'own — a required check failing after merge usually means the base moved.',
+                  ].join('\n')
+                : [
+                    '**No required check failed, which is why nobody was told until now.** A',
+                    'pull request in this state reads `UNSTABLE`, which is also what a healthy',
+                    'one with a skipped optional job reads — so the standing "merge when every',
+                    'required check is green" rule was satisfied. That is the gap #3505 records',
+                    'and this notice exists to close.',
+                  ].join('\n'),
+            ].join('\n');
+
+            if (existing) {
+              // Updated in place rather than stacking one issue per red run.
+              // A notifier that opens duplicates trains people to ignore it —
+              // the same reasoning `override-freshness.yml` records.
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, body,
+              });
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: `Still failing: [run ${run.id}](${run.html_url}) on \`${run.head_sha.slice(0, 8)}\` — ${bad.map((j) => `\`${j.name}\``).join(', ') || 'no failing job named'}.`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title: TITLE, body, labels: LABELS,
+              });
+            }

@@ -58,7 +58,7 @@ import { useTranslations } from "next-intl";
 import type { Row, TableInstance, TableRowData } from "./types";
 import { List, type RowComponentProps } from "react-window";
 
-import { SortOrder } from "../icons";
+import { SortOrder } from "@inflect/ui/components/ui/icons/sort-order";
 import { Tooltip } from "../tooltip";
 import { cn, isClickOnInteractiveChild } from "./table-utils";
 

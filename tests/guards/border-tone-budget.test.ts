@@ -116,7 +116,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // two is this sentinel's entire allowance, so leaving it unspent would
 // have made the NEXT single migration in a sibling branch read as drift
 // on the merged tree.
-const BORDER_DEFAULT_BUDGET = 109;
+//
+// 109 → 106 (2026-10-14): −3, re-seated to the live count. Main had been
+// carrying three of slack, one of them the use #3275 deleted with
+// `file-upload.tsx` (9d511ba13) without dropping this budget. Found when
+// projectZ #428's FileDropzone fix ran this sentinel on the merged tree.
+const BORDER_DEFAULT_BUDGET = 106;
 
 // Tolerance before the drift sentinel reports the budget as unseated.
 //

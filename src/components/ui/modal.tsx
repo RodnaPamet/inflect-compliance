@@ -54,7 +54,7 @@ import {
 } from "react";
 import { Drawer } from "vaul";
 import { Button } from "./button";
-import { useMediaQuery } from "./hooks";
+import { useMediaQuery } from "@inflect/ui/components/ui/hooks/use-media-query";
 import { OverlayDepthProvider } from "./overlay-depth";
 import { ProgressiveBlur } from "./progressive-blur";
 import { Tooltip } from "./tooltip";

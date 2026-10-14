@@ -167,9 +167,25 @@ export function mapEgressError(e: unknown): LegacyMcpClientError {
     if (/private|loopback|link-local|metadata|not a public|blocked/i.test(msg)) {
         return new SsrfBlockedError('address is not public');
     }
-    if (/^https?:/i.test(msg) === false && /scheme|protocol/i.test(msg)) {
-        return new SsrfBlockedError('scheme not allowed');
-    }
+    // NO SCHEME ARM HERE, and its absence is the fix for #3492 rather than an
+    // oversight. There was one:
+    //
+    //     if (/^https?:/i.test(msg) === false && /scheme|protocol/i.test(msg))
+    //
+    // and it could not fire. `safeFetch`'s message for an `http:` endpoint
+    // contains neither `scheme` nor `protocol`, so every such refusal fell to the
+    // catch-all below and reported `egress failed` — indistinguishable from a
+    // network fault, measured. Its first clause was wrong as well: it tested
+    // whether the MESSAGE began with a scheme, which reads as if the URL were
+    // meant.
+    //
+    // The scheme is now decided where it is KNOWN — `wirePost` holds the URL and
+    // throws `WireSchemeRefusedError` before any call, which `asLegacyError` maps
+    // directly. Do not reinstate an arm here: re-deriving a fact from a third
+    // party's prose when the caller already holds it is how this came to be
+    // unreachable, and a message-sniffing arm would go stale silently the next
+    // time `safeFetch` rewords anything.
+    //
     // Unrecognised. Still a refusal, still typed, and the reason says so rather
     // than echoing a message that may carry the target.
     return new SsrfBlockedError('egress failed');

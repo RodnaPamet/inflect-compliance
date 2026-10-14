@@ -23,11 +23,13 @@
  *     when the user clears. Popover closes on both paths.
  *   - Display rendering goes through `@/lib/format-date` so a picker
  *     on one route reads identically to a date printed anywhere else
- *     in the app.
+ *     in the app. A product that prints dates its own way (in the
+ *     reader's language, say) passes `formatValue`.
+ *   - The placeholder and the "Clear" row read from `common.calendar`.
  *
  * Not-goals for this picker:
- *   - Time selection. Evidence expiry and policy review are
- *     day-level by design; a time-aware variant can layer on later.
+ *   - Time selection. The fields it serves are day-level by design;
+ *     a time-aware variant can layer on later.
  *   - Presets. Single-date presets are rare in product (you don't
  *     "pick Today" from a date field). The range picker is where
  *     presets pay their keep.
@@ -43,6 +45,7 @@ import {
     type ReactElement,
 } from 'react';
 
+import { useTranslations } from 'next-intl';
 import { formatDate } from '@inflect/ui/lib/format-date';
 
 import { Popover } from '../popover';
@@ -82,6 +85,13 @@ export interface DatePickerProps
     clearable?: boolean;
     /** Mirror of `hasError` for call sites that prefer the a11y name. */
     invalid?: boolean;
+    /**
+     * How the trigger shows the chosen day. Defaults to `formatDate`
+     * ("16 Apr 2026", `en-GB`, UTC). A product that shows dates in the
+     * reader's language passes its own; it receives the UTC-midnight
+     * Date the picker holds.
+     */
+    formatValue?: (value: Date) => string;
 }
 
 /**
@@ -128,14 +138,17 @@ export function DatePicker({
     disabledDays,
     showYearNavigation = false,
     locale = enUS,
-    placeholder = 'Select date',
+    placeholder: placeholderProp,
     hasError,
     invalid,
     align = 'center',
     className,
     clearable = false,
+    formatValue = formatDate,
     ...props
 }: DatePickerProps) {
+    const t = useTranslations('common.calendar');
+    const placeholder = placeholderProp ?? t('selectDate');
     const [open, setOpen] = useState(false);
     const isControlled = value !== undefined;
     const [internal, setInternal] = useState<DateValue>(
@@ -174,7 +187,7 @@ export function DatePicker({
     // printed in a table cell or detail page.
     const displayValue =
         selected && !Number.isNaN(selected.getTime())
-            ? formatDate(selected)
+            ? formatValue(selected)
             : null;
 
     return (
@@ -208,7 +221,7 @@ export function DatePicker({
                                 data-testid="date-picker-clear"
                             >
                                 <X className="size-3.5" aria-hidden="true" />
-                                <span>Clear</span>
+                                <span>{t('clear')}</span>
                             </button>
                         )}
                     </div>

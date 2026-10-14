@@ -93,15 +93,30 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // so the FORMAT half round-tripped untouched and only the key-order
         // digest moved, which is this pin working as designed.
         //
-        // Updated again 2026-10-14: TWO entries REMOVED — `ci.yml:laya-image`
-        // and `laya-image.yml:build-scan-push` — because the Laya image estate
-        // was retired (owner decision, same day). Both halves of the pin did
-        // their job here: the FORMAT check confirmed the removal is -10/+0 with
-        // no reflow of the sixteen entries left, and this digest is the only
-        // other line that moved. First time this pin has recorded a DELETION
-        // rather than an addition; the digest cannot tell the two apart, which
-        // is why the reason is written rather than inferred from the count.
-        keyOrderSha: '072de24b0f85b7a8f1f251cef2be8df8619b0cc5d3dcb0934af80bec9e0040c4',
+        // Updated again 2026-10-14: one entry added for
+        // `main-ci-failure-notice.yml:notice` (#3505) — the `workflow_run` job
+        // that opens an issue when a run on `main` fails. The diff is +5/-0, a
+        // pure append, so again only this digest moved. Worth noting WHY that
+        // job had to be registered rather than fixed: it is the one job in the
+        // repo that is unreachable from a pull request ON PURPOSE, since its
+        // whole function is to react to a run that has already merged.
+        //
+        // And again, hours later: TWO entries REMOVED — `ci.yml:laya-image` and
+        // `laya-image.yml:build-scan-push` — because the Laya image estate was
+        // retired (owner decision, same day). 19 keys down to 17.
+        //
+        // The two edits CONFLICTED on this line, which is the pin working as
+        // designed and worth recording as the worked example: both branches were
+        // green alone, both moved the digest, and git cannot merge two different
+        // hashes. Resolving it meant re-applying the deletion to the version of
+        // the registry that already carried the addition and recomputing — not
+        // picking a side, which would have left the file and the digest
+        // describing different documents.
+        //
+        // First time this pin has recorded a DELETION rather than an addition.
+        // The digest cannot tell the two apart, which is why the reason is
+        // written rather than inferred from the count.
+        keyOrderSha: '9a128ccc17c47e44174e1a55357a6d503444c200a45cb223562181c0284fa1bc',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

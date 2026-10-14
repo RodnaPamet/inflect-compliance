@@ -1,8 +1,5 @@
 "use client";
 
-import { LucideIcon } from "lucide-react";
-import { ComponentType, SVGProps } from "react";
-
 // custom icons
 export * from "@inflect/ui/components/ui/icons/arrow-up-right-2";
 export * from "@inflect/ui/components/ui/icons/copy";
@@ -85,4 +82,4 @@ export * from "@inflect/ui/components/ui/icons/nucleo";
 // Feature icons for pricing table
 export * from "./plan-feature-icons";
 
-export type Icon = LucideIcon | ComponentType<SVGProps<SVGSVGElement>>;
+export type { Icon } from "./icon-type";

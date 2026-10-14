@@ -143,7 +143,9 @@
       "prevYear": "Go to previous year",
       "prevMonth": "Go to previous month",
       "nextMonth": "Go to next month",
-      "nextYear": "Go to next year"
+      "nextYear": "Go to next year",
+      "selectDate": "Select date",
+      "clear": "Clear"
     },
     "copy": {
       "copy": "Copy",

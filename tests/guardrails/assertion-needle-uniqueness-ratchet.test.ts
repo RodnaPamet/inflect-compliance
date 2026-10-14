@@ -566,7 +566,12 @@ const HIGH_MULTIPLICITY = 5;
 //   occurrences to five and tripped the 5+ ceiling. Worth recording because the
 //   ratchet did not merely object to a number — it named the assertion, and the
 //   assertion was genuinely wrong about its own subject.
-const AMBIGUOUS_NEEDLE_BASELINE = 1165;
+//
+//   1165 -> 1164 (2026-10-14, projectZ #336). `filter-foundation`'s check that
+//   AnimatedSizeContainer uses the shared useResizeObserver matched any
+//   `from './hooks'` in the file; it now names the hook's own module, which
+//   only that import satisfies.
+const AMBIGUOUS_NEEDLE_BASELINE = 1164;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

@@ -38,7 +38,7 @@ import { forwardRef, type ComponentProps } from 'react';
 // edge tokens. The rest/hover/focus channels now ride
 // `--ctrl-edge-rest` / `--ctrl-edge-hover` / `--ctrl-edge-focus` so
 // a focused date-picker trigger feels like a cousin of a focused
-// Input and a focused Button — three controls, one focus
+// Input and a focused Button — three inputs, one focus
 // vocabulary. The Tailwind ring is dropped in favour of a
 // brand-tinted box-shadow halo so the open state can layer cleanly
 // (R20 doesn't widen open-state styling here; that's a later

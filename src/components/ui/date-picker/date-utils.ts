@@ -5,7 +5,7 @@
  * picker, range picker, filter integration, URL sync, preset catalogue)
  * will build on. They are deliberately UTC-anchored so the same value
  * renders identically on server and client regardless of the user's
- * system timezone — the same posture the existing
+ * system timezone — the same approach the existing
  * `src/lib/format-date.ts` helpers take for display-side rendering.
  *
  * Why not delegate everything to `date-fns`?

@@ -82,6 +82,21 @@ export class WireEgressError extends Error {
     }
 }
 
+/**
+ * The URL's scheme is not `https:`, decided from the URL rather than inferred
+ * from somebody else's error message (#3492).
+ *
+ * It is its OWN class rather than a `WireEgressError` with a nicer string
+ * because the client distinguishes them by type: an egress error is unwrapped
+ * and re-read by `mapEgressError`, which is exactly the guesswork this replaces.
+ */
+export class WireSchemeRefusedError extends Error {
+    constructor(readonly scheme: string) {
+        super(`mcp wire: scheme ${scheme} is not allowed, https: only`);
+        this.name = 'WireSchemeRefusedError';
+    }
+}
+
 export interface WirePostOptions {
     readonly url: string;
     /** Caller-owned, INCLUDING `accept` — see the header. */
@@ -121,6 +136,39 @@ export interface WireResponse {
 }
 
 export async function wirePost(opts: WirePostOptions): Promise<WireResponse> {
+    // ── HTTPS OR NOTHING, AND THE DECISION IS TAKEN HERE (#3492) ──
+    //
+    // This used to be inferred downstream and therefore not at all. The client's
+    // `mapEgressError` carried an arm that reported `scheme not allowed` when the
+    // thrown MESSAGE matched /scheme|protocol/ — and `safeFetch`'s message for an
+    // `http:` endpoint contains neither word, so the arm never fired. Measured
+    // through the production path, an operator who typed `http://` was told
+    // `egress refused: egress failed`: the same sentence an unresolvable hostname
+    // produces, which reads as a network problem at their end when the real cause
+    // is that this product requires `https:` and never will accept what they
+    // typed.
+    //
+    // Nothing had to be asked of anybody to know this: the caller handed us the
+    // URL. Deciding it from the URL is both exact and free.
+    //
+    // IT SITS ABOVE THE `fetchImpl` BRANCH ON PURPOSE. A refusal the test seam
+    // could skip would mean the seam and production disagree about what is
+    // reachable — which is the mechanism by which a convenience becomes a bypass,
+    // and this module's own header says so about that very branch.
+    //
+    // An UNPARSEABLE url deliberately falls through rather than being reported as
+    // a scheme problem: it is not one, and the egress path below already reports
+    // an unrecognised fault as such.
+    let protocol: string | null = null;
+    try {
+        protocol = new URL(opts.url).protocol;
+    } catch {
+        protocol = null;
+    }
+    if (protocol !== null && protocol !== 'https:') {
+        throw new WireSchemeRefusedError(protocol);
+    }
+
     const remaining =
         opts.deadlineAt === undefined ? opts.timeoutMs : opts.deadlineAt - Date.now();
     if (remaining <= 0) throw new WireTimeoutError('request', 0);
