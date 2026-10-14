@@ -1313,6 +1313,35 @@ export function Table<T extends TableRowData>({
               // either end from chaining out to AppShell's own
               // `md:overflow-y-auto` content div.
               "overscroll-contain",
+              // SCROLL PADDING FOR THE STICKY HEADER (#3524).
+              //
+              // Without it, anything that scrolls a row into view parks that
+              // row flush against the container's top edge — which is UNDER the
+              // `sticky top-0 z-20` header cells. The header then swallows the
+              // click, and because the row is genuinely visible, enabled and
+              // stable, nothing reports an error: the click simply retries until
+              // it gives up. Playwright named the intercepting element 373 times
+              // in one attempt before the test timed out.
+              //
+              // 45px is the real header height and the comment above says so:
+              // `py-2.5` (20px) + `leading-6` (24px) + `border-b` (1px). The th
+              // is `whitespace-nowrap`, so it cannot grow to two lines and make
+              // this short.
+              //
+              // THIS IS A RESTORATION, NOT A NEW IDEA. A `scroll-pt-[37px]` used
+              // to live here as part of the scroll-snap setup. The snap was
+              // removed for grabbing through momentum scrolls — correctly — and
+              // the scroll padding went with it, even though it was serving a
+              // second purpose that had nothing to do with snapping. The note
+              // above already records that 37px was 8px short of the header; the
+              // bug that surfaced in #3524 is the same misalignment with the
+              // padding at zero instead of 37.
+              //
+              // Why the CONTAINER and not `scroll-mt` on each row: this applies
+              // to every scroll-into-view in the region — keyboard navigation and
+              // anchor targets as well as a programmatic click — and it is one
+              // declaration rather than one per row.
+              "scroll-pt-[45px]",
               scrollWrapperClassName,
             )}
             // maxHeight clamps the wrapper to a whole number of rows

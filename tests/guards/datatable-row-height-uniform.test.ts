@@ -60,6 +60,59 @@ describe('DataTable uniform row height (R12-PR2)', () => {
         expect(src).toMatch(/py-2\.5\s+text-left\s+text-sm\s+leading-6/);
     });
 
+    /**
+     * The scroll padding covers the sticky header (#3524).
+     *
+     * This belongs in a row-HEIGHT guard because it is the same arithmetic. The
+     * header cells are `sticky top-0 z-20`, so anything that scrolls a row into
+     * view inside the clamped region parks that row flush against the container
+     * top — which is UNDERNEATH the header — unless the container carries scroll
+     * padding at least as tall as the header.
+     *
+     * The failure is silent, which is why it needs a guard. The row is genuinely
+     * visible, enabled and stable; the header merely sits on top of it and takes
+     * the click. Nothing throws. In the E2E run that found this, Playwright
+     * reported the intercepting `<th>` 373 times in a single attempt and then
+     * timed out at 180s, and three specs failed that way with 213 passing.
+     *
+     * ASSERTED AS AN INEQUALITY, not as a literal. `scroll-pt-[45px]` written as
+     * a string would pass while somebody changed `py-2.5` to `py-4` and made the
+     * header taller than the padding — the exact way the previous attempt went
+     * wrong. That one was `scroll-pt-[37px]` against a 45px header: 8px short,
+     * recorded in `table.tsx`'s own comment, and then removed along with the
+     * scroll-snap it was grouped with. So both numbers are DERIVED from the
+     * classes that produce them and compared.
+     */
+    test('the scroll container clears the sticky header it scrolls rows under', () => {
+        const src = codeOf(fs.readFileSync(
+            path.resolve(ROOT, 'src/components/ui/table/table.tsx'),
+            'utf-8',
+        ));
+
+        // The header must actually be sticky, or there is nothing to clear and
+        // this test would pass over a changed design without saying so.
+        expect(src).toMatch(/sticky\s+top-0/);
+
+        // Header height, from the classes that set it. Tailwind: py-N is
+        // N*0.25rem per side, leading-N is N*0.25rem, border-b is 1px.
+        const headerPadY = /py-2\.5/.test(src) ? 2.5 * 4 * 2 : NaN;
+        const headerLeading = /leading-6/.test(src) ? 6 * 4 : NaN;
+        expect(Number.isNaN(headerPadY)).toBe(false);
+        expect(Number.isNaN(headerLeading)).toBe(false);
+        const headerHeight = headerPadY + headerLeading + 1; // + border-b
+
+        // The scroll padding actually present on the scrolling region.
+        const m = /scroll-pt-\[(\d+)px\]/.exec(src);
+        expect(m).not.toBeNull();
+        const scrollPad = Number(m![1]);
+
+        expect({ scrollPad, headerHeight }).toEqual({
+            scrollPad: expect.any(Number),
+            headerHeight: 45,
+        });
+        expect(scrollPad).toBeGreaterThanOrEqual(headerHeight);
+    });
+
     test('no entity list page renders a multi-line title cell via block-level description', () => {
         // Catches the Policies-style anti-pattern: title-cell renders
         // a `<p>` description below the title link. The block element
