@@ -91,16 +91,18 @@ describe('the refusals — three branches, two of them reachable since activatio
         ).rejects.toThrow(/LAYA_BASE_URL/);
     });
 
-    it('EXTERNAL is now ACCEPTED — the sub-processor is active since 2026-10-11', async () => {
-        // Was: 'EXTERNAL is refused while the processor is not an active
-        // sub-processor', asserting the refusal. The refusal no longer fires.
-        // Asserting the new behaviour positively matters more than it looks:
-        // the previous test would also have passed if `updateTenantSecurityConfig`
-        // had started throwing for some unrelated reason, so flipping it to
-        // `.resolves` is the only version that proves the path WORKS.
-        expect(TYPESAFE_SUBPROCESSOR_ACTIVE).toBe(true);
-        const cfg = await updateTenantSecurityConfig(ctx(), { legacyMatchAiMode: 'EXTERNAL' });
-        expect(cfg.legacyMatchAiMode).toBe('EXTERNAL');
+    it('EXTERNAL is refused again — the sub-processor was WITHDRAWN on 2026-10-14', async () => {
+        // This assertion has now been written three ways in four days, and the
+        // churn is the point rather than an embarrassment: refusal while
+        // TypeSafe was proposed-inactive, acceptance from #3409's activation,
+        // and refusal again now that the owner withdrew it. Each version
+        // asserted the behaviour the constant produces, so each flip was a
+        // one-line change here — which is what a gate kept for its direction
+        // rather than its current value buys.
+        expect(TYPESAFE_SUBPROCESSOR_ACTIVE).toBe(false);
+        await expect(
+            updateTenantSecurityConfig(ctx(), { legacyMatchAiMode: 'EXTERNAL' })
+        ).rejects.toThrow();
     });
 
     it('the sub-processor refusal BRANCH is still in the source, inert but intact', async () => {
@@ -132,18 +134,29 @@ describe('the refusals — three branches, two of them reachable since activatio
         expect(code).toContain('active sub-processor');
     });
 
-    it('EXTERNAL is still refused under LOCAL_ONLY residency, which is now the only block', async () => {
-        // Was 'and that DEPLOYMENT reason is reported before the residency one'.
-        // The ordering it tested is no longer observable: the deployment block
-        // for EXTERNAL cannot fire, so the residency refusal is what an admin
-        // now sees. The ordering still EXISTS in the source — the test above
-        // pins the branch — but only one of the two arms is reachable, and a
-        // test claiming to observe an order it cannot observe would be a check
-        // that cannot fail.
+    it('the SUB-PROCESSOR reason is reported before the residency one, which is observable again', async () => {
+        // THE ORDERING CAME BACK. Both refusals hold for EXTERNAL under
+        // LOCAL_ONLY residency, and the source reports the sub-processor one
+        // first on a stated argument: it is unconditional, so it is the binding
+        // constraint, and "reporting the residency reason first would send
+        // somebody to change their residency, which would not unblock them, and
+        // they would come back."
+        //
+        // While the processor was ACTIVE that arm could not fire, so this test
+        // asserted the residency message instead and said the ordering was no
+        // longer observable. The withdrawal makes it observable again — and in
+        // the direction the comment argues for, which is the version worth
+        // having, because it tests the DECISION rather than whichever arm
+        // happened to be reachable.
         await updateTenantSecurityConfig(ctx(), { aiResidency: 'LOCAL_ONLY', aiLocalBaseUrl: 'http://local' });
         await expect(
             updateTenantSecurityConfig(ctx(), { legacyMatchAiMode: 'EXTERNAL' })
-        ).rejects.toThrow(/aiResidency=LOCAL_ONLY/);
+        ).rejects.toThrow(/not an active sub-processor/);
+        // And NOT the residency one — asserting the absence too, since "throws
+        // something" would pass on either message.
+        await expect(
+            updateTenantSecurityConfig(ctx(), { legacyMatchAiMode: 'EXTERNAL' })
+        ).rejects.not.toThrow(/aiResidency=LOCAL_ONLY/);
     });
 
     it('a stored mode is read as part of the combination, not just the patch', async () => {

@@ -175,7 +175,18 @@ describe('the sub-processor register agrees with the code', () => {
         // Asserting the CURRENT shape on purpose. If somebody later completes
         // step 2 or 3, or activates a different sub-processor without a record,
         // this fails and the waiver prose has to be brought up to date with it.
-        expect(facts.incompleteSteps.map((s) => s.split(' — ')[0]).sort()).toEqual(['2', '3']);
+        //
+        // STEP 4 JOINED THE LIST ON 2026-10-14, and that is the guard reading
+        // the register correctly rather than a regression. Activation is no
+        // longer "Complete": it reads "Reversed — active 2026-10-11, withdrawn
+        // 2026-10-14". A withdrawn processor has an activation step that is not
+        // complete, and a register claiming otherwise would be the thing this
+        // file exists to catch.
+        expect(facts.incompleteSteps.map((s) => s.split(' — ')[0]).sort()).toEqual([
+            '2',
+            '3',
+            '4',
+        ]);
     });
 });
 
@@ -228,6 +239,15 @@ describe('prose in src/ agrees with TYPESAFE_SUBPROCESSOR_ACTIVE', () => {
         'src/app-layer/ai/identity-match/index.ts',
         'src/lib/legacy-access/adjudication-mode.ts',
         'src/app-layer/usecases/tenant-security-settings.ts',
+        // Added 2026-10-14. It names the constant and was NOT scanned, which is
+        // the same kind of gap this guard exists to close — a file asserting a
+        // value nothing checks. It also had to be reworded first: it read
+        // "while `TYPESAFE_SUBPROCESSOR_ACTIVE` is false no tenant path can
+        // obtain this provider", which is a CONDITION rather than a claim about
+        // the current value, and a line-scanner cannot tell those apart. Left as
+        // it was, adding the file here would have produced a false red the next
+        // time the flag went true.
+        'src/app-layer/ai/identity-match/systemone-wire.ts',
     ] as const;
 
     it('reads a non-empty population, so a clean run is not an empty one', () => {

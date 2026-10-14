@@ -58,7 +58,7 @@ beforeEach(() => {
     mutableEnv.LAYA_API_KEY = undefined;
 });
 
-describe('6b factory — the sub-processor is ACTIVE (owner decision 2026-10-11)', () => {
+describe('6b factory — the sub-processor is WITHDRAWN (owner decision 2026-10-14)', () => {
     // These five replace the five that asserted the INACTIVE invariant. They are
     // deliberately NOT the old assertions with their polarity flipped: two of the
     // old five protected something that still holds after activation, and those
@@ -71,10 +71,14 @@ describe('6b factory — the sub-processor is ACTIVE (owner decision 2026-10-11)
     // constant against itself notices a flip but cannot notice the register and
     // the code disagreeing, which is the failure that actually reaches a customer.
 
-    it('EXTERNAL with the key set yields Jev — this is what activation means', () => {
+    it('EXTERNAL does NOT yield Jev, even with the key set — this is what withdrawal means', () => {
+        // The key is present in `beforeEach`. That is the whole point: the
+        // credential is not what gates the transfer, the constant is. A reader
+        // who removes the key and concludes the path is shut has checked the
+        // wrong thing.
         const p = getDecisionProvider('EXTERNAL');
-        expect(p.providerName).toBe('jev');
-        expect(p.isExternal).toBe(true);
+        expect(p.providerName).not.toBe('jev');
+        expect(p.isExternal).toBe(false);
     });
 
     it('EXTERNAL without the key falls back to the local provider rather than throwing', () => {
@@ -94,19 +98,28 @@ describe('6b factory — the sub-processor is ACTIVE (owner decision 2026-10-11)
         expect(p.isExternal).toBe(false);
     });
 
-    it('ONLY EXTERNAL can go external — activation does not widen OFF or LOCAL_ONLY', () => {
-        // The surviving half of 'no mode whatsoever returns an external provider'.
-        // That test's value was never the flag; it was that the MODE decides, and
-        // a present credential does not promote a mode that did not ask for it.
-        // The worst case is set up in beforeEach: key present, Laya present.
-        for (const mode of ['OFF', 'LOCAL_ONLY'] as const) {
+    it('NO mode goes external now, and the mode is still what the factory reads', () => {
+        // The worst case is set up in `beforeEach`: key present, Laya present.
+        for (const mode of ['OFF', 'LOCAL_ONLY', 'EXTERNAL'] as const) {
             expect(getDecisionProvider(mode).isExternal).toBe(false);
             expect(getDecisionProvider(mode).providerName).not.toBe('jev');
         }
-        // The positive control. Without it a loop over an empty or mistyped mode
-        // list passes while proving nothing, and a factory that had been broken
-        // into returning the stub for everything would look like a success.
-        expect(getDecisionProvider('EXTERNAL').isExternal).toBe(true);
+
+        // THE POSITIVE CONTROL HAD TO CHANGE, and the old one is worth recording
+        // because its replacement is weaker in one way and stronger in another.
+        //
+        // It used to be `getDecisionProvider('EXTERNAL').isExternal === true` —
+        // which proved the loop was not vacuous by showing the factory COULD
+        // return something external. With the sub-processor withdrawn no mode
+        // can, so that control is unavailable: it would now assert the very
+        // thing the withdrawal removed.
+        //
+        // What is left is discrimination. If the factory had been broken into
+        // returning one provider for everything, the loop above would pass while
+        // proving nothing at all — so the control is that two modes still give
+        // DIFFERENT answers, which no constant-returning stub can fake.
+        expect(getDecisionProvider('OFF').providerName).toBe('stub');
+        expect(getDecisionProvider('LOCAL_ONLY').providerName).toBe('laya');
     });
 
     it('the flag is what the gate reads, so the two cannot be reasoned about separately', () => {

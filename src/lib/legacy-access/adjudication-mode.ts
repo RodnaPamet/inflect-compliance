@@ -55,7 +55,7 @@ import type { AiResidency, LegacyMatchAiMode } from '@prisma/client';
  * without importing the egress stack. The provider now reads it from here; there
  * is still exactly one definition.
  */
-export const TYPESAFE_SUBPROCESSOR_ACTIVE = true;
+export const TYPESAFE_SUBPROCESSOR_ACTIVE = false;
 
 /**
  * Who processes the payload under each mode, and where.

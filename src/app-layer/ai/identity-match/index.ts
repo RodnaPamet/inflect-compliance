@@ -29,24 +29,23 @@
  *
  * 1. The effective mode must be `EXTERNAL` — the stricter of the tenant's
  *    `legacyMatchAiMode` and its `aiResidency`, computed by the caller.
- * 2. `TYPESAFE_SUBPROCESSOR_ACTIVE` must be true, AND IT IS TRUE since #3409
- *    (2026-10-11).
+ * 2. `TYPESAFE_SUBPROCESSOR_ACTIVE` must be true, and it is false.
  *
- * So gate 2 no longer stops anything, and gate 1 is what governs: a tenant whose
- * effective mode is `EXTERNAL` reaches Jev and personal data leaves this
- * deployment. The mode defaults to `OFF` and `aiResidency = LOCAL_ONLY` narrows
- * it, so this is a deliberate per-tenant choice rather than a default.
+ * So gate 2 is what governs again, and it is doing the exact job #3502's
+ * docblock claimed for it: "the one switch that makes the external path
+ * unreachable for EVERY tenant at once, in a reviewed diff, if the sub-processor
+ * relationship ends." That relationship ended on 2026-10-14, and this is that
+ * diff.
  *
- * Gate 2 is kept rather than deleted, and the reason is the direction it fails
- * in: it is the one switch that makes the external path unreachable for EVERY
- * tenant at once, in a reviewed diff, if the sub-processor relationship ends.
- * Deleting it because it currently passes would remove the brake while leaving
- * the road.
+ * Keeping the brake while the road was clear is what made the withdrawal a
+ * one-line change rather than a refactor. The flag moved twice in four days —
+ * false until #3409, true from 2026-10-11, false again from 2026-10-14 — which
+ * is the argument for the gate existing at all.
  *
- * Until #3409 this read "and it is false", and this docblock went on saying so
- * for two days afterwards — which inverted the one fact a reader comes here for.
- * `tests/guards/subprocessor-prose-agrees-with-constant.test.ts` now fails on
- * prose in `src/` that states a value the constant does not have.
+ * Falling back to the local path (and then the stub) rather than throwing is
+ * deliberate: a tenant who asked for adjudication gets the privacy-preserving
+ * answer or no answer, never an error that reads like a bug in their
+ * configuration.
  *
  * Falling back to the local path (and then the stub) rather than throwing is
  * deliberate: a tenant who asked for adjudication gets the privacy-preserving
