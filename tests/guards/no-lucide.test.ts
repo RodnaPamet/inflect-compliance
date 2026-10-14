@@ -202,7 +202,9 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // specific icons not yet covered by Nucleo.
     'src/components/processes/node-taxonomy.ts',
     'src/components/ui/HeroMetric.tsx',
-    'src/components/ui/icons/index.tsx',
+    // #336 (projectZ): the `Icon` type moved out of the barrel, and with it
+    // the barrel's one lucide import (`type LucideIcon`).
+    'src/components/ui/icons/icon-type.ts',
     'src/components/ui/inline-notice.tsx',
     'src/components/ui/input.tsx',
     'src/components/ui/KpiCard.tsx',

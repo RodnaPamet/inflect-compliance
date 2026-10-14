@@ -13,10 +13,12 @@
  * (jsdom's IO is a no-op).
  */
 import { render } from '@testing-library/react';
-import { useInViewport } from '@/components/ui/hooks';
+import { useInViewport } from '@inflect/ui/components/ui/hooks/use-in-viewport';
 import { InfiniteScrollSentinel } from '@/components/ui/table/infinite-scroll-sentinel';
 
-jest.mock('@/components/ui/hooks', () => ({
+// The module the sentinel imports, not the hooks barrel: it imports the hook
+// by its own module (projectZ #336), so a mock of the barrel never reaches it.
+jest.mock('@inflect/ui/components/ui/hooks/use-in-viewport', () => ({
     useInViewport: jest.fn(),
 }));
 

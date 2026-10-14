@@ -1149,10 +1149,15 @@
   "derivation": "audited",
   "reason": "Pure SVG brand logo (four hardcoded hex paths), className-only prop."
  },
+ "src/components/ui/icons/icon-type.ts": {
+  "classification": "GENERIC",
+  "derivation": "audited",
+  "reason": "The `Icon` type alone (a Lucide icon or one of ours), moved out of the barrel for projectZ #336 so a primitive can name it without importing every icon. Two type-only imports, `lucide-react` and `react`; no copy, no domain import, nothing that renders."
+ },
  "src/components/ui/icons/index.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "A barrel of relative re-exports plus the `Icon` type alias — generic in shape. #3133 deleted the comment naming the brand Dub. What remains is the re-export block that lifts six brand-named modules and the upstream pricing-plan map into the shared public API, so this stays MIXED on a re-export rather than on prose; deleting those lines when the coupled files go leaves a clean barrel."
+  "reason": "A barrel of relative re-exports plus a re-export of the `Icon` type from `icon-type.ts` — generic in shape. #3133 deleted the comment naming the brand Dub. What remains is the re-export block that lifts six brand-named modules and the upstream pricing-plan map into the shared public API, so this stays MIXED on a re-export rather than on prose; deleting those lines when the coupled files go leaves a clean barrel."
  },
  "packages/ui/src/components/ui/icons/instagram.tsx": {
   "classification": "GENERIC",

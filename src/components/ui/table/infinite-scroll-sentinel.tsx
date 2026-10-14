@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useInViewport } from "@/components/ui/hooks";
+import { useInViewport } from "@inflect/ui/components/ui/hooks/use-in-viewport";
 
 export interface InfiniteScrollSentinelProps {
     /**

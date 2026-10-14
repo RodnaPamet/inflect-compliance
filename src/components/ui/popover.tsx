@@ -33,7 +33,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Drawer } from "vaul";
-import { useMediaQuery } from "./hooks";
+import { useMediaQuery } from "@inflect/ui/components/ui/hooks/use-media-query";
 import { OverlayDepthProvider, useIsNestedInOverlay } from "./overlay-depth";
 import { Tooltip } from "./tooltip";
 import {
