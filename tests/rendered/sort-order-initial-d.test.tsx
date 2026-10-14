@@ -13,6 +13,7 @@ import * as React from 'react';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SortOrder } from '@inflect/ui/components/ui/icons/sort-order';
+import { codeOf } from '../helpers/source-blocks';
 
 describe('SortOrder — no d="undefined" on mount', () => {
     it.each(['asc', 'desc', null] as const)(
@@ -40,9 +41,12 @@ describe('SortOrder — no d="undefined" on mount', () => {
     });
 
     it('needs no animation engine: the icon is in every route through the icons barrel', () => {
-        const src = fs.readFileSync(
-            path.join(__dirname, '..', '..', 'packages/ui/src/components/ui/icons/sort-order.tsx'),
-            'utf8',
+        // Comments masked: the docblock names framer-motion, the code must not.
+        const src = codeOf(
+            fs.readFileSync(
+                path.join(__dirname, '..', '..', 'packages/ui/src/components/ui/icons/sort-order.tsx'),
+                'utf8',
+            ),
         );
         expect(src).not.toMatch(/from ["']motion|from ["']framer-motion/);
     });
