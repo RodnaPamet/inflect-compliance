@@ -35,15 +35,9 @@ export const EVIDENCE_UPLOAD_HINT =
     `PDF, Office, CSV, image, JSON, or ZIP — up to ${EVIDENCE_MAX_FILE_MB} MB per file`;
 
 /**
- * Human-readable byte size.
- *
- * The sub-kilobyte branch is the one a copy dropped. Without it a 500-byte
- * file reads "0.5 KB", which is not wrong so much as unhelpful — the reader
- * cannot tell a small file from an empty one.
+ * Human-readable byte size. It lives in `@/lib/format-bytes`, which imports
+ * nothing, so the shared `FileDropzone` can show a size without importing this
+ * evidence module (projectZ #428); re-exported so every evidence surface keeps
+ * its one import.
  */
-export function formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null) return '—';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1048576).toFixed(1)} MB`;
-}
+export { formatBytes } from '@/lib/format-bytes';

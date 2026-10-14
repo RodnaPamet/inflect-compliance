@@ -152,11 +152,19 @@ export type CouplingKind = 'storage-key' | 'brand-as-text' | 'domain-import';
  * namespace would assert `ThemeToggle` neutral, which no pass has looked at;
  * the design doc reserves it for step 4. Narrower than `SHARED_COMPONENT_DIRS`
  * allows, so it stays coupled.
+ *
+ * ─── `format-bytes`, measured the same way ───────────────────────────
+ * Moved out of `@/lib/evidence-upload-limits` (which re-exports it) so that
+ * `FileDropzone`, the last importer of an evidence module among the shared
+ * files, can show a file size without one (projectZ #428). Like `resize-image`
+ * and `text-utils` it has ZERO import statements of any kind, so it cannot
+ * pull anything in behind its allowance. `evidence-upload-limits` itself is
+ * exactly as coupled as it was.
  */
 export const NEUTRAL_LIB = new Set([
     'ui-storage', 'hooks', 'design', 'theme-constants',
     'kpi-trend', 'locale-constants',
-    'resize-image', 'text-utils',
+    'resize-image', 'text-utils', 'format-bytes',
 ]);
 
 const RAW_STORAGE_HOOK = /use(?:Local|Session)Storage(?:<[^>]*>)?\(\s*[`'"]/;

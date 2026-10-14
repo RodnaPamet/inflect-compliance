@@ -355,7 +355,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/components/risks/RiskScoreExplainer.tsx': 1, // partial, 1 prop
     'src/components/ui/ComplianceStatusIndicator.tsx': 4, // no-intl, 4 prop
     'src/components/ui/DonutChart.tsx': 1, // partial, 1 jsx
-    'src/components/ui/FileDropzone.tsx': 2, // no-intl, 2 prop
     'src/components/ui/FrameworkBuilder.tsx': 3, // no-intl, 3 jsx
     'src/components/ui/FrameworkMinimap.tsx': 2, // no-intl, 1 jsx + 1 prop
     'src/components/ui/FreshnessBadge.tsx': 4, // no-intl, 4 prop

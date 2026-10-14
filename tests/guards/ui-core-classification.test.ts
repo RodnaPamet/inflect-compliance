@@ -278,7 +278,7 @@ describe('shared-UI coupling classification (#3047)', () => {
         const cases: Array<[string, string]> = [
             ['src/components/ui/charts/areas.tsx', 'brand-as-text'],
             ['src/components/ui/aside-panel.tsx', 'storage-key'],
-            ['src/components/ui/FileDropzone.tsx', 'domain-import'],
+            ['src/components/ui/EvidenceGallery.tsx', 'domain-import'],
         ];
         for (const [file, kind] of cases) {
             if (!fs.existsSync(path.join(ROOT, file))) continue; // moved; covered by the coverage case

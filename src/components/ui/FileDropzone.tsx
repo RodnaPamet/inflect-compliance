@@ -8,24 +8,24 @@
  *   2. a click-to-browse fallback,
  *   3. visible per-file progress + success/error feedback.
  *
- * The component handles all three. It does NOT know about the
- * evidence API (or any specific endpoint). The consumer passes an
+ * The component handles all three. It does NOT know about any
+ * specific endpoint. The consumer passes an
  * `onUpload(file, ctx)` handler that receives the file plus a
  * `(progress) => void` callback and an `AbortSignal`. Use
  * `uploadWithProgress` from `@/lib/upload/upload-with-progress` if you
  * want a one-line XHR uploader — it's separate so non-UI callers can
  * reuse it.
  *
- * Reusable by design: evidence is the first caller (Epic 43); future
- * surfaces (policy attachments, audit-pack imports, vendor
- * questionnaire artefacts) can drop this component in unchanged.
+ * Reusable by design: every caller supplies its own `onUpload`,
+ * `accept` and size cap, and the component's copy comes from
+ * `common.upload`, so a surface drops it in unchanged.
  *
  * What this is NOT:
  *   - A folder uploader (no `webkitdirectory` — out of scope for Epic 43.1).
  *   - A resumable / chunked uploader (browser fetch streaming is still
  *     flag-gated; XHR + retry is the realistic compromise today).
  *   - A previewer (the consumer renders previews via the children API
- *     if it cares — most evidence flows want a list, not a thumbnail).
+ *     if it cares — most upload flows want a list, not a thumbnail).
  */
 
 import {
@@ -42,9 +42,10 @@ import {
     useState,
 } from 'react';
 import { CheckCircle2, UploadCloud, X } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
 
 import { FileTypeIcon } from '@/components/ui/file-type-icon';
-import { formatBytes } from '@/lib/evidence-upload-limits';
+import { formatBytes } from '@/lib/format-bytes';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -116,8 +117,8 @@ export interface FileDropzoneProps {
     hint?: ReactNode;
     /**
      * Compact layout — a much shorter drop area (~1/3 height) for dense
-     * side-rail / panel contexts (e.g. the Controls right-rail evidence
-     * box). Keeps full width; trims the vertical padding + icon. Default
+     * side-rail / panel contexts (e.g. a detail page's right-rail
+     * upload box). Keeps full width; trims the vertical padding + icon. Default
      * false (the roomy full-height surface).
      */
     compact?: boolean;
@@ -156,8 +157,8 @@ function uid(): string {
         : `f-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 }
 
-// formatBytes moved to @/lib/evidence-upload-limits — it had two other
-// copies, one of which had lost the sub-kilobyte branch.
+// formatBytes lives in @/lib/format-bytes — it had two other copies,
+// one of which had lost the sub-kilobyte branch.
 
 /** Whether the dragged item is a file (vs text/etc). */
 function dragHasFiles(e: DragEvent): boolean {
@@ -209,6 +210,8 @@ function FileDropzoneInner(
     }: FileDropzoneProps,
     ref: ForwardedRef<FileDropzoneHandle>,
 ) {
+    const t = useTranslations('common.upload');
+    const locale = useLocale();
     const [entries, setEntries] = useState<FileUploadEntry[]>([]);
     const [dragActive, setDragActive] = useState(false);
     const [hint_, setHintMessage] = useState<string | null>(null);
@@ -268,9 +271,9 @@ function FileDropzoneInner(
     // `entriesRef.current` — the ref is updated by a `useEffect` that
     // fires AFTER the React commit, so reading it inside the same
     // microtask as `setEntries` produces the previous (queued) entry,
-    // not the success/error one. That race silently kept the upload
-    // modal open after a successful POST in
-    // `evidence-upload-modal.spec.ts`.
+    // not the success/error one. That race silently kept an upload
+    // modal open after a successful POST, caught by that modal's
+    // browser test.
     const runOne = useCallback(
         async (entry: FileUploadEntry): Promise<FileUploadEntry> => {
             const ac = new AbortController();
@@ -330,12 +333,12 @@ function FileDropzoneInner(
             const sliceTo = multiple ? list : list.slice(0, 1);
             for (const file of sliceTo) {
                 if (accept_ && !fileMatchesAccept(file, accept_)) {
-                    rejections.push(`${file.name}: file type not accepted`);
+                    rejections.push(t('typeRejected', { name: file.name }));
                     continue;
                 }
                 if (file.size > maxBytes) {
                     rejections.push(
-                        `${file.name}: exceeds ${maxFileSizeMB} MB limit`,
+                        t('tooLarge', { name: file.name, mb: maxFileSizeMB }),
                     );
                     continue;
                 }
@@ -379,6 +382,7 @@ function FileDropzoneInner(
             onAllSettled,
             onPick,
             runOne,
+            t,
         ],
     );
 
@@ -484,7 +488,7 @@ function FileDropzoneInner(
                 aria-label={
                     typeof title === 'string'
                         ? title
-                        : 'File upload dropzone'
+                        : t('dropzone')
                 }
                 data-testid={dataTestId}
                 data-drag-active={dragActive ? 'true' : 'false'}
@@ -509,18 +513,13 @@ function FileDropzoneInner(
                 <UploadCloud
                     size={compact ? 18 : 28}
                     className={`transition-transform ${
-                        dragActive ? 'scale-110 text-[var(--brand-default)]' : 'text-content-muted'
+                        dragActive ? 'scale-110 text-content-brand' : 'text-content-muted'
                     }`}
                     aria-hidden
                 />
                 <div className={`${compact ? 'mt-1' : 'mt-2'} text-center ${compact ? 'text-xs' : 'text-sm'}`}>
                     <p className="text-content-emphasis">
-                        {title ?? (
-                            <>
-                                Drag and drop {multiple ? 'files' : 'a file'} or
-                                click to browse
-                            </>
-                        )}
+                        {title ?? t(multiple ? 'promptMany' : 'promptOne')}
                     </p>
                     {hint && (
                         <p className="mt-0.5 text-xs text-content-muted">
@@ -580,7 +579,7 @@ function FileDropzoneInner(
                                         {entry.file.name}
                                     </span>
                                     <span className="shrink-0 text-xs text-content-muted">
-                                        {formatBytes(entry.file.size)}
+                                        {formatBytes(entry.file.size, locale)}
                                     </span>
                                 </div>
                                 <div className="mt-1 flex items-center gap-tight">
@@ -591,7 +590,7 @@ function FileDropzoneInner(
                             {entry.status === 'uploading' && (
                                 <button
                                     type="button"
-                                    aria-label={`Cancel upload of ${entry.file.name}`}
+                                    aria-label={t('cancel', { name: entry.file.name })}
                                     className="text-content-muted hover:text-content-emphasis"
                                     onClick={() => cancelEntry(entry.id)}
                                     data-testid={`file-dropzone-cancel-${entry.id}`}
@@ -603,14 +602,14 @@ function FileDropzoneInner(
                                 <CheckCircle2
                                     size={16}
                                     className="text-content-success"
-                                    aria-label="Uploaded"
+                                    aria-label={t('uploaded')}
                                 />
                             )}
                             {(entry.status === 'error' ||
                                 entry.status === 'aborted') && (
                                 <button
                                     type="button"
-                                    aria-label={`Remove ${entry.file.name} from list`}
+                                    aria-label={t('remove', { name: entry.file.name })}
                                     className="text-content-muted hover:text-content-emphasis"
                                     onClick={() =>
                                         setEntries((prev) =>
@@ -635,7 +634,7 @@ function FileDropzoneInner(
                         onClick={clearCompleted}
                         data-testid="file-dropzone-clear-completed"
                     >
-                        Clear completed ({completedCount})
+                        {t('clearCompleted', { count: completedCount })}
                     </button>
                 </div>
             )}
@@ -651,6 +650,7 @@ FileDropzone.displayName = 'FileDropzone';
 // ─── Internal helpers ───────────────────────────────────────────────
 
 function ProgressBar({ entry }: { entry: FileUploadEntry }) {
+    const t = useTranslations('common.upload');
     const pct = entry.status === 'success' ? 100 : (entry.percent ?? 0);
     const indeterminate =
         entry.status === 'uploading' && entry.percent === null;
@@ -669,7 +669,7 @@ function ProgressBar({ entry }: { entry: FileUploadEntry }) {
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={indeterminate ? undefined : pct}
-            aria-label={`Upload progress for ${entry.file.name}`}
+            aria-label={t('progress', { name: entry.file.name })}
             data-testid={`file-dropzone-progress-${entry.id}`}
         >
             <div
@@ -681,23 +681,24 @@ function ProgressBar({ entry }: { entry: FileUploadEntry }) {
 }
 
 function StatusLabel({ entry }: { entry: FileUploadEntry }) {
+    const t = useTranslations('common.upload');
     let text: string;
     switch (entry.status) {
         case 'queued':
-            text = 'Queued';
+            text = t('queued');
             break;
         case 'uploading':
-            text = entry.percent == null ? 'Uploading…' : `${entry.percent}%`;
+            text = entry.percent == null ? t('uploading') : `${entry.percent}%`;
             break;
         case 'success':
-            text = 'Uploaded';
+            text = t('uploaded');
             break;
         case 'aborted':
-            text = 'Cancelled';
+            text = t('cancelled');
             break;
         case 'error':
         default:
-            text = entry.error ?? 'Failed';
+            text = entry.error ?? t('failed');
             break;
     }
     return (
