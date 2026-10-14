@@ -226,14 +226,22 @@ export function projectRunSteps(
     });
 }
 
-/** A run whose steps can still change. Anything else replays from the ledger. */
-const LIVE_RUN_STATUSES: ReadonlySet<string> = new Set([
-    'RUNNING',
-    'PENDING',
-    'PAUSED',
-    'AWAITING_APPROVAL',
-]);
-
-export function isLiveRunStatus(status: string): boolean {
-    return LIVE_RUN_STATUSES.has(status);
-}
+/**
+ * A run whose steps can still change. Anything else replays from the ledger.
+ *
+ * RE-EXPORTED, NOT RE-DECLARED (#3484). This module had its own copy, and the
+ * copy was WRONG: it listed `PENDING`, which sounds like a run status and is
+ * not one — `WorkflowRunStatus` is
+ * `RUNNING | AWAITING_APPROVAL | PAUSED | COMPLETED | ABORTED | FAILED`. As a
+ * plain string Set that typechecked and shipped a claim about a state no row
+ * can hold; the concurrent-run cap found it the moment the same list had to be
+ * a Prisma `in:` filter, where the enum refuses it.
+ *
+ * The two readers must agree because they answer the same question — can this
+ * run still produce steps? The tail keeps a connection open on it and the cap
+ * counts rows by it, so a drift would show up as a stream held for a finished
+ * run, or a tenant refused for a run nobody was watching progress. One
+ * definition, in `run-concurrency.ts`, with a test asserting it is exactly the
+ * non-terminal half of the generated enum.
+ */
+export { LIVE_RUN_STATUSES, isLiveRunStatus } from './run-concurrency';

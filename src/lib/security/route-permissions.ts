@@ -277,6 +277,22 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // honest. The old wording is deliberately not quoted here — a comment
     // that repeats a phrase a guard might match is a survivor that can satisfy
     // an assertion after the real code is deleted.
+    // #3484 — the per-tenant cap on CONCURRENT agentic runs. Above the
+    // register's catch-all like every other narrow rule here, and it resolves
+    // to `admin.agent_registry` deliberately rather than to
+    // `admin.agent_kill_switch`: a cap bounds how much NEW work may start and
+    // stops nothing already running, where a kill switch is an emergency that
+    // also stops tool calls inside runs already going, carries a reason and is
+    // lifted by name. Sharing the kill key would mean a tenant could not
+    // delegate capacity planning without delegating the emergency stop.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/concurrency$`),
+        permission: 'admin.agent_registry',
+        note:
+            'Read or set how many agentic runs this tenant may execute at ' +
+            'once. The second axis beside the monthly token budget, which ' +
+            'bounds spend over a month and cannot express simultaneity.',
+    },
     // ── Agent RUN replay (#3472, plan point 08) ─────────────────────
     //
     // The live tail of one run's step ledger. The only `text/event-stream`

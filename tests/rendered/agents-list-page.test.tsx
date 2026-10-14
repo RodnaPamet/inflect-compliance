@@ -169,6 +169,7 @@ function renderRegister(
                         enforcing: true,
                         unboundCredentials: 0,
                         unboundCredentialSamples: [],
+            concurrency: { cap: null, inFlight: 0 }
                     }
                 }
                 assurance={null}
@@ -287,6 +288,7 @@ describe('the governance banner says the right sentence for each of the three st
             enforcing: false,
             unboundCredentials: 0,
             unboundCredentialSamples: [],
+            concurrency: { cap: null, inFlight: 0 }
         });
         expect(text).toContain(REGISTER.governance.notEnforcing);
         // …and NOT either of the other two. A banner that concatenated them
@@ -305,6 +307,7 @@ describe('the governance banner says the right sentence for each of the three st
             unboundCredentialSamples: [
                 { id: 'k9', name: 'Dormant exporter', keyPrefix: 'ik_live_ff99' },
             ],
+            concurrency: { cap: null, inFlight: 0 }
         });
         // …and the NAME does not leak into the off-state banner either. With
         // the gate off nothing is refused, so naming a credential here would
@@ -322,6 +325,7 @@ describe('the governance banner says the right sentence for each of the three st
                 { id: 'k2', name: 'Zapier', keyPrefix: 'ik_live_cd34' },
                 { id: 'k3', name: 'Warehouse loader', keyPrefix: 'ik_live_ef56' },
             ],
+            concurrency: { cap: null, inFlight: 0 }
         });
         // The sentence's TAIL, after the ICU plural the test mock does not
         // expand. It is the half that carries the instruction.
@@ -335,6 +339,7 @@ describe('the governance banner says the right sentence for each of the three st
             enforcing: true,
             unboundCredentials: 0,
             unboundCredentialSamples: [],
+            concurrency: { cap: null, inFlight: 0 }
         });
         expect(text).toBe(REGISTER.governance.enforcing);
     });
@@ -343,15 +348,18 @@ describe('the governance banner says the right sentence for each of the three st
         // The paired assertion the three above cannot make individually: a
         // state that rendered null would pass its own `not.toContain` checks.
         for (const g of [
-            { enforcing: false, unboundCredentials: 0, unboundCredentialSamples: [] },
+            { enforcing: false, unboundCredentials: 0, unboundCredentialSamples: [],
+            concurrency: { cap: null, inFlight: 0 }},
             {
                 enforcing: true,
                 unboundCredentials: 3,
                 unboundCredentialSamples: [
                     { id: 'k1', name: 'Nightly sync', keyPrefix: 'ik_live_ab12' },
                 ],
+            concurrency: { cap: null, inFlight: 0 }
             },
-            { enforcing: true, unboundCredentials: 0, unboundCredentialSamples: [] },
+            { enforcing: true, unboundCredentials: 0, unboundCredentialSamples: [],
+            concurrency: { cap: null, inFlight: 0 }},
         ]) {
             expect(bannerText(g).trim().length).toBeGreaterThan(20);
         }
@@ -389,6 +397,7 @@ describe('the unbound state NAMES the credentials, not just their number (#2565)
                 { id: 'k1', name: 'Nightly sync', keyPrefix: 'ik_live_ab12' },
                 { id: 'k2', name: 'Zapier', keyPrefix: 'ik_live_cd34' },
             ],
+            concurrency: { cap: null, inFlight: 0 }
         });
         // EXACT, and in the order handed over. The prefix is half the claim:
         // two integrations can share a label, and the prefix is what an
@@ -411,6 +420,7 @@ describe('the unbound state NAMES the credentials, not just their number (#2565)
                     unboundCredentialSamples: [
                         { id: 'k1', name: 'Nightly sync', keyPrefix: 'ik_live_ab12' },
                     ],
+            concurrency: { cap: null, inFlight: 0 }
                 }}
             />,
         );
@@ -437,6 +447,7 @@ describe('the unbound state NAMES the credentials, not just their number (#2565)
                 { id: 'k4', name: 'Four', keyPrefix: 'ik_live_0004' },
                 { id: 'k5', name: 'Five', keyPrefix: 'ik_live_0005' },
             ],
+            concurrency: { cap: null, inFlight: 0 }
         });
         expect(rows).toEqual([
             'One ik_live_0001…',
@@ -458,6 +469,7 @@ describe('the unbound state NAMES the credentials, not just their number (#2565)
             unboundCredentialSamples: [
                 { id: 'k1', name: 'Only one', keyPrefix: 'ik_live_0001' },
             ],
+            concurrency: { cap: null, inFlight: 0 }
         });
         expect(rows).toEqual(['Only one ik_live_0001…']);
     });

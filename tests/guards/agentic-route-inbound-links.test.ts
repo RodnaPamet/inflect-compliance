@@ -210,6 +210,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // The read half of that card: which of the six terms are satisfied and
     // which one blocks. Read-only, same tenant-lifecycle key.
     't/[tenantSlug]/admin/flue-wiring/route.ts',
+    // #3484 — the SECOND capacity axis beside the monthly token budget. The
+    // budget bounds spend over a month and cannot express simultaneity, so a
+    // tenant inside its budget could start runs until the shared worker pool
+    // was the limit.
+    't/[tenantSlug]/admin/agents/concurrency/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/circuit-breaker/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/coverage/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/policy-card/route.ts',

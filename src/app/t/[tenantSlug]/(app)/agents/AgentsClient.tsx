@@ -482,6 +482,11 @@ function AgentsInner({
                     <div className="space-y-compact">
                         <GovernanceBanner governance={governance} />
                         {assurance && <AssurancePanel assurance={assurance} />}
+                        <ConcurrencyPanel
+                            cap={governance.concurrency.cap}
+                            inFlight={governance.concurrency.inFlight}
+                            tenantSlug={tenantSlug}
+                        />
                     </div>
                 }
                 kpis={
@@ -723,6 +728,135 @@ export interface GovernanceBannerInput {
     unboundCredentials: number;
     /** Named credentials, so the operator knows which integration stopped. */
     unboundCredentialSamples: { id: string; name: string; keyPrefix: string }[];
+    /**
+     * #3484 — the concurrent-run cap and how much of it is in use.
+     *
+     * `cap: null` is NO CAP and `cap: 0` means no agentic run may start. Two
+     * different states, kept apart all the way to the input below, because
+     * collapsing them would turn "stop" into "unlimited" on a form.
+     */
+    concurrency: { cap: number | null; inFlight: number };
+}
+
+/**
+ * THE CONCURRENT-RUN CAP, editable where the agent controls already live
+ * (#3484).
+ *
+ * Here and not on a new admin page, and not folded into the governance notice
+ * above: that notice is a three-state read-only statement about whether the
+ * boundary is switched on, and an editable number inside an `InlineNotice`
+ * reads as an alert about itself. This sits beside `AssurancePanel`, which is
+ * the same region and the same compact-text idiom.
+ *
+ * The SECOND axis beside the monthly token budget, and the panel says so,
+ * because an operator looking for "why did my run get refused" needs to know
+ * which of the two refused it.
+ */
+export function ConcurrencyPanel({
+    cap,
+    inFlight,
+    tenantSlug,
+}: {
+    cap: number | null;
+    inFlight: number;
+    tenantSlug: string;
+}) {
+    const t = useTranslations('agents');
+    const router = useRouter();
+    // `''` is the EMPTY input, which submits as "no cap". `'0'` is a cap of
+    // zero. The two are different strings here for the same reason they are
+    // different values in the column.
+    const [draft, setDraft] = useState(cap === null ? '' : String(cap));
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    async function save() {
+        setSaving(true);
+        setError(null);
+        try {
+            const trimmed = draft.trim();
+            const next = trimmed === '' ? null : Number(trimmed);
+            if (next !== null && (!Number.isInteger(next) || next < 0)) {
+                setError(t('register.concurrency.invalid'));
+                return;
+            }
+            const res = await fetch(
+                `/api/t/${tenantSlug}/admin/agents/concurrency`,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cap: next }),
+                },
+            );
+            if (!res.ok) {
+                // The server's own message, not a generic one: the route
+                // refuses a cap above its sanity rail and an operator should
+                // read that rather than "something went wrong".
+                const body = (await res.json().catch(() => null)) as
+                    | { error?: { message?: string } }
+                    | null;
+                setError(body?.error?.message ?? t('register.concurrency.saveFailed'));
+                return;
+            }
+            // Re-read from the server rather than patching local state: the
+            // IN-FLIGHT count comes from the same read and is not something
+            // this form knows.
+            router.refresh();
+        } catch {
+            setError(t('register.concurrency.saveFailed'));
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div className="space-y-tight text-sm" data-testid="agents-concurrency">
+            <p className="text-xs uppercase tracking-wide text-content-subtle">
+                {t('register.concurrency.heading')}
+            </p>
+            <p data-testid="agents-concurrency-state">
+                {cap === null
+                    // `uncapped`, NOT `noCap`: `empty-state-tone` classifies any
+                    // `noX` key as an empty-state title and holds it to the
+                    // locked "No X yet" voice — no period, no trailing clause.
+                    // This is a status sentence carrying a live count, not an
+                    // empty state, so the KEY was wrong rather than the copy.
+                    ? t('register.concurrency.uncapped', { inFlight })
+                    : t('register.concurrency.capped', { cap, inFlight })}
+            </p>
+            <div className="flex items-center gap-tight">
+                <label className="sr-only" htmlFor="agent-concurrency-cap">
+                    {t('register.concurrency.inputLabel')}
+                </label>
+                <input
+                    id="agent-concurrency-cap"
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder={t('register.concurrency.placeholder')}
+                    className="w-24 rounded border border-border bg-surface px-2 py-1"
+                    data-testid="agents-concurrency-input"
+                />
+                <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={save}
+                    disabled={saving}
+                    data-testid="agents-concurrency-save"
+                >
+                    {t('register.concurrency.save')}
+                </Button>
+            </div>
+            <p className="text-xs text-content-muted">{t('register.concurrency.hint')}</p>
+            {error && (
+                <InlineNotice variant="warning" data-testid="agents-concurrency-error">
+                    {error}
+                </InlineNotice>
+            )}
+        </div>
+    );
 }
 
 export function GovernanceBanner({ governance }: { governance: GovernanceBannerInput }) {

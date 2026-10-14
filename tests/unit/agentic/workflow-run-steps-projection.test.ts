@@ -140,13 +140,20 @@ describe('decisionDigestOf', () => {
 
 describe('isLiveRunStatus', () => {
     it('a run that can still produce steps is live', () => {
-        for (const s of ['RUNNING', 'PENDING', 'PAUSED', 'AWAITING_APPROVAL']) {
+        // THE REAL ENUM, and this list used to carry `PENDING` as well — a
+        // status `WorkflowRunStatus` does not have. It typechecked because the
+        // set was plain strings, so the test asserted a fact about a state no
+        // row can hold. #3484 found it when the same list had to be a Prisma
+        // `in:` filter, which refuses a non-member. The authoritative list and
+        // the test that pins it to the generated enum both live in
+        // `run-concurrency.ts` now.
+        for (const s of ['RUNNING', 'AWAITING_APPROVAL', 'PAUSED']) {
             expect(isLiveRunStatus(s)).toBe(true);
         }
     });
 
     it('a terminal run is not — the tail closes and replay takes over', () => {
-        for (const s of ['COMPLETED', 'FAILED', 'ABORTED', 'HALTED']) {
+        for (const s of ['COMPLETED', 'FAILED', 'ABORTED']) {
             expect(isLiveRunStatus(s)).toBe(false);
         }
     });
