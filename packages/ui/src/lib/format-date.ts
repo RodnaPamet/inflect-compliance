@@ -25,8 +25,8 @@
  * PICK-A-HELPER DECISION TREE
  * ───────────────────────────
  *   formatDate         → "16 Apr 2026"                       (default — tables, detail chrome, filter pills)
- *   formatDateTime     → "16 Apr 2026, 08:00"                 (activity rows, audit events, modal detail)
- *   formatDateTimeLong → "Thursday, 16 April 2026 at 08:00:45" (PDF metadata, audit receipts — weekday + seconds)
+ *   formatDateTime     → "16 Apr 2026, 08:00"                 (activity rows, event logs, modal detail)
+ *   formatDateTimeLong → "Thursday, 16 April 2026 at 08:00:45" (PDF metadata, receipts — weekday + seconds)
  *   formatDateShort    → "16/04/2026"                         (compact headers, dense tables)
  *   formatDateLong     → "16 April 2026"                      (formal docs, legal-style layouts)
  *   formatDateCompact  → "16 Apr"                             (chart axes, mini-calendars — year is context)
@@ -42,8 +42,7 @@
  * tooltip and is hydration-safe (the component handles the
  * `useHydratedNow()` dance internally). The structural ratchet at
  * `tests/guards/epic63-timestamp-rollout.test.ts` enforces this on
- * the five primary list pages (Evidence, Policies, Tasks, Vendors,
- * Risks).
+ * the five primary list pages.
  *
  * WHAT YOU MUST NOT DO
  * ────────────────────
@@ -58,7 +57,7 @@
  *     month / same-year / different-years semantics.
  *   - Add a SECOND canonical formatter module. If a new variant is
  *     genuinely needed, extend this file — don't stand up a parallel
- *     surface. The dub-utils-era helpers `formatDateSmart`,
+ *     surface. The older vendored helpers `formatDateSmart`,
  *     `formatDateTimeSmart`, `timeAgo`, `formatPeriod`, `parseDateTime`,
  *     `getDateTimeLocal`, `getDaysDifference`, `getFirstAndLastDay`
  *     were removed on 2026-04-22; don't resurrect them.
@@ -73,7 +72,7 @@
  *     formatDateLong,
  *     formatDateCompact,
  *     formatDateRange,
- *   } from '@inflect/ui/lib/format-date';
+ *   } from '<the ui package>/lib/format-date';
  *
  *   formatDate('2026-04-16T08:00:00Z')     // → "16 Apr 2026"
  *   formatDateTime('2026-04-16T08:00:00Z') // → "16 Apr 2026, 08:00"
@@ -166,8 +165,8 @@ export function formatDateTime(
     return d ? DATETIME_FMT.format(d) : fallback;
 }
 
-// Richer form for audit-quality timestamps (PDF metadata page,
-// evidence-pack receipts): weekday + long month + seconds so the
+// Richer form for record-quality timestamps (PDF metadata page,
+// export receipts): weekday + long month + seconds so the
 // exact moment is preserved for downstream forensics. Locked to the
 // same `en-GB` + `UTC` calendar as every other helper here so server
 // and client produce identical strings regardless of host timezone.
@@ -183,9 +182,9 @@ const DATETIME_LONG_FMT = new Intl.DateTimeFormat(LOCALE, {
 });
 
 /**
- * Format a date + time in long, audit-quality form —
+ * Format a date + time in long, record-quality form —
  * "Thursday, 16 April 2026, 08:00:45". Use for PDF metadata pages,
- * evidence receipts, or any surface where the exact moment is
+ * export receipts, or any surface where the exact moment is
  * legally / operationally load-bearing. Returns the fallback string
  * (default `'—'`) for null/invalid inputs.
  */
@@ -325,7 +324,7 @@ export function formatWeekdayShort(
  *
  * The em-dash (U+2013) separator and the UTC calendar fields match the
  * rest of the date helpers. Use everywhere a range is surfaced in chrome
- * — picker triggers, filter pills, audit-cycle detail, reports legends.
+ * — picker triggers, filter pills, period headers, reports legends.
  */
 export function formatDateRange(
     from: string | Date | null | undefined,
