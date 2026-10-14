@@ -8595,7 +8595,15 @@
         },
         "stepTokens": "{count} tokens",
         "decisionLink": "Art 12 decision",
-        "causedBy": "Caused by automation execution {executionId} — this run was started by a rule, not by a person. The name above is the rule owner, whose permissions it ran under."
+        "causedBy": "Caused by automation execution {executionId} — this run was started by a rule, not by a person. The name above is the rule owner, whose permissions it ran under.",
+        "scrubber": {
+          "label": "Step through the run",
+          "prev": "Previous step",
+          "next": "Next step",
+          "clear": "Clear selection",
+          "position": "Step {position} of {total}",
+          "none": "{total, plural, one {# step} other {# steps}} — none selected"
+        }
       },
       "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume.",
       "approvalWindowCloses": "Approval window closes {date}"

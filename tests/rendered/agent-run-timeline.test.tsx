@@ -22,7 +22,7 @@
  * A readiness claim that has become a shipped path is just an untested path,
  * so the last describe block below tests it.
  */
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 
 jest.mock('next/navigation', () => ({
     useRouter: () => ({ push: jest.fn(), refresh: jest.fn(), back: jest.fn() }),
@@ -656,5 +656,136 @@ describe('what caused the run', () => {
     it('says nothing when nothing caused it', () => {
         renderDetail([step()], { ...RUN, parentExecutionId: null });
         expect(screen.queryByTestId('run-caused-by')).toBeNull();
+    });
+});
+
+/**
+ * #3472 — stepping through a run one step at a time.
+ *
+ * ── WHAT THE SCRUBBER MUST NOT DO ───────────────────────────────────────────
+ *
+ * Selection is ADDITIVE. Every step stays rendered and the selected one is
+ * emphasised, because hiding the others would make the scrubber the only way
+ * to read the run — worse for anyone scanning, and it would break the
+ * `#step-N` anchors the decisions page links into. The first assertion below
+ * is that the list length does not change.
+ *
+ * ── AND WHY IT STEPS BY POSITION, NOT BY `seq` ──────────────────────────────
+ *
+ * A Flue run's `seq` counts steps RECORDED and a static run's indexes the
+ * definition, so neither is guaranteed contiguous. Stepping by `seq ± 1` would
+ * skip or stall on a gap, so the control walks the rendered ORDER — and the
+ * gap case is asserted directly, with seqs 0, 5, 9.
+ */
+describe('the timeline scrubber', () => {
+    const gappy = [
+        step({ id: 's0', seq: 0 }),
+        step({ id: 's5', seq: 5 }),
+        step({ id: 's9', seq: 9 }),
+    ];
+    const pos = () => screen.getByTestId('run-scrubber-position');
+
+    it('starts with NOTHING selected — the first paint is the whole timeline', () => {
+        // Defaulting to step 1 would emphasise a step nobody asked about, and
+        // somebody arriving from a `#step-N` link wants their own step.
+        renderDetail(gappy);
+        expect(pos()).toHaveTextContent(/none selected/i);
+        expect(document.querySelectorAll('[data-selected="true"]')).toHaveLength(0);
+    });
+
+    it('selects the first step, and keeps every step rendered', () => {
+        renderDetail(gappy);
+        fireEvent.click(screen.getByTestId('run-scrubber-next'));
+        expect(pos()).toHaveTextContent('Step 1 of 3');
+        const selected = document.querySelectorAll('[data-selected="true"]');
+        expect(selected).toHaveLength(1);
+        // THE CLASS TOO, and a mutation run is why. The attribute is for
+        // tests; the ring is what a user sees — deleting the ring left every
+        // other assertion here green, so the emphasis could have been dropped
+        // silently.
+        expect(selected[0].className).toContain('ring-brand-default');
+        // ADDITIVE, not a filter — the other two are still in the DOM.
+        expect(document.querySelectorAll('#run-step-timeline > li')).toHaveLength(3);
+    });
+
+    it('walks NON-CONTIGUOUS seqs by position', () => {
+        // seq 0 → 5 → 9. Stepping by `seq + 1` would land on a step that does
+        // not exist and emphasise nothing.
+        renderDetail(gappy);
+        const next = screen.getByTestId('run-scrubber-next');
+        fireEvent.click(next);
+        fireEvent.click(next);
+        expect(pos()).toHaveTextContent('Step 2 of 3');
+        expect(document.getElementById('step-5')).toHaveAttribute('data-selected', 'true');
+        fireEvent.click(next);
+        expect(document.getElementById('step-9')).toHaveAttribute('data-selected', 'true');
+    });
+
+    it('disables the buttons at both ends', () => {
+        renderDetail(gappy);
+        const next = screen.getByTestId('run-scrubber-next');
+        for (let i = 0; i < 5; i++) fireEvent.click(next);
+        expect(pos()).toHaveTextContent('Step 3 of 3');
+        expect(next).toBeDisabled();
+
+        const prev = screen.getByTestId('run-scrubber-prev');
+        for (let i = 0; i < 5; i++) fireEvent.click(prev);
+        expect(pos()).toHaveTextContent('Step 1 of 3');
+        expect(prev).toBeDisabled();
+    });
+
+    it('does not WRAP past the end — and only the keyboard can prove it', () => {
+        /*
+            A mutation run found this gap. Making `go()` wrap left the test
+            above GREEN, because at the last step the Next BUTTON is
+            `disabled` and a click on it does nothing — so the clicks proved
+            the disabled attribute, not the bounds check.
+
+            `onKeyDown` calls `go()` directly and is NOT gated by `disabled`,
+            so the keyboard is the only path that reaches the guard. Which also
+            means the guard is load-bearing rather than belt-and-braces: without
+            it, a keyboard user at the last step would silently jump to the
+            first, with no visible cause.
+        */
+        renderDetail(gappy);
+        const group = screen.getByTestId('run-scrubber');
+        for (let i = 0; i < 5; i++) fireEvent.keyDown(group, { key: 'ArrowRight' });
+        expect(pos()).toHaveTextContent('Step 3 of 3');
+        expect(document.getElementById('step-9')).toHaveAttribute('data-selected', 'true');
+
+        for (let i = 0; i < 5; i++) fireEvent.keyDown(group, { key: 'ArrowLeft' });
+        expect(pos()).toHaveTextContent('Step 1 of 3');
+        expect(document.getElementById('step-0')).toHaveAttribute('data-selected', 'true');
+    });
+
+    it('clears back to nothing selected', () => {
+        // Without this, selecting a step is a one-way door — an operator who
+        // wants the plain list back would have to reload.
+        renderDetail(gappy);
+        fireEvent.click(screen.getByTestId('run-scrubber-next'));
+        fireEvent.click(screen.getByTestId('run-scrubber-clear'));
+        expect(pos()).toHaveTextContent(/none selected/i);
+        expect(document.querySelectorAll('[data-selected="true"]')).toHaveLength(0);
+    });
+
+    it('steps with the arrow keys', () => {
+        // Stepping a sequence with a mouse is the slower half of the
+        // interaction, and the group scopes the keys so they do not fight the
+        // page's own scrolling.
+        renderDetail(gappy);
+        const group = screen.getByTestId('run-scrubber');
+        fireEvent.keyDown(group, { key: 'ArrowRight' });
+        expect(pos()).toHaveTextContent('Step 1 of 3');
+        fireEvent.keyDown(group, { key: 'ArrowRight' });
+        expect(pos()).toHaveTextContent('Step 2 of 3');
+        fireEvent.keyDown(group, { key: 'ArrowLeft' });
+        expect(pos()).toHaveTextContent('Step 1 of 3');
+    });
+
+    it('is not rendered for a run with no steps', () => {
+        // The empty state is the whole panel there; a scrubber over zero steps
+        // would offer two disabled buttons and a count of none.
+        renderDetail([]);
+        expect(screen.queryByTestId('run-scrubber')).toBeNull();
     });
 });
