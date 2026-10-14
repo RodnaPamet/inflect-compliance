@@ -193,6 +193,12 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
     const webhookHeaders = Object.keys(
         (actionConfig.headers as Record<string, string> | undefined) ?? {},
     );
+    // #3471 — the KEYS and the FIELDS they read, both shown. Which input key an
+    // agent is fed is the part an operator reviewing a rule has to be able to
+    // see: it is the whole of what reaches prompt assembly.
+    const agentInputMapping = Object.entries(
+        (actionConfig.inputMapping as Record<string, string> | undefined) ?? {},
+    ).map(([k, v]) => `${k} ← ${v}`);
 
     return (
         <Sheet
@@ -412,6 +418,28 @@ export function RuleDetailSheet({ rule, open, onOpenChange, onEdit }: RuleDetail
                                                         value={asStr(actionConfig.targetGroupId)}
                                                     />
                                                 )}
+                                            {detail.actionType === 'INVOKE_AGENT' && (
+                                                <>
+                                                    {asStr(actionConfig.agentId) && (
+                                                        <ConfigRow
+                                                            label={t('ruleDetail.agentId')}
+                                                            value={asStr(actionConfig.agentId)}
+                                                        />
+                                                    )}
+                                                    {asStr(actionConfig.workflowKey) && (
+                                                        <ConfigRow
+                                                            label={t('ruleDetail.agentWorkflow')}
+                                                            value={asStr(actionConfig.workflowKey)}
+                                                        />
+                                                    )}
+                                                    {agentInputMapping.length > 0 && (
+                                                        <ConfigRow
+                                                            label={t('ruleDetail.agentInputMapping')}
+                                                            value={agentInputMapping.join(', ')}
+                                                        />
+                                                    )}
+                                                </>
+                                            )}
                                         </div>
 
                                         {/* Schedule */}

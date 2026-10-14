@@ -832,7 +832,20 @@ executorRegistry.register('rule-chain-dispatch', async (payload) => {
     return result;
 });
 
+// ── agent-invoke-dispatch (#3471) ────────────────────────────────────
+// An automation rule invoking a registered agent. Enqueued by the
+// `INVOKE_AGENT` action; the run itself starts HERE, on the worker that
+// already has the shutdown drain, because a run may outlive any request.
+executorRegistry.register('agent-invoke-dispatch', async (payload) => {
+    const { runAgentInvokeDispatch } = await import('./agent-invoke-dispatch');
+    // Tenant scope: payload.tenantId scopes the agent lookup, both runtime
+    // stops and the run row the dispatcher creates.
+    const { result } = await runAgentInvokeDispatch({ ...payload, tenantId: payload.tenantId });
+    return result;
+});
+
 // ── subflow-dispatch (Visual Rule Editor VR-7) ───────────────────────
+
 executorRegistry.register('subflow-dispatch', async (payload) => {
     const { runSubflowDispatch } = await import('./subflow-dispatcher');
     // Tenant scope: payload.tenantId scopes the entry-rule lookup + the child

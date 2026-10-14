@@ -65,12 +65,28 @@ const InvokeSubflowConfig = z.object({
  * superRefine only covers the both-fields-present case and the usecase covers
  * the rest.
  */
+/**
+ * #3471 — which registered agent runs which workflow, and how the trigger
+ * event's fields feed its input.
+ *
+ * `inputMapping` is a map of INPUT KEY -> EVENT FIELD NAME, never free text.
+ * A rule author picks fields the trigger already carries, so what can reach
+ * prompt assembly is bounded by the event's shape rather than by what someone
+ * typed — and whatever does arrive is injection-scanned at the door (#3468).
+ */
+const InvokeAgentConfig = z.object({
+    agentId: z.string().min(1),
+    workflowKey: z.string().min(1),
+    inputMapping: z.record(z.string(), z.string()).default({}),
+});
+
 export const ACTION_CONFIG_BY_TYPE = {
     NOTIFY_USER: NotifyUserConfig,
     CREATE_TASK: CreateTaskConfig,
     UPDATE_STATUS: UpdateStatusConfig,
     WEBHOOK: WebhookConfig,
     INVOKE_SUBFLOW: InvokeSubflowConfig,
+    INVOKE_AGENT: InvokeAgentConfig,
 } as const;
 
 // Filter DSL v2 (Epic 4) — a recursive FilterGroup, OR the legacy flat

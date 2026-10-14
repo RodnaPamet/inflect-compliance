@@ -7610,7 +7610,8 @@
       "CREATE_TASK": "Create task",
       "UPDATE_STATUS": "Update status",
       "WEBHOOK": "Webhook",
-      "INVOKE_SUBFLOW": "Invoke sub-flow"
+      "INVOKE_SUBFLOW": "Invoke sub-flow",
+      "INVOKE_AGENT": "Invoke agent"
     },
     "filters": {
       "status": "Status",
@@ -7653,7 +7654,10 @@
       "chain": "Chain",
       "nextRule": "Next rule",
       "delay": "Delay (minutes)",
-      "elseRule": "Else rule"
+      "elseRule": "Else rule",
+      "agentId": "Agent",
+      "agentWorkflow": "Workflow",
+      "agentInputMapping": "Input mapping"
     }
   },
   "issues": {
@@ -10520,7 +10524,19 @@
       "ruleDescription": "Description",
       "ruleDescriptionHint": "Optional. Shown on the rule detail sheet. Clear it to remove a description a template set.",
       "ruleDescriptionPlaceholder": "What this rule is for…",
-      "slaBreachDiscardWarning": "Clearing the watchdog window also discards the breach notification ({count, plural, one {# recipient} other {# recipients}}). Re-enter a window to keep them."
+      "slaBreachDiscardWarning": "Clearing the watchdog window also discards the breach notification ({count, plural, one {# recipient} other {# recipients}}). Re-enter a window to keep them.",
+      "actionInvokeAgent": "Invoke agent",
+      "actionInvokeAgentHint": "Start a registered agent on a workflow.",
+      "agentPickerLabel": "Agent",
+      "agentPickerHint": "Only ACTIVE, risk-assessed agents are offered. Needs the agent-register permission.",
+      "agentPickerPlaceholder": "Choose an agent",
+      "agentPickerEmpty": "No active agent available",
+      "agentWorkflowLabel": "Workflow",
+      "agentWorkflowHint": "Which workflow the agent is started on.",
+      "agentWorkflowPlaceholder": "Choose a workflow",
+      "agentInputMappingLabel": "Input mapping",
+      "agentInputMappingHint": "One per line, as inputKey: triggerField. Field names only — never free text.",
+      "agentInputMappingPlaceholder": "riskId: id\nseverity: severity"
     },
     "autoInspector": {
       "actionNotify": "Notify user",
@@ -10550,7 +10566,8 @@
       "actionInvokeSubflow": "Invoke sub-flow",
       "actionUnknown": "Unknown action",
       "actionTypeHint": "Change the action in the rule builder — a new action needs a new configuration.",
-      "saveFailed": "That change was not saved."
+      "saveFailed": "That change was not saved.",
+      "actionInvokeAgent": "Invoke agent"
     },
     "diff": {
       "title": "Diff v{x} vs v{y}",

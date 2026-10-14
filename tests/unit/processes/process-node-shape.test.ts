@@ -75,7 +75,8 @@ describe('nodeType resolves through the taxonomy', () => {
         // later. This ranges over the taxonomy itself, and asserts the count so
         // a kind appearing or vanishing is visible rather than absorbed.
         const kinds = Object.keys(NODE_TAXONOMY) as ProcessNodeKind[];
-        expect(kinds.length).toBe(12);
+        // 12 -> 13: `agent` (#3471).
+        expect(kinds.length).toBe(13);
         expect(new Set(NODE_TAXONOMY_ORDER).size).toBeLessThanOrEqual(kinds.length);
 
         for (const kind of kinds) {

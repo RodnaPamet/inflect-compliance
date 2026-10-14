@@ -179,6 +179,7 @@ const byId = (id: string) => FINDINGS.filter((f) => f.messageId === id);
  */
 const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/app-layer/jobs/agent-proposal-expiry.ts — identifier bound elsewhere',
+    'src/app-layer/jobs/agent-invoke-dispatch.ts — identifier bound elsewhere',
     'src/app-layer/jobs/agent-proposal-sample-audit.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-policy-card.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-proposal-sample-audit.ts — identifier bound elsewhere',
@@ -643,7 +644,25 @@ const SINK_FLOOR = 30;
 // than new to the repo — see its entry in KNOWN_UNANALYSABLE for why the path
 // had to change and why the `err.message` beside two named fields cannot be
 // drained. Measured, not projected: 178 is this branch's live count.
-const MEASURED_HOLES = 178;
+// 178 -> 186: AN AUTOMATION RULE MAY INVOKE AN AGENT (#3471). TWO sinks in one
+// new file, eight holes, every one `identifier bound elsewhere` and every one a
+// shorthand property whose VALUE is a local binding the rule cannot fold —
+// `tenantId`, `agentId`, `workflowKey`, `depth`, `runId`, and the refusal.
+//
+// Already DRAINED once before being recorded. The first draft wrote a
+// `logger.warn` per refusal branch: four sinks, fourteen holes, and the same
+// three identifiers re-counted at each. Routing every refusal through one call
+// with the cause as a FIELD took it to two sinks and eight holes without
+// hiding anything — the ratio moved the right way (14/4 -> 8/2 locally, and
+// 192/113 -> 186/111 across the population).
+//
+// What remains cannot be drained by inlining. `refusal` is a closed union of
+// seven operator actions, `depth` and `runId` are integers and a cuid, and the
+// two ids are the row keys an operator greps by. None of them reads a prompt:
+// the dispatcher never touches `payload.data` except through `projectInput`,
+// whose output goes to `startWorkflowRun` and never to a log line.
+// 186 is this branch's live count, measured on a tree with no unmerged paths.
+const MEASURED_HOLES = 186;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -672,7 +691,11 @@ const MEASURED_HOLES = 178;
 // them here; claiming those would set a floor on work I did not do, and a floor
 // above the true count fails for an unrelated reason the day somebody deletes a
 // log line.
-const MEASURED_SINKS = 102;
+// 102 -> 104: the two sinks of #3471's agent-invoke dispatcher — the one
+// refusal warn and the one dispatched info. Raising the denominator TIGHTENS
+// `HOLES_PER_SINK_CEILING`, which is the direction this pair is meant to move.
+// Still my own contribution only: the live count on this branch is 111.
+const MEASURED_SINKS = 104;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

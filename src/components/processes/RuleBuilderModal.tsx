@@ -29,6 +29,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import {
     EVENT_LABELS,
@@ -41,7 +42,13 @@ import {
 } from '@/lib/automation/status-allowlist';
 import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
 
-type ActionType = 'NOTIFY_USER' | 'CREATE_TASK' | 'UPDATE_STATUS' | 'WEBHOOK' | 'INVOKE_SUBFLOW';
+type ActionType =
+    | 'NOTIFY_USER'
+    | 'CREATE_TASK'
+    | 'UPDATE_STATUS'
+    | 'WEBHOOK'
+    | 'INVOKE_SUBFLOW'
+    | 'INVOKE_AGENT';
 
 type Operator = 'eq' | 'neq' | 'in' | 'not_in' | 'gt' | 'lt' | 'contains';
 
@@ -178,6 +185,16 @@ interface BuilderState {
     webhook: { url: string; method: string; headersText: string; secretRef: string };
     /** PR2 — INVOKE_SUBFLOW target group (a ProcessNode.nodeKey). */
     subflow: { targetGroupId: string };
+    /**
+     * #3471 — which registered agent, on which workflow, fed by which
+     * trigger fields.
+     *
+     * `inputMappingText` is `inputKey: eventField` per line, the same shape
+     * the webhook headers field uses and parsed by the same helper. It maps
+     * input keys to FIELD NAMES, never to free text: what can reach prompt
+     * assembly is then bounded by the trigger event's own shape.
+     */
+    agent: { agentId: string; workflowKey: string; inputMappingText: string };
     /** Optional SLA window in minutes (Epic 5); empty = no SLA. */
     slaWindowMinutes: string;
     /** PR-E — breach action for the execution watchdog. Only NOTIFY_USER is
@@ -207,6 +224,7 @@ const EMPTY: BuilderState = {
     status: { entityType: 'Risk', field: 'status', toStatus: '' },
     webhook: { url: '', method: 'POST', headersText: '', secretRef: '' },
     subflow: { targetGroupId: '' },
+    agent: { agentId: '', workflowKey: '', inputMappingText: '' },
     slaWindowMinutes: '',
     slaBreach: { actionType: '', userIds: [], message: '' },
     schedule: { target: 'Evidence', offsetDays: '0' },
@@ -296,6 +314,16 @@ export function detailToBuilderState(d: RuleDetail): BuilderState {
             d.actionType === 'INVOKE_SUBFLOW'
                 ? { targetGroupId: str(ac.targetGroupId) }
                 : { ...EMPTY.subflow },
+        agent:
+            d.actionType === 'INVOKE_AGENT'
+                ? {
+                      agentId: str(ac.agentId),
+                      workflowKey: str(ac.workflowKey),
+                      inputMappingText: stringifyHeaders(
+                          ac.inputMapping as Record<string, string> | undefined,
+                      ),
+                  }
+                : { ...EMPTY.agent },
         slaWindowMinutes: d.slaWindowMinutes != null ? String(d.slaWindowMinutes) : '',
         slaBreach: {
             actionType: d.slaBreachActionType === 'NOTIFY_USER' ? 'NOTIFY_USER' : '',
@@ -371,6 +399,12 @@ function buildActionConfig(form: BuilderState): Record<string, unknown> {
         }
         case 'INVOKE_SUBFLOW':
             return { targetGroupId: form.subflow.targetGroupId.trim() };
+        case 'INVOKE_AGENT':
+            return {
+                agentId: form.agent.agentId.trim(),
+                workflowKey: form.agent.workflowKey.trim(),
+                inputMapping: parseHeaders(form.agent.inputMappingText),
+            };
     }
 }
 
@@ -445,8 +479,18 @@ function buildActionOptions(
         { value: 'UPDATE_STATUS', label: t('actionUpdateStatus'), hint: t('actionUpdateStatusHint') },
         { value: 'WEBHOOK', label: t('actionWebhook'), hint: t('actionWebhookHint') },
         { value: 'INVOKE_SUBFLOW', label: t('actionInvokeSubflow'), hint: t('actionInvokeSubflowHint') },
+        { value: 'INVOKE_AGENT', label: t('actionInvokeAgent'), hint: t('actionInvokeAgentHint') },
     ];
 }
+
+// #3471 — the workflows an agent can be started on. Static: the registry is
+// code, not tenant data, and `startWorkflowRun` rejects a key it does not hold
+// — so this list is a convenience over the server's own vocabulary, not the
+// thing that decides it.
+const workflowOptions: ComboboxOption[] = listWorkflowDefinitions().map((w) => ({
+    value: w.key,
+    label: w.name,
+}));
 
 const triggerOptions: ComboboxOption[] = eventOptionsByDomain().flatMap((g) =>
     g.events.map((ev) => ({ value: ev.name, label: ev.label })),
@@ -523,6 +567,19 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
     const chainOptions: ComboboxOption[] = (allRules ?? [])
         .filter((r) => r.id !== editRule?.id)
         .map((r) => ({ value: r.id, label: r.name }));
+    // #3471 — the INVOKE_AGENT picker. ACTIVE only: the dispatcher refuses a
+    // suspended agent by name, and offering one here would mean authoring a
+    // rule whose every fire is a refusal. The route is gated on
+    // `admin.agent_registry`, so an author who cannot read the register sees no
+    // options and `step3Valid` keeps the rule unsaveable — deliberately, rather
+    // than falling back to a text box that accepts a typo'd id.
+    const { data: agentList } = useTenantSWR<{ agents: Array<{ id: string; name: string }> }>(
+        CACHE_KEYS.agents.list(),
+    );
+    const agentOptions: ComboboxOption[] = (agentList?.agents ?? []).map((a) => ({
+        value: a.id,
+        label: a.name,
+    }));
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [form, setForm] = useState<BuilderState>(EMPTY);
     const [submitting, setSubmitting] = useState(false);
@@ -596,6 +653,16 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                 return /^https?:\/\//.test(form.webhook.url.trim());
             case 'INVOKE_SUBFLOW':
                 return form.subflow.targetGroupId.trim().length > 0;
+            case 'INVOKE_AGENT':
+                // Both halves required, and the agent id comes from the picker
+                // rather than a text box — an id nobody can see in the register
+                // is an id nobody should be able to type. An author without
+                // `admin.agent_registry` gets no options, so this stays false
+                // and the rule cannot be saved half-configured.
+                return (
+                    form.agent.agentId.trim().length > 0 &&
+                    form.agent.workflowKey.trim().length > 0
+                );
         }
     })();
 
@@ -1137,6 +1204,82 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                                 patch({ webhook: { ...form.webhook, secretRef: e.target.value } })
                                             }
                                             placeholder={t('webhookSecretRefPlaceholder')}
+                                        />
+                                    </FormField>
+                                </>
+                            )}
+                            {form.actionType === 'INVOKE_AGENT' && (
+                                <>
+                                    <FormField
+                                        label={t('agentPickerLabel')}
+                                        description={t('agentPickerHint')}
+                                        required
+                                    >
+                                        <Combobox
+                                            options={agentOptions}
+                                            selected={
+                                                agentOptions.find(
+                                                    (o) => o.value === form.agent.agentId,
+                                                ) ?? null
+                                            }
+                                            setSelected={(o) =>
+                                                patch({
+                                                    agent: {
+                                                        ...form.agent,
+                                                        agentId: o?.value ?? '',
+                                                    },
+                                                })
+                                            }
+                                            placeholder={
+                                                agentOptions.length === 0
+                                                    ? t('agentPickerEmpty')
+                                                    : t('agentPickerPlaceholder')
+                                            }
+                                            forceDropdown
+                                            matchTriggerWidth
+                                        />
+                                    </FormField>
+                                    <FormField
+                                        label={t('agentWorkflowLabel')}
+                                        description={t('agentWorkflowHint')}
+                                        required
+                                    >
+                                        <Combobox
+                                            options={workflowOptions}
+                                            selected={
+                                                workflowOptions.find(
+                                                    (o) => o.value === form.agent.workflowKey,
+                                                ) ?? null
+                                            }
+                                            setSelected={(o) =>
+                                                patch({
+                                                    agent: {
+                                                        ...form.agent,
+                                                        workflowKey: o?.value ?? '',
+                                                    },
+                                                })
+                                            }
+                                            placeholder={t('agentWorkflowPlaceholder')}
+                                            forceDropdown
+                                            matchTriggerWidth
+                                        />
+                                    </FormField>
+                                    <FormField
+                                        label={t('agentInputMappingLabel')}
+                                        description={t('agentInputMappingHint')}
+                                    >
+                                        <Textarea
+                                            value={form.agent.inputMappingText}
+                                            onChange={(e) =>
+                                                patch({
+                                                    agent: {
+                                                        ...form.agent,
+                                                        inputMappingText: e.target.value,
+                                                    },
+                                                })
+                                            }
+                                            placeholder={t('agentInputMappingPlaceholder')}
+                                            rows={3}
                                         />
                                     </FormField>
                                 </>

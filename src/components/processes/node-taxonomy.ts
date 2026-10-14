@@ -8,7 +8,7 @@
  * the map, can't drop annotations.
  *
  * This file is the single source of truth for the canonical node
- * kinds (8 document kinds + 4 automation kinds — R30 added `group`
+ * kinds (8 document kinds + 5 automation kinds — R30 added `group`
  * and VR-1 added the automation set), the rationale for each, and
  * the visual + interaction metadata that the palette + the
  * typed-node renderer consume.
@@ -85,6 +85,8 @@ import {
     Filter,
     Play,
     Timer,
+    // #3471 — the INVOKE_AGENT leaf.
+    Bot,
 } from 'lucide-react';
 
 export type ProcessNodeKind =
@@ -100,6 +102,12 @@ export type ProcessNodeKind =
     | 'trigger'
     | 'condition'
     | 'action'
+    // #3471 — a node that invokes a registered agent. Its own kind rather than
+    // a variant of `action` because the canvas is where an agent is INVOKED and
+    // nowhere else: where it is registered, scored, scoped, stopped and
+    // reviewed is `/agents`. A reader scanning a process map should be able to
+    // see that a model runs here without opening the node.
+    | 'agent'
     | 'slaGate';
 
 /**
@@ -363,6 +371,17 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
         hasHandles: true,
         defaultLabel: 'Then…',
     },
+    agent: {
+        id: 'agent',
+        label: 'Agent',
+        description: 'Leaf — invokes a registered agent. Governance lives on /agents.',
+        icon: Bot,
+        accent: 'brand-secondary',
+        shape: 'rect',
+        category: 'flow',
+        hasHandles: true,
+        defaultLabel: 'Invoke agent…',
+    },
     slaGate: {
         id: 'slaGate',
         label: 'SLA gate',
@@ -414,10 +433,16 @@ export const AUTOMATION_NODE_ORDER: ProcessNodeKind[] = [
     'trigger',
     'condition',
     'action',
+    // #3471. A SEPARATE kind rather than a variant of `action`, because what an
+    // operator needs to see on the canvas is different: an action runs a
+    // bounded, hand-written step, and this one hands a trigger's fields to a
+    // model whose governance — risk tier, kill switch, breaker — lives on
+    // `/agents` and is what decides whether the fire is refused.
+    'agent',
     'slaGate',
 ];
 
-/** The four automation kinds, for mode-gating + guards. */
+/** The five automation kinds, for mode-gating + guards. */
 export const AUTOMATION_NODE_KINDS: ReadonlyArray<ProcessNodeKind> =
     AUTOMATION_NODE_ORDER;
 

@@ -7610,7 +7610,8 @@
       "CREATE_TASK": "Създай задача",
       "UPDATE_STATUS": "Обнови статус",
       "WEBHOOK": "Уебхук",
-      "INVOKE_SUBFLOW": "Извикване на подпоток"
+      "INVOKE_SUBFLOW": "Извикване на подпоток",
+      "INVOKE_AGENT": "Извикване на агент"
     },
     "filters": {
       "status": "Статус",
@@ -7653,7 +7654,10 @@
       "chain": "Верига",
       "nextRule": "Следващо правило",
       "delay": "Забавяне (минути)",
-      "elseRule": "Правило при друго"
+      "elseRule": "Правило при друго",
+      "agentId": "Агент",
+      "agentWorkflow": "Работен процес",
+      "agentInputMapping": "Съответствие на входните данни"
     }
   },
   "issues": {
@@ -10520,7 +10524,19 @@
       "ruleDescription": "Описание",
       "ruleDescriptionHint": "По желание. Показва се в панела с детайли на правилото. Изчистете го, за да премахнете описание, зададено от шаблон.",
       "ruleDescriptionPlaceholder": "За какво служи това правило…",
-      "slaBreachDiscardWarning": "Изчистването на прозореца на наблюдателя отхвърля и известието при нарушение ({count, plural, one {# получател} other {# получатели}}). Въведете отново прозорец, за да ги запазите."
+      "slaBreachDiscardWarning": "Изчистването на прозореца на наблюдателя отхвърля и известието при нарушение ({count, plural, one {# получател} other {# получатели}}). Въведете отново прозорец, за да ги запазите.",
+      "actionInvokeAgent": "Извикване на агент",
+      "actionInvokeAgentHint": "Стартира регистриран агент по работен процес.",
+      "agentPickerLabel": "Агент",
+      "agentPickerHint": "Предлагат се само АКТИВНИ агенти с оценен риск. Изисква права за регистъра на агентите.",
+      "agentPickerPlaceholder": "Изберете агент",
+      "agentPickerEmpty": "Няма наличен активен агент",
+      "agentWorkflowLabel": "Работен процес",
+      "agentWorkflowHint": "С кой работен процес се стартира агентът.",
+      "agentWorkflowPlaceholder": "Изберете работен процес",
+      "agentInputMappingLabel": "Съответствие на входните данни",
+      "agentInputMappingHint": "По един на ред, във вида inputKey: triggerField. Само имена на полета — никога свободен текст.",
+      "agentInputMappingPlaceholder": "riskId: id\nseverity: severity"
     },
     "autoInspector": {
       "actionNotify": "Уведоми потребител",
@@ -10550,7 +10566,8 @@
       "actionInvokeSubflow": "Извикване на подпоток",
       "actionUnknown": "Неизвестно действие",
       "actionTypeHint": "Променете действието в конструктора на правила — новото действие изисква нова конфигурация.",
-      "saveFailed": "Промяната не беше запазена."
+      "saveFailed": "Промяната не беше запазена.",
+      "actionInvokeAgent": "Извикване на агент"
     },
     "diff": {
       "title": "Разлики v{x} спрямо v{y}",
