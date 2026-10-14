@@ -59,6 +59,8 @@ import { isCollapsedFromDataJson } from './drill-scope-host';
 import {
     overlayClassFor,
     useNodeOverlayStatus,
+    useNodeAgentRun,
+    awaitsAHuman,
 } from '@/lib/processes/canvas-execution-overlay';
 
 import {
@@ -329,8 +331,29 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
         output to a correctly-absent overlay. A test for this has to mount the
         provider with a populated map.
     */
-    const overlayStatus = useNodeOverlayStatus(ruleIdFromDataJson(shape.props.dataJson));
+    const ruleId = ruleIdFromDataJson(shape.props.dataJson);
+    const overlayStatus = useNodeOverlayStatus(ruleId);
     const overlayClass = overlayClassFor(overlayStatus);
+
+    /*
+        #3472 — what this node's latest agentic RUN is doing.
+
+        Read unconditionally for the same reason as the line above, and the
+        same empty-map-is-indistinguishable caveat applies to any test.
+
+        A SECOND channel rather than more fields on the first: an execution is
+        a rule FIRING and a run is the work that firing started, and they
+        settle at different times — a firing can succeed while the run it
+        enqueued is still reasoning. The chassis ring keeps answering "did the
+        rule fire", and this answers "what is the agent doing".
+
+        Only an `agent` node can have one: every other kind's rule starts no
+        run, so `useNodeAgentRun` returns undefined for them and nothing below
+        renders. That is a property of the DATA rather than a condition here —
+        the map is keyed by the rule ids of INVOKE_AGENT rules only.
+    */
+    const agentRun = useNodeAgentRun(ruleId);
+    const runAwaitsAHuman = awaitsAHuman(agentRun);
 
     return (
         <HTMLContainer
@@ -356,6 +379,11 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
             // presentation detail a redesign may reword; the status is the
             // fact, and it is what a test should be able to read.
             data-overlay-status={overlayStatus}
+            // The RUN's status as a fact a test can read, beside the
+            // execution's. Absent when this node has no run, which is every
+            // node that is not an agent.
+            data-run-status={agentRun?.status}
+            data-run-awaiting-human={runAwaitsAHuman ? 'true' : undefined}
         >
             <div className="flex items-center gap-tight">
                 {/* Groups only — a step has nothing to fold. */}
@@ -372,6 +400,32 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
             {shape.props.subtitle ? (
                 <span className="truncate text-xs text-content-muted">
                     {shape.props.subtitle}
+                </span>
+            ) : null}
+            {/* WHAT THE AGENT IS DOING (#3472).
+                
+                The step POSITION and KIND, never a step's input or output:
+                those two columns are encrypted at rest because of what they
+                hold, and a canvas chassis is the last place tenant content
+                should surface. `lastStepSeq` is 0-based in the ledger and
+                displayed 1-based, matching the run detail page's own timeline.
+                
+                A run with no steps yet shows its status alone rather than
+                "step 0 of 0" — a run that has just started has genuinely not
+                recorded one, and a zero there reads as a stalled run. */}
+            {agentRun ? (
+                <span
+                    className={[
+                        'truncate text-xs',
+                        runAwaitsAHuman ? 'text-content-warning' : 'text-content-subtle',
+                    ].join(' ')}
+                    data-testid={`process-node-run-${shape.props.nodeKey || shape.id}`}
+                >
+                    {agentRun.status}
+                    {agentRun.lastStepSeq !== null
+                        ? ` · ${agentRun.lastStepSeq + 1}/${agentRun.stepCount}`
+                        : ''}
+                    {agentRun.lastStepTool ? ` · ${agentRun.lastStepTool}` : ''}
                 </span>
             ) : null}
         </HTMLContainer>

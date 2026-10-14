@@ -26,7 +26,33 @@ describe('VR-6 — execution overlay', () => {
         const src = read('src/lib/processes/canvas-execution-overlay.tsx');
         expect(src).toMatch(/CanvasOverlayProvider/);
         expect(src).toMatch(/useNodeOverlayStatus/);
-        expect(src).toMatch(/refreshInterval/);
+
+        // EVERY subscription IS POLLED, counted rather than existence-checked.
+        //
+        // This was `expect(src).toMatch(/refreshInterval/)` over the whole
+        // file, which could not tell "the poll has an interval" from
+        // "something somewhere in this module has one". #3472 added a SECOND
+        // subscription — the agent-run channel — and
+        // `assertion-needle-uniqueness-ratchet` went red, correctly: the needle
+        // then had two satisfying positions and the assertion was about
+        // neither of them in particular.
+        //
+        // Counting is the stronger claim a `toMatch` cannot make: it cannot
+        // tell "both subscriptions are polled" from "one is polled and one
+        // is not", which is the regression that matters — an unpolled
+        // subscription renders once and then goes stale in Run Mode, looking
+        // exactly like a canvas where nothing is happening.
+        const subscriptions = (src.match(/useTenantSWR</g) ?? []).length;
+        const intervals = (src.match(/refreshInterval/g) ?? []).length;
+        expect(subscriptions).toBeGreaterThan(0);
+        expect(intervals).toBe(subscriptions);
+
+        // …and each one is GATED on run mode, so a canvas that is not in Run
+        // Mode polls nothing. `enabled ? … : null` is SWR's own idiom for a
+        // suspended key.
+        expect((src.match(/enabled \? /g) ?? []).length).toBeGreaterThanOrEqual(
+            subscriptions,
+        );
     });
 
     it('the per-node overlay paint is PORTED (#3115)', () => {

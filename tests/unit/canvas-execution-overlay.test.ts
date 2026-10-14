@@ -1,7 +1,12 @@
 /**
  * VR-6 — live execution overlay reducer.
  */
-import { buildOverlayMap, overlayClassFor } from '@/lib/processes/canvas-execution-overlay';
+import {
+    buildOverlayMap,
+    overlayClassFor,
+    buildAgentRunMap,
+    awaitsAHuman,
+} from '@/lib/processes/canvas-execution-overlay';
 
 describe('buildOverlayMap', () => {
     it('returns an empty map for undefined', () => {
@@ -161,5 +166,90 @@ describe('buildOverlayMap — degraded payloads', () => {
             startedAt: '2026-06-08T00:09:00Z',
             count: 1,
         });
+    });
+});
+
+/**
+ * #3472 — the SECOND overlay channel: what an agent node's latest run is doing.
+ *
+ * ── WHY THESE ASSERTIONS AND NOT A SHAPE TEST ──────────────────────────────
+ *
+ * The reducer above has a cautionary history (#3546): its input type was
+ * RESTATED rather than derived, it read a `running` field the endpoint has
+ * never returned, and its test passes by constructing that field itself — a
+ * double that cannot disagree with the API. `buildAgentRunMap`'s input type is
+ * derived from `listCanvasAgentRuns`'s return, so the same mistake is a
+ * compile error, and these cases cover the decisions the reducer actually
+ * makes rather than the shape it accepts.
+ */
+describe('buildAgentRunMap', () => {
+    const node = (over: Record<string, unknown> = {}) => ({
+        ruleId: 'r1',
+        runId: 'run-1',
+        workflowKey: 'audit-prep',
+        status: 'RUNNING',
+        stepCount: 4,
+        costTokens: 0,
+        startedAt: new Date('2026-10-14T00:00:00Z'),
+        lastStepSeq: 2,
+        lastStepKind: 'READ',
+        lastStepTool: 'get_framework_status',
+        ...over,
+    });
+
+    it('is empty for no response, rather than throwing', () => {
+        // The provider renders before the first poll resolves, and a canvas
+        // that is not in Run Mode never polls at all.
+        expect(buildAgentRunMap(undefined).size).toBe(0);
+    });
+
+    it('keys one state per rule', () => {
+        const m = buildAgentRunMap({ nodes: [node()] } as never);
+        expect(m.get('r1')?.runId).toBe('run-1');
+        expect(m.get('r1')?.lastStepSeq).toBe(2);
+    });
+
+    it('keeps the FIRST row for a rule, which the usecase orders newest-first', () => {
+        // The usecase already returns one row per rule, so this dedupe is for
+        // a future endpoint that returns a history: it must degrade to the
+        // LATEST run, not to the last element of the array.
+        const m = buildAgentRunMap({
+            nodes: [node({ runId: 'newer' }), node({ runId: 'older' })],
+        } as never);
+        expect(m.get('r1')?.runId).toBe('newer');
+    });
+
+    it('carries a run with no steps yet, with a null step position', () => {
+        // A just-started run has genuinely recorded none. A zero here would
+        // render as "step 1 of 0" and read as a stalled run.
+        const m = buildAgentRunMap({
+            nodes: [node({ lastStepSeq: null, lastStepKind: null, lastStepTool: null })],
+        } as never);
+        expect(m.get('r1')?.lastStepSeq).toBeNull();
+        expect(m.get('r1')?.status).toBe('RUNNING');
+    });
+});
+
+describe('awaitsAHuman', () => {
+    const state = (status: string) => ({
+        runId: 'r', workflowKey: 'w', status, stepCount: 1,
+        lastStepSeq: 0, lastStepKind: 'READ', lastStepTool: null,
+    });
+
+    it('is true only for AWAITING_APPROVAL', () => {
+        expect(awaitsAHuman(state('AWAITING_APPROVAL'))).toBe(true);
+    });
+
+    it('is FALSE for PAUSED — a deploy paused it and it resumes on its own', () => {
+        // Badging PAUSED would send an operator looking for an approval queue
+        // that is empty. This is the case the distinction exists for.
+        expect(awaitsAHuman(state('PAUSED'))).toBe(false);
+    });
+
+    it('is false for every other status, and for no run at all', () => {
+        for (const s of ['RUNNING', 'COMPLETED', 'FAILED', 'ABORTED']) {
+            expect(awaitsAHuman(state(s))).toBe(false);
+        }
+        expect(awaitsAHuman(undefined)).toBe(false);
     });
 });
