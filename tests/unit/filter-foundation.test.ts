@@ -177,7 +177,7 @@ describe('AnimatedSizeContainer — foundational animated container', () => {
         expect(src).toMatch(
             /import \{ useResizeObserver \} from ['"]@inflect\/ui\/components\/ui\/hooks\/use-resize-observer['"]/,
         );
-        expect(src).not.toMatch(/function useResizeObserver/);
+        expect(src).not.toMatch(/function useResizeObserver\b/);
     });
 
     it('is the container that filter-list consumes (no duplicate implementation)', () => {
