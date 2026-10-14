@@ -734,6 +734,11 @@ export interface GovernanceBannerInput {
      * `cap: null` is NO CAP and `cap: 0` means no agentic run may start. Two
      * different states, kept apart all the way to the input below, because
      * collapsing them would turn "stop" into "unlimited" on a form.
+     *
+     * `inFlight` is only COUNTED when a cap is set — the read short-circuits
+     * otherwise, so an uncapped tenant does not pay a query for a figure it
+     * has no denominator for. The panel's uncapped sentence therefore does not
+     * quote it.
      */
     concurrency: { cap: number | null; inFlight: number };
 }
@@ -819,9 +824,14 @@ export function ConcurrencyPanel({
                     // `uncapped`, NOT `noCap`: `empty-state-tone` classifies any
                     // `noX` key as an empty-state title and holds it to the
                     // locked "No X yet" voice — no period, no trailing clause.
-                    // This is a status sentence carrying a live count, not an
-                    // empty state, so the KEY was wrong rather than the copy.
-                    ? t('register.concurrency.uncapped', { inFlight })
+                    // This is a status sentence, not an empty state, so the KEY
+                    // was wrong rather than the copy.
+                    //
+                    // And it quotes NO COUNT. The server only counts when a cap
+                    // is set, so the figure here would be a false zero — the
+                    // same distinction `spentThisMonth` draws about its own
+                    // short circuit.
+                    ? t('register.concurrency.uncapped')
                     : t('register.concurrency.capped', { cap, inFlight })}
             </p>
             <div className="flex items-center gap-tight">

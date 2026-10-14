@@ -335,7 +335,7 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
 }> {
     assertCanReadAgentRegister(ctx);
     const now = new Date();
-    const [enforcing, unbound, cap, inFlight] = await Promise.all([
+    const [enforcing, unbound, cap] = await Promise.all([
         isAgentRegistrationEnforced(ctx.tenantId),
         runInTenantContext(ctx, async (db) => {
             const rows = await db.tenantApiKey.findMany({
@@ -362,14 +362,28 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
             // `where`, the same capability filter, the same bound.
             return rows.filter((r) => hasMcpCapability(r.scopes));
         }),
-        // Both best-effort, and for the reason the page gives about the panels
+        // Best-effort, and for the reason the page gives about the panels
         // beside this one: a reader who may see the register but not every
         // tenant setting still gets the register, and an absent figure is the
         // honest rendering of "this page cannot tell you" where a zeroed one
         // would not be.
         readConcurrencyCap(ctx).catch(() => null),
-        inFlightRunCount(ctx).catch(() => 0),
     ]);
+
+    // THE COUNT IS CONDITIONAL ON THE CAP, and it was not.
+    //
+    // `inFlightRunCount` ran unconditionally in the `Promise.all` above, which
+    // put a SECOND concurrent tenant-scoped transaction on every register page
+    // load — `runInTenantContext` wraps its callback in a Prisma
+    // `$transaction`, so the page held two pooled connections where it had held
+    // one. For the overwhelming majority of tenants it bought nothing: a tenant
+    // with no cap has no headroom to show, and the panel says "no cap" either
+    // way.
+    //
+    // This mirrors the short-circuit `evaluateConcurrencyForRun` already makes
+    // on the run-start path, and for the same reason: a NULL column is the
+    // answer for every tenant until somebody sets a cap.
+    const inFlight = cap === null ? 0 : await inFlightRunCount(ctx).catch(() => 0);
     return {
         enforcing,
         unboundCredentials: unbound.length,

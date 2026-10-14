@@ -8389,7 +8389,7 @@
       },
       "concurrency": {
         "heading": "Concurrent runs",
-        "uncapped": "No cap configured. {inFlight} run(s) in flight.",
+        "uncapped": "No cap configured — any number of agentic runs may execute at once.",
         "capped": "Cap {cap}, with {inFlight} in flight.",
         "inputLabel": "Concurrent run cap",
         "placeholder": "No cap",

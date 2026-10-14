@@ -743,7 +743,15 @@ groups:
                that matched them is deliberately not recorded anywhere.
             2. Three blocks in a window latch an agent's circuit breaker
                (GUARD_BLOCK_TRIP_THRESHOLD), so a sustained rise here is usually
-               followed by AgenticCircuitBreakerTripped.
+               followed by a breaker trip in the security-controls group.
+
+               The trip alert is deliberately NOT named here. `epic19-coherence`
+               asserts every known alert name appears in this file, reading it
+               whole — so a name in prose is a second position that satisfies a
+               needle meant for the rule itself, and deleting the rule would
+               leave the assertion green. The repo's own
+               `assertion-needle-uniqueness-ratchet` caught exactly that on this
+               paragraph.
 
       # Warning: runs are accumulating in flight.
       #

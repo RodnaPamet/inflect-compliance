@@ -860,8 +860,16 @@ async function executeFrom(
     // WHICH ENGINE, resolved here rather than inside the walk. The definition's
     // request is intersected with what the deployment permits, and any
     // disagreement resolves to static — see `selectRunDriver`.
-    const { run } = selectRunDriver(def, permittedDriver);
-    const driverLabel = selectRunDriver(def, permittedDriver).driver === 'flue' ? 'FLUE' : 'STATIC';
+    // ONE call, both facts. It was two — one for `run` and one for the label —
+    // which this file's own comment at the resolution site argues against:
+    // `selectRunDriver` is pure, so asking twice cannot disagree, but a reader
+    // has to prove that to themselves and the second call is free to drift
+    // onto a different argument. It also made
+    // `assertion-needle-uniqueness-ratchet` red, correctly: a second
+    // occurrence turns any whole-file `toMatch(/selectRunDriver/)` into a
+    // needle that two positions satisfy.
+    const { run, driver } = selectRunDriver(def, permittedDriver);
+    const driverLabel = driver === 'flue' ? 'FLUE' : 'STATIC';
 
     // THE ONE SEAM BOTH ENGINES PASS THROUGH (#3484). The static driver and
     // Flue each settle their own runs — four `status: 'COMPLETED'` sites

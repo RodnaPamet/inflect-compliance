@@ -47,13 +47,25 @@ function mockFetch(ok = true, body: unknown = { cap: 3 }) {
 }
 
 describe('the concurrent-run cap panel', () => {
-    it('shows NO CAP and the live count when none is configured', () => {
+    it('shows NO CAP, and quotes NO COUNT, when none is configured', () => {
+        // The server only COUNTS when a cap is set — the read short-circuits
+        // otherwise, the same way `evaluateConcurrencyForRun` does on the
+        // run-start path. So a figure here would be a false zero, and the
+        // sentence deliberately omits it. Asserted by passing a count the
+        // panel must NOT show.
         renderPanel(null, 2);
         expect(screen.getByTestId('agents-concurrency-state')).toHaveTextContent(/no cap/i);
-        expect(screen.getByTestId('agents-concurrency-state')).toHaveTextContent('2');
+        expect(screen.getByTestId('agents-concurrency-state')).not.toHaveTextContent('2');
         // The input is EMPTY, not '0'. Initialising it to zero would offer an
         // operator a form that reads "stop every run" for a tenant with no cap.
         expect(screen.getByTestId('agents-concurrency-input')).toHaveValue(null);
+    });
+
+    it('DOES quote the count once a cap exists — that is where it has a denominator', () => {
+        renderPanel(4, 2);
+        const state = screen.getByTestId('agents-concurrency-state');
+        expect(state).toHaveTextContent('4');
+        expect(state).toHaveTextContent('2');
     });
 
     it('shows a cap of ZERO as zero, not as "no cap"', () => {
