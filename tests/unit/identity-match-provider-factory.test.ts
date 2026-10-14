@@ -38,7 +38,6 @@ import {
     NoDecisionProviderError,
     type MatchState,
 } from '@/app-layer/ai/identity-match';
-import { LAYA_CHOOSER_TIMEOUT_MS } from '@/app-layer/ai/intent/laya-chooser';
 
 const emptyState: MatchState = {
     account: {
@@ -261,22 +260,24 @@ describe('6b factory — the Jev host is a code constant', () => {
         expect(JEV_TIMEOUT_MS).toBe(3_000);
     });
 
-    it('keeps the intent chooser on its own tight budget, so the raise cannot leak', () => {
-        // The split of 2026-10-12. One constant served adjudication (p50 7.3 s)
-        // and the intent chooser (p50 206 ms for three options, #3394). Raising
-        // the shared value would have taken the USER-FACING compose route's
-        // ceiling from 6 s to 36 s, so the constant was split instead. This
-        // test is what notices them being merged back.
-        expect(LAYA_CHOOSER_TIMEOUT_MS).toBe(2_000);
-        // The `< LAYA_TIMEOUT_MS` half went with the adjudication constant on
-        // 2026-10-14. The two cannot be merged back now — there is nothing to
-        // merge this into — so what is left is the bound that stands on its own
-        // measurement, which was always the stronger half.
-        //
-        // It must stay inside the measured 20-option worst case (719 ms) with
-        // margin — the reason 2 s was right for this path all along.
-        expect(LAYA_CHOOSER_TIMEOUT_MS).toBeGreaterThan(719 * 2);
-    });
+    /*
+     * REMOVED 2026-10-14: `keeps the intent chooser on its own tight budget, so
+     * the raise cannot leak`.
+     *
+     * Its subject was `LAYA_CHOOSER_TIMEOUT_MS`, which lived in
+     * `ai/intent/laya-chooser.ts`. The whole intent layer was retired on the
+     * owner's decision (#3528) — it had never run in production, because
+     * `AI_LOCAL_BASE_URL` was never set and every call refused
+     * `LOCAL_GATEWAY_NOT_CONFIGURED` — so there is no constant left to bound.
+     *
+     * WHAT IT PROVED, kept because the shape recurs: one constant served two
+     * paths with latencies two orders of magnitude apart — adjudication at p50
+     * 7.3 s and the intent chooser at p50 206 ms for three options. Raising the
+     * shared value for the slow path would have taken the USER-FACING compose
+     * route's ceiling from 6 s to 36 s. The fix was to SPLIT the constant, and
+     * this test existed to notice them being merged back. If a future surface
+     * ever shares a timeout with a slower sibling, split it first.
+     */
 });
 
 /*

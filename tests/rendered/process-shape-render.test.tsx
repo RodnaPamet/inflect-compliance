@@ -302,3 +302,128 @@ describe('ruleIdFromDataJson', () => {
         );
     });
 });
+
+/**
+ * #3472 — an AGENT node shows what its latest agentic run is doing.
+ *
+ * ── THE MOCK HAS TO DISTINGUISH TWO SUBSCRIPTIONS ───────────────────────────
+ *
+ * `CanvasOverlayProvider` now opens two: the rule-execution poll and the
+ * agent-run poll. The block above mocks `useTenantSWR` with
+ * `mockReturnValue`, which answers BOTH with the same payload — harmless
+ * there, because an execution response has no `nodes` and the agent-run
+ * reducer reads nothing from it. It would not be harmless here: a test that
+ * fed its agent-run payload to both subscriptions could pass while the
+ * provider wired the wrong one to the wrong context.
+ *
+ * So this block keys the mock on the URL, which is also the only way to assert
+ * that the two channels stay separate.
+ *
+ * ── AND THE EMPTY-MAP CAVEAT STILL APPLIES ──────────────────────────────────
+ *
+ * Without a populated provider the agent-run context holds an empty map, the
+ * hook returns undefined, and the node renders byte-identically to a node with
+ * no run. Every positive case below mounts the provider with real rows.
+ */
+describe('an agent node shows its latest run', () => {
+    const AGENT_RULE = 'rule-agent-7';
+    const LIVE_URL = '/automation/executions/live';
+    const RUNS_URL = '/automation/executions/agent-runs';
+
+    const runNode = (over: Record<string, unknown> = {}) => ({
+        ruleId: AGENT_RULE,
+        runId: 'run-9',
+        workflowKey: 'audit-prep',
+        status: 'RUNNING',
+        stepCount: 7,
+        costTokens: 0,
+        startedAt: '2026-10-14T00:00:00Z',
+        lastStepSeq: 2,
+        lastStepKind: 'READ',
+        lastStepTool: 'get_framework_status',
+        ...over,
+    });
+
+    const mockBoth = (nodes: unknown[]) => {
+        useTenantSWR.mockImplementation((key: string | null) => {
+            if (key === RUNS_URL) return { data: { nodes } };
+            if (key === LIVE_URL) return { data: { stuck: [], recent: [] } };
+            return { data: undefined };
+        });
+    };
+
+    const renderAgent = (dataJson: unknown) =>
+        render(
+            <CanvasOverlayProvider enabled>
+                {util.component(shapeOf('agent' as Kind, { dataJson }))}
+            </CanvasOverlayProvider>,
+        );
+    const node = () => screen.getByTestId('process-node-agent-1');
+
+    it('names the status and the step position', () => {
+        mockBoth([runNode()]);
+        renderAgent({ ruleId: AGENT_RULE });
+        expect(node()).toHaveAttribute('data-run-status', 'RUNNING');
+        // 1-BASED on screen, 0-based in the ledger — matching the run detail
+        // page's own timeline, so the two surfaces name the same step the same
+        // way.
+        expect(node()).toHaveTextContent('3/7');
+        expect(node()).toHaveTextContent('get_framework_status');
+    });
+
+    it('badges a run AWAITING a human, and PAUSED is not that', () => {
+        // A deploy paused it and it resumes on its own; badging it would send
+        // an operator looking for an approval queue that is empty.
+        mockBoth([runNode({ status: 'AWAITING_APPROVAL' })]);
+        renderAgent({ ruleId: AGENT_RULE });
+        expect(node()).toHaveAttribute('data-run-awaiting-human', 'true');
+
+        cleanup();
+        mockBoth([runNode({ status: 'PAUSED' })]);
+        renderAgent({ ruleId: AGENT_RULE });
+        expect(node()).not.toHaveAttribute('data-run-awaiting-human');
+        expect(node()).toHaveAttribute('data-run-status', 'PAUSED');
+    });
+
+    it('shows the status alone for a run with no steps yet', () => {
+        // A just-started run has genuinely recorded none, and "1/0" would read
+        // as a stalled run.
+        mockBoth([runNode({ lastStepSeq: null, lastStepKind: null, lastStepTool: null })]);
+        renderAgent({ ruleId: AGENT_RULE });
+        expect(node()).toHaveAttribute('data-run-status', 'RUNNING');
+        expect(node()).not.toHaveTextContent('/7');
+    });
+
+    it('shows NOTHING on a node whose rule started no run', () => {
+        mockBoth([runNode()]);
+        renderAgent({ ruleId: 'rule-nobody-ran' });
+        expect(node()).not.toHaveAttribute('data-run-status');
+        expect(screen.queryByTestId('process-node-run-agent-1')).toBeNull();
+    });
+
+    it('never surfaces a step’s input or output', () => {
+        // Those two columns are encrypted at rest because of what they hold,
+        // and a canvas chassis is the last place tenant content should appear.
+        // The payload cannot carry them — asserted on the RENDERED node so a
+        // future widening of the endpoint has to trip this.
+        mockBoth([runNode()]);
+        renderAgent({ ruleId: AGENT_RULE });
+        expect(node().textContent ?? '').not.toMatch(/inputJson|outputJson|\{"/);
+    });
+
+    it('keeps the two channels separate — an execution payload paints no run', () => {
+        // The mistake the keyed mock exists to catch: wiring the execution
+        // response into the agent-run context would paint a run from a payload
+        // that describes a rule firing.
+        useTenantSWR.mockImplementation((key: string | null) =>
+            key === LIVE_URL
+                ? { data: { stuck: [], recent: [{ ruleId: AGENT_RULE, status: 'RUNNING', createdAt: '2026-10-14T00:00:00Z' }] } }
+                : { data: { nodes: [] } },
+        );
+        renderAgent({ ruleId: AGENT_RULE });
+        // The execution channel paints the chassis…
+        expect(node()).toHaveAttribute('data-overlay-status', 'RUNNING');
+        // …and the run channel says nothing, because there is no run.
+        expect(node()).not.toHaveAttribute('data-run-status');
+    });
+});
