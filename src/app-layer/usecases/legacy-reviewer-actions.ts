@@ -72,6 +72,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { SCORER_WEIGHTS } from '@/lib/identity/reconcile/scorers';
 import { isBlindHeld } from '@/lib/legacy-access/blind-sample';
+import { recordLegacyReviewDecision } from '@/lib/observability/integration-metrics';
 import {
     eligibleForBulkRatification,
     type VerdictClass,
@@ -438,6 +439,42 @@ async function resolveWrite(
  * it. A reviewer who reclassifies gets their row updated and a second audit
  * row, which is the history somebody will want when the two decisions disagree.
  */
+/**
+ * Did the reviewer follow the engine?
+ *
+ * The override rate's one judgement, kept in a pure function so it can be tested
+ * without a database (#3498).
+ *
+ * THE TWO "NO LEADER" CASES ARE NOT DISAGREEMENT. A tie at the top means the
+ * engine declined to lead — its own rule turns a tie into `AMBIGUOUS` rather than
+ * a pick — so a reviewer choosing either candidate has overridden nothing. Folding
+ * those into `other_candidate` would report an override every time the engine was
+ * honest about not knowing, which is the direction that would make this metric
+ * argue for removing the engine.
+ */
+export function classifyReviewAgreement(
+    candidates: readonly { readonly employeeId: string; readonly score: number }[],
+    chosenEmployeeId: string | null
+):
+    | 'engine_leader'
+    | 'other_candidate'
+    | 'unscored_employee'
+    | 'no_employee'
+    | 'engine_ambiguous'
+    | 'engine_none' {
+    if (chosenEmployeeId === null) return 'no_employee';
+    if (candidates.length === 0) return 'engine_none';
+
+    const top = Math.max(...candidates.map((c) => c.score));
+    const leaders = candidates.filter((c) => c.score === top);
+    // More than one at the top: no leader to agree with.
+    if (leaders.length > 1) return 'engine_ambiguous';
+    if (leaders[0].employeeId === chosenEmployeeId) return 'engine_leader';
+    return candidates.some((c) => c.employeeId === chosenEmployeeId)
+        ? 'other_candidate'
+        : 'unscored_employee';
+}
+
 export async function decideLegacyAccount(
     ctx: RequestContext,
     input: DecideInput
@@ -466,6 +503,15 @@ export async function decideLegacyAccount(
                 },
             })
         );
+        // COUNTED, with its own label. A deferral expresses no opinion, so it is
+        // neither agreement nor override — but leaving it out would hide it from
+        // the denominator entirely, and "how often does a reviewer decline to
+        // decide" is the second thing anyone reading this metric asks.
+        recordLegacyReviewDecision({
+            agreement: 'deferred',
+            classification: 'NONE',
+            method: 'NONE',
+        });
         return {
             accountKey: input.accountKey,
             outcome: 'DEFERRED',
@@ -550,6 +596,16 @@ export async function decideLegacyAccount(
                 signals: seen.signalsJson,
                 resolutionOutcome: seen.outcome,
             },
+        });
+
+        // THE OVERRIDE RATE (#3498), emitted after the row and the audit entry
+        // rather than before: a metric for a decision that then failed to write
+        // would overstate the denominator, and the audit row is the record this
+        // counter summarises.
+        recordLegacyReviewDecision({
+            agreement: classifyReviewAgreement(seen.candidates, write.employeeId),
+            classification: write.classification,
+            method: write.method,
         });
 
         return {

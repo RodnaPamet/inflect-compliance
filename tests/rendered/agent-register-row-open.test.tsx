@@ -120,6 +120,7 @@ function renderRegister() {
                     enforcing: true,
                     unboundCredentials: 0,
                     unboundCredentialSamples: [],
+            concurrency: { cap: null, inFlight: 0 }
                 }}
                 assurance={null}
                 proposalsAwaitingReview={null}

@@ -159,6 +159,63 @@ describe('6b wire — the request we send', () => {
 // ─── The response: the valid case, and one test per rejection ──────────────
 
 describe('6b wire — the response parser', () => {
+    /**
+     * The vendor's truncation report SURVIVES parsing (#3488).
+     *
+     * This is the half that decides whether the fix works in production. The
+     * PROVIDERS call `parseSystemOneResponse`; the adjudication pass receives an
+     * already-parsed response. So a pass-level test proves only that the pass
+     * reads the fields — with a schema that stripped them, the pass would read
+     * `undefined` from every real call and the tests would still pass.
+     *
+     * `.passthrough()` is not enough on its own either: it carries unknown keys
+     * through untyped, so `parsed.usage.truncated` would not compile and nothing
+     * would validate the shape. Declared optional-and-typed instead.
+     */
+    it('preserves the truncation signals, which the pass reads', () => {
+        const raw = validResponse() as unknown as { usage: Record<string, unknown> };
+        raw.usage = {
+            ...raw.usage,
+            state_tokens: 430,
+            state_tokens_dropped: 12,
+            truncated: true,
+            truncated_questions: ['person'],
+        };
+        const parsed = parseSystemOneResponse(raw);
+        expect({
+            truncated: parsed.usage.truncated,
+            dropped: parsed.usage.state_tokens_dropped,
+            questions: parsed.usage.truncated_questions,
+            stateTokens: parsed.usage.state_tokens,
+        }).toEqual({
+            truncated: true,
+            dropped: 12,
+            questions: ['person'],
+            stateTokens: 430,
+        });
+    });
+
+    it('accepts a response that reports none of them — they are optional', () => {
+        // A conforming server need not report truncation. Requiring the block
+        // would refuse an otherwise complete response, and absence means "this
+        // server does not say", not "nothing was truncated".
+        const parsed = parseSystemOneResponse(validResponse());
+        expect(parsed.usage.truncated).toBeUndefined();
+        expect(parsed.usage.state_tokens_dropped).toBeUndefined();
+        // And the two REQUIRED fields are still required, so an unmetered
+        // response is still refused.
+        expect(parsed.usage.input_tokens).toBe(412);
+    });
+
+    it('refuses a truncation signal of the wrong TYPE rather than ignoring it', () => {
+        // `truncated: 'yes'` from a sloppy server must not read as falsy and
+        // silently clear the refusal — the one failure direction that would make
+        // this fix worse than no fix.
+        const raw = validResponse() as unknown as { usage: Record<string, unknown> };
+        raw.usage = { ...raw.usage, truncated: 'yes' };
+        expect(() => parseSystemOneResponse(raw)).toThrow();
+    });
+
     it('accepts the documented shape', () => {
         const parsed = parseSystemOneResponse(validResponse());
         // `match` is optional on the type since the orphan shape landed, and

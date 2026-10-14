@@ -299,6 +299,89 @@ describe('an option outside the labels offered for this account', () => {
     });
 });
 
+/**
+ * The vendor's own truncation report (#3488).
+ *
+ * The schema parsed `truncated`, `state_tokens_dropped`, `truncated_questions`
+ * and `state_tokens` and threw them away under a comment calling them
+ * "accounting we do not read", while the check downstream described itself as
+ * reading "the vendor's own accounting" and in fact compared `input_tokens` to a
+ * constant of ours. The server's answer was on the wire and nothing looked at it.
+ *
+ * Every case below keeps `input_tokens` WELL BELOW the window, so the proxy
+ * cannot fire and only the vendor's report is under test. Without that, each
+ * would pass for the wrong reason.
+ */
+describe('truncation the vendor reports, with input_tokens below the window', () => {
+    /** Answers the canary correctly, so only the tenant payload is in question. */
+    function cleanCanary(reply: SystemOneResponse): Spy {
+        return spyProvider((tag) => (tag === 'canary' ? answer() : reply));
+    }
+
+    /** `answer()` with extra `usage` keys the schema now validates. */
+    function withUsage(extra: Record<string, unknown>): SystemOneResponse {
+        const a = answer({ inputTokens: 100 }) as unknown as {
+            usage: Record<string, unknown>;
+        };
+        a.usage = { ...a.usage, ...extra };
+        return a as unknown as SystemOneResponse;
+    }
+
+    it('truncated: true is OVER_BUDGET', async () => {
+        const spy = cleanCanary(withUsage({ truncated: true }));
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+        expect(result.outcomes[0].reason).toBe('OVER_BUDGET');
+        expect(result.outcomes[0].verdict).toBeNull();
+    });
+
+    it('state_tokens_dropped above zero is OVER_BUDGET', async () => {
+        const spy = cleanCanary(withUsage({ state_tokens_dropped: 7 }));
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+        expect(result.outcomes[0].reason).toBe('OVER_BUDGET');
+    });
+
+    it('a non-empty truncated_questions is OVER_BUDGET', async () => {
+        // The question list is the one signal that names WHAT was lost, and a
+        // dropped question means an answer about something we did not ask.
+        const spy = cleanCanary(withUsage({ truncated_questions: ['person'] }));
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+        expect(result.outcomes[0].reason).toBe('OVER_BUDGET');
+    });
+
+    it('truncated: false with zero dropped is ACCEPTED — the control', async () => {
+        // Without this, a check that refused every response carrying a `usage`
+        // key at all would satisfy the three assertions above.
+        const spy = cleanCanary(
+            withUsage({
+                truncated: false,
+                state_tokens_dropped: 0,
+                truncated_questions: [],
+                state_tokens: 430,
+            }),
+        );
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+        expect(result.outcomes[0].reason).toBeNull();
+        expect(result.outcomes[0].verdict).not.toBeNull();
+    });
+
+    it('a server that reports NONE of them is accepted, not refused', async () => {
+        // Absence means "this server does not report truncation", which is not
+        // "something was truncated". Refusing here would reject every conforming
+        // server that omits the optional block.
+        const spy = cleanCanary(answer({ inputTokens: 100 }));
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+        expect(result.outcomes[0].reason).toBeNull();
+    });
+
+    it('the PROXY still fires on its own, with no vendor report at all', async () => {
+        // The other half of the OR, kept because a vendor that under-reports is
+        // what the proxy is for.
+        const spy = cleanCanary(answer({ inputTokens: 100_000 }));
+        const result = await pass({ subjects: [ready('r1')], provider: spy.provider });
+        expect(result.outcomes[0].reason).toBe('OVER_BUDGET');
+    });
+});
+
 // --- One outcome per subject ---------------------------------------------
 
 describe('one outcome per subject, in input order', () => {

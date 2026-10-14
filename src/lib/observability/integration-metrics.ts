@@ -584,6 +584,77 @@ export function recordLegacyAliasSuspensions(attrs: {
     }
 }
 
+let _legacyReviewDecision: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+
+/**
+ * THE REVIEWER OVERRIDE RATE — one increment per decision (#3498).
+ *
+ * `docs/legacy-access-recertification-design.md` calls this "the production
+ * outcome metric" for assisted reconciliation, and until 2026-10-14 it did not
+ * exist: `legacy-reviewer-actions.ts` emitted no metric at all. Every other
+ * legacy counter measures whether the machinery RAN — outcomes, refusals,
+ * latency, suspensions — and none measured whether its output was of any use.
+ *
+ * It is the only signal that says whether the ASSISTED half earns its place. A
+ * suggestion engine whose suggestions are overridden most of the time costs
+ * reviewers time while looking busy, and nothing in the product would show it.
+ *
+ * A COUNTER PAIR, NOT A PRE-DIVIDED RATE. The rate is
+ * `(other_candidate + unscored_employee) / (those + engine_leader)`, computed by
+ * whoever reads it — so the DENOMINATOR stays visible. A stored ratio of 0.5
+ * cannot tell two decisions from two thousand, and this subsystem's own lesson
+ * is that a figure which hides its denominator is the one that misleads.
+ *
+ * `agreement` is a closed set, and the two "no leader to agree with" cases are
+ * separate from disagreement on purpose — a tie at the top means the engine
+ * declined to lead, so a reviewer picking either candidate has overridden
+ * nothing:
+ *
+ *   engine_leader      chose the engine's single top-scoring candidate
+ *   other_candidate    chose a different candidate the engine DID score
+ *   unscored_employee  chose somebody the engine never scored (a MANUAL match)
+ *   no_employee        classified as NON_PERSON, EXTERNAL or ORPHAN
+ *   engine_ambiguous   the engine tied at the top, so it named no leader
+ *   engine_none        the engine scored nobody at all
+ *   deferred           the reviewer expressed no opinion
+ *
+ * NO `provider` LABEL, deliberately. This surface has one provider family today
+ * (`legacy-mcp`), so the label would be a constant — and deriving it would mean a
+ * read whose only purpose is the label. Adding it is a one-line change at the
+ * call site if a second legacy provider ever arrives.
+ *
+ * THE MODEL IS NOT COMPARED HERE, and that is also deliberate. A verdict may be
+ * BLIND-HELD, and the blind lane exists precisely so that a reviewer's decision
+ * is taken without sight of the model's. Emitting model agreement per decision
+ * would put that comparison into a metric the reviewer's own dashboards can read,
+ * which is the one place it must not appear. `AiDecisionLog` plus `verdictId`
+ * already hold what a later, deliberate comparison needs.
+ */
+export function recordLegacyReviewDecision(attrs: {
+    agreement:
+        | 'engine_leader'
+        | 'other_candidate'
+        | 'unscored_employee'
+        | 'no_employee'
+        | 'engine_ambiguous'
+        | 'engine_none'
+        | 'deferred';
+    classification: string;
+    method: string;
+}): void {
+    if (!_legacyReviewDecision)
+        _legacyReviewDecision = getMeter().createCounter('legacy.review.decision', {
+            description:
+                'Legacy reconciliation decisions by whether the reviewer followed the engine',
+            unit: '1',
+        });
+    _legacyReviewDecision.add(1, {
+        agreement: attrs.agreement,
+        classification: attrs.classification,
+        method: attrs.method,
+    });
+}
+
 /**
  * A reconciliation run that refused before resolving anything.
  *

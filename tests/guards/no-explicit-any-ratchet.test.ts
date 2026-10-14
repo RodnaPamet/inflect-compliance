@@ -38,7 +38,26 @@ const PATTERNS: Pattern[] = [
     { label: ': any', regex: /:\s*any\b/g },
     { label: '<any>', regex: /<any>/g },
     { label: 'useState<any>', regex: /useState<any>/g },
-    { label: 'as any', regex: /as\s+any\b/g },
+    // THE LEADING `\b` IS LOAD-BEARING, and its absence here was a real bug.
+    // Without it the pattern matches the tail of an ordinary English word:
+    // "whether its output w-as any- good" tripped this cap-0 pattern on
+    // 2026-10-14 from inside a docblock, and the paydown history below already
+    // contains an entry reading "comment reword" — so somebody had been here
+    // before and treated the sentence as the problem rather than the regex.
+    //
+    // "has any", "was any", "class anywhere", "overseas anybody" all end in `as`
+    // followed by `any`. A cast never does: `x as any` carries a space, an
+    // operator or a line start before the `as`, never a word character.
+    //
+    // THE SIBLING GUARDRAIL ALREADY HAD IT. `tests/guardrails/no-explicit-any-ratchet.test.ts`
+    // spells the same subject `/\bas\s+any\b/`, so the two detectors for one
+    // rule disagreed and only the weaker one could fire on prose. Spelled the
+    // same way here rather than with a lookbehind, so the pair now matches.
+    //
+    // This can only LOWER a count, never raise one, so no cap moves with it. The
+    // other three patterns need no equivalent — `:` and `<` are not word
+    // characters, so they are their own left boundary, which the proofs assert.
+    { label: 'as any', regex: /\bas\s+any\b/g },
     { label: '// @ts-ignore', regex: /\/\/\s*@ts-ignore/g },
 ];
 
@@ -497,5 +516,59 @@ describe('`any` usage ratchet', () => {
             );
         }
         expect(total).toBeLessThanOrEqual(capTotal);
+    });
+});
+
+/**
+ * The patterns match casts, not sentences.
+ *
+ * A cap of 0 makes a false positive expensive: it turns a prose edit into a red
+ * build, and the cheapest way out is to reword the sentence — which is how this
+ * ratchet's own history came to contain "comment reword" as a line item. The
+ * cost lands on whoever writes the next comment, so the detector is asserted
+ * here rather than trusted.
+ *
+ * This file deliberately does NOT strip comments, and that stays: a mention in a
+ * docblock is a thing the team chose to count, and the caps were set with those
+ * mentions included. What it must not do is count a word that merely ENDS in
+ * `as`.
+ */
+describe('the any-patterns match casts rather than English', () => {
+    const count = (label: string, text: string): number => {
+        const p = PATTERNS.find((x) => x.label === label);
+        if (!p) throw new Error(`no pattern labelled ${label}`);
+        return (text.match(new RegExp(p.regex.source, 'g')) ?? []).length;
+    };
+
+    it.each([
+        ['whether its output was any good', 'was'],
+        ['before it has any candidates', 'has'],
+        ['the class anyone can see', 'class'],
+        ['sent overseas anyway', 'overseas'],
+    ])('does not count %s — the word ends in "as"', (text) => {
+        expect(count('as any', text)).toBe(0);
+    });
+
+    it.each([
+        ['const x = y as any;', 'a plain cast'],
+        ['return (z as any).field;', 'a parenthesised cast'],
+        ['foo(bar as any)', 'a cast in an argument'],
+        ['as any', 'the bare pattern at a line start'],
+    ])('still counts %s — %s', (text) => {
+        expect(count('as any', text)).toBe(1);
+    });
+
+    it('counts a cast whose spacing is unusual', () => {
+        // `as` and `any` separated by a newline, which the `\s+` covers.
+        expect(count('as any', 'const x = y as\n    any;')).toBe(1);
+    });
+
+    it('the other three patterns are their own left boundary', () => {
+        // `:` and `<` are not word characters, so no equivalent fix is needed —
+        // asserted rather than assumed, since adding one would be the obvious
+        // next edit.
+        expect(count(': any', 'a ratio: anybody')).toBe(0);
+        expect(count(': any', 'const x: any = 1')).toBe(1);
+        expect(count('<any>', 'Array<any>')).toBe(1);
     });
 });

@@ -52,6 +52,10 @@ import {
 } from '../repositories/RegisteredAgentRepository';
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
+import {
+    readConcurrencyCap,
+    inFlightRunCount,
+} from '@/lib/agentic/run-concurrency-policy';
 import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
 import { resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
@@ -316,10 +320,22 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
     enforcing: boolean;
     unboundCredentials: number;
     unboundCredentialSamples: UnboundCredentialSample[];
+    /**
+     * #3484 — the concurrent-run cap and how much of it is in use.
+     *
+     * Carried on THIS read rather than fetched separately by the panel: the
+     * page already awaits this usecase, and a second client round trip for two
+     * integers would make the control arrive after the page it sits in.
+     *
+     * `inFlight` is the REAL count, not the verdict's. `evaluateConcurrencyForRun`
+     * short-circuits before counting when no cap is set — correct on the
+     * run-start hot path, and a false zero as a reported figure.
+     */
+    concurrency: { cap: number | null; inFlight: number };
 }> {
     assertCanReadAgentRegister(ctx);
     const now = new Date();
-    const [enforcing, unbound] = await Promise.all([
+    const [enforcing, unbound, cap, inFlight] = await Promise.all([
         isAgentRegistrationEnforced(ctx.tenantId),
         runInTenantContext(ctx, async (db) => {
             const rows = await db.tenantApiKey.findMany({
@@ -346,6 +362,13 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
             // `where`, the same capability filter, the same bound.
             return rows.filter((r) => hasMcpCapability(r.scopes));
         }),
+        // Both best-effort, and for the reason the page gives about the panels
+        // beside this one: a reader who may see the register but not every
+        // tenant setting still gets the register, and an absent figure is the
+        // honest rendering of "this page cannot tell you" where a zeroed one
+        // would not be.
+        readConcurrencyCap(ctx).catch(() => null),
+        inFlightRunCount(ctx).catch(() => 0),
     ]);
     return {
         enforcing,
@@ -353,6 +376,7 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
         unboundCredentialSamples: unbound
             .slice(0, UNBOUND_CREDENTIAL_SAMPLE_LIMIT)
             .map((r) => ({ id: r.id, name: r.name, keyPrefix: r.keyPrefix })),
+        concurrency: { cap, inFlight },
     };
 }
 

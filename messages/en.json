@@ -8386,6 +8386,17 @@
         "sampleNone": "No approved proposal has been sample-audited yet, so nothing is re-checking what reviewers approve.",
         "sampleRate": "A second reviewer disagreed with {dissented} of {answered} sampled approvals ({percent}%) in the last 90 days.",
         "checkNeverRun": "never run"
+      },
+      "concurrency": {
+        "heading": "Concurrent runs",
+        "uncapped": "No cap configured. {inFlight} run(s) in flight.",
+        "capped": "Cap {cap}, with {inFlight} in flight.",
+        "inputLabel": "Concurrent run cap",
+        "placeholder": "No cap",
+        "save": "Save cap",
+        "hint": "Leave empty for no cap; 0 stops new agentic runs without engaging a kill switch. Separate from the monthly token budget, which bounds spend rather than simultaneity.",
+        "invalid": "Enter a whole number of 0 or more, or leave it empty for no cap.",
+        "saveFailed": "Could not save the cap. Try again."
       }
     },
     "views": {

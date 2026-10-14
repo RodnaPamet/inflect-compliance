@@ -44,6 +44,20 @@ const read = (rel: string) => codeOf(readFileSync(path.join(ROOT, rel), 'utf8'))
 
 const EXECUTE = 'src/lib/agentic/flue/execute.ts';
 const PAGE = 'src/app/t/[tenantSlug]/(app)/agents/runs/[runId]/page.tsx';
+/**
+ * THE DERIVATION MOVED (#3472), AND THE CLAIM DID NOT.
+ *
+ * The three assertions below used to read `PAGE`, because that is where the
+ * projection lived. Plan point 08 gave the same projection to a bounded feed
+ * route and an SSE tail, so it moved to a usecase they all call — and a
+ * rotted citation proves the CITATION moved, not that the claim stopped
+ * holding. The claims are unchanged and now range over the one definition.
+ *
+ * `PAGE` is still read, for a new assertion: that it DELEGATES. A second
+ * inline copy there would satisfy every assertion in this file while the
+ * route and the tail quietly derived something else.
+ */
+const FEED = 'src/lib/agentic/run-step-projection.ts';
 
 describe('the two sides compute the same key', () => {
     it('a digest is a sha256 of the sanitised input, and is stable', () => {
@@ -96,9 +110,19 @@ describe('the two sides compute the same key', () => {
 
 describe('the surface offers the link only where there is a row', () => {
     const page = read(PAGE);
+    const feed = read(FEED);
 
     it('derives the digest server-side, from the step it belongs to', () => {
-        expect(page).toContain('decisionDigest: decisionDigestOf(s.inputJson)');
+        expect(feed).toContain('decisionDigest: decisionDigestOf(s.inputJson)');
+    });
+
+    it('and the PAGE delegates rather than keeping a second copy', () => {
+        // The projection is shared by the page, the bounded feed route and the
+        // live tail. A copy inlined back onto the page would satisfy every
+        // other assertion here — they would all still find a correct
+        // derivation in the usecase — while the page rendered a different one.
+        expect(page).toContain('projectRunSteps(');
+        expect(page).not.toContain('decisionDigestOf(');
     });
 
     it('with a GUARDED parse — a malformed blob costs the link, not the page', () => {
@@ -106,7 +130,7 @@ describe('the surface offers the link only where there is a row', () => {
         // so a bad blob breaks one collapsed panel rather than the route. A
         // naked `JSON.parse` here would undo that decision for the sake of one
         // anchor.
-        const helper = functionBodyOf(page, 'decisionDigestOf');
+        const helper = functionBodyOf(feed, 'decisionDigestOf');
         expect(helper).toContain('try {');
         expect(helper).toContain('catch');
         expect(helper).toContain('return null');
@@ -116,7 +140,7 @@ describe('the surface offers the link only where there is a row', () => {
         // It is interpolated into a URL. `sha256:<64 hex>` is the only thing
         // the decisions page can act on, and anything else should produce no
         // link rather than a link to nothing.
-        expect(functionBodyOf(page, 'decisionDigestOf')).toContain('/^sha256:[0-9a-f]{64}$/');
+        expect(functionBodyOf(feed, 'decisionDigestOf')).toContain('/^sha256:[0-9a-f]{64}$/');
     });
 
     it('a TOOL call records no digest, so it offers no link', () => {
