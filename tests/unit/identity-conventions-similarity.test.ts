@@ -20,6 +20,9 @@
 
 import {
     reconcile,
+    strengthOf,
+    SUPPORTING_SIGNAL_KINDS,
+    STRONG_SIGNAL_KINDS,
     type CanonicalAccount,
     type RosterEmployee,
 } from '@/lib/identity/reconcile/engine';
@@ -37,6 +40,7 @@ import { jaro, jaroWinkler, tokenSetRatio, scoreNames } from '@/lib/identity/rec
 import {
     makeConventionScorer,
     makeSimilarityScorer,
+    makeDepartmentScorer,
     step4aExtensions,
     SCORER_WEIGHTS,
 } from '@/lib/identity/reconcile/scorers';
@@ -550,5 +554,146 @@ describe('4a — the precision ratchet holds with both scorers wired in', () => 
         expect(correct).toHaveLength(expectedLinks.length);
         // 4a must actually MOVE cases, or it has added two signals and no value.
         expect(suggestedNow).toBeGreaterThan(3);
+    });
+});
+
+/**
+ * The department scorer: a second opinion, and nothing more (#3516).
+ *
+ * Seven residue rows rest on `NAME_TRANSLIT` alone and five on `SIMILARITY`
+ * alone, and every other supporting kind restates a name, an address or a
+ * directory link. A shared department is the cheapest genuinely independent
+ * fact the engine already holds on both sides.
+ *
+ * What these assert is mostly what it CANNOT do, because that is where the risk
+ * is: a department identifies nobody, so the failure mode is corroborating
+ * everything.
+ */
+describe('makeDepartmentScorer — corroborates, never identifies (#3516)', () => {
+    const scorer = makeDepartmentScorer();
+    const acct = (department?: string | null) => ({ accountKey: 'x', displayName: 'X', department });
+    const cand = (department?: string | null) => ({
+        id: 'e-1', fullName: 'Someone', status: 'ACTIVE' as const, department,
+    });
+
+    it('emits DEPARTMENT_MATCH when both sides name the same unit', () => {
+        const out = scorer(acct('Finance') as never, cand('Finance') as never, {} as never);
+        expect(out.map((s) => s.kind)).toEqual(['DEPARTMENT_MATCH']);
+        // The VALUE is the evidence, so a reviewer sees which department agreed
+        // rather than being told that one did.
+        expect(out[0].evidence).toBe('finance');
+    });
+
+    it('ignores case and surrounding whitespace, and nothing else', () => {
+        expect(scorer(acct(' FINANCE ') as never, cand('finance') as never, {} as never)).toHaveLength(1);
+        // Internal punctuation is NOT folded: neighbouring teams must not be
+        // manufactured into agreement, the same line EMAIL_EXACT draws.
+        expect(scorer(acct('Finance & Controlling') as never, cand('Finance') as never, {} as never)).toEqual([]);
+    });
+
+    it('treats ABSENCE as no match, on either side', () => {
+        // The failure mode that matters. A source system that leaves the field
+        // blank would otherwise have every weak name match corroborated.
+        expect(scorer(acct(null) as never, cand(null) as never, {} as never)).toEqual([]);
+        expect(scorer(acct('Finance') as never, cand(null) as never, {} as never)).toEqual([]);
+        expect(scorer(acct(null) as never, cand('Finance') as never, {} as never)).toEqual([]);
+        expect(scorer(acct('  ') as never, cand('  ') as never, {} as never)).toEqual([]);
+    });
+
+    it('is classified SUPPORTING, so it can never reach LINKED', () => {
+        // The guarantee itself is proven for every subset of the supporting
+        // kinds at score 10,000 by `identity-reconcile-precision`'s exhaustive
+        // test, which enumerates the union — so adding this kind extended that
+        // proof automatically. This asserts the classification the proof rests
+        // on, because a kind reclassified STRONG would pass that test's
+        // enumeration while changing everything.
+        expect(strengthOf('DEPARTMENT_MATCH')).toBe('SUPPORTING');
+        expect(SUPPORTING_SIGNAL_KINDS).toContain('DEPARTMENT_MATCH');
+        expect(STRONG_SIGNAL_KINDS).not.toContain('DEPARTMENT_MATCH');
+    });
+
+    it('stays below the weight the bulk action is bounded by', () => {
+        // `legacy-reviewer-actions` bounds bulk confirmation by the largest
+        // score a single supporting signal can contribute. A weight at or above
+        // CONVENTION would re-tune who qualifies for bulk, silently.
+        expect(SCORER_WEIGHTS.DEPARTMENT).toBeLessThan(SCORER_WEIGHTS.CONVENTION);
+        expect(SCORER_WEIGHTS.DEPARTMENT).toBeLessThan(SCORER_WEIGHTS.SIMILARITY_SCALE);
+    });
+
+    it('adds a SECOND signal to a translit-only row, and changes nothing else', () => {
+        // THE CLAIM, end to end through the real engine rather than the scorer
+        // in isolation: a row that rested on one signal now rests on two, and
+        // the outcome is identical.
+        //
+        // Built here rather than in the corpus because THE CORPUS CARRIES NO
+        // DEPARTMENTS AT ALL — `department:` occurs zero times in
+        // `corpus.ts`, so this signal fires on none of its 30 cases. Adding the
+        // field to existing cases is not a cosmetic edit either: at +40 it can
+        // separate two candidates that currently tie, turning an AMBIGUOUS into
+        // a SUGGESTED. So the demonstration lives here and the corpus is left
+        // alone.
+        const account = {
+            accountKey: 'gshterev',
+            displayName: 'Георги Щерев',
+            department: 'Internal Audit',
+        } as CanonicalAccount;
+        const employee = {
+            id: 'e-1',
+            fullName: 'Georgi Shterev',
+            givenName: 'Georgi',
+            familyName: 'Shterev',
+            status: 'ACTIVE' as const,
+            department: 'Internal Audit',
+        } as RosterEmployee;
+
+        const run = (acct: CanonicalAccount, emp: RosterEmployee) => {
+            const { scorers, blockers } = step4aExtensions([emp], null);
+            const r = reconcile({
+                accounts: [acct], roster: [emp], directory: [], aliases: [],
+                now: '2026-10-08T00:00:00.000Z', config: { scorers, blockers },
+            });
+            const res = r.resolutions[0];
+            return { outcome: res.outcome, kinds: res.signals.map((x) => x.kind).sort() };
+        };
+
+        // Without the department on either side — one signal.
+        const before = run(
+            { ...account, department: null } as CanonicalAccount,
+            { ...employee, department: null } as RosterEmployee,
+        );
+        expect(before.kinds).toEqual(['NAME_TRANSLIT']);
+
+        // With it — two independent signals, SAME outcome.
+        const after = run(account, employee);
+        expect(after.kinds).toEqual(['DEPARTMENT_MATCH', 'NAME_TRANSLIT']);
+        expect(after.outcome).toBe(before.outcome);
+    });
+
+    it('does not separate two candidates that share the department', () => {
+        // The tie it must NOT break. Both candidates sit in the same unit, so
+        // both receive the signal and the engine's equal-score rule is
+        // untouched — it can only separate candidates who actually differ.
+        const acctT = { accountKey: 'apetrov', displayName: 'A. Petrov', department: 'Finance' } as CanonicalAccount;
+        const two = [
+            { id: 'e-1', fullName: 'Angel Petrov', givenName: 'Angel', familyName: 'Petrov', status: 'ACTIVE' as const, department: 'Finance' },
+            { id: 'e-2', fullName: 'Anton Petrov', givenName: 'Anton', familyName: 'Petrov', status: 'ACTIVE' as const, department: 'Finance' },
+        ] as RosterEmployee[];
+        const { scorers, blockers } = step4aExtensions(two, null);
+        const r = reconcile({
+            accounts: [acctT], roster: two, directory: [], aliases: [],
+            now: '2026-10-08T00:00:00.000Z', config: { scorers, blockers },
+        });
+        const scores = r.resolutions[0].candidates.map((c) => c.score);
+        expect(new Set(scores).size).toBe(1);
+    });
+
+    it('is wired into step4aExtensions, which is what production calls', () => {
+        // Code-complete is not running. `legacy-reconcile.ts` calls this
+        // function and nothing else assembles the scorer list.
+        const { scorers } = step4aExtensions([cand('Finance') as never], null);
+        const signals = scorers.flatMap((s) =>
+            s(acct('Finance') as never, cand('Finance') as never, {} as never),
+        );
+        expect(signals.map((x) => x.kind)).toContain('DEPARTMENT_MATCH');
     });
 });
