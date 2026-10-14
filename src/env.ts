@@ -365,8 +365,6 @@ export const env = createEnv({
         // a constant. The key is optional because most Laya servers sit behind a
         // network boundary rather than an auth header, and requiring one would push
         // operators toward the external path.
-        LAYA_BASE_URL: z.string().optional(),
-        LAYA_API_KEY: z.string().optional(),
 
         // ── Private-address egress allowlist, SELF-HOSTED ONLY (#3328) ──
         //
@@ -570,8 +568,6 @@ export const env = createEnv({
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
         TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY,
-        LAYA_BASE_URL: process.env.LAYA_BASE_URL,
-        LAYA_API_KEY: process.env.LAYA_API_KEY,
 
         AUDIT_STREAM_RETRY_ENABLED: process.env.AUDIT_STREAM_RETRY_ENABLED,
         ENCRYPTION_DECRYPT_FAIL_CLOSED: process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED,

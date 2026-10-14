@@ -82,13 +82,32 @@ describe('the default is OFF, and nothing reaches a provider', () => {
 });
 
 describe('the refusals — three branches, two of them reachable since activation', () => {
-    it('LOCAL_ONLY is refused when LAYA_BASE_URL is unset', async () => {
-        // A DEPLOYMENT value — a tenant cannot point the local model somewhere
-        // of their choosing — so the message says it cannot be fixed from the
-        // settings page.
+    it('LOCAL_ONLY is refused UNCONDITIONALLY — there is no local model to point at', async () => {
+        // It used to be refused only when `LAYA_BASE_URL` was unset, and the
+        // message named that variable. The Laya estate was retired on
+        // 2026-10-14, so the refusal lost its condition: no deployment has a
+        // local decision model and `buildLocalProvider` returns the refusing
+        // stub for every caller.
+        //
+        // The needle moved off `LAYA_BASE_URL` with it. Matching a variable that
+        // no longer exists would be a test passing on the message's history
+        // rather than its content, and the point of asserting the message at all
+        // is that an admin reads it: it has to say what to do instead, which is
+        // `OFF`.
         await expect(
             updateTenantSecurityConfig(ctx(), { legacyMatchAiMode: 'LOCAL_ONLY' })
-        ).rejects.toThrow(/LAYA_BASE_URL/);
+        ).rejects.toThrow(/no local decision model/);
+
+        // The old condition is gone, so the worst case is now the ONLY case —
+        // asserted separately so a future re-conditioning of this branch cannot
+        // reintroduce an accepting path without reddening something.
+        await expect(
+            updateTenantSecurityConfig(ctx(), {
+                legacyMatchAiMode: 'LOCAL_ONLY',
+                aiResidency: 'LOCAL_ONLY',
+                aiLocalBaseUrl: 'http://model.internal:8080',
+            })
+        ).rejects.toThrow(/no local decision model/);
     });
 
     it('EXTERNAL is refused again — the sub-processor was WITHDRAWN on 2026-10-14', async () => {
@@ -164,16 +183,36 @@ describe('the refusals — three branches, two of them reachable since activatio
         // still be judged against the mode already stored, or a tenant can reach
         // a refused combination in two legal-looking steps.
         //
-        // Reaching EXTERNAL requires the constant, so this asserts the shape
-        // that is reachable today: LOCAL_ONLY stored, residency patched, and
-        // the LAYA refusal still firing because the deployment has no endpoint.
+        // THIS TEST DID NOT TEST THAT. Until 2026-10-14 its body supplied
+        // `legacyMatchAiMode` IN THE PATCH, so the stored value played no part
+        // and the name promised something the assertion never exercised. The
+        // retirement is what exposed it: the needle was `/LAYA_BASE_URL/` and
+        // when that message changed, the test failed for the wrong reason.
+        //
+        // The row is written DIRECTLY rather than through the usecase, because
+        // the usecase now refuses LOCAL_ONLY and so cannot produce the state
+        // under test. That is not a contrivance — it is the migration case.
+        // Rows written before the retirement can hold LOCAL_ONLY, and they do
+        // not disappear when the model does.
+        await prisma.tenantSecuritySettings.upsert({
+            where: { tenantId: T },
+            update: { legacyMatchAiMode: 'LOCAL_ONLY' },
+            create: { tenantId: T, legacyMatchAiMode: 'LOCAL_ONLY' },
+        });
+
+        // A patch touching ONLY residency is judged against that stored mode,
+        // which is the property the name claims.
         await expect(
-            updateTenantSecurityConfig(ctx(), {
-                legacyMatchAiMode: 'LOCAL_ONLY',
-                aiResidency: 'LOCAL_ONLY',
-                aiLocalBaseUrl: 'http://local',
-            })
-        ).rejects.toThrow(/LAYA_BASE_URL/);
+            updateTenantSecurityConfig(ctx(), { aiResidency: 'EXTERNAL' })
+        ).rejects.toThrow(/no local decision model/);
+
+        // And the way out is the one the message names, which is what makes the
+        // refusal actionable rather than a dead end for a pre-existing row.
+        const cfg = await updateTenantSecurityConfig(ctx(), {
+            legacyMatchAiMode: 'OFF',
+            aiResidency: 'EXTERNAL',
+        });
+        expect(cfg.legacyMatchAiMode).toBe('OFF');
     });
 });
 

@@ -1222,8 +1222,13 @@ invariants, each enforced by a test rather than by convention:
 - **The Jev host is a code constant.** `JEV_ENDPOINT` is a plain literal — no template,
   no `env.`, no `process.env`, asserted by reading the line. A configurable host is an
   SSRF for whoever can write that column, and it would make the sub-processor register
-  describe a destination the code no longer uses. `LAYA_BASE_URL` is deployment
-  configuration for the same reason, and no tenant-writable column reaches it.
+  describe a destination the code no longer uses. `LAYA_BASE_URL` was deployment
+  configuration for the same reason, and no tenant-writable column reached it — the
+  variable and the provider that read it were deleted on 2026-10-14 when the owner
+  retired the Laya estate, so `buildLocalProvider` now returns the refusing stub and
+  `legacyMatchAiMode = LOCAL_ONLY` is refused at the settings boundary. The rule is kept
+  because it governs whatever local endpoint comes next: a tenant must never be able to
+  name the host a model runs on.
 - **Residency is structural.** The factory RETURNS before constructing anything
   external; it does not construct-then-skip. A constructed-but-unused external provider
   is one refactor away from a called one, and the refactor looks like tidying.

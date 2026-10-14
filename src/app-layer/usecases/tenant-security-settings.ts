@@ -1,7 +1,6 @@
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
-import { env } from '@/env';
 import {
     LEGACY_MATCH_PROCESSOR,
     TYPESAFE_SUBPROCESSOR_ACTIVE,
@@ -444,12 +443,27 @@ export async function updateTenantSecurityConfig(
             ?? before?.legacyMatchAiMode
             ?? 'OFF') as LegacyMatchAiMode;
 
-        if (nextAiMode === 'LOCAL_ONLY' && !env.LAYA_BASE_URL) {
+        // UNCONDITIONAL since 2026-10-14, where it used to be
+        // `&& !env.LAYA_BASE_URL`. The Laya estate was retired on the owner's
+        // decision, so there is no local decision model in ANY deployment —
+        // `buildLocalProvider` returns the refusing stub — and a mode that
+        // cannot be served should be refused where somebody can read the
+        // reason, rather than accepted here and silently doing nothing in a
+        // background job.
+        //
+        // The previous wording is worth keeping in mind for whoever reinstates a
+        // local model: this was always a DEPLOYMENT value and never a tenant
+        // one, because a tenant must not be able to point the local model
+        // somewhere of their choosing. That is also why the replacement is not
+        // "configure it on the settings page".
+        if (nextAiMode === 'LOCAL_ONLY') {
             throw badRequest(
-                'legacyMatchAiMode=LOCAL_ONLY requires LAYA_BASE_URL to be configured for '
-                + 'this deployment. It is a DEPLOYMENT value, not a tenant one — a tenant '
-                + 'cannot point the local model somewhere of their choosing — so this '
-                + 'cannot be fixed from the settings page.',
+                'legacyMatchAiMode=LOCAL_ONLY is refused: this deployment has no local '
+                + 'decision model. The one it had was retired on 2026-10-14, after a '
+                + 'measurement showed it answered from prompt LENGTH rather than content — '
+                + 'filler text carrying no identity information changed 39 of 69 match '
+                + 'decisions, every one of them onto the first candidate. Identity matching '
+                + 'runs on the deterministic engine; set OFF.',
             );
         }
         // THE DEPLOYMENT BLOCK FIRST, then the tenant one. Both can hold at
