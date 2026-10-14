@@ -110,6 +110,43 @@ function ListPageShellFilters({ children, className }: ListPageShellProps) {
     );
 }
 
+/**
+ * THE CLAMPED BODY HAS A FLOOR, so a growing page header cannot crush it
+ * (#3524).
+ *
+ * `md:min-h-0` is what lets a flex child shrink below its content, and it is
+ * required for the body's own `overflow-hidden` to mean anything. But it has no
+ * lower bound, so everything ABOVE the body — breadcrumbs, title, description,
+ * notice banners, the KPI strip, the filter toolbar — takes its height first and
+ * the body gets whatever is left. At a 1280x720 viewport that remainder can
+ * reach nearly zero.
+ *
+ * WHAT A CRUSHED BODY LOOKS LIKE, because it does not look like a layout bug.
+ * The table still renders at its natural height inside an `overflow-hidden`
+ * parent, so every row keeps a real bounding box; it is simply clipped out of
+ * view. Hit testing goes by the clipping ancestor, so a click aimed at a row
+ * lands on `<main>` or on the `sticky top-0` header — and anything that asks
+ * "is this element visible?" by measuring its box (Playwright does) answers YES.
+ * The result is a row a person can see in the DOM, cannot see on screen, and
+ * cannot click, with nothing reporting an error.
+ *
+ * MEASURED: `main` was green at 05:00 on 2026-10-14 and failed from 07:00
+ * onward, at the merge commit of #3518 — which added one notice panel to the
+ * `/agents` banner slot. The only three E2E specs that failed were the three
+ * that click a row on that page; every other row-clicking spec on every other
+ * list page kept passing. Nothing about the table changed.
+ *
+ * THE FLOOR, not a redesign of the page. 20rem holds the sticky header plus
+ * roughly six rows, which is the point at which a list is still a list. Above
+ * it the body flexes exactly as before — on a tall viewport this class never
+ * binds. Below it the shell grows past `<main>`, and `<main>` already carries
+ * `md:overflow-y-auto`, so the PAGE scrolls instead of the table vanishing.
+ * That is the mobile behaviour, which works, arriving one breakpoint early.
+ *
+ * It is spelled as a replacement for `md:min-h-0` rather than an addition
+ * because `cn` is `twMerge`, which keeps the last `min-h-*` and would silently
+ * drop whichever came first.
+ */
 function ListPageShellBody({
     children,
     className,
@@ -124,7 +161,7 @@ function ListPageShellBody({
         return (
             <div
                 className={cn(
-                    'md:flex-1 md:min-h-0 md:flex md:flex-col md:overflow-hidden',
+                    'md:flex-1 md:min-h-[20rem] md:flex md:flex-col md:overflow-hidden',
                     className,
                 )}
                 data-list-page-body="true"
@@ -157,7 +194,7 @@ function ListPageShellBody({
             )}
             <div
                 className={cn(
-                    'md:flex-1 md:min-h-0 md:flex md:flex-col md:overflow-hidden xl:min-w-0',
+                    'md:flex-1 md:min-h-[20rem] md:flex md:flex-col md:overflow-hidden xl:min-w-0',
                     className,
                 )}
                 data-list-page-body="true"

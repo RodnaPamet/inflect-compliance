@@ -63,10 +63,36 @@ describe('ListPageShell — slot contract', () => {
         const cls = body.className;
         // The four invariants the design relies on:
         expect(cls).toContain('md:flex-1');
-        expect(cls).toContain('md:min-h-0');
         expect(cls).toContain('md:flex');
         expect(cls).toContain('md:flex-col');
         expect(cls).toContain('md:overflow-hidden');
+
+        // ── AND A FLOOR, which is the fifth and the newest (#3524) ──
+        //
+        // This assertion was `toContain('md:min-h-0')` until 2026-10-14. The
+        // class it now forbids is the one that let the body be crushed to
+        // nothing: `min-h-0` permits a flex child to shrink below its content,
+        // which the body's own `overflow-hidden` needs, but it sets no lower
+        // bound — so everything above the body (title, banners, KPI strip,
+        // filter toolbar) takes its height first and the body gets the
+        // remainder, which at 1280x720 can reach nearly zero.
+        //
+        // A crushed body does not read as a layout bug. The table renders at
+        // its natural height inside an `overflow-hidden` parent, so every row
+        // keeps a real bounding box and only the CLIPPING hides it. Hit testing
+        // follows the clipping ancestor, so a click aimed at a row lands on
+        // `<main>` or the sticky header, while anything measuring the row's box
+        // to answer "is it visible?" says yes. Three E2E specs spent 3.6 minutes
+        // each retrying a click on a row that was present, measurable, and off
+        // screen.
+        //
+        // Asserted BOTH ways on purpose. The positive half pins the floor; the
+        // negative half is what actually fails if somebody re-adds `min-h-0`,
+        // because `cn` is `twMerge` and the last `min-h-*` wins — so a
+        // reinstated `min-h-0` would silently delete the floor while leaving
+        // this file's positive assertion satisfied by the string it replaced.
+        expect(cls).toContain('md:min-h-[20rem]');
+        expect(cls).not.toContain('md:min-h-0');
     });
 
     it('Header / Filters / Footer slots are flex-shrink-0 so they keep natural height', () => {
