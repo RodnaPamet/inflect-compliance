@@ -1144,19 +1144,51 @@ export function Table<T extends TableRowData>({
       card.parentElement;
     const availH = allocAncestor?.clientHeight ?? card.clientHeight;
 
+    // ── THE STICKY HEADER IS INSIDE THIS WRAPPER, SO IT COSTS ROWS (#3524) ──
+    //
+    // `maxHeight` is applied to the SCROLL WRAPPER, and that wrapper's content
+    // is `<thead>` followed by `<tbody>`. The header cells are `sticky top-0`,
+    // so the header holds the wrapper's first `headerH` pixels permanently —
+    // they are never available to a row. Dividing the WHOLE allocation by
+    // `rowH` therefore over-counts by exactly one header: the wrapper ends up
+    // `N * rowH` tall with only `N * rowH - headerH` of room for rows, so the
+    // last row is always partly underneath the header.
+    //
+    // That is not a cosmetic half-row. A row covered by the sticky header is
+    // still visible, enabled and stable to a hit test, so a click aimed at it
+    // lands on the `<th>` and NOTHING REPORTS AN ERROR — it retries until it
+    // gives up. For a person it is a row they can read and cannot click.
+    //
+    // It surfaced when #3518 added a panel above the table on `/agents`, which
+    // shrank `availH` enough to move the clipped row onto the one three E2E
+    // specs click. The arithmetic was wrong before that too; the panel only
+    // changed WHICH row paid for it, which is why the fix is here and not on
+    // that page.
+    const thead = wrapper.querySelector("thead") as HTMLElement | null;
+    const headerH = thead?.offsetHeight ?? 0;
+
     // tbody.scrollHeight is the actual content height (sum of all
     // rows + any borders/padding). If it fits within the
     // allocation, no clip — CSS max-h-full naturally caps to
     // parent and content is shorter than that.
+    //
+    // `+ headerH` for the reason above: the header's pixels are not available
+    // to content, so a table whose ROWS alone just fit would report "no clip"
+    // while the header pushes the last row out with nothing clamping it.
     const contentH = tbody?.scrollHeight ?? 0;
-    if (contentH <= availH) {
+    if (contentH + headerH <= availH) {
       setMaxScrollHeight((prev) => (prev === undefined ? prev : undefined));
       return;
     }
 
-    // Content overflows. Clip to whole rows.
-    const wholeRows = Math.max(Math.floor(availH / rowH), 1);
-    const newMax = wholeRows * rowH;
+    // Content overflows. Clip to the header PLUS whole rows, so the wrapper is
+    // exactly tall enough to show `rowsFit` rows with none of them half-covered.
+    //
+    // A `max(…, 1)` floor keeps one whole row visible even where the allocation
+    // is smaller than the header itself — the honest minimum, and better than a
+    // wrapper that shows a header and nothing else.
+    const rowsFit = Math.max(Math.floor((availH - headerH) / rowH), 1);
+    const newMax = headerH + rowsFit * rowH;
     setMaxScrollHeight((prev) => (prev === newMax ? prev : newMax));
   }, []);
 
@@ -1322,6 +1354,17 @@ export function Table<T extends TableRowData>({
               // stable, nothing reports an error: the click just retries until it
               // gives up. Playwright named the intercepting `<th>` 373 times in
               // one attempt before timing out at 180s.
+              //
+              // THIS IS THE SECOND OF TWO FIXES, AND IT WAS NOT THE CAUSE. The
+              // cause was in `measureRowClip` above, which sized this very
+              // container to `wholeRows * rowH` while the sticky header held its
+              // first `headerH` pixels — so its RESTING state always left one row
+              // partly under the header, with no scrolling involved. That is
+              // fixed there. This declaration covers the other way a row gets
+              // under the header: a scroll-into-view, from keyboard navigation,
+              // an anchor target or a programmatic click. Both are real; shipping
+              // only this one left the three agent E2E specs failing, which is
+              // how the clip arithmetic was found.
               //
               // THE HEADER IS 37px, NOT THE ~45px THE COMMENT ABOVE SAYS. That
               // figure is the CELL height and the two differ, which is worth
