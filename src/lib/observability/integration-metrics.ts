@@ -593,7 +593,7 @@ let _legacyReviewDecision: ReturnType<ReturnType<typeof getMeter>['createCounter
  * outcome metric" for assisted reconciliation, and until 2026-10-14 it did not
  * exist: `legacy-reviewer-actions.ts` emitted no metric at all. Every other
  * legacy counter measures whether the machinery RAN — outcomes, refusals,
- * latency, suspensions — and none measured whether its output was any good.
+ * latency, suspensions — and none measured whether its output was of any use.
  *
  * It is the only signal that says whether the ASSISTED half earns its place. A
  * suggestion engine whose suggestions are overridden most of the time costs
