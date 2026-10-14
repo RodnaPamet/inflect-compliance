@@ -187,7 +187,13 @@ export async function runAgentInvokeDispatch(
         };
 
         const { startWorkflowRun } = await import('@/app-layer/usecases/workflow-runs');
-        const started = await startWorkflowRun(ctx, workflowKey, projectInput(payload));
+        // THE CAUSE REACHES THE ROW (#3537). `parentExecutionId` has been in
+        // this payload since #3471 — copied from `subflow-dispatcher`, which
+        // carries it for exactly this purpose — and was read by nothing, so the
+        // lineage lived in the queue and vanished when the job completed.
+        const started = await startWorkflowRun(ctx, workflowKey, projectInput(payload), {
+            parentExecutionId: payload.parentExecutionId,
+        });
         logger.info('agent-invoke: dispatched', {
             component: 'automation', tenantId, agentId, workflowKey, depth, runId: started.runId,
         });

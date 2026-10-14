@@ -197,6 +197,7 @@ const RUN: RunHeader = {
     completedAt: null,
     summary: null,
     errorMessage: null,
+    parentExecutionId: null
 };
 
 function runStep(over: Partial<RunStepRow> = {}): RunStepRow {

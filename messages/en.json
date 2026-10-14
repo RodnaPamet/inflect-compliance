@@ -8594,7 +8594,8 @@
           "QUARANTINED": "guard: quarantined"
         },
         "stepTokens": "{count} tokens",
-        "decisionLink": "Art 12 decision"
+        "decisionLink": "Art 12 decision",
+        "causedBy": "Caused by automation execution {executionId} — this run was started by a rule, not by a person. The name above is the rule owner, whose permissions it ran under."
       },
       "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume.",
       "approvalWindowCloses": "Approval window closes {date}"

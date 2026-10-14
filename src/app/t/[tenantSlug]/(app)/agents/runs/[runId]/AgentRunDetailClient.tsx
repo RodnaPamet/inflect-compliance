@@ -38,6 +38,18 @@ export interface RunHeader {
     completedAt: string | null;
     summary: string | null;
     errorMessage: string | null;
+    /**
+     * WHAT CAUSED THIS RUN — the `AutomationExecution` id of the rule firing
+     * that started it, or null when nothing did (#3537).
+     *
+     * Distinct from the authority. An automation-started run's
+     * `startedByUserId` is the rule OWNER, because the run executes under
+     * their permissions and is stamped `actorType: 'JOB'` so the trail does
+     * not claim a person acted. That is correct attribution and says nothing
+     * about the cause, and a reader seeing only a person's name concluded
+     * somebody had clicked something.
+     */
+    parentExecutionId: string | null;
 }
 
 const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 'neutral'> = {
@@ -176,6 +188,21 @@ export function AgentRunDetailClient({
             }
         >
             <div className="space-y-section">
+                {/* WHO vs WHAT. An automation-started run names a person in
+                    `startedByUserId` — the rule's owner, whose permissions it
+                    ran under — so without this line the page answers "under
+                    whose authority" while looking like it answers "why". The
+                    id is shown rather than the rule's NAME because a rule can
+                    be renamed or deleted after the fact and the execution id
+                    is what the audit trail carries. */}
+                {run.parentExecutionId && (
+                    <p
+                        className="text-sm text-content-muted"
+                        data-testid="run-caused-by"
+                    >
+                        {t('runs.detail.causedBy', { executionId: run.parentExecutionId })}
+                    </p>
+                )}
                 {run.errorMessage && (
                     <p className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}>
                         {run.errorMessage}
