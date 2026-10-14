@@ -527,21 +527,28 @@ function FileDropzoneInner(
                         </p>
                     )}
                 </div>
-                <input
-                    ref={inputRef}
-                    id={inputId}
-                    type="file"
-                    accept={accept}
-                    multiple={multiple}
-                    disabled={disabled}
-                    onChange={onInputChange}
-                    onClick={(e) => e.stopPropagation()}
-                    className="sr-only"
-                    data-testid="file-dropzone-input"
-                    aria-hidden
-                    tabIndex={-1}
-                />
             </div>
+            {/*
+              Beside the drop area, not inside it. The area is a
+              role="button", and an input inside it is an interactive
+              control nested in another, which screen readers may not
+              announce and axe reports as `nested-interactive` (found by
+              projectZ's browser tests, #428). The area opens it through
+              `inputRef`, so where it sits changes nothing else.
+            */}
+            <input
+                ref={inputRef}
+                id={inputId}
+                type="file"
+                accept={accept}
+                multiple={multiple}
+                disabled={disabled}
+                onChange={onInputChange}
+                className="sr-only"
+                data-testid="file-dropzone-input"
+                aria-hidden
+                tabIndex={-1}
+            />
 
             {hint_ && (
                 <p
