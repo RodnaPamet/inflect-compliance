@@ -6,12 +6,23 @@
  * rather than sharing one, because they fail for different reasons and a shared
  * assertion would pass on the wrong one.
  */
+// The override-rate counter is spied, not stubbed out: `requireActual` keeps
+// every other recorder real, so nothing else in this file changes behaviour.
+// Mocking a METRIC is not mocking Prisma — this suite still hits a real database
+// for everything it asserts.
+jest.mock('@/lib/observability/integration-metrics', () => ({
+    ...jest.requireActual('@/lib/observability/integration-metrics'),
+    recordLegacyReviewDecision: jest.fn(),
+}));
+
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { makeRequestContext } from '../helpers/make-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { isBlindHeld } from '@/lib/legacy-access/blind-sample';
+import { recordLegacyReviewDecision } from '@/lib/observability/integration-metrics';
+import { classifyReviewAgreement } from '@/app-layer/usecases/legacy-reviewer-actions';
 import {
     BULK_MAX_ROWS,
     BULK_MIN_MARGIN,
@@ -220,6 +231,43 @@ describe('the server re-checks what the client claims', () => {
 });
 
 describe('each action writes what it claims', () => {
+    it('CONFIRM emits the override-rate counter, labelled engine_leader', async () => {
+        const spy = recordLegacyReviewDecision as jest.MockedFunction<
+            typeof recordLegacyReviewDecision
+        >;
+        spy.mockClear();
+        await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'CONFIRM', employeeId },
+        });
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy).toHaveBeenCalledWith({
+            agreement: 'engine_leader',
+            classification: 'EMPLOYEE',
+            method: 'CONFIRMED_ALIAS',
+        });
+    });
+
+    it('DEFER emits it too, labelled deferred rather than left out', async () => {
+        // A deferral expresses no opinion, so it is neither agreement nor
+        // override — but omitting it would hide it from the denominator, and
+        // "how often does a reviewer decline to decide" is the second question
+        // anyone reading this metric asks.
+        const spy = recordLegacyReviewDecision as jest.MockedFunction<
+            typeof recordLegacyReviewDecision
+        >;
+        spy.mockClear();
+        await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'DEFER' },
+        });
+        expect(spy).toHaveBeenCalledWith({
+            agreement: 'deferred',
+            classification: 'NONE',
+            method: 'NONE',
+        });
+    });
+
     it('CONFIRM writes an EMPLOYEE alias with method CONFIRMED_ALIAS', async () => {
         await decideLegacyAccount(ctx(), {
             connectionId, accountKey: 'alovelace', executionId,
@@ -1056,5 +1104,60 @@ describe('Step 6c — confirming the model\'s proposal', () => {
         // looks exactly like a reviewer agreeing.
         const exec = await seed({ accountKey: 'prop-blind', verdict: 'PROPOSES', blind: true });
         expect(await methodAfterConfirm('prop-blind', exec)).toBe('CONFIRMED_ALIAS');
+    });
+});
+
+/**
+ * The reviewer override rate (#3498).
+ *
+ * The design document calls this "the production outcome metric" for assisted
+ * reconciliation, and it did not exist: this usecase emitted no metric at all.
+ * Every other legacy counter measures whether the machinery RAN; none measured
+ * whether its output was any good.
+ */
+describe('the override rate — which decision counts as following the engine', () => {
+    const c = (employeeId: string, score: number) => ({ employeeId, score });
+
+    it('the engine leader is agreement', () => {
+        expect(classifyReviewAgreement([c('e1', 90), c('e2', 40)], 'e1')).toBe('engine_leader');
+    });
+
+    it('another SCORED candidate is an override', () => {
+        expect(classifyReviewAgreement([c('e1', 90), c('e2', 40)], 'e2')).toBe('other_candidate');
+    });
+
+    it('somebody the engine never scored is its own case, not an override of a candidate', () => {
+        // A MANUAL match. Reporting it as `other_candidate` would claim the
+        // engine offered an alternative it never offered.
+        expect(classifyReviewAgreement([c('e1', 90)], 'e9')).toBe('unscored_employee');
+    });
+
+    it('a tie at the top is NOT disagreement', () => {
+        // The engine turns a tie into AMBIGUOUS rather than a pick, so it named
+        // no leader and the reviewer overrode nothing. Folding this into
+        // `other_candidate` would report an override every time the engine was
+        // honest about not knowing — the direction that would make this metric
+        // argue for deleting the engine.
+        expect(classifyReviewAgreement([c('e1', 90), c('e2', 90)], 'e1')).toBe('engine_ambiguous');
+        expect(classifyReviewAgreement([c('e1', 90), c('e2', 90)], 'e2')).toBe('engine_ambiguous');
+    });
+
+    it('an engine that scored nobody is its own case', () => {
+        expect(classifyReviewAgreement([], 'e1')).toBe('engine_none');
+    });
+
+    it('a non-employee classification names no employee', () => {
+        expect(classifyReviewAgreement([c('e1', 90)], null)).toBe('no_employee');
+    });
+
+    it('a three-way tie is still ambiguous, not resolved by order', () => {
+        const three = [c('e1', 50), c('e2', 50), c('e3', 50)];
+        for (const picked of ['e1', 'e2', 'e3']) {
+            expect(classifyReviewAgreement(three, picked)).toBe('engine_ambiguous');
+        }
+    });
+
+    it('a single candidate IS the leader — a sole scored candidate is not a tie', () => {
+        expect(classifyReviewAgreement([c('e1', 7)], 'e1')).toBe('engine_leader');
     });
 });
