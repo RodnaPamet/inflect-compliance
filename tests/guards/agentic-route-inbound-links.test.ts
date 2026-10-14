@@ -289,6 +289,22 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/agent-runs/[id]/abort/route.ts',
     't/[tenantSlug]/agent-runs/[id]/resume/route.ts',
     't/[tenantSlug]/agent-runs/[id]/route.ts',
+    // #3472 — REPLAY, in two shapes, beside the unpaged `[id]/route.ts` rather
+    // than replacing it.
+    //
+    // `[id]/route.ts` returns the run with EVERY step, which is what the
+    // server-rendered timeline wants and what a canvas scrubber must not ask
+    // for. `steps` is the bounded page, cursor-exact over an append-only
+    // ledger; `stream` is the live tail of the same projection for a run that
+    // can still produce steps.
+    //
+    // `stream` is the second `text/event-stream` route in the app and the only
+    // one under `/api/t/`. It polls the ledger rather than subscribing to the
+    // in-process bus the notification bell uses, because a Flue run executes in
+    // the BullMQ WORKER and this is served by the WEB tier — a bus here would
+    // see nothing a run ever wrote.
+    't/[tenantSlug]/agent-runs/[id]/steps/route.ts',
+    't/[tenantSlug]/agent-runs/[id]/stream/route.ts',
     't/[tenantSlug]/agent-runs/route.ts',
 ] as const;
 

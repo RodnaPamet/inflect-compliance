@@ -9,6 +9,7 @@ import {
     SHUTDOWN_SENTRY_MS,
 } from './shutdown-budget';
 import { pauseInFlightRuns } from '@/lib/agentic/in-flight-runs';
+import { closeOpenRunStreams } from '@/lib/agentic/open-run-streams';
 
 /**
  * One-shot SIGTERM / SIGINT handler. Drains observability surfaces
@@ -72,10 +73,29 @@ export function installShutdownHandlers(): void {
             });
         });
 
-        // Stage 3 — OTel (never throws by contract)
+        // Stage 3 — close the run-replay streams this process holds (#3472).
+        //
+        // ABOVE OTel and BELOW the run pause, on the same cost argument: a
+        // stranded stream costs a viewer an `EventSource` backoff before the
+        // next pod answers, which is less than an abandoned run and more than
+        // a lost span. Synchronous and never-throwing by contract, so it
+        // cannot exceed a budget and does not need one.
+        try {
+            closeOpenRunStreams();
+        } catch (err) {
+            // `closeOpenRunStreams` promises never to throw, and this catch
+            // does not trust it — for the same reason the two stages above
+            // carry one. An unguarded throw here would skip OTel AND Sentry.
+            logger.warn('shutdown: closing run streams threw', {
+                component: 'shutdown',
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+
+        // Stage 4 — OTel (never throws by contract)
         await shutdownTelemetry(SHUTDOWN_OTEL_MS);
 
-        // Stage 4 — Sentry (never throws by contract)
+        // Stage 5 — Sentry (never throws by contract)
         await shutdownSentry(SHUTDOWN_SENTRY_MS);
 
         logger.info('graceful shutdown complete', {

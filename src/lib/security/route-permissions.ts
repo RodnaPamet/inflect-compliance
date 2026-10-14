@@ -277,6 +277,32 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // honest. The old wording is deliberately not quoted here — a comment
     // that repeats a phrase a guard might match is a survivor that can satisfy
     // an assertion after the real code is deleted.
+    // ── Agent RUN replay (#3472, plan point 08) ─────────────────────
+    //
+    // The live tail of one run's step ledger. The only `text/event-stream`
+    // route under `/api/t/:slug` and the only one here outside `/admin/`, so
+    // read what this entry is and is not: this map is a DECLARATIVE POLICY
+    // RECORD (see the long note below) checked by
+    // `api-permission-coverage.test.ts` against `PRIVILEGED_ROOTS`, which is
+    // `/admin/` only — so this rule is checked by nothing today. It is here
+    // because the LIVE gate is the `requirePermission('admin.view')` wrapper
+    // in the route file, and a reader asking "what authority streams a run?"
+    // should find the answer in the policy record rather than only in the
+    // handler.
+    //
+    // `admin.view` and not one of the three agent keys: this is the gate the
+    // run detail PAGE already applies (`ctx.appPermissions.admin.view`), and
+    // the stream serves the same rows to the same readers. A narrower key
+    // would gate the LIVE view of data the page hands out on a page load.
+    {
+        path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/stream$`),
+        permission: 'admin.view',
+        note:
+            "Live tail of one agentic run's append-only step ledger (SSE). The " +
+            'same authority as the run detail page it drives; the stream adds ' +
+            'latency, not reach. Tenant scope is the usecase predicate, so a ' +
+            "run in another tenant is not-found rather than forbidden.",
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/policy-card$`),
         permission: 'admin.agent_policy_card',

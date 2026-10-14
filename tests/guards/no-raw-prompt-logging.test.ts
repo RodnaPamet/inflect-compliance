@@ -199,6 +199,7 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // driver, and its log sinks went with it. Both files appear because both
     // still log: the usecase for run lifecycle, the driver for each step.
     'src/lib/agentic/drivers/static-driver.ts — identifier bound elsewhere',
+    'src/lib/agentic/open-run-streams.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
     // RELOCATION, not a new hole. `haltRunAtCap` was extracted from the static
     // driver into the shared settlement module when a second engine arrived —
@@ -345,6 +346,7 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // credential is excluded deliberately and by test: not the secret, and not
     // its length.
     'src/app/api/mcp/entra-grant/route.ts — identifier bound elsewhere',
+    'src/app/api/t/[tenantSlug]/agent-runs/[id]/stream/route.ts — identifier bound elsewhere',
 ];
 /**
  * Floor on the sink calls the sweep recognised. Measured at 33 across 11 files
@@ -662,7 +664,27 @@ const SINK_FLOOR = 30;
 // the dispatcher never touches `payload.data` except through `projectInput`,
 // whose output goes to `startWorkflowRun` and never to a log line.
 // 186 is this branch's live count, measured on a tree with no unmerged paths.
-const MEASURED_HOLES = 186;
+// 186 -> 191: RUN REPLAY, AND THE GLOB IT REVEALED (#3472). Five holes across
+// two new sinks, plus the widening that brought a third into scope.
+//
+// THE POPULATION GREW ON PURPOSE. `AGENTIC_PATH_GLOBS_LIVE` covered
+// `api/t/*/agent-proposals/**` from the start and `api/t/*/agent-runs/**`
+// never — yet `GET /agent-runs/:id` serves the run WITH every step, the rows
+// carrying `inputJson` and `outputJson`, the two columns encrypted at rest
+// precisely because of what they hold. So an agentic route a prompt could
+// reach a log line through sat outside the one rule that looks for that.
+// Widening it added 7 files and, measured, ZERO holes from the four routes
+// that already existed — they contain no sink at all. The point is the next
+// log line somebody writes there, not a number today.
+//
+// The five that are mine: the shutdown stage's two sinks in
+// `open-run-streams.ts` (an `err.message` beside a literal, and `closed` +
+// `failed`, both integers this file counts) and the stream route's one (a
+// `runId` cuid and an `err.message`). None of them reads a prompt: the tail
+// never touches `inputJson` except to hand the whole projected row to the
+// wire, and the catch logs the error, not the row.
+// 191 is this branch's live count, measured on a tree with no unmerged paths.
+const MEASURED_HOLES = 191;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -695,7 +717,11 @@ const MEASURED_HOLES = 186;
 // refusal warn and the one dispatched info. Raising the denominator TIGHTENS
 // `HOLES_PER_SINK_CEILING`, which is the direction this pair is meant to move.
 // Still my own contribution only: the live count on this branch is 111.
-const MEASURED_SINKS = 104;
+// 104 -> 106: the two sinks #3472 adds — the shutdown stage's warn/info pair
+// counts as one file's worth and the stream route's catch as the other.
+// Raising the denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the
+// direction this pair is meant to move. The live count on this branch is 114.
+const MEASURED_SINKS = 106;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

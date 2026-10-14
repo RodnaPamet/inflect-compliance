@@ -335,4 +335,34 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'wire format. Auth via getLegacyCtx pre-stream; per-chunk ' +
             'errors close the channel via req.signal abort.',
     },
+    // The agent-run replay tail (#3472). Same category and the same reason as
+    // the bell above, with two differences worth stating rather than leaving a
+    // reader to diff the files:
+    //
+    //   - The GATE IS STRONGER. `requirePermission('admin.view')` runs before
+    //     the stream is constructed, so a denial is the middleware's standard
+    //     403 AND a hash-chained AUTHZ_DENIED row — not a bare throw.
+    //   - THE FIRST READ IS ALSO PRE-STREAM. `getRunStepFeed` runs before the
+    //     `ReadableStream` exists, so an unreadable run is an ordinary 404
+    //     through the usecase's `notFound()`. Once the headers are sent a
+    //     client cannot tell "no such run" from "a run with no steps yet",
+    //     which is why that read is not deferred into the first poll.
+    //
+    // What remains unwrappable is the same: errors AFTER the headers are sent
+    // cannot become an ApiErrorResponse, so the stream sends `event: end` with
+    // a reason and closes, which is what EventSource is built to reconnect
+    // from.
+    {
+        file: 't/[tenantSlug]/agent-runs/[id]/stream/route.ts',
+        category: 'sse_stream',
+        reason:
+            'SSE live tail of one agentic run\'s step ledger (#3472). ' +
+            'Long-lived text/event-stream ReadableStream — cannot be wrapped ' +
+            'by withApiErrorHandling without breaking the EventSource wire ' +
+            'format. Authorized by requirePermission(admin.view) BEFORE the ' +
+            'stream is constructed, and the first ledger read happens there ' +
+            'too, so both a denial and an unreadable run are ordinary ' +
+            'responses. Post-header failures close the channel with an ' +
+            '`end` event carrying a reason.',
+    },
 ];

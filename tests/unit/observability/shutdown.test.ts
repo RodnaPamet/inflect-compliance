@@ -26,6 +26,9 @@ jest.mock('@/lib/observability/sentry', () => ({
 jest.mock('@/lib/agentic/in-flight-runs', () => ({
     pauseInFlightRuns: jest.fn(),
 }));
+jest.mock('@/lib/agentic/open-run-streams', () => ({
+    closeOpenRunStreams: jest.fn(),
+}));
 // Silence logger output in tests
 jest.mock('@/lib/observability/logger', () => ({
     logger: {
@@ -38,6 +41,7 @@ import { flushAllAuditStreams } from '@/app-layer/events/audit-stream';
 import { shutdownTelemetry } from '@/lib/observability/instrumentation';
 import { shutdownSentry } from '@/lib/observability/sentry';
 import { pauseInFlightRuns } from '@/lib/agentic/in-flight-runs';
+import { closeOpenRunStreams } from '@/lib/agentic/open-run-streams';
 import {
     installShutdownHandlers,
     _resetShutdownInstalledForTesting,
@@ -48,6 +52,7 @@ const mockFlush = flushAllAuditStreams as jest.MockedFunction<typeof flushAllAud
 const mockOtel = shutdownTelemetry as jest.MockedFunction<typeof shutdownTelemetry>;
 const mockSentry = shutdownSentry as jest.MockedFunction<typeof shutdownSentry>;
 const mockPauseRuns = pauseInFlightRuns as jest.MockedFunction<typeof pauseInFlightRuns>;
+const mockCloseStreams = closeOpenRunStreams as jest.MockedFunction<typeof closeOpenRunStreams>;
 
 /** Let the microtask queue + any pending timers settle. */
 async function settle(): Promise<void> {
@@ -59,6 +64,13 @@ afterEach(() => {
     process.removeAllListeners('SIGINT');
     _resetShutdownInstalledForTesting();
     jest.clearAllMocks();
+});
+
+beforeEach(() => {
+    // The default for every test that is not about this stage. It is
+    // SYNCHRONOUS by contract — closing a controller cannot block — so it
+    // returns a value rather than a promise.
+    mockCloseStreams.mockReturnValue({ closed: 0, failed: 0 });
 });
 
 describe('installShutdownHandlers', () => {
@@ -73,12 +85,16 @@ describe('installShutdownHandlers', () => {
         expect(process.listenerCount('SIGINT')).toBe(beforeInt + 1);
     });
 
-    it('SIGTERM drains audit, then in-flight runs, then OTel, then Sentry', async () => {
+    it('SIGTERM drains audit, then runs, then run streams, then OTel, then Sentry', async () => {
         const callOrder: string[] = [];
         mockFlush.mockImplementation(async () => { callOrder.push('audit'); });
         mockPauseRuns.mockImplementation(async () => {
             callOrder.push('pause-runs');
             return { attempted: 0, paused: 0, timedOut: false };
+        });
+        mockCloseStreams.mockImplementation(() => {
+            callOrder.push('close-streams');
+            return { closed: 0, failed: 0 };
         });
         mockOtel.mockImplementation(async () => { callOrder.push('otel'); });
         mockSentry.mockImplementation(async () => { callOrder.push('sentry'); });
@@ -89,8 +105,18 @@ describe('installShutdownHandlers', () => {
 
         // ORDER, not membership. The run pause must come after audit (whose
         // loss is irreversible) and before OTel (a lost span is cheaper than an
-        // abandoned run reaped to FAILED an hour later).
-        expect(callOrder).toEqual(['audit', 'pause-runs', 'otel', 'sentry']);
+        // abandoned run reaped to FAILED an hour later). The stream close sits
+        // between them on the same cost argument — a stranded SSE connection
+        // costs a viewer an EventSource backoff, which is more than a span and
+        // less than a run.
+        //
+        // This list was FOUR entries while the fifth stage already existed:
+        // `closeOpenRunStreams` was unmocked, so the real no-op ran and pushed
+        // nothing. An order assertion that silently covers 4 of 5 stages is
+        // the shape it exists to prevent.
+        expect(callOrder).toEqual([
+            'audit', 'pause-runs', 'close-streams', 'otel', 'sentry',
+        ]);
     });
 
     it('calls each helper exactly once on SIGTERM', async () => {
@@ -105,6 +131,7 @@ describe('installShutdownHandlers', () => {
 
         expect(mockFlush).toHaveBeenCalledTimes(1);
         expect(mockPauseRuns).toHaveBeenCalledTimes(1);
+        expect(mockCloseStreams).toHaveBeenCalledTimes(1);
         expect(mockOtel).toHaveBeenCalledTimes(1);
         expect(mockSentry).toHaveBeenCalledTimes(1);
     });
@@ -154,6 +181,26 @@ describe('installShutdownHandlers', () => {
         await settle();
 
         // OTel and Sentry must still have been called despite the audit failure
+        expect(mockOtel).toHaveBeenCalledTimes(1);
+        expect(mockSentry).toHaveBeenCalledTimes(1);
+    });
+
+    it('the later stages still run when closing the run streams throws', async () => {
+        // `closeOpenRunStreams` promises never to throw. This is the backstop
+        // for the day it breaks that promise: one torn-down controller must not
+        // cost every span and every queued error as well.
+        mockFlush.mockResolvedValue(undefined);
+        mockPauseRuns.mockResolvedValue({ attempted: 0, paused: 0, timedOut: false });
+        mockCloseStreams.mockImplementation(() => {
+            throw new Error('controller already detached');
+        });
+        mockOtel.mockResolvedValue(undefined);
+        mockSentry.mockResolvedValue(undefined);
+
+        installShutdownHandlers();
+        process.emit('SIGTERM');
+        await settle();
+
         expect(mockOtel).toHaveBeenCalledTimes(1);
         expect(mockSentry).toHaveBeenCalledTimes(1);
     });

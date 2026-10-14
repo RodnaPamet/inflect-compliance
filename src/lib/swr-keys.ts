@@ -210,6 +210,16 @@ export const CACHE_KEYS = {
         list: () => '/admin/agents?status=ACTIVE' as const,
     },
 
+    // ─── Agent run replay (#3472) ───────────────────────────────────
+    //
+    // `steps` is the BOUNDED page a scrubber reads; `stream` is the live tail
+    // and is NOT an SWR key — `EventSource` owns that connection, and giving
+    // it a cache key would invite somebody to `mutate()` a stream.
+    agentRuns: {
+        steps: (runId: string, sinceSeq = -1) =>
+            `/agent-runs/${runId}/steps?sinceSeq=${sinceSeq}` as const,
+    },
+
     // ─── Processes / canvas (R25+ · Visual Rule Editor) ──────────
     processes: {
         // VR-10 — cross-map governance meta-graph.
