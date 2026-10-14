@@ -1,12 +1,12 @@
 /**
  * `<SortOrder>` — the DataTable column-header sort indicator.
  *
- * Regression lock for the `<path d="undefined">` console error: each
- * `<motion.path>` must carry an `initial={{ d }}` seed so framer-motion
- * never morphs `d` from the element's empty mount state (which set
- * `d="undefined"` and logged an SVG error for every sortable column on
- * every list page). Both a behavioural check (rendered paths have a valid
- * `d`) and a structural lock (the source keeps `initial={{ d`).
+ * Regression lock for the `<path d="undefined">` console error, from when
+ * each path's `d` was morphed by framer-motion: every rendered path has a
+ * valid `d`. The paths are static now (the order flips their group), and
+ * the icon must stay free of the animation engine: it is exported from the
+ * icons barrel, which the shell's primitives import, so an engine import
+ * here is an engine in every route's first load.
  */
 import { render } from '@testing-library/react';
 import * as React from 'react';
@@ -30,12 +30,20 @@ describe('SortOrder — no d="undefined" on mount', () => {
         },
     );
 
-    it('source seeds initial={{ d }} on both motion paths', () => {
+    it('ascending is the descending chevrons turned upside down; nothing else moves', () => {
+        const flipped = (order: 'asc' | 'desc' | null) =>
+            (render(<SortOrder order={order} />).container.querySelector('g') as SVGGElement)
+                .style.transform;
+        expect(flipped('asc')).toBe('scaleY(-1)');
+        expect(flipped('desc')).toBe('');
+        expect(flipped(null)).toBe('');
+    });
+
+    it('needs no animation engine: the icon is in every route through the icons barrel', () => {
         const src = fs.readFileSync(
             path.join(__dirname, '..', '..', 'packages/ui/src/components/ui/icons/sort-order.tsx'),
             'utf8',
         );
-        const initials = src.match(/initial=\{\{\s*d:/g) ?? [];
-        expect(initials.length).toBeGreaterThanOrEqual(2);
+        expect(src).not.toMatch(/from ["']motion|from ["']framer-motion/);
     });
 });
