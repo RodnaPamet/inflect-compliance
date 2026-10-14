@@ -418,11 +418,29 @@ const usageSchema = z
     .object({
         input_tokens: z.number().int().nonnegative(),
         output_tokens: z.number().int().nonnegative(),
+
+        // THE VENDOR'S OWN TRUNCATION REPORT, parsed rather than passed through
+        // (#3488). These four were discarded until 2026-10-14, under a comment
+        // calling them "accounting we do not read" — while the check downstream
+        // described itself as "truncation, reported by the vendor's own
+        // accounting" and actually compared `input_tokens` to a constant of
+        // OURS. The server's answer to the question was on the wire the whole
+        // time and nothing looked at it.
+        //
+        // OPTIONAL, not required, and the distinction is the point. `laya`
+        // sends all four; a conforming server need not, and requiring them
+        // would refuse a response that is otherwise complete. So absence means
+        // "this server does not report truncation" — which is not the same as
+        // "nothing was truncated", and the caller treats it as the former.
+        state_tokens: z.number().int().nonnegative().optional(),
+        state_tokens_dropped: z.number().int().nonnegative().optional(),
+        truncated: z.boolean().optional(),
+        truncated_questions: z.array(z.string()).optional(),
     })
-    // A real block also carries `state_tokens`, `state_tokens_dropped`,
-    // `truncated` and `truncated_questions` (#3407). The two fields above are
-    // what makes a call METERED, which is the property this schema exists to
-    // require; the rest is accounting we do not read.
+    // Still permissive about anything ELSE a server adds: the two required
+    // fields are what makes a call METERED, which is the property this schema
+    // exists to require, and #3407 measured that a strict envelope refused every
+    // genuine response.
     .passthrough();
 
 /**

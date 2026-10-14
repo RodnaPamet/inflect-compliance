@@ -503,8 +503,35 @@ export async function runAdjudicationPass(
             };
         }
 
-        // 7. Truncation, reported by the vendor's own accounting.
-        if (inputTokens >= window) {
+        // 7. TRUNCATION — the vendor's own report first, then our own bound.
+        //
+        // Two independent signals, and they answer different questions.
+        //
+        // The vendor's report (`truncated`, `state_tokens_dropped`,
+        // `truncated_questions`) is DIRECT evidence: the server saying it threw
+        // input away. Until #3488 these were parsed out of the response and
+        // dropped, while this comment claimed to read them.
+        //
+        // `inputTokens >= window` is a PROXY: our own constant against the
+        // vendor's token count. It is kept, and kept FIRST in the OR, because
+        // a vendor that under-reports truncation is exactly the case the proxy
+        // exists for — and a model answering on a silently clipped state is the
+        // failure this whole step is about.
+        //
+        // The two disagree in both directions, measured on the deployed
+        // container (#3490): at 1,154 and even 1,454 input tokens against a
+        // 1,024 window it reported `truncated: false` and
+        // `state_tokens_dropped: 0`, so the proxy fires where the vendor says
+        // nothing was dropped. That conservatism is deliberate and is NOT
+        // narrowed here: trusting the vendor's accounting over our own bound
+        // would be a decision to make deliberately, not a side effect of
+        // reading one more field.
+        const vendorReportsTruncation =
+            parsed.usage.truncated === true ||
+            (parsed.usage.state_tokens_dropped ?? 0) > 0 ||
+            (parsed.usage.truncated_questions?.length ?? 0) > 0;
+
+        if (inputTokens >= window || vendorReportsTruncation) {
             return {
                 ...base,
                 reason: 'OVER_BUDGET' as const,
