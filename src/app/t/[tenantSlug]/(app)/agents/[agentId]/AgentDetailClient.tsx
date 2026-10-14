@@ -11,6 +11,7 @@ import { PolicyCardTab } from './tabs/PolicyCardTab';
 import { ToolsTab } from './tabs/ToolsTab';
 import { CoverageTab } from './tabs/CoverageTab';
 import { SkillsTab } from './tabs/SkillsTab';
+import { RunsTab } from './tabs/RunsTab';
 import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
 import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
 import { AgentAmendModal } from './AgentAmendModal';
@@ -69,10 +70,18 @@ export interface AgentDetailPermissions {
     canCloseBreaker: boolean;
 }
 
-// `skills` is the SEVENTH key, not the eighth. The integration plan said
-// eight because it counted the tool-manifest pins as their own tab; they
-// render inside Tools (#3470, finding F11).
-const TAB_KEYS = ['overview', 'risk', 'policy', 'tools', 'skills', 'coverage', 'breaker'] as const;
+// `skills` is the SEVENTH key and `runs` the EIGHTH. The integration plan said
+// eight before either existed, because it counted the tool-manifest pins as
+// their own tab; they render inside Tools (#3470, finding F11). So the count
+// matching is a coincidence and this comment is here to stop the next reader
+// concluding the plan's list was satisfied.
+//
+// `runs` is LAST-BUT-ONE deliberately: it sits after the tabs that describe
+// what the agent MAY do and before the breaker, because it is the record of
+// what it DID — the order a reviewer reads the page in (#3472).
+const TAB_KEYS = [
+    'overview', 'risk', 'policy', 'tools', 'skills', 'coverage', 'runs', 'breaker',
+] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 /** SUSPENDED and RETIRED are the states an operator is looking FOR. */
@@ -203,6 +212,7 @@ export function AgentDetailClient({
                 { key: 'tools', label: t('agentDetail.tabTools') },
                 { key: 'skills', label: t('agentDetail.tabSkills') },
                 { key: 'coverage', label: t('agentDetail.tabCoverage') },
+                { key: 'runs', label: t('agentDetail.tabRuns') },
                 { key: 'breaker', label: t('agentDetail.tabBreaker') },
             ]}
             activeTab={tab}
@@ -243,6 +253,9 @@ export function AgentDetailClient({
             )}
             {tab === 'skills' && <SkillsTab {...props} />}
             {tab === 'coverage' && <CoverageTab {...props} />}
+            {/* Read-only, and no `onChanged`: resuming or aborting a run
+                happens on the run itself, where the steps are. */}
+            {tab === 'runs' && <RunsTab {...props} />}
             {tab === 'breaker' && (
                 <CircuitBreakerTab
                     {...props}

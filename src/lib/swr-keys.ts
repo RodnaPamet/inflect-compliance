@@ -218,6 +218,14 @@ export const CACHE_KEYS = {
     agentRuns: {
         steps: (runId: string, sinceSeq = -1) =>
             `/agent-runs/${runId}/steps?sinceSeq=${sinceSeq}` as const,
+        /**
+         * ONE agent's runs, for the register's Runs tab. The `agentId` is in
+         * the key rather than a hook argument so two agents' tabs cannot share
+         * a cache entry — which is what a bare `/agent-runs` key would do, and
+         * the symptom would be the previous agent's runs rendering for a
+         * second after a navigation.
+         */
+        forAgent: (agentId: string) => `/agent-runs?agentId=${agentId}` as const,
     },
 
     // ─── Processes / canvas (R25+ · Visual Rule Editor) ──────────

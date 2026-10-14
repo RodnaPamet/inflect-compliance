@@ -299,7 +299,19 @@ const ROOT = path.resolve(__dirname, '../..');
 // incrementing also makes the number ORDER-SAFE against the concurrent branches
 // open today — each measures 343 + 1 on its own tree and writes 344, so the
 // edits are byte-identical and merge rather than conflict.
-const RENDERED_TEST_FLOOR = 344;
+// 344 -> 353 (2026-10-14, #3472): `agent-runs-tab.test.tsx` — the Runs tab on
+// the agent register, so the register reaches the work it authorised. The step
+// ledger had been served by `GET /agent-runs/:id` since the engine shipped and
+// read by nothing on a per-agent surface.
+//   The raise takes the MEASURED `ls tests/rendered/*.test.tsx | wc -l` = 353
+// rather than 345, for the reason the notes above give three times now: eight
+// suites had accumulated under the floor before this branch — concurrent lanes
+// each adding one and none raising it — and the sentinel exists precisely to
+// stop that slack being spendable. Measuring rather than incrementing also
+// makes the number ORDER-SAFE against the branches open today: each measures
+// the same tree and writes 353, so the edits are byte-identical and merge
+// rather than conflict.
+const RENDERED_TEST_FLOOR = 353;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
