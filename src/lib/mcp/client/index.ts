@@ -63,6 +63,7 @@ import {
     wirePost,
     WireCapExceededError,
     WireEgressError,
+    WireSchemeRefusedError,
     WireTimeoutError,
     type WireResponse,
 } from '@/lib/mcp/wire-transport';
@@ -201,6 +202,13 @@ function asLegacyError(e: unknown, budgetMs: number): LegacyMcpClientError {
     }
     if (e instanceof WireTimeoutError) {
         return new TimeoutError('request', budgetMs);
+    }
+    if (e instanceof WireSchemeRefusedError) {
+        // DECIDED, not inferred (#3492). The transport knew the scheme from the
+        // URL before it called anybody, so this reason is exact — where the old
+        // route through `mapEgressError` fell to the catch-all and reported the
+        // same `egress failed` as an unrelated network fault.
+        return new SsrfBlockedError('scheme not allowed');
     }
     if (e instanceof WireEgressError) {
         // The CAUSE, not the wrapper: `mapEgressError` reads safeFetch's own
