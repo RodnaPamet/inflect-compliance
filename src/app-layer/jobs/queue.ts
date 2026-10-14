@@ -23,6 +23,7 @@ import { propagation, trace, context as otelContext, SpanStatusCode } from '@ope
 import { createRedisClient } from '@/lib/redis';
 import { QUEUE_NAME, JOB_DEFAULTS, type JobName, type JobPayload } from './types';
 import { OTEL_CARRIER_KEY } from '@/lib/observability/job-trace';
+import { isValidBullMqJobId } from './fan-out';
 import { logger } from '@/lib/observability/logger';
 
 // ─── Singleton queue (survives HMR) ───
@@ -83,6 +84,26 @@ export async function enqueue<T extends JobName>(
     payload: JobPayload<T>,
     options?: Partial<JobsOptions>,
 ) {
+    // THE ONE PLACE THIS CAN BE ENFORCED ONCE. Every job in the system is
+    // enqueued through this function, so a custom id is checked here or at no
+    // call site at all.
+    //
+    // #3554: the control-test scheduler hand-rolled `ctr:{planId}:{iso}`, BullMQ
+    // rejected all ~4,300 enqueues over seven days, and nothing noticed —
+    // the scheduler's failure path rolled its DB claim back cleanly every time,
+    // so a permanent error looked exactly like a transient one being retried.
+    //
+    // Thrown as a precondition, before the queue or the span exist: an invalid
+    // custom id is a programming error, and failing on the caller's own stack
+    // names the site better than a span event would.
+    if (options?.jobId !== undefined && !isValidBullMqJobId(options.jobId)) {
+        throw new Error(
+            `enqueue(${name}): jobId "${options.jobId}" is not a valid BullMQ custom id. ` +
+                'BullMQ accepts a colon only when the id splits into exactly three parts; ' +
+                'build ids with dispatchJobId() or scheduledJobId() rather than by hand.',
+        );
+    }
+
     const queue = getQueue();
     const defaults = JOB_DEFAULTS[name];
     const tracer = trace.getTracer('inflect.jobs');

@@ -214,7 +214,33 @@ describe('epic-named ratchets are not added back', () => {
         // way round this: the two rendered specs in the same stack are `.tsx`
         // because they render components, and renaming a source-scanning
         // guard to dodge the denominator would be gaming the measure.
-        expect(guardFiles().length).toBeLessThan(775);
+        //
+        // RAISED 775 -> 776 on 2026-10-15, for one file, on the grounds this
+        // ceiling states: `bullmq-job-id-rule.test.ts` is named for the
+        // invariant it protects — a custom BullMQ job id is one the library
+        // will accept, and no site builds one by hand.
+        //
+        // Why a new file rather than folding it in, which is the test the two
+        // raises above apply: nothing in these directories owns job-id
+        // VALIDITY. The nearest match is `fan-out-bucket-matches-schedule`,
+        // whose subject is whether the dedupe bucket agrees with the cron
+        // period — a different invariant about the same function, and hanging
+        // a colon-validity rule off it would make both harder to find, which
+        // is the exact argument the 750 -> 775 raise used.
+        //
+        // What it cost to not have it: #3554. The one enqueue site that did
+        // not use the shared factory hand-rolled
+        // `ctr:{planId}:{scheduledForIso}`, BullMQ rejected every enqueue, and
+        // scheduled control tests did not run in production for 7½ days —
+        // ~4,300 failures. The identical defect had already happened at the
+        // leaver dispatch (#2175) five weeks earlier, where the lesson was
+        // written into a docstring and two call-site tests but never made a
+        // property of the tree. One slot is the cheaper half of that trade.
+        //
+        // Raised to THIS BRANCH'S live count (553 guards + 222 guardrails),
+        // not to a round number with headroom: a ceiling with slack admits the
+        // next file silently, which is how a ratchet stops ratcheting.
+        expect(guardFiles().length).toBeLessThan(776);
     });
 
     /**

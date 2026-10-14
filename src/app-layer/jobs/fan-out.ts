@@ -70,6 +70,60 @@ export const FOUR_HOURLY_BUCKET_MS = 4 * HOUR_MS;
  * it is an opaque discriminator, and formatting invites someone to "improve" it
  * to a local-time string, which would shift the boundary by the server's offset.
  */
+/**
+ * Does BullMQ accept this custom job id?
+ *
+ * MIRRORS THE LIBRARY'S OWN CHECK, which is narrower than its error message
+ * suggests. Colons ARE allowed — but only when the id splits into exactly three
+ * parts, a back-compat carve-out for old repeatable ids:
+ *
+ *     if (jobId.includes(':') && jobId.split(':').length !== 3) throw
+ *
+ * `tests/guards/bullmq-job-id-rule.test.ts` reads the condition out of the
+ * INSTALLED BullMQ and fails if this predicate and the library disagree. A
+ * predicate that mirrors a dependency by hand goes stale with nothing failing,
+ * and this one has a seven-day production outage behind it (#3554).
+ *
+ * Deliberately NOT tightened to "no colons at all", much as the error message
+ * invites it: `dispatchJobId` emits exactly two colons and is load-bearing at
+ * eight call sites. Tightening belongs with a change to that format, not here.
+ */
+export function isValidBullMqJobId(jobId: string): boolean {
+    return !jobId.includes(':') || jobId.split(':').length === 3;
+}
+
+/**
+ * A stable job id for one (prefix, key) at one EXACT instant.
+ *
+ * The sibling of `dispatchJobId`, for schedulers that are not fan-outs. A cron
+ * plan can legitimately be due more than once inside any bucket a dispatcher
+ * would use, so bucketing here would collapse two real runs into one. The
+ * instant IS the identity.
+ *
+ * COLON-FREE, deliberately, and this is the whole point of the function.
+ * #3554 was `ctr:{planId}:{scheduledForIso}`: the template's two colons were
+ * fine, but the ISO timestamp contributed two more, the id reached five
+ * segments, and BullMQ rejected every enqueue for seven days. Epoch ms carries
+ * the same instant at the same millisecond precision with no separator of its
+ * own, and hyphens keep the id valid even if BullMQ later bans colons outright
+ * — which its error message reads like it intends to.
+ */
+export function scheduledJobId(prefix: string, key: string, instantMs: number): string {
+    if (!Number.isFinite(instantMs)) {
+        throw new Error(`scheduledJobId: instantMs must be finite, got ${instantMs}`);
+    }
+    const id = `${prefix}-${key}-${instantMs}`;
+    // A caller passing a colon-bearing prefix or key would reintroduce #3554
+    // exactly. Cheap to check, and the message names the cause rather than
+    // leaving BullMQ's "Custom Id cannot contain :" to be decoded again.
+    if (!isValidBullMqJobId(id)) {
+        throw new Error(
+            `scheduledJobId: "${id}" is not a valid BullMQ job id — the prefix or key contains a colon`,
+        );
+    }
+    return id;
+}
+
 export function dispatchJobId(
     jobName: string,
     key: string,

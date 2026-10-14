@@ -985,6 +985,49 @@ function foldString(
         }
         return fn === 'join' ? path.join(...parts) : path.resolve(...parts);
     }
+    // `require.resolve('pkg/sub')` — a dependency located by RESOLUTION.
+    //
+    // WITHOUT THIS CASE THE TWO RATCHETS CONTRADICT EACH OTHER, which is how it
+    // was found (#3554). `dependency-paths-are-resolved` requires this exact
+    // shape for any read of an installed package — a literal `node_modules/...`
+    // join does no upward walk, so it breaks in a `.claude/worktrees/<id>/`
+    // checkout that has no install of its own, or worse skips itself green
+    // behind an `existsSync`. But `require.resolve(…)` is not a constant, so
+    // every such read landed in `path-not-constant` and counted against the
+    // un-analysable ceiling. The only spelling one ratchet mandated was the
+    // spelling the other punished.
+    //
+    // RESOLVED FOR REAL rather than folded symbolically: nothing short of
+    // asking Node can say where a specifier lands, since that depends on the
+    // package's `exports` map and on which `node_modules` wins the upward walk.
+    // Node's own resolver is the authority the other ratchet points at, so it
+    // is the authority here too.
+    //
+    // BARE SPECIFIERS ONLY. A relative or absolute specifier would resolve
+    // against THIS helper's directory rather than the asserting file's, and the
+    // failure would be silent: a wrong file read successfully, with needles
+    // matched against content from somewhere else. `null` keeps those in
+    // `path-not-constant`, exactly where they are today.
+    if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === 'require' &&
+        node.expression.name.text === 'resolve' &&
+        node.arguments.length >= 1
+    ) {
+        const spec = foldString(node.arguments[0], scope, dirOfFile, opts);
+        if (spec === null || spec.startsWith('.') || path.isAbsolute(spec)) return null;
+        try {
+            return require.resolve(spec);
+        } catch {
+            // Not installed, or the `exports` map does not expose the subpath.
+            // Unresolvable is not constant, so this stays a skip rather than
+            // becoming an error — the detector's job is to measure its own
+            // blind spots, not to fail the build over a dependency's layout.
+            return null;
+        }
+    }
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
         const l = foldString(node.left, scope, dirOfFile, opts);
         const r = foldString(node.right, scope, dirOfFile, opts);
