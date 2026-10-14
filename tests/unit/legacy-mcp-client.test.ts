@@ -326,31 +326,42 @@ describe('1b client — every fault fails closed', () => {
             requestTimeoutMs: 1_000,
             pullTimeoutMs: 5_000,
         });
-        expect(res.complete).toBe(false);
-        expect(res.reason?.kind).toBe('ssrf-blocked');
-        // Not the policy message. This is the discrimination the tests above rely on.
-        expect(res.reason?.message).not.toBe('egress refused: address is not public');
+        // ASSERTED POSITIVELY since #3492, where it was two `not.toBe`s. A
+        // negated assertion is satisfied by an empty or absent value as readily as
+        // by the right one, so it cannot distinguish "the catch-all produced
+        // `egress failed`" from "`message` is undefined because the shape
+        // changed". Naming the exact sentence is what makes this a control for
+        // BOTH discriminations the cases around it rely on — the address cases
+        // above say `address is not public`, the scheme case below says
+        // `scheme not allowed`, and this one, which is neither a policy refusal
+        // nor a scheme refusal, says `egress failed`.
+        expect({ complete: res.complete, kind: res.reason?.kind, message: res.reason?.message })
+            .toEqual({
+                complete: false,
+                kind: 'ssrf-blocked',
+                message: 'egress refused: egress failed',
+            });
     });
 
-    it('http: is refused, but the client cannot say WHY — mapEgressError never reaches its scheme branch', async () => {
-        // Documented rather than asserted as correct: the refusal is real (safeFetch
-        // rejects the scheme before any connect), but `mapEgressError`'s
-        // `scheme not allowed` arm requires the word `scheme` or `protocol` in the
-        // underlying message and the message carries neither, so an `http:` endpoint
-        // reports the same reason as an unrelated network fault. Filed separately.
+    it('http: is refused AND says so — the reason names the scheme, not a generic egress failure', async () => {
+        // FIXED in #3492. This test used to pin the opposite, as a record of a
+        // defect: `mapEgressError`'s `scheme not allowed` arm required the word
+        // `scheme` or `protocol` in safeFetch's message, which carries neither, so
+        // an `http:` endpoint reported `egress refused: egress failed` — the same
+        // sentence an unresolvable hostname produces. The scheme is now decided in
+        // `wirePost` from the URL it was handed, before any call.
         const res = await pullSnapshot({
             url: 'http://legacy.example.com/mcp',
             token: TOKEN,
             requestTimeoutMs: 1_000,
             pullTimeoutMs: 5_000,
         });
-        expect({ complete: res.complete, kind: res.reason?.kind }).toEqual({
-            complete: false,
-            kind: 'ssrf-blocked',
-        });
-        // The CURRENT reason, pinned so that fixing the scheme branch turns this
-        // red and whoever fixes it updates the criterion with it.
-        expect(res.reason?.message).toBe('egress refused: egress failed');
+        expect({ complete: res.complete, kind: res.reason?.kind, message: res.reason?.message })
+            .toEqual({
+                complete: false,
+                kind: 'ssrf-blocked',
+                message: 'egress refused: scheme not allowed',
+            });
     });
 
     it('slowResponse yields a timeout', async () => {
