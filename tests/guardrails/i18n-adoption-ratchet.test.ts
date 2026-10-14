@@ -345,7 +345,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx': 1, // partial, 1 prop
     'src/components/TraceabilityPanel.tsx': 1, // partial, 1 prop
     'src/components/dev/swr-devtools.tsx': 9, // no-intl, 6 jsx + 3 prop
-    'src/components/layout/ListPageShell.tsx': 2, // no-intl, 2 prop
     'src/components/layout/MobileNavDrawer.tsx': 1, // partial, 1 prop
     'src/components/layout/org-workspace-switcher.tsx': 6, // no-intl, 5 jsx + 1 prop
     'src/components/layout/tenant-switcher.tsx': 5, // no-intl, 4 jsx + 1 prop

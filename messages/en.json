@@ -135,7 +135,9 @@
       "uploading": "Uploading…",
       "openPdf": "Open PDF",
       "openPdfNamed": "Open PDF: {title}",
-      "loadingIndicator": "Loading"
+      "loadingIndicator": "Loading",
+      "listRailLeft": "Orientation",
+      "listRailRight": "Context"
     },
     "calendar": {
       "prevYear": "Go to previous year",
