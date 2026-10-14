@@ -95,6 +95,130 @@ export const DEFAULT_STUCK_AFTER_MINUTES = 15;
  * stuck executions are by definition the OLD ones, and a newest-first page
  * would hide them behind healthy traffic — then filtered in memory.
  */
+/**
+ * WHAT THE AGENT NODES ON A CANVAS ARE DOING (#3472, plan point 08).
+ *
+ * One row per RULE, carrying the latest agentic run that rule firing started.
+ *
+ * ── WHY THIS JOIN AND NOT ANOTHER ───────────────────────────────────────────
+ *
+ * A canvas node carries `dataJson.ruleId`, so the chain is
+ *
+ *     node -> ruleId -> AutomationExecution -> WorkflowRun.parentExecutionId
+ *
+ * and `parentExecutionId` (#3537) is what makes it EXACT. The join available
+ * before that column was `(agentId, workflowKey)` from the rule's action
+ * config, and it is not unique: two rules may invoke the same agent on the
+ * same workflow, and a person may start the same workflow for the same agent.
+ * A canvas built on it would show "runs that look like they came from here",
+ * which on a governance surface is worse than showing nothing — so this
+ * function did not exist until the column did.
+ *
+ * ── BOUNDED, AND THE BOUND IS PER RULE ─────────────────────────────────────
+ *
+ * The executions read is capped, and only the LATEST run per rule survives the
+ * grouping. A canvas shows one chassis per node, so a node cannot render a
+ * history — and a rule that has fired a thousand times would otherwise drag a
+ * thousand runs across the wire to display one.
+ *
+ * ── THE ACTIVE STEP IS THE LAST RECORDED ONE ───────────────────────────────
+ *
+ * `WorkflowStep` is append-only and ordered, so the highest `seq` is where the
+ * run has got to — there is no "current step" column and inventing one would
+ * be a second source of truth for a fact the ledger already carries. For a
+ * terminal run the same read gives the step it finished on, which is the right
+ * answer to "what did this node last do".
+ */
+export async function listCanvasAgentRuns(ctx: RequestContext) {
+    assertCanReadAutomationHistory(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        // The rules that can start a run at all. Narrowed here rather than
+        // after the join: a tenant's canvas is mostly NOTIFY_USER rules, and
+        // reading their executions to discard them would be the bulk of the
+        // work.
+        const agentRules = await db.automationRule.findMany({
+            where: { tenantId: ctx.tenantId, actionType: 'INVOKE_AGENT', deletedAt: null },
+            select: { id: true },
+            take: 500,
+        });
+        if (agentRules.length === 0) return { nodes: [] };
+
+        const ruleIds = agentRules.map((r) => r.id);
+        const executions = await db.automationExecution.findMany({
+            where: { tenantId: ctx.tenantId, ruleId: { in: ruleIds } },
+            orderBy: { createdAt: 'desc' },
+            take: 500,
+            select: { id: true, ruleId: true },
+        });
+        if (executions.length === 0) return { nodes: [] };
+
+        const ruleByExecution = new Map(executions.map((e) => [e.id, e.ruleId]));
+        const runs = await db.workflowRun.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                parentExecutionId: { in: executions.map((e) => e.id) },
+            },
+            orderBy: { startedAt: 'desc' },
+            take: 500,
+            select: {
+                id: true, parentExecutionId: true, workflowKey: true, status: true,
+                stepCount: true, costTokens: true, startedAt: true,
+            },
+        });
+
+        // NEWEST PER RULE. `runs` is already newest-first, so the first one
+        // seen for a rule is the latest — no comparison, and no dependence on
+        // a second sort that could disagree with the first.
+        const latestByRule = new Map<string, (typeof runs)[number]>();
+        for (const run of runs) {
+            const ruleId = run.parentExecutionId
+                ? ruleByExecution.get(run.parentExecutionId)
+                : undefined;
+            if (!ruleId || latestByRule.has(ruleId)) continue;
+            latestByRule.set(ruleId, run);
+        }
+        if (latestByRule.size === 0) return { nodes: [] };
+
+        // The last recorded step of each surviving run, in ONE query rather
+        // than one per run: a canvas in Run Mode polls this, so an N+1 here is
+        // N+1 every few seconds.
+        const steps = await db.workflowStep.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                runId: { in: [...latestByRule.values()].map((r) => r.id) },
+            },
+            orderBy: { seq: 'desc' },
+            select: { runId: true, seq: true, kind: true, status: true, toolCalled: true },
+        });
+        const lastStepByRun = new Map<string, (typeof steps)[number]>();
+        for (const st of steps) {
+            if (!lastStepByRun.has(st.runId)) lastStepByRun.set(st.runId, st);
+        }
+
+        return {
+            nodes: [...latestByRule.entries()].map(([ruleId, run]) => {
+                const step = lastStepByRun.get(run.id);
+                return {
+                    ruleId,
+                    runId: run.id,
+                    workflowKey: run.workflowKey,
+                    status: run.status,
+                    stepCount: run.stepCount,
+                    costTokens: run.costTokens,
+                    startedAt: run.startedAt,
+                    // The step KIND and the tool, never a step's input or
+                    // output: those two columns are encrypted at rest because
+                    // of what they hold, and a canvas chassis is the last place
+                    // tenant content should surface.
+                    lastStepSeq: step?.seq ?? null,
+                    lastStepKind: step?.kind ?? null,
+                    lastStepTool: step?.toolCalled ?? null,
+                };
+            }),
+        };
+    });
+}
+
 export async function listLiveExecutions(ctx: RequestContext, now = new Date()) {
     assertCanReadAutomationHistory(ctx);
     return runInTenantContext(ctx, async (db) => {

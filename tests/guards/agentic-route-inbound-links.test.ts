@@ -308,6 +308,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // in-process bus the notification bell uses, because a Flue run executes in
     // the BullMQ WORKER and this is served by the WEB tier — a bus here would
     // see nothing a run ever wrote.
+    // #3472 — what the agent nodes on a process canvas are doing. Agentic
+    // surface because it follows `WorkflowRun.parentExecutionId` (#3537) into
+    // the run ledger; a SIBLING of `executions/live` rather than a widening of
+    // it, because `MonitorTab` reads that response too and would carry a
+    // payload it discards on every poll.
+    't/[tenantSlug]/automation/executions/agent-runs/route.ts',
     't/[tenantSlug]/agent-runs/[id]/steps/route.ts',
     't/[tenantSlug]/agent-runs/[id]/stream/route.ts',
     't/[tenantSlug]/agent-runs/route.ts',

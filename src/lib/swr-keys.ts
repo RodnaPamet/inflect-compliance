@@ -195,6 +195,13 @@ export const CACHE_KEYS = {
         analytics: () => '/automation/analytics' as const,
         executions: {
             live: () => '/automation/executions/live' as const,
+            /**
+             * #3472 — what the agent nodes on a canvas are doing. A SIBLING of
+             * `live` rather than a field on it: that response is read by
+             * `MonitorTab` too, and widening it would make that surface carry
+             * a payload it discards on every poll.
+             */
+            canvasAgentRuns: () => '/automation/executions/agent-runs' as const,
         },
         // VR-9 — AI rule suggestions (Control-page right rail).
         suggestions: () => '/ai/automation-suggestions' as const,
