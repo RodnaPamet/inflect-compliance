@@ -4577,6 +4577,7 @@
       "tabSkills": "Skills",
       "tabTools": "Tools",
       "tabCoverage": "ASI coverage",
+      "tabRuns": "Runs",
       "tabBreaker": "Circuit breaker",
       "metaAutonomy": "Autonomy",
       "metaAccess": "Data access",
@@ -5219,6 +5220,16 @@
         "windowNoTools": "No tool names recorded",
         "countedPending": "Not counted yet — still filling",
         "countedAwaitingVerdict": "Not counted — awaiting its verdict"
+      },
+      "runs": {
+        "heading": "Runs this agent authorised",
+        "scope": "{count, plural, one {# run} other {# runs}}, newest first. Runs a person started are not listed here — they carry no agent.",
+        "steps": "{count, plural, one {# step} other {# steps}}",
+        "tokens": "{count, plural, one {# token} other {# tokens}}",
+        "pendingProposals": "{count, plural, one {# awaiting review} other {# awaiting review}}",
+        "emptyTitle": "No runs yet",
+        "emptyDescription": "This agent has not started a workflow run. Runs a person started are not listed here — a run records which agent authorised it, and a human-started run names none.",
+        "loadFailed": "Could not load this agent’s runs"
       }
     },
     "mcp": {

@@ -796,7 +796,21 @@ export async function getWorkflowRun(ctx: RequestContext, runId: string) {
 
 export async function listWorkflowRuns(
     ctx: RequestContext,
-    opts: { status?: string; take?: number } = {},
+    opts: {
+        status?: string;
+        take?: number;
+        /**
+         * #3472 — narrow to ONE registered agent's runs.
+         *
+         * `WorkflowRun.agentId` is written at create time and is NULL for a
+         * human-started run, so this filter means "the runs this agent
+         * authorised" and deliberately cannot match the human ones. That is
+         * the question the agent detail page asks: the register should reach
+         * the work it admitted, and a list that mixed in runs a person started
+         * would be answering a different one.
+         */
+        agentId?: string;
+    } = {},
 ) {
     assertCanRead(ctx);
     // `opts.status` is a raw `?status=` query-string value — the `as never`
@@ -809,7 +823,14 @@ export async function listWorkflowRuns(
     );
     return runInTenantContext(ctx, (db) =>
         db.workflowRun.findMany({
-            where: { tenantId: ctx.tenantId, status },
+            where: {
+                tenantId: ctx.tenantId,
+                status,
+                // Omitted rather than `agentId: undefined` when absent —
+                // which Prisma treats the same way, and which a reader has to
+                // know to be sure. Spread so the shape says it.
+                ...(opts.agentId ? { agentId: opts.agentId } : {}),
+            },
             orderBy: { startedAt: 'desc' },
             take: opts.take ?? 50,
             // HOW MANY PROPOSALS ARE ACTUALLY WAITING on this run.
