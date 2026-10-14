@@ -50,7 +50,7 @@ import { test, expect } from './fixtures';
 import { safeGoto, waitForHydration } from './e2e-utils';
 
 /**
- * The six tabs, exactly as `AgentDetailClient` declares them and `en.json`
+ * The seven tabs, exactly as `AgentDetailClient` declares them and `en.json`
  * words them. Asserted as an ordered list rather than one-by-one so a tab that
  * silently disappears — the policy card is `disabled`, not hidden, precisely
  * because "a missing tab says the product does not have it" — fails here.
@@ -60,6 +60,11 @@ const TAB_LABELS = [
     'Risk assessment',
     'Policy card',
     'Tools',
+    // #3470 added this one. It is listed in RENDER ORDER for the same reason
+    // the list is ordered at all: a label in the wrong place is a tab in the
+    // wrong place, and this spec is the only thing that reads the rendered
+    // strings rather than the keys that produce them.
+    'Skills',
     'ASI coverage',
     'Circuit breaker',
 ];
@@ -118,7 +123,7 @@ async function registerAgent(
 }
 
 test.describe('Agent detail page', () => {
-    test('register → agent detail: six tabs, the kill switch, and back', async ({
+    test('register → agent detail: seven tabs, the kill switch, and back', async ({
         authedPage: page,
         isolatedTenant,
     }) => {
@@ -251,7 +256,7 @@ test.describe('Agent detail page', () => {
             await expect(dialog).toHaveCount(0, { timeout: 10_000 });
         });
 
-        await test.step('six tabs, and selecting one swaps the panel', async () => {
+        await test.step('seven tabs, and selecting one swaps the panel', async () => {
             const tabs = main.getByRole('tablist').getByRole('tab');
             await expect(tabs).toHaveText(TAB_LABELS, { timeout: 20_000 });
 
