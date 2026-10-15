@@ -7532,6 +7532,23 @@
     }
   },
   "processes": {
+    "checkpoint": {
+      "title": "Human checkpoint",
+      "subtitle": "{workflowKey} · run is {status}",
+      "close": "Close checkpoint review",
+      "loading": "Reading this run's open checkpoint…",
+      "loadFailed": "Could not read this run's checkpoint.",
+      "retry": "Try again",
+      "forbidden": "Reviewing agent proposals needs workspace-admin access. Ask an administrator, or open the proposals queue if you have access there.",
+      "noneAwaiting": "This run is waiting on a person, but it queued no proposals — a checkpoint pauses a run whether or not it proposed anything. The decision is on the run itself.",
+      "noneSettled": "This run is {status}, so there is nothing here to decide.",
+      "openRun": "Open this run",
+      "openQueue": "Open the proposals queue",
+      "stepLabel": "Queued by step {seq}",
+      "windowCloses": "The run's approval window closes at {at}. A decision taken after it will not resume the run.",
+      "flaggedBlocked": "The output guard flagged this proposal ({rules}), so it is approved in the proposals queue rather than from the map — the rule ids and the run's own record are there.",
+      "truncated": "This checkpoint queued more proposals than fit here. Review the rest in the proposals queue."
+    },
     "tabsAria": "Process page sections",
     "tabCanvas": "Canvas",
     "tabRules": "Rules",
