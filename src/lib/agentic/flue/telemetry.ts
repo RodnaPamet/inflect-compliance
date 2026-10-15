@@ -1,5 +1,7 @@
 import { instrument, type FlueExecutionOperation } from '@flue/runtime';
 
+import { gateDelegation } from './delegation-gate';
+
 import { getTracer } from '@/lib/observability/tracing';
 
 /**
@@ -110,12 +112,27 @@ export function installFlueTelemetry(): () => Promise<void> {
         // forwarding one nobody re-reads.
         observe: () => {},
 
-        interceptor: async (operation, _ctx, next) =>
+        // ── ONE INTERCEPTOR, TWO CONCERNS ──────────────────────────────
+        //
+        // `instrument()` throws `InstrumentationAlreadyInstalledError` on a
+        // second install, so there is exactly one interceptor per process and
+        // anything that needs the seam composes HERE. The delegation gate
+        // (#3473) is the second thing that needs it.
+        //
+        // The gate runs INSIDE the span rather than before it, so a refused
+        // delegation is traced as an attempt that failed. A gate outside would
+        // make the one operation an operator most wants to see invisible
+        // precisely when it was declined.
+        interceptor: async (operation, ctx, next) =>
             tracer.startActiveSpan(
                 spanNameFor(operation),
                 { attributes: attributesFor(operation) },
                 async (span) => {
                     try {
+                        // THROWS to refuse, which fails the `task` tool call
+                        // with a message addressed to the model. Returns
+                        // immediately for everything that is not a delegation.
+                        gateDelegation(operation, ctx);
                         return await next();
                     } catch (err) {
                         // The TYPE and message of the failure, which is ours or

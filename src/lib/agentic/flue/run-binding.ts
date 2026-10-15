@@ -105,6 +105,27 @@ export interface FlueRunBinding {
     skills: readonly FlueSkillDocument[];
     /** `<provider-id>/<model-id>`, already resolved against the tenant's residency. */
     modelSpecifier: string;
+
+    /**
+     * HOW MANY SUBAGENTS ONE TURN OF THIS RUN MAY DELEGATE TO (#3473).
+     *
+     * Carried here for the same reason the tools and the skills are: the only
+     * place a fan-out cap can be enforced is the Flue execution interceptor,
+     * which runs in the ESM graph where `pg` does not load — so the VALUE is
+     * resolved by the driver, in ordinary Node, from
+     * `TenantSecuritySettings.agentMaxSubagentsPerTurn`, and the enforcement
+     * compares against what it was handed.
+     *
+     * OPTIONAL ON THE TYPE AND NEVER OPTIONAL IN EFFECT.
+     * `normaliseFanOutCap` turns an absent, negative or non-finite value into
+     * `DEFAULT_MAX_SUBAGENTS_PER_TURN`, so a caller that omits it gets the
+     * safe number rather than "unlimited". Optional rather than required
+     * because every existing `bindRun` call site predates delegation and
+     * requiring it would make them all say a number about a capability they do
+     * not use — and a required field answered by copy-paste is a worse record
+     * than an absent one with a safe default.
+     */
+    maxSubagentsPerTurn?: number;
 }
 
 const BINDINGS = new Map<string, FlueRunBinding>();

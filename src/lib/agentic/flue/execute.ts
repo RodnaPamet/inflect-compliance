@@ -26,6 +26,8 @@ import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
 import { resolveSkillsFor } from './skills/resolve';
 import { bindRun, releaseRun } from './run-binding';
+import { readFanOutCap } from '@/lib/agentic/subagent-fanout-policy';
+import { releaseDelegationCounts } from './delegation-gate';
 import { resolveKillState, killRefusalMessage, KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { ensureFlueRuntime } from './runtime-start';
@@ -469,7 +471,18 @@ export async function executeFlueRun(
     // documents, never the ability to go and find documents.
     const skills = resolveSkillsFor(def.skills);
 
-    bindRun(runId, { tools, modelSpecifier, skills });
+    // THE FAN-OUT CAP (#3473), resolved HERE for the reason the tools and the
+    // skills are: the only place it can be enforced is the execution
+    // interceptor, which runs in the ESM graph where `pg` does not load. So the
+    // driver reads the number and the enforcement compares against what it was
+    // handed — the same shape as every other authority term in this binding.
+    //
+    // Never throws and never resolves to "unlimited": see
+    // `subagent-fanout-policy` for why a failed read here takes the opposite
+    // direction to the concurrent-run cap's.
+    const maxSubagentsPerTurn = await readFanOutCap(ctx.tenantId, ctx.requestId);
+
+    bindRun(runId, { tools, modelSpecifier, skills, maxSubagentsPerTurn });
 
     try {
         // BEFORE THE DISPATCH, because the stream is live-only: "the
@@ -686,6 +699,9 @@ export async function executeFlueRun(
         // does so at the moment the dispatch ends, which is the boundary that
         // was meant all along.
         releaseRun(runId);
+        // The per-turn delegation counters die with the binding. Leaving them
+        // would hold one entry per turn of every run this process ever ran.
+        releaseDelegationCounts(runId);
     }
 }
 

@@ -200,6 +200,18 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // still log: the usecase for run lifecycle, the driver for each step.
     'src/lib/agentic/drivers/static-driver.ts — identifier bound elsewhere',
     'src/lib/agentic/run-concurrency-policy.ts — identifier bound elsewhere',
+    // #3473 — the same shape as every other policy module in this family: the
+    // log line names `tenantId` and `requestId`, which the rule cannot follow
+    // to their bindings. REGISTERED rather than reworded, because that is this
+    // guard's own design — "what the rule could NOT judge is counted, not
+    // hidden" — and because the alternative would be inlining a tenant id to
+    // satisfy a static analyser.
+    //
+    // Only ONE entry, deliberately. The first draft of that module also used a
+    // conditional spread for `requestId` and earned a second hole ("spread of
+    // an object whose keys are not in the source"); the spread was removed
+    // instead, matching the sibling above. A hole that can be closed should be.
+    'src/lib/agentic/subagent-fanout-policy.ts — identifier bound elsewhere',
     'src/lib/agentic/open-run-streams.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
     // RELOCATION, not a new hole. `haltRunAtCap` was extracted from the static
@@ -707,7 +719,34 @@ const SINK_FLOOR = 30;
 // 194 = 186 (the base both branched from) + 5 (#3472) + 3 (#3484), and it is
 // the MEASURED live count on this merged tree, not that arithmetic — the sum
 // is shown only because it reconciles.
-const MEASURED_HOLES = 194;
+//
+// 194 -> 198: THE SUBAGENT FAN-OUT CAP (#3473). Four holes in ONE new sink —
+// the settings-read `logger.warn` in `subagent-fanout-policy.ts`, which falls
+// back to the product default when `TenantSecuritySettings` cannot be read.
+// All four are `identifier bound elsewhere`: `tenantId` and `requestId` are
+// parameters, `cap` is an imported constant, and `error` is the family's
+// `err instanceof Error ? err.message : String(err)`. The sibling
+// `run-concurrency-policy.ts` contributes an identically-shaped sink, counted
+// among #3484's four.
+//
+// Nothing in it can carry a prompt: the function reads one integer column and
+// logs the failure to read it. There is no model output in its scope.
+//
+// SAID PLAINLY BECAUSE THE RATIO MOVED THE WRONG WAY. +4 holes against +1 sink
+// LOOSENS `HOLES_PER_SINK_CEILING`, and the note under `MEASURED_SINKS` says in
+// as many words that this pair is meant to move the other way. Accepted here
+// rather than engineered around, for one reason: the alternative is contorting
+// a log line — dropping the `cap` field an operator needs, or inlining a
+// tenant id to satisfy a static analyser — to improve a number ABOUT
+// analysability. That makes the metric better and the logging worse, which is
+// the failure this metric exists to detect, pointed inward.
+//
+// One hole WAS closed rather than registered: the first draft used
+// `...(requestId ? { requestId } : {})` and earned a second kind of hole
+// ("spread of an object whose keys are not in the source"). The spread went,
+// matching the sibling. A hole that can be closed should be; these four
+// cannot, without making the log worse.
+const MEASURED_HOLES = 198;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -753,7 +792,12 @@ const MEASURED_HOLES = 194;
 // `MEASURED_HOLES` gives. 110 = 104 + 2 (#3472) + 4 (#3484). Raising the
 // denominator by more than the numerator TIGHTENS the ratio, which is the
 // direction this pair is meant to move.
-const MEASURED_SINKS = 110;
+// 110 -> 111: the ONE sink #3473 adds — the fan-out settings-read warn. Four
+// holes against one sink, which LOOSENS rather than tightens the ratio; the
+// long note under `MEASURED_HOLES` says why that was accepted rather than
+// worked around, and that draining an existing sink is what would actually
+// move it.
+const MEASURED_SINKS = 111;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
