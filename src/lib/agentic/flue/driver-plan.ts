@@ -1,4 +1,4 @@
-import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import { ENGINE_CAPS, type WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { resolveFlueModel, type FlueModelSelection, type FlueModelRefusal } from './model-selection';
 
 /**
@@ -28,7 +28,7 @@ export type FlueStartRefusal =
     | FlueModelRefusal
     /** The definition asked for a driver other than flue. */
     | 'DEFINITION_ASKED_FOR_ANOTHER_DRIVER'
-    /** The run resumed past the steps a definition declares. */
+    /** The run resumed with its whole step budget already spent. */
     | 'NO_STEPS_REMAIN'
     /**
      * The chosen model is not one the runtime registered at boot.
@@ -64,10 +64,35 @@ export function planFlueRun(
     if (def.driver !== 'flue') {
         return { ok: false, reason: 'DEFINITION_ASKED_FOR_ANOTHER_DRIVER' };
     }
-    // A resume past the last declared step has nothing to execute. Refusing
-    // here rather than dispatching an agent with no work keeps a no-op out of
-    // the ledger, where it would look like a run that did something.
-    if (fromSeq >= def.steps.length) {
+    // A resume with no budget left has nothing to execute. Refusing here rather
+    // than dispatching an agent with no work keeps a no-op out of the ledger,
+    // where it would look like a run that did something.
+    //
+    // ── WHY THE BOUND IS THE ENGINE CAP AND NOT `def.steps.length` (#3602) ──
+    //
+    // This compared `fromSeq >= def.steps.length`, and the two numbers are not
+    // commensurable on this engine. `fromSeq` is a LEDGER position — how many
+    // rows the run has committed. `def.steps.length` counts DECLARED steps, and
+    // the static engine walks those one-for-one, which is the only setting where
+    // the comparison means anything.
+    //
+    // Flue does not walk them. `runMessage` hands the model the description and
+    // the step list as a SPECIFICATION, and the ledger then records a row per
+    // call the model actually chose to make — routinely more rows than the
+    // definition has steps. And the line above has already refused every
+    // non-flue definition, so this check only ever ran on the engine where it
+    // could not be right.
+    //
+    // Measured: `access-posture` declares 3 steps; its production runs committed
+    // 4, 5 and 6 rows. The 5-row run was resumed, hit `5 >= 3`, and was failed
+    // with "the run resumed past the last declared step" — erasing the real
+    // story, which was an MCP tool failing twice with a FLAGGED verdict. Every
+    // Flue run that needs a resume after a normal amount of work met this.
+    //
+    // `MAX_STEPS` is the bound that actually applies to a model-driven run, and
+    // it is the same ceiling `run-caps.ts` charges against, so a run refused
+    // here is one the cap would have halted anyway.
+    if (fromSeq >= ENGINE_CAPS.MAX_STEPS) {
         return { ok: false, reason: 'NO_STEPS_REMAIN' };
     }
 
@@ -90,7 +115,10 @@ export function refusalMessage(reason: FlueStartRefusal): string {
         case 'DEFINITION_ASKED_FOR_ANOTHER_DRIVER':
             return 'flue_driver_not_requested: this workflow does not ask for the Flue engine.';
         case 'NO_STEPS_REMAIN':
-            return 'flue_no_steps_remain: the run resumed past the last declared step.';
+            return (
+                'flue_no_steps_remain: the run resumed with its entire step budget ' +
+                `already spent (${ENGINE_CAPS.MAX_STEPS}).`
+            );
         case 'LOCAL_GATEWAY_NOT_CONFIGURED':
             return (
                 'flue_local_gateway_not_configured: this workspace is LOCAL_ONLY and no ' +

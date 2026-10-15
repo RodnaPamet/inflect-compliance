@@ -252,7 +252,7 @@ export async function executeFlueRun(
     // not tight enough: pass an `AbortSignal` into the dispatch.
     const preflight = budget.charge('RUNTIME_MS', 0);
     if (preflight) {
-        const status = await haltRunAtCap(ctx, runId, preflight, def.steps.length - fromSeq);
+        const status = await haltRunAtCap(ctx, runId, preflight, null);
         return { status, stepFailures: 0 };
     }
 
@@ -661,7 +661,7 @@ export async function executeFlueRun(
         // may well have finished tidily after being refused its tools, and
         // reporting that as a completed run would hide the ceiling.
         if (latch.halt) {
-            const status = await haltRunAtCap(ctx, runId, latch.halt, def.steps.length - fromSeq);
+            const status = await haltRunAtCap(ctx, runId, latch.halt, null);
             return { status, stepFailures };
         }
 
@@ -681,7 +681,7 @@ export async function executeFlueRun(
         const tokenHalt = budget.charge('TOKENS', costTokens - budget.used('TOKENS'));
         if (tokenHalt) {
             await updateRun(ctx, runId, { costTokens, stepCount: seq });
-            const status = await haltRunAtCap(ctx, runId, tokenHalt, 0);
+            const status = await haltRunAtCap(ctx, runId, tokenHalt, null);
             return { status, stepFailures };
         }
 
@@ -735,7 +735,7 @@ export async function executeFlueRun(
         // are what the submission failed on. Report the ceiling, not the
         // symptom.
         if (latch.halt) {
-            const status = await haltRunAtCap(ctx, runId, latch.halt, def.steps.length - fromSeq);
+            const status = await haltRunAtCap(ctx, runId, latch.halt, null);
             return { status, stepFailures };
         }
 
