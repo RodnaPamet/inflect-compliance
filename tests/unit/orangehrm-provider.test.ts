@@ -40,11 +40,29 @@ import {
     IntegrationAuthError,
     IntegrationTerminalError,
 } from '@/app-layer/integrations/http-resilience';
-import { fetchOrangeHrmAccessToken } from '@/app-layer/integrations/providers/orangehrm/token';
+import {
+    buildOrangeHrmAuthorizeUrl,
+    exchangeCodeForOrangeHrmToken,
+    readOrangeHrmSecret,
+    refreshOrangeHrmToken,
+    resolveOrangeHrmAccessToken,
+    type OrangeHrmSecret,
+} from '@/app-layer/integrations/providers/orangehrm/token';
 import { HRIS_PROVIDERS, isHrisProviderId, isHrisSyncProvider } from '@/app-layer/integrations/providers/hris';
 
 const HOST = 'acme.orangehrmlive.com';
 const GOOD = { baseUrl: HOST, clientId: 'cid', clientSecret: 'csecret' };
+/**
+ * A CONSENTED connection: `GOOD` plus the token pair the authorization-code
+ * flow leaves behind (#3594). Separate from `GOOD` on purpose — `GOOD` is still
+ * exactly what an operator can type in, and the difference between the two is
+ * now the difference between "configured" and "authorized", which several tests
+ * below exist to keep distinct.
+ *
+ * `expiresAt` is far in the future so the default path does NOT refresh; the
+ * tests that want a refresh set it in the past explicitly.
+ */
+const CONSENTED = { ...GOOD, accessToken: 'live-access', refreshToken: 'live-refresh', expiresAt: 4_000_000_000 };
 
 /** A JSON response, in the shape `resilientFetch`'s callers consume. */
 const json = (body: unknown, init: { ok?: boolean; status?: number } = {}) =>
@@ -246,59 +264,252 @@ describe('a secret never leaves for an unlisted host', () => {
         expect(r.employees).toHaveLength(1);
     });
 
-    it('the token exchange refuses an off-domain host before sending the client secret', async () => {
+    it('the code exchange refuses an off-domain host before sending the client secret', async () => {
         const fetchImpl = mockFetch(async () => json({ access_token: 'x' }));
         await expect(
-            fetchOrangeHrmAccessToken({ host: 'attacker.test', clientId: 'cid', clientSecret: 'csecret' }, { fetchImpl }),
+            exchangeCodeForOrangeHrmToken(
+                { client: { host: 'attacker.test', clientId: 'cid', clientSecret: 'csecret' }, code: 'c', redirectUri: 'https://x.test/cb' },
+                { fetchImpl },
+            ),
         ).rejects.toThrow(/Refusing to send OrangeHRM credentials/);
         expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('and so does the AUTHORIZE url, which is where a browser gets sent', async () => {
+        // A separate assertion because it is a separate code path and the
+        // consequence is different: this one does not carry the secret, it
+        // hands the admin's BROWSER a destination and tells it this
+        // deployment's callback address.
+        expect(() =>
+            buildOrangeHrmAuthorizeUrl({
+                client: { host: 'attacker.test', clientId: 'cid' },
+                redirectUri: 'https://x.test/cb',
+                state: 's',
+            }),
+        ).toThrow(/Refusing to send OrangeHRM credentials/);
     });
 });
 
 // ───────────────────────────── token exchange ──────────────────────────────
 
-describe('the client-credentials exchange', () => {
-    it('posts the grant to the instance token endpoint with the secret in a Basic header', async () => {
-        const fetchImpl = mockFetch(async () => json({ access_token: 'minted' }));
-        const token = await fetchOrangeHrmAccessToken(
-            { host: HOST, clientId: 'cid', clientSecret: 'csecret' },
-            { fetchImpl },
+describe('the authorization-code exchange', () => {
+    // ═══ WHY THESE TESTS REPLACED THE CLIENT-CREDENTIALS ONES WHOLESALE ═══
+    //
+    // The old suite asserted `grant_type=client_credentials` and a Basic
+    // header, correctly, against a grant OrangeHRM 5.x does not implement and a
+    // header its REST Bearer middleware intercepts (#3594). Both assertions
+    // were green for the life of the provider. They are not adjusted here —
+    // they are deleted, because every one of them pinned a request the product
+    // rejects, and an adjusted version of a wrong request is still wrong.
+    //
+    // The expectations below are written from MEASURED responses of
+    // `orangehrm/orangehrm:5.9`, not from a design note.
+
+    const CLIENT = { host: HOST, clientId: 'cid', clientSecret: 'csecret' };
+    const RU = 'https://app.test/api/integrations/orangehrm/callback';
+
+    it('posts the authorization_code grant with the credentials in the BODY', async () => {
+        const fetchImpl = mockFetch(async () => json({ access_token: 'a1', refresh_token: 'r1', expires_in: 3600 }));
+        const secret = await exchangeCodeForOrangeHrmToken(
+            { client: CLIENT, code: 'the-code', redirectUri: RU },
+            { fetchImpl, now: () => 1_000_000 },
         );
-        expect(token).toBe('minted');
+        expect(secret).toEqual({ accessToken: 'a1', refreshToken: 'r1', expiresAt: 1000 + 3600 });
 
         const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
         expect(url).toBe(`https://${HOST}/web/index.php/oauth2/token`);
         expect(init.method).toBe('POST');
-        const headers = init.headers as Record<string, string>;
-        expect(headers.Authorization).toBe(`Basic ${Buffer.from('cid:csecret').toString('base64')}`);
-        // The secret must be in the header, not the form body — a proxy in
-        // front of the instance that logs bodies would otherwise capture it.
-        expect(String(init.body)).toBe('grant_type=client_credentials');
+
+        // ═══ THE ASSERTION THAT IS THE WHOLE POINT ═══
+        //
+        // No Authorization header. OrangeHRM's REST Bearer middleware claims
+        // any request carrying one before the OAuth server evaluates it —
+        // measured with the grant held constant: body credentials reached the
+        // OAuth server (`invalid_client`), a Basic header did not
+        // ("Unexpected error occurred while evaluating the `Bearer` token").
+        expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+
+        const body = new URLSearchParams(String(init.body));
+        expect(body.get('grant_type')).toBe('authorization_code');
+        expect(body.get('code')).toBe('the-code');
+        expect(body.get('redirect_uri')).toBe(RU);
+        expect(body.get('client_id')).toBe('cid');
+        expect(body.get('client_secret')).toBe('csecret');
+        // No PKCE: the client must be confidential, and AuthCodeGrant requires
+        // a challenge for PUBLIC clients only. Sending a challenge at authorize
+        // time without a verifier here would fail the exchange.
+        expect(body.get('code_verifier')).toBeNull();
+    });
+
+    it('refuses a code exchange that returns no refresh token', async () => {
+        // Without one the connection works until the first expiry and then
+        // dies at 04:00 some morning. Failing at consent is the only moment a
+        // human is present to fix it.
+        const fetchImpl = mockFetch(async () => json({ access_token: 'a1', expires_in: 3600 }));
+        await expect(
+            exchangeCodeForOrangeHrmToken({ client: CLIENT, code: 'c', redirectUri: RU }, { fetchImpl }),
+        ).rejects.toThrow(/did not return a refresh token/);
+    });
+
+    it('refuses a response with no usable expires_in rather than guessing one', async () => {
+        // Guessing LONG strands the connection; guessing SHORT burns a refresh
+        // every run and multiplies the chance of losing a rotating chain.
+        const fetchImpl = mockFetch(async () => json({ access_token: 'a1', refresh_token: 'r1' }));
+        await expect(
+            exchangeCodeForOrangeHrmToken({ client: CLIENT, code: 'c', redirectUri: RU }, { fetchImpl }),
+        ).rejects.toThrow(/no usable expires_in/);
     });
 
     it('a 200 carrying no access_token throws HERE, not as a 401 one frame later', async () => {
-        // An empty Bearer header would come back 401 from the ROSTER endpoint
-        // and read as a credential problem several frames from the exchange
-        // that actually failed.
         const fetchImpl = mockFetch(async () => json({}));
-        await expect(fetchOrangeHrmAccessToken({ host: HOST, clientId: 'c', clientSecret: 's' }, { fetchImpl })).rejects.toThrow(
-            /no access_token/,
-        );
+        await expect(
+            exchangeCodeForOrangeHrmToken({ client: CLIENT, code: 'c', redirectUri: RU }, { fetchImpl }),
+        ).rejects.toThrow(/no access_token/);
     });
 
     it('a non-ok token response throws with its status', async () => {
         const fetchImpl = mockFetch(async () => json({}, { ok: false, status: 401 }));
-        await expect(fetchOrangeHrmAccessToken({ host: HOST, clientId: 'c', clientSecret: 's' }, { fetchImpl })).rejects.toThrow(
-            /401/,
-        );
+        await expect(
+            exchangeCodeForOrangeHrmToken({ client: CLIENT, code: 'c', redirectUri: RU }, { fetchImpl }),
+        ).rejects.toThrow(/401/);
     });
 
     it('refuses empty credentials before building a request', async () => {
         const fetchImpl = mockFetch(async () => json({ access_token: 'x' }));
-        await expect(fetchOrangeHrmAccessToken({ host: HOST, clientId: '', clientSecret: 's' }, { fetchImpl })).rejects.toThrow(
-            /client id and client secret are required/,
-        );
+        await expect(
+            exchangeCodeForOrangeHrmToken(
+                { client: { ...CLIENT, clientId: '' }, code: 'c', redirectUri: RU },
+                { fetchImpl },
+            ),
+        ).rejects.toThrow(/client id and client secret are required/);
         expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('builds an authorize url with no scope parameter at all', async () => {
+        // `ohrm_oauth_scope` is EMPTY in a stock 5.9 instance, so there is
+        // nothing to ask for — and `scope=` is not the same request as no
+        // `scope`. Measured, not assumed.
+        const url = new URL(buildOrangeHrmAuthorizeUrl({
+            client: { host: HOST, clientId: 'cid' },
+            redirectUri: RU,
+            state: 'nonce-1',
+        }));
+        expect(url.origin + url.pathname).toBe(`https://${HOST}/web/index.php/oauth2/authorize`);
+        expect(url.searchParams.get('response_type')).toBe('code');
+        expect(url.searchParams.get('client_id')).toBe('cid');
+        expect(url.searchParams.get('redirect_uri')).toBe(RU);
+        expect(url.searchParams.get('state')).toBe('nonce-1');
+        expect(url.searchParams.has('scope')).toBe(false);
+        expect(url.searchParams.has('code_challenge')).toBe(false);
+    });
+});
+
+describe('refresh rotation', () => {
+    const CLIENT = { host: HOST, clientId: 'cid', clientSecret: 'csecret' };
+
+    it('posts the refresh_token grant, credentials in the body', async () => {
+        const fetchImpl = mockFetch(async () => json({ access_token: 'a2', refresh_token: 'r2', expires_in: 60 }));
+        const secret = await refreshOrangeHrmToken(
+            { client: CLIENT, refreshToken: 'r1' },
+            { fetchImpl, now: () => 2_000_000 },
+        );
+        expect(secret).toEqual({ accessToken: 'a2', refreshToken: 'r2', expiresAt: 2000 + 60 });
+
+        const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+        expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+        const body = new URLSearchParams(String(init.body));
+        expect(body.get('grant_type')).toBe('refresh_token');
+        expect(body.get('refresh_token')).toBe('r1');
+    });
+
+    it('KEEPS the current refresh token when the server does not rotate one', async () => {
+        // RefreshTokenGrant MAY rotate and MAY not. Overwriting with undefined
+        // un-authenticates the connection on the NEXT run, which surfaces as an
+        // unrelated failure a day later.
+        const fetchImpl = mockFetch(async () => json({ access_token: 'a2', expires_in: 60 }));
+        const secret = await refreshOrangeHrmToken({ client: CLIENT, refreshToken: 'r1' }, { fetchImpl });
+        expect(secret.refreshToken).toBe('r1');
+    });
+
+    it('POSITIVE CONTROL — a rotated token REPLACES the current one', async () => {
+        // Without this, the test above passes for an implementation that
+        // ignores `refresh_token` entirely and always keeps the old one.
+        const fetchImpl = mockFetch(async () => json({ access_token: 'a2', refresh_token: 'r2', expires_in: 60 }));
+        const secret = await refreshOrangeHrmToken({ client: CLIENT, refreshToken: 'r1' }, { fetchImpl });
+        expect(secret.refreshToken).toBe('r2');
+    });
+
+    it('does NOT refresh while the token is outside the expiry skew', async () => {
+        const refresh = jest.fn();
+        const current: OrangeHrmSecret = { accessToken: 'a1', refreshToken: 'r1', expiresAt: 1_000 };
+        const r = await resolveOrangeHrmAccessToken(current, { client: CLIENT }, {
+            now: () => 900_000, // 900s — 100s of life left, skew is 60s
+            refresh,
+        });
+        expect(r.accessToken).toBe('a1');
+        expect(r.rotated).toBeNull();
+        expect(refresh).not.toHaveBeenCalled();
+    });
+
+    it('refreshes INSIDE the skew, before the token has actually expired', async () => {
+        // The skew is the point: refreshing only after expiry means every
+        // boundary run makes one doomed request first.
+        const rotated: OrangeHrmSecret = { accessToken: 'a2', refreshToken: 'r2', expiresAt: 2_000 };
+        const refresh = jest.fn(async () => rotated);
+        const current: OrangeHrmSecret = { accessToken: 'a1', refreshToken: 'r1', expiresAt: 1_000 };
+        const r = await resolveOrangeHrmAccessToken(current, { client: CLIENT }, {
+            now: () => 950_000, // 950s — 50s of life left, inside the 60s skew
+            refresh,
+        });
+        expect(refresh).toHaveBeenCalledWith('r1');
+        expect(r.accessToken).toBe('a2');
+        expect(r.rotated).toEqual(rotated);
+    });
+
+    it('PERSISTS the rotated pair before returning it', async () => {
+        // A rotated refresh token that is never stored leaves the next run
+        // holding a dead one — and the run that rotated it still succeeds, so
+        // the failure appears a day later with nothing pointing here.
+        const rotated: OrangeHrmSecret = { accessToken: 'a2', refreshToken: 'r2', expiresAt: 2_000 };
+        const persisted: OrangeHrmSecret[] = [];
+        await resolveOrangeHrmAccessToken(
+            { accessToken: 'a1', refreshToken: 'r1', expiresAt: 0 },
+            { client: CLIENT },
+            { now: () => 0, refresh: async () => rotated, persist: async (x) => { persisted.push(x); } },
+        );
+        expect(persisted).toEqual([rotated]);
+    });
+
+    it('does not write on a no-op resolve', async () => {
+        const persist = jest.fn();
+        await resolveOrangeHrmAccessToken(
+            { accessToken: 'a1', refreshToken: 'r1', expiresAt: 1_000 },
+            { client: CLIENT },
+            { now: () => 0, persist },
+        );
+        expect(persist).not.toHaveBeenCalled();
+    });
+});
+
+describe('reading the stored secret', () => {
+    it('returns null when there is no refresh token — unauthorized, not malformed', async () => {
+        expect(readOrangeHrmSecret({ ...GOOD })).toBeNull();
+    });
+
+    it('treats a missing expiry as expired rather than as valid forever', async () => {
+        // `expiresAt: 0` forces a refresh, which is the correct reading of "we
+        // hold a refresh token and nothing trustworthy about the access token".
+        // Defaulting it high would park the connection on a dead access token.
+        const secret = readOrangeHrmSecret({ refreshToken: 'r1' });
+        expect(secret).toEqual({ accessToken: '', refreshToken: 'r1', expiresAt: 0 });
+    });
+
+    it('reads a complete pair through unchanged', async () => {
+        expect(readOrangeHrmSecret(CONSENTED)).toEqual({
+            accessToken: 'live-access',
+            refreshToken: 'live-refresh',
+            expiresAt: 4_000_000_000,
+        });
     });
 });
 
@@ -778,13 +989,33 @@ describe('the read deadline keeps the roster read inside the lock lease', () => 
 
 // ──────────────────────── the provider's own seams ─────────────────────────
 
+/**
+ * A `resolveOrangeHrmAccessToken` double. Takes the real four-argument shape so
+ * a test can assert WHICH secret was handed in — which is the thing that broke
+ * when the lifecycle changed, and the thing a `() => 'tok'` stub could not see.
+ */
+const stubResolve = (accessToken = 'tok'): jest.Mock =>
+    jest.fn(async (_current: OrangeHrmSecret) => ({ accessToken, rotated: null }));
+
 describe('the provider wires the two halves together', () => {
     it('refuses BEFORE any request when the connection is incomplete', async () => {
         const readRoster = jest.fn(async () => ({ employees: [], complete: true, resumeToken: null }));
-        const fetchToken = jest.fn(async () => 'tok');
-        const p = new OrangeHrmProvider({ readRoster, fetchToken });
-        await expect(p.listEmployees({ ...GOOD, clientSecret: '' })).rejects.toThrow(/incomplete/i);
-        expect(fetchToken).not.toHaveBeenCalled();
+        const resolveToken = stubResolve();
+        const p = new OrangeHrmProvider({ readRoster, resolveToken });
+        await expect(p.listEmployees({ ...CONSENTED, clientSecret: '' })).rejects.toThrow(/incomplete/i);
+        expect(resolveToken).not.toHaveBeenCalled();
+        expect(readRoster).not.toHaveBeenCalled();
+    });
+
+    it('refuses an UNAUTHORIZED connection distinctly from an incomplete one', async () => {
+        // The two states used to be the same: under client credentials, a
+        // complete config WAS a complete credential. Now a connection can be
+        // fully configured and still hold no token, and telling an operator
+        // "incomplete: clientSecret" for that would send them to re-check a
+        // secret that is fine (#3594).
+        const readRoster = jest.fn(async () => ({ employees: [], complete: true, resumeToken: null }));
+        const p = new OrangeHrmProvider({ readRoster, resolveToken: stubResolve() });
+        await expect(p.listEmployees(GOOD)).rejects.toThrow(/has not been authorized/i);
         expect(readRoster).not.toHaveBeenCalled();
     });
 
@@ -792,12 +1023,12 @@ describe('the provider wires the two halves together', () => {
         // An empty roster reported complete is the mass-terminate path.
         const readRoster = jest.fn(async () => ({ employees: [], complete: true, resumeToken: null }));
         const p = new OrangeHrmProvider({
-            fetchToken: jest.fn(async () => {
+            resolveToken: jest.fn(async () => {
                 throw new Error('OrangeHRM token request failed: 401');
             }),
             readRoster,
         });
-        await expect(p.listEmployees(GOOD)).rejects.toThrow('401');
+        await expect(p.listEmployees(CONSENTED)).rejects.toThrow('401');
         expect(readRoster).not.toHaveBeenCalled();
     });
 
@@ -805,10 +1036,10 @@ describe('the provider wires the two halves together', () => {
         // The provider must not round a partial roster up to complete — that
         // flag is what the departure reconcile keys on.
         const p = new OrangeHrmProvider({
-            fetchToken: jest.fn(async () => 'tok'),
+            resolveToken: stubResolve(),
             readRoster: jest.fn(async () => ({ employees: [], complete: false, resumeToken: '50' })),
         });
-        const r = await p.listEmployees(GOOD);
+        const r = await p.listEmployees(CONSENTED);
         expect(r.complete).toBe(false);
         expect(r.resumeToken).toBe('50');
     });
@@ -817,8 +1048,8 @@ describe('the provider wires the two halves together', () => {
         // A fresh budget at the roster call would let a slow token exchange
         // push the read past the lock lease it is meant to fit inside (#2508).
         const readRoster = jest.fn(async () => ({ employees: [], complete: true, resumeToken: null }));
-        const p = new OrangeHrmProvider({ fetchToken: jest.fn(async () => 'tok'), readRoster });
-        await p.listEmployees(GOOD, '50', { readDeadlineAt: 12_345 });
+        const p = new OrangeHrmProvider({ resolveToken: stubResolve(), readRoster });
+        await p.listEmployees(CONSENTED, '50', { readDeadlineAt: 12_345 });
 
         const call = readRoster.mock.calls[0] as unknown as [
             { host: string },
@@ -842,28 +1073,56 @@ describe('validateConnection', () => {
     });
 
     it('rejects an off-domain host without probing it', async () => {
-        const fetchToken = jest.fn(async () => 'tok');
-        const p = new OrangeHrmProvider({ fetchToken });
+        const resolveToken = stubResolve();
+        const p = new OrangeHrmProvider({ resolveToken });
         const r = await p.validateConnection({ baseUrl: 'attacker.test', clientId: 'c' }, { clientSecret: 's' });
         expect(r.valid).toBe(false);
-        expect(fetchToken).not.toHaveBeenCalled();
+        expect(resolveToken).not.toHaveBeenCalled();
     });
 
-    it('makes a REAL token exchange and reports its failure', async () => {
+    it('tells an unauthorized connection what to DO, and does not call it rejected', async () => {
+        // The failure mode this replaces: under client credentials a complete
+        // config was testable on the spot, so "not authorized" had no spelling
+        // and would have surfaced as "OrangeHRM rejected the credentials" —
+        // sending an operator to re-enter a secret that is correct.
+        const resolveToken = stubResolve();
+        const p = new OrangeHrmProvider({ resolveToken });
+        const r = await p.validateConnection({ baseUrl: HOST, clientId: 'c' }, { clientSecret: 's' });
+        expect(r.valid).toBe(false);
+        expect(r.error).toMatch(/has not been authorized/i);
+        expect(r.error).not.toMatch(/rejected/i);
+        // And it costs no request: there is nothing to exchange.
+        expect(resolveToken).not.toHaveBeenCalled();
+    });
+
+    it('makes a REAL token exchange for an authorized connection and reports its failure', async () => {
         const p = new OrangeHrmProvider({
-            fetchToken: jest.fn(async () => {
+            resolveToken: jest.fn(async () => {
                 throw new Error('OrangeHRM token request failed: 401');
             }),
         });
-        const r = await p.validateConnection({ baseUrl: HOST, clientId: 'c' }, { clientSecret: 's' });
+        const r = await p.validateConnection(
+            { baseUrl: HOST, clientId: 'c' },
+            { clientSecret: 's', refreshToken: 'r1', accessToken: 'a1', expiresAt: 0 },
+        );
         expect(r.valid).toBe(false);
         expect(r.error).toMatch(/rejected the credentials/);
     });
 
     it('is valid when the exchange succeeds, and declares itself a live check', async () => {
-        const p = new OrangeHrmProvider({ fetchToken: jest.fn(async () => 'tok') });
-        const r = await p.validateConnection({ baseUrl: HOST, clientId: 'c' }, { clientSecret: 's' });
+        const resolveToken = stubResolve();
+        const p = new OrangeHrmProvider({ resolveToken });
+        const r = await p.validateConnection(
+            { baseUrl: HOST, clientId: 'c' },
+            { clientSecret: 's', refreshToken: 'r1', accessToken: 'a1', expiresAt: 4_000_000_000 },
+        );
         expect(r.valid).toBe(true);
         expect(p.liveValidation).toBe(true);
+
+        // The SECRET reached the resolver, not the config bag. A resolver
+        // handed `{baseUrl, clientId, ...}` would refresh nothing and the
+        // stub's return value would hide it.
+        const [current] = resolveToken.mock.calls[0] as unknown as [OrangeHrmSecret];
+        expect(current.refreshToken).toBe('r1');
     });
 });
