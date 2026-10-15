@@ -188,12 +188,37 @@ metric value, with a date, so somebody who was not there can check it.
 | phase | has it run in production? | evidence |
 | --- | --- | --- |
 | **0** — directory prerequisites | **yes** | `IdentityWriteJournal` row `APPLIED / DISABLE_ACCOUNT`, 2026-09-12 — the first real directory disable. 1 `IdentityAccountLink`, 3 journal rows. |
-| **1** — the pipe (`legacy-mcp`) | **no** | no `legacy-mcp` connection exists. Production has 6 `IntegrationConnection` rows: `active-directory` 1, `entra-id` 2, `mcp-server` 3. |
-| **2** — mapping and ingestion | **no** | `LegacyAccount` 0, `LegacyAccessSnapshot` 0. |
-| **3** — deterministic reconciliation | **no** | `LegacyAccountResolution` 0. |
-| **4** — assisted reconciliation and review | **no** | `LegacyIdentityAlias` 0. |
+| **1** — the pipe (`legacy-mcp`) | **yes, against the reference fixture** | #3592, 2026-10-15. Connection `cmv9kqroc0000f1s3a3wk9u56` in `inflect-ltd-mo94mi34`; `validateConnection` returned valid over public HTTPS with a Let's Encrypt certificate. The far end's own request log recorded `initialize`, `notifications/initialized` and `resources/read inflect-access://manifest` — so the handshake and manifest read are the SERVER'S evidence, not ours. Production now has 7 `IntegrationConnection` rows: `active-directory` 1, `entra-id` 2, `mcp-server` 3, `legacy-mcp` 1. |
+| **2** — mapping and ingestion | **yes, against the reference fixture** | #3592, 2026-10-15. `LegacyAccessSnapshot` `cmv9kvzqx000301s384fd9rm3` — `COMPLETE`, `rowCount` 7, `rowsReceived` 7, `unparsedDateCount` 0, no refusal, no overshared columns, `pulledAt` 13:32:22.744 → `completedAt` 13:32:23.175. `payloadHash` `f5f146d82b6f…bfb1d449` at algorithm version 1, over mapping v1 confirmed against `columnSetFingerprint` `59e625614052…b7d5c3f1c`. `LegacyAccount` 7, read across three cursor pages at `rowsPerPage: 3`. Job `629290`: `itemsScanned` 7, `itemsActioned` 7, 612 ms. |
+| **3** — deterministic reconciliation | **no — it RAN and refused, which is the finding** | `LegacyAccountResolution` 0. Job `629291` executed and refused `NO_FRESH_ROSTER`, recorded as `IntegrationExecution: legacy-mcp.reconcile / PARTIAL`. The gate is right — a stale roster "mass-produces false orphans and false leavers rather than degrading gently" — and it is unreachable, because **no HRIS sync has ever executed in production**: zero `IntegrationExecution` rows for `bamboohr`, `workday` or `orangehrm`, ever. #3594 is why that is not merely untried — `orangehrm` authenticated with a grant OrangeHRM 5.x does not implement — and #3595 is the same gap in `workday`, whose consent flow has no caller at all. |
+| **4** — assisted reconciliation and review | **no** | `LegacyIdentityAlias` 0. Blocked behind phase 3. |
 | **5** — recertification campaigns | **no** | `AccessReview` 0, `AccessReviewDecision` 0. |
 | **6** — model adjudication | **no, and cannot** | `LegacyMatchVerdict` 0 for its whole life. Laya is retired, TypeSafe withdrawn, and `legacyMatchAiMode` can only be written `OFF`, so `runLegacyAdjudication` returns before reaching a model. |
+
+**"Against the reference fixture" is doing real work in rows 1 and 2.** It means
+the code ran over an actual socket, through `safeFetch`'s re-resolution, against
+a server it does not share a process with — which is exactly what #3578 said no
+criterion required. It does **not** mean a customer's legacy application has
+been read. The fixture is `scripts/proving-run-legacy-mcp-server.ts`, which
+wraps the same `createLegacyMcpFakeServer` the unit tests use, so the *payloads*
+are still ours. What changed is the transport, the handshake, the paging, the
+persistence and the hashing, every one of which had only ever run in-process.
+
+That distinction earns its place by what the run caught. Three gates fired that
+no in-process test had reached — `MAPPING_MISSING`, the
+one-column-two-canonical-fields refusal, and `NO_FRESH_ROSTER` — and each was
+correct. It also found one defect (#3591: `legacy-reconcile` reported
+`success: true` on its own refusal, because its `makeResult` call is handed no
+`JobOutcome`) and, in trying to reach phase 3, two more that no fixture could
+have surfaced: a provider built on a grant the vendor does not implement
+(#3594) and a consent flow with no caller (#3595).
+
+**The general lesson, which is why this appendix exists at all:** a provider's
+fake cannot discover that the vendor does not implement what the fake
+implements. `orangehrm` had 120 green tests over an authentication method
+OrangeHRM has never offered. One probe against the real product settled it, and
+the probe only meant anything because it carried a control — an invented grant
+name, to prove that "unsupported" and "rejected" are different answers.
 
 *Measured 2026-10-15 against production. Counts only; no row contents.*
 
