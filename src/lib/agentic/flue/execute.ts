@@ -515,6 +515,9 @@ export async function executeFlueRun(
         // bookkeeping. `toolCalled: 'task'` because that is the tool the model
         // called; the specialist is the LABEL, which is what the timeline
         // shows and what the grouping keys on.
+        // THE COUNTER, read-only. The gate takes the span's lower bound from
+        // it before `next()`; only the driver allocates.
+        currentLedgerSeq: () => seq,
         onDelegationComplete: async (d) => {
             await recordStep(ctx, runId, seq++, 'TOOL_CALL', {
                 toolCalled: DELEGATION_TOOL_NAME,
@@ -526,7 +529,18 @@ export async function executeFlueRun(
                 // that cares. The answer reached the parent's context and was
                 // scanned on the way; it is not evidence this row needs to
                 // carry a second time.
-                input: { agent: d.agent, taskId: d.taskId },
+                // `agent` IS THE ONLY PLACE THE SPECIALIST SURVIVES for the
+                // timeline. `rec.label` reaches the AUDIT row's `detailsJson`
+                // and nothing else — `WorkflowStep` has no label column, and
+                // `run-step-projection` derives its `label` from the workflow
+                // definition, which knows nothing about delegates. So the name
+                // travels in `inputJson`, which the projection already parses
+                // (guardedly) for the Art 12 digest.
+                //
+                // `fromSeq` is the span's lower bound; this step's own seq is
+                // the upper. Together they say which steps the delegate
+                // produced.
+                input: { agent: d.agent, taskId: d.taskId, fromSeq: d.fromSeq },
                 ...(d.answerAccepted
                     ? {}
                     : {

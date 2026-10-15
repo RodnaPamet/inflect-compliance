@@ -129,8 +129,15 @@ export class DelegationRefusedError extends Error {
 export function gateDelegation(
     operation: { type: string; toolName?: string },
     ctx: { instanceId?: string; turnId?: string; taskId?: string },
-): void {
-    if (operation.type !== 'tool' || operation.toolName !== DELEGATION_TOOL_NAME) return;
+    /**
+     * The ledger counter's current value, for the span's lower bound (#3473
+     * part 3). Read HERE because this is the only hook that runs before
+     * `next()`, and returned so the caller's own frame holds it — see
+     * `FlueRunBinding.onDelegationComplete.fromSeq` for why that beats a map.
+     */
+    currentLedgerSeq?: () => number,
+): number | null {
+    if (operation.type !== 'tool' || operation.toolName !== DELEGATION_TOOL_NAME) return null;
 
     // ── DEPTH 1 IS NOT ENFORCED HERE, AND THIS IS WHERE IT USED TO BE ──────
     //
@@ -174,7 +181,7 @@ export function gateDelegation(
     // outer bound is `ENGINE_CAPS`, which does not depend on this context at
     // all. A missing `turnId` is the same argument: the count would be keyed
     // on nothing and every call would read 0.
-    if (!ctx.instanceId || !ctx.turnId) return;
+    if (!ctx.instanceId || !ctx.turnId) return currentLedgerSeq?.() ?? null;
 
     const binding = readRunBinding(ctx.instanceId);
     // NO BINDING IS THE DEFAULT, NOT NO CAP. An unbound run is one this
@@ -188,6 +195,9 @@ export function gateDelegation(
         throw new DelegationRefusedError(fanOutRefusalMessage(verdict), 'fan-out');
     }
     DELEGATIONS.set(key, verdict.delegatedThisTurn + 1);
+    // READ AFTER the refusal, not before: a delegation that was declined
+    // records no span, because it produced no steps.
+    return currentLedgerSeq?.() ?? null;
 }
 
 /**
@@ -237,7 +247,14 @@ export async function guardDelegateResult(
      * carry, not an absence. Awaited BEFORE the guard's throw propagates, for
      * that reason.
      */
-    record?: (d: { agent: string; taskId: string; answerAccepted: boolean }) => Promise<void>,
+    record?: (d: {
+        agent: string;
+        taskId: string;
+        answerAccepted: boolean;
+        fromSeq: number | null;
+    }) => Promise<void>,
+    /** The span's lower bound, as `gateDelegation` returned it. */
+    fromSeq: number | null = null,
 ): Promise<void> {
     if (operation.type !== 'tool' || operation.toolName !== DELEGATION_TOOL_NAME) return;
 
@@ -250,7 +267,7 @@ export async function guardDelegateResult(
     // delegate that returned nothing would read as a delegation that never
     // occurred, which is the one reading that is certainly wrong.
     if (text === '') {
-        await recordIfPossible(record, agent, taskId, true);
+        await recordIfPossible(record, agent, taskId, true, fromSeq);
         return;
     }
 
@@ -259,7 +276,7 @@ export async function guardDelegateResult(
     // or by a caller that predates delegation, and requiring it would make the
     // hook mandatory on every existing `bindRun` call site.
     if (!guard) {
-        await recordIfPossible(record, agent, taskId, true);
+        await recordIfPossible(record, agent, taskId, true, fromSeq);
         return;
     }
 
@@ -269,10 +286,10 @@ export async function guardDelegateResult(
     try {
         await guard(text, taskId);
     } catch (err) {
-        await recordIfPossible(record, agent, taskId, false);
+        await recordIfPossible(record, agent, taskId, false, fromSeq);
         throw err;
     }
-    await recordIfPossible(record, agent, taskId, true);
+    await recordIfPossible(record, agent, taskId, true, fromSeq);
     return;
 }
 
@@ -287,13 +304,21 @@ export async function guardDelegateResult(
  * writing anonymous rows.
  */
 async function recordIfPossible(
-    record: ((d: { agent: string; taskId: string; answerAccepted: boolean }) => Promise<void>) | undefined,
+    record:
+        | ((d: {
+            agent: string;
+            taskId: string;
+            answerAccepted: boolean;
+            fromSeq: number | null;
+        }) => Promise<void>)
+        | undefined,
     agent: string | undefined,
     taskId: string | undefined,
     answerAccepted: boolean,
+    fromSeq: number | null,
 ): Promise<void> {
     if (!record || !agent || !taskId) return;
-    await record({ agent, taskId, answerAccepted });
+    await record({ agent, taskId, answerAccepted, fromSeq });
 }
 
 /** Which specialist answered, from the runtime's own result `details`. */

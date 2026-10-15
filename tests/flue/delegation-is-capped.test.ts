@@ -382,11 +382,17 @@ describe('a completed delegation reaches the ledger hook', () => {
         agent: string;
         taskId: string;
         answerAccepted: boolean;
+        fromSeq: number | null;
     }
+
+    /** Reads a counter the caller owns, without a non-null assertion. */
+    const seqOf = (c: { value: number } | undefined): number => c?.value ?? 0;
 
     async function runRecording(opts: {
         runId: string;
         guard?: (text: string, taskId: string | undefined) => Promise<void>;
+        /** A mutable counter the test advances, read as the ledger's seq. */
+        seq?: { value: number };
     }): Promise<Recorded[]> {
         const faux = fauxProvider();
         const recorded: Recorded[] = [];
@@ -407,11 +413,19 @@ describe('a completed delegation reaches the ledger hook', () => {
             },
             dispose: () => {},
         });
+        // A COUNTER THE TEST DRIVES, standing in for the driver's. It advances
+        // on every ledger write the real driver would make, so `fromSeq` is
+        // observable without reaching the driver (which needs Prisma).
         bindRun(opts.runId, {
             tools: [],
             skills: [],
             modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
             maxSubagentsPerTurn: 3,
+            // OMITTED when the test gives no counter, so the `null` path is
+            // genuinely exercised. Supplying a reader that returns 0 would
+            // have asserted a number while the case claimed to test its
+            // absence.
+            ...(opts.seq ? { currentLedgerSeq: (): number => seqOf(opts.seq) } : {}),
             ...(opts.guard ? { guardDelegateOutput: opts.guard } : {}),
             onDelegationComplete: async (d) => { recorded.push(d); },
         });
@@ -525,6 +539,145 @@ describe('a completed delegation reaches the ledger hook', () => {
         // case was rewritten to remove.
         expect(ordinaryCalls).toBe(1);
         expect(recorded).toEqual([]);
+    });
+});
+
+describe('the delegation span has an exact lower bound', () => {
+    /*
+        `fromSeq` is read by the gate BEFORE `next()` and returned, so the
+        interceptor's own frame carries it to the completion. That is what makes
+        it exact under concurrent fan-out: two delegations in one turn are two
+        frames, and neither can read the other's local.
+
+        An earlier draft kept it in a module map keyed by run and turn —
+        last-write-wins for exactly the concurrent case the fan-out cap permits.
+        These cases are what would have caught that.
+    */
+    it('reports the seq the ledger stood at when the delegation STARTED', async () => {
+        const seq = { value: 7 };
+        const faux = fauxProvider();
+        const recorded: Array<{ agent: string; fromSeq: number | null }> = [];
+        const dispose = instrument({
+            observe: () => {},
+            interceptor: async (operation, ctx, next) => {
+                const binding = readRunBinding(ctx.instanceId ?? '');
+                const fromSeq = gateDelegation(operation, ctx, binding?.currentLedgerSeq);
+                const result = await next();
+                await guardDelegateResult(
+                    operation, ctx, result,
+                    binding?.guardDelegateOutput, binding?.onDelegationComplete, fromSeq,
+                );
+                return result;
+            },
+            dispose: () => {},
+        });
+        bindRun('span-1', {
+            tools: [{
+                name: 'list_controls',
+                description: 'an ordinary read',
+                input: v.strictObject({}),
+                annotations: { readOnlyHint: true, destructiveHint: false, title: 'list_controls' },
+                // EVERY read ADVANCES the counter, as the real wrapper's
+                // `nextSeq()` does — so a delegate that reads twice moves the
+                // ledger past the bound its delegation captured.
+                run: async () => { seq.value += 1; return '{}'; },
+            }],
+            skills: [],
+            modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            maxSubagentsPerTurn: 3,
+            currentLedgerSeq: () => seq.value,
+            onDelegationComplete: async (d) => {
+                recorded.push({ agent: d.agent, fromSeq: d.fromSeq });
+            },
+        });
+        faux.setResponses([
+            // the parent reads once, so the ledger moves to 8 BEFORE delegating
+            fauxAssistantMessage([fauxToolCall('list_controls', {})]),
+            // `policy_drafter`, NOT `risk_analyst` — and the first draft used
+            // the latter, whose declared set excludes `list_controls`, so the
+            // delegate's read never happened and the span stayed empty. An
+            // incidental confirmation that the narrowing works, and a reminder
+            // that a span test needs a delegate that can actually act.
+            fauxAssistantMessage([fauxToolCall('task', { prompt: 'x', agent: 'policy_drafter' })]),
+            // the delegate reads once too
+            fauxAssistantMessage([fauxToolCall('list_controls', {})]),
+            fauxAssistantMessage('delegate done'),
+            fauxAssistantMessage('parent done'),
+            fauxAssistantMessage('spare'),
+        ]);
+        const flue = await start({ agents: [InflectAgent], providers: [faux.provider] });
+        try {
+            const agent = init(InflectAgent, { id: 'span-1' });
+            await agent.read(
+                await agent.dispatch({ message: 'go', initialData: { runId: 'span-1' } }),
+            );
+        } finally {
+            await flue.stop();
+            await dispose();
+            releaseRun('span-1');
+        }
+
+        expect(recorded).toHaveLength(1);
+        // THE BOUND IS THE PARENT'S POSITION, not the delegate's. It was 8
+        // after the parent's own read and before the delegate's — so a bound of
+        // 9 would mean it was captured after `next()`, and 7 would mean it was
+        // captured before the parent's read.
+        expect(recorded[0]).toEqual({ agent: 'policy_drafter', fromSeq: 8 });
+        // And the ledger moved past it, which is what makes the span non-empty.
+        expect(seq.value).toBe(9);
+    });
+
+    it('reports null when the driver supplies no counter', async () => {
+        // A run bound by a test or a caller predating delegation. The MARKER is
+        // still recorded — only the grouping is absent, which is the right way
+        // for this to degrade: a delegation nobody can group is still a
+        // delegation that happened.
+        //
+        // Self-contained rather than reusing the neighbouring harness, whose
+        // helper is scoped to its own describe — and which supplies a counter
+        // by construction, so it could not reach this path at all.
+        const faux = fauxProvider();
+        const recorded: Array<number | null> = [];
+        const dispose = instrument({
+            observe: () => {},
+            interceptor: async (operation, ctx, next) => {
+                const binding = readRunBinding(ctx.instanceId ?? '');
+                const fromSeq = gateDelegation(operation, ctx, binding?.currentLedgerSeq);
+                const result = await next();
+                await guardDelegateResult(
+                    operation, ctx, result,
+                    binding?.guardDelegateOutput, binding?.onDelegationComplete, fromSeq,
+                );
+                return result;
+            },
+            dispose: () => {},
+        });
+        bindRun('span-none', {
+            tools: [],
+            skills: [],
+            modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            maxSubagentsPerTurn: 3,
+            // NO `currentLedgerSeq` — that absence is the subject.
+            onDelegationComplete: async (d) => { recorded.push(d.fromSeq); },
+        });
+        faux.setResponses([
+            fauxAssistantMessage([fauxToolCall('task', { prompt: 'x', agent: 'risk_analyst' })]),
+            fauxAssistantMessage('delegate done'),
+            fauxAssistantMessage('parent done'),
+            fauxAssistantMessage('spare'),
+        ]);
+        const flue = await start({ agents: [InflectAgent], providers: [faux.provider] });
+        try {
+            const agent = init(InflectAgent, { id: 'span-none' });
+            await agent.read(
+                await agent.dispatch({ message: 'go', initialData: { runId: 'span-none' } }),
+            );
+        } finally {
+            await flue.stop();
+            await dispose();
+            releaseRun('span-none');
+        }
+        expect(recorded).toEqual([null]);
     });
 });
 

@@ -174,6 +174,18 @@ export interface FlueRunBinding {
      * step carries the outcome, and the group a reader wants is "the steps back
      * to the previous non-delegation step".
      */
+    /**
+     * The ledger counter's CURRENT value, without advancing it (#3473 part 3).
+     *
+     * Read by the gate before `next()`, so a delegation's step span has an
+     * exact lower bound: every step the delegate goes on to record takes a seq
+     * from this same counter, so they all sit at or above it.
+     *
+     * A READER, not an allocator. `nextSeq()` is the driver's and must stay so
+     * — a second allocator would hand two steps the same seq.
+     */
+    currentLedgerSeq?: () => number;
+
     onDelegationComplete?: (delegation: {
         /** The specialist the model selected, from the runtime's own result. */
         agent: string;
@@ -184,6 +196,27 @@ export interface FlueRunBinding {
          * a delegate that failed on its own.
          */
         answerAccepted: boolean;
+        /**
+         * The seq the ledger stood at when this delegation STARTED, so the
+         * span is `[fromSeq, this step's seq)`.
+         *
+         * EXACT EVEN UNDER CONCURRENT FAN-OUT, and that is a property of where
+         * it is captured rather than of any bookkeeping. The gate reads it
+         * before `next()` in the SAME interceptor frame that later records the
+         * completion, so each delegation's bound lives in its own local — two
+         * delegations in one turn are two frames and cannot read each other's.
+         *
+         * An earlier draft kept this in a module map keyed by run and turn,
+         * which would have been last-write-wins for exactly the concurrent
+         * case the fan-out cap permits. Spans may still OVERLAP in the ledger
+         * when two delegations run at once; each one's bounds are right, and
+         * overlap is an honest thing for a timeline to show.
+         *
+         * `null` when the driver supplied no reader — a run bound by a test or
+         * a caller predating delegation. The marker is still recorded; only the
+         * grouping is absent, which is the right way for this to degrade.
+         */
+        fromSeq: number | null;
     }) => Promise<void>;
 }
 

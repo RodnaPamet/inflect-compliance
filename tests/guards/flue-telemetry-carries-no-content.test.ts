@@ -172,7 +172,12 @@ describe('the production interceptor calls the delegation gate', () => {
         // changed claim, so it is retargeted and widened rather than loosened.
         // Matching each NAME in the import list is what keeps it from being
         // satisfied by a line that imports only one of them.
-        expect(telemetry).toContain('gateDelegation(operation, ctx)');
+        // MATCHED ON THE CALLEE, not on an argument list. The needle was
+        // `gateDelegation(operation, ctx)` and went red when the gate gained a
+        // third argument and wrapped across lines — the third time a citation
+        // in this block has drifted while its claim held. The claim is "the
+        // interceptor calls both halves", and a callee is what says that.
+        expect(telemetry).toMatch(/\bgateDelegation\s*\(/);
         expect(telemetry).toContain('await guardDelegateResult(');
         expect(telemetry).toMatch(/import \{[^}]*\bgateDelegation\b[^}]*\} from '\.\/delegation-gate'/);
         expect(telemetry).toMatch(/import \{[^}]*\bguardDelegateResult\b[^}]*\} from '\.\/delegation-gate'/);
@@ -210,7 +215,7 @@ describe('the production interceptor calls the delegation gate', () => {
         // happened. Asserted on ORDER rather than presence, because both lines
         // are present either way and only one of the two arrangements refuses
         // anything.
-        const gateAt = telemetry.indexOf('gateDelegation(operation, ctx)');
+        const gateAt = telemetry.search(/\bgateDelegation\s*\(/);
         const nextAt = telemetry.indexOf('await next()');
         expect(gateAt).toBeGreaterThan(-1);
         expect(nextAt).toBeGreaterThan(-1);

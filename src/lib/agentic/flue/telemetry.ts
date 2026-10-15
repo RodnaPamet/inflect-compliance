@@ -133,7 +133,19 @@ export function installFlueTelemetry(): () => Promise<void> {
                         // THROWS to refuse, which fails the `task` tool call
                         // with a message addressed to the model. Returns
                         // immediately for everything that is not a delegation.
-                        gateDelegation(operation, ctx);
+                        const binding = ctx.instanceId
+                            ? readRunBinding(ctx.instanceId)
+                            : undefined;
+                        // THE SPAN'S LOWER BOUND, held in THIS frame (#3473
+                        // part 3). Two delegations in one turn are two
+                        // interceptor invocations, so each keeps its own —
+                        // which is why no map and no key are needed, and why
+                        // concurrent fan-out cannot mix them up.
+                        const fromSeq = gateDelegation(
+                            operation,
+                            ctx,
+                            binding?.currentLedgerSeq,
+                        );
                         const result = await next();
                         // AND THE ANSWER ON THE WAY BACK (#3473). The delegate's
                         // reads ran the parent's wrapper and were scanned there;
@@ -144,9 +156,6 @@ export function installFlueTelemetry(): () => Promise<void> {
                         // The binding is read HERE rather than passed, because
                         // the interceptor is per-process and the guard is
                         // per-run — `ctx.instanceId` is the run id.
-                        const binding = ctx.instanceId
-                            ? readRunBinding(ctx.instanceId)
-                            : undefined;
                         await guardDelegateResult(
                             operation,
                             ctx,
@@ -157,6 +166,7 @@ export function installFlueTelemetry(): () => Promise<void> {
                             // guard's throw propagates. Two separate calls here
                             // would record only the delegations that went well.
                             binding?.onDelegationComplete,
+                            fromSeq,
                         );
                         return result;
                     } catch (err) {
