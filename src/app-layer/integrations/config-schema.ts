@@ -350,6 +350,22 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         // one simply fails to authorize.
         tenantId: { kind: 'inert' },
         clientId: { kind: 'inert' },
+        // THE OAUTH AUDIENCE (#3467), and inert despite looking like a URL.
+        //
+        // That resemblance is the thing to be careful about, so it is stated:
+        // a scope such as `https://mcp.svc.cloud.microsoft/.default` is never
+        // fetched, never resolved and never interpolated into a URL. It goes
+        // into the FORM BODY of the POST to Entra's token endpoint, whose own
+        // URL is built from `tenantId` alone — and that one is GUID-checked in
+        // `token.ts` before a request is made. So `internalOrigin` would be the
+        // wrong rule twice over: it would reject the `api://…` audiences Entra
+        // also issues, and it would imply this field decides where a request
+        // goes, which it does not.
+        //
+        // Inert in consequence as well as in shape: a token minted for the
+        // wrong audience simply fails to authorize — measured, as
+        // `401 InvalidAuthenticationToken — Invalid audience`.
+        scope: { kind: 'inert' },
         // NOTE what is absent: `authorization`, `clientSecret` and
         // `refreshToken` are `secretFields` on the descriptor and must never
         // gain a rule here — a credential in `configJson` is returned by the

@@ -13,7 +13,14 @@ const listToolsMock = jest.fn();
 const mintMock = jest.fn();
 jest.mock('@/app-layer/integrations/mcp/token', () => ({
     ...jest.requireActual('@/app-layer/integrations/mcp/token'),
-    mintAccessToken: (...a: unknown[]) => mintMock(...a),
+    // `mintToken`, NOT `mintAccessToken` (#3467). The provider dispatches on
+    // the credential's `kind` now, and this double is placed at the dispatcher
+    // so a case here can assert WHICH grant the provider chose — the thing the
+    // defect was about. `resolveMcpCredentials` is deliberately left REAL
+    // (`requireActual` above): it is the shared shape resolver, and stubbing it
+    // would take the one piece this provider and the runtime must agree on out
+    // of the test.
+    mintToken: (...a: unknown[]) => mintMock(...a),
 }));
 
 jest.mock('@/app-layer/integrations/mcp/client', () => {
@@ -63,10 +70,17 @@ describe('what the provider declares about itself', () => {
     });
 
     it('asks for a URL, the Entra fields, and nothing else', () => {
+        // `scope` ARRIVED LATE AND WAS ALREADY READ (#3467). The minting path
+        // consulted `config.scope` from the day it landed and there was no
+        // field for it, so the only reachable value was the delegated default —
+        // and an operator whose server has its own audience had no way to say
+        // so. It is CONFIG rather than a secret because an audience is a public
+        // identifier of the server, not a credential.
         expect(provider.configSchema.configFields.map((f) => f.key)).toEqual([
             'url',
             'tenantId',
             'clientId',
+            'scope',
         ]);
         expect(provider.configSchema.secretFields.map((f) => f.key)).toEqual([
             'authorization',
@@ -260,19 +274,76 @@ describe('a connection configured for Entra', () => {
         expect(initializeMock).toHaveBeenCalledWith(
             expect.objectContaining({ authorization: 'Bearer at-1' }),
         );
+        // AND WHICH GRANT (#3467). The header alone cannot tell a delegated
+        // token from an app-only one, and the two have different governance:
+        // only the delegated grant caps an agent at the privileges of a named
+        // person. A validation that minted the wrong one would be green.
+        expect(mintMock.mock.calls[0][0]).toEqual(
+            expect.objectContaining({ kind: 'delegated', refreshToken: 'refresh-1' }),
+        );
+    });
+
+    it('mints by the APP-ONLY grant when there is a scope and no refresh token', async () => {
+        // The defect this issue was filed for: a server that wants app-only
+        // auth could only be connected with a pasted bearer that expires in
+        // about an hour. Asserted through `validateConnection`, which is the
+        // button an operator actually presses.
+        mintMock.mockResolvedValue({ accessToken: 'at-app', expiresAt: Date.now() + 3_600_000, rotatedRefreshToken: null });
+
+        const r = await provider.validateConnection(
+            { ...cfg, scope: 'https://mcp.svc.cloud.microsoft/.default' },
+            { clientSecret: 'secret-1' },
+        );
+
+        expect(r).toEqual({ valid: true });
+        expect(mintMock.mock.calls[0][0]).toEqual({
+            kind: 'app-only',
+            tenantId: cfg.tenantId,
+            clientId: cfg.clientId,
+            clientSecret: 'secret-1',
+            scope: 'https://mcp.svc.cloud.microsoft/.default',
+        });
     });
 
     it('refuses a PARTLY configured connection, before reaching the network', async () => {
         // Falling back to a stale pasted token here would work until that token
         // died and then look like a server problem.
+        //
+        // THE MESSAGE CHANGED WITH THE SECOND GRANT (#3467), and the old one
+        // was the wrong thing to say: "tenantId, clientId, clientSecret and
+        // refreshToken are all required together" sent an operator who had
+        // deliberately supplied three of them looking for a refresh token their
+        // server cannot issue. What is missing here is the field that would
+        // select EITHER grant, and the message now names both options.
         const r = await provider.validateConnection(cfg, { clientSecret: 'secret-1' });
 
         expect(r.valid).toBe(false);
-        expect(r.error).toMatch(/all required together/);
+        expect(r.error).toMatch(/app-only connection needs a scope/);
+        expect(r.error).toMatch(/refreshToken instead for delegated access/);
         expect({ mints: mintMock.mock.calls.length, handshakes: initializeMock.mock.calls.length }).toEqual({
             mints: 0,
             handshakes: 0,
         });
+    });
+
+    it('a SCOPE ALONE does not make a static connection look half-configured', async () => {
+        // `scope` is a property of the SERVER, not of the grant, so a connection
+        // authenticated by a static header may carry one. Counting it as an
+        // Entra field would refuse to save a correct configuration — and the
+        // #3340 both-credentials check is where that would have bitten.
+        initializeMock.mockResolvedValue(undefined);
+        listToolsMock.mockResolvedValue([]);
+
+        const r = await provider.validateConnection(
+            { url: 'https://mcp.example.com/rpc', scope: 'https://x/.default' },
+            { authorization: 'Bearer pasted' },
+        );
+
+        expect(r).toEqual({ valid: true });
+        expect({ mints: mintMock.mock.calls.length }).toEqual({ mints: 0 });
+        expect(initializeMock).toHaveBeenCalledWith(
+            expect.objectContaining({ authorization: 'Bearer pasted' }),
+        );
     });
 
     it('says the CREDENTIAL failed, not the server, when minting is refused', async () => {
