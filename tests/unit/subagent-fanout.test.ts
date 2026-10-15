@@ -188,39 +188,29 @@ describe('the gate: what it ignores', () => {
     });
 });
 
-describe('the gate: depth 1', () => {
-    it('refuses a delegation from inside a delegated task', () => {
-        // `ctx.taskId` is undefined for a parent's delegation and set for
-        // anything inside one — measured, and the depth signal is that
-        // absence.
-        const err = (() => {
-            try {
-                gateDelegation(
-                    { type: 'tool', toolName: DELEGATION_TOOL_NAME },
-                    { instanceId: 'run-1', turnId: 'turn-1', taskId: 'task-1' },
-                );
-                return null;
-            } catch (e) {
-                return e as DelegationRefusedError;
-            }
-        })();
-        expect(err).toBeInstanceOf(DelegationRefusedError);
-        expect(err?.cap).toBe('depth');
-        expect(err?.message).toContain('delegation_not_nested');
-    });
+/*
+    ═══ THE DEPTH BLOCK THAT USED TO BE HERE (#3581) ═══
 
-    it('refuses WITHOUT reading a binding, because no tenant may raise it', () => {
-        // Checked before the cap for that reason: the message must not name a
-        // limit somebody could go and change. Asserted by refusing with no
-        // binding bound at all — a fan-out refusal would have had to read one.
-        expect(() =>
-            gateDelegation(
-                { type: 'tool', toolName: DELEGATION_TOOL_NAME },
-                { instanceId: 'never-bound', turnId: 'turn-1', taskId: 'task-1' },
-            ),
-        ).toThrow(/delegation_not_nested/);
-    });
-});
+    Two cases asserted that `gateDelegation` refuses a `task` call carrying a
+    `ctx.taskId`. They passed, the arm could not fire, and the two facts had
+    the same cause: a unit test supplies the context it expects.
+
+    MEASURED against the real runtime, `ctx.taskId` is unset on the way IN —
+    the context for a root tool call, the parent's `task` call and a tool call
+    inside the delegation are indistinguishable except for `turnId`. The value
+    is populated only AFTER `next()`, which is where it was first read and
+    where `guardDelegateResult` legitimately uses it.
+
+    So the arm is gone and these cases with it. Keeping them retargeted at
+    something else would keep the shape that hid this: an assertion whose input
+    it also authored.
+
+    DEPTH 1 IS NOW ASSERTED STRUCTURALLY, in
+    `tests/guards/flue-refused-capabilities.test.ts` — no file under
+    `flue/subagents/` names `useSubagent`, and the delegate's own render in
+    `agent.ts` does not either. A fact about the source, which an edge case
+    cannot be wrong about.
+*/
 
 describe('the gate: fan-out, per turn', () => {
     const RUN = 'run-fanout';
