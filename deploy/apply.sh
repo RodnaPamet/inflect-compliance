@@ -50,14 +50,31 @@
 #
 # WHAT IT DELIBERATELY DOES NOT PUSH:
 #
-#   deploy/caddy/Caddyfile — the live /opt/inflect/caddy/Caddyfile serves a
-#   SECOND vhost (app.inflect.bg, answering 200 today) that the repo copy
-#   does not define, while the repo copy carries retry/HTTP-3 settings from
-#   #1814/#1275 that the live one never received. Each side has content the
-#   other lacks, so "push the repo copy" would delete a live production
-#   hostname. Reconciling them is a decision with a TLS blast radius and it
-#   has not been made — check-drift.sh reports the divergence separately and
-#   exits 3 for it, so it stays visible instead of being quietly pushed.
+#   (nothing today — the Caddyfile moved OUT of this list on 2026-10-15, see
+#   CADDY_* below and #3589.)
+#
+# WHAT IT USED TO SAY ABOUT THE CADDYFILE, AND WHY THAT WAS WRONG:
+#
+#   It said the live copy "serves a SECOND vhost (app.inflect.bg) that the
+#   repo copy does not define", so pushing "would delete a live production
+#   hostname". The repo copy HAS defined `app.inflect.bg` since somebody
+#   reconciled the hostnames, and the comment was not updated. Measured by
+#   adapting both with `caddy adapt --adapter caddyfile` inside the running
+#   container — which is what Caddy serves, rather than a line diff, because
+#   the repo factors shared headers into an `(app_site)` snippet it imports
+#   twice while the live copy spells them out per vhost:
+#
+#       hostnames served, repo copy: app.inflect.bg, inflect.…sslip.io,
+#                                    hrm-mcp.…sslip.io,
+#                                    legacy-mcp-proving.…sslip.io
+#       hostnames served, live copy: the same four
+#       adapted configs differ:      yes — the repo ADDS h1/h2/h3, the Next
+#                                    cache-control matchers, the 110MB body
+#                                    limit and the #1814/#1275 retry settings
+#
+#   So pushing deletes no hostname. The reason the comment gave was the one
+#   thing that was not true, and it outlived the state it described — which is
+#   the whole failure mode #3589 is about.
 #
 # WHAT IT NEVER TOUCHES: /opt/inflect/.env and /opt/inflect/.env.prod. Those
 # are host-owned secret files. This script reads their KEY NAMES in preflight
@@ -72,6 +89,15 @@
 #                                # push ONLY the host config set and reload its
 #                                # service. Touches no container, so it needs no
 #                                # service window. Still requires CONFIRM=1.
+#
+#   CADDY_ONLY=1 CONFIRM=1 deploy/apply.sh
+#                                # push ONLY the Caddyfile, then `caddy reload`
+#                                # and re-check every hostname it serves.
+#                                # Recreates NO container — a reload keeps the
+#                                # listeners and the issued certificates — so
+#                                # this needs no service window either. Rolls
+#                                # the file back and reloads again if any
+#                                # hostname stops answering.
 #
 # Applying recreates containers. Expect a short 502 window on `app` and a
 # Redis restart (AOF-persisted, so queued BullMQ jobs survive). Run it in a
@@ -143,6 +169,29 @@ CANONICAL_SET=(
 HOST_CONFIG_SET=(
     "${SCRIPT_DIR}/ops-agent-config.yaml:/etc/google-cloud-ops-agent/config.yaml"
 )
+
+# ── The Caddyfile ──────────────────────────────────────────────────────────
+#
+# Its own pair rather than a HOST_CONFIG_SET entry, for a reason the guard
+# states: `tests/guards/deploy-canonical-set-is-watched.test.ts` requires every
+# HOST_CONFIG_SET remote path to live OUTSIDE ${REMOTE_DIR}, and this one is
+# inside it. Its own pair rather than a CANONICAL_SET entry too, because that
+# set is activated by `docker compose up -d` and a Caddyfile is not: the file is
+# bind-mounted, so a changed file alone recreates nothing and `up -d` would
+# report a clean apply over a Caddy still serving the previous config.
+#
+# What it needs instead is a RELOAD, which is also why it gets a mode of its
+# own. `caddy reload` keeps the listeners and the already-issued certificates;
+# recreating the container would drop both for the length of a restart, on a
+# TLS terminator serving production. So CADDY_ONLY=1 needs no service window,
+# and the reload is verified rather than assumed — see caddy_apply.
+CADDY_LOCAL="${SCRIPT_DIR}/caddy/Caddyfile"
+CADDY_REMOTE="${REMOTE_DIR}/caddy/Caddyfile"
+# The container that mounts it. The reload runs INSIDE it, against the path
+# Caddy itself is configured with, so a validate that passes here is a validate
+# of the file the running process will read.
+CADDY_CONTAINER="${CADDY_CONTAINER:-inflect-caddy-1}"
+CADDY_CONFIG_IN_CONTAINER="/etc/caddy/Caddyfile"
 
 # The service that reads the host config, and the generated artefact that
 # proves the push actually reached it.
@@ -230,6 +279,139 @@ host_config_preflight() {
     done
 }
 
+# Report what a Caddyfile push would change, and refuse a config Caddy rejects.
+#
+# Two separate checks, and the second is the one the old UNRECONCILED note
+# asked for. `caddy validate` proves the file PARSES and adapts; comparing the
+# HOSTNAMES of both adapted configs proves the push does not silently stop
+# serving something. A validate alone would happily accept a file that drops a
+# production vhost.
+caddy_preflight() {
+    local lsha rsha staged rc repo_hosts live_hosts gone
+    [ -f "$CADDY_LOCAL" ] || { err "Caddyfile missing from the repo: $CADDY_LOCAL"; return 1; }
+
+    log "Caddyfile (pushed to ${CADDY_REMOTE}, activated by reload — no container is recreated):"
+    lsha="$(sha256sum "$CADDY_LOCAL" | awk '{print $1}')"
+    rsha="$(ssh_vm "sudo sha256sum '${CADDY_REMOTE}' 2>/dev/null || true" | awk '{print $1}')"
+    if [ -z "$rsha" ]; then
+        log "    WOULD CREATE ${CADDY_REMOTE} (absent on the VM)"
+    elif [ "$lsha" = "$rsha" ]; then
+        log "    unchanged  ${CADDY_REMOTE} (${lsha:0:12})"
+    else
+        log "    WOULD CHANGE ${CADDY_REMOTE}: repo ${lsha:0:12} → VM ${rsha:0:12}"
+    fi
+
+    staged="/tmp/Caddyfile.validate.${TS}"
+    gcloud compute scp "$CADDY_LOCAL" "${VM_NAME}:${staged}" \
+        --zone "$VM_ZONE" --tunnel-through-iap >/dev/null
+
+    log "    validating with ${CADDY_CONTAINER}'s own caddy binary"
+    rc=0
+    # Copied INTO the container rather than validated over a bind mount,
+    # because the staged file is not mounted anywhere — and `caddy validate`
+    # resolves `import` relative to the config, so it has to sit where the real
+    # one does for a multi-file config to behave the same way.
+    ssh_vm "set -e
+        sudo docker cp '${staged}' '${CADDY_CONTAINER}:/tmp/Caddyfile.candidate'
+        rc=0
+        sudo docker exec '${CADDY_CONTAINER}' caddy validate \
+            --config /tmp/Caddyfile.candidate --adapter caddyfile >/tmp/caddyval.${TS} 2>&1 || rc=\$?
+        sed 's/^/      /' /tmp/caddyval.${TS}
+        sudo rm -f /tmp/caddyval.${TS} '${staged}'
+        exit \$rc" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        err "the repo Caddyfile is NOT valid — caddy rejected it. Its message is above."
+        err "  Nothing was changed."
+        ssh_vm "sudo docker exec '${CADDY_CONTAINER}' rm -f /tmp/Caddyfile.candidate" >/dev/null 2>&1 || true
+        return 1
+    fi
+    log "      config OK"
+
+    # ── The hostname comparison ────────────────────────────────────────────
+    #
+    # `caddy adapt` emits the JSON Caddy actually runs. Comparing the hostname
+    # sets answers the question the old exclusion reason got wrong: whether
+    # pushing would stop serving a name that is served today.
+    repo_hosts="$(ssh_vm "sudo docker exec '${CADDY_CONTAINER}' sh -c \"caddy adapt --config /tmp/Caddyfile.candidate --adapter caddyfile 2>/dev/null | grep -oE '\\\"[a-z0-9.-]+\\\\.(bg|io)\\\"' | tr -d '\\\"' | sort -u\"" | tr -d '\r')"
+    live_hosts="$(ssh_vm "sudo docker exec '${CADDY_CONTAINER}' sh -c \"caddy adapt --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>/dev/null | grep -oE '\\\"[a-z0-9.-]+\\\\.(bg|io)\\\"' | tr -d '\\\"' | sort -u\"" | tr -d '\r')"
+    ssh_vm "sudo docker exec '${CADDY_CONTAINER}' rm -f /tmp/Caddyfile.candidate" >/dev/null 2>&1 || true
+
+    if [ -z "$live_hosts" ]; then
+        err "could not read the hostnames the LIVE config serves — refusing to push blind."
+        err "  An empty answer here is UNKNOWN, not 'serves nothing'."
+        return 1
+    fi
+    log "    hostnames served now : $(echo "$live_hosts" | tr '\n' ' ')"
+    log "    hostnames after push : $(echo "$repo_hosts" | tr '\n' ' ')"
+    gone="$(comm -23 <(echo "$live_hosts") <(echo "$repo_hosts") || true)"
+    if [ -n "$gone" ]; then
+        err "pushing would STOP SERVING: $(echo "$gone" | tr '\n' ' ')"
+        err "  That is the thing #3589's exclusion reason existed to prevent, and it is"
+        err "  checked rather than assumed. Reconcile the repo copy first."
+        return 1
+    fi
+    log "    no hostname is lost"
+}
+
+# Push the Caddyfile and RELOAD, then prove every hostname still answers.
+#
+# Rolls back on a failed reload and on a hostname that stops responding. A
+# reload that fails leaves the previous config running — Caddy does not accept a
+# bad one — but the FILE would then disagree with what is being served, which is
+# drift created by the tool whose job is to prevent it.
+caddy_apply() {
+    local staged backup rc host code bad
+    staged="/tmp/Caddyfile.new.${TS}"
+    backup="${CADDY_REMOTE}.bak.${TS}"
+
+    log "backing up ${CADDY_REMOTE} → ${backup}"
+    ssh_vm "sudo sh -c \"mkdir -p '$(dirname "${CADDY_REMOTE}")' && cp -a '${CADDY_REMOTE}' '${backup}' && chmod 600 '${backup}'\" 2>/dev/null || true"
+
+    log "pushing ${CADDY_REMOTE}"
+    # Flattened staging name. `/tmp/${remote_base}.new` would be
+    # `/tmp/caddy/Caddyfile.new` for this nested path, and /tmp/caddy does not
+    # exist — the mechanical blocker the UNRECONCILED entry named.
+    gcloud compute scp "$CADDY_LOCAL" "${VM_NAME}:${staged}" \
+        --zone "$VM_ZONE" --tunnel-through-iap
+    ssh_vm "sudo mv '${staged}' '${CADDY_REMOTE}' && sudo chown root:root '${CADDY_REMOTE}'"
+
+    log "reloading caddy (keeps listeners and issued certificates)"
+    rc=0
+    ssh_vm "sudo docker exec '${CADDY_CONTAINER}' caddy reload \
+        --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>&1 | sed 's/^/      /'" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        err "caddy reload FAILED — restoring ${backup} and reloading again."
+        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile" || true
+        return 1
+    fi
+
+    # ── Verify, from OUTSIDE ───────────────────────────────────────────────
+    #
+    # Each hostname is fetched over public HTTPS rather than asked of Caddy's
+    # admin API, because the property that matters is that a client can still
+    # reach it. Any HTTP status counts as served: these vhosts legitimately
+    # answer 200, 302, 401 and 405 depending on what they front, and pinning a
+    # code would make this fail on a healthy endpoint. A connection failure
+    # gives curl's 000, which is what this is looking for.
+    bad=""
+    for host in $(ssh_vm "sudo docker exec '${CADDY_CONTAINER}' sh -c \"caddy adapt --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile 2>/dev/null | grep -oE '\\\"[a-z0-9.-]+\\\\.(bg|io)\\\"' | tr -d '\\\"' | sort -u\"" | tr -d '\r'); do
+        code="$(ssh_vm "curl -s -o /dev/null -w '%{http_code}' --max-time 20 'https://${host}/' || true" | tr -d '\r')"
+        if [ "$code" = "000" ] || [ -z "$code" ]; then
+            err "    ${host} -> ${code:-no answer}"
+            bad="${bad} ${host}"
+        else
+            log "    ${host} -> ${code}"
+        fi
+    done
+    if [ -n "$bad" ]; then
+        err "these hostnames stopped answering after the reload:${bad}"
+        err "  restoring ${backup} and reloading again."
+        ssh_vm "sudo cp -a '${backup}' '${CADDY_REMOTE}' && sudo docker exec '${CADDY_CONTAINER}' caddy reload --config '${CADDY_CONFIG_IN_CONTAINER}' --adapter caddyfile" || true
+        return 1
+    fi
+    log "Caddyfile applied and every hostname answers."
+}
+
 host_config_apply() {
     local entry local_path remote_path base compiled
     for entry in "${HOST_CONFIG_SET[@]}"; do
@@ -288,6 +470,33 @@ host_config_apply() {
         log "  OK   the receiver from ${base} is present in the compiled config (${compiled} ref(s))"
     done
 }
+
+# ── CADDY_ONLY: the other no-service-window path (#3589) ─────────────────
+#
+# Returns before anything compose-related runs, like HOST_CONFIG_ONLY, so it
+# cannot recreate a container even by mistake. It is a separate flag rather
+# than a widening of that one because the two activate differently — a systemd
+# restart there, a `caddy reload` here — and a single flag covering both would
+# make "no service window" depend on which files happened to change.
+if [ "${CADDY_ONLY:-0}" = "1" ]; then
+    if [ "${DRY_RUN:-0}" = "1" ]; then
+        err "CADDY_ONLY=1 and DRY_RUN=1 are mutually exclusive: validating a Caddyfile"
+        err "  means running caddy's own binary, which lives in the container on the VM."
+        err "  Drop DRY_RUN to preflight against the VM without applying."
+        exit 2
+    fi
+    log "CADDY_ONLY — the Caddyfile only. No container is recreated; caddy is reloaded."
+    caddy_preflight || exit 1
+    if [ "${CONFIRM:-0}" != "1" ]; then
+        log ""
+        log "PREFLIGHT ONLY — nothing has been applied. Re-run with CONFIRM=1."
+        log "No service window is needed: a reload keeps the listeners and the certs."
+        exit 0
+    fi
+    caddy_apply || exit 1
+    log "Caddyfile applied. Verify with deploy/check-drift.sh."
+    exit 0
+fi
 
 # ── HOST_CONFIG_ONLY: the no-service-window path ─────────────────────────
 #
@@ -468,6 +677,13 @@ if ! host_config_preflight; then
     exit 1
 fi
 
+# 5b. The Caddyfile: report, validate with caddy's own binary, and refuse a
+#     push that would stop serving a hostname that is served today.
+if ! caddy_preflight; then
+    cleanup_staged
+    exit 1
+fi
+
 if [ "${CONFIRM:-0}" != "1" ]; then
     log ""
     log "PREFLIGHT ONLY — nothing has been applied."
@@ -513,6 +729,14 @@ done
 # the end, which is also where an operator is already looking.
 HOST_CONFIG_FAILED=0
 host_config_apply || HOST_CONFIG_FAILED=1
+
+# The Caddyfile, on the same terms and for the same reason: the compose file is
+# already pushed by this point, so a failure here is recorded and reported with
+# the health result rather than aborting into a half-applied VM. `caddy_apply`
+# restores its own backup and reloads, so a failure leaves Caddy serving what it
+# served before — the failure to report is that the repo copy did not land.
+CADDY_FAILED=0
+caddy_apply || CADDY_FAILED=1
 
 # ── Prune ──────────────────────────────────────────────────────────────────
 #
@@ -581,6 +805,17 @@ if [ "$HOST_CONFIG_FAILED" = "1" ]; then
     err "  whatever that service does (for the ops agent: log export, silently)."
     err "  Fix the file and re-run with HOST_CONFIG_ONLY=1 CONFIRM=1 — no service"
     err "  window is needed for that path."
+    exit 1
+fi
+
+if [ "$CADDY_FAILED" = "1" ]; then
+    err "the compose stack applied and is HEALTHY, but the Caddyfile did not."
+    err "  Caddy is serving what it served BEFORE this run: caddy_apply restores its"
+    err "  own backup and reloads, so nothing is half-applied at the edge. What is"
+    err "  wrong is that the repo copy has not landed, so the next check-drift.sh will"
+    err "  report it."
+    err "  Fix the file and re-run with CADDY_ONLY=1 CONFIRM=1 — no service window is"
+    err "  needed for that path."
     exit 1
 fi
 
