@@ -14,7 +14,13 @@
  * real request stack — and `tests/guardrails/vendor-origin-no-test-flags.test.ts`
  * keeps them out of `src/`.
  */
-import { resolveVendorOrigin, OKTA_HOSTS, type HostAllowlist } from '@/app-layer/integrations/allowed-host';
+import {
+    resolveVendorOrigin,
+    assertAllowedHost,
+    OKTA_HOSTS,
+    ORANGEHRM_HOSTS,
+    type HostAllowlist,
+} from '@/app-layer/integrations/allowed-host';
 
 /** What a test harness would inject. Never legal in src/ — see the guardrail. */
 const LOCAL: HostAllowlist = {
@@ -91,5 +97,52 @@ describe('the credential-bearing edge cases assertAllowedHost already guards', (
 
     it('an empty org URL is a required-field error, not a parse error', () => {
         expect(() => resolveVendorOrigin('', OKTA_HOSTS)).toThrow(/required/);
+    });
+});
+
+describe('the OrangeHRM lab fixture is admitted by name and by name only', () => {
+    // ═══ WHAT THESE FOUR ASSERTIONS ARE PROTECTING ═══
+    //
+    // `ORANGEHRM_HOSTS.exact` names one self-hosted fixture,
+    // `orangehrm-lab.34-140-180-255.sslip.io`. Every other entry in that
+    // allowlist is a vendor domain, and this one is not — so the natural
+    // tidy-up, some months from now, is to "simplify" it into the `suffixes`
+    // list beside the two real ones.
+    //
+    // That tidy-up is a security regression and nothing about the diff looks
+    // like one. sslip.io maps `<anything>.34-140-180-255.sslip.io` to a single
+    // address, so the suffix admits every vhost on that machine — including
+    // `inflect.34-140-180-255.sslip.io`, which is this application. The third
+    // assertion is the one that fails on that change, and it is the reason the
+    // other three are here to say what the entry is FOR.
+
+    it('admits the exact fixture hostname', () => {
+        expect(assertAllowedHost('orangehrm-lab.34-140-180-255.sslip.io', ORANGEHRM_HOSTS))
+            .toBe('orangehrm-lab.34-140-180-255.sslip.io');
+    });
+
+    it('admits it written as a URL, which is how an operator pastes it', () => {
+        expect(assertAllowedHost('https://orangehrm-lab.34-140-180-255.sslip.io/', ORANGEHRM_HOSTS))
+            .toBe('orangehrm-lab.34-140-180-255.sslip.io');
+    });
+
+    it('REFUSES this deployment’s own hostname on the same address', () => {
+        // The assertion that makes `exact` load-bearing. Both names resolve to
+        // 34.140.180.255; only one of them is the fixture.
+        expect(() => assertAllowedHost('inflect.34-140-180-255.sslip.io', ORANGEHRM_HOSTS))
+            .toThrow(/OrangeHRM/);
+        expect(() => assertAllowedHost('app.inflect.bg', ORANGEHRM_HOSTS))
+            .toThrow(/OrangeHRM/);
+    });
+
+    it('refuses the lookalikes a substring check would admit', () => {
+        for (const host of [
+            'evil-orangehrm-lab.34-140-180-255.sslip.io',
+            'orangehrm-lab.34-140-180-255.sslip.io.attacker.net',
+            'orangehrm-lab.34-140-180-255.sslip.io@evil.tld',
+            'orangehrm-lab.34-140-180-256.sslip.io',
+        ]) {
+            expect(() => assertAllowedHost(host, ORANGEHRM_HOSTS)).toThrow();
+        }
     });
 });
