@@ -288,7 +288,8 @@ asks for JSON in the prompt, and parses JSON out of the reply.
   `src/app-layer/ai/identity-match/` holds the only code that calls a typed-decision
   API — `POST /v1/systemone`, through `callSystemOne` — and it reaches a model only for
   a tenant whose `legacyMatchAiMode` is not `OFF`. The default is `OFF`, no deployment
-  sets `LAYA_BASE_URL`, and `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`, so the factory
+  could set `LAYA_BASE_URL` — the variable no longer exists, see *Retired* — and
+`TYPESAFE_SUBPROCESSOR_ACTIVE` is `false`, so the factory
   returns a stub that answers nothing. (This line read "no code in `src/` calls a
   typed-decision API" until 6c, and that is the kind of claim a `living` document has to
   be corrected rather than left to rot.)
@@ -301,7 +302,9 @@ asks for JSON in the prompt, and parses JSON out of the reply.
 
 ### Operating adjudication
 
-The runbook for what Steps 6c and 6d shipped, including the Laya service now running on
+The runbook for what Steps 6c and 6d shipped. The Laya service it described no
+longer runs anywhere — see *Retired* — and TypeSafe is withdrawn, so the lanes
+below describe a mechanism that is present and dormant rather than one in use on
 the production VM. The sentence that used to sit here said the Jev half did not exist
 yet; `TYPESAFE_SUBPROCESSOR_ACTIVE` is `true` as of 2026-10-11, so activation has
 happened and key rotation is below rather than deferred. What is still outstanding for
@@ -320,9 +323,20 @@ Three refusals apply at the cross-field point, deployment block first:
 
 | setting | refused when |
 | --- | --- |
-| `EXTERNAL` | `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false` — **no longer the case**; it is `true` since 2026-10-11, so this refusal no longer fires |
+| `EXTERNAL` | `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false` — **and it is `false` again.** It was flipped `true` on 2026-10-11 and back to `false` by the 2026-10-14 withdrawal, so this refusal fires once more. `adjudication-mode.ts` is the authority, and the marker below is what a guard compares against it |
+
+<!-- derived: TYPESAFE_SUBPROCESSOR_ACTIVE=false -->
+
+> **Why a marker and not the prose.** `current-state-stays-true` tried to read
+> the sentence above and could not: the row legitimately names BOTH values while
+> telling the story of the flip, so "does the text say true or false" has no
+> answer. A guard that parses English here either cries wolf or passes a lie —
+> the first version of it passed a mutation that flipped the claim outright.
+> So the checkable assertion is this one line, verified against
+> `adjudication-mode.ts` on every CI run, and the prose around it is free to
+> explain itself.
 | `EXTERNAL` | `aiResidency` is `LOCAL_ONLY` |
-| `LOCAL_ONLY` | `LAYA_BASE_URL` is unset |
+| `LOCAL_ONLY` | always — the provider it needed was deleted, so this mode now always returns the stub (see *Retired*) |
 
 **Turning it off is the rollback, and it takes effect from the next run.** Adjudication
 happens inside `runLegacyReconcileJob`, after the resolutions are committed, so setting
@@ -339,7 +353,7 @@ stopped the account, and they are not equally interesting:
 
 | reason | what it means | what to do |
 | --- | --- | --- |
-| `NO_PROVIDER` | the mode is on and the factory returned the stub — `LOCAL_ONLY` with no `LAYA_BASE_URL` | configure the server, or set the mode `OFF` |
+| `NO_PROVIDER` | the mode is on and the factory returned the stub | set the mode `OFF`. **The other half of this advice is dead**: it used to read "configure the server", and there is no server to configure — `LOCAL_ONLY` now always returns the stub because the Laya provider was deleted (see *Retired*) |
 | `NO_EVALUATION` | no committed record for the revision the endpoint reports | produce a record with `scripts/eval-identity-match.ts`. **This is the state for BOTH models again** — `evaluations/` is empty. The Laya record committed on 2026-10-12 was removed because the harness no longer writes it (see below), and Jev is refused for the same reason. So adjudication produces no verdicts at all today, which is the fail-closed state |
 | `MODEL_DRIFT` | the canary did not reproduce its recorded answers, or an answer came from a revision the canary never validated | **go and look at the model**; the batch was refused |
 | `KILL_SWITCH` | a platform- or tenant-scope kill is engaged | expected during a drill; otherwise ask who engaged it |
@@ -352,7 +366,87 @@ stopped the account, and they are not equally interesting:
 the deployment or the data. A whole run of `NO_EVALUATION` is the designed state; a
 whole run of `MODEL_DRIFT` is an incident.
 
-#### Where Laya runs, and what it actually delivers
+#### Rotating the TypeSafe key — WITHDRAWN processor, rotation DEFERRED
+
+> **Status, 2026-10-15.** TypeSafe was **withdrawn** as a proposed sub-processor
+> on 2026-10-14, and the owner has **deferred this rotation**. So nothing below
+> is a current operating procedure, and nobody should perform it on the strength
+> of reading this section.
+>
+> It stays here, rather than moving to *Retired*, because unlike the Laya estate
+> the code it describes **still exists on purpose**: `TYPESAFE_API_KEY` is wired
+> in `src/env.ts` and read by `jev-provider.ts`, and the roadmap's own first
+> unticked criterion records that six `src/` files name TypeSafe deliberately —
+> "so the register describes code that exists and the withdrawal stays one
+> constant away from reversible". A procedure for code that is present and
+> dormant is different from one for code that is gone.
+>
+> If TypeSafe is ever reinstated this becomes current again unchanged.
+
+`TYPESAFE_API_KEY` lives in `/opt/inflect/.env.prod`, which is host-owned. `apply.sh`
+never writes it and never reads its value — it checks that the NAME is present during
+preflight and nothing more. So rotation is a deliberate act by the owner on the VM, and
+no part of it belongs in this repository.
+
+    1. the owner edits /opt/inflect/.env.prod in place, replacing the value
+    2. recreate the two services that read it:
+         cd /opt/inflect && sudo docker compose --env-file .env --env-file .env.prod \
+           -f docker-compose.prod.yml up -d app worker
+    3. confirm the name is still present and the containers came back:
+         sudo docker exec inflect-app-1 sh -c 'env | grep -c ^TYPESAFE_API_KEY='
+         curl -s -o /dev/null -w '%{http_code}' https://app.inflect.bg/api/readyz
+
+Never echo the value, never pass it on a command line, and never paste it into a pull
+request or an issue. Step 3 asserts on PRESENT/ABSENT, which is all anyone needs.
+
+**ROTATION DEGRADES TO THE STUB RATHER THAN FAILING, AND THAT IS WORTH KNOWING BEFORE
+YOU DO IT.** While the key is absent or wrong, `getDecisionProvider('EXTERNAL')` does
+not throw — it falls back to the stub, which answers nothing.
+
+> **This paragraph used to say "it falls back to Laya", and that is no longer
+> true** — the local provider was deleted with the Laya estate, so there is no
+> second provider left to degrade to. The old text went on to warn that
+> verdicts written during a rotation window would name a *different processor*
+> than the tenant asked for; that risk is gone with the provider, and what
+> remains is simply that a tenant asking for `EXTERNAL` gets no verdicts at all
+> until the key is right. Which is the fail-closed direction, and is what
+> `NO_PROVIDER` reports.
+
+#### What a closed `AGREES` lane means
+
+Five per cent of `AGREES` rows are withheld from their reviewer and kept out of bulk
+ratification, chosen by a hash of the verdict id. The reviewer's own decision is then
+compared with the model's pick, and **one disagreement closes the bulk lane for that
+revision for the rest of the cycle.**
+
+A closed lane is not an outage. Every row still reaches a reviewer; they confirm one at
+a time instead of ratifying a page. What it says is that the claim bulk ratification
+rests on — *this model agrees with the engine* — has a counter-example on this tenant's
+own data, which is the only evidence about this tenant that exists.
+
+The gate is derived from the decisions rather than stored, so it cannot disagree with
+them. A reviewer who answered a different question has not disagreed: classifying an
+account as a non-person, an external or an orphan records no employee, and the model was
+asked which person holds the account.
+
+**To reopen it, change the revision.** The sample is keyed on the verdict id, which is
+one per `(resolution, revision)`, so a new revision re-samples and is measured on its
+own. Suppressing the disagreement is not an option the surface offers, and that is
+deliberate.
+
+## Retired
+
+Configurations this programme once ran and no longer does. They are kept
+because a design that was real is evidence — an auditor asking "what was the
+model doing in August?" needs the answer, and because a reinstatement would
+start from here rather than from nothing.
+
+**Nothing in this section is true today.** That is the whole point of it being
+a separate section rather than a banner inside *Current state* — a banner at the
+top of a subsection reads as sufficient while the body underneath goes on
+describing a live system, which is exactly what #3579 found nine times.
+
+### Where Laya ran, and what it actually delivered
 
 > **RETIRED 2026-10-14 — owner decision.** Laya no longer runs anywhere. The
 > container was removed from `deploy/docker-compose.prod.yml` and stopped on the
@@ -424,54 +518,7 @@ Three operational facts, all measured on the deployed service rather than inferr
   the **canary** here. There is no second, independent revision check for Laya. Jev is
   unaffected: `JEV_MODEL` pins `jev-1.13.0` and a hosted API reports a real revision.
 
-#### Rotating the TypeSafe key
-
-`TYPESAFE_API_KEY` lives in `/opt/inflect/.env.prod`, which is host-owned. `apply.sh`
-never writes it and never reads its value — it checks that the NAME is present during
-preflight and nothing more. So rotation is a deliberate act by the owner on the VM, and
-no part of it belongs in this repository.
-
-    1. the owner edits /opt/inflect/.env.prod in place, replacing the value
-    2. recreate the two services that read it:
-         cd /opt/inflect && sudo docker compose --env-file .env --env-file .env.prod \
-           -f docker-compose.prod.yml up -d app worker
-    3. confirm the name is still present and the containers came back:
-         sudo docker exec inflect-app-1 sh -c 'env | grep -c ^TYPESAFE_API_KEY='
-         curl -s -o /dev/null -w '%{http_code}' https://app.inflect.bg/api/readyz
-
-Never echo the value, never pass it on a command line, and never paste it into a pull
-request or an issue. Step 3 asserts on PRESENT/ABSENT, which is all anyone needs.
-
-**ROTATION DEGRADES TO LOCAL RATHER THAN FAILING, AND THAT IS WORTH KNOWING BEFORE YOU
-DO IT.** While the key is absent or wrong, `getDecisionProvider('EXTERNAL')` does not
-throw — it falls back to Laya if `LAYA_BASE_URL` is set, and to the stub otherwise. A
-tenant who asked for `EXTERNAL` therefore keeps getting verdicts through the rotation
-window, from a *different processor*. That is the safe direction (the local model moves
-no data off our infrastructure) and it is deliberate, but it means the verdicts written
-during the window name Laya, not Jev. If the processor on the record matters for the
-period you are rotating in, set those tenants `OFF` first and back afterwards.
-
-#### What a closed `AGREES` lane means
-
-Five per cent of `AGREES` rows are withheld from their reviewer and kept out of bulk
-ratification, chosen by a hash of the verdict id. The reviewer's own decision is then
-compared with the model's pick, and **one disagreement closes the bulk lane for that
-revision for the rest of the cycle.**
-
-A closed lane is not an outage. Every row still reaches a reviewer; they confirm one at
-a time instead of ratifying a page. What it says is that the claim bulk ratification
-rests on — *this model agrees with the engine* — has a counter-example on this tenant's
-own data, which is the only evidence about this tenant that exists.
-
-The gate is derived from the decisions rather than stored, so it cannot disagree with
-them. A reviewer who answered a different question has not disagreed: classifying an
-account as a non-person, an external or an orphan records no employee, and the model was
-asked which person holds the account.
-
-**To reopen it, change the revision.** The sample is keyed on the verdict id, which is
-one per `(resolution, revision)`, so a new revision re-samples and is measured on its
-own. Suppressing the disagreement is not an option the surface offers, and that is
-deliberate.
+---
 
 ## Roadmap (future direction)
 

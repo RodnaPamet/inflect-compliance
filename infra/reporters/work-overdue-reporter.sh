@@ -88,6 +88,38 @@ DRY_RUN=${WORK_OVERDUE_DRY_RUN:-0}
 # family=control_test_plan grace_minutes=15 cadence_minutes=5
 # family=audit_outbox grace_minutes=15 cadence_minutes=5
 # family=notification_outbox grace_minutes=30 cadence_minutes=10
+#
+# ── ABANDONED_CONTRACT — a SECOND metric, for work given up on ──────────────
+#
+# `jobs/work_abandoned` is deliberately not another family of
+# `jobs/work_overdue`, because the two mean different things and a paged human
+# reads the policy's title first. "Overdue" is late and may still complete;
+# "abandoned" is final and never will. A policy named "scheduled work is
+# overdue" firing because an audit entry was given up on would mislead at
+# exactly the wrong moment.
+#
+# THE WINDOW IS NOT A GRACE PERIOD. A FAILED row is already terminal, so there
+# is nothing to wait for — the window bounds what counts as NEW. It has to be
+# bounded: production holds 512 FAILED notification rows written off under
+# #3573, and an unbounded count would make this alert permanently firing, which
+# is an alert on its way to being muted.
+#
+# THE COLUMNS DIFFER BY TABLE, and each is the right one:
+#
+#   · `NotificationOutbox` records NO transition time — no `updatedAt`, and
+#     `processOutbox`'s failure branch writes only `status` and `lastError`, so
+#     `sendAfter` never moves. `createdAt` is therefore the only timestamp, and
+#     it is a sound proxy: with no backoff applied, `attempts` capped at 3 and
+#     the flusher on */10, a row reaches FAILED within about half an hour of
+#     being queued. If a backoff is ever added there, this proxy weakens and
+#     this comment is where to start.
+#   · `AuditOutbox` DOES back off — `audit-outbox-flush.ts:165` writes
+#     `nextAttemptAt: now + backoffMs(attempts)` — so that column marks the last
+#     attempt and is a real transition time. Its index `[status, nextAttemptAt]`
+#     covers the query.
+#
+# family=notification_abandoned window_hours=24 column=createdAt
+# family=audit_abandoned window_hours=24 column=nextAttemptAt
 
 read_count() {
     # $1 = SQL returning exactly one integer.
@@ -129,7 +161,20 @@ SELECT count(*) FROM \"NotificationOutbox\"
    AND \"sendAfter\" < now() - interval '30 minutes';
 ") || { echo "emitting NOTHING — an unreadable backlog is not an empty one" >&2; exit 1; }
 
+NOTIFICATION_ABANDONED=$(check notification_abandoned "
+SELECT count(*) FROM \"NotificationOutbox\"
+ WHERE status = 'FAILED'
+   AND \"createdAt\" > now() - interval '24 hours';
+") || { echo "emitting NOTHING — an unreadable backlog is not an empty one" >&2; exit 1; }
+
+AUDIT_ABANDONED=$(check audit_abandoned "
+SELECT count(*) FROM \"AuditOutbox\"
+ WHERE status = 'FAILED'
+   AND \"nextAttemptAt\" > now() - interval '24 hours';
+") || { echo "emitting NOTHING — an unreadable backlog is not an empty one" >&2; exit 1; }
+
 TOTAL=$((CONTROL_TEST_PLAN + AUDIT_OUTBOX + NOTIFICATION_OUTBOX))
+ABANDONED_TOTAL=$((NOTIFICATION_ABANDONED + AUDIT_ABANDONED))
 
 # The detail goes to the journal when there is any, so whoever reads the page
 # has the WHICH as well as the HOW MANY. #3554 took hours to diagnose partly
@@ -147,6 +192,22 @@ SELECT \"tenantId\" || ' plan=' || id || ' nextRunAt=' || \"nextRunAt\"
     fi
 fi
 
+if [ "$ABANDONED_TOTAL" -gt 0 ]; then
+    echo "ABANDONED work in the last 24h: notification_abandoned=$NOTIFICATION_ABANDONED audit_abandoned=$AUDIT_ABANDONED" >&2
+    if [ "$NOTIFICATION_ABANDONED" -gt 0 ]; then
+        # The error, not the recipient. `dedupeKey` embeds the address (#3577)
+        # and `toEmail` is the address, so neither is printed here — a page is
+        # read by whoever is on call, not only by someone entitled to the
+        # recipient list.
+        read_count "
+SELECT type::text || ' n=' || count(*) || ' err=' || left(coalesce(\"lastError\",'(null)'), 60)
+  FROM \"NotificationOutbox\"
+ WHERE status = 'FAILED' AND \"createdAt\" > now() - interval '24 hours'
+ GROUP BY 1 ORDER BY 2 DESC LIMIT 20;
+" >&2
+    fi
+fi
+
 IID=$(curl -s -H "$H" "$MD/instance/id")
 ZONE=$(curl -s -H "$H" "$MD/instance/zone" | awk -F/ '{print $NF}')
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -155,13 +216,26 @@ if [ -z "$IID" ] || [ -z "$ZONE" ]; then
     exit 1
 fi
 
-series_for() {
-    # $1 = family label, $2 = count
-    printf '{"metric":{"type":"custom.googleapis.com/jobs/work_overdue","labels":{"family":"%s"}},"resource":{"type":"gce_instance","labels":{"instance_id":"%s","zone":"%s","project_id":"%s"}},"points":[{"interval":{"endTime":"%s"},"value":{"int64Value":"%s"}}]}' \
-        "$1" "$IID" "$ZONE" "$PROJECT" "$NOW" "$2"
+series_of() {
+    # $1 = metric short name, $2 = family label, $3 = count
+    printf '{"metric":{"type":"custom.googleapis.com/jobs/%s","labels":{"family":"%s"}},"resource":{"type":"gce_instance","labels":{"instance_id":"%s","zone":"%s","project_id":"%s"}},"points":[{"interval":{"endTime":"%s"},"value":{"int64Value":"%s"}}]}' \
+        "$1" "$2" "$IID" "$ZONE" "$PROJECT" "$NOW" "$3"
 }
 
-PAYLOAD="{\"timeSeries\":[$(series_for control_test_plan "$CONTROL_TEST_PLAN"),$(series_for audit_outbox "$AUDIT_OUTBOX"),$(series_for notification_outbox "$NOTIFICATION_OUTBOX")]}"
+series_for() {
+    # $1 = family label, $2 = count — the overdue metric.
+    series_of work_overdue "$1" "$2"
+}
+
+series_abandoned() {
+    # $1 = family label, $2 = count — the abandoned metric.
+    series_of work_abandoned "$1" "$2"
+}
+
+# BOTH METRICS IN ONE POST. `timeSeries` accepts series of differing metric
+# types, so two metrics cost one request and one timer — the split is for the
+# ALERT's sake, not the reporter's.
+PAYLOAD="{\"timeSeries\":[$(series_for control_test_plan "$CONTROL_TEST_PLAN"),$(series_for audit_outbox "$AUDIT_OUTBOX"),$(series_for notification_outbox "$NOTIFICATION_OUTBOX"),$(series_abandoned notification_abandoned "$NOTIFICATION_ABANDONED"),$(series_abandoned audit_abandoned "$AUDIT_ABANDONED")]}"
 
 if [ "$DRY_RUN" = "1" ]; then
     echo "DRY RUN — would POST to projects/$PROJECT/timeSeries:"

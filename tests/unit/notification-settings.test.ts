@@ -10,6 +10,7 @@
  * Unit tests for notification settings — disabled tenant skips enqueue.
  */
 import { buildDedupeKey } from '@/app-layer/notifications/enqueue';
+import { hashForLookup } from '@/lib/security/encryption';
 
 // Mock the settings module
 jest.mock('@/app-layer/notifications/settings', () => ({
@@ -27,7 +28,10 @@ describe('enqueueEmail with tenant settings', () => {
 
     it('buildDedupeKey still works with settings module loaded', () => {
         const key = buildDedupeKey('t1', 'TASK_ASSIGNED', 'a@b.com', 'eid', new Date('2026-03-17'));
-        expect(key).toBe('t1:TASK_ASSIGNED:a@b.com:eid:2026-03-17');
+        // Derived, not a literal — the recipient segment is a keyed hash whose
+        // value depends on `DATA_ENCRYPTION_KEY` (#3577).
+        expect(key).toBe(`t1:TASK_ASSIGNED:${hashForLookup('a@b.com')}:eid:2026-03-17`);
+        expect(key).not.toContain('@');
     });
 
     it('isNotificationsEnabled defaults to true', async () => {

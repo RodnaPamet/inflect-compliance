@@ -164,6 +164,54 @@ These bind every step. The prompts point here rather than restating them.
     - a change to `emailKey()`, to how `ConnectedIdentityAccount.email` is derived,
       or to `Employee.fullName` — the JML chain depends on all three byte for byte.
 
+### Operational evidence — what has actually RUN
+
+**This table is not part of the 177 hardening criteria and does not change the
+count.** It answers a different question, and the difference is the point:
+
+- the hardening checklists ask *"is this built correctly?"* — 177 criteria, each
+  ticked beside the test that proves it;
+- this table asks *"has this ever run?"* — and names the production artefact, or
+  says plainly that there is none.
+
+**Why both are needed (#3578).** Of the 177 criteria, **zero** require a real
+run, and roughly 162 are satisfiable without the system ever having run. That is
+not a flaw in how they gate — it is a limit on *what* they gate, and #3554 is
+the cost of leaving it unstated: a hand-rolled BullMQ job id shipped on
+2026-05-05, was ticked, and was broken for five months, because the enqueue path
+had no due rows to run against until 2026-10-07. **An unreached code path passes
+every test written for it.**
+
+**A green test is not an entry here.** An entry names a row, a run id or a
+metric value, with a date, so somebody who was not there can check it.
+
+| phase | has it run in production? | evidence |
+| --- | --- | --- |
+| **0** — directory prerequisites | **yes** | `IdentityWriteJournal` row `APPLIED / DISABLE_ACCOUNT`, 2026-09-12 — the first real directory disable. 1 `IdentityAccountLink`, 3 journal rows. |
+| **1** — the pipe (`legacy-mcp`) | **no** | no `legacy-mcp` connection exists. Production has 6 `IntegrationConnection` rows: `active-directory` 1, `entra-id` 2, `mcp-server` 3. |
+| **2** — mapping and ingestion | **no** | `LegacyAccount` 0, `LegacyAccessSnapshot` 0. |
+| **3** — deterministic reconciliation | **no** | `LegacyAccountResolution` 0. |
+| **4** — assisted reconciliation and review | **no** | `LegacyIdentityAlias` 0. |
+| **5** — recertification campaigns | **no** | `AccessReview` 0, `AccessReviewDecision` 0. |
+| **6** — model adjudication | **no, and cannot** | `LegacyMatchVerdict` 0 for its whole life. Laya is retired, TypeSafe withdrawn, and `legacyMatchAiMode` can only be written `OFF`, so `runLegacyAdjudication` returns before reaching a model. |
+
+*Measured 2026-10-15 against production. Counts only; no row contents.*
+
+**Six of seven phases have never run, and that is EXPECTED rather than broken:**
+nobody has connected a legacy application, and Phases 1–6 cannot execute without
+one. The pipeline is built, tested and waiting for its first real connection.
+
+**What it means for a recertification claim.** "173 of 177" is true and says
+*built and tested*. It does not say *exercised*. An auditor asking "show me this
+working on real data" has one answer today — the 2026-09-12 disable — and that
+answer came from a proving run somebody chose to do, not from a criterion in
+this document. Keeping the two statements apart is the honest way to hold both.
+
+**How to update this.** When a phase first runs, replace its row with the
+artefact that proves it. Do not tick anything on the strength of a test.
+
+---
+
 ### Definition of done
 
 Every step, without exception:

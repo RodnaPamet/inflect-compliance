@@ -259,7 +259,26 @@ describe('epic-named ratchets are not added back', () => {
         // 7.5 days with ~4,300 failures while every counter and log line
         // worked. A grace that silently stops matching its cadence turns this
         // alert into noise, then into a muted alert, then back into #3554.
-        expect(guardFiles().length).toBeLessThan(777);
+        //
+        // RAISED 777 -> 778 on 2026-10-15, for one file, same test applied:
+        // `current-state-stays-true.test.ts` is named for the invariant it
+        // protects — the design document's "Current state (true today)" section
+        // must not describe a retired thing as operating.
+        //
+        // Why a new file: nothing in these directories compares PROSE against
+        // CODE. Every existing guard here reads source, config or schema and
+        // asserts about the thing it read; this one reads a document and holds
+        // it to the repository. `docs-accuracy` is the nearest relative and
+        // governs classification and banners — which file belongs in which
+        // bucket — not whether a sentence is still true.
+        //
+        // What it cost to not have it: #3579. The retirement commit updated the
+        // design doc the same day, adding banners at subsection tops, and left
+        // TEN body passages describing a deleted container, a deleted provider
+        // and a deferred key rotation as current. One read "the Laya service
+        // now running on". A banner at the top is the natural minimum effort,
+        // it reads as sufficient, and nothing checked the rest.
+        expect(guardFiles().length).toBeLessThan(778);
     });
 
     /**

@@ -38,7 +38,7 @@ the same day or the two silently diverge again.
 | --- | --- | --- | --- |
 | `container-health-reporter.sh` | `docker/container_health`, `host/disk_percent_used` | 60s | **deployed** |
 | `identity-unsettled-reporter.sh` | `identity/write_unsettled` | 5m | **deployed** |
-| `work-overdue-reporter.sh` | `jobs/work_overdue` | 5m | **deployed** 2026-10-15, policy `9571974332933407186` |
+| `work-overdue-reporter.sh` | `jobs/work_overdue`, `jobs/work_abandoned` | 5m | **deployed** 2026-10-15, policies `9571974332933407186` (overdue) and `work-abandoned.json` (abandoned) |
 
 ### The identity row said "not yet applied" until 2026-10-15, and was wrong
 

@@ -1,0 +1,60 @@
+{
+  "displayName": "inflect work was ABANDONED — something gave up and nobody was told (#3558)",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "work was abandoned in the last 24h",
+      "conditionThreshold": {
+        "filter": "metric.type=\"custom.googleapis.com/jobs/work_abandoned\" AND resource.type=\"gce_instance\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0,
+        "duration": "300s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_MAX",
+            "crossSeriesReducer": "REDUCE_MAX",
+            "groupByFields": [
+              "metric.label.family"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "displayName": "abandonment reporting stopped — absence is not health",
+      "conditionAbsent": {
+        "filter": "metric.type=\"custom.googleapis.com/jobs/work_abandoned\" AND resource.type=\"gce_instance\"",
+        "duration": "1800s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ]
+      }
+    }
+  ],
+  "documentation": {
+    "mimeType": "text/markdown",
+    "content": "Work on the inflect-compliance VM was ABANDONED in the last 24 hours: a row\nwhose retries are exhausted and whose status is terminal. Nothing will retry\nit, and no screen in the product lists it.\n\nThis is NOT the same condition as \"inflect scheduled work is overdue\". Overdue\nwork is late and may still complete. Abandoned work never will.\n\nWHY THIS EXISTS (#3558, #3573). Between 2026-06-03 and 2026-08-31, 520\nnotification emails were abandoned — 48.6% of every notification the product\nhad ever queued — all for one cause, an SMTP 550 rejecting the sender domain.\nIt was silent for three months. Among them were two policy-approval requests\nthat nobody was ever asked for; they were still sitting IN_REVIEW when this was\nwritten, and were re-sent on 2026-10-15 after the sender was fixed. The 10\n\"leaver needs action\" notifications in that batch were one event fanned out to\nten recipients, and the account was disabled by hand two weeks later for an\nunrelated reason. Nothing in that sequence was noticed by a machine.\n\nWHAT TO DO. The journal entry for the firing run names the type and the error,\ndeliberately WITHOUT the recipient — `dedupeKey` embeds the address (#3577) and\na page is read by whoever is on call:\n\n    journalctl -u work-overdue-reporter.service -n 50\n\n| family | means |\n|---|---|\n| notification_abandoned | emails given up on. Check the error first: one cause usually explains the whole batch, as a sender-domain rejection did for all 520. |\n| audit_abandoned | an audit entry that will never be applied. Compliance-relevant in its own right — the queued-entry link an auditor follows does not arrive. |\n\nTHE WINDOW IS 24 HOURS AND IS BOUNDED ON PURPOSE. Production holds 512 FAILED\nnotification rows written off under #3573. Counting all of them would make this\nalert permanently firing, which is an alert on its way to being muted. The\ncolumns differ by table because only one of them records a transition time —\nsee the ABANDONED_CONTRACT comment in the reporter.\n\nNOT COVERED: FAILED rows older than the window, and any job family that writes\nno row a reporter can read, because `runJob` persists no job-run history.\n"
+  },
+  "enabled": true,
+  "notificationChannels": [
+    "projects/hazel-design-419410/notificationChannels/11199896282881593035"
+  ],
+  "alertStrategy": {
+    "autoClose": "1800s"
+  },
+  "userLabels": {
+    "issue": "3558",
+    "product": "inflect-compliance"
+  }
+}
