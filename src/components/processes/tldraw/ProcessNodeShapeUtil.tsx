@@ -58,10 +58,15 @@ import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-rig
 import { isCollapsedFromDataJson } from './drill-scope-host';
 import {
     overlayClassFor,
-    useNodeOverlayStatus,
+    useNodeOverlayState,
     useNodeAgentRun,
     awaitsAHuman,
 } from '@/lib/processes/canvas-execution-overlay';
+// WHO HAS OPENED WHICH CHECKPOINT (#3472). Read unconditionally and safe
+// without a provider — `canReview` is false and `open` is a no-op — which is
+// the same design property the execution overlay states for itself and the
+// reason `process-shape-render` can keep rendering this util bare.
+import { useCheckpointReview } from '@/lib/processes/canvas-checkpoint-review';
 
 import {
     NODE_ACCENT_BORDER,
@@ -216,7 +221,7 @@ export class ProcessNodeShapeUtil extends ShapeUtil<ProcessNodeShape> {
      * Rendered through a named function component, NOT inline.
      *
      * `component()` is a method on a `ShapeUtil`, and the body now reads React
-     * context (`useNodeOverlayStatus`). A hook in a class method is outside what
+     * context (`useNodeOverlayState`). A hook in a class method is outside what
      * `react-hooks/rules-of-hooks` can verify — tldraw does invoke this during a
      * render, so it would work, but "works and cannot be checked" is how a
      * conditional hook gets added later with nothing to catch it.
@@ -321,7 +326,7 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
 
         Read UNCONDITIONALLY, which is what keeps the hook rules satisfiable:
         without a `CanvasOverlayProvider` above this the context holds an empty
-        map, `useNodeOverlayStatus` returns undefined, and `overlayClassFor`
+        map, `useNodeOverlayState` returns undefined, and `overlayClassFor`
         returns `''`. So a node still renders in isolation in a test and under
         SSR — the overlay module's header states that as a design property, and
         gating the hook on run mode would break it.
@@ -332,8 +337,21 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
         provider with a populated map.
     */
     const ruleId = ruleIdFromDataJson(shape.props.dataJson);
-    const overlayStatus = useNodeOverlayStatus(ruleId);
+    const overlayState = useNodeOverlayState(ruleId);
+    const overlayStatus = overlayState?.status;
     const overlayClass = overlayClassFor(overlayStatus);
+    /*
+        HOW MANY are stuck, when more than one is (#3546).
+
+        Shown only above 1, because "1 stuck execution" is what the STUCK ring
+        already says and a badge repeating it is noise on a canvas. Above 1 it
+        is a different fact: the rule wedges every time it fires rather than
+        having one wedged run, and those have different remedies.
+    */
+    const stuckCount =
+        overlayStatus === 'STUCK' && overlayState && overlayState.count > 1
+            ? overlayState.count
+            : null;
 
     /*
         #3472 — what this node's latest agentic RUN is doing.
@@ -354,6 +372,24 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
     */
     const agentRun = useNodeAgentRun(ruleId);
     const runAwaitsAHuman = awaitsAHuman(agentRun);
+    /*
+        THE INLINE REVIEW AFFORDANCE (#3472).
+
+        `canReview` is the proposals PAGE's gate (`admin.view`) threaded down
+        the canvas, not a new authority: the panel this opens reads the same
+        review queue, and the canvas is not an admin surface. A viewer without
+        it sees exactly what they see today — a node saying a human is needed,
+        with no control that lies about who.
+
+        The AFFORDANCE is here and the PANEL is not, because a tldraw shape
+        renders inside the camera transform: it is scaled, clipped to the
+        shape's own bounds, and positioned by a matrix this component does not
+        own. A diff table has its own scroll, focus order and size. So the
+        shape carries the button and the panel renders in ordinary DOM beside
+        the canvas, joined by the context above.
+    */
+    const checkpoint = useCheckpointReview();
+    const canOpenCheckpoint = runAwaitsAHuman && checkpoint.canReview && agentRun !== undefined;
 
     return (
         <HTMLContainer
@@ -379,6 +415,7 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
             // presentation detail a redesign may reword; the status is the
             // fact, and it is what a test should be able to read.
             data-overlay-status={overlayStatus}
+            data-overlay-stuck-count={stuckCount ?? undefined}
             // The RUN's status as a fact a test can read, beside the
             // execution's. Absent when this node has no run, which is every
             // node that is not an agent.
@@ -396,6 +433,16 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                 <span className="truncate text-sm font-medium text-content-emphasis">
                     {shape.props.label}
                 </span>
+                {/* The COUNT, beside the label rather than below it: it
+                    qualifies the ring, and the line below is the agent run's. */}
+                {stuckCount !== null && (
+                    <span
+                        className="shrink-0 text-xs font-medium text-content-warning"
+                        data-testid={`process-node-stuck-${shape.props.nodeKey || shape.id}`}
+                    >
+                        ×{stuckCount}
+                    </span>
+                )}
             </div>
             {shape.props.subtitle ? (
                 <span className="truncate text-xs text-content-muted">
@@ -414,19 +461,69 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                 "step 0 of 0" — a run that has just started has genuinely not
                 recorded one, and a zero there reads as a stalled run. */}
             {agentRun ? (
-                <span
-                    className={[
-                        'truncate text-xs',
-                        runAwaitsAHuman ? 'text-content-warning' : 'text-content-subtle',
-                    ].join(' ')}
-                    data-testid={`process-node-run-${shape.props.nodeKey || shape.id}`}
-                >
-                    {agentRun.status}
-                    {agentRun.lastStepSeq !== null
-                        ? ` · ${agentRun.lastStepSeq + 1}/${agentRun.stepCount}`
-                        : ''}
-                    {agentRun.lastStepTool ? ` · ${agentRun.lastStepTool}` : ''}
-                </span>
+                /*
+                    THE SAME LINE, AND SOMETIMES A CONTROL.
+
+                    A `<button>` exactly when a human is the thing this run is
+                    waiting for AND this viewer may review — otherwise the
+                    `<span>` it has always been. Not a button that is sometimes
+                    disabled: a disabled control still says "there is something
+                    to do here" to everyone who cannot do it, which is the
+                    defect the proposals queue recorded when Approve and Reject
+                    "rendered enabled for readers and returned 403 on press".
+
+                    THE TEXT IS UNCHANGED in both branches, so this introduces
+                    no copy. That matters because a shape util has no
+                    translator — `process-shape-render` renders it with no
+                    NextIntl provider on purpose — which is why the node reads
+                    per-kind text from `NODE_TAXONOMY` constants rather than a
+                    message catalogue. The accessible NAME is the node's own
+                    label, the same answer `GroupFoldToggle` gives.
+
+                    `stopEventPropagation` for the reason that control
+                    documents: without it tldraw reads the pointer-down as a
+                    canvas gesture and starts dragging the shape, so the click
+                    either drags or never lands.
+                */
+                (() => {
+                    const runText = (
+                        <>
+                            {agentRun.status}
+                            {agentRun.lastStepSeq !== null
+                                ? ` · ${agentRun.lastStepSeq + 1}/${agentRun.stepCount}`
+                                : ''}
+                            {agentRun.lastStepTool ? ` · ${agentRun.lastStepTool}` : ''}
+                        </>
+                    );
+                    const testId = `process-node-run-${shape.props.nodeKey || shape.id}`;
+                    return canOpenCheckpoint ? (
+                        <button
+                            type="button"
+                            aria-label={shape.props.label || undefined}
+                            aria-haspopup="dialog"
+                            data-testid={testId}
+                            data-checkpoint-affordance="true"
+                            onPointerDown={stopEventPropagation}
+                            onClick={() => checkpoint.open(agentRun.runId)}
+                            className="truncate text-left text-xs text-content-warning underline decoration-dotted hover:decoration-solid"
+                            style={{ pointerEvents: 'all' }}
+                        >
+                            {runText}
+                        </button>
+                    ) : (
+                        <span
+                            className={[
+                                'truncate text-xs',
+                                runAwaitsAHuman
+                                    ? 'text-content-warning'
+                                    : 'text-content-subtle',
+                            ].join(' ')}
+                            data-testid={testId}
+                        >
+                            {runText}
+                        </span>
+                    );
+                })()
             ) : null}
         </HTMLContainer>
     );

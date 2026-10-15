@@ -78,6 +78,8 @@ import { buildCanvasCommandGroups } from '@/lib/processes/canvas-command-groups'
 import { useTldrawCanvasCounts } from '@/lib/processes/use-tldraw-canvas-counts';
 import { CanvasOverlayProvider } from '@/lib/processes/canvas-execution-overlay';
 import { RunModeProvider, useRunMode } from '@/lib/processes/run-mode-context';
+import { CheckpointReviewProvider } from '@/lib/processes/canvas-checkpoint-review';
+import { CheckpointReviewPanel } from '@/components/processes/CheckpointReviewPanel';
 import type { AutosaveStatus } from '@/lib/processes/use-canvas-autosave';
 import { useTldrawDocumentBar } from '@/lib/processes/use-tldraw-document-bar';
 import { useTldrawSelection } from '@/lib/processes/use-tldraw-selection';
@@ -127,6 +129,31 @@ export interface TldrawProcessWorkspaceProps {
     activeId: string | null;
     onActiveIdChange: (id: string | null) => void;
     onProcessesChange: (next: ProcessMapSummary[]) => void;
+    /**
+     * May this viewer READ the agent-proposal review queue (#3472)?
+     *
+     * The `/agents/proposals` page's own gate (`admin.view`), resolved on the
+     * server and threaded here — not a new authority. A proposal diff carries
+     * the current values of a risk, control, policy or finding beside what an
+     * agent proposes to change them to, and the canvas is not an admin
+     * surface; offering that from here under a weaker gate would be a
+     * permissions change wearing a UI feature's clothes.
+     *
+     * Optional, defaulting to FALSE. A caller that does not thread it gets the
+     * canvas as it was, which is the safe direction for a permission to fail —
+     * and the inline review simply does not appear.
+     */
+    canReviewCheckpoints?: boolean;
+    /**
+     * May this viewer APPROVE or REJECT? The role-tier `canWrite`.
+     *
+     * Separate from the read, because it is separate on the queue: both
+     * `approveAgentProposal` and `rejectAgentProposal` open with
+     * `assertCanWrite(ctx)`, and the proposals client records what skipping
+     * the distinction cost — "Approve and Reject rendered enabled for readers
+     * and returned 403 on press".
+     */
+    canOperateCheckpoints?: boolean;
 }
 
 export function TldrawProcessWorkspace(props: TldrawProcessWorkspaceProps) {
@@ -136,7 +163,18 @@ export function TldrawProcessWorkspace(props: TldrawProcessWorkspaceProps) {
     return (
         <RunModeProvider>
             <OverlayBridge>
-                <Inner {...props} />
+                {/* The inline-review join (#3472). ALWAYS MOUNTED, for the
+                    reason `OverlayBridge` is: the node shape reads this
+                    context unconditionally, and a missing provider would make
+                    it read the module default rather than this viewer's
+                    authority. The flags decide whether anything renders; the
+                    provider's existence does not. */}
+                <CheckpointReviewProvider
+                    canReview={props.canReviewCheckpoints ?? false}
+                    canOperate={props.canOperateCheckpoints ?? false}
+                >
+                    <Inner {...props} />
+                </CheckpointReviewProvider>
             </OverlayBridge>
         </RunModeProvider>
     );
@@ -470,7 +508,12 @@ function Inner({
             <div className="flex min-h-0 flex-1">
                 <ProcessPalette />
 
-                <div className="min-w-0 flex-1" ref={canvasHostRef}>
+                {/* `relative`, so the checkpoint panel's `absolute` resolves
+                    against the CANVAS AREA rather than the page: it must sit
+                    over the map and inside it, not float across the palette
+                    and the inspector. */}
+                <div className="relative min-w-0 flex-1" ref={canvasHostRef}>
+                    <CheckpointReviewPanel />
                     <TldrawProcessMap
                         // Remounts on a conflict; see `handleConflict`.
                         key={`${activeId ?? 'none'}:${reloadKey}`}

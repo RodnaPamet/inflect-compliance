@@ -15,9 +15,13 @@
  *      nextRunAt as part of the WHERE clause; if updateMany returns
  *      count=0 the tick lost the race and skips enqueue.
  *   4. Enqueue contract — successful claim yields an enqueue with
- *      the deterministic `ctr:{planId}:{scheduledForIso}` jobId so
- *      a worker-restart retry cannot double-fire the same intended
- *      execution.
+ *      the deterministic `ctr-{planId}-{epochMs}` jobId so a
+ *      worker-restart retry cannot double-fire the same intended
+ *      execution, AND that id is one BullMQ will actually accept.
+ *      The second half is not pedantry: this suite previously
+ *      asserted the id's exact spelling against a mocked enqueue,
+ *      so it stayed green through seven days of every real enqueue
+ *      being rejected (#3554).
  */
 
 // ─── Mocks ─────────────────────────────────────────────────────────
@@ -54,6 +58,7 @@ jest.mock('@/app-layer/jobs/queue', () => ({
 }));
 
 import { runControlTestScheduler } from '@/app-layer/jobs/control-test-scheduler';
+import { isValidBullMqJobId, scheduledJobId } from '@/app-layer/jobs/fan-out';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -131,9 +136,22 @@ describe('runControlTestScheduler — happy path', () => {
             testPlanId: plan.id,
             scheduledForIso: plan.nextRunAt!.toISOString(),
         });
-        expect(options.jobId).toBe(
-            `ctr:${plan.id}:${plan.nextRunAt!.toISOString()}`,
-        );
+        // ASSERTED AGAINST THE RULE, NOT THE SPELLING — this is the line that
+        // let #3554 run for seven days. It used to read
+        //
+        //     expect(options.jobId).toBe(`ctr:${plan.id}:${iso}`)
+        //
+        // which pinned the exact string BullMQ rejects, against a MOCKED
+        // enqueue that accepts anything. Green forever, and incapable of
+        // expressing the only failure that mattered.
+        //
+        // Three properties now, each independently load-bearing:
+        expect(isValidBullMqJobId(options.jobId)).toBe(true);
+        // determinism — the dedupe contract this id exists for
+        expect(options.jobId).toBe(scheduledJobId('ctr', plan.id, plan.nextRunAt!.getTime()));
+        // and the instant is really in it, so a second run of the same plan
+        // cannot collide with the first
+        expect(options.jobId).toContain(String(plan.nextRunAt!.getTime()));
     });
 });
 

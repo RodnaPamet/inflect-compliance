@@ -67,6 +67,17 @@ export const SCORER_WEIGHTS = {
     SIMILARITY_SCALE: 140,
     /** Below this, a similarity is noise and is not emitted at all. */
     SIMILARITY_FLOOR: 0.82,
+    /**
+     * A shared department (#3516).
+     *
+     * DELIBERATELY THE SMALLEST WEIGHT HERE, and it must stay below
+     * {@link SCORER_WEIGHTS.CONVENTION}: `legacy-reviewer-actions` bounds its
+     * bulk action by the largest score any single supporting signal can
+     * contribute, so a new weight above CONVENTION would silently re-tune who
+     * qualifies for bulk confirmation. 40 is corroboration, not identification
+     * — a department is shared by many people and identifies none of them.
+     */
+    DEPARTMENT: 40,
 } as const;
 
 /**
@@ -147,6 +158,75 @@ export function makeSimilarityScorer(): CandidateScorer {
         ];
         return signals;
     };
+}
+
+/**
+ * A SECOND OPINION on a candidate somebody else already proposed (#3516).
+ *
+ * ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+ *
+ * Measured over the Step 3a corpus with 4a wired: of 24 residue rows a reviewer
+ * sees, **seven rest on `NAME_TRANSLIT` alone and five on `SIMILARITY` alone**.
+ * Those rows give a person one piece of evidence and no way to corroborate it
+ * without going to the roster themselves. Every other supporting kind is about
+ * a name, an address or a directory link — so a second signal drawn from any of
+ * them restates the first rather than confirming it.
+ *
+ * A department is independent of how a name is spelled. It is the cheapest
+ * genuinely separate fact this engine already holds on both sides
+ * (`CanonicalAccount.department`, `RosterEmployee.department`).
+ *
+ * ── WHAT IT DOES NOT DO, WHICH MATTERS MORE ────────────────────────────────
+ *
+ * It changes **no outcome**. `DEPARTMENT_MATCH` is `SUPPORTING`, so it cannot
+ * reach `LINKED` however it scores — proven for every subset of the supporting
+ * kinds at score 10,000 by `identity-reconcile-precision`'s exhaustive test,
+ * which enumerates the union and therefore covered this kind the moment it was
+ * added.
+ *
+ * It is a SCORER and never a blocker. A scorer runs per candidate the blocker
+ * already produced, so this can only annotate a shortlist, never widen one.
+ * Keyed as a blocker it would make every member of Finance a candidate for
+ * every other — a shortlist of dozens, which is worse than none.
+ *
+ * And it cannot break a tie on its own: two candidates in the same department
+ * both receive it, so the engine's equal-score rule is unaffected. It only
+ * separates candidates who differ on the department, which is exactly when the
+ * separation is real.
+ */
+export function makeDepartmentScorer(): CandidateScorer {
+    return (account, candidate): readonly SupportingSignal[] => {
+        const a = normaliseOrgUnit(account.department);
+        const b = normaliseOrgUnit(candidate.department);
+        // Absence is not a match. Two accounts with no department are not
+        // colleagues, and scoring them as such would corroborate every weak
+        // name match in a source system that leaves the field blank — which is
+        // most of them.
+        if (!a || !b || a !== b) return [];
+        return [
+            {
+                kind: 'DEPARTMENT_MATCH',
+                score: SCORER_WEIGHTS.DEPARTMENT,
+                // The value, so a reviewer can see WHICH department agreed
+                // rather than being told that one did.
+                evidence: a,
+            },
+        ];
+    };
+}
+
+/**
+ * Compare org units the way a person would, and no further.
+ *
+ * Case and surrounding whitespace are noise — "Finance" and "finance " are the
+ * same unit. Internal punctuation and spacing are NOT normalised away: "Finance
+ * & Controlling" and "Finance" are different units, and folding them would
+ * manufacture agreement between neighbouring teams. That is the same line
+ * `EMAIL_EXACT` draws at byte-equality for the same reason.
+ */
+function normaliseOrgUnit(v: string | null | undefined): string | null {
+    const t = (v ?? '').trim().toLowerCase();
+    return t === '' ? null : t;
 }
 
 // ─── Blocking ──────────────────────────────────────────────────────────────
@@ -282,5 +362,9 @@ export function step4aExtensions(
         blockers.push(makeConventionBlocker(convention, roster));
     }
     scorers.push(makeSimilarityScorer());
+    // The second opinion (#3516). Last, so it annotates whatever the scorers
+    // above proposed rather than competing with them — and at the smallest
+    // weight here, because it corroborates and never identifies.
+    scorers.push(makeDepartmentScorer());
     return { scorers, blockers };
 }

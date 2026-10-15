@@ -25,7 +25,22 @@ describe('VR-6 — execution overlay', () => {
     it('the overlay is distributed via context (no per-node tenant SWR)', () => {
         const src = read('src/lib/processes/canvas-execution-overlay.tsx');
         expect(src).toMatch(/CanvasOverlayProvider/);
-        expect(src).toMatch(/useNodeOverlayStatus/);
+        // THE EXPORTS, by name, one unique match each.
+        //
+        // This was `toMatch(/useNodeOverlayState/)` with a comment saying
+        // "either read satisfies this" — which is precisely the ambiguity
+        // `assertion-needle-uniqueness-ratchet` objects to, and it went red:
+        // the bare name appears twice in the module (the definition, and the
+        // call inside the narrow wrapper), so two positions satisfied a needle
+        // that was about neither in particular.
+        //
+        // Naming both exports is also the stronger claim. The module's job is
+        // to expose a node-side read over the context, and it exposes TWO —
+        // the full state for the node that needs the stuck count, and the
+        // narrow status for callers that do not. A substring could not tell
+        // "both are exported" from "one is, and the other is mentioned".
+        expect(src).toMatch(/export function useNodeOverlayState\(/);
+        expect(src).toMatch(/export function useNodeOverlayStatus\(/);
 
         // EVERY subscription IS POLLED, counted rather than existence-checked.
         //
@@ -88,8 +103,11 @@ describe('VR-6 — execution overlay', () => {
         const util = read('src/components/processes/tldraw/ProcessNodeShapeUtil.tsx');
         const workspace = read('src/components/processes/TldrawProcessWorkspace.tsx');
 
-        // The node reads the CONTEXT…
-        expect(util).toMatch(/useNodeOverlayStatus\(/);
+        // The node reads the CONTEXT… through `useNodeOverlayState` since
+        // #3546, because it needs the stuck COUNT and not only the status.
+        // `useNodeOverlayStatus` remains the narrow read for callers that want
+        // just a status, and has its own provider test.
+        expect(util).toMatch(/useNodeOverlayState\(/);
         expect(util).toMatch(/overlayClassFor\(/);
         // …and the workspace provides it, gated so the poll cannot run on a
         // document map. `enabled={isRunMode}` and not `enabled` bare: an
@@ -109,4 +127,75 @@ describe('VR-6 — execution overlay', () => {
         expect(util).toMatch(/export function ruleIdFromDataJson/);
         expect(util).toMatch(/typeof id === 'string'/);
     });
+
+    /*
+        ═══ NO SECOND APPROVAL PATH (#3472) ═══
+
+        The plan's constraint is one sentence — "approve/reject from the canvas
+        goes through the SAME usecase as /agents/proposals" — and it is the
+        kind of claim that cannot be checked by looking at the canvas. A panel
+        that grew its own approve endpoint, or its own usecase, would render
+        identically and pass every rendered test; the only place the claim is
+        visible is in what the code REACHES.
+
+        So three reads, each closing a different way for a second path to
+        appear:
+
+          · the canvas panel's write fetches name the PROPOSALS routes;
+          · the panel imports no write usecase of its own;
+          · the checkpoint ROUTE declares no mutating handler, so the read the
+            panel needs cannot quietly become the write it does.
+
+        The third is the one worth stating twice. A read route beside a write
+        is how a surface acquires a private door: the file already has the
+        `requirePermission` wrapper and the run id, and adding a `POST` to it
+        would be two lines that no rendered test and no permission census could
+        tell from the read.
+    */
+    it('the canvas decides nothing — approve/reject reach the proposals routes', () => {
+        const panel = read('src/components/processes/CheckpointReviewPanel.tsx');
+
+        // THE WRITE TARGET, as the only interpolated path the panel POSTs to.
+        expect(panel).toMatch(/\/agent-proposals\/\$\{p\.id\}\/\$\{action\}/);
+        // And `action` is exactly the two decisions, so a third cannot be
+        // smuggled through the same template.
+        expect(panel).toMatch(/action: 'approve' \| 'reject'/);
+
+        // NO WRITE USECASE OF ITS OWN. A client component importing one would
+        // not even work — it would yield a client reference — but the import
+        // is what a refactor adds first, so it is refused here rather than
+        // discovered at runtime.
+        expect(panel).not.toMatch(/approveAgentProposal|rejectAgentProposal/);
+        expect(panel).not.toMatch(/resumeWorkflowRun|abortWorkflowRun/);
+
+        // THE SAME DIFF COMPONENT the queue renders, which is what keeps the
+        // "approve is a child of the diff" invariant from being re-authored
+        // per surface.
+        expect(panel).toMatch(/<ProposalDiffPanel/);
+    });
+
+    it('the checkpoint route is a READ, with no mutating handler', () => {
+        const route = read('src/app/api/t/[tenantSlug]/agent-runs/[id]/checkpoint/route.ts');
+        expect(route).toMatch(/export const GET =/);
+        // Counted over the EXPORTED handlers rather than searched for as
+        // words: `POST` appears in prose and in a comment about where the
+        // decision does go, and `codeOf` has masked those — but a future
+        // rewrite could put the word in a string. An export is unambiguous.
+        const handlers = route.match(/export const (GET|POST|PUT|PATCH|DELETE) =/g) ?? [];
+        expect(handlers).toEqual(['export const GET =']);
+        // The gate is the review surface's own, spelled as the middleware.
+        expect(route).toMatch(/requirePermission<\{ tenantSlug: string; id: string \}>\(\s*'admin\.view'/);
+    });
+
+    it('the node offers the affordance only to a viewer who may review', () => {
+        const node = read('src/components/processes/tldraw/ProcessNodeShapeUtil.tsx');
+        // THE CONJUNCTION, not either half. A node that checked only
+        // `runAwaitsAHuman` would hand every reader a control that 403s, which
+        // is the defect the proposals queue recorded; one that checked only
+        // `canReview` would offer a review of a run nobody is waiting on.
+        expect(node).toMatch(
+            /canOpenCheckpoint =\s*runAwaitsAHuman && checkpoint\.canReview/,
+        );
+    });
+
 });

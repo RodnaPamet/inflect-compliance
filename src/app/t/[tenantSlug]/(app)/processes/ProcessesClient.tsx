@@ -71,11 +71,25 @@ const TldrawProcessWorkspace = dynamic(
 interface ProcessesClientProps {
     tenantSlug: string;
     initialProcesses: ProcessMapSummary[];
+    /**
+     * #3472 — the two authorities the canvas's inline checkpoint review needs,
+     * resolved on the server and passed straight through to the workspace.
+     *
+     * Two, not one, and for the reason `/agents/proposals` keeps them apart:
+     * `admin.view` decides whether the review queue may be READ at all, and
+     * the role-tier `canWrite` decides whether a decision may be TAKEN. Both
+     * default to false here, so a caller that does not thread them gets the
+     * canvas unchanged — the safe direction for a permission to fail.
+     */
+    canReviewCheckpoints?: boolean;
+    canOperateCheckpoints?: boolean;
 }
 
 export function ProcessesClient({
     tenantSlug,
     initialProcesses,
+    canReviewCheckpoints = false,
+    canOperateCheckpoints = false,
 }: ProcessesClientProps) {
     // The full list is owned here so a save can refresh the
     // selected map's metadata (version, updatedAt) without a full
@@ -176,6 +190,8 @@ export function ProcessesClient({
                         activeId={activeId}
                         setActiveId={setActiveId}
                         setProcesses={setProcesses}
+                        canReviewCheckpoints={canReviewCheckpoints}
+                        canOperateCheckpoints={canOperateCheckpoints}
                     />
                 )}
             </div>
@@ -189,12 +205,17 @@ function CanvasWorkspace({
     activeId,
     setActiveId,
     setProcesses,
+    canReviewCheckpoints,
+    canOperateCheckpoints,
 }: {
     tenantSlug: string;
     processes: ProcessMapSummary[];
     activeId: string | null;
     setActiveId: (id: string | null) => void;
     setProcesses: (p: ProcessMapSummary[]) => void;
+    /** #3472 — see `ProcessesClientProps`; passed through, never re-derived. */
+    canReviewCheckpoints: boolean;
+    canOperateCheckpoints: boolean;
 }) {
     // Mobile PR-5 — the xyflow canvas (pan/zoom/drag of a node graph) is
     // unusable on a phone. Below `md` we render a read-only LIST of the
@@ -238,6 +259,8 @@ function CanvasWorkspace({
                         activeId={activeId}
                         onActiveIdChange={setActiveId}
                         onProcessesChange={setProcesses}
+                        canReviewCheckpoints={canReviewCheckpoints}
+                        canOperateCheckpoints={canOperateCheckpoints}
                     />
                 </CanvasModeProvider>
             </WorkspaceShell.Body>

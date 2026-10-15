@@ -314,6 +314,18 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/automation/executions/agent-runs/route.ts',
     't/[tenantSlug]/agent-runs/[id]/steps/route.ts',
     't/[tenantSlug]/agent-runs/[id]/stream/route.ts',
+    // #3472 — one run's OPEN HUMAN CHECKPOINT: the PENDING proposals it
+    // queued, each with a server-computed diff, for the canvas's inline
+    // approve/reject. Agentic surface because it reads the proposal queue
+    // through a run.
+    //
+    // A READ, and the only route in this family whose gate is load-bearing
+    // rather than documentary: a proposal diff carries the current values of a
+    // risk, control, policy or finding, so it takes `/agents/proposals`' own
+    // `admin.view`. The DECISION is not here — it posts to the proposals
+    // routes, which is the plan's "no second approval path" — and
+    // `vr6-execution-overlay` asserts this file exports GET and nothing else.
+    't/[tenantSlug]/agent-runs/[id]/checkpoint/route.ts',
     't/[tenantSlug]/agent-runs/route.ts',
 ] as const;
 

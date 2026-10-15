@@ -319,6 +319,31 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'latency, not reach. Tenant scope is the usecase predicate, so a ' +
             "run in another tenant is not-found rather than forbidden.",
     },
+    //
+    // The CHECKPOINT read beside it — and the one `/agent-runs` route whose
+    // gate is load-bearing rather than documentary.
+    //
+    // Its sibling `/steps` is gated only by the usecase's `assertCanRead`,
+    // which is right: it serves the step rows the run detail page already
+    // hands out to the same readers. A proposal DIFF is not that. It carries
+    // the current values of a risk, control, policy or finding beside what an
+    // agent proposes to change them to, and the only surface that has ever
+    // shown those is `/agents/proposals`, whose page gates on `admin.view`
+    // before it loads anything. The canvas that consumes this is NOT an admin
+    // surface, so serving the review queue from it under a weaker gate would
+    // be a permissions change wearing a UI feature's clothes.
+    {
+        path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/checkpoint$`),
+        permission: 'admin.view',
+        note:
+            "One run's open human checkpoint: its status plus every PENDING " +
+            'proposal it queued, each with a server-computed diff. The same ' +
+            'authority as the /agents/proposals page, because it is the same ' +
+            'data — the canvas reads it to offer inline approve/reject, and ' +
+            'the decision itself posts to the proposals routes, so this adds ' +
+            'reach to no write. Tenant scope is the usecase predicate, so a ' +
+            "run in another tenant is not-found rather than forbidden.",
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/policy-card$`),
         permission: 'admin.agent_policy_card',
