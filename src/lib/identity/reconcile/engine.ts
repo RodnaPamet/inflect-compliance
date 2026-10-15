@@ -117,6 +117,17 @@ export type StrongSignalKind =
  *   a suggestion and never a link.
  * - `NAME_EXACT`, `NAME_TRANSLIT`, `NAME_INITIAL`, `USERNAME_CONVENTION`,
  *   `SIMILARITY` — Step 4a.
+ * - `DEPARTMENT_MATCH` — the account's department equals the candidate's
+ *   (#3516). The ONLY supporting kind that is not about a name, an address or a
+ *   directory link, which is the whole reason it was added: a reviewer reading a
+ *   row that rests on transliteration alone has one piece of evidence and no
+ *   second opinion. A shared department is independent of how the name is
+ *   spelled, so it corroborates rather than restates.
+ *
+ *   It is deliberately WEAK and deliberately a SCORER, never a blocker. Many
+ *   people share a department, so it identifies nobody — and a blocker keyed on
+ *   it would make every member of Finance a candidate for every other, which is
+ *   the opposite of help.
  */
 export type SupportingSignalKind =
     | 'EMAIL_UNTAGGED'
@@ -125,7 +136,8 @@ export type SupportingSignalKind =
     | 'NAME_TRANSLIT'
     | 'NAME_INITIAL'
     | 'USERNAME_CONVENTION'
-    | 'SIMILARITY';
+    | 'SIMILARITY'
+    | 'DEPARTMENT_MATCH';
 
 export type SignalKind = StrongSignalKind | SupportingSignalKind;
 
@@ -151,6 +163,7 @@ const SIGNAL_STRENGTH: Readonly<Record<SignalKind, SignalStrength>> = {
     NAME_INITIAL: 'SUPPORTING',
     USERNAME_CONVENTION: 'SUPPORTING',
     SIMILARITY: 'SUPPORTING',
+    DEPARTMENT_MATCH: 'SUPPORTING',
 };
 
 export const ALL_SIGNAL_KINDS: readonly SignalKind[] = Object.keys(SIGNAL_STRENGTH) as SignalKind[];
@@ -463,6 +476,19 @@ const SCORE: Readonly<Record<SignalKind, number>> = {
     NAME_INITIAL: 50,
     USERNAME_CONVENTION: 40,
     SIMILARITY: 30,
+    /**
+     * NEVER EMITTED BY THIS MODULE (#3516), and present because the table is
+     * exhaustive over `SignalKind` on purpose — a kind added without an entry
+     * fails to compile, which is how a new signal is forced to declare its
+     * place in the ordering rather than defaulting to `undefined`.
+     *
+     * `DEPARTMENT_MATCH` comes from `makeDepartmentScorer`, which supplies its
+     * own weight from `SCORER_WEIGHTS.DEPARTMENT`. The value here is what the
+     * engine WOULD use if it ever emitted the kind itself: the lowest on this
+     * scale, below `SIMILARITY`, because a department is shared by many people
+     * and identifies none of them.
+     */
+    DEPARTMENT_MATCH: 20,
 };
 
 // ─── Date handling, clock-free ─────────────────────────────────────────────

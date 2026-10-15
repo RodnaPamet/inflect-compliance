@@ -37,6 +37,19 @@ export default async function ProcessesPage({
     // (#3079) — a page that still asked would be asking a question with one
     // possible answer.
     return (
-        <ProcessesClient tenantSlug={tenantSlug} initialProcesses={processes} />
+        <ProcessesClient
+            tenantSlug={tenantSlug}
+            initialProcesses={processes}
+            // #3472 — the canvas's inline approve/reject for a run parked on a
+            // HUMAN_CHECKPOINT. Resolved HERE, on the server, from the same
+            // two terms `/agents/proposals` uses: its PAGE gates on
+            // `appPermissions.admin.view` before loading anything, and its
+            // CLIENT takes `permissions.canWrite` for the two usecases that
+            // assert it. Neither is new authority and neither is widened — a
+            // viewer who cannot review the queue sees the canvas exactly as it
+            // is today.
+            canReviewCheckpoints={ctx.appPermissions.admin.view}
+            canOperateCheckpoints={ctx.permissions.canWrite}
+        />
     );
 }

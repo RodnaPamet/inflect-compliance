@@ -32,7 +32,12 @@ import {
 // copy that can drift from the Prisma enum it mirrors.
 import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
 
-import { ProposalDiffPanel } from './ProposalDiffPanel';
+// MOVED OUT OF THIS ROUTE DIRECTORY (#3472). The canvas's checkpoint
+// panel renders the same component, and `route-import-boundaries` is
+// explicit that a route directory is not a module other surfaces import
+// from — so the second reader is what moved it, which is the decision
+// that guard exists to force someone to make.
+import { ProposalDiffPanel } from '@/components/agentic/ProposalDiffPanel';
 
 export interface ProposalRow {
     id: string;

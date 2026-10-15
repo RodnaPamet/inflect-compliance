@@ -131,4 +131,56 @@ describe('the declaration that diff expansion is unobservable rests on live fact
         expect(client).not.toContain('<Accordion');
         expect(client).not.toContain('<details');
     });
+
+    it('the CANVAS panel renders the same diff with nothing to expand either', () => {
+        // THE SECOND MOUNT (#3472). The declaration above — "expansion is
+        // unobservable, because the approve control is a child of the panel
+        // that renders the diff" — is a claim about the CODE, and it was true
+        // of the one surface that existed when it was written. A canvas panel
+        // that wrapped the same component in a `<details>` would make the
+        // un-expanded approval reachable again on a surface this guard was
+        // not looking at, and the metric this file excuses would quietly be
+        // owed after all.
+        //
+        // So the claim is re-checked per surface rather than once. It is also
+        // why the component MOVED out of the proposals route directory: two
+        // copies of it would make the invariant unenforceable here, because
+        // there would be no single file whose shape carries it.
+        // BOUND TO THE COMPONENT, not the file — the same shape the assertion
+        // above uses on the queue client, and for the reason its comment
+        // gives: a whole-file read would let a `<details>` in a neighbouring
+        // helper satisfy, or be forbidden by, a claim about this panel's own
+        // render. It is also what keeps the site ANALYSABLE to
+        // `assertion-needle-uniqueness-ratchet` — a `path.join` subject
+        // resolves to no constant path and becomes a blind spot the ratchet
+        // counts, which is what these four assertions did when first written.
+        const panel = codeOf(
+            functionBodyOf(
+                readFileSync(
+                    path.join(REPO_ROOT, 'src/components/processes/CheckpointReviewPanel.tsx'),
+                    'utf8',
+                ),
+                'CheckpointReviewPanel',
+            ),
+        );
+        expect(panel).toContain('<ProposalDiffPanel');
+        expect(panel).not.toContain('JSON.stringify(payload');
+        expect(panel).not.toContain('<Accordion');
+        expect(panel).not.toContain('<details');
+        // And it never receives the payload to stringify in the first place:
+        // `getRunCheckpointReview` reads `payloadJson` for the diff builder
+        // and does not carry it into the projection.
+        const usecase = codeOf(
+            functionBodyOf(
+                readFileSync(
+                    path.join(REPO_ROOT, 'src/app-layer/usecases/run-checkpoint-review.ts'),
+                    'utf8',
+                ),
+                'getRunCheckpointReview',
+            ),
+        );
+        // Present ONCE, in the `select` — not in the returned object. Counted,
+        // because "it appears" cannot tell a read from a leak.
+        expect(usecase.match(/payloadJson/g) ?? []).toHaveLength(1);
+    });
 });

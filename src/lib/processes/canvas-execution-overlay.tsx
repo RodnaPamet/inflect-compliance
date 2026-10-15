@@ -9,7 +9,7 @@
  *
  * Distribution is via context, NOT a per-node hook: the canvas computes the
  * map once (one SWR subscription) and provides it; each `ProcessTypedNode`
- * reads its own ruleId through `useNodeOverlayStatus`. This keeps the node
+ * reads its own ruleId through `useNodeOverlayState`. This keeps the node
  * renderer free of tenant-context / network dependencies (so it still renders
  * in isolation in tests + SSR) — the overlay is simply empty without a provider.
  */
@@ -21,24 +21,76 @@ import {
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 
-export type OverlayStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
+/**
+ * `STUCK` is new (#3546) and it is the one the endpoint could always answer.
+ *
+ * `listLiveExecutions` computes it per execution against that rule's own
+ * `slaWindowMinutes` — it cannot be one SQL predicate, which is why the
+ * usecase filters in memory — and the canvas ignored it entirely. So Run Mode
+ * showed "something is running here" and could not show "something is STUCK
+ * here", which is the state an operator opens Run Mode to find, while
+ * `MonitorTab` badged the same execution from the same response.
+ */
+export type OverlayStatus = 'RUNNING' | 'STUCK' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
 
 export interface ExecutionOverlayState {
     status: OverlayStatus;
     startedAt: string;
-    /** simultaneous executions of this rule (running) */
+    /**
+     * Simultaneous STUCK executions of this rule.
+     *
+     * 0 for a rule whose latest execution is terminal — the `recent` loop sets
+     * it and nothing increments it there, because "how many finished runs" is
+     * not a question the canvas asks.
+     */
     count: number;
 }
 
-interface LiveExecutionItem {
-    ruleId: string;
-    status: string;
-    createdAt: string;
-}
-interface LiveExecutionsResponse {
-    running: LiveExecutionItem[];
-    recent: LiveExecutionItem[];
-}
+/**
+ * DERIVED from what the usecase returns, not restated — and restating it is
+ * exactly how this module came to be wrong (#3546).
+ *
+ * It declared `running`, which `listLiveExecutions` has NEVER returned: the
+ * usecase returns `{ stuck, recent }`. So `resp.running ?? []` was always
+ * empty, the RUNNING-wins branch never executed, and `count` was written by
+ * nothing. Worse, the unit test passed by CONSTRUCTING the `running` field
+ * itself — a double that cannot disagree with the API, because nothing in the
+ * test reached the API.
+ *
+ * With the type derived, a rename on either side is a compile error. The
+ * fields are also read through this alias below rather than spelled again, so
+ * there is one place to be wrong instead of three.
+ */
+/**
+ * WHAT THE SERVER'S SHAPE BECOMES AFTER JSON.
+ *
+ * Deriving from the usecase's return type is right about the field NAMES and
+ * wrong about their types: `createdAt` is a `Date` on the server and a STRING
+ * by the time `useTenantSWR` hands it over, because it went through
+ * `JSON.stringify`. The first draft of this fix derived the raw return type
+ * and called `createdAt.toISOString()` — which TypeScript accepted and which
+ * would have thrown on every poll in production. The compiler caught it only
+ * because the derived type made the mismatch visible at all; the old
+ * hand-written interface declared `createdAt: string` and was silently right
+ * about that one field while being wrong about the two that mattered.
+ *
+ * So the contract is stated once, here: the client receives the server's
+ * shape with every `Date` serialised.
+ */
+type Jsonified<T> = T extends Date
+    ? string
+    : T extends Array<infer U>
+      ? Array<Jsonified<U>>
+      : T extends object
+        ? { [K in keyof T]: Jsonified<T[K]> }
+        : T;
+
+type LiveExecutionsResponse = Jsonified<
+    Awaited<
+        ReturnType<typeof import('@/app-layer/usecases/automation-executions').listLiveExecutions>
+    >
+>;
+type LiveExecutionItem = LiveExecutionsResponse['recent'][number];
 
 /**
  * Pure reducer (unit-tested): RUNNING wins over a terminal state for the same
@@ -50,6 +102,12 @@ export function buildOverlayMap(
 ): Map<string, ExecutionOverlayState> {
     const map = new Map<string, ExecutionOverlayState>();
     if (!resp) return map;
+    // RECENT first, newest-first from the usecase, so the first row seen for a
+    // rule is its latest execution.
+    // `?? []` on both, and the degraded tests are the record of why: a body
+    // missing an array must leave the canvas unpainted rather than throwing
+    // inside a render. The arrays are REQUIRED in the derived type, so this
+    // guards the wire and not the contract.
     for (const r of resp.recent ?? []) {
         if (!map.has(r.ruleId)) {
             map.set(r.ruleId, {
@@ -59,12 +117,20 @@ export function buildOverlayMap(
             });
         }
     }
-    for (const r of resp.running ?? []) {
+    // STUCK WINS over anything `recent` said about the same rule, and over
+    // every other status — it is the only one that means a human has to look.
+    // A rule with a hung execution and a newer successful one is still hung:
+    // the success says a later firing finished, not that the stuck one did.
+    //
+    // `count` is the number of SIMULTANEOUS stuck executions, which is the
+    // figure that distinguishes "one run wedged" from "this rule wedges every
+    // time it fires" — the question an operator asks second.
+    for (const r of resp.stuck ?? []) {
         const existing = map.get(r.ruleId);
         map.set(r.ruleId, {
-            status: 'RUNNING',
+            status: 'STUCK',
             startedAt: r.createdAt,
-            count: (existing?.status === 'RUNNING' ? existing.count : 0) + 1,
+            count: (existing?.status === 'STUCK' ? existing.count : 0) + 1,
         });
     }
     return map;
@@ -78,6 +144,13 @@ export function overlayClassFor(status: OverlayStatus | undefined): string {
     switch (status) {
         case 'RUNNING':
             return 'ring-2 ring-brand-default animate-pulse';
+        // DISTINCT from both RUNNING and FAILED, and not pulsing. A stuck
+        // execution is not making progress, so borrowing RUNNING's pulse
+        // would animate the one state where nothing is happening; and it has
+        // not failed, so borrowing FAILED's ring would tell an operator the
+        // run is over when it is still holding a worker.
+        case 'STUCK':
+            return 'ring-2 ring-content-warning';
         case 'SUCCEEDED':
             return 'ring-2 ring-content-success';
         case 'FAILED':
@@ -213,6 +286,26 @@ export function CanvasOverlayProvider({
 
 /** Node-side read — safe without a provider (empty map → no overlay). */
 export function useNodeOverlayStatus(ruleId: string | undefined): OverlayStatus | undefined {
+    return useNodeOverlayState(ruleId)?.status;
+}
+
+/**
+ * The WHOLE overlay state, for the node that wants more than the status.
+ *
+ * Added to give `count` a consumer (#3546). It was written by the dead
+ * `running` branch and read by nothing — `grep '\.count\b'` over this module
+ * and the node renderer returned exactly one hit, the write itself — which is
+ * the "wired is not delivered" shape the issue called out. With STUCK a real
+ * status it has a real use: "three simultaneous stuck executions" is the
+ * second question an operator asks after "something is stuck here", and it
+ * distinguishes one wedged run from a rule that wedges every time it fires.
+ *
+ * `useNodeOverlayStatus` stays as the narrow read, because most callers want
+ * only the status and should not have to reach past it.
+ */
+export function useNodeOverlayState(
+    ruleId: string | undefined,
+): ExecutionOverlayState | undefined {
     const map = useContext(OverlayContext);
-    return ruleId ? map.get(ruleId)?.status : undefined;
+    return ruleId ? map.get(ruleId) : undefined;
 }

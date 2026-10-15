@@ -233,6 +233,21 @@ export const CACHE_KEYS = {
          * second after a navigation.
          */
         forAgent: (agentId: string) => `/agent-runs?agentId=${agentId}` as const,
+        /**
+         * ONE run's open human checkpoint, for the canvas's inline
+         * approve/reject. The `runId` is in the key for the reason
+         * `forAgent`'s `agentId` is: two nodes on the same canvas can be
+         * parked on checkpoints at once, and a shared entry would show one
+         * node's proposals under the other's badge.
+         *
+         * NOT polled. The panel fetches when a reviewer OPENS it, and a
+         * decision revalidates it — unlike the Run-Mode overlays above, whose
+         * whole job is to notice change nobody asked about. A diff is computed
+         * against the target's state at fetch time, so a background refresh
+         * would silently replace the thing a reviewer is in the middle of
+         * reading.
+         */
+        checkpoint: (runId: string) => `/agent-runs/${runId}/checkpoint` as const,
     },
 
     // ─── Processes / canvas (R25+ · Visual Rule Editor) ──────────

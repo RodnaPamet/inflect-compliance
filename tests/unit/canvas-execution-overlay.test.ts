@@ -8,6 +8,30 @@ import {
     awaitsAHuman,
 } from '@/lib/processes/canvas-execution-overlay';
 
+/**
+ * THE REAL ROW SHAPE, built once (#3546).
+ *
+ * The three cases below used to construct `{ ruleId, status, createdAt }` and
+ * put them under a `running` key. `listLiveExecutions` returns
+ * `{ stuck, recent }` and each row carries seven fields — so the old literals
+ * described a response the endpoint has never produced, and the test passed
+ * because nothing in it reached the endpoint. The reducer's input type is
+ * derived now, so this factory is checked against the usecase's own return.
+ */
+const row = (over: Partial<ReturnType<typeof baseRow>> = {}) => ({ ...baseRow(), ...over });
+
+function baseRow() {
+    return {
+        id: 'e1',
+        ruleId: 'r1',
+        ruleName: 'A rule',
+        triggerEvent: 'RISK_CREATED',
+        status: 'SUCCEEDED' as string,
+        triggeredBy: 'system',
+        createdAt: '2026-06-08T00:00:00Z',
+    };
+}
+
 describe('buildOverlayMap', () => {
     it('returns an empty map for undefined', () => {
         expect(buildOverlayMap(undefined).size).toBe(0);
@@ -15,26 +39,54 @@ describe('buildOverlayMap', () => {
 
     it('maps recent terminal executions by ruleId', () => {
         const m = buildOverlayMap({
-            running: [],
+            stuck: [],
             recent: [
-                { ruleId: 'r1', status: 'SUCCEEDED', createdAt: '2026-06-08T00:00:00Z' },
-                { ruleId: 'r2', status: 'FAILED', createdAt: '2026-06-08T00:01:00Z' },
+                row({ ruleId: 'r1', status: 'SUCCEEDED' }),
+                row({ ruleId: 'r2', status: 'FAILED', createdAt: '2026-06-08T00:01:00Z' }),
             ],
-        });
+        } as never);
         expect(m.get('r1')?.status).toBe('SUCCEEDED');
         expect(m.get('r2')?.status).toBe('FAILED');
     });
 
-    it('RUNNING wins over a terminal state for the same rule + counts concurrency', () => {
+    it('STUCK wins over a terminal state for the same rule, and counts concurrency', () => {
+        /*
+            THE BRANCH THAT HAD NEVER RUN (#3546). This case read `running`, a
+            field the endpoint does not return, so it asserted a reducer path
+            that production never took — and `count` was computed by that dead
+            path and consumed by nothing.
+
+            `stuck` is what the endpoint DOES return, and it is the signal the
+            overlay could not derive for itself: an execution past that rule's
+            own `slaWindowMinutes`, computed per execution in memory because it
+            cannot be one SQL predicate.
+
+            A rule with a hung execution AND a newer successful one is still
+            hung — the success says a later firing finished, not that the stuck
+            one did. So STUCK wins over whatever `recent` said.
+        */
         const m = buildOverlayMap({
-            running: [
-                { ruleId: 'r1', status: 'RUNNING', createdAt: '2026-06-08T00:02:00Z' },
-                { ruleId: 'r1', status: 'RUNNING', createdAt: '2026-06-08T00:02:05Z' },
+            stuck: [
+                row({ ruleId: 'r1', status: 'RUNNING', createdAt: '2026-06-08T00:02:00Z' }),
+                row({ ruleId: 'r1', status: 'RUNNING', createdAt: '2026-06-08T00:02:05Z' }),
             ],
-            recent: [{ ruleId: 'r1', status: 'SUCCEEDED', createdAt: '2026-06-08T00:00:00Z' }],
-        });
-        expect(m.get('r1')?.status).toBe('RUNNING');
+            recent: [row({ ruleId: 'r1', status: 'SUCCEEDED' })],
+        } as never);
+        expect(m.get('r1')?.status).toBe('STUCK');
+        // TWO simultaneous stuck executions. The figure distinguishes "one run
+        // wedged" from "this rule wedges every time it fires".
         expect(m.get('r1')?.count).toBe(2);
+    });
+
+    it('a STUCK rule is painted differently from a merely running one', () => {
+        // The user-visible half of the defect: before this, a hung rule's node
+        // was indistinguishable from a healthy one, while `MonitorTab` badged
+        // the same execution from the same response.
+        expect(overlayClassFor('STUCK')).not.toBe(overlayClassFor('RUNNING'));
+        expect(overlayClassFor('STUCK')).not.toBe(overlayClassFor('FAILED'));
+        // NOT pulsing: a stuck execution is the one state where nothing is
+        // happening, so borrowing RUNNING's animation would say the opposite.
+        expect(overlayClassFor('STUCK')).not.toContain('animate-pulse');
     });
 });
 
@@ -50,7 +102,7 @@ describe('overlayClassFor', () => {
 
 // ─── Degraded-response + precedence branches ───────────────────────
 //
-// `buildOverlayMap` guards `resp.recent ?? []`, `resp.running ?? []`
+// `buildOverlayMap` guards `resp.recent ?? []`, `resp.stuck ?? []`
 // and `(r.status as OverlayStatus) ?? 'SKIPPED'`. The declared
 // response type marks `running` / `recent` as REQUIRED and `status`
 // as a plain `string`, so a degraded body cannot be written as a
@@ -63,7 +115,7 @@ type DegradedRow = {
     createdAt: string;
 };
 type DegradedResponse = {
-    running?: DegradedRow[];
+    stuck?: DegradedRow[];
     recent?: DegradedRow[];
 };
 
@@ -74,23 +126,23 @@ function degraded(
 }
 
 describe('buildOverlayMap — degraded payloads', () => {
-    it('tolerates a body with no `recent` array and still reads `running`', () => {
+    it('tolerates a body with no `recent` array and still reads `stuck`', () => {
         const m = buildOverlayMap(
             degraded({
-                running: [
+                stuck: [
                     { ruleId: 'r1', status: 'RUNNING', createdAt: '2026-06-08T00:00:00Z' },
                 ],
             }),
         );
         expect(m.size).toBe(1);
         expect(m.get('r1')).toStrictEqual({
-            status: 'RUNNING',
+            status: 'STUCK',
             startedAt: '2026-06-08T00:00:00Z',
             count: 1,
         });
     });
 
-    it('tolerates a body with no `running` array and still reads `recent`', () => {
+    it('tolerates a body with no `stuck` array and still reads `recent`', () => {
         const m = buildOverlayMap(
             degraded({
                 recent: [
@@ -116,7 +168,7 @@ describe('buildOverlayMap — degraded payloads', () => {
         // `overlayClassFor` return '' and the node would look untouched.
         const m = buildOverlayMap(
             degraded({
-                running: [],
+                stuck: [],
                 recent: [
                     { ruleId: 'r1', status: null, createdAt: '2026-06-08T00:00:00Z' },
                 ],
@@ -132,7 +184,7 @@ describe('buildOverlayMap — degraded payloads', () => {
         // node would flash the wrong terminal state.
         const m = buildOverlayMap(
             degraded({
-                running: [],
+                stuck: [],
                 recent: [
                     { ruleId: 'r1', status: 'FAILED', createdAt: '2026-06-08T00:05:00Z' },
                     { ruleId: 'r1', status: 'SUCCEEDED', createdAt: '2026-06-08T00:01:00Z' },
@@ -148,12 +200,12 @@ describe('buildOverlayMap — degraded payloads', () => {
     });
 
     it('resets the concurrency count to 1 when the prior entry was terminal', () => {
-        // `existing?.status === 'RUNNING' ? existing.count : 0` — the
-        // false arm. A recent SUCCEEDED row carries count 0; the single
-        // running row that follows must report 1, not 0 and not 2.
+        // `existing?.status === 'STUCK' ? existing.count : 0` — the false
+        // arm. A recent SUCCEEDED row carries count 0; the single stuck row
+        // that follows must report 1, not 0 and not 2.
         const m = buildOverlayMap(
             degraded({
-                running: [
+                stuck: [
                     { ruleId: 'r1', status: 'RUNNING', createdAt: '2026-06-08T00:09:00Z' },
                 ],
                 recent: [
@@ -162,7 +214,10 @@ describe('buildOverlayMap — degraded payloads', () => {
             }),
         );
         expect(m.get('r1')).toStrictEqual({
-            status: 'RUNNING',
+            // STUCK, not RUNNING: `stuck` is the only array the endpoint
+            // fills, and every row in it is by definition past that rule's own
+            // deadline (#3546).
+            status: 'STUCK',
             startedAt: '2026-06-08T00:09:00Z',
             count: 1,
         });
