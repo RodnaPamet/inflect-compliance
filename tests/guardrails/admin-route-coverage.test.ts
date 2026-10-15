@@ -126,6 +126,7 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/parameter-sets/signatures/route.ts',
     'admin/agents/external-tools/route.ts',
     'admin/integrations/[connectionId]/mcp-consent/route.ts',
+    'admin/integrations/[connectionId]/orangehrm-consent/route.ts',
     // The agent risk assessment (Agentic 3) — read the instrument, answer one
     // question, and score the agent. Same `admin.agent_registry` key as the
     // register: completing a run writes the tier that caps the agent's

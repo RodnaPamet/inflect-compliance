@@ -100,13 +100,26 @@ import {
 import type { IdentityWriteMode } from '@/lib/identity/write-ladder';
 import { assertOrangeHrmHost } from './host';
 import { readOrangeHrmRoster } from './roster';
-import { fetchOrangeHrmAccessToken, type OrangeHrmOAuthClient } from './token';
-import { preflightOrangeHrmWriteBack } from './write-back-preflight';
+import {
+    readOrangeHrmSecret,
+    resolveOrangeHrmAccessToken,
+    type OrangeHrmOAuthClient,
+    type OrangeHrmSecret,
+} from './token';
+import { ORANGEHRM_PROVIDER_ID, preflightOrangeHrmWriteBack } from './write-back-preflight';
+
+/**
+ * The provider id, re-exported so callers name it from the provider rather than
+ * from its write-back module — which is where the constant happens to live and
+ * is not where a reader looks for it. `readonly id` below now reads it instead
+ * of repeating the literal, so the two cannot drift.
+ */
+export { ORANGEHRM_PROVIDER_ID } from './write-back-preflight';
 
 interface OrangeHrmDeps {
     /** Injected in tests so the roster read needs no live instance. */
     readRoster?: typeof readOrangeHrmRoster;
-    fetchToken?: typeof fetchOrangeHrmAccessToken;
+    resolveToken?: typeof resolveOrangeHrmAccessToken;
     fetchImpl?: typeof fetch;
     /** Injected in tests so the write-back preflight needs no live instance. */
     preflightWriteBack?: typeof preflightOrangeHrmWriteBack;
@@ -138,7 +151,7 @@ function readConfig(merged: Record<string, unknown>): {
 export class OrangeHrmProvider
     implements ScheduledCheckProvider, HrisSyncProvider, HrisWriteBackPreflightProvider
 {
-    readonly id = 'orangehrm';
+    readonly id = ORANGEHRM_PROVIDER_ID;
     readonly displayName = 'OrangeHRM';
     readonly description =
         'An OrangeHRM directory, read for the HRIS roster. Supports the OAuth2 client-credentials grant ' +
@@ -248,9 +261,31 @@ export class OrangeHrmProvider
         } catch (e) {
             return { valid: false, error: e instanceof Error ? e.message : 'Invalid OrangeHRM instance URL.' };
         }
+        // ═══ WHY THIS CANNOT JUST MINT A TOKEN ANY MORE (#3594) ═══
+        //
+        // It used to prove the credentials by minting one from them, which the
+        // client-credentials grant made a complete test: the stored secret was
+        // the whole credential. Under the authorization-code grant it is not —
+        // the credential is the refresh token, and a client id and secret with
+        // no consent behind them are an incomplete connection rather than a
+        // wrong one.
+        //
+        // Reporting that as "rejected the credentials" would send an operator
+        // to re-check a secret that is fine. So the two states are named
+        // separately, and the unauthorized one says what to do next.
+        const secret = readOrangeHrmSecret({ ...config, ...secrets });
+        if (!secret) {
+            return {
+                valid: false,
+                error:
+                    'This connection has not been authorized yet. Save it, then use Authorize '
+                    + 'to grant access in OrangeHRM — the client id and secret alone cannot '
+                    + 'obtain a token.',
+            };
+        }
         try {
-            const fetchToken = this.deps.fetchToken ?? fetchOrangeHrmAccessToken;
-            await fetchToken(client, { fetchImpl: this.deps.fetchImpl });
+            const resolveToken = this.deps.resolveToken ?? resolveOrangeHrmAccessToken;
+            await resolveToken(secret, { client }, { fetchImpl: this.deps.fetchImpl });
             return { valid: true };
         } catch (e) {
             return {
@@ -258,6 +293,54 @@ export class OrangeHrmProvider
                 error: `OrangeHRM rejected the credentials: ${e instanceof Error ? e.message : String(e)}`,
             };
         }
+    }
+
+    /**
+     * Resolve a usable access token, persisting a rotated pair when the server
+     * rotates one.
+     *
+     * ═══ ONE PLACE, AND THAT IS THE POINT ═══
+     *
+     * Three call sites need a token — `validateConnection`, `listEmployees` and
+     * the write-back preflight — and under the client-credentials grant each
+     * minted its own, which was harmless because nothing was stored. Under the
+     * authorization-code grant a token exchange can CONSUME the stored refresh
+     * token, so three independent exchanges in one run are three chances to
+     * rotate and lose the chain. Resolution lives here so there is one.
+     *
+     * `persistSecret` is a PATCH of the three token fields only. The provider
+     * is handed config and secrets merged into one object and cannot tell which
+     * key came from where, so writing the whole bag back would put `baseUrl`
+     * and `clientId` into `secretEncrypted` — see `HrisSyncDeps.persistSecret`.
+     * Writing nothing would be worse: a rotated refresh token that is never
+     * stored leaves the next run holding a dead one.
+     */
+    private async accessTokenFor(
+        merged: Record<string, unknown>,
+        client: OrangeHrmOAuthClient,
+        deps: HrisSyncDeps,
+    ): Promise<string> {
+        const secret = readOrangeHrmSecret(merged);
+        if (!secret) {
+            throw new Error(
+                'This OrangeHRM connection has not been authorized. Grant access in '
+                + 'OrangeHRM first — a client id and secret alone cannot obtain a token.',
+            );
+        }
+        const resolveToken = this.deps.resolveToken ?? resolveOrangeHrmAccessToken;
+        const { accessToken } = await resolveToken(secret, { client }, {
+            fetchImpl: this.deps.fetchImpl,
+            persist: deps.persistSecret
+                ? async (rotated: OrangeHrmSecret) => {
+                    await deps.persistSecret?.({
+                        accessToken: rotated.accessToken,
+                        refreshToken: rotated.refreshToken,
+                        expiresAt: rotated.expiresAt,
+                    });
+                }
+                : undefined,
+        });
+        return accessToken;
     }
 
     async listEmployees(
@@ -271,8 +354,7 @@ export class OrangeHrmProvider
         // empty strings.
         if (missing.length) throw new Error(`OrangeHRM connection is incomplete: ${missing.join(', ')}`);
 
-        const fetchToken = this.deps.fetchToken ?? fetchOrangeHrmAccessToken;
-        const accessToken = await fetchToken(client, { fetchImpl: this.deps.fetchImpl });
+        const accessToken = await this.accessTokenFor(config, client, deps);
 
         const read = this.deps.readRoster ?? readOrangeHrmRoster;
         // The deadline is FORWARDED, not recomputed here. It measures the RUN's
@@ -332,8 +414,35 @@ export class OrangeHrmProvider
             });
         }
 
+        // ═══ UNAUTHORIZED IS PROVEN, AND MUST NOT GO THROUGH THE RESOLVER ═══
+        //
+        // A connection holding no refresh token cannot authenticate, and that
+        // is a CERTAIN fact established locally — the same kind as the missing
+        // fields above, and it costs no request. Routed through
+        // `accessTokenFor` instead it throws a plain Error, which
+        // `classifyFailure` correctly declines to treat as proven, and the
+        // verdict comes back PREFLIGHT_INDETERMINATE: "nothing was established
+        // about this credential either way" about a credential that does not
+        // exist. Decision 4 asks whether a refusal is proven, and this one is.
+        if (!readOrangeHrmSecret(config)) {
+            return writeBackPreflightResult({
+                outcome: 'REFUSED_CREDENTIAL',
+                provider: this.id,
+                detail:
+                    'This OrangeHRM connection has not been authorized. Grant access in '
+                    + 'OrangeHRM first — a client id and secret alone cannot obtain a token.',
+            });
+        }
+
         const preflight = this.deps.preflightWriteBack ?? preflightOrangeHrmWriteBack;
-        return preflight(client, { fetchImpl: this.deps.fetchImpl, fetchToken: this.deps.fetchToken });
+        // The resolver is handed over UNCALLED, so a credential failure is
+        // classified by `classifyFailure` inside the preflight rather than
+        // collapsed to REFUSED_CREDENTIAL here. Decision 4 turns on the
+        // difference between a proven refusal and a lost request, and a
+        // try/catch at this call site cannot tell them apart.
+        return preflight(client, () => this.accessTokenFor(config, client, {}), {
+            fetchImpl: this.deps.fetchImpl,
+        });
     }
 
     /**

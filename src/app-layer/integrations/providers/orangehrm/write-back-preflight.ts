@@ -70,7 +70,7 @@ import {
     type HrisWriteBackPreflightResult,
 } from '../hris/write-back';
 import { assertOrangeHrmHost } from './host';
-import { fetchOrangeHrmAccessToken, OrangeHrmTokenError, ORANGEHRM_WEB_ROOT, type OrangeHrmOAuthClient } from './token';
+import { OrangeHrmTokenError, ORANGEHRM_WEB_ROOT, type OrangeHrmOAuthClient } from './token';
 
 /** The provider id this preflight reports as. */
 export const ORANGEHRM_PROVIDER_ID = 'orangehrm';
@@ -87,7 +87,6 @@ export const ORANGEHRM_IDENTITY_FIELD = 'workEmail';
 
 export interface OrangeHrmPreflightDeps {
     fetchImpl?: typeof fetch;
-    fetchToken?: typeof fetchOrangeHrmAccessToken;
 }
 
 /**
@@ -136,6 +135,27 @@ function statusSuffix(status: number | null): string {
  */
 export async function preflightOrangeHrmWriteBack(
     client: OrangeHrmOAuthClient,
+    /**
+     * How to obtain an access token — a thunk, not a token, and not a minting
+     * function of its own.
+     *
+     * It used to mint one from the stored client credentials, which the
+     * client-credentials grant made free. Under the authorization-code grant
+     * (#3594) an exchange can CONSUME the stored refresh token, so a preflight
+     * minting its own would be a second chance to rotate inside one run, racing
+     * the roster read for the same chain.
+     *
+     * A thunk rather than a resolved string because the FAILURE has to happen
+     * here. Decision 4 of `docs/jml-hris-write-back-design.md` makes the
+     * verdict turn on whether a credential failure was PROVEN — a 400/401/403/404
+     * proves it, a 5xx or a lost response does not — and that classification
+     * lives in `classifyFailure` below, with its own tests. Taking a resolved
+     * token instead would move the try/catch to the caller, where the obvious
+     * implementation returns `REFUSED_CREDENTIAL` for everything and quietly
+     * reports a TIMEOUT as a proven refusal. Which is what the first draft of
+     * this change did.
+     */
+    resolveAccessToken: () => Promise<string>,
     deps: OrangeHrmPreflightDeps = {},
 ): Promise<HrisWriteBackPreflightResult> {
     const provider = ORANGEHRM_PROVIDER_ID;
@@ -158,24 +178,29 @@ export async function preflightOrangeHrmWriteBack(
     }
 
     const doFetch = deps.fetchImpl ?? resilientFetch;
-    const fetchToken = deps.fetchToken ?? fetchOrangeHrmAccessToken;
 
-    // ── 1. Does the credential authenticate at all?
+    // ── 1. Does the credential resolve at all?
     let accessToken: string;
     try {
-        accessToken = await fetchToken(client, { fetchImpl: deps.fetchImpl });
+        accessToken = await resolveAccessToken();
     } catch (e) {
         const { status, provenAuth } = classifyFailure(e);
         return provenAuth
             ? refuse(
                   'REFUSED_CREDENTIAL',
-                  `OrangeHRM rejected the stored client credentials${statusSuffix(status)}.`,
+                  `OrangeHRM rejected the stored credentials${statusSuffix(status)}.`,
               )
             : refuse(
                   'PREFLIGHT_INDETERMINATE',
                   `The OrangeHRM token exchange did not complete${statusSuffix(status)}, so nothing was ` +
                       'established about this credential either way.',
               );
+    }
+    // An empty Bearer header would come back 401 from step 2 and be classified
+    // as "the credential cannot reach the employee endpoint" — a proven verdict
+    // about the wrong thing.
+    if (!accessToken) {
+        return refuse('REFUSED_CREDENTIAL', 'No OrangeHRM access token was available for this connection.');
     }
 
     const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };

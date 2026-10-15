@@ -51,8 +51,40 @@ import { LADDER, isAboveClamp, type IdentityWriteMode } from '@/lib/identity/wri
 
 const HOST = 'acme.orangehrmlive.com';
 const CLIENT = { host: HOST, clientId: 'cid', clientSecret: 'csecret' };
+
+/**
+ * The happy-path token resolver.
+ *
+ * A thunk because that is the preflight's signature now (#3594): a credential
+ * failure has to be thrown INSIDE the preflight so `classifyFailure` can decide
+ * whether it was proven. The two tests below that care about that pass their own
+ * throwing resolver instead of this one.
+ */
+const TOKEN = async (): Promise<string> => 'tok';
 /** A connection that has opted in and is otherwise complete. */
-const ENABLED_CONFIG = { baseUrl: HOST, clientId: 'cid', clientSecret: 'csecret', writeBackEnabled: true };
+/**
+ * Opted in, configured AND authorized — the token pair is what an authorized
+ * connection carries after the consent flow (#3594). Before that change a
+ * configured connection was automatically a credentialed one; now the two are
+ * different states, and `UNAUTHORIZED_CONFIG` below is the other.
+ */
+const ENABLED_CONFIG = {
+    baseUrl: HOST,
+    clientId: 'cid',
+    clientSecret: 'csecret',
+    writeBackEnabled: true,
+    accessToken: 'live-access',
+    refreshToken: 'live-refresh',
+    expiresAt: 4_000_000_000,
+};
+
+/** Opted in and fully configured, but never taken through consent. */
+const UNAUTHORIZED_CONFIG = {
+    baseUrl: HOST,
+    clientId: 'cid',
+    clientSecret: 'csecret',
+    writeBackEnabled: true,
+};
 
 const json = (body: unknown, init: { ok?: boolean; status?: number } = {}) =>
     ({ ok: init.ok ?? true, status: init.status ?? 200, json: async () => body }) as unknown as Response;
@@ -239,7 +271,7 @@ describe('HRIS write-back Phase 1 — the result cannot overclaim', () => {
 describe('OrangeHRM write-back preflight — the happy path reads twice and writes never', () => {
     it('authenticates, finds the handle in the LIST, and reads the field per RECORD', async () => {
         const f = instance();
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
 
         expect(r.outcome).toBe('WRITE_PATH_READABLE');
         expect(r).toMatchObject({
@@ -252,30 +284,37 @@ describe('OrangeHRM write-back preflight — the happy path reads twice and writ
         // The verdict must not be mistaken for "it can write".
         expect(r.detail).toContain('Whether this credential may WRITE is not established');
 
-        // Three calls, in order, and the third is the SINGULAR per-record path.
+        // TWO calls, in order, and the second is the SINGULAR per-record path.
+        // The token exchange used to be the first of three and now happens once
+        // per run in `accessTokenFor` (#3594) — this module makes reads only.
         const seen = urls(f);
-        expect(seen).toHaveLength(3);
-        expect(seen[0]).toContain('/oauth2/token');
-        expect(seen[1]).toContain('/api/v2/pim/employees?');
-        expect(seen[2]).toBe(
+        expect(seen).toHaveLength(2);
+        expect(seen[0]).toContain('/api/v2/pim/employees?');
+        expect(seen[1]).toBe(
             `https://${HOST}/web/index.php/api/v2/pim/employee/7/contact-details`,
         );
+        // The token endpoint is NOT among them, which is the property that
+        // keeps one run from racing itself for a rotating refresh token.
+        expect(seen.some((u) => u.includes('/oauth2/token'))).toBe(false);
     });
 
-    it('sends exactly one POST — the OAuth token exchange — and nothing else mutating', async () => {
-        // The whole of Phase 1's safety claim, expressed as a count. A PUT or a
-        // PATCH appearing here is the blocked Phase 2 shipping by accident.
+    it('sends NO non-GET request at all — every request it makes is a read', async () => {
+        // The whole of Phase 1's safety claim, expressed as a count, and it got
+        // STRICTER with #3594 rather than weaker. It used to allow exactly one
+        // POST because the token exchange lived here; now that the exchange has
+        // moved, a single non-GET in this module is a defect with no legitimate
+        // reading. A PUT or a PATCH appearing here is the blocked Phase 2
+        // shipping by accident.
         const f = instance();
-        await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
-        expect(methods(f)).toEqual(['POST', 'GET', 'GET']);
-        expect(urls(f)[0]).toContain('/oauth2/token');
-        expect(methods(f).filter((m) => ['PUT', 'PATCH', 'DELETE'].includes(m))).toEqual([]);
+        await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
+        expect(methods(f)).toEqual(['GET', 'GET']);
+        expect(methods(f).filter((m) => m !== 'GET')).toEqual([]);
     });
 
     it('pins the ordering the roster read also pins, so the probe subject is stable', async () => {
         const f = instance();
-        await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
-        const list = new URL(urls(f)[1]);
+        await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
+        const list = new URL(urls(f)[0]);
         expect(list.searchParams.get('sortField')).toBe('employee.empNumber');
         expect(list.searchParams.get('sortOrder')).toBe('ASC');
         expect(list.searchParams.get('limit')).toBe('1');
@@ -289,13 +328,13 @@ describe('OrangeHRM write-back preflight — handle present, identity field abse
     it('does not take the identity field from the list row, even when one is there', async () => {
         // The A/B, in the direction that catches a shortcut: hand the list a
         // work email (a shape 5.9 does NOT emit) and the per-record call must
-        // still happen. A preflight that trusted the row would stop at two
-        // calls and report a green for a path it never touched.
+        // still happen. A preflight that trusted the row would stop at ONE
+        // call and report a green for a path it never touched.
         const f = instance({ list: async () => json({ data: [{ ...listRow(), workEmail: 'someone@acme.test' }] }) });
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
 
-        expect(urls(f)).toHaveLength(3);
-        expect(urls(f)[2]).toContain('/contact-details');
+        expect(urls(f)).toHaveLength(2);
+        expect(urls(f)[1]).toContain('/contact-details');
         expect(r.outcome).toBe('WRITE_PATH_READABLE');
     });
 
@@ -305,12 +344,12 @@ describe('OrangeHRM write-back preflight — handle present, identity field abse
         // second read exists.
         const f = instance();
         expect(Object.prototype.hasOwnProperty.call(listRow(), 'workEmail')).toBe(false);
-        expect((await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f })).outcome).toBe('WRITE_PATH_READABLE');
+        expect((await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f })).outcome).toBe('WRITE_PATH_READABLE');
     });
 
     it('an EXPLICIT NULL work email is the expected pre-hire state, not a refusal', async () => {
         const f = instance({ contact: async () => json({ data: { [ORANGEHRM_IDENTITY_FIELD]: null } }) });
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
         expect(r.outcome).toBe('WRITE_PATH_READABLE');
         expect(r.identityFieldReadable).toBe(true);
     });
@@ -320,7 +359,7 @@ describe('OrangeHRM write-back preflight — handle present, identity field abse
         // exists to make, and on 5.9 sibling keys come back as explicit null,
         // which is what makes it observable at all.
         const f = instance({ contact: async () => json({ data: { countryCode: null, street1: null } }) });
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
         expect(r.outcome).toBe('REFUSED_IDENTITY_FIELD_UNREADABLE');
         expect(r.handleObserved).toBe(true);
         expect(r.identityFieldReadable).toBe(false);
@@ -332,7 +371,7 @@ describe('OrangeHRM write-back preflight — handle present, identity field abse
         // belonging to Phase 2's conditional, and reading it as a connection
         // fact would refuse a whole batch because employee #1 has an address.
         const f = instance({ contact: async () => json({ data: { workEmail: 'taken@acme.test' } }) });
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
         expect(r.outcome).toBe('WRITE_PATH_READABLE');
         // …and the value never leaves the preflight.
         expect(r.detail).not.toContain('taken@acme.test');
@@ -342,15 +381,18 @@ describe('OrangeHRM write-back preflight — handle present, identity field abse
 describe('OrangeHRM write-back preflight — what each failure PROVES', () => {
     it('a roster read that succeeded with no rows refuses NO_HANDLE', async () => {
         const f = instance({ list: async () => json({ data: [] }) });
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
         expect(r.outcome).toBe('REFUSED_NO_HANDLE');
         expect(r.authenticated).toBe(true);
-        expect(urls(f)).toHaveLength(2);
+        // ONE: the list read. It stops there because there is no record to
+        // address the per-record read to — and `authenticated: true` is still
+        // right, since the list read succeeded.
+        expect(urls(f)).toHaveLength(1);
     });
 
     it('a row with no empNumber refuses NO_HANDLE rather than falling back to the badge number', async () => {
         const f = instance({ list: async () => json({ data: [listRow(null)] }) });
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
         expect(r.outcome).toBe('REFUSED_NO_HANDLE');
         expect(r.detail).toContain('empNumber');
         // BADGE-7 is on the row and must never become an address.
@@ -361,7 +403,7 @@ describe('OrangeHRM write-back preflight — what each failure PROVES', () => {
         // A failed read proves nothing about what the roster holds, and
         // NO_HANDLE is a claim about the roster's contents.
         const f = instance({ list: async () => json({ ok: false }, { ok: false, status: 503 }) });
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
         expect(r.outcome).toBe('PREFLIGHT_INDETERMINATE');
         expect(r.handleObserved).toBe(false);
     });
@@ -372,7 +414,7 @@ describe('OrangeHRM write-back preflight — what each failure PROVES', () => {
                 throw new IntegrationAuthError(401, 'https://x/pim/employees');
             },
         });
-        expect((await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f })).outcome).toBe('REFUSED_CREDENTIAL');
+        expect((await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f })).outcome).toBe('REFUSED_CREDENTIAL');
     });
 
     it('401 on contact-details is a credential refusal, not a field problem', async () => {
@@ -381,7 +423,7 @@ describe('OrangeHRM write-back preflight — what each failure PROVES', () => {
                 throw new IntegrationAuthError(403, 'https://x/pim/employee/7/contact-details');
             },
         });
-        const r = await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f });
         expect(r.outcome).toBe('REFUSED_CREDENTIAL');
         // `IntegrationAuthError extends IntegrationTerminalError`, so an
         // instanceof test in the wrong order turns a revoked credential into a
@@ -395,44 +437,46 @@ describe('OrangeHRM write-back preflight — what each failure PROVES', () => {
                 throw new IntegrationTerminalError(404, 'https://x/pim/employee/7/contact-details');
             },
         });
-        expect((await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f })).outcome).toBe(
+        expect((await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f })).outcome).toBe(
             'REFUSED_IDENTITY_FIELD_UNREADABLE',
         );
     });
 
     it('a 5xx on contact-details is indeterminate', async () => {
         const f = instance({ contact: async () => json({}, { ok: false, status: 500 }) });
-        expect((await preflightOrangeHrmWriteBack(CLIENT, { fetchImpl: f })).outcome).toBe('PREFLIGHT_INDETERMINATE');
+        expect((await preflightOrangeHrmWriteBack(CLIENT, TOKEN, { fetchImpl: f })).outcome).toBe('PREFLIGHT_INDETERMINATE');
     });
 
     it('a token exchange rejected with a status is a PROVEN credential refusal', async () => {
         // OAuth2 says `invalid_client` with a 400, not a 401. The status is
         // carried on the error rather than parsed back out of its message.
         const f = instance();
-        const r = await preflightOrangeHrmWriteBack(CLIENT, {
-            fetchImpl: f,
-            fetchToken: async () => {
+        const r = await preflightOrangeHrmWriteBack(
+            CLIENT,
+            async () => {
                 throw new OrangeHrmTokenError(400);
             },
-        });
+            { fetchImpl: f },
+        );
         expect(r.outcome).toBe('REFUSED_CREDENTIAL');
         expect(r.detail).toContain('HTTP 400');
         expect(r.authenticated).toBe(false);
     });
 
     it('a token exchange that was LOST is indeterminate', async () => {
-        const r = await preflightOrangeHrmWriteBack(CLIENT, {
-            fetchImpl: instance(),
-            fetchToken: async () => {
+        const r = await preflightOrangeHrmWriteBack(
+            CLIENT,
+            async () => {
                 throw new Error('ETIMEDOUT');
             },
-        });
+            { fetchImpl: instance() },
+        );
         expect(r.outcome).toBe('PREFLIGHT_INDETERMINATE');
     });
 
     it('an off-allowlist host refuses BEFORE any request, so no secret leaves', async () => {
         const f = instance();
-        const r = await preflightOrangeHrmWriteBack({ ...CLIENT, host: 'attacker.example.com' }, { fetchImpl: f });
+        const r = await preflightOrangeHrmWriteBack({ ...CLIENT, host: 'attacker.example.com' }, TOKEN, { fetchImpl: f });
         expect(r.outcome).toBe('REFUSED_CREDENTIAL');
         expect(f).not.toHaveBeenCalled();
     });
@@ -475,7 +519,23 @@ describe('OrangeHrmProvider.writeBackPreflight — the gate at the CALL SITE', (
         const f = instance();
         const r = await provider({ fetchImpl: f }).writeBackPreflight(ENABLED_CONFIG, 'DRY_RUN');
         expect(r.outcome).toBe('WRITE_PATH_READABLE');
-        expect(urls(f)).toHaveLength(3);
+        // TWO, not three. The token exchange used to be the first of these and
+        // now happens in `accessTokenFor`, once per run, shared with the roster
+        // read — see #3594. Both remaining requests are reads.
+        expect(urls(f)).toHaveLength(2);
+    });
+
+    it('an UNAUTHORIZED connection is a PROVEN refusal and costs no request', async () => {
+        // Routed through the token resolver this would come back
+        // PREFLIGHT_INDETERMINATE — "nothing was established about this
+        // credential either way" — about a credential that does not exist.
+        // Decision 4 asks whether a refusal is proven, and this one is.
+        const f = instance();
+        const r = await provider({ fetchImpl: f }).writeBackPreflight(UNAUTHORIZED_CONFIG, 'DRY_RUN');
+        expect(r.outcome).toBe('REFUSED_CREDENTIAL');
+        expect(r.detail).toMatch(/has not been authorized/i);
+        expect(r.authenticated).toBe(false);
+        expect(f).not.toHaveBeenCalled();
     });
 
     it('an incomplete connection is a PROVEN refusal, with every missing field named', async () => {
