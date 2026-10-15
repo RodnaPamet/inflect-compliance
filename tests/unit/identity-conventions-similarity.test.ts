@@ -25,6 +25,9 @@ import {
     STRONG_SIGNAL_KINDS,
     type CanonicalAccount,
     type RosterEmployee,
+    type CandidateScorer,
+    type CandidateBlocker,
+    type SupportingSignal,
 } from '@/lib/identity/reconcile/engine';
 import {
     CANDIDATE_TEMPLATES,
@@ -45,6 +48,12 @@ import {
     SCORER_WEIGHTS,
 } from '@/lib/identity/reconcile/scorers';
 import { CORPUS, engineInputFor } from '../fixtures/identity-reconcile/corpus';
+// The bulk bound, imported so #3560's "same number" assertion compares the
+// two real constants rather than one constant against a literal.
+import { BULK_MIN_MARGIN } from '@/app-layer/usecases/legacy-reviewer-actions';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const NOW = '2026-10-08T00:00:00.000Z';
 
@@ -695,5 +704,205 @@ describe('makeDepartmentScorer — corroborates, never identifies (#3516)', () =
             s(acct('Finance') as never, cand('Finance') as never, {} as never),
         );
         expect(signals.map((x) => x.kind)).toContain('DEPARTMENT_MATCH');
+    });
+});
+
+/**
+ * A lead thinner than one whole signal is not a choice (#3560).
+ *
+ * MEASURED FIRST, over both fixture sets with 4a wired as production wires it:
+ * `AMBIGUOUS` was reached by **ZERO of 45 cases**. The outcome existed, its
+ * badge was rendered `error` — "the row a reviewer must not skim past" — and no
+ * case produced it.
+ *
+ * The reason is structural rather than accidental. `AMBIGUOUS` required an
+ * EXACT tie, which with 4a wired means two candidates indistinguishable to
+ * EVERY scorer, and `SIMILARITY` fires on almost any name pair. So one signal's
+ * worth of difference turned "I cannot choose" into "probably this one" —
+ * including on `db-02`, the one case the outcome was written for: a single
+ * account appearing in two directory connections, both links FRESH, pointing at
+ * two DIFFERENT employees. It tied 250/250 at Step 3b and became
+ * `SUGGESTED e-100` at 390 vs 250 once 4a ran.
+ *
+ * Owner decision 2026-10-15: make the rule margin-based, reusing
+ * `BULK_MIN_MARGIN`. Measured impact before the change: **exactly one case of
+ * 45 moves**, and it moves the engine INTO agreement with a fixture expectation
+ * that had been unmet since the corpus was written.
+ *
+ * WHY THESE TESTS LIVE HERE rather than in `identity-reconcile-precision`: the
+ * margin is deliberately NOT an engine invariant. The engine defaults to 0 — an
+ * exact tie, what it has always done — and the margin is a STEP 4A POLICY,
+ * because a margin is only meaningful against the scorer weights. It is
+ * returned by `step4aExtensions`, beside the weights it is derived from, and
+ * this is that module's suite.
+ */
+describe('a thin lead is AMBIGUOUS, not a suggestion (#3560)', () => {
+    const NOW = '2026-10-15T00:00:00.000Z';
+    const account: CanonicalAccount = { accountKey: 'anwosu', displayName: 'Ada Nwosu' };
+    const twin = (id: string): RosterEmployee => ({ id, fullName: 'Ada Nwosu', status: 'ACTIVE' });
+    const bothBlock: CandidateBlocker = () => ['e-1', 'e-2'];
+
+    /** Two candidates whose scores differ by exactly `gap`. */
+    const withGap = (gap: number, ambiguityMargin?: number) => {
+        const scorer: CandidateScorer = (_a, candidate) => [
+            {
+                kind: 'SIMILARITY',
+                score: candidate.id === 'e-1' ? 1000 + gap : 1000,
+                evidence: 'synthetic',
+            } as SupportingSignal,
+        ];
+        return reconcile({
+            accounts: [account],
+            roster: [twin('e-1'), twin('e-2')],
+            directory: [],
+            aliases: [],
+            now: NOW,
+            config: {
+                blockers: [bothBlock],
+                scorers: [scorer],
+                ...(ambiguityMargin === undefined ? {} : { ambiguityMargin }),
+            },
+        }).resolutions[0];
+    };
+
+    it('derives the margin from the weights, not from a literal', () => {
+        // The whole reason it is returned from `step4aExtensions`: a margin is
+        // meaningless except against the scores it is compared to, so it must
+        // move when they move. A constant here would go stale the first time
+        // anybody re-weighted a scorer.
+        const { ambiguityMargin } = step4aExtensions([], null);
+        expect(ambiguityMargin).toBe(SCORER_WEIGHTS.CONVENTION);
+    });
+
+    it('is the SAME number that bounds bulk confirmation', () => {
+        // "Too close to suggest" and "too close to bulk-confirm" are one
+        // judgement. Two constants would eventually disagree about it, and the
+        // disagreement would be invisible — a row the engine was confident
+        // enough to suggest but not confident enough to bulk-confirm reads as
+        // a deliberate policy rather than a drifted constant.
+        const { ambiguityMargin } = step4aExtensions([], null);
+        expect(ambiguityMargin).toBe(BULK_MIN_MARGIN);
+    });
+
+    it('defaults to an EXACT tie, so Step 3b is unchanged', () => {
+        // Backwards compatibility, asserted rather than assumed. With no margin
+        // configured the engine must behave exactly as it did before #3560:
+        // only a dead-level tie refuses.
+        expect(withGap(0).outcome).toBe('AMBIGUOUS');
+        expect(withGap(1).outcome).toBe('SUGGESTED');
+        expect(withGap(1000).outcome).toBe('SUGGESTED');
+    });
+
+    it('refuses to choose when the lead is thinner than one whole signal', () => {
+        const margin = SCORER_WEIGHTS.CONVENTION;
+        expect(withGap(1, margin).outcome).toBe('AMBIGUOUS');
+        expect(withGap(margin - 1, margin).outcome).toBe('AMBIGUOUS');
+        // db-02's actual gap, which is what the decision turned on.
+        expect(withGap(140, margin).outcome).toBe('AMBIGUOUS');
+    });
+
+    it('suggests at a lead of EXACTLY the margin, matching the bulk bound', () => {
+        // STRICT, not `<=`, and the two bounds must agree about their own
+        // value: `BULK_MIN_MARGIN` admits a row "ahead by AT LEAST" that much,
+        // so a lead of exactly the margin is a suggestion here too. Were this
+        // `<=`, there would be a one-point band the engine refuses to suggest
+        // and bulk would happily ratify.
+        const margin = SCORER_WEIGHTS.CONVENTION;
+        expect(withGap(margin, margin).outcome).toBe('SUGGESTED');
+        expect(withGap(margin + 1, margin).outcome).toBe('SUGGESTED');
+    });
+
+    it('still refuses an exact tie when a margin IS set', () => {
+        // The other half of the condition. `gap < margin` alone would be
+        // satisfied by a tie too, so this looks redundant — but the
+        // implementation is `gap === 0 || gap < margin`, and the first clause is
+        // what keeps the default of 0 working. Asserted at both settings so
+        // removing either clause fails something.
+        expect(withGap(0, SCORER_WEIGHTS.CONVENTION).outcome).toBe('AMBIGUOUS');
+        expect(withGap(0, 0).outcome).toBe('AMBIGUOUS');
+    });
+
+    it('names no winner when it refuses', () => {
+        // A refusal that still filled in `employeeId` would be worse than a
+        // suggestion: the UI would show a chosen person on a row whose badge
+        // says the engine could not choose.
+        const r = withGap(140, SCORER_WEIGHTS.CONVENTION);
+        expect(r.outcome).toBe('AMBIGUOUS');
+        expect(r.employeeId).toBeNull();
+        // And both candidates are still carried, with their evidence.
+        expect(r.candidates).toHaveLength(2);
+        expect(r.candidates.filter((c) => c.signals.length > 0)).toHaveLength(2);
+    });
+
+    it('cannot turn a thin lead into a LINK, however it scores', () => {
+        // The invariant the whole supporting-signal design rests on, re-checked
+        // at the boundary this change touches: the margin decides between
+        // SUGGESTED and AMBIGUOUS and can reach neither LINKED nor UNMATCHED.
+        const outcomes = [0, 1, 139, 140, 219, 220, 10_000].map(
+            (g) => withGap(g, SCORER_WEIGHTS.CONVENTION).outcome,
+        );
+        expect(outcomes.filter((o) => o !== 'AMBIGUOUS' && o !== 'SUGGESTED')).toEqual([]);
+    });
+});
+
+/**
+ * Production really does wire what these tests wire (#3560).
+ *
+ * THREE SUITES CLAIM TO REPLICATE PRODUCTION — this one, the Step 3b precision
+ * gate's #3550 block, and the held-out harness — and until now **nothing
+ * checked the claim.** Each calls `step4aExtensions` itself and spreads the
+ * result into `config`, citing `legacy-reconcile.ts` in a comment. Delete
+ * `config: { scorers, blockers, ambiguityMargin }` from the usecase and all
+ * three keep passing, measuring a configuration no tenant runs.
+ *
+ * That is the shape of #3554 exactly: the control-test scheduler's unit test
+ * asserted the spelling of a job id against a mocked enqueue, stayed green for
+ * seven days, and the thing it described never worked. A harness that
+ * reconstructs production is only as good as the assertion that production
+ * matches it.
+ *
+ * STRUCTURAL, because importing the usecase pulls Prisma, the request context
+ * and the audit path — and kept to the narrowest possible claim: the three
+ * values come out of the extension point and go into the engine's config. The
+ * read is MASKED, because this file's own prose names all three.
+ */
+describe('legacy-reconcile wires the engine the way these tests do (#3560)', () => {
+    const usecase = codeOf(
+        readFileSync(
+            path.resolve(__dirname, '../../src/app-layer/usecases/legacy-reconcile.ts'),
+            'utf-8',
+        ),
+    );
+
+    it('reads CODE, not the comment that explains it', () => {
+        // The mask, proved. The usecase carries a long comment of mine naming
+        // `ambiguityMargin` and `step4aExtensions` in prose, so an unmasked
+        // read would be satisfied by the explanation of the wiring rather than
+        // the wiring.
+        expect(usecase.length).toBeGreaterThan(1000);
+        expect(usecase).not.toContain('probably Jamie Jones');
+    });
+
+    it('takes all three values out of step4aExtensions', () => {
+        expect(usecase).toContain(
+            'const { scorers, blockers, ambiguityMargin } = step4aExtensions(',
+        );
+    });
+
+    it('puts all three INTO the engine config, which is the half that can rot', () => {
+        // Destructuring without passing is the failure this exists for — it
+        // compiles, it lints, and the margin silently never reaches the engine.
+        // I wrote exactly that bug while making this change, and only noticed
+        // by reading the call site back.
+        expect(usecase).toContain('config: { scorers, blockers, ambiguityMargin },');
+    });
+
+    it('passes the margin to the ONE reconcile call it makes', () => {
+        // Counted, so a second `reconcile(` added later cannot be missed: the
+        // claim is that every engine run in this usecase carries the config,
+        // and a bare count is how that stays true.
+        const reconcileCalls = usecase.split('reconcile({').length - 1;
+        expect(reconcileCalls).toBe(1);
+        expect(usecase.split('ambiguityMargin').length - 1).toBe(2);
     });
 });

@@ -339,6 +339,30 @@ export interface EngineConfig {
     readonly blockers?: readonly CandidateBlocker[];
     /** How many candidates to carry on each resolution, highest first. */
     readonly maxCandidates?: number;
+    /**
+     * The gap below which the engine refuses to choose between the top two
+     * SUPPORTING candidates — reporting `AMBIGUOUS` instead of `SUGGESTED`.
+     *
+     * DEFAULTS TO 0, which is an exact tie and exactly what the engine did
+     * before #3560. Step 3b measures that default; production raises it.
+     *
+     * PASSED IN, NOT IMPORTED, for the same reason the scorers are: a margin is
+     * only meaningful against the scorer WEIGHTS, and those live in
+     * `scorers.ts`, which imports this module. The engine owning a number
+     * derived from weights it cannot see would invert that dependency and make
+     * a cycle. `step4aExtensions` returns the margin beside the scorers it is
+     * derived from.
+     *
+     * WHY A MARGIN AT ALL (#3560). Measured over both fixture sets: with 4a
+     * wired, `AMBIGUOUS` was reached by ZERO of 45 cases, because an exact tie
+     * requires two candidates indistinguishable to EVERY scorer and
+     * `SIMILARITY` fires on almost any name pair. `db-02` — one account in two
+     * directory connections, both links fresh, pointing at two DIFFERENT
+     * employees — tied 250/250 at Step 3b and became `SUGGESTED` at 390 vs 250
+     * once 4a was wired. One signal's worth of difference turned "I cannot
+     * choose" into "probably this one", on the case the outcome exists for.
+     */
+    readonly ambiguityMargin?: number;
 }
 
 export interface EngineInput {
@@ -857,6 +881,8 @@ export function reconcile(input: EngineInput): EngineResult {
     const scorers = config.scorers ?? [];
     const blockers = config.blockers ?? [];
     const maxCandidates = config.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
+    // 0 is an exact tie, which is what this engine did before #3560.
+    const ambiguityMargin = config.ambiguityMargin ?? 0;
 
     const index = buildRosterIndex(input.roster);
     const bridge = buildBridgeIndex(input.directory);
@@ -1038,7 +1064,7 @@ export function reconcile(input: EngineInput): EngineResult {
         // input order the determinism test exists to catch.
         scored.sort((a, b) => b.score - a.score || a.employeeId.localeCompare(b.employeeId));
 
-        const resolution = decide(account, scored, index, maxCandidates);
+        const resolution = decide(account, scored, index, maxCandidates, ambiguityMargin);
         byOutcome[resolution.outcome] += 1;
         resolutions.push(resolution);
     }
@@ -1066,7 +1092,11 @@ function decide(
     account: CanonicalAccount,
     scored: readonly ScoredCandidate[],
     index: RosterIndex,
-    maxCandidates: number
+    maxCandidates: number,
+    // Passed in like `maxCandidates`, not read off a closed-over config: this
+    // function already takes its configuration as arguments, and a fifth one
+    // keeps every value it decides on visible in its own signature.
+    ambiguityMargin: number
 ): Resolution {
     const candidates = scored.slice(0, maxCandidates);
     const base = {
@@ -1197,7 +1227,20 @@ function decide(
         const [first, second] = supporting;
         // A tie on supporting evidence is AMBIGUOUS; a clear leader is a
         // suggestion with the rest carried for the reviewer to see.
-        if (first.score === second.score) {
+        //
+        // "Tie" means an exact tie OR a lead thinner than `ambiguityMargin`
+        // (#3560). Both halves are needed and neither is redundant:
+        //
+        //   · `gap === 0` keeps the pre-#3560 behaviour at the default margin
+        //     of 0, where `gap < 0` can never hold. Dropping it would make an
+        //     exact tie a SUGGESTION in Step 3b, which is a silent change to
+        //     what this engine has always done.
+        //   · `gap < margin` is strict, not `<=`, so a lead of exactly the
+        //     margin is a suggestion. That matches `BULK_MIN_MARGIN`, which
+        //     admits a row "ahead by AT LEAST" that much — the two bounds are
+        //     the same number and must not disagree about its own value.
+        const gap = first.score - second.score;
+        if (gap === 0 || gap < ambiguityMargin) {
             return {
                 ...base,
                 outcome: 'AMBIGUOUS',

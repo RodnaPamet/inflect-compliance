@@ -284,7 +284,13 @@ export async function runLegacyReconcile(
     // engine, which is what keeps the engine's `LINKED` guarantee a type-level
     // property: a `CandidateScorer` returns `SupportingSignal`, so nothing here
     // can produce a strong signal however it scores.
-    const { scorers, blockers } = step4aExtensions(roster, convention);
+    // `ambiguityMargin` rides with them (#3560): a lead thinner than one whole
+    // supporting signal is not a choice the engine should make for a reviewer.
+    // Measured before the change — with 4a wired, AMBIGUOUS was reached by ZERO
+    // of 45 corpus+held-out cases, including `db-02`, two FRESH directory links
+    // to two different employees, which one SIMILARITY signal turned into
+    // "probably Jamie Jones".
+    const { scorers, blockers, ambiguityMargin } = step4aExtensions(roster, convention);
 
     const result: EngineResult = reconcile({
         accounts,
@@ -292,7 +298,7 @@ export async function runLegacyReconcile(
         directory,
         aliases: revalidation.surviving,
         now: now.toISOString(),
-        config: { scorers, blockers },
+        config: { scorers, blockers, ambiguityMargin },
     });
 
     // ── Write the run ───────────────────────────────────────────────────────
