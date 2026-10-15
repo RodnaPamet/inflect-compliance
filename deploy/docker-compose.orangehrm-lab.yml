@@ -31,11 +31,21 @@
 #
 # ── WHAT IS AND IS NOT INTERNET-FACING ────────────────────────────────
 #
-# ONLY the adapter, and only through Caddy. Neither `orangehrm` nor
-# `orangehrm-db` publishes a port: they are reachable on the Compose
-# network by service name and nowhere else. The agent reaches the
-# adapter over public HTTPS; the adapter reaches OrangeHRM over a
-# private bridge.
+# TWO of the three, both only through Caddy, and NEITHER by publishing a
+# port — that part is unchanged and is the mechanism worth keeping
+# straight. No service here has a `ports:` key; Caddy proxies to them
+# over the Compose network, so the host firewall is not what is holding
+# anything closed and never was.
+#
+# Until 2026-10-15 it was the adapter alone. `orangehrm` is now fronted
+# by the `orangehrm-lab` vhost as well, because the HRIS connector needs
+# an https origin on a public host and a redirect URI a browser can come
+# back from (#3594). `orangehrm-db` is proxied by nothing.
+#
+# The agent reaches the ADAPTER over public HTTPS and the adapter reaches
+# OrangeHRM over the private bridge; the connector reaches the
+# APPLICATION over public HTTPS. Two public names, two different paths,
+# neither serving the other's.
 #
 # That split is the whole reason these are separate processes rather
 # than one. The fixture holds invented employees, but it is an
@@ -111,13 +121,34 @@
 #
 # ── WHAT IS DELIBERATELY NOT HERE ─────────────────────────────────────
 #
-# No `.orangehrm-lab` suffix is added to `ORANGEHRM_HOSTS` in
-# `allowed-host.ts`. That allowlist governs IC's own HRIS CONNECTOR
-# reaching an OrangeHRM instance directly, which is a different path
-# from an agent reaching this ADAPTER: the adapter is an `mcp-server`
-# connection, whose `url` is classified `internalOrigin` and carries no
-# vendor allowlist. Adding a suffix here would widen the connector for a
-# fixture the connector is not being pointed at.
+# No `.orangehrm-lab` SUFFIX is added to `ORANGEHRM_HOSTS` in
+# `allowed-host.ts`, and that is still true. That allowlist governs IC's
+# own HRIS CONNECTOR reaching an OrangeHRM instance directly, which is a
+# different path from an agent reaching this ADAPTER: the adapter is an
+# `mcp-server` connection, whose `url` is classified `internalOrigin` and
+# carries no vendor allowlist. A suffix would widen the connector far
+# past this fixture — sslip.io maps every
+# `<anything>.34-140-180-255.sslip.io` to this machine, so `.sslip.io`
+# would admit the application's own hostname as a destination for OAuth
+# client credentials.
+#
+# ── WHAT CHANGED ON 2026-10-15, AND WHY THE NOTE ABOVE SURVIVED IT ────
+#
+# The original reason given here was "a fixture the connector is not
+# being pointed at". That premise is now false: #3594 found that the
+# `orangehrm` connector could never authenticate against OrangeHRM 5.x
+# at all — it used the client-credentials grant, which the product does
+# not implement — and proving the fix needs the connector pointed at
+# exactly this fixture.
+#
+# So `ORANGEHRM_HOSTS` now admits ONE EXACT host,
+# `orangehrm-lab.34-140-180-255.sslip.io` (#3593), served by the vhost of
+# that name in `deploy/caddy/Caddyfile`. The suffix refusal above is
+# unchanged and is the reason the entry is exact rather than a suffix.
+#
+# The distinction this note draws is what made that safe to decide: the
+# adapter path and the connector path are separate, so admitting a host
+# for the connector widens nothing an agent can reach.
 #
 services:
   # The fixture's database. Never published; reachable only on the
@@ -143,8 +174,11 @@ services:
   # connector's field mapping was corrected against THAT version, so a
   # silent major bump would invalidate the evidence it produced.
   #
-  # No `ports:`. It is addressed as `orangehrm:80` by the adapter and is
-  # not reachable from outside this host.
+  # No `ports:`, and still none. It is addressed as `orangehrm:80` by the
+  # adapter — and since 2026-10-15 also by Caddy, which fronts it at
+  # `orangehrm-lab.34-140-180-255.sslip.io` so the HRIS connector can
+  # complete an OAuth redirect (#3594). So it IS reachable from outside
+  # this host, through Caddy and under that one name only.
   orangehrm:
     image: orangehrm/orangehrm:5.9
     restart: unless-stopped
@@ -159,7 +193,8 @@ services:
     volumes:
       - orangehrm-data:/var/www/html
 
-  # The MCP adapter. The ONLY service here Caddy proxies to.
+  # The MCP adapter. One of two services Caddy proxies to — see the
+  # `orangehrm` note above for the other and why it was added.
   #
   # `node:24-alpine` with the source mounted read-only: no build, no
   # package.json, no lockfile, no dependencies. MCP over HTTP is JSON-RPC
