@@ -215,18 +215,46 @@ describe('RQ-3b — supporting signals cannot link, exhaustively', () => {
         expect(subsets).toHaveLength(2 ** SUPPORTING_SIGNAL_KINDS.length - 1);
     });
 
+    /**
+     * A BLOCKER IS WHAT MAKES THIS TEST RUN AT ALL (#3559).
+     *
+     * Until 2026-10-15 this block passed `config: { scorers: [scorer] }` and
+     * nothing else. The engine creates no candidate of its own for a name-only
+     * account — candidates come from a strong-signal path (confirmed alias,
+     * employee number, exact email, directory bridge) or from a blocker — and
+     * **scorers run per existing candidate**. So the scorer was never invoked
+     * once, no candidate ever existed, and `expect(linked).toEqual([])` was
+     * satisfied by an empty array for reasons unrelated to the claim:
+     *
+     *     subsets=127  evaluated=254  TOTAL_CANDIDATES=0  SCORER_CALLS=0
+     *
+     * The `evaluated` floor that was meant to prevent exactly this counted
+     * `reconcile` CALLS, which happen whether or not a candidate exists — it
+     * would have read 254 against a stub engine. The floors below count the
+     * quantities that can actually go to zero.
+     *
+     * Found by writing an unrelated positive control (#3550) that kept
+     * returning `NO_CANDIDATES` with this block's input shape copied verbatim.
+     */
+    const blockBoth: CandidateBlocker = () => ['e-1', 'e-2'];
+
     it('never yields LINKED, at any score, for one candidate or two', () => {
         const linked: string[] = [];
+        const wrongSignalCount: string[] = [];
         let evaluated = 0;
+        let scorerCalls = 0;
+        let candidatesSeen = 0;
 
         for (const subset of subsets) {
             // Scores far above every strong signal's weight. If the engine
             // summed and thresholded, this would link; it must not.
-            const scorer: CandidateScorer = () =>
-                subset.map(
+            const scorer: CandidateScorer = () => {
+                scorerCalls += 1;
+                return subset.map(
                     (kind) =>
                         ({ kind, score: 10_000, evidence: 'synthetic' }) as SupportingSignal
                 );
+            };
 
             for (const roster of [[person], [person, other]]) {
                 const r = reconcile({
@@ -235,18 +263,43 @@ describe('RQ-3b — supporting signals cannot link, exhaustively', () => {
                     directory: [],
                     aliases: [],
                     now: NOW,
-                    config: { scorers: [scorer] },
+                    // The blocker nominates both roster ids; the engine keeps
+                    // whichever are actually in `roster`, so the one-candidate
+                    // and two-candidate arms still differ.
+                    config: { blockers: [blockBoth], scorers: [scorer] },
                 });
                 evaluated += 1;
                 const res = r.resolutions[0];
+                candidatesSeen += res.candidates.length;
                 if (res.outcome === 'LINKED') {
                     linked.push(`${subset.join('+')} (roster ${roster.length}) -> ${res.method}`);
+                }
+                // EVERY SIGNAL UNDER TEST REACHED THE CANDIDATE. This is the
+                // assertion the old `evaluated` floor was reaching for: it ties
+                // the subset being enumerated to evidence that the engine
+                // actually saw it, per case rather than in aggregate.
+                for (const cand of res.candidates) {
+                    if (cand.signals.length !== subset.length) {
+                        wrongSignalCount.push(
+                            `${subset.join('+')} (roster ${roster.length}) -> ` +
+                                `${cand.employeeId} carried ${cand.signals.length} of ${subset.length}`,
+                        );
+                    }
                 }
             }
         }
 
-        // The denominator, so an empty selection cannot pass as a clean sweep.
+        // ── THE FLOORS, on quantities that can reach zero ──
         expect(evaluated).toBe(subsets.length * 2);
+        // One call per candidate per reconcile: 1 candidate in the first arm,
+        // 2 in the second, so three per subset. Stated exactly rather than as
+        // `> 0`, because a blocker that nominated one id would halve this and
+        // still pass a mere positivity check.
+        expect(scorerCalls).toBe(subsets.length * 3);
+        expect(candidatesSeen).toBe(subsets.length * 3);
+        expect(wrongSignalCount).toEqual([]);
+
+        // ── AND THE CLAIM ITSELF ──
         expect(linked).toEqual([]);
     });
 
