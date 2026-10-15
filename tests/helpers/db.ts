@@ -911,16 +911,63 @@ export function prismaTestClient(): any {
  *
  * The sixth is not like the others and is worth knowing about:
  * `Membership` → `TenantMembership`, whose parents are `Tenant` and
- * `User` — NEITHER of which is a root here. So it is NOT in the cascade
- * closure, and this helper has silently not been clearing memberships
- * since the rename. That is left as-is deliberately: adding it would
- * change what every `beforeEach(() => resetDatabase(...))` in the suite
- * sees (memberships would vanish while their tenants and users
- * survived), which is a behavioural decision for whoever needs it and
- * not something to smuggle in beside a flake fix. It is written down
- * here so the next reader is not the third person to rediscover it.
+ * `User` — NEITHER of which is a root here. So it was NOT in the cascade
+ * closure, and this helper silently did not clear memberships from the
+ * rename until 2026-10-15.
+ *
+ * ── WHY IT IS A ROOT NOW (#3597) ──────────────────────────────────────
+ *
+ * The note here used to say this was "left as-is deliberately", because
+ * adding it "would change what every `beforeEach(() => resetDatabase(...))`
+ * in the suite sees — memberships would vanish while their tenants and
+ * users survived" — and closed by hoping the next reader would not be the
+ * third to rediscover it. They were. The hazard was real and the
+ * population was never measured; measured, it is EMPTY:
+ *
+ *     test files total                               2322
+ *     files using resetDatabase                        69
+ *       · inside beforeAll                             53
+ *       · top level / a helper                         10
+ *       · inside afterAll                               6
+ *       · inside beforeEach                             3
+ *     of those 3, creating a membership in beforeAll    0
+ *
+ * No suite resets between tests while depending on a membership made
+ * once. So the behavioural change the note was protecting against has
+ * nobody to affect, and leaving it out had a cost that was being paid:
+ * 158 suites clean up a `User`/`Tenant` fixture by hand and about 90 of
+ * them delete the USER first, which a surviving membership turns into
+ * `Foreign key constraint violated on TenantMembership_userId_fkey` —
+ * failing every test in the file on something none of them is about.
+ * That is what #3597 was: 35 failures in `external-write-policy`, all of
+ * them this.
+ *
+ * `TRUNCATE ... CASCADE` on it reaches nothing further: nothing in the
+ * schema holds a foreign key INTO `TenantMembership`. The references to
+ * it (`User.memberships`, `Organization.provisionedTenantMemberships`,
+ * `TenantCustomRole.memberships`) are all parent sides, where the child
+ * holds the key.
  */
 export const RESET_TABLES: readonly string[] = [
+    // ── Tenant-scoped roots whose PARENT is deliberately not one ─────────
+    //
+    // `Tenant` and `User` survive a reset so fixtures can, which means every
+    // table hanging off them alone is outside the cascade closure. Two of
+    // those were being left behind and both turned a hand-rolled fixture
+    // cleanup into a whole-file failure (#3597):
+    //
+    //   TenantMembership       blocks `user.deleteMany`   (userId_fkey)
+    //   IntegrationConnection  blocks `tenant.deleteMany` (tenantId_fkey)
+    //
+    // Added together because the second only became visible once the first was
+    // fixed — the suite moved from one FK wall straight to the next, which is
+    // what a leak of this shape looks like from inside a `beforeAll`.
+    //
+    // Both are safe for the same measured reason: of 69 files using this
+    // helper, only 3 reset inside `beforeEach`, and none of those creates a
+    // membership or a connection in `beforeAll`. See the docblock above.
+    'TenantMembership',
+    'IntegrationConnection',
     'AuditLog', 'TaskLink', 'TaskComment', 'TaskWatcher', 'Task',
     'EvidenceReview', 'Evidence', 'FileRecord',
     'ControlRequirementLink',

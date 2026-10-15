@@ -109,11 +109,16 @@ inflect.34-140-180-255.sslip.io {
 
 # ── hrm-mcp — the OrangeHRM lab fixture's MCP adapter (#2861) ───────────────
 #
-# The ONLY service in `docker-compose.orangehrm-lab.yml` that is reachable from
-# outside this host. Neither `orangehrm` nor `orangehrm-db` publishes a port:
-# they are addressable on the Compose network by service name and nowhere else.
-# The agent reaches the adapter over public HTTPS; the adapter reaches OrangeHRM
-# over a private bridge.
+# One of TWO services in `docker-compose.orangehrm-lab.yml` reachable from
+# outside this host, and it was the only one until 2026-10-15 — the
+# `orangehrm-lab` block further down now fronts the web application itself, so
+# the HRIS connector can complete an OAuth redirect (#3594). `orangehrm-db`
+# still publishes no port and is addressable on the Compose network by service
+# name and nowhere else.
+#
+# The two public names front DIFFERENT things and that separation is the point:
+# an agent reaches this ADAPTER, bearer-authenticated, and the connector reaches
+# the APPLICATION. Neither hostname serves the other's path.
 #
 # ── WHY A PUBLIC HOSTNAME AT ALL, FOR A SERVICE ON THIS SAME HOST ──────────
 #
@@ -168,6 +173,54 @@ legacy-mcp-proving.34-140-180-255.sslip.io {
     # than serving anonymously — so an unauthenticated request never reaches the
     # reference handler even if this block is up before the secret is in place.
     reverse_proxy legacy-mcp-proving:8099
+}
+
+# ── The OrangeHRM lab instance ITSELF, not its MCP adapter ──────────────────
+#
+# `hrm-mcp` below fronts `orangehrm-mcp`, a bearer-authenticated adapter an
+# agent talks to. THIS block fronts the OrangeHRM web application, because the
+# `orangehrm` HRIS connector needs two things an internal address cannot give
+# it: an `https` origin on a PUBLIC host, and a redirect URI a browser can be
+# sent to and come back from.
+#
+# ═══ WHY THE HOSTNAME IS THIS EXACT STRING ═══
+#
+# `ORANGEHRM_HOSTS` admits `orangehrm-lab.34-140-180-255.sslip.io` as an EXACT
+# entry (#3593) and admits no suffix. So this vhost's name is not a label — it
+# is the allowlist entry, and renaming it breaks the connector with a refusal
+# that names the host rather than this file. The exactness is deliberate:
+# sslip.io maps every `<anything>.34-140-180-255.sslip.io` to this machine, so a
+# suffix would have admitted `inflect.34-140-180-255.sslip.io` — the application
+# itself — as a destination for OAuth client credentials.
+#
+# ═══ WHAT THIS DOES NOT DO ═══
+#
+# It does not make the lab reachable by anyone who has not been told the name,
+# and it does not front the lab's database or its MCP adapter. OrangeHRM 5.9
+# requires a login for every path but `/oauth2/token`, which refuses without
+# client credentials, and `/installer`, which closes itself once
+# `lib/confs/Conf.php` exists — see the overlay's installer notes.
+#
+# It is nonetheless a PUBLIC surface for a fixture holding synthetic HR records,
+# so it is listed here rather than added quietly: if the lab is ever loaded with
+# anything real, this block is the thing to remove first.
+orangehrm-lab.34-140-180-255.sslip.io {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        -Server
+    }
+
+    # OrangeHRM builds absolute URLs from the Host header it is given, so the
+    # proxy must pass the PUBLIC name through. Without this the OAuth authorize
+    # redirect comes back pointing at `http://orangehrm`, which no browser can
+    # follow and `safeFetch` would refuse as a private address.
+    reverse_proxy orangehrm:80 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+    }
 }
 
 hrm-mcp.34-140-180-255.sslip.io {

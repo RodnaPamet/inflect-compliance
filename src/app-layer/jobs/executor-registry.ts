@@ -1340,6 +1340,34 @@ executorRegistry.register('legacy-reconcile', async (payload) => {
         status: r.status,
         refusal: r.refusal,
         byOutcome: r.byOutcome,
+    }, {
+        // ═══ WHY THIS ARGUMENT EXISTS AT ALL (#3591) ═══
+        //
+        // It did not, and the omission was invisible: `makeResult` derives
+        // `success` from the outcome it is given, so with none it answered
+        // `true` for every refusal — `SNAPSHOT_NOT_FOUND`,
+        // `SNAPSHOT_NOT_COMPLETE`, `EMPTY_SNAPSHOT` and `NO_FRESH_ROSTER`
+        // alike. `recordJobMetrics` in this same file then counted a refused
+        // run as a successful one.
+        //
+        // Found by the first production run of this job, which refused
+        // `NO_FRESH_ROSTER`, wrote `IntegrationExecution: PARTIAL` with the
+        // reason, and logged "job processed successfully" in the same breath.
+        // Two surfaces disagreeing about one run.
+        //
+        // PARTIAL rather than a new status, because that is what
+        // `runLegacyReconcile`'s own `refuse()` already writes on the
+        // execution row — the correspondence between the two records is worth
+        // more than inventing a third vocabulary for the same fact. And
+        // deliberately not ERROR: a refusal is the gate working, not a fault,
+        // and ERROR would page somebody for a correct outcome.
+        status: r.status === 'RESOLVED' ? 'PASSED' : 'PARTIAL',
+        errorMessage: r.refusal ?? undefined,
+        // A refusal is a verdict, not a transient fault — the same reasoning
+        // `legacy-access-pull` gives forty lines above, and it only starts
+        // mattering now: while `success` was wrongly `true` the queue never
+        // retried anyway, so this flag had nothing to prevent.
+        noRetry: true,
     });
 });
 

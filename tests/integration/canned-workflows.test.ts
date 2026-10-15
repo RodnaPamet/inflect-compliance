@@ -90,4 +90,44 @@ describeFn('Canned workflow — Audit prep (real DB, end-to-end)', () => {
         expect(done.status).toBe('COMPLETED');
         expect(done.summary).toMatch(/Audit-readiness report/);
     });
+
+    /**
+     * THE CASE THIS FILE COULD NOT EXPRESS UNTIL NOW (#3600).
+     *
+     * The test above has always passed `{ frameworkKey: FW_KEY }`, so the only
+     * path it exercised was the one where the caller supplies the key. The path
+     * where nobody does accounted for SEVEN production failures between
+     * 2026-07-02 and 2026-09-19 — `audit-prep` and `framework-onboarding`
+     * substituted `''`, `get_framework_status` read falsy as "no key given" and
+     * returned the installable-framework catalogue (recorded DONE, wrong
+     * question answered), and `find_coverage_gaps` then died on its
+     * `z.string().min(1)`.
+     *
+     * A happy-path-only test is why CI never saw it. These assert the refusal
+     * AND that it costs nothing: no run row, so no FAILED row burning tokens
+     * and no RUNNING row for the settlement sweep to reap as a crashed
+     * executor.
+     */
+    describe('a workflow that declares requiredInput refuses at the door', () => {
+        it.each([
+            ['nothing at all', {}],
+            ['an empty string', { frameworkKey: '' }],
+            ['only whitespace', { frameworkKey: '   ' }],
+            ['a non-string', { frameworkKey: 42 }],
+        ])('refuses audit-prep given %s, and writes no run', async (_label, input) => {
+            const before = await prisma.workflowRun.count({ where: { tenantId: TENANT } });
+
+            await expect(startWorkflowRun(ctx(), 'audit-prep', input as Record<string, unknown>)).rejects.toThrow(
+                /requires a non-empty frameworkKey/,
+            );
+
+            // The refusal is at admission, so no row exists in ANY state.
+            expect(await prisma.workflowRun.count({ where: { tenantId: TENANT } })).toBe(before);
+        });
+
+        it('still admits the run when the key IS supplied — the refusal is not blanket', async () => {
+            const result = await startWorkflowRun(ctx(), 'audit-prep', { frameworkKey: FW_KEY });
+            expect(result.runId).toBeTruthy();
+        });
+    });
 });
