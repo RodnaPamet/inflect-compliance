@@ -208,6 +208,24 @@ export async function haltRunAtKill(
  * it, the remaining work is a recorded number in a hash-chained row that is
  * never deleted — visibly not-done rather than quietly gone.
  *
+ * ── AND WHY IT IS NULLABLE (#3602) ──────────────────────────────────────────
+ *
+ * `null` means THE REMAINDER WAS NEVER ENUMERABLE, which is the truth for a
+ * model-driven run and a different statement from `0`. The static engine walks
+ * a declared array, so `def.steps.length - seq` is exactly the work it will not
+ * now do. Flue is handed that array as a SPECIFICATION and decides its own
+ * calls, so the same subtraction mixes two scales and produces a number that is
+ * wrong in whichever direction the ledger happens to sit.
+ *
+ * Both directions were observed. A `posture-review` halt recorded
+ * `stepsNotRun: 5` — all five declared steps unrun — for a run that had already
+ * committed four `TOOL_CALL` rows. And `access-posture` declares 3 steps while
+ * its runs commit 4 to 6, so the same expression goes NEGATIVE there.
+ *
+ * `0` could not be used instead: on the static path it is a real and meaningful
+ * value (a run halted after its last step), so overloading it would make the
+ * honest zero unreadable.
+ *
  * The run stays `FAILED` rather than gaining a `HALTED` status of its own.
  * Adding an enum value is safe to WRITE under a rolling deploy and unsafe to
  * READ: a container still running the old build would fail to deserialise a
@@ -219,7 +237,7 @@ export async function haltRunAtCap(
     ctx: RequestContext,
     runId: string,
     halt: RunCapHalt,
-    stepsNotRun: number,
+    stepsNotRun: number | null,
 ): Promise<string> {
     await updateRun(ctx, runId, {
         status: 'FAILED',

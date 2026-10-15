@@ -1153,7 +1153,63 @@ export type QueuedRunOutcome =
  * landed and resumes after them. A payload-carried index would re-execute a
  * step the run had already committed — and the steps that call tools are not
  * idempotent.
+ *
+ * ── AND WHY IT READS BOTH THE LEDGER AND THE COUNTER (#3602) ────────────────
+ *
+ * This used to read `row.stepCount` alone, under that same comment. The column
+ * is NOT the ledger: it is a denormalised counter written by the engine, and
+ * every path that dies before its writer leaves it behind the committed rows.
+ * Measured in production — a `posture-review` run on 2026-09-24 carried
+ * `stepCount 0` with FOUR committed `TOOL_CALL` rows, because the segment was
+ * killed mid-dispatch before `settleTurns` ran. Had the retry arrived inside
+ * the wall-clock hour instead of 3h34m later, this function would have resumed
+ * that run at seq 0 and re-executed all four tool calls — the precise outcome
+ * the paragraph above promises cannot happen.
+ *
+ * So the resume point is the GREATER of the two, which is the only combination
+ * that is safe in both directions. The ledger stops a stale counter resuming
+ * behind committed work. The counter is still consulted because the human
+ * resume path writes it deliberately — `resumeWorkflowRun` stores
+ * `resumedFrom + 1` precisely because an argument "does not survive the hop" —
+ * and a run released from a checkpoint must not resume behind the point that
+ * transaction chose.
  */
+/**
+ * WHERE A QUEUED RUN RESUMES, given the ledger's high-water mark and the run
+ * row's counter (#3602).
+ *
+ * `ledgerMaxSeq` is `max(WorkflowStep.seq)` for the run, or `-1` when it has
+ * committed nothing. `stepCount` is the denormalised counter on the run row.
+ *
+ * THE GREATER OF THE TWO, because neither is safe alone and they fail in
+ * opposite directions:
+ *
+ *   • The COUNTER can sit behind the ledger. It has a single writer by design —
+ *     see `settleTurns` in `flue/execute.ts`, where a second writer for the same
+ *     number was rejected as the way the two drift — so any path that dies
+ *     before that writer leaves it stale. Measured in production: a
+ *     `posture-review` run carried `stepCount 0` with FOUR committed TOOL_CALL
+ *     rows after its segment was killed mid-dispatch. Resuming at 0 would have
+ *     re-executed four non-idempotent tool calls, which is exactly what the
+ *     caller's own header says cannot happen.
+ *   • The LEDGER can sit behind the counter. `resumeWorkflowRun` writes
+ *     `resumedFrom + 1` deliberately when releasing a run from a human
+ *     checkpoint, because an argument "does not survive the hop" to the worker.
+ *     A run released past a checkpoint must not resume before the point that
+ *     transaction chose.
+ *
+ * So the max is not a hedge between two guesses. Each input is authoritative
+ * about a different thing — what HAS run, and what a human decided should run
+ * next — and the resume point must respect both.
+ *
+ * Extracted and exported because nothing exercised this arithmetic:
+ * `executeQueuedWorkflowRun` needs Prisma, a registered agent and a dispatch to
+ * reach, which is why reading a stale counter survived in it unnoticed.
+ */
+export function resumePositionOf(ledgerMaxSeq: number, stepCount: number): number {
+    return Math.max(ledgerMaxSeq + 1, stepCount);
+}
+
 export async function executeQueuedWorkflowRun(
     tenantId: string,
     runId: string,
@@ -1215,12 +1271,22 @@ export async function executeQueuedWorkflowRun(
             workflowKey: row.workflowKey,
         })
     ).driver;
+    // `max(seq) + 1` rather than `count(*)`: a gap in the sequence must not pull
+    // the resume point back on top of a step that already committed.
+    const ledger = await runInTenantContext(ctx, (db) =>
+        db.workflowStep.aggregate({
+            where: { runId, tenantId: ctx.tenantId },
+            _max: { seq: true },
+        }),
+    );
+
     const { status, stepFailures } = await executeFrom(
         ctx,
         runId,
         def,
-        // The ledger's answer, not the payload's.
-        row.stepCount,
+        // The ledger's answer OR the counter's, whichever is further on — see
+        // `resumePositionOf` for why neither alone is safe.
+        resumePositionOf(ledger._max.seq ?? -1, row.stepCount),
         row.startedAt.getTime(),
         permitted,
     );

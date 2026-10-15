@@ -220,3 +220,94 @@ describe('a Flue run tells its proposals which step made them', () => {
         expect(ledgerWrapper).toContain('ledger.forgetOrigin(context.toolCallId)');
     });
 });
+
+/**
+ * A FLUE CAP HALT REPORTS AN UNENUMERABLE REMAINDER AS `null`, NOT A NUMBER
+ * COMPUTED FROM A LIST THIS ENGINE DOES NOT WALK (#3602).
+ *
+ * `haltRunAtCap`'s `stepsNotRun` is documented as "the part that makes this a
+ * halt rather than a trim" — the remaining work, in a hash-chained row that is
+ * never deleted. On the static driver `def.steps.length - seq` is exactly that.
+ * On this engine it mixes two scales: `fromSeq` counts committed LEDGER rows,
+ * `def.steps.length` counts DECLARED steps, and Flue is handed the declared
+ * list as a specification rather than walking it.
+ *
+ * Both failure directions were observed in production. A `posture-review` halt
+ * recorded `stepsNotRun: 5` — every declared step unrun — for a run that had
+ * already committed four TOOL_CALL rows. And `access-posture` declares 3 steps
+ * while its runs commit 4 to 6, so the same expression is NEGATIVE there.
+ *
+ * `0` could not stand in: on the static path it is a real value (halted after
+ * the last step), so overloading it would make the honest zero unreadable.
+ */
+describe('a Flue cap halt does not invent a remainder', () => {
+    /**
+     * THE HALT CALLS THEMSELVES, not the files they sit in.
+     *
+     * A whole-file `toMatch` would be an ambiguous needle — satisfiable by any
+     * of a thousand positions, which is what
+     * `assertion-needle-uniqueness-ratchet` Class D counts. Deriving the call
+     * list is also the more precise subject: the claim is about what every halt
+     * site passes, not about a string appearing somewhere in the module.
+     */
+    const haltCallsIn = (rel: string): string[] =>
+        [...read(rel).matchAll(/haltRunAtCap\([^)]*\)/g)].map((m) => m[0]);
+
+    const flueHalts = haltCallsIn(EXECUTE);
+    const staticHalts = haltCallsIn('src/lib/agentic/drivers/static-driver.ts');
+
+    it('has four halt sites to talk about', () => {
+        // The denominator. Runtime preflight, two guard-latch exits, token cap.
+        expect(flueHalts.length).toBeGreaterThanOrEqual(4);
+        expect(staticHalts.length).toBeGreaterThanOrEqual(6);
+    });
+
+    it('computes no remainder from the declared step list', () => {
+        // The exact expression that produced both wrong numbers in production.
+        expect(flueHalts.filter((c) => /def\.steps\.length/.test(c))).toEqual([]);
+    });
+
+    it('passes null at every cap halt on this engine', () => {
+        expect(flueHalts.filter((c) => !/,\s*null\s*\)$/.test(c))).toEqual([]);
+    });
+
+    it('the detector fires on the code that shipped — positive control', () => {
+        // Without this the two assertions above cannot be told apart from
+        // filters that match nothing.
+        const historical = 'haltRunAtCap(ctx, runId, preflight, def.steps.length - fromSeq)';
+        expect(/def\.steps\.length/.test(historical)).toBe(true);
+        expect(/,\s*null\s*\)$/.test(historical)).toBe(false);
+        expect(/,\s*null\s*\)$/.test('haltRunAtCap(ctx, runId, preflight, 0)')).toBe(false);
+    });
+
+    it('leaves the STATIC driver reporting a real number — the change is scoped', () => {
+        // A blanket null would have destroyed the field everywhere it was
+        // already correct. The static engine walks its declared array, so there
+        // the subtraction IS the remaining work.
+        expect(staticHalts.filter((c) => /def\.steps\.length\s*-\s*seq/.test(c)).length)
+            .toBeGreaterThanOrEqual(6);
+    });
+});
+
+/**
+ * AND THE QUEUED RESUME STILL GOES THROUGH THE LEDGER-AWARE SEAM (#3602).
+ *
+ * `resumePositionOf` is unit-tested exhaustively in
+ * `tests/unit/agentic/resume-position.test.ts`. What that cannot see is whether
+ * the call site still uses it: reverting to `row.stepCount` would leave every
+ * one of those assertions green while restoring the defect.
+ */
+describe('a queued run resumes from the ledger-aware position', () => {
+    const usecase = read('src/app-layer/usecases/workflow-runs.ts');
+    const body = functionBodyOf(usecase, 'executeQueuedWorkflowRun');
+
+    it('passes the seam its BOTH inputs rather than the counter alone', () => {
+        expect(body).toMatch(/resumePositionOf\([^)]*_max\.seq[^)]*stepCount/);
+    });
+
+    it('reads the ledger high-water mark, not a row count', () => {
+        // `count(*)` would pull the resume point back onto a committed step if
+        // the sequence ever had a gap.
+        expect(body).toMatch(/_max:\s*\{\s*seq:\s*true/);
+    });
+});

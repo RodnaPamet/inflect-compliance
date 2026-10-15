@@ -12,7 +12,7 @@
  * stopped run.
  */
 import { planFlueRun, refusalMessage, type FlueStartRefusal } from '@/lib/agentic/flue/driver-plan';
-import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import { ENGINE_CAPS, type WorkflowDefinition } from '@/lib/agentic/workflow-types';
 
 jest.mock('@/env', () => ({
     env: {
@@ -82,16 +82,51 @@ describe('refusal ORDER — the most specific answer wins', () => {
         }
     });
 
-    it('a resume past the last step is refused before the model is resolved', () => {
+    it('a resume with the whole STEP BUDGET spent is refused before the model is resolved', () => {
         // Nothing to execute. Dispatching an agent with no work would put a
         // no-op in the ledger, where it reads as a run that did something.
-        expect(planFlueRun(def(), 2, { residency: 'EXTERNAL' })).toEqual({
-            ok: false,
-            reason: 'NO_STEPS_REMAIN',
-        });
-        // …and at the last valid index it still starts, so the boundary is
-        // `>=` and not an off-by-one.
-        expect(planFlueRun(def(), 1, { residency: 'EXTERNAL' }).ok).toBe(true);
+        expect(
+            planFlueRun(def(), ENGINE_CAPS.MAX_STEPS, { residency: 'EXTERNAL' }),
+        ).toEqual({ ok: false, reason: 'NO_STEPS_REMAIN' });
+        // …and one below the cap it still starts, so the boundary is `>=` and
+        // not an off-by-one.
+        expect(
+            planFlueRun(def(), ENGINE_CAPS.MAX_STEPS - 1, { residency: 'EXTERNAL' }).ok,
+        ).toBe(true);
+    });
+
+    it('STARTS a resume whose ledger is past the declared step list (#3602)', () => {
+        // This asserted the opposite until #3602, when the bound was
+        // `def.steps.length`: a 2-step definition refused a resume at seq 2.
+        //
+        // The two numbers are not commensurable on this engine. `fromSeq`
+        // counts committed LEDGER rows; `def.steps.length` counts DECLARED
+        // steps, which only the static engine walks one-for-one. Flue is handed
+        // the list as a specification and records a row per call the model
+        // chose, routinely more than the definition declares — and the
+        // another-driver refusal above has already excluded every non-flue
+        // definition, so this comparison only ever ran on the engine where it
+        // could not be right.
+        //
+        // Measured: `access-posture` declares 3 steps and its production runs
+        // committed 4, 5 and 6 rows. The 5-row run was resumed, met `5 >= 3`,
+        // and was failed with "resumed past the last declared step" — erasing
+        // the real cause, an MCP tool that had failed twice, one call carrying a
+        // FLAGGED guard verdict.
+        const threeStep = def({
+            steps: [
+                { kind: 'READ', label: 'a', tool: 'list_risks' },
+                { kind: 'READ', label: 'b', tool: 'list_findings' },
+                { kind: 'SYNTHESIS', label: 'c', synthesize: () => ({ text: 'x' }) },
+            ],
+        } as Partial<WorkflowDefinition>);
+
+        // The production shapes, plus well past them. All must START.
+        for (const ledgerSeq of [3, 4, 5, 6, 20, ENGINE_CAPS.MAX_STEPS - 1]) {
+            expect(planFlueRun(threeStep, ledgerSeq, { residency: 'EXTERNAL' }).ok).toBe(
+                true,
+            );
+        }
     });
 
     it('forwards the model refusal when the engine itself is wanted', () => {
