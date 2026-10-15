@@ -10,6 +10,16 @@ import { isDiffReviewable, type ProposalDiff } from '@/lib/agentic/proposal-diff
  * The review surface for ONE proposal's diff - and the only place the approve
  * control is allowed to be rendered.
  *
+ * ## Two mounts, one invariant (#3472)
+ *
+ * `/agents/proposals` renders this per queued row. The process canvas renders
+ * it per proposal of a run parked on a HUMAN_CHECKPOINT, so a reviewer can
+ * decide without leaving the map. They are different surfaces with different
+ * chrome and the SAME approve control, because the plan's constraint is "no
+ * second approval path" and a second copy of this file would be exactly that
+ * - the structural invariant below holds only as long as there is one place it
+ * is written down.
+ *
  * ## The invariant this component exists to make structural
  *
  * `approveAction` is a slot, and it is rendered from EXACTLY ONE place in this

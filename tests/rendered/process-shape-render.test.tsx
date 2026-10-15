@@ -21,7 +21,7 @@
  * file. The count is asserted so an empty or shrunken population cannot pass
  * by vacuity.
  */
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 jest.mock('tldraw', () => ({
     ...jest.requireActual('tldraw'),
@@ -52,6 +52,22 @@ const { PROCESS_NODE_SHAPE_TYPE } = require('@/components/processes/tldraw/proce
 
 const { CanvasOverlayProvider } =
     require('@/lib/processes/canvas-execution-overlay') as typeof import('@/lib/processes/canvas-execution-overlay');
+const { CheckpointReviewProvider, useCheckpointReview } =
+    require('@/lib/processes/canvas-checkpoint-review') as typeof import('@/lib/processes/canvas-checkpoint-review');
+
+/**
+ * WHICH RUN THE AFFORDANCE OPENED, read back out of the context.
+ *
+ * The panel itself is not mounted here — it fetches, translates and renders a
+ * diff table, which is `tests/rendered/checkpoint-review-panel.test.tsx`'s
+ * subject. What this file owns is the SHAPE's half of the join: that the click
+ * lands and carries this node's run id. A probe makes that observable without
+ * dragging the panel's whole dependency graph into a shape-render suite.
+ */
+function OpenRunProbe() {
+    const { openRunId } = useCheckpointReview();
+    return <span data-testid="open-run-probe">{openRunId ?? 'none'}</span>;
+}
 const { ruleIdFromDataJson } =
     require('@/components/processes/tldraw/ProcessNodeShapeUtil') as typeof import('@/components/processes/tldraw/ProcessNodeShapeUtil');
 const { useTenantSWR } =
@@ -490,5 +506,109 @@ describe('an agent node shows its latest run', () => {
         expect(node()).toHaveAttribute('data-overlay-status', 'RUNNING');
         // …and the run channel says nothing, because there is no run.
         expect(node()).not.toHaveAttribute('data-run-status');
+    });
+    /*
+        ═══ THE INLINE REVIEW AFFORDANCE (#3472) ═══
+
+        The plan asks a HUMAN_CHECKPOINT to render "a paused badge with inline
+        approve/reject". The badge is the run line above; the affordance is
+        this, and the thing worth asserting is WHEN it is a control and when it
+        is only text.
+
+        THREE TERMS, and each has to be able to withhold it on its own:
+        the run must be AWAITING_APPROVAL, this viewer must be allowed to read
+        the review queue, and there must be a run at all. A disabled button is
+        deliberately NOT the answer for the middle term — it still tells
+        everyone who cannot act that there is something to do here, which is
+        the defect the proposals queue recorded as "Approve and Reject
+        rendered enabled for readers and returned 403 on press".
+    */
+    describe('the inline checkpoint affordance', () => {
+        const renderWithReview = (
+            dataJson: unknown,
+            opts: { canReview: boolean; canOperate?: boolean },
+        ) =>
+            render(
+                <CheckpointReviewProvider
+                    canReview={opts.canReview}
+                    canOperate={opts.canOperate ?? true}
+                >
+                    <CanvasOverlayProvider enabled>
+                        {util.component(shapeOf('agent' as Kind, { dataJson }))}
+                        <OpenRunProbe />
+                    </CanvasOverlayProvider>
+                </CheckpointReviewProvider>,
+            );
+        const runLine = () => screen.getByTestId('process-node-run-agent-1');
+
+        it('is a BUTTON when a human is needed and this viewer may review', () => {
+            mockBoth([runNode({ status: 'AWAITING_APPROVAL' })]);
+            renderWithReview({ ruleId: AGENT_RULE }, { canReview: true });
+            expect(runLine().tagName).toBe('BUTTON');
+            expect(runLine()).toHaveAttribute('data-checkpoint-affordance', 'true');
+            // The accessible NAME is the node's own label — a shape util has
+            // no translator, which is why this introduces no copy.
+            expect(runLine()).toHaveAttribute('aria-label', 'agent label');
+        });
+
+        it('opens the panel for THIS node’s run id', () => {
+            // The id matters: two nodes on one canvas can be parked at once,
+            // and opening the wrong run would review another node's proposals.
+            mockBoth([runNode({ status: 'AWAITING_APPROVAL', runId: 'run-77' })]);
+            renderWithReview({ ruleId: AGENT_RULE }, { canReview: true });
+            expect(screen.getByTestId('open-run-probe')).toHaveTextContent('none');
+            fireEvent.click(runLine());
+            expect(screen.getByTestId('open-run-probe')).toHaveTextContent('run-77');
+        });
+
+        it('is PLAIN TEXT for a viewer who may not review the queue', () => {
+            // Not a disabled button. The canvas is not an admin surface, and
+            // the panel behind this reads the proposals queue.
+            mockBoth([runNode({ status: 'AWAITING_APPROVAL' })]);
+            renderWithReview({ ruleId: AGENT_RULE }, { canReview: false });
+            expect(runLine().tagName).toBe('SPAN');
+            expect(runLine()).not.toHaveAttribute('data-checkpoint-affordance');
+        });
+
+        it('is PLAIN TEXT for a run nobody is waiting on', () => {
+            // A RUNNING run needs no decision, so there is nothing to open —
+            // and PAUSED resumes on its own.
+            mockBoth([runNode({ status: 'RUNNING' })]);
+            renderWithReview({ ruleId: AGENT_RULE }, { canReview: true });
+            expect(runLine().tagName).toBe('SPAN');
+
+            cleanup();
+            mockBoth([runNode({ status: 'PAUSED' })]);
+            renderWithReview({ ruleId: AGENT_RULE }, { canReview: true });
+            expect(runLine().tagName).toBe('SPAN');
+        });
+
+        it('says the SAME THING either way', () => {
+            // The branch introduces no copy and loses none: whichever element
+            // renders, it carries the status, the step position and the tool.
+            // A redesign that dropped the text on one branch would leave the
+            // reviewer with an underline and no reason to click it.
+            mockBoth([runNode({ status: 'AWAITING_APPROVAL' })]);
+            renderWithReview({ ruleId: AGENT_RULE }, { canReview: true });
+            const asButton = runLine().textContent;
+            cleanup();
+            mockBoth([runNode({ status: 'AWAITING_APPROVAL' })]);
+            renderWithReview({ ruleId: AGENT_RULE }, { canReview: false });
+            expect(runLine().textContent).toBe(asButton);
+        });
+
+        it('renders bare, with no provider at all', () => {
+            // The design property the overlay module states for itself: a node
+            // still renders in isolation and under SSR, and the feature is
+            // simply absent. `useCheckpointReview`'s default is what makes
+            // this true, so it is asserted rather than assumed.
+            mockBoth([runNode({ status: 'AWAITING_APPROVAL' })]);
+            render(
+                <CanvasOverlayProvider enabled>
+                    {util.component(shapeOf('agent' as Kind, { dataJson: { ruleId: AGENT_RULE } }))}
+                </CanvasOverlayProvider>,
+            );
+            expect(runLine().tagName).toBe('SPAN');
+        });
     });
 });
