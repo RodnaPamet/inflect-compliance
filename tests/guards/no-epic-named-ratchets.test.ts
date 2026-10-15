@@ -278,7 +278,31 @@ describe('epic-named ratchets are not added back', () => {
         // and a deferred key rotation as current. One read "the Laya service
         // now running on". A banner at the top is the natural minimum effort,
         // it reads as sufficient, and nothing checked the rest.
-        expect(guardFiles().length).toBeLessThan(778);
+        //
+        // RAISED 778 -> 779 on 2026-10-15, for one file, same test applied:
+        // `a-refusal-is-not-a-success.test.ts` is named for the invariant it
+        // protects — an executor whose usecase handed back a refusal must
+        // report one, rather than reporting success because the argument that
+        // carries the verdict is optional.
+        //
+        // Why a new file: nothing in these directories reads the executor
+        // registry's CALL SITES as a population. `runtime-wiring-coverage` is
+        // the nearest relative and asks whether each job is dispatched at all;
+        // this asks whether each one's result tells the truth. A job can be
+        // wired perfectly and still report every refusal as a pass, which is
+        // exactly what happened.
+        //
+        // What it cost to not have it: #3591. `legacy-reconcile` carried
+        // `refusal` and `status` into its job details and then omitted the
+        // eighth argument to `makeResult`, whose default answer is
+        // `success: true`. The first production run of that job refused
+        // `NO_FRESH_ROSTER`, wrote `IntegrationExecution: PARTIAL` with the
+        // reason, and logged "job processed successfully" in the same breath —
+        // for the whole life of the feature, with no type error, no lint
+        // warning, and nothing in the diff that looks like a dropped verdict.
+        // Its sibling `legacy-access-pull`, registered forty lines earlier,
+        // mapped the same refusal correctly and explained why in a comment.
+        expect(guardFiles().length).toBeLessThan(779);
     });
 
     /**
