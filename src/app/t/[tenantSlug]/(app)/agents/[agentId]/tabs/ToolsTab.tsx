@@ -90,6 +90,23 @@ interface AgentToolsPayload {
      */
     available: string[];
     /**
+     * WHAT THE RUNTIME HANDS A RUN THAT NOBODY GRANTED (#3569).
+     *
+     * Measured: a Flue run bound with no tools at all still reaches the model
+     * with `task`, and with `activate_skill` once it mounts a skill. This
+     * panel's claim is otherwise an intersection — a tool absent from the
+     * grants is unreachable however widely the credential is scoped — and that
+     * claim was true of the tools this product supplies and silent about these.
+     *
+     * Optional, so an older cached response renders the panel as it was rather
+     * than crashing on a missing array.
+     */
+    runtimeProvided?: Array<{
+        name: string;
+        appearsWhen: 'always' | 'when-skills-mounted';
+        boundedBy: string;
+    }>;
+    /**
      * The AGENT's effective autonomy ceiling — `min(registered autonomy, tier
      * cap)` — resolved server-side by the same helper the tool boundary uses.
      *
@@ -739,6 +756,73 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                     </InlineNotice>
                 )}
             </Card>
+
+            {/*
+                WHAT ARRIVES REGARDLESS (#3569).
+
+                A SEPARATE CARD, never a section of the grants list above.
+                Merging them would answer "what can this agent reach" with a
+                true set and a false implication — that the register decided
+                every entry on it. Three questions, three places: what was
+                granted, what could be, and what the runtime hands over anyway.
+
+                Rendered even though neither tool widens reach today, because
+                the gap this closes is not a reach gap. It is that an operator
+                reading this page saw a shorter list than the model does, and
+                had no way to know.
+            */}
+            {(data?.runtimeProvided ?? []).length > 0 && (
+                <Card className="space-y-tight p-4" data-testid="agent-runtime-tools">
+                    <Heading level={3} className="text-sm">
+                        {t('agentDetail.tools.runtimeTitle')}
+                    </Heading>
+                    <p className="text-content-muted text-xs">
+                        {t('agentDetail.tools.runtimeBody')}
+                    </p>
+                    <ul className="space-y-compact">
+                        {(data?.runtimeProvided ?? []).map((rt) => (
+                            <li
+                                key={rt.name}
+                                data-testid={`runtime-tool-${rt.name}`}
+                                data-appears-when={rt.appearsWhen}
+                                className="space-y-tight"
+                            >
+                                <div className="flex items-center gap-tight">
+                                    <code className="text-content-default text-xs">{rt.name}</code>
+                                    {/*
+                                        THE CONDITION, as quiet inline text and
+                                        not a badge. `task` arrives on every run
+                                        and `activate_skill` only once a skill is
+                                        mounted, and that difference is why only
+                                        one of them follows something this product
+                                        declared — so it has to be legible.
+
+                                        A badge is the wrong weight for it, and
+                                        `badge-density` said so: this file was
+                                        already at its budget of four, and the
+                                        guard's prescription is the right call on
+                                        the merits rather than a constraint to
+                                        work around. The subject of the row is the
+                                        TOOL; the condition qualifies it. One loud
+                                        signal per row, secondaries in the chrome.
+                                    */}
+                                    <span className="text-content-subtle text-xs">
+                                        {rt.appearsWhen === 'always'
+                                            ? t('agentDetail.tools.runtimeAlways')
+                                            : t('agentDetail.tools.runtimeWhenSkills')}
+                                    </span>
+                                </div>
+                                {/* WHY IT IS NOT A HOLE, in the terms the
+                                    intersection is stated in. Rendered rather
+                                    than summarised: a reviewer checking this
+                                    page needs the sentence, not a reassuring
+                                    adjective. */}
+                                <p className="text-content-muted text-xs">{rt.boundedBy}</p>
+                            </li>
+                        ))}
+                    </ul>
+                </Card>
+            )}
 
             <ToolManifestPins refreshToken={refreshToken} />
         </div>

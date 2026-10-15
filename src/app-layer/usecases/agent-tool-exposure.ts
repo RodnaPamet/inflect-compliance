@@ -58,6 +58,11 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
+// PURE DATA, and that is why this import is safe here: `runtime-tools.ts`
+// holds no value import of `@flue/runtime`, which is ESM-only and would not
+// load in this Prisma-reaching graph. Same discipline as
+// `refused-capabilities.ts`.
+import { FLUE_RUNTIME_TOOLS } from '@/lib/agentic/flue/runtime-tools';
 import { AgentToolGrantSchema } from '../schemas/agent-registry.schemas';
 import type { RequestContext } from '../types';
 
@@ -190,6 +195,40 @@ export async function listAgentTools(ctx: RequestContext, agentId: string) {
                     requiredAutonomyFor(mcpToolCapabilityClass(name)),
                 ]),
             ) as Record<string, number>,
+            /**
+             * WHAT THE RUNTIME HANDS A RUN THAT NOBODY GRANTED (#3569).
+             *
+             * This list's whole claim is an intersection — `RegisteredAgentTool`
+             * allowlist ∩ API-key resource scopes ∩ autonomy ceiling, and a tool
+             * absent from it is unreachable however widely the credential is
+             * scoped. Measured, that claim is true of the tools THIS product
+             * supplies and silent about the ones the agent runtime supplies: a
+             * Flue run bound with `tools: []` still reaches the model with
+             * `task`, and with `activate_skill` once it mounts a skill.
+             *
+             * Silent is the problem this field fixes, and the fix is to SAY so
+             * rather than to change anything — the owner's decision of
+             * 2026-10-15. Neither tool widens reach today, each carries the
+             * sentence explaining why, and an operator asking what an agent can
+             * reach now gets the same list the model gets.
+             *
+             * REPORTED SEPARATELY from `granted` and `available`, never merged
+             * into them. A single list mixing the two would answer the question
+             * with a true set and a false implication: that the register
+             * decided every entry on it. The three fields answer three
+             * different questions — what was granted, what could be, and what
+             * arrives regardless.
+             *
+             * NOT conditioned on whether this agent has a Flue run today. The
+             * statement is about what a run OF THIS AGENT would be handed, and
+             * a field that appeared only after the first run would be absent
+             * exactly when somebody is deciding whether to allow one.
+             */
+            runtimeProvided: FLUE_RUNTIME_TOOLS.map((t) => ({
+                name: t.name,
+                appearsWhen: t.appearsWhen,
+                boundedBy: t.boundedBy,
+            })),
         };
     });
 }

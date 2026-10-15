@@ -56,6 +56,10 @@ import { start } from '@flue/runtime/node';
 
 import { InflectAgent } from '@/lib/agentic/flue/agent';
 import { bindRun, releaseRun, type FlueRunBinding } from '@/lib/agentic/flue/run-binding';
+import {
+    FLUE_RUNTIME_TOOLS,
+    runtimeToolNamesFor,
+} from '@/lib/agentic/flue/runtime-tools';
 
 /**
  * Two skill documents with DISTINCTIVE instruction text.
@@ -218,5 +222,44 @@ describe('the tools a run is handed, beyond the ones it was granted', () => {
         // follows what we mounted; the other does not follow anything we said.
         const ctx = await contextFor([DECLARED], 'run-tools-with-a-skill');
         expect((ctx.tools ?? []).map((t) => t.name).sort()).toEqual(['activate_skill', 'task']);
+    });
+
+    /*
+        ═══ THE DECLARATION IS CHECKED, NOT MERELY WRITTEN DOWN ═══
+
+        `FLUE_RUNTIME_TOOLS` is what the register reports to an operator asking
+        what an agent can reach (#3569, owner decision: report them). A list
+        that mirrored the runtime BY NAME would go stale the first time a
+        version added a third tool — and it would go stale SILENTLY, which is
+        the failure mode every hand-maintained mirror has.
+
+        So the two assertions above are re-made against the DECLARATION rather
+        than against literals, in both conditions. The literals stay as well:
+        together they say "the runtime sends exactly these" and "our list
+        predicts exactly that", and only the pair can tell a runtime change
+        from a drifted declaration.
+    */
+    it('the declared runtime-tool list matches what the runtime actually sends', async () => {
+        const withoutSkills = await contextFor([], 'run-tools-declared-none');
+        expect((withoutSkills.tools ?? []).map((t) => t.name).sort())
+            .toEqual(runtimeToolNamesFor({ skillsMounted: false }));
+
+        const withSkills = await contextFor([DECLARED], 'run-tools-declared-some');
+        expect((withSkills.tools ?? []).map((t) => t.name).sort())
+            .toEqual(runtimeToolNamesFor({ skillsMounted: true }));
+    });
+
+    it('every declared runtime tool says what bounds it', () => {
+        // The reporting surface renders `boundedBy`, so an empty one would
+        // publish a tool with no account of why it is not a hole. Asserted on
+        // substance rather than presence: a single word would satisfy a
+        // non-empty check.
+        for (const tool of FLUE_RUNTIME_TOOLS) {
+            expect(tool.boundedBy.length).toBeGreaterThan(80);
+        }
+        // And the conditions are the two the measurements above distinguish —
+        // a third value would mean a case here is not covering it.
+        expect(new Set(FLUE_RUNTIME_TOOLS.map((t) => t.appearsWhen)))
+            .toEqual(new Set(['always', 'when-skills-mounted']));
     });
 });
