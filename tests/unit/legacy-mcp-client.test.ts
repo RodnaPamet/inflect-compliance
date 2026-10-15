@@ -278,9 +278,18 @@ describe('1b client — every fault fails closed', () => {
      * which the control does not satisfy.
      *
      * NO SOCKET IS OPENED for the address cases — each is refused on inspection
-     * before connect, measured at 0-2 ms against the control's 66 ms. A hostname
-     * that only RESOLVES to a private address is a different check and lives in
+     * before connect, measured at 0-2 ms. A hostname that only RESOLVES to a
+     * private address is a different check and lives in
      * `legacy-mcp-provider.test.ts`.
+     *
+     * THE CONTROL IS THE ONE CASE HERE THAT USES THE SEAM (#3549), and the
+     * timing comparison this paragraph used to draw — 0-2 ms against the
+     * control's 66 ms — is what gave it away: those 66 ms were a real DNS
+     * lookup racing the control's own 1000 ms deadline, and on a slow runner
+     * the deadline won. The control's claim is about the MAPPING of a plain
+     * socket failure, so the failure is now injected. The six address cases
+     * keep the production path, because the composition with `safeFetch` is
+     * exactly what they are for.
      */
     it.each([
         ['IPv4 loopback', 'https://127.0.0.1/mcp'],
@@ -316,16 +325,66 @@ describe('1b client — every fault fails closed', () => {
     });
 
     it('CONTROL: a plain egress failure is indistinguishable by kind, so the kind alone is not the proof', async () => {
-        // An unresolvable public name. Nothing about it is private, yet it yields
-        // the same `kind` as every case above — which is exactly why those assert
-        // the message. If this control ever stops returning `ssrf-blocked`, the
-        // assertions above became stronger than they claim and should be revisited.
+        /*
+            ═══ THE SOCKET FAILURE IS INJECTED, NOT PROVOKED (#3549) ═══
+
+            This case used to call the real client against
+            `https://nonexistent-host-xyz-9281.example/mcp` and rely on DNS
+            failing inside its own 1000 ms deadline. It raced two clocks and
+            owned neither: on a loaded CI runner resolution took longer, the
+            deadline won, and the client returned `kind: 'timeout'` — which is
+            the correct answer to what actually happened.
+
+            A FLAKY CONTROL IS WORSE THAN A FLAKY ORDINARY CASE, which is why
+            this was worth fixing rather than re-running. Its own warning,
+            below, instructs a reader whose run goes red to go and WEAKEN the
+            sibling assertions. Firing because a timer won sends somebody
+            looking for a behaviour change in the egress layer that never
+            happened, and the remedy it recommends is the opposite of correct.
+
+            Nothing about the claim is about how fast DNS is. The claim is
+            about the MAPPING: a fault that is neither a policy refusal nor a
+            scheme refusal must come out as `egress failed`. So the fault is
+            handed in through the declared seam, as the exact error Node's
+            fetch throws for a name that does not resolve — `TypeError: fetch
+            failed` wrapping an `ENOTFOUND` cause. `wirePost` wraps it in
+            `WireEgressError` and `asLegacyError` reads the CAUSE, so
+            `mapEgressError` sees precisely what it would have seen from the
+            live call, and takes the arm it would have taken.
+
+            What the seam gives up is nothing this case ever had: a `.example`
+            name does not resolve, so `safeFetch`'s address policy was never
+            reached by it either. The composition WITH `safeFetch` stays proven
+            by the six address cases above, which are the ones that must not
+            use the seam.
+        */
+        let calls = 0;
         const res = await pullSnapshot({
             url: 'https://nonexistent-host-xyz-9281.example/mcp',
             token: TOKEN,
             requestTimeoutMs: 1_000,
             pullTimeoutMs: 5_000,
+            fetchImpl: () => {
+                calls += 1;
+                // Node's own shape for an unresolvable name: a bare
+                // `TypeError` whose message says nothing about addresses, with
+                // the resolver's error as the cause. Neither string matches
+                // the private-address arm's pattern, which is the whole reason
+                // this reaches the catch-all.
+                throw Object.assign(new TypeError('fetch failed'), {
+                    cause: new Error(
+                        'getaddrinfo ENOTFOUND nonexistent-host-xyz-9281.example',
+                    ),
+                });
+            },
         });
+
+        // POSITIVE CONTROL. Without it, "the client reported `egress failed`"
+        // is also satisfied by a client that never called out at all and
+        // failed somewhere earlier — the catch-all maps ANY unrecognised
+        // failure, so a refusal before the request would read identically.
+        expect(calls).toBe(1);
+
         // ASSERTED POSITIVELY since #3492, where it was two `not.toBe`s. A
         // negated assertion is satisfied by an empty or absent value as readily as
         // by the right one, so it cannot distinguish "the catch-all produced
@@ -335,6 +394,11 @@ describe('1b client — every fault fails closed', () => {
         // above say `address is not public`, the scheme case below says
         // `scheme not allowed`, and this one, which is neither a policy refusal
         // nor a scheme refusal, says `egress failed`.
+        //
+        // If this control ever stops returning `ssrf-blocked`, the assertions
+        // above became stronger than they claim and should be revisited — and
+        // since #3549 that sentence means what it says, because the only thing
+        // that can change the answer now is the mapping.
         expect({ complete: res.complete, kind: res.reason?.kind, message: res.reason?.message })
             .toEqual({
                 complete: false,
