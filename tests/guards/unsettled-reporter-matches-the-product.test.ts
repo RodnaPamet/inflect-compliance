@@ -384,18 +384,34 @@ describe('the alert policy can actually fire, and can see silence', () => {
 // ── 4. the contract file does not claim coverage it does not have ───────────
 
 describe('the deployed-contract file stays honest', () => {
-    it('does not record a deployed policy id for the unsettled metric yet', () => {
-        // The alert is NOT applied — applying it is an operator action (see
-        // infra/reporters/README.md). A contract file claiming otherwise is the
-        // exact failure #2842 is about: a claim of coverage that stops the next
-        // reader checking. When an operator applies it, they record the real id
-        // and this expectation is updated in the same diff.
+    it('records the real deployed policy id for the unsettled metric', () => {
+        // UPDATED 2026-10-15, in the diff that recorded the id — which is what
+        // the previous version of this test asked for in so many words: "when
+        // an operator applies it, they record the real id and this expectation
+        // is updated in the same diff."
+        //
+        // It had asserted `toBeNull()` on the stated ground that applying the
+        // alert is an operator action not yet taken. That became false without
+        // anything failing: the reporter was installed and the policy created,
+        // and neither the contract file nor infra/reporters/README.md was
+        // touched. Measured before changing anything here —
+        // `custom.googleapis.com/identity/write_unsettled` holds 5,558 points
+        // over 30 days, about one per five minutes, matching its timer, and the
+        // policy answers to that id; a positive control on an
+        // already-deployed metric (docker/container_health, 11 series / 112
+        // points in 2h) established the query shape first.
+        //
+        // So the file's old claim — "until both are done there is NO alert on
+        // an unsettled identity write" — was the inverse of the #2842 failure
+        // mode it was written to prevent: not a claim of coverage that does not
+        // exist, but a DENIAL of coverage that does, which would have had the
+        // next reader build a second alert beside the working one.
         //
         // PARSED, not grepped. A regex over the YAML passes on a line that
         // merely looks right; loading it means the assertion is about the value
         // the file actually carries.
         const entry = contractMetric(reporterMetricType());
-        expect(entry.deployed_policy_id).toBeNull();
+        expect(entry.deployed_policy_id).toBe('6353371817671167444');
     });
 
     it('keeps the reporter status consistent with the policy id', () => {

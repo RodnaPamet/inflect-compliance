@@ -1,0 +1,19 @@
+[Unit]
+Description=Run the overdue-work reporter every 5 minutes (#3558)
+
+[Timer]
+# 5 minutes, matching the shortest grace period it reports on (15 min for the
+# two 5-minute flushers). A finer resolution would buy nothing: nothing can
+# become overdue faster than its grace, and three reads a minute for a number
+# that moves on a quarter-hour scale is 4,320 database reads a day for no
+# additional information.
+#
+# It is also what the policy's alignment assumes: the absence arm fires after
+# 1800s, which is six consecutive missed runs rather than one slow one.
+OnBootSec=4min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=work-overdue-reporter.service
+
+[Install]
+WantedBy=timers.target

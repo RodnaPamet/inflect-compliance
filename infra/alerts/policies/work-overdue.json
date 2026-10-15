@@ -1,0 +1,60 @@
+{
+  "displayName": "inflect scheduled work is overdue — a job is not doing its job (#3558)",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "work has been overdue for 15 minutes",
+      "conditionThreshold": {
+        "filter": "metric.type=\"custom.googleapis.com/jobs/work_overdue\" AND resource.type=\"gce_instance\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0,
+        "duration": "900s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_MAX",
+            "crossSeriesReducer": "REDUCE_MAX",
+            "groupByFields": [
+              "metric.label.family"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "displayName": "overdue-work reporting stopped — absence is not health",
+      "conditionAbsent": {
+        "filter": "metric.type=\"custom.googleapis.com/jobs/work_overdue\" AND resource.type=\"gce_instance\"",
+        "duration": "1800s",
+        "trigger": {
+          "count": 1
+        },
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_COUNT",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ]
+      }
+    }
+  ],
+  "documentation": {
+    "mimeType": "text/markdown",
+    "content": "Scheduled work on the inflect-compliance VM is overdue: rows whose own\nscheduling column says they are late, grouped by family.\n\nWHY THIS EXISTS (#3558, caused by #3554). From 2026-10-07T09:09Z to\n2026-10-14T20:30Z, `control-test-scheduler` claimed each due plan, failed to\nenqueue the runner, rolled the claim back and retried — about 4,300 times, 24\nan hour, for 7 1/2 days. ZERO scheduled control tests ran. It was found by a\nhuman grepping logs for an unrelated reason.\n\nEvery signal that should have carried it worked: the failure counter was\nincremented AND error-logged on every attempt, the tick logged \"job completed\"\neach time (truthfully — having enqueued nothing), /api/readyz stayed green\nbecause the process was healthy and only the work failed, and a manual trigger\nworked because it passes no custom job id.\n\nWHAT TO DO. The journal entry for the firing run names which rows are late:\n\n    journalctl -u work-overdue-reporter.service -n 50\n\n| family | means |\n|---|---|\n| control_test_plan | an ACTIVE plan's nextRunAt is >15 min in the past. The scheduler is not claiming, or claims and cannot enqueue (#3554's shape). |\n| audit_outbox | PENDING entries with nextAttemptAt >15 min past. The audit flusher is not draining — compliance-relevant. |\n| notification_outbox | PENDING mail with sendAfter >30 min past. Nobody is being emailed. |\n\nGrace periods are 3x each flusher's cron cadence, so two consecutive missed\nruns plus margin are needed. A guard test derives them from SCHEDULED_JOBS and\nfails if a cadence change leaves a grace behind.\n\nTHE ABSENCE ARM IS NOT DECORATION. The reporter exits WITHOUT posting if any\nquery is unreadable, because an unreadable backlog is not an empty one —\nposting 0 on a failed read would be a confident all-clear. Sustained silence is\ntherefore a real condition and this policy pages on it.\n\nNOT COVERED: FAILED rows (work abandoned rather than not progressing), and the\n~25 other SCHEDULED_JOBS entries that write no row a reporter can read, because\n`runJob` persists no job-run history. That is the larger half of #3558.\n"
+  },
+  "enabled": true,
+  "notificationChannels": [
+    "projects/hazel-design-419410/notificationChannels/11199896282881593035"
+  ],
+  "alertStrategy": {
+    "autoClose": "1800s"
+  },
+  "userLabels": {
+    "issue": "3558",
+    "product": "inflect-compliance"
+  }
+}

@@ -1,0 +1,22 @@
+[Unit]
+Description=Report overdue scheduled work to GCP Monitoring (#3558)
+Documentation=https://github.com/RodnaPamet/inflect-compliance/issues/3558
+# Reads the database through the postgres CONTAINER, so docker must be up for
+# the number to mean anything. It deliberately does NOT require the app or the
+# worker: the entire point is that the signal survives the thing it watches
+# being broken — in #3554 the app and worker were healthy and only the WORK
+# failed, for 7½ days.
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/work-overdue-reporter.sh
+# A hung psql must not wedge the unit. If a read cannot complete the reporter
+# emits nothing, which is correct — the policy's absence arm turns sustained
+# silence into a page. A STUCK unit would stop the timer firing at all, so the
+# timeout is deliberately shorter than the timer interval.
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
