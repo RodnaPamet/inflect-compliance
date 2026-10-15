@@ -137,6 +137,39 @@ inflect.34-140-180-255.sslip.io {
 # hostname is public either way, and a real domain would quietly advertise "there
 # is an OrangeHRM here" against a name somebody cares about. A disposable fixture
 # gets a disposable name.
+# ── legacy-mcp-proving — the reference legacy-access server (#3578) ────────
+#
+# A FIXTURE, and internet-facing only because it has to be. `endpointUrl` on a
+# `legacy-mcp` connection is `publicOrigin`: HTTPS required at save time, and
+# `safeFetch` refusing private, loopback, link-local and metadata addresses at
+# use time — loopback and metadata however the tenant egress allowlist is
+# written. So `127.0.0.1` cannot be the endpoint, which is the same wall
+# `hrm-mcp` hit below and solved the same way.
+#
+# It serves the reference fixture's SEVEN SYNTHETIC accounts. That is what makes
+# this an acceptable public surface; a server over a real HR database would not
+# be, and is not what this is.
+#
+# Started only by `docker-compose.legacy-mcp-proving.yml`, which is an opt-in
+# overlay. If that overlay is down this block has nothing to proxy to and
+# answers 502 — which is the correct resting state for a fixture.
+#
+# TEARDOWN: delete this block, reload Caddy, stop the overlay.
+legacy-mcp-proving.34-140-180-255.sslip.io {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        -Server
+    }
+
+    # The wrapper fails CLOSED when `PROVING_TOKEN` is unset — it exits rather
+    # than serving anonymously — so an unauthenticated request never reaches the
+    # reference handler even if this block is up before the secret is in place.
+    reverse_proxy legacy-mcp-proving:8099
+}
+
 hrm-mcp.34-140-180-255.sslip.io {
     encode gzip zstd
 

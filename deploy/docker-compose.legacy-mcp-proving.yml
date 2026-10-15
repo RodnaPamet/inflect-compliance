@@ -1,0 +1,98 @@
+#
+# OPT-IN OVERLAY — a real socket in front of the `inflect-legacy-access/1`
+# reference server, so Phases 1–6 can be exercised for the first time.
+#
+# Usage (deliberate act, never part of the canonical deploy):
+#
+#   docker compose --env-file .env --env-file .env.prod \
+#     -f docker-compose.prod.yml \
+#     -f docker-compose.legacy-mcp-proving.yml up -d legacy-mcp-proving
+#
+# ── WHAT THIS IS FOR (#3578) ──────────────────────────────────────────
+#
+# The recertification pipeline's Phases 1–6 have never spoken to anything
+# over a network. The contract has exactly ONE implementation —
+# `tests/helpers/legacy-mcp-fake-server.ts` — and it says of itself that
+# it opens no port and is reached through an injected `fetch` that
+# "production code never passes". So the client has only ever been
+# exercised through a seam production does not use.
+#
+# This puts that same handler behind a socket, so `safeFetch`, address
+# resolution, TLS, the handshake, the manifest read and paging all run
+# against something real.
+#
+# ── WHAT IT PROVES, AND WHAT IT DOES NOT ──────────────────────────────
+#
+# PROVES the wire: whether our client can hold a session, page a snapshot
+# and persist it when the bytes cross a socket, through the real egress
+# rules.
+#
+# DOES NOT PROVE the contract against a real application. The rows are
+# the reference fixture's seven synthetic accounts. Implementing the
+# contract over a real HR database is separate, larger work, and the
+# operational-evidence appendix in
+# `docs/legacy-access-recertification-phases.md` must keep saying so.
+#
+# ── WHY AN OVERLAY AND NOT docker-compose.prod.yml ────────────────────
+#
+# The same argument `docker-compose.orangehrm-lab.yml` makes, which
+# applies here too: this is a FIXTURE. It has no business starting
+# because somebody ran the canonical deploy. Splitting it out means the
+# thing we push is the thing that runs, and enabling it stays a
+# deliberate act by a person who knows what it is.
+#
+# ── WHY IT IS INTERNET-FACING AT ALL ──────────────────────────────────
+#
+# Not by preference. `endpointUrl` on a `legacy-mcp` connection is
+# classified `publicOrigin`: HTTPS is required and validated at save
+# time, and `safeFetch` refuses private, loopback, link-local and
+# metadata addresses at use time. Loopback and metadata stay refused
+# however the tenant egress allowlist is written, so `127.0.0.1` is
+# impossible by construction.
+#
+# `hrm-mcp` reached the same conclusion for the same reason (#2861): the
+# obvious internal shortcut "is refused by IC before a socket opens".
+# This follows that pattern exactly — no published port, reachable only
+# through Caddy by service name.
+#
+# It serves SYNTHETIC rows, which is why this is a far lower-stakes
+# public surface than a server over a real HR database would be.
+#
+# ── PRECONDITIONS ─────────────────────────────────────────────────────
+#   [ ] `LEGACY_MCP_PROVING_TOKEN` set in /opt/inflect/.env.prod
+#   [ ] the bundle at /opt/inflect/legacy-mcp-proving/app.mjs
+#   [ ] the Caddy vhost present (see deploy/caddy/Caddyfile)
+#
+# ── TEARDOWN ──────────────────────────────────────────────────────────
+#   docker compose ... down legacy-mcp-proving
+#   remove the Caddy vhost and reload
+#   delete the connection row it was created for
+#
+services:
+  legacy-mcp-proving:
+    image: node:24-alpine
+    restart: unless-stopped
+    working_dir: /srv
+    command: ["node", "/srv/app.mjs"]
+    environment:
+      PROVING_PORT: "8099"
+      # Fails CLOSED when unset — the wrapper exits rather than serving
+      # anonymously, and `:?` makes that a start-time error instead of a
+      # runtime surprise. The reference server itself ignores
+      # `Authorization` entirely, which is correct of a reference (the
+      # contract leaves authentication to the operator) and is exactly
+      # why the wrapper has to enforce it before this listens publicly.
+      PROVING_TOKEN: ${LEGACY_MCP_PROVING_TOKEN:?LEGACY_MCP_PROVING_TOKEN is required}
+    volumes:
+      # DIRECTORY, not the file — a single-file bind mount binds the
+      # inode, so any editor that writes-and-renames leaves the container
+      # on the old content. The same lesson the Caddyfile mount carries.
+      - ./legacy-mcp-proving:/srv:ro
+    healthcheck:
+      # An unauthenticated request must be refused, so a 401 IS health
+      # here: it proves the process is up AND that the token gate is in
+      # front of the handler. A 200 would mean the gate is missing.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8099/').then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
