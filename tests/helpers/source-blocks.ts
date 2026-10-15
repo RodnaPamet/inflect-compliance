@@ -986,24 +986,58 @@ export function braceBlockAfter(src: string, anchorPattern: string): string {
  * against an empty string.
  */
 export function callExpressionOf(src: string, callee: string): string {
+    // THE FIRST call, which is what a guard wants when a module has one — and
+    // a trap when it gains a second. `allCallExpressionsOf` is the sweep, and
+    // this is defined in terms of it so there is ONE balanced-paren parser
+    // rather than two that can disagree about where a call ends.
+    const all = allCallExpressionsOf(src, callee);
+    if (all.length === 0) throw new Error(`call expression not found: ${callee}(`);
+    return all[0];
+}
+
+/**
+ * EVERY call to `callee`, in source order.
+ *
+ * Added because the single-call form is a citation that drifts: a guard
+ * reading "the `recordStep` call" was reading the MODEL_CALL write while the
+ * Flue engine had one, and silently switched to a delegation write when #3473
+ * added one above it. A claim that should hold of every call has to be asked
+ * of every call.
+ *
+ * Returns the text with COMMENTS MASKED, like the single form — so a sentence
+ * in a docblock inside a call cannot satisfy or trip an assertion about it.
+ */
+export function allCallExpressionsOf(src: string, callee: string): string[] {
     const code = maskNonCode(src);
     const text = maskComments(src);
-    const start = code.search(new RegExp(`\\b${callee}\\s*\\(`));
-    if (start < 0) throw new Error(`call expression not found: ${callee}(`);
+    const finder = new RegExp(`\\b${callee}\\s*\\(`, 'g');
+    const out: string[] = [];
 
-    let depth = 0;
-    let seenOpen = false;
-
-    for (let i = start; i < code.length; i++) {
-        const ch = code[i];
-
-        if (ch === '(') {
-            depth++;
-            seenOpen = true;
-        } else if (ch === ')') {
-            depth--;
-            if (seenOpen && depth === 0) return text.slice(start, i + 1);
+    let match: RegExpExecArray | null;
+    while ((match = finder.exec(code)) !== null) {
+        const start = match.index;
+        let depth = 0;
+        let seenOpen = false;
+        let end = -1;
+        for (let i = start; i < code.length; i++) {
+            const ch = code[i];
+            if (ch === '(') {
+                depth++;
+                seenOpen = true;
+            } else if (ch === ')') {
+                depth--;
+                if (seenOpen && depth === 0) {
+                    end = i;
+                    break;
+                }
+            }
         }
+        if (end < 0) throw new Error(`unterminated call expression: ${callee}(`);
+        out.push(text.slice(start, end + 1));
+        // RESUME AFTER THIS CALL, not after its opening paren — a nested call
+        // to the same callee would otherwise be returned twice, once on its
+        // own and once inside its parent.
+        finder.lastIndex = end + 1;
     }
-    throw new Error(`unterminated call expression: ${callee}(`);
+    return out;
 }

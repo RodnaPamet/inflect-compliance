@@ -8581,6 +8581,19 @@
         "FLUE": "Flue engine"
       },
       "detail": {
+        "delegation": {
+          "title": "Delegated to specialists",
+          "body": "This run handed work to a subagent. A specialist gets a subset of what the run itself may reach — never more — and its reads are recorded below as the run's own steps, which is how they are charged to it.",
+          "stepsClaimed": "{count} step(s) between",
+          "stepsUnknown": "Steps not attributable",
+          "stepsUnknownWhy": "This delegation recorded no start position, so which steps were the specialist's cannot be said.",
+          "tokens": "{count} tokens",
+          "tokensUnknown": "Tokens unreported",
+          "refused": "Answer refused by the output guard",
+          "accepted": "Answer accepted",
+          "overlapping": "Ran at the same time as another delegation, so the steps below are claimed by both and these figures do not sum to the run's total.",
+          "stepBadge": "via {agents}"
+        },
         "crumbAgents": "Agents",
         "loadingAria": "Loading run detail",
         "emptyTitle": "No steps recorded",

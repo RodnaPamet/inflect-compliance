@@ -12,6 +12,9 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
+import { Heading } from '@/components/ui/typography';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { delegationSpans, delegatesClaiming } from '@/lib/agentic/delegation-spans';
 import type { RunStepFeedRow } from '@/lib/agentic/run-step-projection';
 
 /**
@@ -259,6 +262,15 @@ export function AgentRunDetailClient({
     // arriving from a link wants. Defaulting to step 1 would emphasise a step
     // nobody asked about.
     const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
+    // THE DELEGATIONS, grouped by the rule in `delegation-spans` (#3473 part
+    // 3). Derived rather than fetched: the steps already carry everything —
+    // each delegation marker holds its specialist and its span's lower bound,
+    // and the rule is pure so it is unit-tested without a timeline.
+    //
+    // Not memoised. It is a filter and a comparison over one page of steps,
+    // and `useMemo` here would cost a dependency nobody re-reads for an
+    // allocation nobody measured.
+    const spans = delegationSpans(steps);
 
     return (
         <EntityDetailLayout
@@ -342,6 +354,94 @@ export function AgentRunDetailClient({
                     </p>
                 )}
 
+                {/* ── WHAT THIS RUN DELEGATED (#3473 part 3) ──────────────
+                    Rendered ABOVE the timeline and only when there is
+                    something to say: a run that delegated nothing shows
+                    nothing, which is every run until a workflow uses a
+                    specialist.
+
+                    The steps a specialist produced are the run's OWN rows
+                    further down — a delegate runs the parent's tool objects,
+                    so its reads land in the parent's ledger and are charged to
+                    it. The span is the only thing that says whose work they
+                    were, which is why this section exists at all. */}
+                {spans.length > 0 && (
+                    <section
+                        className={cn(cardVariants({ density: 'comfortable' }), 'space-y-tight')}
+                        data-testid="run-delegations"
+                    >
+                        <Heading level={2} className="text-sm">
+                            {t('runs.detail.delegation.title')}
+                        </Heading>
+                        <p className="max-w-prose text-xs text-content-muted">
+                            {t('runs.detail.delegation.body')}
+                        </p>
+                        <ul className="space-y-compact">
+                            {spans.map((span) => (
+                                <li
+                                    key={span.taskId}
+                                    data-testid={`delegation-${span.agent}`}
+                                    data-overlapping={span.overlapping ? 'true' : undefined}
+                                    className="space-y-tight"
+                                >
+                                    <div className="flex flex-wrap items-center gap-tight">
+                                        <code className="text-xs text-content-emphasis">
+                                            {span.agent}
+                                        </code>
+                                        {/* THE OUTCOME, from the marker's own
+                                            status — the one thing a reader
+                                            cannot infer from the delegation
+                                            having happened. */}
+                                        <StatusBadge
+                                            variant={
+                                                span.marker.status === 'FAILED' ? 'error' : 'success'
+                                            }
+                                        >
+                                            {span.marker.status === 'FAILED'
+                                                ? t('runs.detail.delegation.refused')
+                                                : t('runs.detail.delegation.accepted')}
+                                        </StatusBadge>
+                                    </div>
+                                    {/* STEPS AND TOKENS, each able to say it
+                                        does not know: an unbounded span claims
+                                        no steps, and a span whose steps
+                                        reported no usage is not a span that
+                                        spent nothing. */}
+                                    <p className="text-xs text-content-subtle">
+                                        {span.fromSeq === null
+                                            ? t('runs.detail.delegation.stepsUnknown')
+                                            : t('runs.detail.delegation.stepsClaimed', {
+                                                count: span.steps.length,
+                                            })}
+                                        {' · '}
+                                        {span.costTokens === null
+                                            ? t('runs.detail.delegation.tokensUnknown')
+                                            : t('runs.detail.delegation.tokens', {
+                                                count: span.costTokens,
+                                            })}
+                                    </p>
+                                    {span.fromSeq === null && (
+                                        <p className="text-xs text-content-subtle">
+                                            {t('runs.detail.delegation.stepsUnknownWhy')}
+                                        </p>
+                                    )}
+                                    {/* SAID, not implied. Interleaved
+                                        delegations share steps, so these
+                                        figures do not sum to the run's total,
+                                        and a reader comparing them with the
+                                        header would otherwise conclude the
+                                        arithmetic is broken. */}
+                                    {span.overlapping && (
+                                        <InlineNotice variant="info">
+                                            {t('runs.detail.delegation.overlapping')}
+                                        </InlineNotice>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                )}
+
                 {steps.length === 0 ? (
                     <EmptyState
                         title={t('runs.detail.emptyTitle')}
@@ -370,11 +470,30 @@ export function AgentRunDetailClient({
                                 // The selection as a FACT a test can read, not a
                                 // Tailwind ring string a redesign may reword.
                                 data-selected={s.seq === selectedSeq ? 'true' : undefined}
+                                // WHICH DELEGATE PRODUCED IT, as a fact too
+                                // (#3473 part 3). Comma-joined because a step
+                                // inside two overlapping delegations belongs to
+                                // both, and naming one would be a guess.
+                                data-delegates={
+                                    delegatesClaiming(spans, s).join(',') || undefined
+                                }
                             >
                                 <div className="flex flex-wrap items-center gap-tight">
                                     <span className="text-xs tabular-nums text-content-subtle">
                                         {t('runs.detail.seq', { seq: s.seq + 1 })}
                                     </span>
+                                    {/* The specialist, ON the step, so a reader
+                                        scanning the timeline does not have to
+                                        hold the span boundaries in their head.
+                                        Quiet: the step's own status and kind are
+                                        the louder signals. */}
+                                    {delegatesClaiming(spans, s).length > 0 && (
+                                        <span className="text-xs text-content-subtle">
+                                            {t('runs.detail.delegation.stepBadge', {
+                                                agents: delegatesClaiming(spans, s).join(', '),
+                                            })}
+                                        </span>
+                                    )}
                                     <StatusBadge variant={STEP_STATUS_VARIANT[s.status] ?? 'neutral'}>
                                         {s.status}
                                     </StatusBadge>

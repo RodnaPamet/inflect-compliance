@@ -152,6 +152,72 @@ export interface FlueRunBinding {
      * is what this guards.
      */
     guardDelegateOutput?: (text: string, taskId: string | undefined) => Promise<void>;
+
+    /**
+     * RECORD A COMPLETED DELEGATION IN THE STEP LEDGER (#3473, part 3).
+     *
+     * A callback for the same reason `guardDelegateOutput` is one: the ledger
+     * write reaches Prisma, which the interceptor's ESM graph cannot load. The
+     * driver owns the sequence counter, so it allocates the `seq` as well —
+     * the interceptor supplies only what it knows.
+     *
+     * WHAT IT KNOWS IS ENOUGH, and that was the finding that shaped this. The
+     * `task` result's `details` carries `agent` — the specialist's name,
+     * supplied by the runtime — alongside `taskId` and `session`. So no render
+     * callback is needed to report the name, which is as well: a delegate's
+     * render gets `useInitialData() === undefined` and has no task identity to
+     * key a report to.
+     *
+     * A TRAILING MARKER, not a leading one. The seq is allocated when the
+     * delegation COMPLETES, so the step lands after the delegate's own steps
+     * rather than before them. That is the better end of the span to mark: the
+     * step carries the outcome, and the group a reader wants is "the steps back
+     * to the previous non-delegation step".
+     */
+    /**
+     * The ledger counter's CURRENT value, without advancing it (#3473 part 3).
+     *
+     * Read by the gate before `next()`, so a delegation's step span has an
+     * exact lower bound: every step the delegate goes on to record takes a seq
+     * from this same counter, so they all sit at or above it.
+     *
+     * A READER, not an allocator. `nextSeq()` is the driver's and must stay so
+     * — a second allocator would hand two steps the same seq.
+     */
+    currentLedgerSeq?: () => number;
+
+    onDelegationComplete?: (delegation: {
+        /** The specialist the model selected, from the runtime's own result. */
+        agent: string;
+        taskId: string;
+        /**
+         * Did the answer survive the guard? `false` when
+         * `guardDelegateOutput` refused it, which is a different outcome from
+         * a delegate that failed on its own.
+         */
+        answerAccepted: boolean;
+        /**
+         * The seq the ledger stood at when this delegation STARTED, so the
+         * span is `[fromSeq, this step's seq)`.
+         *
+         * EXACT EVEN UNDER CONCURRENT FAN-OUT, and that is a property of where
+         * it is captured rather than of any bookkeeping. The gate reads it
+         * before `next()` in the SAME interceptor frame that later records the
+         * completion, so each delegation's bound lives in its own local — two
+         * delegations in one turn are two frames and cannot read each other's.
+         *
+         * An earlier draft kept this in a module map keyed by run and turn,
+         * which would have been last-write-wins for exactly the concurrent
+         * case the fan-out cap permits. Spans may still OVERLAP in the ledger
+         * when two delegations run at once; each one's bounds are right, and
+         * overlap is an honest thing for a timeline to show.
+         *
+         * `null` when the driver supplied no reader — a run bound by a test or
+         * a caller predating delegation. The marker is still recorded; only the
+         * grouping is absent, which is the right way for this to degrade.
+         */
+        fromSeq: number | null;
+    }) => Promise<void>;
 }
 
 const BINDINGS = new Map<string, FlueRunBinding>();

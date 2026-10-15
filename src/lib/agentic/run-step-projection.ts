@@ -70,6 +70,24 @@ export interface RunStepFeedRow {
      */
     decisionDigest: string | null;
     /**
+     * WHEN THIS STEP IS A DELEGATION, what it delegated (#3473 part 3).
+     *
+     * Null for every other step, which is almost all of them — a run that
+     * never delegated carries none at all.
+     *
+     * READ FROM `inputJson`, which is the only place the specialist's name
+     * survives: `WorkflowStep` has no label column, `recordStep`'s `label`
+     * reaches the audit row's `detailsJson`, and `stepDeclaration` below
+     * derives this row's `label` from the workflow DEFINITION, which knows
+     * nothing about delegates.
+     *
+     * `fromSeq` is the span's lower bound and this step's own `seq` is the
+     * upper, so the steps the delegate produced are the ones between. Null
+     * when the driver supplied no counter — the delegation is still reported,
+     * only ungrouped.
+     */
+    delegation: { agent: string; taskId: string; fromSeq: number | null } | null;
+    /**
      * The proposals this step queued. Possibly several — one `buildItems` can
      * produce many — which is why `AgentProposal.stepSeq` carries no unique
      * constraint.
@@ -133,6 +151,46 @@ export function decisionDigestOf(inputJson: string | null): string | null {
     } catch {
         // A malformed blob is a display problem for the payload panel, not a
         // reason to fail the page.
+        return null;
+    }
+}
+
+/**
+ * WHAT A DELEGATION STEP DELEGATED, or null (#3473 part 3).
+ *
+ * Narrowed by KIND AND TOOL before the parse, not by the parse succeeding. A
+ * step whose `inputJson` happens to carry an `agent` field — a tool called
+ * with an argument of that name — is not a delegation, and deciding by shape
+ * alone would promote one.
+ *
+ * The parse is guarded for the reason the digest's is: a malformed blob costs
+ * this row's grouping, not the page.
+ */
+export function delegationOf(
+    kind: string,
+    tool: string | null,
+    inputJson: string | null,
+): { agent: string; taskId: string; fromSeq: number | null } | null {
+    if (kind !== 'TOOL_CALL' || tool !== 'task' || !inputJson) return null;
+    try {
+        const parsed: unknown = JSON.parse(inputJson);
+        if (!parsed || typeof parsed !== 'object') return null;
+        const { agent, taskId, fromSeq } = parsed as {
+            agent?: unknown;
+            taskId?: unknown;
+            fromSeq?: unknown;
+        };
+        // BOTH REQUIRED. A delegation that cannot name its specialist or its
+        // task is not reportable — the driver writes neither without the
+        // other, so an absence here means a row this build did not write.
+        if (typeof agent !== 'string' || agent === '') return null;
+        if (typeof taskId !== 'string' || taskId === '') return null;
+        return {
+            agent,
+            taskId,
+            fromSeq: typeof fromSeq === 'number' && Number.isFinite(fromSeq) ? fromSeq : null,
+        };
+    } catch {
         return null;
     }
 }
@@ -212,6 +270,12 @@ export function projectRunSteps(
             // A GUARDED parse, and only for this one field — so a malformed
             // blob costs the LINK and not the page.
             decisionDigest: decisionDigestOf(s.inputJson),
+            // A SECOND guarded parse of the same column, and kept separate
+            // from the digest's rather than folded into one pass. They answer
+            // different questions about different step kinds, and a combined
+            // reader would have to decide what a blob carrying one and not the
+            // other means — which is "both, independently".
+            delegation: delegationOf(s.kind, tool, s.inputJson),
             // WHAT THIS STEP QUEUED. The other half of the backlink: a
             // proposal names its step, and a step names its proposals, so a
             // reviewer can travel either way between the write and the

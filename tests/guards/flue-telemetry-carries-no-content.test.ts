@@ -172,10 +172,31 @@ describe('the production interceptor calls the delegation gate', () => {
         // changed claim, so it is retargeted and widened rather than loosened.
         // Matching each NAME in the import list is what keeps it from being
         // satisfied by a line that imports only one of them.
-        expect(telemetry).toContain('gateDelegation(operation, ctx)');
+        // MATCHED ON THE CALLEE, not on an argument list. The needle was
+        // `gateDelegation(operation, ctx)` and went red when the gate gained a
+        // third argument and wrapped across lines — the third time a citation
+        // in this block has drifted while its claim held. The claim is "the
+        // interceptor calls both halves", and a callee is what says that.
+        expect(telemetry).toMatch(/\bgateDelegation\s*\(/);
         expect(telemetry).toContain('await guardDelegateResult(');
         expect(telemetry).toMatch(/import \{[^}]*\bgateDelegation\b[^}]*\} from '\.\/delegation-gate'/);
         expect(telemetry).toMatch(/import \{[^}]*\bguardDelegateResult\b[^}]*\} from '\.\/delegation-gate'/);
+    });
+
+    it('passes BOTH binding hooks — the guard and the ledger recorder', () => {
+        // #3473 part 3. The behavioural suites build their OWN interceptor,
+        // reproducing this composition rather than importing it, so they cannot
+        // see a hook that production stops passing.
+        //
+        // MEASURED: replacing `binding?.onDelegationComplete` with `undefined`
+        // left all 35 of those assertions green while every delegation went
+        // unrecorded. This is the only place that catches it.
+        expect(telemetry).toContain('binding?.guardDelegateOutput');
+        expect(telemetry).toContain('binding?.onDelegationComplete');
+        // READ FROM ONE BINDING LOOKUP, not two. Two would be two reads of a
+        // map that a release between them could have emptied, and the pair
+        // would then disagree about whether this run has hooks at all.
+        expect((telemetry.match(/readRunBinding\(/g) ?? []).length).toBe(1);
     });
 
     it('scans the answer AFTER `next()`, which is the only place the answer exists', () => {
@@ -194,7 +215,7 @@ describe('the production interceptor calls the delegation gate', () => {
         // happened. Asserted on ORDER rather than presence, because both lines
         // are present either way and only one of the two arrangements refuses
         // anything.
-        const gateAt = telemetry.indexOf('gateDelegation(operation, ctx)');
+        const gateAt = telemetry.search(/\bgateDelegation\s*\(/);
         const nextAt = telemetry.indexOf('await next()');
         expect(gateAt).toBeGreaterThan(-1);
         expect(nextAt).toBeGreaterThan(-1);

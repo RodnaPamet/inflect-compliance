@@ -111,6 +111,9 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         inputJson: null,
         outputJson: null,
         decisionDigest: null,
+        // #3473 part 3 — null for every step that is not a delegation, which
+        // is every step in these fixtures.
+        delegation: null,
         proposals: [],
         ...over,
     };
@@ -789,3 +792,125 @@ describe('the timeline scrubber', () => {
         expect(screen.queryByTestId('run-scrubber')).toBeNull();
     });
 });
+
+/*
+    ═══ WHAT THIS RUN DELEGATED (#3473 part 3) ═══
+
+    The owner's decision was to group a delegate's steps by SEQUENCE, with a
+    delegation step marking the span. `tests/unit/agentic/delegation-spans` owns
+    the rule; this owns what a reader is actually told.
+
+    THE CLAIM THAT MATTERS IS THE ONE ABOUT ATTRIBUTION. The steps in a span
+    are the run's OWN rows — a delegate runs the parent's tool objects, so its
+    reads land in the parent's ledger and are charged to it. So the page must
+    say which steps were a specialist's without implying the run did not do
+    them, and must not claim a precision the ledger lacks when two delegations
+    interleave.
+*/
+describe('the delegation section', () => {
+    const delegation = (
+        agent: string,
+        fromSeq: number | null,
+        over: Partial<RunStepRow> = {},
+    ): RunStepRow =>
+        step({
+            kind: 'TOOL_CALL',
+            tool: 'task',
+            status: 'DONE',
+            delegation: { agent, taskId: `task_${agent}`, fromSeq },
+            ...over,
+        });
+
+    it('is ABSENT for a run that delegated nothing', () => {
+        // Every run until a workflow uses a specialist. A heading over an empty
+        // list would tell an operator to look for something that is not there.
+        renderDetail([step({ seq: 0, kind: 'READ' }), step({ seq: 1, kind: 'SYNTHESIS' })]);
+        expect(screen.queryByTestId('run-delegations')).toBeNull();
+    });
+
+    it('names the specialist, the step count and the token rollup', () => {
+        renderDetail([
+            step({ seq: 0, kind: 'READ', costTokens: 10 }),
+            step({ seq: 1, kind: 'READ', costTokens: 100 }),
+            step({ seq: 2, kind: 'READ', costTokens: 200 }),
+            delegation('evidence_assessor', 0, { seq: 3 }),
+            step({ seq: 4, kind: 'SYNTHESIS', costTokens: 20 }),
+        ]);
+        const card = screen.getByTestId('delegation-evidence_assessor');
+        expect(card).toBeInTheDocument();
+        // TWO steps between the bounds, and 300 tokens — the parent's 10 and 20
+        // are its own, and a rollup that swept them would make the specialist
+        // look more expensive than it was.
+        expect(card).toHaveTextContent('2 step(s) between');
+        expect(card).toHaveTextContent('300 tokens');
+    });
+
+    it('says the answer was REFUSED when the guard blocked it', () => {
+        // The one outcome a reader cannot infer from the delegation existing.
+        renderDetail([
+            step({ seq: 0, kind: 'READ' }),
+            delegation('risk_analyst', 0, { seq: 1, status: 'FAILED' }),
+        ]);
+        const card = screen.getByTestId('delegation-risk_analyst');
+        expect(card).toHaveTextContent(/refused/i);
+        expect(card).not.toHaveTextContent(/Answer accepted/i);
+    });
+
+    it('says it cannot attribute steps when no bound was recorded', () => {
+        // `fromSeq` is null for a run bound by a caller predating delegation.
+        // The delegation is still listed — it happened — and the page says what
+        // it cannot say rather than showing "0 steps", which reads as a
+        // specialist that did nothing.
+        renderDetail([
+            step({ seq: 0, kind: 'READ', costTokens: 9 }),
+            delegation('policy_drafter', null, { seq: 1 }),
+        ]);
+        const card = screen.getByTestId('delegation-policy_drafter');
+        expect(card).toHaveTextContent(/not attributable/i);
+        expect(card).not.toHaveTextContent('0 step(s)');
+        // AND IT CLAIMS NO TOKENS. An unbounded span sweeping earlier steps
+        // would report the whole run's spend as one delegate's.
+        expect(card).toHaveTextContent(/unreported/i);
+    });
+
+    it('warns when two delegations overlap, and names BOTH on a shared step', () => {
+        // Concurrent fan-out. Each span's bounds are exact; their ranges are
+        // not disjoint, and a step inside both belongs to both as far as the
+        // ledger can say. The notice exists because the two rollups then do not
+        // sum to the run's total — a reader comparing them with the header
+        // would otherwise conclude the arithmetic is broken.
+        renderDetail([
+            step({ seq: 0, kind: 'READ' }),
+            step({ seq: 1, kind: 'READ', costTokens: 40 }),
+            delegation('risk_analyst', 0, { seq: 2 }),
+            delegation('vendor_reviewer', 0, { seq: 3 }),
+        ]);
+        expect(screen.getByTestId('delegation-risk_analyst'))
+            .toHaveAttribute('data-overlapping', 'true');
+        expect(screen.getAllByText(/do not sum to the run/i).length).toBeGreaterThan(0);
+
+        // The shared step names both, comma-joined — picking one would be a
+        // guess, and on a governance surface the wrong specialist is the error
+        // that matters.
+        const shared = document.getElementById('step-1');
+        expect(shared).toHaveAttribute('data-delegates', 'risk_analyst,vendor_reviewer');
+    });
+
+    it('marks a delegated step and leaves the parent\'s own unmarked', () => {
+        renderDetail([
+            step({ seq: 0, kind: 'READ' }),
+            step({ seq: 1, kind: 'READ' }),
+            delegation('risk_analyst', 0, { seq: 2 }),
+            step({ seq: 3, kind: 'SYNTHESIS' }),
+        ]);
+        expect(document.getElementById('step-1'))
+            .toHaveAttribute('data-delegates', 'risk_analyst');
+        // The parent's last step before delegating, and its first after, are
+        // ITS OWN — strict bounds, so neither is claimed.
+        expect(document.getElementById('step-0')).not.toHaveAttribute('data-delegates');
+        expect(document.getElementById('step-3')).not.toHaveAttribute('data-delegates');
+        // And the marker itself is not its own delegate's work.
+        expect(document.getElementById('step-2')).not.toHaveAttribute('data-delegates');
+    });
+});
+

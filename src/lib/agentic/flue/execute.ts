@@ -28,7 +28,7 @@ import { refusalMessage } from './driver-plan';
 import { resolveSkillsFor } from './skills/resolve';
 import { bindRun, releaseRun } from './run-binding';
 import { readFanOutCap } from '@/lib/agentic/subagent-fanout-policy';
-import { releaseDelegationCounts } from './delegation-gate';
+import { releaseDelegationCounts, DELEGATION_TOOL_NAME } from './delegation-gate';
 import { resolveKillState, killRefusalMessage, KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { ensureFlueRuntime } from './runtime-start';
@@ -503,6 +503,53 @@ export async function executeFlueRun(
         // settles the run `AWAITING_APPROVAL`.
         guardDelegateOutput: (text, taskId) =>
             guardDelegateAnswer(ctx, text, taskId, noteVerdict),
+        // THE DELEGATION, IN THE LEDGER (#3473 part 3).
+        //
+        // The seq is allocated HERE, from the same counter every other step
+        // takes — which is what makes the ordering meaningful: the delegate's
+        // own steps were recorded through the parent's `wrapForLedger` while
+        // the delegation was in flight, so they hold lower seqs and this step
+        // closes the span.
+        //
+        // `agent` comes from the runtime's own result `details`, not from our
+        // bookkeeping. `toolCalled: 'task'` because that is the tool the model
+        // called; the specialist is the LABEL, which is what the timeline
+        // shows and what the grouping keys on.
+        // THE COUNTER, read-only. The gate takes the span's lower bound from
+        // it before `next()`; only the driver allocates.
+        currentLedgerSeq: () => seq,
+        onDelegationComplete: async (d) => {
+            await recordStep(ctx, runId, seq++, 'TOOL_CALL', {
+                toolCalled: DELEGATION_TOOL_NAME,
+                status: d.answerAccepted ? 'DONE' : 'FAILED',
+                label: d.agent,
+                // THE TASK ID AND THE OUTCOME, never the answer. The delegate's
+                // text is model output composed from tenant reads, and this
+                // column is plaintext — `no-raw-prompt-logging` is the guard
+                // that cares. The answer reached the parent's context and was
+                // scanned on the way; it is not evidence this row needs to
+                // carry a second time.
+                // `agent` IS THE ONLY PLACE THE SPECIALIST SURVIVES for the
+                // timeline. `rec.label` reaches the AUDIT row's `detailsJson`
+                // and nothing else — `WorkflowStep` has no label column, and
+                // `run-step-projection` derives its `label` from the workflow
+                // definition, which knows nothing about delegates. So the name
+                // travels in `inputJson`, which the projection already parses
+                // (guardedly) for the Art 12 digest.
+                //
+                // `fromSeq` is the span's lower bound; this step's own seq is
+                // the upper. Together they say which steps the delegate
+                // produced.
+                input: { agent: d.agent, taskId: d.taskId, fromSeq: d.fromSeq },
+                ...(d.answerAccepted
+                    ? {}
+                    : {
+                        // A REFUSED answer is the one outcome a reader cannot
+                        // infer from the row's existence, so it is stated.
+                        output: { refused: 'ai_guard_blocked' },
+                    }),
+            });
+        },
     });
 
     try {
