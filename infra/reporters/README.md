@@ -37,7 +37,23 @@ the same day or the two silently diverge again.
 | reporter | metric | timer | status |
 | --- | --- | --- | --- |
 | `container-health-reporter.sh` | `docker/container_health`, `host/disk_percent_used` | 60s | **deployed** |
-| `identity-unsettled-reporter.sh` | `identity/write_unsettled` | 5m | **not yet applied** |
+| `identity-unsettled-reporter.sh` | `identity/write_unsettled` | 5m | **deployed** |
+| `work-overdue-reporter.sh` | `jobs/work_overdue` | 5m | **deployed** 2026-10-15, policy `9571974332933407186` |
+
+### The identity row said "not yet applied" until 2026-10-15, and was wrong
+
+Corrected on evidence, not on recollection: `custom.googleapis.com/identity/write_unsettled`
+holds **5,558 points over 30 days** — about one per five minutes, matching its
+timer — and its alert policy is live as `6353371817671167444`. A positive
+control (`docker/container_health`: 11 series, 112 points in a 2h window)
+established that the query shape was sound before either figure was believed.
+
+So the reporter was installed and the policy created, and neither this table nor
+`infra/alerts/gcp-custom-metrics.yml` was updated — **exactly the drift this
+file warns about two paragraphs above.** Worth noting what it cost: it is why
+`gcp-custom-metrics.yml` still claimed "Until both are done there is NO alert on
+an unsettled identity write", which would have led the next reader to build an
+alert that already existed.
 
 ## The shape every reporter follows
 
