@@ -38,7 +38,7 @@
  * authored.
  */
 
-import { buildSystemContext } from '@/app-layer/context-system';
+import { buildDelegatedJobContext, buildSystemContext } from '@/app-layer/context-system';
 import {
     testConnectionCredentials,
     upsertIntegrationConnection,
@@ -46,6 +46,9 @@ import {
 import { saveLegacyAccessMapping } from '@/app-layer/usecases/legacy-access-mapping';
 import { requestLegacyAccessPull } from '@/app-layer/usecases/legacy-access-pull';
 import { requestLegacyReconcile } from '@/app-layer/usecases/legacy-reconcile';
+import { decideLegacyAccount } from '@/app-layer/usecases/legacy-reviewer-actions';
+import { createLegacyAccessReview } from '@/app-layer/usecases/access-review-legacy';
+import { submitConnectedDecision } from '@/app-layer/usecases/access-review-connected';
 import { computeColumnSetFingerprint } from '@/lib/legacy-access/canonical';
 import { probeManifest } from '@/lib/mcp/client';
 import { prisma } from '@/lib/prisma';
@@ -356,7 +359,145 @@ async function main(): Promise<void> {
         return;
     }
 
-    throw new Error('phase must be one of: validate create map pull status reconcile');
+    if (phase === 'review') {
+        // ═══ PHASE 4 — WHAT A REVIEWER IS FOR ═══
+        //
+        // The engine resolved `user4` as UNMATCHED / NO_CANDIDATES even though
+        // the roster holds an employee with a byte-identical display name: the
+        // only always-on blocker needs exactly-two-token names and both sides
+        // have three (#3612). That is precisely the case a human queue exists
+        // to absorb — the reviewer sees what the engine could not form a
+        // question about, and links it by hand.
+        //
+        // So this phase is not a convenience. It is the realistic action for
+        // the realistic failure, and the alias it writes is what makes the NEXT
+        // run resolve the same account without a human.
+        const connectionId = await findConnection(tenant.id);
+        if (!connectionId) throw new Error('no legacy-mcp connection — run create first');
+
+        const accountKey = need('PROVING_REVIEW_ACCOUNT_KEY');
+
+        // The execution the reviewer was looking at. Read rather than passed in,
+        // because `decideLegacyAccount` uses it to raise a 409 when the queue
+        // has moved on — handing it a stale id by hand would defeat that.
+        const resolution = await prisma.legacyAccountResolution.findFirst({
+            where: { tenantId: tenant.id, accountKey },
+            orderBy: { createdAt: 'desc' },
+            select: { executionId: true, outcome: true, employeeId: true },
+        });
+        if (!resolution) throw new Error(`no resolution for ${accountKey} — run reconcile first`);
+        console.log(`seen        ${accountKey} outcome=${String(resolution.outcome)} execution=${resolution.executionId}`);
+
+        const employeeId = need('PROVING_REVIEW_EMPLOYEE_ID');
+        const r = await decideLegacyAccount(ctx, {
+            connectionId,
+            accountKey,
+            executionId: resolution.executionId,
+            action: {
+                kind: 'MANUAL',
+                employeeId,
+                justification:
+                    'Proving run: the display name matches this employee exactly, and the '
+                    + 'family-name blocker could not index either side because both names are '
+                    + 'three tokens (#3612). Linked by hand, which is what the queue is for.',
+            },
+        });
+        console.log(`decided     ${r.accountKey} outcome=${r.outcome} classification=${r.classification ?? 'null'} alias=${r.aliasId ?? 'none'}`);
+        return;
+    }
+
+    if (phase === 'campaign') {
+        // ═══ PHASE 5 — THE RECERTIFICATION ITSELF ═══
+        //
+        // Every gate this refuses on is about whether the population is one
+        // somebody can vouch for: NO_SNAPSHOT, SNAPSHOT_STALE,
+        // SNAPSHOT_INCOMPLETE, NOT_RECONCILED, NO_SUBJECTS. Reaching it at all
+        // means the four phases before it produced a reviewable set, which is
+        // the whole claim the roadmap makes.
+        const connectionId = await findConnection(tenant.id);
+        if (!connectionId) throw new Error('no legacy-mcp connection — run create first');
+
+        const reviewerUserId = need('PROVING_REVIEWER_USER_ID');
+
+        // ═══ NOT `ctx` — AND THE SCHEMA IS WHY ═══
+        //
+        // `AccessReview.createdByUserId` is NOT NULL with a foreign key to
+        // `User`, so a campaign cannot be created by `SYSTEM_PRINCIPAL`: the
+        // insert dies on `AccessReview_createdByUserId_fkey`. Measured here on
+        // the first attempt, and it is the same constraint
+        // `context-system.ts` already documents for `Task.createdByUserId` —
+        // which is why `buildDelegatedJobContext` exists.
+        //
+        // So the row records the reviewer as its creator and `actorType: 'JOB'`
+        // as its author. That reads as "a job did this, attributed to the
+        // reviewer", which is true, rather than claiming the reviewer clicked
+        // something.
+        const campaignCtx = buildDelegatedJobContext({
+            tenantId: tenant.id,
+            tenantSlug: tenant.slug,
+            job: 'proving-run-legacy-access',
+            onBehalfOf: reviewerUserId,
+        });
+
+        const r = await createLegacyAccessReview(campaignCtx, {
+            name: 'Proving run — legacy access recertification',
+            description:
+                'The first recertification campaign to exist in production. Subjects come '
+                + 'from the snapshot pulled over a real socket and reconciled against a '
+                + 'roster read from a real HRIS.',
+            connectionId,
+            reviewerUserId,
+        });
+        console.log(`campaign    ${JSON.stringify(r).slice(0, 400)}`);
+        return;
+    }
+
+    if (phase === 'decide') {
+        // ═══ PHASE 5, SECOND HALF — A RECORDED VERDICT ═══
+        //
+        // `createLegacyAccessReview` writes one `AccessReviewConnectedDecision`
+        // per subject, all undecided. A campaign with no verdict in it is a
+        // queue, not a recertification — the artefact an auditor cites is
+        // somebody having DECIDED.
+        //
+        // CONFIRM on an account the engine linked cleanly, which is the honest
+        // verdict for it and the one that spawns no deprovision work: the
+        // usecase's own comment notes a verdict "becomes SOC 2 evidence and
+        // spawns deprovision tasks", and a REVOKE on this fixture would create
+        // real task rows for a synthetic account. Proving that a decision can
+        // be recorded does not require proving the revoke path, and the two
+        // have different blast radii.
+        const subjectRef = need('PROVING_DECIDE_SUBJECT_REF');
+        const reviewerUserId = need('PROVING_REVIEWER_USER_ID');
+
+        const subject = await prisma.accessReviewConnectedDecision.findFirst({
+            where: { tenantId: tenant.id, subjectRef },
+            select: { id: true, decision: true, accessReviewId: true },
+        });
+        if (!subject) throw new Error(`no campaign subject ${subjectRef} — run campaign first`);
+        console.log(`subject     ${subject.id} review=${subject.accessReviewId} decision=${subject.decision ?? '(undecided)'}`);
+
+        // Delegated, for the reason the campaign phase gives: `decidedByUserId`
+        // must be a real `User`, and a verdict attributed to SYSTEM_PRINCIPAL
+        // would be a recertification nobody signed.
+        const decideCtx = buildDelegatedJobContext({
+            tenantId: tenant.id,
+            tenantSlug: tenant.slug,
+            job: 'proving-run-legacy-access',
+            onBehalfOf: reviewerUserId,
+        });
+
+        const r = await submitConnectedDecision(decideCtx, subject.id, {
+            decision: 'CONFIRM',
+            notes:
+                'Proving run: the engine linked this account to an employee by exact work '
+                + 'email, with no veto. Access confirmed.',
+        });
+        console.log(`decided     ${JSON.stringify(r)}`);
+        return;
+    }
+
+    throw new Error('phase must be one of: validate create map pull status reconcile review campaign decide');
 }
 
 main()
