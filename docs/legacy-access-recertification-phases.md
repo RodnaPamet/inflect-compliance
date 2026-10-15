@@ -214,7 +214,7 @@ artefact that proves it. Do not tick anything on the strength of a test.
 
 All four now carry a reason, and **none of them is outstanding work**:
 
-| criterion | state |
+| criterion | why it is unticked |
 | --- | --- |
 | the row states the processor is inactive, and nothing in `src/` names TypeSafe | **not tickable by design** — the second half is deliberately false, so the register describes code that exists |
 | legal approval recorded, including zero retention in a signed DPA | **moot** since the 2026-10-14 withdrawal — no active processor, no DPA to execute. Dormant, not discharged |
