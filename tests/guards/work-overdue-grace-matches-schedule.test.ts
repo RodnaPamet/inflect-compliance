@@ -138,8 +138,20 @@ describe('the overdue-work reporter declares a grace per family (#3558)', () => 
         // an unreadable backlog is not an empty one, so a failed read exits
         // without posting rather than posting 0. Posting 0 there would be a
         // confident all-clear — the worst available outcome.
-        expect(source).toContain('emitting NOTHING — an unreadable backlog is not an empty one');
-        // Three families, three guarded reads, three exits.
-        expect(source.split('exit 1; }').length - 1).toBeGreaterThanOrEqual(3);
+        // COUNTED, NOT MATCHED, and the Class D ratchet is why: this phrase
+        // appears once per family, so a bare `toContain` has three satisfying
+        // positions and deleting two of the three guards would leave it green.
+        // The count is also the stronger assertion — it proves ALL THREE reads
+        // are guarded, which is the property, rather than that one of them is.
+        const refusals = source.split('emitting NOTHING — an unreadable backlog is not an empty one').length - 1;
+        expect(refusals).toBe(declared.length);
+        // And each refusal EXITS rather than falling through to the POST.
+        //
+        // The construct, not the bare `exit 1; }`: that appears FOUR times, not
+        // three — the fourth is the missing-token guard, which is a different
+        // refusal for a different reason. I asserted 3 and measured 4, which is
+        // the whole argument for counting a needle before trusting it.
+        const refusalsThatExit = source.split('is not an empty one" >&2; exit 1; }').length - 1;
+        expect(refusalsThatExit).toBe(declared.length);
     });
 });

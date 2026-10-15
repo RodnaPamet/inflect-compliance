@@ -240,7 +240,26 @@ describe('epic-named ratchets are not added back', () => {
         // Raised to THIS BRANCH'S live count (553 guards + 222 guardrails),
         // not to a round number with headroom: a ceiling with slack admits the
         // next file silently, which is how a ratchet stops ratcheting.
-        expect(guardFiles().length).toBeLessThan(776);
+        //
+        // RAISED 776 -> 777 on 2026-10-15, for one file, same test applied:
+        // `work-overdue-grace-matches-schedule.test.ts` is named for the
+        // invariant it protects — the overdue-work reporter's grace periods are
+        // three times the cadence of the job that drains each family, derived
+        // from `SCHEDULED_JOBS` rather than written twice.
+        //
+        // Why a new file rather than folding it in: its consumer is a BASH
+        // SCRIPT on the production VM with no node available, so the contract
+        // is three comment lines in a fixed shape and this test is what makes
+        // them binding. `fan-out-bucket-matches-schedule` is the nearest
+        // relative and does the same job for the dedupe buckets — a different
+        // registry reader for a different consumer, and merging them would
+        // couple a TypeScript constant to a shell script's comments.
+        //
+        // What it cost to not have it: #3558, which exists because #3554 ran
+        // 7.5 days with ~4,300 failures while every counter and log line
+        // worked. A grace that silently stops matching its cadence turns this
+        // alert into noise, then into a muted alert, then back into #3554.
+        expect(guardFiles().length).toBeLessThan(777);
     });
 
     /**

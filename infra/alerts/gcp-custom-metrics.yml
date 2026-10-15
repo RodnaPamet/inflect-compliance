@@ -182,7 +182,13 @@ metrics:
       disable half-landed looks, from every screen, like a leaver who was
       disabled.
     policy: infra/alerts/policies/identity-write-unsettled.json
-    deployed_policy_id: null      # NOT YET APPLIED — see `reporters` above.
+    deployed_policy_id: '6353371817671167444'
+    # CORRECTED 2026-10-15. This read `null  # NOT YET APPLIED`, and
+    # `unsettled-reporter-matches-the-product.test.ts` caught the half-fix:
+    # it asserts status == DEPLOYED exactly when a policy id is present, so
+    # correcting the status above without the id here failed the guard. The id
+    # is the live policy, read back from the Monitoring API alongside the
+    # metric's 5,558 points over 30 days.
 
     # ─── WHY ONE HOUR, AND WHERE IT CAME FROM ───────────────────────────
     #
