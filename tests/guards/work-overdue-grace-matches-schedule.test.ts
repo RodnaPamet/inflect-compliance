@@ -131,6 +131,24 @@ describe('the overdue-work reporter declares a grace per family (#3558)', () => 
         expect(source).toContain('PAYLOAD="{\\"timeSeries\\":[$(series_for');
         // The gate is on the journal detail, not on the POST.
         expect(source).toMatch(/if \[ "\$TOTAL" -gt 0 \]; then\n\s+echo "OVERDUE/);
+
+        // AND NOTHING ELSE SHORT-CIRCUITS THE POST. The two assertions above
+        // were not enough, and a mutation proved it: prepending
+        //
+        //     if [ "$TOTAL" -eq 0 ]; then exit 0; fi
+        //
+        // before the payload leaves both of them satisfied while stopping the
+        // reporter emitting on every healthy run — which makes the policy's
+        // absence arm fire on every good day, and is precisely README rule 2
+        // being defeated. The guard graded the shape of the POST and the
+        // position of the gate, neither of which is the property.
+        //
+        // Counted, because the property is "there is no OTHER branch":
+        //   · `exit 0` exactly once — the dry-run path, the only early exit;
+        //   · `$TOTAL` read exactly once — the journal gate. A second read is
+        //     something else deciding on it.
+        expect(source.split('exit 0').length - 1).toBe(1);
+        expect(source.split('$TOTAL').length - 1).toBe(1);
     });
 
     it('refuses to post a number it could not read', () => {
