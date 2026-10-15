@@ -311,7 +311,26 @@ const ROOT = path.resolve(__dirname, '../..');
 // makes the number ORDER-SAFE against the branches open today: each measures
 // the same tree and writes 353, so the edits are byte-identical and merge
 // rather than conflict.
-const RENDERED_TEST_FLOOR = 353;
+// 353 -> 355 (2026-10-15, #3470): `agent-skills-tab.test.tsx` — the Skills tab,
+// which had no rendered test at all despite being an acceptance item of the
+// issue that built it. The load-bearing assertions there are not that it
+// renders: it reads the CORPUS route rather than an agent-scoped one, and
+// read-only is COUNTED (zero buttons, inputs, selects or role=button over a
+// populated list) rather than described in a docblock a later commit falsifies.
+//   355 IS THIS GUARD'S OWN COUNTER on this branch's tree, and getting there
+// took two corrections worth recording, because each is a way a floor comes to
+// be set from the wrong number.
+//   The first draft wrote 356, from an `ls` that globbed `.test.ts?(x)`. This
+// population is `.test.tsx` ONLY — `countFiles(rel, suffix)` takes one suffix —
+// so the two `.test.ts` files under `tests/rendered/` are outside it. A floor
+// set from a wider population than the counter's is unsatisfiable on arrival,
+// which is how it was caught.
+//   The second said 354, measured before this branch was rebased. `main` then
+// gained `checkpoint-review-panel.test.tsx` from #3472, so 354 was a true count
+// of a tree this commit is not against. The number has to come from the
+// measurement the assertion makes, ON THE TREE BEING COMMITTED — not from a
+// convenient count beside it, and not from one taken before the base moved.
+const RENDERED_TEST_FLOOR = 355;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
