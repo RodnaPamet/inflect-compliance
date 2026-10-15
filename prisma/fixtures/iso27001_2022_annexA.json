@@ -4,7 +4,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 1,
-        "title": "Policies for information security",
+        "title": "Security policy set approved and kept current",
         "summary": "Establish and maintain information security policy framework"
     },
     {
@@ -12,7 +12,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 2,
-        "title": "Information security roles and responsibilities",
+        "title": "Named owners for each security duty",
         "summary": "Define and assign information security roles"
     },
     {
@@ -20,7 +20,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 3,
-        "title": "Segregation of duties",
+        "title": "Conflicting duties split between different people",
         "summary": "Ensure conflicting duties are segregated"
     },
     {
@@ -28,7 +28,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 4,
-        "title": "Management responsibilities",
+        "title": "Leadership requires and checks policy adherence",
         "summary": "Management enforces security policy compliance"
     },
     {
@@ -36,7 +36,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 5,
-        "title": "Contact with authorities",
+        "title": "Working channels to regulators and authorities",
         "summary": "Maintain contacts with relevant authorities"
     },
     {
@@ -44,7 +44,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 6,
-        "title": "Contact with special interest groups",
+        "title": "Membership of security practitioner networks",
         "summary": "Maintain contacts with security forums and groups"
     },
     {
@@ -52,7 +52,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 7,
-        "title": "Threat intelligence",
+        "title": "Threat information gathered, analysed and acted on",
         "summary": "Collect and analyze threat intelligence"
     },
     {
@@ -60,7 +60,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 8,
-        "title": "Information security in project management",
+        "title": "Security carried through every project stage",
         "summary": "Integrate security into project management"
     },
     {
@@ -68,7 +68,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 9,
-        "title": "Inventory of information and other associated assets",
+        "title": "A current register of assets and their owners",
         "summary": "Maintain inventory of information assets"
     },
     {
@@ -76,7 +76,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 10,
-        "title": "Acceptable use of information and other associated assets",
+        "title": "Stated rules for handling assets and data",
         "summary": "Define acceptable use rules for assets"
     },
     {
@@ -84,7 +84,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 11,
-        "title": "Return of assets",
+        "title": "Assets recovered when someone leaves or moves",
         "summary": "Ensure return of assets upon termination"
     },
     {
@@ -92,7 +92,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 12,
-        "title": "Classification of information",
+        "title": "Data graded by the harm its loss would cause",
         "summary": "Classify information according to needs"
     },
     {
@@ -100,7 +100,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 13,
-        "title": "Labelling of information",
+        "title": "Grades marked on the data that carries them",
         "summary": "Implement labelling procedures for classified information"
     },
     {
@@ -108,7 +108,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 14,
-        "title": "Information transfer",
+        "title": "Protected routes for sending data out",
         "summary": "Secure information transfer policies and procedures"
     },
     {
@@ -116,7 +116,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 15,
-        "title": "Access control",
+        "title": "A stated basis for who may reach what",
         "summary": "Establish access control policy and rules"
     },
     {
@@ -124,7 +124,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 16,
-        "title": "Identity management",
+        "title": "Identities created, changed and removed on time",
         "summary": "Manage identity lifecycle for access control"
     },
     {
@@ -132,7 +132,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 17,
-        "title": "Authentication information",
+        "title": "Secrets issued, stored and replaced safely",
         "summary": "Manage allocation and use of authentication info"
     },
     {
@@ -140,7 +140,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 18,
-        "title": "Access rights",
+        "title": "Rights granted, re-checked and withdrawn",
         "summary": "Provision, review and revoke access rights"
     },
     {
@@ -148,7 +148,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 19,
-        "title": "Information security in supplier relationships",
+        "title": "Security expectations set before engaging a supplier",
         "summary": "Address security in supplier agreements"
     },
     {
@@ -156,7 +156,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 20,
-        "title": "Addressing information security within supplier agreements",
+        "title": "Security obligations written into supplier contracts",
         "summary": "Include security requirements in supplier contracts"
     },
     {
@@ -164,7 +164,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 21,
-        "title": "Managing information security in the ICT supply chain",
+        "title": "Risk traced through sub-suppliers and components",
         "summary": "Secure the ICT supply chain"
     },
     {
@@ -172,7 +172,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 22,
-        "title": "Monitoring, review and change management of supplier services",
+        "title": "Supplier delivery watched and changes re-approved",
         "summary": "Monitor and review supplier services"
     },
     {
@@ -180,7 +180,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 23,
-        "title": "Information security for use of cloud services",
+        "title": "Cloud providers held to stated requirements",
         "summary": "Manage cloud service security requirements"
     },
     {
@@ -188,7 +188,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 24,
-        "title": "Information security incident management planning and preparation",
+        "title": "An incident process agreed before it is needed",
         "summary": "Plan incident management processes"
     },
     {
@@ -196,7 +196,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 25,
-        "title": "Assessment and decision on information security events",
+        "title": "Events triaged, and the call recorded",
         "summary": "Assess and decide on security events"
     },
     {
@@ -204,7 +204,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 26,
-        "title": "Response to information security incidents",
+        "title": "Incidents worked to the agreed procedure",
         "summary": "Respond to incidents per documented procedures"
     },
     {
@@ -212,7 +212,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 27,
-        "title": "Learning from information security incidents",
+        "title": "Findings from incidents change what happens next",
         "summary": "Learn from incidents to improve security"
     },
     {
@@ -220,7 +220,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 28,
-        "title": "Collection of evidence",
+        "title": "Evidence captured so it survives scrutiny",
         "summary": "Collect and preserve evidence for incidents"
     },
     {
@@ -228,7 +228,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 29,
-        "title": "Information security during disruption",
+        "title": "Controls hold while the business is disrupted",
         "summary": "Maintain security during business disruptions"
     },
     {
@@ -236,7 +236,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 30,
-        "title": "ICT readiness for business continuity",
+        "title": "Technology ready to meet recovery targets",
         "summary": "Ensure ICT supports business continuity"
     },
     {
@@ -244,7 +244,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 31,
-        "title": "Legal, statutory, regulatory and contractual requirements",
+        "title": "Binding obligations identified and tracked",
         "summary": "Identify and comply with legal requirements"
     },
     {
@@ -252,7 +252,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 32,
-        "title": "Intellectual property rights",
+        "title": "Licensed and owned material used lawfully",
         "summary": "Protect intellectual property rights"
     },
     {
@@ -260,7 +260,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 33,
-        "title": "Protection of records",
+        "title": "Records kept intact for as long as required",
         "summary": "Protect records per legal and business requirements"
     },
     {
@@ -268,7 +268,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 34,
-        "title": "Privacy and protection of PII",
+        "title": "Personal data handled to its privacy duties",
         "summary": "Ensure privacy and PII protection"
     },
     {
@@ -276,7 +276,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 35,
-        "title": "Independent review of information security",
+        "title": "Independent scrutiny of the security regime",
         "summary": "Conduct independent security reviews"
     },
     {
@@ -284,7 +284,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 36,
-        "title": "Compliance with policies, rules and standards for information security",
+        "title": "Adherence to internal rules actually verified",
         "summary": "Ensure compliance with security policies"
     },
     {
@@ -292,7 +292,7 @@
         "theme": "ORGANIZATIONAL",
         "themeNumber": 5,
         "sortOrder": 37,
-        "title": "Documented operating procedures",
+        "title": "Written procedures for the work people do",
         "summary": "Document and maintain operating procedures"
     },
     {
@@ -300,7 +300,7 @@
         "theme": "PEOPLE",
         "themeNumber": 6,
         "sortOrder": 38,
-        "title": "Screening",
+        "title": "Candidates checked before they are trusted",
         "summary": "Verify backgrounds of personnel"
     },
     {
@@ -308,7 +308,7 @@
         "theme": "PEOPLE",
         "themeNumber": 6,
         "sortOrder": 39,
-        "title": "Terms and conditions of employment",
+        "title": "Security duties stated in the employment terms",
         "summary": "Include security responsibilities in employment terms"
     },
     {
@@ -316,7 +316,7 @@
         "theme": "PEOPLE",
         "themeNumber": 6,
         "sortOrder": 40,
-        "title": "Information security awareness, education and training",
+        "title": "People taught what the rules ask of them",
         "summary": "Provide security awareness training"
     },
     {
@@ -324,7 +324,7 @@
         "theme": "PEOPLE",
         "themeNumber": 6,
         "sortOrder": 41,
-        "title": "Disciplinary process",
+        "title": "A known consequence for breaking the rules",
         "summary": "Define disciplinary process for policy violations"
     },
     {
@@ -332,7 +332,7 @@
         "theme": "PEOPLE",
         "themeNumber": 6,
         "sortOrder": 42,
-        "title": "Responsibilities after termination or change of employment",
+        "title": "Duties that outlast the job itself",
         "summary": "Define post-employment security responsibilities"
     },
     {
@@ -340,7 +340,7 @@
         "theme": "PEOPLE",
         "themeNumber": 6,
         "sortOrder": 43,
-        "title": "Confidentiality or non-disclosure agreements",
+        "title": "Confidentiality committed to in writing",
         "summary": "Use NDAs to protect information"
     },
     {
@@ -348,7 +348,7 @@
         "theme": "PEOPLE",
         "themeNumber": 6,
         "sortOrder": 44,
-        "title": "Remote working",
+        "title": "Work away from the office kept protected",
         "summary": "Secure remote working arrangements"
     },
     {
@@ -356,7 +356,7 @@
         "theme": "PEOPLE",
         "themeNumber": 6,
         "sortOrder": 45,
-        "title": "Information security event reporting",
+        "title": "A route for anyone to raise a concern",
         "summary": "Enable personnel to report security events"
     },
     {
@@ -364,7 +364,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 46,
-        "title": "Physical security perimeters",
+        "title": "Defined boundaries around protected space",
         "summary": "Define and protect physical security perimeters"
     },
     {
@@ -372,7 +372,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 47,
-        "title": "Physical entry",
+        "title": "Entry to protected space controlled and logged",
         "summary": "Control physical access to secure areas"
     },
     {
@@ -380,7 +380,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 48,
-        "title": "Securing offices, rooms and facilities",
+        "title": "Rooms and facilities protected to their use",
         "summary": "Secure offices and facilities"
     },
     {
@@ -388,7 +388,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 49,
-        "title": "Physical security monitoring",
+        "title": "Premises watched for unauthorised presence",
         "summary": "Monitor premises for unauthorized access"
     },
     {
@@ -396,7 +396,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 50,
-        "title": "Protecting against physical and environmental threats",
+        "title": "Guarding against fire, flood and like hazards",
         "summary": "Protect against environmental threats"
     },
     {
@@ -404,7 +404,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 51,
-        "title": "Working in secure areas",
+        "title": "Rules for conduct inside protected space",
         "summary": "Define procedures for working in secure areas"
     },
     {
@@ -412,7 +412,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 52,
-        "title": "Clear desk and clear screen",
+        "title": "Nothing readable left unattended",
         "summary": "Implement clear desk and screen policy"
     },
     {
@@ -420,7 +420,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 53,
-        "title": "Equipment siting and protection",
+        "title": "Equipment placed where it is least at risk",
         "summary": "Site and protect equipment appropriately"
     },
     {
@@ -428,7 +428,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 54,
-        "title": "Security of assets off-premises",
+        "title": "Assets protected away from company sites",
         "summary": "Protect off-premises assets"
     },
     {
@@ -436,7 +436,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 55,
-        "title": "Storage media",
+        "title": "Media controlled from issue to destruction",
         "summary": "Manage storage media throughout lifecycle"
     },
     {
@@ -444,7 +444,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 56,
-        "title": "Supporting utilities",
+        "title": "Power, cooling and like services kept dependable",
         "summary": "Protect equipment from utility failures"
     },
     {
@@ -452,7 +452,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 57,
-        "title": "Cabling security",
+        "title": "Power and data cabling protected from interference",
         "summary": "Protect power and network cabling"
     },
     {
@@ -460,7 +460,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 58,
-        "title": "Equipment maintenance",
+        "title": "Equipment serviced so it stays available",
         "summary": "Maintain equipment to ensure availability"
     },
     {
@@ -468,7 +468,7 @@
         "theme": "PHYSICAL",
         "themeNumber": 7,
         "sortOrder": 59,
-        "title": "Secure disposal or re-use of equipment",
+        "title": "Nothing recoverable left on retired equipment",
         "summary": "Securely dispose or reuse equipment"
     },
     {
@@ -476,7 +476,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 60,
-        "title": "User endpoint devices",
+        "title": "Laptops, phones and desktops brought under control",
         "summary": "Secure user endpoint devices"
     },
     {
@@ -484,7 +484,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 61,
-        "title": "Privileged access rights",
+        "title": "Elevated access limited and accounted for",
         "summary": "Restrict and manage privileged access"
     },
     {
@@ -492,7 +492,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 62,
-        "title": "Information access restriction",
+        "title": "Reach narrowed to what the policy allows",
         "summary": "Restrict access to information per policy"
     },
     {
@@ -500,7 +500,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 63,
-        "title": "Access to source code",
+        "title": "Source and build inputs restricted",
         "summary": "Restrict access to source code"
     },
     {
@@ -508,7 +508,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 64,
-        "title": "Secure authentication",
+        "title": "Sign-in strong enough for what it protects",
         "summary": "Implement secure authentication mechanisms"
     },
     {
@@ -516,7 +516,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 65,
-        "title": "Capacity management",
+        "title": "Capacity forecast and kept ahead of demand",
         "summary": "Monitor and manage resource capacity"
     },
     {
@@ -524,7 +524,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 66,
-        "title": "Protection against malware",
+        "title": "Defences against hostile code, kept current",
         "summary": "Implement malware protection measures"
     },
     {
@@ -532,7 +532,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 67,
-        "title": "Management of technical vulnerabilities",
+        "title": "Weaknesses found, ranked and remediated",
         "summary": "Manage technical vulnerabilities systematically"
     },
     {
@@ -540,7 +540,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 68,
-        "title": "Configuration management",
+        "title": "Systems built and held to a known configuration",
         "summary": "Manage system configurations securely"
     },
     {
@@ -548,7 +548,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 69,
-        "title": "Information deletion",
+        "title": "Data erased once its retention basis ends",
         "summary": "Delete information when no longer needed"
     },
     {
@@ -556,7 +556,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 70,
-        "title": "Data masking",
+        "title": "Identifying values obscured outside need-to-know",
         "summary": "Mask data per access control policy"
     },
     {
@@ -564,7 +564,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 71,
-        "title": "Data leakage prevention",
+        "title": "Routes for data to escape watched and closed",
         "summary": "Prevent unauthorized data disclosure"
     },
     {
@@ -572,7 +572,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 72,
-        "title": "Information backup",
+        "title": "Copies taken, protected and proven restorable",
         "summary": "Maintain and test backup copies"
     },
     {
@@ -580,7 +580,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 73,
-        "title": "Redundancy of information processing facilities",
+        "title": "Spare capacity so one failure is survivable",
         "summary": "Ensure redundancy for availability"
     },
     {
@@ -588,7 +588,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 74,
-        "title": "Logging",
+        "title": "Activity recorded and the record protected",
         "summary": "Produce and protect activity logs"
     },
     {
@@ -596,7 +596,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 75,
-        "title": "Monitoring activities",
+        "title": "Systems watched for behaviour worth investigating",
         "summary": "Monitor networks, systems, applications"
     },
     {
@@ -604,7 +604,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 76,
-        "title": "Clock synchronization",
+        "title": "One agreed time across every system",
         "summary": "Synchronize system clocks"
     },
     {
@@ -612,7 +612,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 77,
-        "title": "Use of privileged utility programs",
+        "title": "Powerful tooling restricted and its use recorded",
         "summary": "Restrict and control utility programs"
     },
     {
@@ -620,7 +620,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 78,
-        "title": "Installation of software on operational systems",
+        "title": "Only approved software reaches live systems",
         "summary": "Control software installation"
     },
     {
@@ -628,7 +628,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 79,
-        "title": "Networks security",
+        "title": "Networks designed, run and defended deliberately",
         "summary": "Secure and manage networks"
     },
     {
@@ -636,7 +636,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 80,
-        "title": "Security of network services",
+        "title": "Network services held to agreed protections",
         "summary": "Address security in network service agreements"
     },
     {
@@ -644,7 +644,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 81,
-        "title": "Segregation of networks",
+        "title": "Traffic kept apart by what it may reach",
         "summary": "Segregate networks by security requirements"
     },
     {
@@ -652,7 +652,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 82,
-        "title": "Web filtering",
+        "title": "Outbound browsing limited to acceptable destinations",
         "summary": "Filter access to external websites"
     },
     {
@@ -660,7 +660,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 83,
-        "title": "Use of cryptography",
+        "title": "Stated rules for keys and algorithms",
         "summary": "Define and implement cryptography rules"
     },
     {
@@ -668,7 +668,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 84,
-        "title": "Secure development life cycle",
+        "title": "Security built into how software is made",
         "summary": "Apply security throughout development lifecycle"
     },
     {
@@ -676,7 +676,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 85,
-        "title": "Application security requirements",
+        "title": "Security stated as a requirement, not an afterthought",
         "summary": "Identify and address application security needs"
     },
     {
@@ -684,7 +684,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 86,
-        "title": "Secure system architecture and engineering principles",
+        "title": "Designs follow agreed engineering principles",
         "summary": "Apply secure engineering principles"
     },
     {
@@ -692,7 +692,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 87,
-        "title": "Secure coding",
+        "title": "Code written to practices that avoid known flaws",
         "summary": "Apply secure coding practices"
     },
     {
@@ -700,7 +700,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 88,
-        "title": "Security testing in development and acceptance",
+        "title": "Security proven before a release is accepted",
         "summary": "Test security during development and acceptance"
     },
     {
@@ -708,7 +708,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 89,
-        "title": "Outsourced development",
+        "title": "Externally built software held to the same bar",
         "summary": "Manage security for outsourced development"
     },
     {
@@ -716,7 +716,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 90,
-        "title": "Separation of development, test and production environments",
+        "title": "Build, test and live kept apart",
         "summary": "Separate dev, test, and production"
     },
     {
@@ -724,7 +724,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 91,
-        "title": "Change management",
+        "title": "Changes assessed, approved and traceable",
         "summary": "Manage changes to information processing facilities"
     },
     {
@@ -732,7 +732,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 92,
-        "title": "Test information",
+        "title": "Test data chosen so it carries no real risk",
         "summary": "Protect test data appropriately"
     },
     {
@@ -740,7 +740,7 @@
         "theme": "TECHNOLOGICAL",
         "themeNumber": 8,
         "sortOrder": 93,
-        "title": "Protection of information systems during audit testing",
+        "title": "Audit activity constrained so it cannot disrupt",
         "summary": "Protect systems during audit testing"
     }
 ]

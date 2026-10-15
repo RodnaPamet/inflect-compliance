@@ -528,6 +528,202 @@ describe('catalogue requirements carry prose', () => {
         );
     });
 
+    /*
+        ═══ THE ISO ANNEX A FIXTURE CARRIES NONE OF ISO'S TEXT (#3478) ═══
+
+        `prisma/fixtures/iso27001_2022_annexA.json` held ISO's control titles
+        verbatim and declared no provenance, while every other derived fixture
+        in that folder declares one. Owner decision, 2026-10-15: regenerate
+        from identifiers only — the identifiers and theme names are references,
+        and the titles and summaries are this product's own prose.
+
+        That makes the fixture's provenance a CHECKABLE claim rather than an
+        asserted one, which is the whole reason the decision was takeable: the
+        previous state was not "this infringes" but "nobody can tell whether
+        the question was asked".
+
+        ── WHY CONTAINMENT AND NOT ONLY EQUALITY ──────────────────────────────
+
+        A title that WRAPPED ISO's — "Policies for information security,
+        approved" — reproduces it exactly as surely as one that equals it. And
+        the check runs every sample against every title rather than against the
+        row's own, because a real title pasted onto a NEIGHBOURING key is still
+        ISO's words.
+
+        ── THE REGRESSION THIS ACTUALLY GUARDS ────────────────────────────────
+
+        Not malice. Somebody "corrects" a title to match the standard a
+        customer quoted in a call, because the fixture's title no longer looks
+        like the one in their copy of Annex A. That is a helpful-looking commit
+        and it is the one that undoes this.
+
+        FOLDED INTO THIS FILE rather than given its own, because
+        `no-epic-named-ratchets` ratchets the guard-FILE count across
+        `tests/guards` AND `tests/guardrails` downward — and because this file
+        already reasons about this fixture at length two blocks above.
+    */
+    describe('the ISO 27001 Annex A fixture is keyed to the standard, not copied from it', () => {
+        const ISO_FIXTURE = 'prisma/fixtures/iso27001_2022_annexA.json';
+        const PROVENANCE = 'prisma/fixtures/iso27001_2022_annexA.LICENSE.md';
+
+        /**
+         * REAL Annex A control titles, as the fixture carried them before the
+         * regeneration. Twelve, spanning all four themes — organizational,
+         * people, physical, technological — because a sample drawn from one
+         * theme would leave three quarters of the file unchecked, and a paste
+         * is as likely in any of them.
+         *
+         * Short ones are deliberately included (`Threat intelligence`,
+         * `Logging`, `Data masking`, `Clear desk and clear screen`): a two-word
+         * topic label is the hardest thing to rewrite without collision and
+         * therefore the likeliest to be restored.
+         */
+        const REAL_ISO_TITLES = [
+            'Policies for information security',
+            'Segregation of duties',
+            'Threat intelligence',
+            'Classification of information',
+            'Screening',
+            'Confidentiality or non-disclosure agreements',
+            'Clear desk and clear screen',
+            'Equipment maintenance',
+            'Information deletion',
+            'Data masking',
+            'Logging',
+            'Clock synchronization',
+        ];
+
+        const norm = (v: string): string =>
+            v.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+
+        const fixtureRows = (): Array<{ key: string; title: string; summary?: string }> =>
+            JSON.parse(fs.readFileSync(path.join(REPO_ROOT, ISO_FIXTURE), 'utf8')) as Array<{
+                key: string;
+                title: string;
+                summary?: string;
+            }>;
+
+        it('reads 93 rows — otherwise every assertion below is vacuous', () => {
+            // The denominator, first. An empty or renamed fixture would satisfy
+            // "no title reproduces ISO's" perfectly.
+            const rows = fixtureRows();
+            expect(rows).toHaveLength(93);
+            expect(rows.every((r) => typeof r.title === 'string' && r.title.length > 0)).toBe(true);
+        });
+
+        it('no title reproduces a real Annex A title, by equality or containment', () => {
+            const rows = fixtureRows();
+            const offenders: string[] = [];
+            for (const row of rows) {
+                const t = norm(row.title);
+                for (const real of REAL_ISO_TITLES) {
+                    const r = norm(real);
+                    if (t === r || t.includes(r)) {
+                        offenders.push(`${row.key} "${row.title}" reproduces "${real}"`);
+                    }
+                }
+            }
+            expect(offenders).toEqual([]);
+        });
+
+        it('the DETECTOR fires on a row that carries a real title', () => {
+            /*
+                A POSITIVE CONTROL ON THE COMPARISON, and the first draft of it
+                had no discriminating power at all: it compared
+                `REAL_ISO_TITLES` against ITSELF, so every needle matched its
+                own entry and a misspelt needle matched its misspelling.
+                Measured — deliberately corrupting one needle left that version
+                green.
+
+                This runs the real comparison over a SYNTHETIC row, so the thing
+                under test is the comparison and the normaliser rather than the
+                list's agreement with itself. Each needle must be found, and a
+                title that is ours must not be.
+            */
+            const detects = (title: string): boolean =>
+                REAL_ISO_TITLES.some((real) => {
+                    const t = norm(title);
+                    const r = norm(real);
+                    return t === r || t.includes(r);
+                });
+
+            for (const real of REAL_ISO_TITLES) {
+                expect({ title: real, detected: detects(real) })
+                    .toEqual({ title: real, detected: true });
+                // And wrapped, which is the containment half.
+                expect(detects(`${real}, approved and current`)).toBe(true);
+            }
+            // The other direction, so the detector is not simply true of
+            // everything: a real title from the regenerated fixture is clean.
+            expect(detects('Data erased once its retention basis ends')).toBe(false);
+            expect(detects('One agreed time across every system')).toBe(false);
+        });
+
+        /*
+            ═══ WHAT THIS SUITE CANNOT CHECK, STATED RATHER THAN IMPLIED ═══
+
+            Whether the twelve needles are spelt the way ISO spells them.
+
+            Nothing in this repository can check it, BY CONSTRUCTION: a
+            correctly-spelt copy of Annex A's titles is exactly what #3478
+            removed, so there is no independent in-repo record to compare
+            against — and adding one back as a test fixture would reintroduce
+            the reproduction this whole change exists to end.
+
+            The needles were taken from this fixture's own `title` field at the
+            moment of regeneration, which the commit that did it records. A
+            misspelt needle would therefore not be a drift; it would be a
+            transcription error made once, in that commit, visible in its diff.
+
+            So the residual is: this suite proves no title matches the twelve
+            titles it names, and proves the matching works. It does not prove
+            the twelve are the right twelve. That is a smaller and more honest
+            claim than a self-comparing control would have implied, and it is
+            the strongest one available without keeping the text.
+        */
+
+        it('the 93 titles are distinct from one another', () => {
+            // A regeneration that collapsed two controls onto one phrase would
+            // leave a tenant unable to tell them apart on screen, and the
+            // identifier is the only thing that would still separate them.
+            const rows = fixtureRows();
+            const byNorm = new Map<string, string>();
+            const dupes: string[] = [];
+            for (const row of rows) {
+                const n = norm(row.title);
+                const prior = byNorm.get(n);
+                if (prior) dupes.push(`${prior} and ${row.key}`);
+                byNorm.set(n, row.key);
+            }
+            expect(dupes).toEqual([]);
+        });
+
+        it('the provenance file exists and makes all three claims', () => {
+            // The claim has to be WRITTEN somewhere a reader finds it, in the
+            // shape the two other provenance-bearing fixtures in that folder
+            // use. An assertion that only checked the data would leave the file
+            // making no claim again — which was the original finding.
+            //
+            // ONE ASSERTION OVER A NAMED OBJECT, not three `toContain`s on the
+            // raw file. Two reasons and they agree: a failure then says WHICH
+            // claim went missing instead of which substring, and the subject is
+            // a derived value rather than a `path.join` read — which
+            // `assertion-needle-uniqueness-ratchet` cannot resolve to a
+            // constant path, so three such reads were three blind spots it
+            // counted. Measured: +3 `path-not-constant` before this shape.
+            const md = fs.readFileSync(path.join(REPO_ROOT, PROVENANCE), 'utf8');
+            expect({
+                namesTheStandard: md.includes('ISO/IEC 27001:2022'),
+                saysWhatWasTaken: md.includes('identifier'),
+                saysNoTextIsReproduced: /No ISO text is reproduced/i.test(md),
+            }).toEqual({
+                namesTheStandard: true,
+                saysWhatWasTaken: true,
+                saysNoTextIsReproduced: true,
+            });
+        });
+    });
+
     it('summaries are prose, not empty and not a bare restatement of the title', () => {
         // The repair strips a suffix. Stripping it down to nothing, or leaving
         // a summary that only repeats the title, would satisfy the rule above
