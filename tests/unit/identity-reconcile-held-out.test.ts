@@ -55,11 +55,20 @@ function runCase(c: CorpusCase): { outcome: Outcome; employeeId: string | null; 
     // `convention` stays NULL on purpose: a convention is adopted per
     // connection by a human, and inferring one for a fixture is the circular
     // fit `conventions.ts` forbids.
-    const { scorers, blockers } = step4aExtensions(
+    const { scorers, blockers, ambiguityMargin } = step4aExtensions(
         input.roster as readonly RosterEmployee[],
         null,
     );
-    const r = reconcile({ ...input, config: { ...input.config, scorers, blockers } });
+    // `ambiguityMargin` rides with them (#3560) for the same reason the scorers
+    // do: this harness's whole claim is that it wires the engine the way
+    // `legacy-reconcile.ts` wires it, and omitting one config value would make
+    // every outcome below measure a configuration no tenant runs. Measured
+    // across both fixture sets, wiring it changes exactly ONE case — `db-02`,
+    // which is in the CORPUS, not here — so nothing in this file moves.
+    const r = reconcile({
+        ...input,
+        config: { ...input.config, scorers, blockers, ambiguityMargin },
+    });
     // One account in, one resolution out. Asserted rather than assumed: a
     // builder that returned two would make every count below wrong by a factor
     // nobody would see.
@@ -120,7 +129,6 @@ describe('the deterministic engine on held-out data (#3516)', () => {
         const expectedLinks = HELD_OUT.filter((c) => c.expected.outcome === 'LINKED');
         const agreed = HELD_OUT.length - disagreements.length;
 
-        // eslint-disable-next-line no-console
         console.log(
             [
                 '',

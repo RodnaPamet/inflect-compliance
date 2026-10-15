@@ -1078,11 +1078,16 @@ describe('a tie with no evidence is UNMATCHED, never AMBIGUOUS (#3550)', () => {
     // nothing. Production wires them at `legacy-reconcile.ts:287`.
     const resolveAsProduction = (c: CorpusCase) => {
         const input = engineInputFor(c) as EngineInput;
-        const { scorers, blockers } = step4aExtensions(
+        const { scorers, blockers, ambiguityMargin } = step4aExtensions(
             input.roster as readonly RosterEmployee[],
             null,
         );
-        const r = reconcile({ ...input, config: { ...input.config, scorers, blockers } });
+        // Including the margin (#3560) — this helper is named
+        // `resolveAsProduction` and would stop deserving the name without it.
+        const r = reconcile({
+            ...input,
+            config: { ...input.config, scorers, blockers, ambiguityMargin },
+        });
         expect(r.resolutions).toHaveLength(1);
         return r.resolutions[0];
     };
@@ -1209,23 +1214,32 @@ describe('a tie with no evidence is UNMATCHED, never AMBIGUOUS (#3550)', () => {
         expect(evidenced.outcome).not.toEqual(tie?.r.outcome);
     });
 
-    it('reports how often AMBIGUOUS is reached at all, which is zero (#3560)', () => {
+    it('reports how often AMBIGUOUS is reached at all — now ONE, not zero (#3560)', () => {
         // REPORTED, NOT GATED. The number is a property of the fixtures, not of
         // the engine, so gating it would fail the day somebody adds a case that
-        // reaches the outcome — exactly backwards. It is printed because a
-        // reviewer-visible outcome that no case in a 45-case corpus reaches is
-        // worth somebody deciding about, and because the figure is what stopped
-        // the positive control above from being drawn from the corpus.
+        // reaches the outcome — exactly backwards.
+        //
+        // IT WAS ZERO WHEN THIS WAS WRITTEN, and that zero is what #3560 was
+        // filed about: with 4a wired, an exact tie needed two candidates
+        // indistinguishable to every scorer, and `SIMILARITY` fires on almost
+        // any name pair. It is now ONE, because the owner's decision of
+        // 2026-10-15 made the rule margin-based — and the one case is `db-02`,
+        // two FRESH directory links to two different employees, which is the
+        // shape the outcome exists for. Measured: wiring the margin changes
+        // exactly that one case of 45, and it moves the engine INTO agreement
+        // with a fixture expectation that had been unmet for as long as it
+        // existed.
         const reached = ALL.filter((c) => resolveAsProduction(c).outcome === 'AMBIGUOUS');
         console.log(
             [
                 '',
                 `  AMBIGUOUS under production wiring: ${reached.length}/${ALL.length}`,
                 `  cases: ${reached.map((c) => c.id).join(', ') || '(none)'}`,
-                '  db-02 is AMBIGUOUS at Step 3b (250 vs 250) and SUGGESTED with 4a',
-                '  wired (390 vs 250) — one SIMILARITY signal breaks the tie. Its',
-                '  margin of 140 is below BULK_MIN_MARGIN (220), so the row is',
-                '  individually reviewable and NOT bulk-confirmable.',
+                '  db-02 scores 390 vs 250 with 4a wired — one SIMILARITY signal',
+                '  ahead. Before #3560 that made it SUGGESTED; the gap of 140 is',
+                '  below the margin (220 = one whole supporting signal), so the',
+                '  engine now declines to choose. The same number bounds bulk',
+                '  confirmation, so the row was never bulk-eligible either way.',
                 '',
             ].join('\n'),
         );

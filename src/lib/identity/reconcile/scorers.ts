@@ -354,7 +354,23 @@ export function makeFamilyNameBlocker(roster: readonly RosterEmployee[]): Candid
 export function step4aExtensions(
     roster: readonly RosterEmployee[],
     convention?: string | ParsedConvention | null
-): { scorers: readonly CandidateScorer[]; blockers: readonly CandidateBlocker[] } {
+): {
+    scorers: readonly CandidateScorer[];
+    blockers: readonly CandidateBlocker[];
+    /**
+     * The engine's `ambiguityMargin` (#3560), returned here because this is
+     * where the weights it is derived from live.
+     *
+     * `SCORER_WEIGHTS.CONVENTION` is the largest score any single supporting
+     * signal can contribute, so a leader ahead by less than it is a leader the
+     * runner-up could overtake on one more match — which is not a choice the
+     * engine should make for a reviewer. It is the SAME number
+     * `legacy-reviewer-actions` uses for `BULK_MIN_MARGIN`, and deliberately:
+     * "too close to suggest" and "too close to bulk-confirm" are one judgement,
+     * and two constants would eventually disagree about it.
+     */
+    ambiguityMargin: number;
+} {
     const scorers: CandidateScorer[] = [];
     const blockers: CandidateBlocker[] = [makeFamilyNameBlocker(roster)];
     if (convention) {
@@ -366,5 +382,5 @@ export function step4aExtensions(
     // above proposed rather than competing with them — and at the smallest
     // weight here, because it corroborates and never identifies.
     scorers.push(makeDepartmentScorer());
-    return { scorers, blockers };
+    return { scorers, blockers, ambiguityMargin: SCORER_WEIGHTS.CONVENTION };
 }
