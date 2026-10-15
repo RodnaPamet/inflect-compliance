@@ -4916,6 +4916,10 @@
         "aboveDeclaredScopeBody": "The card reaches {card} and this agent is registered as reaching {scope} — the register was narrowed after this version was written, and a stored version is never rewritten. Nothing clamps this one: the tool boundary reads the card's rung and never the register's, so the wider reach is live on every call. Narrow the card to {scope}, or raise the agent's registered data-access scope if the wider reach is intended. Every other change stays open meanwhile."
       },
       "tools": {
+        "runtimeTitle": "Supplied by the agent runtime",
+        "runtimeBody": "These reach a Flue run whatever this agent was granted — the runtime adds them, not the register. Neither widens what the agent can reach today; each says below what bounds it. They are listed here because an operator reading the grants above was seeing a shorter list than the model is shown.",
+        "runtimeAlways": "On every run",
+        "runtimeWhenSkills": "Only with a skill mounted",
         "widensRead": "{tool} can READ this workspace's data. It cannot propose or change anything.",
         "widensPropose": "{tool} can PROPOSE changes. Proposals land in the approval queue for a human — granting this does not let the agent commit anything on its own.",
         "widensBlocked": "The tool boundary is refusing this tool right now because its definition changed and no one has accepted the new one. Granting it will have no effect until that pin is approved.",

@@ -219,6 +219,15 @@ interface Reads {
     manifestsError?: unknown;
     autonomyCeiling?: number;
     requiredAutonomy?: Record<string, number>;
+    /**
+     * #3569 — what the agent RUNTIME hands a run that nobody granted.
+     *
+     * Defaults to UNDEFINED rather than to the real pair, so the cases below
+     * that say nothing about it exercise the older-response path: the panel has
+     * to render as it always did when the field is absent, which is what a
+     * cached response from before this field existed looks like.
+     */
+    runtimeProvided?: Array<{ name: string; appearsWhen: string; boundedBy: string }>;
 }
 
 /**
@@ -236,6 +245,7 @@ function mockReads({
     manifestsError,
     autonomyCeiling,
     requiredAutonomy,
+    runtimeProvided,
 }: Reads) {
     mockSWR.mockImplementation((key: string | null) => {
         if (key === TOOL_MANIFEST_PATH) {
@@ -252,7 +262,14 @@ function mockReads({
         return {
             data: grantsError
                 ? undefined
-                : { agentId: AGENT_ID, granted, available, autonomyCeiling, requiredAutonomy },
+                : {
+                      agentId: AGENT_ID,
+                      granted,
+                      available,
+                      autonomyCeiling,
+                      requiredAutonomy,
+                      ...(runtimeProvided ? { runtimeProvided } : {}),
+                  },
             error: grantsError,
             isLoading: false,
             mutate: grantsMutate,
@@ -769,5 +786,82 @@ describe('a grant above the agent’s ceiling says so', () => {
         // …and the row still renders, which is what makes the absence a
         // deliberate silence rather than a crash.
         expect(screen.getByTestId('agent-tool-row-draft_policy')).toBeInTheDocument();
+    });
+});
+
+/*
+    ═══ WHAT ARRIVES REGARDLESS (#3569) ═══
+
+    This panel's claim is an intersection: a tool absent from the grants is
+    unreachable however widely the credential is scoped. Measured, that claim
+    was true of the tools this product supplies and SILENT about the ones the
+    agent runtime supplies — a Flue run bound with `tools: []` still reaches
+    the model with `task`.
+
+    Neither tool widens reach today, so the owner's decision was to report them
+    rather than suppress them. Which makes the reporting itself the thing worth
+    testing, and specifically its SEPARATION: a list that mixed granted and
+    runtime tools would answer "what can this agent reach" with a true set and
+    a false implication — that the register decided every entry on it.
+*/
+describe('tools the runtime supplies, which nobody granted', () => {
+    const RUNTIME = [
+        {
+            name: 'task',
+            appearsWhen: 'always',
+            boundedBy: 'No subagent is declared, so it has no valid agent value.',
+        },
+        {
+            name: 'activate_skill',
+            appearsWhen: 'when-skills-mounted',
+            boundedBy: 'Loads a skill this run already mounted; reaches nothing new.',
+        },
+    ];
+
+    it('renders them in their OWN card, not inside the grants list', () => {
+        // THE LOAD-BEARING ASSERTION. Containment, not mere presence: `task`
+        // must be findable in the runtime card and must NOT appear inside the
+        // grants section, because that section is the one whose entries the
+        // register decided.
+        mockReads({ granted: [grant('list_risks')], runtimeProvided: RUNTIME });
+        renderTab();
+        const card = screen.getByTestId('agent-runtime-tools');
+        expect(within(card).getByText('task')).toBeInTheDocument();
+        expect(within(grantsSection()).queryByText('task')).toBeNull();
+    });
+
+    it('says WHEN each one arrives, because only one of them follows anything we declared', () => {
+        // `task` is on every run; `activate_skill` only once a skill is
+        // mounted. That difference is the whole reason one of them is bounded
+        // by something this product controls and the other is not.
+        mockReads({ runtimeProvided: RUNTIME });
+        renderTab();
+        expect(screen.getByTestId('runtime-tool-task'))
+            .toHaveAttribute('data-appears-when', 'always');
+        expect(screen.getByTestId('runtime-tool-activate_skill'))
+            .toHaveAttribute('data-appears-when', 'when-skills-mounted');
+    });
+
+    it('renders the sentence that says why each is not a hole', () => {
+        // Rendered rather than summarised. A reviewer checking this page needs
+        // the account, and a reassuring adjective is not one — this is the only
+        // surface where the bound is stated beside the tool.
+        mockReads({ runtimeProvided: RUNTIME });
+        renderTab();
+        expect(screen.getByText(/No subagent is declared/)).toBeInTheDocument();
+        expect(screen.getByText(/already mounted/)).toBeInTheDocument();
+    });
+
+    it('is ABSENT from a response that does not carry the field', () => {
+        // The older-response path. A cached payload from before this field
+        // existed must render the panel as it always did rather than crash on
+        // a missing array or show an empty card with a heading promising
+        // content.
+        mockReads({ granted: [grant('list_risks')] });
+        renderTab();
+        expect(screen.queryByTestId('agent-runtime-tools')).toBeNull();
+        // And the rest of the panel is intact, so this is an omission rather
+        // than a render that failed before reaching the card.
+        expect(within(grantsSection()).getByText('list_risks')).toBeInTheDocument();
     });
 });
