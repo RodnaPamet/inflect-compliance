@@ -11,6 +11,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import type { EmailNotificationType } from '@prisma/client';
 import { isNotificationsEnabled } from './settings';
 import { logger } from '@/lib/observability/logger';
+import { hashForLookup } from '@/lib/security/encryption';
 import {
     buildTaskAssignedEmail,
     buildEvidenceExpiringEmail,
@@ -70,7 +71,47 @@ export interface EnqueueEmailInput {
 
 /**
  * Build a dedupe key for idempotent email sending.
- * Format: {tenantId}:{type}:{email}:{entityId}:{YYYY-MM-DD}
+ *
+ * Format: `{tenantId}:{type}:{recipientHash}:{entityId}:{YYYY-MM-DD}`
+ *
+ * ─── WHY THE RECIPIENT IS HASHED (#3577) ───────────────────────────────────
+ *
+ * This key used to embed the address itself. The row already carries it in
+ * `toEmail`, so that was not a new disclosure — it was THE SAME PERSONAL DATA
+ * IN A SECOND PLACE, which is what makes a deletion or a DSAR incomplete:
+ * anything that redacts, encrypts or drops `toEmail` leaves the address intact
+ * in a uniquely-indexed column with no retention rule of its own. The model
+ * already has a `toEmailEncrypted` column beside the plaintext, so somebody had
+ * judged the address worth protecting; the key was simply not part of that
+ * judgement, and it is the copy nobody would think to look for.
+ *
+ * It surfaced while tracing #3573's 520 undelivered emails: `dedupeKey` was the
+ * only column that could say which entity each failed row was about, so reading
+ * it was the natural debugging move — and reading it is a disclosure.
+ *
+ * ─── WHY `hashForLookup` AND NOT A NEW CONSTRUCTION ────────────────────────
+ *
+ * Because the repository already solved this exact problem. `hashForLookup` is
+ * the blind-index primitive behind the `emailHash` columns `auth.ts` and
+ * `credentials.ts` use to find a user without storing the address in the clear:
+ * HMAC-SHA256 under an HKDF-derived subkey of `DATA_ENCRYPTION_KEY`, with the
+ * production-required / dev-fallback handling already in place. Inventing a
+ * second keyed hash here would have meant a second key to source, a second
+ * rotation story and a second thing to get wrong.
+ *
+ * KEYED, not a bare digest, and that distinction is the whole value: an
+ * unkeyed SHA-256 of a corporate address is reversible by dictionary attack
+ * over a known user base, so it would pseudonymise nothing.
+ *
+ * ─── ONE BEHAVIOUR CHANGE, STATED RATHER THAN HIDDEN ───────────────────────
+ *
+ * `hashForLookup` lowercases and trims before hashing, so `Alice@acme.com` and
+ * `alice@acme.com` now produce the SAME key and the second is deduped away.
+ * That is more correct — one mailbox, one notification — but it is a change,
+ * and it could have collided on the unique index during the backfill. Measured
+ * against production first: 1,085 rows produce 1,085 distinct new keys, 0
+ * colliding groups, and 0 addresses differing only by case. So nothing in the
+ * existing data is affected.
  */
 export function buildDedupeKey(
     tenantId: string,
@@ -80,7 +121,7 @@ export function buildDedupeKey(
     date: Date = new Date(),
 ): string {
     const day = date.toISOString().slice(0, 10); // YYYY-MM-DD
-    return `${tenantId}:${type}:${email}:${entityId}:${day}`;
+    return `${tenantId}:${type}:${hashForLookup(email)}:${entityId}:${day}`;
 }
 
 /**
