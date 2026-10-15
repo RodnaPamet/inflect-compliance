@@ -111,6 +111,9 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         inputJson: null,
         outputJson: null,
         decisionDigest: null,
+        // #3473 part 3 — null for every step that is not a delegation, which
+        // is every step in these fixtures.
+        delegation: null,
         proposals: [],
         ...over,
     };
