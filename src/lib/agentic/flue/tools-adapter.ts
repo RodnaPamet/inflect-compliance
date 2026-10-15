@@ -547,6 +547,59 @@ function offerTools(
  * Pure apart from the schema conversion; performs no authorization and writes
  * no audit row. The returned `run` closures are where anything happens.
  */
+/**
+ * SCAN A DELEGATE'S ANSWER, exactly as a tool RESULT is scanned (#3473).
+ *
+ * Lives here rather than in the driver because everything it needs is already
+ * here: `stepVerdictOf` is private to this module, and the two assertions and
+ * the guard call are the ones `GuardReview.check` makes. A second
+ * implementation in the driver would be the same sandwich with its own
+ * opinions about which verdicts throw.
+ *
+ * ## Why a delegate's answer is a tool result in every respect that matters
+ *
+ * It crosses into the parent's context as the `task` tool's return value. The
+ * only thing that makes it special is that `task` belongs to the RUNTIME, so
+ * `wrapForLedger` never sees it — which is why nothing was scanning it.
+ *
+ * The delegate's own READS need no help: `narrowTools` hands it the parent's
+ * own tool objects, so each one runs the parent's wrapper and is scanned both
+ * directions, recorded in the parent's ledger and charged to its budget.
+ * Measured. What is left is the composed answer.
+ *
+ * ## It reports through the SAME observer, so a flag settles the run
+ *
+ * A flagged answer trips the same latch a flagged tool result does, which is
+ * what puts the run into `AWAITING_APPROVAL` with the flag attached. Reported
+ * BEFORE the assertions for the reason `check` gives: both of those paths
+ * leave by throwing, and observing afterwards would record every clean verdict
+ * and drop every refusal.
+ *
+ * `slice: 'result'` because that is what it is, and the ledger folds every
+ * verdict for one id into the worst seen. The `tool` is `task` — the name the
+ * model called, not the specialist it selected, because the specialist is in
+ * the arguments and this field is the tool.
+ */
+export async function guardDelegateAnswer(
+    ctx: RequestContext,
+    text: string,
+    taskId: string | undefined,
+    observe: GuardObserver | undefined,
+): Promise<void> {
+    const outcome = await guardUntrustedInput(ctx, text, {
+        source: `flue-delegate-answer:${taskId ?? 'unknown'}`,
+    });
+    observe?.({
+        toolCallId: taskId ?? 'standalone',
+        tool: 'task',
+        slice: 'result',
+        verdict: stepVerdictOf(outcome),
+        ruleIds: [...(outcome.ruleIds ?? [])],
+    });
+    assertGuardAllowed(outcome);
+    assertNoReviewRequired(outcome);
+}
+
 export function flueToolsFor(
     inv: McpInvocation,
     observe?: GuardObserver,

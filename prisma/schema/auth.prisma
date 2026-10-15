@@ -1511,6 +1511,37 @@ model TenantSecuritySettings {
   /// run may start" — a deliberate, readable way to stop a tenant's agents
   /// without engaging a kill switch.
   agentMaxConcurrentRuns       Int?
+  /// HOW MANY SUBAGENTS ONE PARENT TURN MAY DELEGATE TO (#3473).
+  ///
+  /// NOT NULLABLE, AND THAT IS THE ONE DIFFERENCE FROM ITS TWO NEIGHBOURS
+  /// ABOVE — read it before copying their shape. For `agentMonthlyTokenBudget`
+  /// and `agentMaxConcurrentRuns`, NULL is the configured meaning of "no cap":
+  /// they bound something already authorised, so defaulting every existing
+  /// tenant to a number would refuse work that runs today.
+  ///
+  /// Delegation is the opposite case. Nothing can delegate yet — the `task`
+  /// tool is in every run's tool list and has no valid target until a subagent
+  /// is declared (#3569) — so a default is not a restriction of anything, and
+  /// the owner's decision (2026-10-15) was a tenant-configurable cap
+  /// DEFAULTING LOW. A nullable column could not deliver that: NULL would have
+  /// to mean "the product default", and a NULL that means "unlimited" in the
+  /// column above and "3" in this one is how somebody reads the wrong one at
+  /// the wrong moment.
+  ///
+  /// So the default lives in the DATABASE and every tenant has a value. The
+  /// shipped behaviour is the safe one for every tenant that never touches it,
+  /// which was the condition attached to making this a knob at all.
+  ///
+  /// THREE, because the four shipped specialists are consultative: a parent
+  /// reasonably asks two or three of them about one question. More than that in
+  /// a SINGLE TURN is a fan-out pattern rather than a consultation, and
+  /// fan-out is what `ENGINE_CAPS` has to absorb.
+  ///
+  /// A CHECK refuses a negative value. ZERO IS LEGAL and means "this tenant's
+  /// agents may not delegate" — the readable way to withdraw delegation
+  /// without retiring an agent or engaging a kill switch, both of which say
+  /// something larger.
+  agentMaxSubagentsPerTurn     Int      @default(3)
   /// When the current DRY_RUN period began, per direction. The gate to
   /// AUTOMATIC reads this: dry-run is time-boxed and mandatory, so a tenant
   /// cannot enable unattended writes the same afternoon it enables the feature.

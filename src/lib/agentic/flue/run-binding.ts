@@ -105,6 +105,53 @@ export interface FlueRunBinding {
     skills: readonly FlueSkillDocument[];
     /** `<provider-id>/<model-id>`, already resolved against the tenant's residency. */
     modelSpecifier: string;
+
+    /**
+     * HOW MANY SUBAGENTS ONE TURN OF THIS RUN MAY DELEGATE TO (#3473).
+     *
+     * Carried here for the same reason the tools and the skills are: the only
+     * place a fan-out cap can be enforced is the Flue execution interceptor,
+     * which runs in the ESM graph where `pg` does not load — so the VALUE is
+     * resolved by the driver, in ordinary Node, from
+     * `TenantSecuritySettings.agentMaxSubagentsPerTurn`, and the enforcement
+     * compares against what it was handed.
+     *
+     * OPTIONAL ON THE TYPE AND NEVER OPTIONAL IN EFFECT.
+     * `normaliseFanOutCap` turns an absent, negative or non-finite value into
+     * `DEFAULT_MAX_SUBAGENTS_PER_TURN`, so a caller that omits it gets the
+     * safe number rather than "unlimited". Optional rather than required
+     * because every existing `bindRun` call site predates delegation and
+     * requiring it would make them all say a number about a capability they do
+     * not use — and a required field answered by copy-paste is a worse record
+     * than an absent one with a safe default.
+     */
+    maxSubagentsPerTurn?: number;
+
+    /**
+     * SCAN A DELEGATE'S ANSWER BEFORE IT RE-ENTERS THE PARENT'S CONTEXT
+     * (#3473, and #3468's rule applied to a new inbound edge).
+     *
+     * A CALLBACK rather than a value, which is the one authority term here
+     * that cannot be precomputed: the guard runs on TEXT that does not exist
+     * until the delegate has answered. The driver builds it closed over its
+     * own `ctx` — in ordinary Node, where `app-layer/ai/guard` and Prisma load
+     * — and the interceptor awaits it in the ESM graph. Same shape as
+     * `wrapForLedger`'s `onFailure`/`noteOrigin` hooks, for the same reason.
+     *
+     * THROWS to block. A delegate's answer that is steering the parent must
+     * not reach the model, and returning a verdict for the caller to check
+     * would put the enforcement in the caller — which is where it gets
+     * forgotten.
+     *
+     * WHY THE DELEGATE'S READS NEED NO SUCH HOOK: `narrowTools` hands the
+     * delegate the parent's OWN tool objects, so its reads run the parent's
+     * `wrapForLedger` — already scanned both directions, already recorded in
+     * the parent's step ledger, already charged to the parent's budget.
+     * Measured: a delegate's `list_controls` call runs the parent's wrapper.
+     * What that leaves unscanned is the delegate's own composed ANSWER, which
+     * is what this guards.
+     */
+    guardDelegateOutput?: (text: string, taskId: string | undefined) => Promise<void>;
 }
 
 const BINDINGS = new Map<string, FlueRunBinding>();

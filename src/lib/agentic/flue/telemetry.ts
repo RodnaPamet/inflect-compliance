@@ -1,5 +1,8 @@
 import { instrument, type FlueExecutionOperation } from '@flue/runtime';
 
+import { gateDelegation, guardDelegateResult } from './delegation-gate';
+import { readRunBinding } from './run-binding';
+
 import { getTracer } from '@/lib/observability/tracing';
 
 /**
@@ -110,13 +113,46 @@ export function installFlueTelemetry(): () => Promise<void> {
         // forwarding one nobody re-reads.
         observe: () => {},
 
-        interceptor: async (operation, _ctx, next) =>
+        // ── ONE INTERCEPTOR, TWO CONCERNS ──────────────────────────────
+        //
+        // `instrument()` throws `InstrumentationAlreadyInstalledError` on a
+        // second install, so there is exactly one interceptor per process and
+        // anything that needs the seam composes HERE. The delegation gate
+        // (#3473) is the second thing that needs it.
+        //
+        // The gate runs INSIDE the span rather than before it, so a refused
+        // delegation is traced as an attempt that failed. A gate outside would
+        // make the one operation an operator most wants to see invisible
+        // precisely when it was declined.
+        interceptor: async (operation, ctx, next) =>
             tracer.startActiveSpan(
                 spanNameFor(operation),
                 { attributes: attributesFor(operation) },
                 async (span) => {
                     try {
-                        return await next();
+                        // THROWS to refuse, which fails the `task` tool call
+                        // with a message addressed to the model. Returns
+                        // immediately for everything that is not a delegation.
+                        gateDelegation(operation, ctx);
+                        const result = await next();
+                        // AND THE ANSWER ON THE WAY BACK (#3473). The delegate's
+                        // reads ran the parent's wrapper and were scanned there;
+                        // its own composed answer crosses into the parent's
+                        // context as the `task` tool's result, which our wrapper
+                        // never sees because `task` is the runtime's tool.
+                        //
+                        // The binding is read HERE rather than passed, because
+                        // the interceptor is per-process and the guard is
+                        // per-run — `ctx.instanceId` is the run id.
+                        await guardDelegateResult(
+                            operation,
+                            ctx,
+                            result,
+                            ctx.instanceId
+                                ? readRunBinding(ctx.instanceId)?.guardDelegateOutput
+                                : undefined,
+                        );
+                        return result;
                     } catch (err) {
                         // The TYPE and message of the failure, which is ours or
                         // the runtime's — never the model's answer. `recordException`

@@ -136,3 +136,78 @@ describe('no second exporter is installed anywhere for Flue', () => {
         expect(read(TELEMETRY)).toContain("getTracer('inflect.agentic.flue')");
     });
 });
+
+/*
+    ═══ THE ONE INTERCEPTOR ALSO CARRIES THE DELEGATION GATE (#3473) ═══
+
+    `instrument()` throws `InstrumentationAlreadyInstalledError` on a second
+    install, so this process has exactly ONE interceptor and anything needing
+    that seam has to compose into it. The fan-out and depth caps on subagent
+    delegation do, because the `task` tool belongs to the runtime: it is in
+    every run's tool list already (#3569), so there is no `useTool` wrapper to
+    put a check in and no point before the runtime at which the call could be
+    declined.
+
+    `tests/flue/delegation-is-capped.test.ts` proves the gate WORKS — it boots
+    the real runtime, scripts a model to call `task`, and reads what the
+    interceptor saw. What it cannot prove is that PRODUCTION calls it: that
+    file installs its own instrumentation, because the app's is installed
+    inside `ensureFlueRuntime`, which it does not call. So it reproduces the
+    composition rather than importing it.
+
+    This is the other half, and without it the composition is the thing that
+    can silently come apart: deleting one line from the production interceptor
+    leaves every behavioural assertion green and every delegation ungated.
+*/
+describe('the production interceptor calls the delegation gate', () => {
+    const telemetry = read(TELEMETRY);
+
+    it('calls BOTH halves of the gate, and imports them rather than reimplementing', () => {
+        // TWO HALVES SINCE #3473's second part: `gateDelegation` decides whether
+        // a delegation may START, and `guardDelegateResult` decides whether its
+        // answer may be SEEN. They are one seam and either missing is a hole.
+        //
+        // The needle was `import { gateDelegation } from …` and went red when
+        // the second name joined the line — a drifted citation rather than a
+        // changed claim, so it is retargeted and widened rather than loosened.
+        // Matching each NAME in the import list is what keeps it from being
+        // satisfied by a line that imports only one of them.
+        expect(telemetry).toContain('gateDelegation(operation, ctx)');
+        expect(telemetry).toContain('await guardDelegateResult(');
+        expect(telemetry).toMatch(/import \{[^}]*\bgateDelegation\b[^}]*\} from '\.\/delegation-gate'/);
+        expect(telemetry).toMatch(/import \{[^}]*\bguardDelegateResult\b[^}]*\} from '\.\/delegation-gate'/);
+    });
+
+    it('scans the answer AFTER `next()`, which is the only place the answer exists', () => {
+        // The mirror of the ordering assertion below it: the gate must run
+        // before `next()` and the answer scan after it. A scan before would
+        // have nothing to read, and would pass a presence check.
+        const scanAt = telemetry.indexOf('await guardDelegateResult(');
+        const nextAt = telemetry.indexOf('await next()');
+        expect(scanAt).toBeGreaterThan(-1);
+        expect(nextAt).toBeGreaterThan(-1);
+        expect(scanAt).toBeGreaterThan(nextAt);
+    });
+
+    it('calls it BEFORE `next()`, which is what makes a refusal enforcement', () => {
+        // A gate after `next()` would observe a delegation that had already
+        // happened. Asserted on ORDER rather than presence, because both lines
+        // are present either way and only one of the two arrangements refuses
+        // anything.
+        const gateAt = telemetry.indexOf('gateDelegation(operation, ctx)');
+        const nextAt = telemetry.indexOf('await next()');
+        expect(gateAt).toBeGreaterThan(-1);
+        expect(nextAt).toBeGreaterThan(-1);
+        expect(gateAt).toBeLessThan(nextAt);
+    });
+
+    it('passes the REAL ctx, not the discarded one', () => {
+        // The interceptor's second parameter was `_ctx` — unused, because the
+        // telemetry half wants nothing from it. The gate needs `instanceId`
+        // and `turnId`, and its own fail-open branch means an underscore here
+        // would let every delegation through while every other assertion in
+        // this file stayed green.
+        expect(telemetry).toMatch(/interceptor: async \(operation, ctx, next\)/);
+        expect(telemetry).not.toMatch(/interceptor: async \(operation, _ctx, next\)/);
+    });
+});
