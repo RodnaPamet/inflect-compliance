@@ -182,11 +182,40 @@ test.describe('CSP nonce coverage on authenticated pages', () => {
         const emittedSrcs = new Set(emitted.map((s) => s.src).filter(Boolean));
         const runtimeOnly = inDom.filter((s) => s.src && !emittedSrcs.has(s.src));
 
-        // The DOM must be a SUPERSET of what the server sent — if it is not, the
-        // two reads are not describing the same page and nothing below means
-        // anything.
+        // ── WHY THIS IS A FLOOR ON EACH READ, NOT A RELATION BETWEEN THEM ───────
+        //
+        // This asserted `inDom.length >= emitted.length` until #3590, on the
+        // stated premise that "the DOM must be a SUPERSET of what the server
+        // sent". It cannot establish that premise, and failed ~1 run in 9 on
+        // main through all three retries.
+        //
+        // The two operands come from two DIFFERENT HTTP requests: `inDom` reads
+        // the live DOM of the page we navigated to, while `serverEmittedScripts`
+        // issues its own `page.request.get`. Those are independent renders, and
+        // nothing pins them to the same chunk split — which is the very
+        // nondeterminism the comment fourteen lines below already records
+        // ("four then three on two runs of the same build"). Hydration also
+        // replaces tags in the live DOM, so even one render does not guarantee a
+        // superset BY COUNT.
+        //
+        // Nothing downstream of this assertion was ever asserted — `runtimeOnly`
+        // is printed. So it was an unstable gate in front of a `console.log`, in
+        // a test whose own name says "reported, not asserted".
+        //
+        // Measured on a GREEN run (CI 38741627780): "server-emitted 51, dom 51,
+        // runtime-only 0". The two counts TIE on a healthy page, so `>=` was
+        // riding a knife edge with zero margin — one tag swapped during
+        // hydration is enough to invert it, which is exactly a 1-in-9 flake.
+        //
+        // What is both stable and worth asserting is a FLOOR on each read: the
+        // app renders dozens of scripts on this page (51 above), so either count
+        // dropping to single digits means the page did not render or the server
+        // HTML collapsed — the regression this spec exists for. The floor is the
+        // same `> 5` the first test uses, for the same stated reason. The
+        // relation between the counts is the part that was never checkable, and
+        // it is gone.
         expect({
-            domCount: inDom.length >= emitted.length,
+            domCount: inDom.length > 5,
             emittedCount: emitted.length > 5,
         }).toEqual({ domCount: true, emittedCount: true });
 
