@@ -26,6 +26,8 @@ import { generateNonce, buildCspHeader, CSP_NONCE_HEADER, CSP_REPORT_PATH, LEGAC
 import { applySecurityHeaders } from '@/lib/security/headers';
 import { resolveCorsConfig, isOriginAllowed, applyCorsHeaders, CORS_PREFLIGHT_HEADERS } from '@/lib/security/cors';
 import { shouldBlockAdminRequest } from '@/lib/security/admin-session-guard';
+import { edgeLogger } from '@/lib/observability/edge-logger';
+import { documentLoadRoute, DOCUMENT_LOAD_MSG } from '@/lib/observability/vital-route';
 
 /**
  * GAP-04 — Edge middleware: centralized auth guard + CSP for ALL routes.
@@ -590,6 +592,32 @@ export default async function middleware(
     // ── Apply CORS Headers to API responses (environment-locked) ──
     if (pathname.startsWith('/api/') && isAllowedOrigin && origin) {
         applyCorsHeaders(res.headers, origin);
+    }
+
+    // ── THE WEB-VITALS DENOMINATOR (#3547) ──
+    //
+    // Production had 12 `web_vital` beacons in 30 days and nothing to divide
+    // them by: measured 2026-10-15, every `route` in a 500-line/30-day sample
+    // of the production log belongs to a background job, because the app logs
+    // no HTTP requests at all. "12 beacons" could therefore not be read as
+    // "almost no traffic" OR as "beacons are being dropped", and those two
+    // have completely different responses.
+    //
+    // One line per SERVED DOCUMENT, labelled by the same `normalizeVitalRoute`
+    // the beacons use — the decision and the label both live in
+    // `documentLoadRoute`, which is pure and unit-tested, because this file can
+    // only be tested by grepping its own source.
+    //
+    // Bounded on purpose: one line per page load, route only. No tenant, no
+    // user, no IP — the route label is already collapsed to fixed cardinality,
+    // and anything per-identity would turn an access log into a PII store.
+    const documentRoute = documentLoadRoute({
+        fetchDest: req.headers.get('sec-fetch-dest'),
+        pathname,
+        passedThrough: isPassThrough,
+    });
+    if (documentRoute !== null) {
+        edgeLogger.info(DOCUMENT_LOAD_MSG, { route: documentRoute });
     }
 
     return res;
