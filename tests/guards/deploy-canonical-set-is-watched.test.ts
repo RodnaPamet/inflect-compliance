@@ -128,13 +128,53 @@ function pair(entry: string, remoteIsBasename: boolean): Pair {
     };
 }
 
-/** Everything apply.sh pushes, from both of its arrays. */
+/**
+ * Everything apply.sh pushes — from its two arrays AND its one scalar pair.
+ *
+ * ═══ WHY A THIRD SOURCE EXISTS (#3589) ═══
+ *
+ * The Caddyfile is pushed by neither array, and could not be by either. It is
+ * INSIDE `${REMOTE_DIR}`, so `HOST_CONFIG_SET carries absolute remote paths
+ * outside the compose dir` below refuses it; and it is activated by a `caddy
+ * reload` rather than by `docker compose up -d`, so putting it in
+ * `CANONICAL_SET` would push a file and report a clean apply over a Caddy still
+ * serving the previous config. It gets `CADDY_LOCAL`/`CADDY_REMOTE` and a
+ * `CADDY_ONLY=1` mode of its own.
+ *
+ * It is read HERE because the invariant this guard protects is not about
+ * arrays: it is that nothing apply.sh pushes goes unwatched and nothing
+ * check-drift.sh calls appliable is unpushable. A new push mechanism that this
+ * function did not know about would satisfy both directions by being invisible
+ * to both — which is how the Caddyfile spent months as a standing divergence
+ * in the first place.
+ */
 function pushedByApply(): Pair[] {
     const src = read(APPLY);
     return [
         ...bashArray(src, 'CANONICAL_SET').map((e) => pair(e, true)),
         ...bashArray(src, 'HOST_CONFIG_SET').map((e) => pair(e, false)),
+        caddyPair(src),
     ];
+}
+
+/**
+ * The Caddyfile pair, read from the two scalars rather than an array.
+ *
+ * Asserted non-empty rather than defaulted: if either assignment is renamed or
+ * deleted, this throws and the guard goes red, instead of quietly returning one
+ * fewer pair and letting the two directions agree about a smaller set.
+ */
+function caddyPair(src: string): Pair {
+    const scalar = (name: string): string => {
+        const hits = codeLines(src)
+            .filter((l) => l.startsWith(`${name}=`))
+            .map((l) => expand(l.slice(name.length + 1).replace(/^"|"$/g, '')));
+        if (hits.length !== 1) {
+            throw new Error(`apply.sh must assign ${name} exactly once, found ${String(hits.length)}`);
+        }
+        return hits[0];
+    };
+    return { local: scalar('CADDY_LOCAL'), remote: scalar('CADDY_REMOTE') };
 }
 
 /** Everything check-drift.sh watches as appliable. */
@@ -224,6 +264,57 @@ describe('deploy — a pushed host config is reloaded, not merely copied', () =>
         expect(hits).toHaveLength(1);
         return hits[0];
     }
+
+    it('apply.sh RELOADS caddy, and does not merely copy the Caddyfile', () => {
+        // Without this the push is inert in the same way the ops-agent push
+        // would be: the file is bind-mounted, so a changed file alone changes
+        // nothing a client sees, and `up -d` recreates no container for it.
+        //
+        // `executableLines()` rather than the raw source, for the reason the
+        // docblock above gives: the rollback advice this script prints also
+        // contains the words `caddy reload`, and reading that as the thing
+        // being asserted is exactly the ambiguous-needle defect this helper was
+        // introduced to fix.
+        const lines = executableLines();
+        expect(lines.some((l) => /caddy reload/.test(l))).toBe(true);
+        // A RELOAD and not a restart: a restart drops the listeners and the
+        // issued certificates on a production TLS terminator.
+        expect(lines.some((l) => /docker (compose )?restart.*caddy/.test(l))).toBe(false);
+    });
+
+    it('apply.sh proves the reload worked by fetching every hostname it serves', () => {
+        // The counterpart of the ops-agent's compiled-config needle. A reload
+        // that Caddy accepted still has to leave the vhosts answering, and the
+        // only way to know is from outside.
+        const lines = executableLines();
+        expect(lines.some((l) => /curl .*http_code/.test(l))).toBe(true);
+        // The hostnames come from the ADAPTED config rather than a hard-coded
+        // list, so a vhost added to the Caddyfile is verified without anyone
+        // remembering to extend a constant here.
+        expect(lines.some((l) => /caddy adapt/.test(l))).toBe(true);
+    });
+
+    it('apply.sh restores its backup when the reload or the verification fails', () => {
+        // Two failure paths, one in `caddy_apply` for a rejected reload and one
+        // for a hostname that stops answering, and both must put the previous
+        // file back and reload again — otherwise the FILE disagrees with what
+        // is being served, which is drift created by the anti-drift tool.
+        //
+        // The needle is `cp -a '${backup}'` and not `cp -a …bak…`: the backup
+        // path is held in a variable, so the literal `.bak.` appears only where
+        // that variable is ASSIGNED. The first draft looked for `.bak.` and
+        // reported 0 against code that was correct — a needle aimed one level
+        // off the construct it names.
+        const restores = executableLines().filter(
+            (l) => /cp -a '\$\{backup\}'/.test(l) && /caddy reload/.test(l),
+        );
+        expect(restores.length).toBeGreaterThanOrEqual(2);
+        // And the backup is actually taken, with a timestamp, so the two
+        // restores above have something to restore.
+        expect(executableLines().some((l) => /backup="\$\{CADDY_REMOTE\}\.bak\.\$\{TS\}"/.test(l))).toBe(
+            true,
+        );
+    });
 
     it('apply.sh restarts the unit that reads the host config', () => {
         // Without this the push is inert: the agent re-reads its config only

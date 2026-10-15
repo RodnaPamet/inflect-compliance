@@ -86,6 +86,13 @@ APPLIABLE=(
     "${SCRIPT_DIR}/${COMPOSE_BASENAME}:${REMOTE_DIR}/${COMPOSE_BASENAME}"
     "${SCRIPT_DIR}/init-roles.sh:${REMOTE_DIR}/init-roles.sh"
     "${REPO_ROOT}/prisma.config.ts:${REMOTE_DIR}/prisma.config.ts"
+    # Pushed by apply.sh's own CADDY_* path rather than from CANONICAL_SET or
+    # HOST_CONFIG_SET — it is inside ${REMOTE_DIR} so it cannot be host config,
+    # and it is activated by a reload rather than by `up -d` so it cannot be
+    # canonical config. Watched here for the reason the header gives: the
+    # property this script reports is the same for all three, and only the push
+    # mechanism differs.
+    "${SCRIPT_DIR}/caddy/Caddyfile:${REMOTE_DIR}/caddy/Caddyfile"
     "${SCRIPT_DIR}/ops-agent-config.yaml:/etc/google-cloud-ops-agent/config.yaml"
 )
 
@@ -93,7 +100,21 @@ APPLIABLE=(
 # reason, because an un-actionable warning that outlives its explanation is
 # how a check becomes noise people filter out.
 UNRECONCILED=(
-    "${SCRIPT_DIR}/caddy/Caddyfile:${REMOTE_DIR}/caddy/Caddyfile:the CONTENT is reconciled as of 2026-09-26 — the repo copy is the superset, defining both hostnames and carrying the HTTP/3 and Cache-Control work. The MECHANICAL blocker this entry used to cite is gone: it said apply.sh had no flattened staging name for a nested remote path, and as of the ops-agent change apply.sh's HOST_CONFIG_SET loop stages every push through /tmp/\$(basename).new.\${TS}, which the Caddyfile could use unchanged. What remains is NOT mechanical. Caddy needs a reload rather than a restart, so pushing it means adding and verifying that step; the repo and VM copies are still not byte-equal, so the first push is a real content change to a live TLS terminator serving two production hostnames; and nobody has taken that decision. Moving this entry to APPLIABLE is therefore a deliberate act with its own verification, not the one-line array edit it now looks like"
+    # EMPTY as of 2026-10-15 (#3589). The Caddyfile entry that lived here moved
+    # to APPLIABLE, and the move was the deliberate act its own reason demanded
+    # rather than the one-line array edit it looked like: apply.sh now stages
+    # the push under a FLATTENED name (the mechanical blocker — /tmp/caddy/
+    # does not exist), validates with caddy's own binary in the running
+    # container, compares the hostnames of both ADAPTED configs and refuses a
+    # push that would stop serving one, reloads rather than restarting, then
+    # fetches every served hostname over public HTTPS and rolls the file back
+    # if any stops answering. See CADDY_ONLY=1 there.
+    #
+    # Exit 3 is therefore UNREACHABLE today, and this comment is the honest
+    # version of the claim the header used to make about that — the array is
+    # empty NOW, which is a different statement from the one made on
+    # 2026-09-26, when the entry was present and the CONTENT had been
+    # reconciled. Add an entry here and exit 3 becomes reachable again.
 )
 
 remote_sha() {
