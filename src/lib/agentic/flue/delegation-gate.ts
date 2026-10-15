@@ -229,29 +229,83 @@ export async function guardDelegateResult(
     ctx: { instanceId?: string; taskId?: string },
     result: unknown,
     guard: ((text: string, taskId: string | undefined) => Promise<void>) | undefined,
+    /**
+     * Record the delegation in the step ledger (#3473 part 3).
+     *
+     * Called whether the answer was accepted or refused, and told which — a
+     * delegation that happened and was blocked is a thing the ledger must
+     * carry, not an absence. Awaited BEFORE the guard's throw propagates, for
+     * that reason.
+     */
+    record?: (d: { agent: string; taskId: string; answerAccepted: boolean }) => Promise<void>,
 ): Promise<void> {
     if (operation.type !== 'tool' || operation.toolName !== DELEGATION_TOOL_NAME) return;
-    // NO GUARD IS NOT A SILENT PASS for a run this product dispatched — the
-    // driver always supplies one. It is absent only for a run bound by a test
-    // or by a caller that predates delegation, and refusing those would make
-    // the hook mandatory on every existing `bindRun` call site.
-    if (!guard) return;
+
+    const taskId = delegateTaskId(result) ?? ctx.taskId;
+    const agent = delegateAgentName(result);
 
     const text = delegateAnswerText(result);
-    if (text === '') return;
-    // THE TASK ID COMES FROM THE RESULT, NOT THE CONTEXT, and that is measured
-    // rather than preferred. On the parent's `task` tool call `ctx.taskId` is
-    // UNDEFINED — it is set for operations running INSIDE a delegation, which
-    // is what the depth check above relies on. The id of the task that just
-    // answered is in the result's own `details`.
-    //
-    // It is what the guard keys its `source` on, so getting this wrong does not
-    // fail: it makes every flagged delegate answer attributable to `unknown`,
-    // which is the shape of audit record that looks complete and names nothing.
-    // `ctx.taskId` is kept as a fallback for a nested call this product does not
-    // currently permit.
-    await guard(text, delegateTaskId(result) ?? ctx.taskId);
+    // AN EMPTY ANSWER IS STILL A DELEGATION. There is nothing to scan, but
+    // something happened and the ledger has to say so — an absent step for a
+    // delegate that returned nothing would read as a delegation that never
+    // occurred, which is the one reading that is certainly wrong.
+    if (text === '') {
+        await recordIfPossible(record, agent, taskId, true);
+        return;
+    }
+
+    // NO GUARD IS NOT A SILENT PASS for a run this product dispatched — the
+    // driver always supplies one. It is absent only for a run bound by a test
+    // or by a caller that predates delegation, and requiring it would make the
+    // hook mandatory on every existing `bindRun` call site.
+    if (!guard) {
+        await recordIfPossible(record, agent, taskId, true);
+        return;
+    }
+
+    // RECORDED EITHER WAY, and the step says which. A refused answer leaves
+    // this function by throwing, so recording afterwards would record exactly
+    // the delegations that went well — the inversion of what a reviewer wants.
+    try {
+        await guard(text, taskId);
+    } catch (err) {
+        await recordIfPossible(record, agent, taskId, false);
+        throw err;
+    }
+    await recordIfPossible(record, agent, taskId, true);
+    return;
 }
+
+/**
+ * Write the step, when there is a writer and an identifiable delegation.
+ *
+ * A delegation with no `taskId` or no `agent` is not recorded. Both come from
+ * the runtime's own result, so their absence means a runtime that stopped
+ * supplying them — and a step claiming `agent: 'unknown'` would be a row that
+ * looks like evidence and names nothing. `tests/flue/` asserts both are
+ * present, so a version that drops either turns that red rather than quietly
+ * writing anonymous rows.
+ */
+async function recordIfPossible(
+    record: ((d: { agent: string; taskId: string; answerAccepted: boolean }) => Promise<void>) | undefined,
+    agent: string | undefined,
+    taskId: string | undefined,
+    answerAccepted: boolean,
+): Promise<void> {
+    if (!record || !agent || !taskId) return;
+    await record({ agent, taskId, answerAccepted });
+}
+
+/** Which specialist answered, from the runtime's own result `details`. */
+export function delegateAgentName(result: unknown): string | undefined {
+    if (!result || typeof result !== 'object') return undefined;
+    const details = (result as { details?: unknown }).details;
+    if (!details || typeof details !== 'object') return undefined;
+    const agent = (details as { agent?: unknown }).agent;
+    return typeof agent === 'string' && agent !== '' ? agent : undefined;
+}
+
+
 
 /** The id of the task that produced this result, or undefined. */
 export function delegateTaskId(result: unknown): string | undefined {

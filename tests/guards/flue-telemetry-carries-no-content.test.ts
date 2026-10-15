@@ -178,6 +178,22 @@ describe('the production interceptor calls the delegation gate', () => {
         expect(telemetry).toMatch(/import \{[^}]*\bguardDelegateResult\b[^}]*\} from '\.\/delegation-gate'/);
     });
 
+    it('passes BOTH binding hooks — the guard and the ledger recorder', () => {
+        // #3473 part 3. The behavioural suites build their OWN interceptor,
+        // reproducing this composition rather than importing it, so they cannot
+        // see a hook that production stops passing.
+        //
+        // MEASURED: replacing `binding?.onDelegationComplete` with `undefined`
+        // left all 35 of those assertions green while every delegation went
+        // unrecorded. This is the only place that catches it.
+        expect(telemetry).toContain('binding?.guardDelegateOutput');
+        expect(telemetry).toContain('binding?.onDelegationComplete');
+        // READ FROM ONE BINDING LOOKUP, not two. Two would be two reads of a
+        // map that a release between them could have emptied, and the pair
+        // would then disagree about whether this run has hooks at all.
+        expect((telemetry.match(/readRunBinding\(/g) ?? []).length).toBe(1);
+    });
+
     it('scans the answer AFTER `next()`, which is the only place the answer exists', () => {
         // The mirror of the ordering assertion below it: the gate must run
         // before `next()` and the answer scan after it. A scan before would

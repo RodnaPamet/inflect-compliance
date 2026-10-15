@@ -27,6 +27,7 @@ import path from 'path';
 
 import {
     callExpressionOf,
+    allCallExpressionsOf,
     codeOf,
     declarationOf,
     functionBodyOf,
@@ -174,9 +175,35 @@ describe('output that becomes nothing reaches ONE column', () => {
         // second anchor moved above the first when the recorder gained a
         // caller — a backwards slice is silently empty, so every `not.toContain`
         // in it would have passed while checking nothing.
-        const modelStep = callExpressionOf(engine, 'recordStep');
-        expect(modelStep).toContain("'MODEL_CALL'");
-        expect(modelStep).not.toContain('reply.text');
+        //
+        // AND NOW OVER EVERY `recordStep` CALL, not whichever comes first.
+        // `callExpressionOf` takes the FIRST match, which was the MODEL_CALL
+        // write while the engine had one ledger write. #3473 part 3 added a
+        // delegation write ahead of it and this guard read that instead —
+        // a drifted citation, not a changed claim.
+        //
+        // Sweeping them all is also the stronger claim: "the model's text
+        // reaches no step" should be true of every step the engine writes, not
+        // of the one that happens to be first. The MODEL_CALL write keeps its
+        // extra condition — no `output:` at all — because that is the step
+        // whose subject IS the model's answer.
+        const writes = allCallExpressionsOf(engine, 'recordStep');
+        // THE DENOMINATOR FIRST: more than one write, so the sweep below is
+        // over a population rather than over the single call this guard used
+        // to read.
+        expect(writes.length).toBeGreaterThanOrEqual(2);
+
+        // JOINED AND ASSERTED ONCE rather than looped. A `for (const w of
+        // writes)` makes the subject a loop VARIABLE, which
+        // `assertion-needle-uniqueness-ratchet` cannot resolve — measured,
+        // that shape added two blind spots it counts. One derived subject with
+        // literal needles is both analysable and a smaller claim to read.
+        const everyWrite = writes.join('\n');
+        expect(everyWrite).not.toContain('reply.text');
+        expect(everyWrite).not.toContain('response.text');
+
+        const modelStep = writes.find((w) => w.includes("'MODEL_CALL'"));
+        expect(modelStep).toBeDefined();
         expect(modelStep).not.toContain('output:');
     });
 

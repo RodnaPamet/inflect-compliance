@@ -152,6 +152,39 @@ export interface FlueRunBinding {
      * is what this guards.
      */
     guardDelegateOutput?: (text: string, taskId: string | undefined) => Promise<void>;
+
+    /**
+     * RECORD A COMPLETED DELEGATION IN THE STEP LEDGER (#3473, part 3).
+     *
+     * A callback for the same reason `guardDelegateOutput` is one: the ledger
+     * write reaches Prisma, which the interceptor's ESM graph cannot load. The
+     * driver owns the sequence counter, so it allocates the `seq` as well —
+     * the interceptor supplies only what it knows.
+     *
+     * WHAT IT KNOWS IS ENOUGH, and that was the finding that shaped this. The
+     * `task` result's `details` carries `agent` — the specialist's name,
+     * supplied by the runtime — alongside `taskId` and `session`. So no render
+     * callback is needed to report the name, which is as well: a delegate's
+     * render gets `useInitialData() === undefined` and has no task identity to
+     * key a report to.
+     *
+     * A TRAILING MARKER, not a leading one. The seq is allocated when the
+     * delegation COMPLETES, so the step lands after the delegate's own steps
+     * rather than before them. That is the better end of the span to mark: the
+     * step carries the outcome, and the group a reader wants is "the steps back
+     * to the previous non-delegation step".
+     */
+    onDelegationComplete?: (delegation: {
+        /** The specialist the model selected, from the runtime's own result. */
+        agent: string;
+        taskId: string;
+        /**
+         * Did the answer survive the guard? `false` when
+         * `guardDelegateOutput` refused it, which is a different outcome from
+         * a delegate that failed on its own.
+         */
+        answerAccepted: boolean;
+    }) => Promise<void>;
 }
 
 const BINDINGS = new Map<string, FlueRunBinding>();

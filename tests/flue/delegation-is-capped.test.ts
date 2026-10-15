@@ -33,6 +33,7 @@
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { init, instrument } from '@flue/runtime';
 import { start } from '@flue/runtime/node';
+import * as v from 'valibot';
 
 import { InflectAgent } from '@/lib/agentic/flue/agent';
 import { bindRun, releaseRun, readRunBinding } from '@/lib/agentic/flue/run-binding';
@@ -284,10 +285,25 @@ describe('the delegate answer reaches the guard hook', () => {
     });
 
     it('is NOT called for an ordinary tool, only for a delegation', async () => {
-        // The fast path. A hook called on every tool result would double-scan
-        // what `wrapForLedger` already scanned, and would charge a second
-        // guard pass to every read in the run.
+        /*
+            THE FAST PATH, and what the `toolName` check is actually for.
+
+            A hook called on every tool result would double-scan what
+            `wrapForLedger` already scanned on the way in AND on the way out,
+            charging a second guard pass to every read in the run.
+
+            It is NOT what stops an ordinary result being RECORDED as a
+            delegation — `recordIfPossible` needs both `agent` and `taskId`,
+            and an ordinary tool's `details` carries `{ customTool, output }`
+            with neither. Measured by dropping the `toolName` check and
+            watching the recording cases stay green.
+
+            So this case is the one that has teeth for that check, and the
+            first draft of it had none: it bound NO tools, so there was no
+            ordinary result to double-scan. It binds one and calls it.
+        */
         const seen: string[] = [];
+        let ordinaryCalls = 0;
         const faux = fauxProvider();
         const dispose = instrument({
             observe: () => {},
@@ -304,13 +320,23 @@ describe('the delegate answer reaches the guard hook', () => {
             dispose: () => {},
         });
         bindRun('guard-none', {
-            tools: [],
+            tools: [{
+                name: 'list_controls',
+                description: 'an ordinary read',
+                input: v.strictObject({}),
+                annotations: { readOnlyHint: true, destructiveHint: false, title: 'list_controls' },
+                run: async () => { ordinaryCalls += 1; return '{"controls":1}'; },
+            }],
             skills: [],
             modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
             maxSubagentsPerTurn: 3,
             guardDelegateOutput: async (text) => { seen.push(text); },
         });
-        faux.setResponses([fauxAssistantMessage('no tools at all')]);
+        faux.setResponses([
+            fauxAssistantMessage([fauxToolCall('list_controls', {})]),
+            fauxAssistantMessage('done'),
+            fauxAssistantMessage('spare'),
+        ]);
         const flue = await start({ agents: [InflectAgent], providers: [faux.provider] });
         try {
             const agent = init(InflectAgent, { id: 'guard-none' });
@@ -322,7 +348,183 @@ describe('the delegate answer reaches the guard hook', () => {
             await dispose();
             releaseRun('guard-none');
         }
+        // THE TOOL REALLY RAN, so the absence below is about the hook rather
+        // than about a run in which nothing happened.
+        expect(ordinaryCalls).toBe(1);
         expect(seen).toEqual([]);
+    });
+});
+
+/*
+    ═══ THE DELEGATION IS IN THE LEDGER (#3473 part 3) ═══
+
+    Before this, a delegation wrote NO step. `task` is the runtime's tool, so
+    it never passes through `wrapForLedger` — while the delegate's own reads DO
+    get recorded, through the parent's wrapper, as the parent's own steps with
+    nothing marking which delegate made them.
+
+    So the run detail could show the work and not the delegating, which is the
+    half an operator opens it for.
+
+    The owner's decision (2026-10-15) was to group by SEQUENCE with a
+    delegation step marking the span, and the measurement that shaped it is
+    that the `task` result's `details` carries `agent` — the specialist's name,
+    from the runtime. No render callback, no name-pairing queue.
+
+    These cases exercise the SEAM: that the recorder is called, with the
+    specialist and the task id the runtime supplied, and that a REFUSED answer
+    is recorded too. The ledger write itself reaches Prisma and is the driver's;
+    what only this file can show is that the interceptor reaches the hook with
+    the right facts.
+*/
+describe('a completed delegation reaches the ledger hook', () => {
+    interface Recorded {
+        agent: string;
+        taskId: string;
+        answerAccepted: boolean;
+    }
+
+    async function runRecording(opts: {
+        runId: string;
+        guard?: (text: string, taskId: string | undefined) => Promise<void>;
+    }): Promise<Recorded[]> {
+        const faux = fauxProvider();
+        const recorded: Recorded[] = [];
+        const dispose = instrument({
+            observe: () => {},
+            interceptor: async (operation, ctx, next) => {
+                gateDelegation(operation, ctx);
+                const result = await next();
+                const binding = readRunBinding(ctx.instanceId ?? '');
+                await guardDelegateResult(
+                    operation,
+                    ctx,
+                    result,
+                    binding?.guardDelegateOutput,
+                    binding?.onDelegationComplete,
+                );
+                return result;
+            },
+            dispose: () => {},
+        });
+        bindRun(opts.runId, {
+            tools: [],
+            skills: [],
+            modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            maxSubagentsPerTurn: 3,
+            ...(opts.guard ? { guardDelegateOutput: opts.guard } : {}),
+            onDelegationComplete: async (d) => { recorded.push(d); },
+        });
+        faux.setResponses([
+            fauxAssistantMessage([
+                fauxToolCall('task', { prompt: 'look', agent: 'evidence_assessor' }),
+            ]),
+            fauxAssistantMessage('the delegate answers'),
+            fauxAssistantMessage('parent done'),
+            fauxAssistantMessage('spare'),
+        ]);
+        const flue = await start({ agents: [InflectAgent], providers: [faux.provider] });
+        try {
+            const agent = init(InflectAgent, { id: opts.runId });
+            await agent.read(
+                await agent.dispatch({ message: 'go', initialData: { runId: opts.runId } }),
+            );
+        } finally {
+            await flue.stop();
+            await dispose();
+            releaseRun(opts.runId);
+        }
+        return recorded;
+    }
+
+    it('names the SPECIALIST the model selected, from the runtime\'s own result', async () => {
+        // The finding this design rests on: `details.agent` is supplied by the
+        // runtime, so the name needs no bookkeeping of ours. If a version stops
+        // supplying it, `recordIfPossible` writes nothing rather than a row
+        // reading `agent: 'unknown'` — and this assertion is what says so.
+        const recorded = await runRecording({ runId: 'led-agent' });
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0].agent).toBe('evidence_assessor');
+        expect(recorded[0].taskId).toMatch(/^task_/);
+        expect(recorded[0].answerAccepted).toBe(true);
+    });
+
+    it('records a REFUSED answer too, and says it was refused', async () => {
+        // A delegation that happened and was blocked is a thing the ledger must
+        // carry. Recording after the guard's throw would have recorded exactly
+        // the delegations that went well — the inversion of what a reviewer
+        // wants from an audit trail.
+        const recorded = await runRecording({
+            runId: 'led-refused',
+            guard: async () => { throw new Error('ai_guard_blocked: steering'); },
+        });
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0].agent).toBe('evidence_assessor');
+        expect(recorded[0].answerAccepted).toBe(false);
+    });
+
+    it('records nothing for an ordinary tool call', async () => {
+        /*
+            The hook is for delegations. A recorder called per tool result would
+            put a `task` step in the ledger for every read in the run.
+
+            THE FIRST DRAFT OF THIS CASE WAS VACUOUS, found by mutating the
+            `toolName` check away and watching it pass: it bound NO tools and
+            scripted no tool call, so there was no ordinary tool result for the
+            gate to wrongly record. An empty recorder list proved only that
+            nothing happened.
+
+            So it binds a tool and has the model call it.
+        */
+        const faux = fauxProvider();
+        const recorded: Recorded[] = [];
+        const dispose = instrument({
+            observe: () => {},
+            interceptor: async (operation, ctx, next) => {
+                const result = await next();
+                const binding = readRunBinding(ctx.instanceId ?? '');
+                await guardDelegateResult(
+                    operation, ctx, result,
+                    binding?.guardDelegateOutput, binding?.onDelegationComplete,
+                );
+                return result;
+            },
+            dispose: () => {},
+        });
+        let ordinaryCalls = 0;
+        bindRun('led-none', {
+            tools: [{
+                name: 'list_controls',
+                description: 'an ordinary read',
+                input: v.strictObject({}),
+                annotations: { readOnlyHint: true, destructiveHint: false, title: 'list_controls' },
+                run: async () => { ordinaryCalls += 1; return '{}'; },
+            }],
+            skills: [],
+            modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            maxSubagentsPerTurn: 3,
+            onDelegationComplete: async (d) => { recorded.push(d); },
+        });
+        faux.setResponses([
+            fauxAssistantMessage([fauxToolCall('list_controls', {})]),
+            fauxAssistantMessage('no delegation at all'),
+            fauxAssistantMessage('spare'),
+        ]);
+        const flue = await start({ agents: [InflectAgent], providers: [faux.provider] });
+        try {
+            const agent = init(InflectAgent, { id: 'led-none' });
+            await agent.read(
+                await agent.dispatch({ message: 'go', initialData: { runId: 'led-none' } }),
+            );
+        } finally {
+            await flue.stop();
+            await dispose();
+            releaseRun('led-none');
+        }
+        // THE TOOL REALLY RAN — otherwise the absence below is the vacuity this
+        // case was rewritten to remove.
+        expect(ordinaryCalls).toBe(1);
+        expect(recorded).toEqual([]);
     });
 });
 

@@ -144,13 +144,19 @@ export function installFlueTelemetry(): () => Promise<void> {
                         // The binding is read HERE rather than passed, because
                         // the interceptor is per-process and the guard is
                         // per-run — `ctx.instanceId` is the run id.
+                        const binding = ctx.instanceId
+                            ? readRunBinding(ctx.instanceId)
+                            : undefined;
                         await guardDelegateResult(
                             operation,
                             ctx,
                             result,
-                            ctx.instanceId
-                                ? readRunBinding(ctx.instanceId)?.guardDelegateOutput
-                                : undefined,
+                            binding?.guardDelegateOutput,
+                            // AND RECORD IT (#3473 part 3) — passed together so
+                            // the gate can record a REFUSED answer before the
+                            // guard's throw propagates. Two separate calls here
+                            // would record only the delegations that went well.
+                            binding?.onDelegationComplete,
                         );
                         return result;
                     } catch (err) {
