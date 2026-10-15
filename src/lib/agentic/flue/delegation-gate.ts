@@ -160,3 +160,90 @@ export function gateDelegation(
     }
     DELEGATIONS.set(key, verdict.delegatedThisTurn + 1);
 }
+
+/**
+ * SCAN A DELEGATE'S ANSWER ON ITS WAY BACK INTO THE PARENT (#3473).
+ *
+ * The other half of this seam. `gateDelegation` runs before `next()` and
+ * decides whether the delegation may start; this runs after it and decides
+ * whether the answer may be seen.
+ *
+ * ## Why the answer needs scanning when the reads did not
+ *
+ * `narrowTools` hands a delegate the parent's OWN tool objects, so everything
+ * it reads runs the parent's `wrapForLedger` — scanned by
+ * `guardUntrustedInput` on the way in, by `guardEgress` on the way out,
+ * recorded in the parent's step ledger and charged to its budget. Measured,
+ * not assumed: a delegate's `list_controls` call runs the parent's wrapper.
+ *
+ * What that leaves is the delegate's own composed answer. It is model output
+ * built from guarded reads, and it crosses into the parent's context as a tool
+ * result — the same kind of inbound edge #3468 exists for, and the one edge
+ * nothing was scanning, because `task` is the runtime's tool and our wrapper
+ * never sees it.
+ *
+ * ## The result shape is measured
+ *
+ *     { content: [{ type: 'text', text: '<the delegate's answer>' }],
+ *       details: { taskId, session, messageId } }
+ *
+ * Identical in shape to what our own tools return, so the text is joined the
+ * same way `tools-adapter` joins it: every block, because reconstructing what
+ * the model actually receives is the point.
+ *
+ * A result that carries no text at all is passed through. There is nothing to
+ * scan, and inventing a refusal for an empty answer would make a delegate that
+ * failed look like a delegate that was blocked.
+ */
+export async function guardDelegateResult(
+    operation: { type: string; toolName?: string },
+    ctx: { instanceId?: string; taskId?: string },
+    result: unknown,
+    guard: ((text: string, taskId: string | undefined) => Promise<void>) | undefined,
+): Promise<void> {
+    if (operation.type !== 'tool' || operation.toolName !== DELEGATION_TOOL_NAME) return;
+    // NO GUARD IS NOT A SILENT PASS for a run this product dispatched — the
+    // driver always supplies one. It is absent only for a run bound by a test
+    // or by a caller that predates delegation, and refusing those would make
+    // the hook mandatory on every existing `bindRun` call site.
+    if (!guard) return;
+
+    const text = delegateAnswerText(result);
+    if (text === '') return;
+    // THE TASK ID COMES FROM THE RESULT, NOT THE CONTEXT, and that is measured
+    // rather than preferred. On the parent's `task` tool call `ctx.taskId` is
+    // UNDEFINED — it is set for operations running INSIDE a delegation, which
+    // is what the depth check above relies on. The id of the task that just
+    // answered is in the result's own `details`.
+    //
+    // It is what the guard keys its `source` on, so getting this wrong does not
+    // fail: it makes every flagged delegate answer attributable to `unknown`,
+    // which is the shape of audit record that looks complete and names nothing.
+    // `ctx.taskId` is kept as a fallback for a nested call this product does not
+    // currently permit.
+    await guard(text, delegateTaskId(result) ?? ctx.taskId);
+}
+
+/** The id of the task that produced this result, or undefined. */
+export function delegateTaskId(result: unknown): string | undefined {
+    if (!result || typeof result !== 'object') return undefined;
+    const details = (result as { details?: unknown }).details;
+    if (!details || typeof details !== 'object') return undefined;
+    const id = (details as { taskId?: unknown }).taskId;
+    return typeof id === 'string' && id !== '' ? id : undefined;
+}
+
+/** The text blocks of a task result, joined. Exported for the tests. */
+export function delegateAnswerText(result: unknown): string {
+    if (!result || typeof result !== 'object') return '';
+    const content = (result as { content?: unknown }).content;
+    if (!Array.isArray(content)) return '';
+    return content
+        .map((block) =>
+            block && typeof block === 'object' && typeof (block as { text?: unknown }).text === 'string'
+                ? (block as { text: string }).text
+                : '',
+        )
+        .filter((t) => t !== '')
+        .join('\n');
+}

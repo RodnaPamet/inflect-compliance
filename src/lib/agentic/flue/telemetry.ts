@@ -1,6 +1,7 @@
 import { instrument, type FlueExecutionOperation } from '@flue/runtime';
 
-import { gateDelegation } from './delegation-gate';
+import { gateDelegation, guardDelegateResult } from './delegation-gate';
+import { readRunBinding } from './run-binding';
 
 import { getTracer } from '@/lib/observability/tracing';
 
@@ -133,7 +134,25 @@ export function installFlueTelemetry(): () => Promise<void> {
                         // with a message addressed to the model. Returns
                         // immediately for everything that is not a delegation.
                         gateDelegation(operation, ctx);
-                        return await next();
+                        const result = await next();
+                        // AND THE ANSWER ON THE WAY BACK (#3473). The delegate's
+                        // reads ran the parent's wrapper and were scanned there;
+                        // its own composed answer crosses into the parent's
+                        // context as the `task` tool's result, which our wrapper
+                        // never sees because `task` is the runtime's tool.
+                        //
+                        // The binding is read HERE rather than passed, because
+                        // the interceptor is per-process and the guard is
+                        // per-run — `ctx.instanceId` is the run id.
+                        await guardDelegateResult(
+                            operation,
+                            ctx,
+                            result,
+                            ctx.instanceId
+                                ? readRunBinding(ctx.instanceId)?.guardDelegateOutput
+                                : undefined,
+                        );
+                        return result;
                     } catch (err) {
                         // The TYPE and message of the failure, which is ours or
                         // the runtime's — never the model's answer. `recordException`

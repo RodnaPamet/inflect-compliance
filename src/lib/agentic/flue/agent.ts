@@ -1,6 +1,7 @@
-import { defineSkill, useInitialData, useInstruction, useModel, useResponseFinish, useSkill, useTool } from '@flue/runtime';
+import { defineSkill, defineSubagent, useInitialData, useInstruction, useModel, useResponseFinish, useSkill, useSubagent, useTool } from '@flue/runtime';
 
 import { readRunBinding } from './run-binding';
+import { SPECIALISTS, narrowTools, narrowSkills } from './subagents';
 
 /**
  * THE ONE AGENT FUNCTION THIS PROCESS SERVES.
@@ -89,6 +90,60 @@ export function InflectAgent(): void {
             name: skill.name,
             description: skill.description,
             instructions: skill.instructions,
+        }));
+    }
+
+    // ── THE SPECIALISTS (#3473) ─────────────────────────────────────────────
+    //
+    // Declared here and nowhere else, because `useSubagent` is a value from
+    // `@flue/runtime` and this module is the only place in `src/` that may
+    // import one — the same reason `defineSkill` is converted here.
+    //
+    // EACH DELEGATE'S RENDER TAKES A SUBSET OF *THIS* BINDING, which is the
+    // whole invariant of this plan point. The runtime's own docblock is the
+    // reason it has to be written this way: a delegate's `agent` function is
+    // "rendered at delegation time — in its own frame, fresh per task", and
+    // "identity and behavior come only from that render". A fresh frame holds
+    // no binding, so the natural thing to write inside it is a resolver that
+    // reads the register — which would silently drop the API-key scope and the
+    // autonomy-ceiling terms and restore reach this run was never granted.
+    //
+    // The closure over `binding` is what makes that impossible rather than
+    // merely discouraged: the delegate's render has the parent's RESOLVED set
+    // in scope and no way to reach anything else. `narrowTools` filters it; it
+    // cannot add to it.
+    //
+    // DECLARING a subagent is also what makes the runtime's `task` tool usable
+    // at all. It is in every run's tool list already (#3569) and until now had
+    // no valid `agent` value — so this is the line that turns delegation on,
+    // and `delegation-gate.ts` is what bounds it.
+    for (const spec of SPECIALISTS) {
+        const tools = narrowTools(spec, binding.tools);
+        const skills = narrowSkills(spec, binding.skills);
+        useSubagent(defineSubagent({
+            name: spec.name,
+            description: spec.description,
+            // NO `model` AND NO `thinkingLevel` OVERRIDE. Both inherit the
+            // parent's turn when omitted, which is what we want: the model was
+            // resolved against the tenant's residency and its budget, and a
+            // delegate on a different model would spend a budget nobody
+            // resolved for it.
+            agent: () => {
+                for (const tool of tools) useTool(tool);
+                for (const skill of skills) {
+                    useSkill(defineSkill({
+                        name: skill.name,
+                        description: skill.description,
+                        instructions: skill.instructions,
+                    }));
+                }
+                // NO NESTED `useSubagent`. Depth 1 is the owner's decision of
+                // 2026-10-15, and this absence is half of it — the other half
+                // is `delegation-gate.ts` refusing a `task` call that arrives
+                // with a `ctx.taskId`, which is what stops the runtime's own
+                // `GeneralSubagent` or a future edit here from reopening it.
+                return spec.instructions;
+            },
         }));
     }
 

@@ -126,6 +126,32 @@ export interface FlueRunBinding {
      * than an absent one with a safe default.
      */
     maxSubagentsPerTurn?: number;
+
+    /**
+     * SCAN A DELEGATE'S ANSWER BEFORE IT RE-ENTERS THE PARENT'S CONTEXT
+     * (#3473, and #3468's rule applied to a new inbound edge).
+     *
+     * A CALLBACK rather than a value, which is the one authority term here
+     * that cannot be precomputed: the guard runs on TEXT that does not exist
+     * until the delegate has answered. The driver builds it closed over its
+     * own `ctx` — in ordinary Node, where `app-layer/ai/guard` and Prisma load
+     * — and the interceptor awaits it in the ESM graph. Same shape as
+     * `wrapForLedger`'s `onFailure`/`noteOrigin` hooks, for the same reason.
+     *
+     * THROWS to block. A delegate's answer that is steering the parent must
+     * not reach the model, and returning a verdict for the caller to check
+     * would put the enforcement in the caller — which is where it gets
+     * forgotten.
+     *
+     * WHY THE DELEGATE'S READS NEED NO SUCH HOOK: `narrowTools` hands the
+     * delegate the parent's OWN tool objects, so its reads run the parent's
+     * `wrapForLedger` — already scanned both directions, already recorded in
+     * the parent's step ledger, already charged to the parent's budget.
+     * Measured: a delegate's `list_controls` call runs the parent's wrapper.
+     * What that leaves unscanned is the delegate's own composed ANSWER, which
+     * is what this guards.
+     */
+    guardDelegateOutput?: (text: string, taskId: string | undefined) => Promise<void>;
 }
 
 const BINDINGS = new Map<string, FlueRunBinding>();

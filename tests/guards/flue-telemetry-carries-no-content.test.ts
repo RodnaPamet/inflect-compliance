@@ -162,9 +162,31 @@ describe('no second exporter is installed anywhere for Flue', () => {
 describe('the production interceptor calls the delegation gate', () => {
     const telemetry = read(TELEMETRY);
 
-    it('calls `gateDelegation`, and imports it rather than reimplementing it', () => {
+    it('calls BOTH halves of the gate, and imports them rather than reimplementing', () => {
+        // TWO HALVES SINCE #3473's second part: `gateDelegation` decides whether
+        // a delegation may START, and `guardDelegateResult` decides whether its
+        // answer may be SEEN. They are one seam and either missing is a hole.
+        //
+        // The needle was `import { gateDelegation } from …` and went red when
+        // the second name joined the line — a drifted citation rather than a
+        // changed claim, so it is retargeted and widened rather than loosened.
+        // Matching each NAME in the import list is what keeps it from being
+        // satisfied by a line that imports only one of them.
         expect(telemetry).toContain('gateDelegation(operation, ctx)');
-        expect(telemetry).toMatch(/import \{ gateDelegation \} from '\.\/delegation-gate'/);
+        expect(telemetry).toContain('await guardDelegateResult(');
+        expect(telemetry).toMatch(/import \{[^}]*\bgateDelegation\b[^}]*\} from '\.\/delegation-gate'/);
+        expect(telemetry).toMatch(/import \{[^}]*\bguardDelegateResult\b[^}]*\} from '\.\/delegation-gate'/);
+    });
+
+    it('scans the answer AFTER `next()`, which is the only place the answer exists', () => {
+        // The mirror of the ordering assertion below it: the gate must run
+        // before `next()` and the answer scan after it. A scan before would
+        // have nothing to read, and would pass a presence check.
+        const scanAt = telemetry.indexOf('await guardDelegateResult(');
+        const nextAt = telemetry.indexOf('await next()');
+        expect(scanAt).toBeGreaterThan(-1);
+        expect(nextAt).toBeGreaterThan(-1);
+        expect(scanAt).toBeGreaterThan(nextAt);
     });
 
     it('calls it BEFORE `next()`, which is what makes a refusal enforcement', () => {

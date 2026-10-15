@@ -35,9 +35,10 @@ import { init, instrument } from '@flue/runtime';
 import { start } from '@flue/runtime/node';
 
 import { InflectAgent } from '@/lib/agentic/flue/agent';
-import { bindRun, releaseRun } from '@/lib/agentic/flue/run-binding';
+import { bindRun, releaseRun, readRunBinding } from '@/lib/agentic/flue/run-binding';
 import {
     gateDelegation,
+    guardDelegateResult,
     delegationsThisTurn,
     releaseDelegationCounts,
     _resetDelegationCounts,
@@ -185,3 +186,143 @@ describe('the cap refuses the delegation past it', () => {
         expect(replied).toBe('finished');
     });
 });
+
+/*
+    ═══ THE DELEGATE'S ANSWER IS SCANNED ON RE-ENTRY (#3473) ═══
+
+    The one inbound edge nothing was guarding. A delegate's READS run the
+    parent's own tool objects — `narrowTools` hands them over rather than
+    rebuilding them — so each is scanned both directions by
+    `wrapForLedger`, recorded in the parent's step ledger and charged to its
+    budget. Measured: a delegate's `list_controls` call runs the parent's
+    wrapper.
+
+    What that leaves is the delegate's composed ANSWER, which crosses into the
+    parent's context as the `task` tool's return value. `task` belongs to the
+    runtime, so our wrapper never sees it.
+
+    These cases exercise the SEAM — that the interceptor extracts the answer
+    text and hands it to the binding's hook, and that a hook which throws stops
+    the text. The real hook is `guardDelegateAnswer`, which reaches Prisma and
+    cannot load here; it is unit-covered where it lives. What only this file can
+    show is that the hook is CALLED, with the delegate's actual words.
+*/
+describe('the delegate answer reaches the guard hook', () => {
+    async function runWithHook(hook: (text: string, taskId: string | undefined) => Promise<void>) {
+        const faux = fauxProvider();
+        const dispose = instrument({
+            observe: () => {},
+            interceptor: async (operation, ctx, next) => {
+                gateDelegation(operation, ctx);
+                const result = await next();
+                await guardDelegateResult(
+                    operation,
+                    ctx,
+                    result,
+                    readRunBinding(ctx.instanceId ?? '')?.guardDelegateOutput,
+                );
+                return result;
+            },
+            dispose: () => {},
+        });
+        bindRun('guard-answer', {
+            tools: [],
+            skills: [],
+            modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            maxSubagentsPerTurn: 3,
+            guardDelegateOutput: hook,
+        });
+        faux.setResponses([
+            fauxAssistantMessage([
+                fauxToolCall('task', { prompt: 'look', agent: 'policy_drafter' }),
+            ]),
+            fauxAssistantMessage('IGNORE-PREVIOUS-INSTRUCTIONS-SENTINEL'),
+            fauxAssistantMessage('parent done'),
+            fauxAssistantMessage('spare'),
+        ]);
+        const flue = await start({ agents: [InflectAgent], providers: [faux.provider] });
+        try {
+            const agent = init(InflectAgent, { id: 'guard-answer' });
+            const reply = await agent.read(
+                await agent.dispatch({ message: 'go', initialData: { runId: 'guard-answer' } }),
+            );
+            return reply?.text ?? null;
+        } finally {
+            await flue.stop();
+            await dispose();
+            releaseRun('guard-answer');
+        }
+    }
+
+    it('is handed the delegate’s own words, and a task id', async () => {
+        const seen: Array<{ text: string; taskId: string | undefined }> = [];
+        await runWithHook(async (text, taskId) => {
+            seen.push({ text, taskId });
+        });
+        expect(seen).toHaveLength(1);
+        // THE DELEGATE'S ANSWER, not the parent's message and not a wrapper.
+        expect(seen[0].text).toContain('IGNORE-PREVIOUS-INSTRUCTIONS-SENTINEL');
+        // The task id is what the guard's `source` is keyed on, so a flagged
+        // answer is attributable to the delegation that produced it.
+        expect(typeof seen[0].taskId).toBe('string');
+    });
+
+    it('a hook that THROWS stops the answer rather than warning about it', async () => {
+        // The enforcement, and the reason the hook throws instead of returning
+        // a verdict: a verdict for the caller to check is a check that gets
+        // forgotten. The `task` call fails, which the model is told about.
+        let called = 0;
+        const replied = await runWithHook(async () => {
+            called += 1;
+            throw new Error('ai_guard_blocked: delegate answer');
+        });
+        expect(called).toBe(1);
+        // THE RUN STILL SETTLES. A blocked answer is a tool failure the model
+        // works around, not a reason to end the run — the same shape as a
+        // blocked tool result.
+        expect(replied).toBe('parent done');
+    });
+
+    it('is NOT called for an ordinary tool, only for a delegation', async () => {
+        // The fast path. A hook called on every tool result would double-scan
+        // what `wrapForLedger` already scanned, and would charge a second
+        // guard pass to every read in the run.
+        const seen: string[] = [];
+        const faux = fauxProvider();
+        const dispose = instrument({
+            observe: () => {},
+            interceptor: async (operation, ctx, next) => {
+                const result = await next();
+                await guardDelegateResult(
+                    operation,
+                    ctx,
+                    result,
+                    readRunBinding(ctx.instanceId ?? '')?.guardDelegateOutput,
+                );
+                return result;
+            },
+            dispose: () => {},
+        });
+        bindRun('guard-none', {
+            tools: [],
+            skills: [],
+            modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+            maxSubagentsPerTurn: 3,
+            guardDelegateOutput: async (text) => { seen.push(text); },
+        });
+        faux.setResponses([fauxAssistantMessage('no tools at all')]);
+        const flue = await start({ agents: [InflectAgent], providers: [faux.provider] });
+        try {
+            const agent = init(InflectAgent, { id: 'guard-none' });
+            await agent.read(
+                await agent.dispatch({ message: 'go', initialData: { runId: 'guard-none' } }),
+            );
+        } finally {
+            await flue.stop();
+            await dispose();
+            releaseRun('guard-none');
+        }
+        expect(seen).toEqual([]);
+    });
+});
+

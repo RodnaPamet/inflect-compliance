@@ -12,6 +12,7 @@ import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
+import { guardDelegateAnswer } from './tools-adapter';
 // `computeInputDigest` STAYS, the other three LEAVE. #2786 records the Art 12
 // digest on the MODEL_CALL step so the run timeline can link to the decision
 // row, and that line lives here; `logAiDecision`, `PrismaTx` and
@@ -430,16 +431,22 @@ export async function executeFlueRun(
         return { status, stepFailures };
     };
 
+    // NAMED, so the delegate-answer scan below can feed the SAME accumulator
+    // (#3473). It was an inline closure, which is fine for one caller and wrong
+    // for two: a second copy would track its own `worst` and the run would
+    // settle on whichever of the two happened to be read.
+    const noteVerdict = (o: StepGuardObservation): void => {
+        const prior = seen.get(o.toolCallId);
+        seen.set(o.toolCallId, prior && RANK[prior.verdict] >= RANK[o.verdict] ? prior : o);
+        if (RANK[o.verdict] > RANK[worst]) {
+            worst = o.verdict;
+            worstRuleIds = o.ruleIds;
+        }
+    };
+
     const offered = flueToolsFor(
         invocation,
-        (o) => {
-            const prior = seen.get(o.toolCallId);
-            seen.set(o.toolCallId, prior && RANK[prior.verdict] >= RANK[o.verdict] ? prior : o);
-            if (RANK[o.verdict] > RANK[worst]) {
-                worst = o.verdict;
-                worstRuleIds = o.ruleIds;
-            }
-        },
+        noteVerdict,
         (toolCallId) => {
             const stepSeq = stepOfCall.get(toolCallId);
             return stepSeq === undefined ? undefined : { runId, stepSeq };
@@ -482,7 +489,21 @@ export async function executeFlueRun(
     // direction to the concurrent-run cap's.
     const maxSubagentsPerTurn = await readFanOutCap(ctx.tenantId, ctx.requestId);
 
-    bindRun(runId, { tools, modelSpecifier, skills, maxSubagentsPerTurn });
+    bindRun(runId, {
+        tools,
+        modelSpecifier,
+        skills,
+        maxSubagentsPerTurn,
+        // THE DELEGATE'S ANSWER, SCANNED ON RE-ENTRY (#3473, applying #3468's
+        // rule to a new inbound edge). Built here because the guard reaches
+        // `app-layer/ai/guard` and Prisma, which the interceptor's ESM graph
+        // cannot load — the same reason the tools and the cap are resolved
+        // here. It throws to block, and reports through `noteVerdict`, so a
+        // flagged answer trips the same latch a flagged tool result does and
+        // settles the run `AWAITING_APPROVAL`.
+        guardDelegateOutput: (text, taskId) =>
+            guardDelegateAnswer(ctx, text, taskId, noteVerdict),
+    });
 
     try {
         // BEFORE THE DISPATCH, because the stream is live-only: "the
