@@ -89,13 +89,28 @@ export type SuspensionReason =
     | 'ACCOUNT_RECREATED'
     | 'ACCOUNT_POSTDATES_EMPLOYMENT_END'
     | 'HR_RECORD_REKEYED'
-    | 'HR_RECORD_VANISHED';
+    | 'HR_RECORD_VANISHED'
+    /**
+     * A veto fired that this alias's confirmation may not override (#3613).
+     *
+     * The ONLY reason in this set that is not decided by `revalidateAliases`.
+     * It cannot be: vetoes are the engine's, computed one step after this pass
+     * runs, and re-deriving them here is exactly the duplication the
+     * `HR_RECORD_REKEYED` note above refuses. `legacy-reconcile` applies it
+     * after resolving, where the answer already exists.
+     *
+     * It is in this closed set anyway, because the set's purpose is to keep
+     * "how often does each kind of retirement happen" answerable — and a
+     * suspension decided elsewhere still has to be counted here.
+     */
+    | 'CONTRADICTED_BY_VETO';
 
 export const SUSPENSION_REASONS: readonly SuspensionReason[] = [
     'ACCOUNT_RECREATED',
     'ACCOUNT_POSTDATES_EMPLOYMENT_END',
     'HR_RECORD_REKEYED',
     'HR_RECORD_VANISHED',
+    'CONTRADICTED_BY_VETO',
 ];
 
 /** An active alias, as revalidation needs to see it. */

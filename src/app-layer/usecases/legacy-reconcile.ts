@@ -93,6 +93,7 @@ import {
     type RosterEmployee,
 } from '@/lib/identity/reconcile/engine';
 import { step4aExtensions } from '@/lib/identity/reconcile/scorers';
+import { VETO_OVERRIDABLE_BY_CONFIRMATION } from '@/lib/identity/reconcile/engine';
 import { CONVENTION_CONFIG_KEY } from './legacy-username-convention';
 import { ACCOUNT_SELECT, type StoredAccountRow } from './legacy-access-verify';
 import type { RequestContext } from '../types';
@@ -346,6 +347,58 @@ export async function runLegacyReconcile(
     // under RLS "no such row" and "not visible to this tenant" are the same
     // return — so a verdict count that exceeds the moved count is the only
     // signal that something was decided and not applied.
+    // ═══ A SECOND SUSPENSION PASS, AFTER RESOLVING (#3613) ═══
+    //
+    // `revalidateAliases` runs BEFORE the engine and asks four questions about
+    // the account and the HR record. It cannot ask the fifth — "does a veto
+    // contradict this alias?" — because vetoes are computed by the engine, one
+    // step later, and the file that owns revalidation says plainly why it must
+    // not re-implement engine logic locally: two definitions of the same fact
+    // eventually disagree.
+    //
+    // So the question is asked here, where the answer already exists. An alias
+    // blocked by a veto its confirmation may NOT override is contradicted, and
+    // leaving it ACTIVE is what produced the loop this fixes: the account came
+    // back as SUGGESTED on every run, forever, and the only action open to the
+    // reviewer was the one that had not stuck.
+    //
+    // ORDER: after resolve, deliberately, and it does not reintroduce the
+    // hazard the pre-resolve pass exists to avoid. That one is about not
+    // recording `CONFIRMED_ALIAS` as the OUTCOME of a run that distrusted the
+    // alias; here the outcome is `SUGGESTED`, which is an accurate record of
+    // what this run saw. The alias is retired for the NEXT run.
+    const contradicted: AliasVerdict[] = [];
+    const liveAliasKeys = new Set(revalidation.surviving.map((a) => a.accountKey));
+    for (const r of result.resolutions) {
+        if (!liveAliasKeys.has(r.accountKey)) continue;
+        if (r.outcome === 'LINKED') continue;
+        const blocking = r.vetoes.filter((v) => !VETO_OVERRIDABLE_BY_CONFIRMATION[v.kind]);
+        if (blocking.length === 0) continue;
+        contradicted.push({
+            accountKey: r.accountKey,
+            reason: 'CONTRADICTED_BY_VETO',
+            detail: blocking.map((v) => `${v.kind}: ${v.detail}`).join('; '),
+        } as AliasVerdict);
+    }
+    const contradictedApplied = contradicted.length
+        ? await suspendAliases(ctx, snapshot.connectionId, contradicted, now)
+        : 0;
+    if (contradicted.length > 0) {
+        recordLegacyAliasSuspensions({
+            provider: LEGACY_MCP_PROVIDER_ID,
+            byReason: { CONTRADICTED_BY_VETO: contradicted.length },
+        });
+        logger.warn('alias suspended: a veto its confirmation cannot override', {
+            executionId,
+            decided: contradicted.length,
+            applied: contradictedApplied,
+            // The account keys, not the details: a detail carries two email
+            // addresses or two employee numbers, and this line goes to a log
+            // aggregator.
+            accountKeys: contradicted.map((c) => c.accountKey),
+        });
+    }
+
     if (revalidation.suspensions.length > 0) {
         const byReason: Record<string, number> = {};
         for (const s of revalidation.suspensions) {

@@ -222,6 +222,65 @@ export interface Veto {
     readonly detail: string;
 }
 
+/**
+ * Whether a reviewer's recorded confirmation may override this veto (#3613).
+ *
+ * ═══ WHY THIS IS PER-KIND AND NOT A SINGLE RULE ═══
+ *
+ * "A veto beats every score" is right about SCORES — resemblance never
+ * outranks evidence of difference. A human confirmation is not a score. It is
+ * a person having looked at the same two records and said which they are, and
+ * the three vetoes differ in whether that judgement can be better informed
+ * than the comparison.
+ *
+ * The failure this fixes was the absence of the distinction, not either
+ * answer: a confirmed alias was vetoed on every run and never suspended, so
+ * the account returned to the queue indefinitely and the only action available
+ * to the reviewer was the one that had not stuck.
+ *
+ * `EMPLOYEE_NUMBER_CONFLICT` — NOT overridable. Both sides carry a structured
+ * identifier issued by their own system and the two disagree. That is not
+ * weak evidence a reviewer can see past; it means one of the records is wrong,
+ * and the repair is in the source, not in a link. A reviewer who overrides it
+ * is almost certainly looking at bad data and would be writing it into an
+ * access review.
+ *
+ * `EMAIL_DOMAIN_CONFLICT` — OVERRIDABLE. An address is not an identifier. One
+ * person legitimately holds several in one namespace: a second mailbox, an
+ * address kept alive through a rename, a role account assigned to them, a
+ * contractor with both a personal and a functional address. The reviewer is
+ * looking at both addresses — that is the evidence, and it is exactly why a
+ * manual link was needed rather than an automatic one.
+ *
+ * `ACCOUNT_POSTDATES_END_DATE` — NOT overridable, and it never reaches this
+ * decision with a live alias anyway: `alias-revalidation` already suspends on
+ * the same comparison as `ACCOUNT_POSTDATES_EMPLOYMENT_END`, by design, because
+ * an end date can be backdated after a confirmation. It is listed here so the
+ * record is complete and so a future kind cannot be added without answering
+ * the question — the type makes the map exhaustive.
+ */
+export const VETO_OVERRIDABLE_BY_CONFIRMATION: Readonly<Record<VetoKind, boolean>> = {
+    EMPLOYEE_NUMBER_CONFLICT: false,
+    EMAIL_DOMAIN_CONFLICT: true,
+    ACCOUNT_POSTDATES_END_DATE: false,
+};
+
+/**
+ * The vetoes that still BLOCK, given what this candidate's signals establish.
+ *
+ * The full list is kept on the candidate either way: a veto that was overridden
+ * is evidence a reviewer weighed, and dropping it from the record would make
+ * the decision unreviewable. Only the GATE changes.
+ */
+export function blockingVetoes(
+    vetoes: readonly Veto[],
+    signals: readonly Signal[],
+): readonly Veto[] {
+    const confirmed = signals.some((s) => s.kind === 'CONFIRMED_ALIAS');
+    if (!confirmed) return vetoes;
+    return vetoes.filter((v) => !VETO_OVERRIDABLE_BY_CONFIRMATION[v.kind]);
+}
+
 // ─── Inputs ────────────────────────────────────────────────────────────────
 
 export interface CanonicalAccount {
@@ -381,7 +440,16 @@ export interface ScoredCandidate {
     readonly employeeId: string;
     readonly score: number;
     readonly signals: readonly Signal[];
+    /** Every veto that fired, overridden or not — the reviewable record. */
     readonly vetoes: readonly Veto[];
+    /**
+     * The subset that still blocks a link, given this candidate's signals.
+     *
+     * Equal to `vetoes` unless a `CONFIRMED_ALIAS` signal is present and some
+     * of them are overridable — see {@link VETO_OVERRIDABLE_BY_CONFIRMATION}.
+     * The decision arms gate on THIS; the record keeps both.
+     */
+    readonly blocking: readonly Veto[];
     readonly strongest: SignalStrength | null;
 }
 
@@ -920,6 +988,7 @@ export function reconcile(input: EngineInput): EngineResult {
                 signals: [],
                 candidates: [],
                 vetoes: [],
+                blocking: [],
                 note: `service token: ${nonPersonToken}`,
             });
             continue;
@@ -1055,6 +1124,7 @@ export function reconcile(input: EngineInput): EngineResult {
                     (a, b) => b.score - a.score || a.kind.localeCompare(b.kind)
                 ),
                 vetoes,
+                blocking: blockingVetoes(vetoes, signals),
                 strongest,
             });
         }
@@ -1116,7 +1186,7 @@ function decide(
     }
 
     const unvetoedStrong = scored.filter(
-        (c) => c.vetoes.length === 0 && c.signals.some((s) => strengthOf(s.kind) === 'STRONG')
+        (c) => c.blocking.length === 0 && c.signals.some((s) => strengthOf(s.kind) === 'STRONG')
     );
 
     if (unvetoedStrong.length === 1) {
@@ -1201,7 +1271,7 @@ function decide(
     }
 
     const vetoedStrong = scored.filter(
-        (c) => c.vetoes.length > 0 && c.signals.some((s) => strengthOf(s.kind) === 'STRONG')
+        (c) => c.blocking.length > 0 && c.signals.some((s) => strengthOf(s.kind) === 'STRONG')
     );
     if (vetoedStrong.length > 0) {
         return {
@@ -1213,7 +1283,7 @@ function decide(
         };
     }
 
-    const supporting = scored.filter((c) => c.signals.length > 0 && c.vetoes.length === 0);
+    const supporting = scored.filter((c) => c.signals.length > 0 && c.blocking.length === 0);
     if (supporting.length === 1) {
         return {
             ...base,
