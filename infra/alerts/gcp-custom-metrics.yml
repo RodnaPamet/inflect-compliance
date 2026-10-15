@@ -170,6 +170,55 @@ metrics:
       UNEXERCISED by production data and rests on the schema alone — stated
       because a zero from an untested query is not evidence.
 
+  - type: custom.googleapis.com/jobs/work_abandoned
+    resource: gce_instance
+    labels: [family]
+    value: >-
+      count of rows GIVEN UP ON in the last 24 hours, per family:
+      notification_abandoned (NotificationOutbox FAILED, createdAt in window),
+      audit_abandoned (AuditOutbox FAILED, nextAttemptAt in window).
+    covers: >-
+      work that will never complete and that no screen lists. #3573: 520
+      notification emails were abandoned between 2026-06-03 and 2026-08-31 —
+      48.6% of every notification ever queued — all for one SMTP 550 rejecting
+      the sender domain, silent for three months. Two policy-approval requests
+      in that batch were never asked of anyone and were still IN_REVIEW when
+      found.
+    why_a_second_metric: >-
+      NOT another family of jobs/work_overdue. A paged human reads the policy
+      title first, and "overdue" promises work that may still complete whereas
+      abandoned work never will. One reporter and one timer post both metrics in
+      a single request; the split is for the ALERT's sake, not the reporter's.
+      The threshold duration also differs — 300s here against 900s there,
+      because a terminal row gives nothing to wait and see about.
+    window_is_bounded: >-
+      DELIBERATELY 24 hours, and the guard asserts it. Production holds 512
+      FAILED notification rows written off under #3573, so an unbounded count
+      would make this alert permanently firing — an alert on its way to being
+      muted, which is the state #3573 describes.
+    columns_differ_by_table: >-
+      Only one of the two records a transition time. NotificationOutbox has no
+      updatedAt and processOutbox's failure branch writes only status and
+      lastError, so sendAfter never moves — createdAt is the only timestamp and
+      is a sound proxy because no backoff is applied (attempts capped at 3, the
+      flusher on */10, so a row reaches FAILED within about half an hour of
+      being queued). AuditOutbox DOES back off, so nextAttemptAt marks the last
+      attempt and its [status, nextAttemptAt] index covers the query.
+    not_covered: >-
+      FAILED rows older than the window, and any job family writing no readable
+      row because runJob persists no job-run history.
+    policy: infra/alerts/policies/work-abandoned.json
+    deployed_policy_id: '8687369104431239545'
+    issue: '3558'
+    deployed: >-
+      2026-10-15. Same reporter and timer as jobs/work_overdue; both metrics ride
+      one POST. Dry-run first against the live database, and the WINDOW was
+      positively controlled read-only before trusting its zero: bounded to 24h
+      the notification family reads 0, unbounded it reads 512 — so without the
+      bound this alert would have fired permanently from the day it shipped.
+      The audit family reads 0 either way because AuditOutbox holds no rows at
+      all, so that arm stays UNEXERCISED by production data.
+
   - type: custom.googleapis.com/identity/write_unsettled
     resource: gce_instance
     labels: []
