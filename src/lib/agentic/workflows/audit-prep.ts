@@ -10,18 +10,20 @@
  * Input: { frameworkKey } — the framework being audited (e.g. SOC2, ISO27001).
  */
 import type { WorkflowDefinition, WorkflowContext } from '../workflow-types';
+import { requiredString } from './required-input';
 
 interface Gaps {
     summary?: { total?: number; mapped?: number; unmapped?: number; coveragePercent?: number };
     unmappedRequirements?: Array<{ code: string; title?: string; section?: string }>;
 }
 
-const frameworkKeyOf = (ctx: WorkflowContext): string =>
-    typeof ctx.input.frameworkKey === 'string' ? ctx.input.frameworkKey : '';
+const frameworkKeyOf = (ctx: WorkflowContext): string => requiredString(ctx, 'frameworkKey');
 
 const arrayLen = (v: unknown): number => (Array.isArray(v) ? v.length : 0);
 
 export const auditPrepWorkflow: WorkflowDefinition = {
+    /** Refused at admission without it — see `requiredInput` on the type. */
+    requiredInput: ['frameworkKey'],
     key: 'audit-prep',
     name: 'Audit prep',
     description:

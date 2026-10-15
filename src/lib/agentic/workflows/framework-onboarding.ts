@@ -8,16 +8,18 @@
  * Input: { frameworkKey } — the newly-installed framework's key.
  */
 import type { WorkflowDefinition, WorkflowContext } from '../workflow-types';
+import { requiredString } from './required-input';
 
 interface Gaps {
     summary?: { total?: number; mapped?: number; unmapped?: number; coveragePercent?: number };
     unmappedRequirements?: Array<{ code: string; title?: string; section?: string }>;
 }
 
-const frameworkKeyOf = (ctx: WorkflowContext): string =>
-    typeof ctx.input.frameworkKey === 'string' ? ctx.input.frameworkKey : '';
+const frameworkKeyOf = (ctx: WorkflowContext): string => requiredString(ctx, 'frameworkKey');
 
 export const frameworkOnboardingWorkflow: WorkflowDefinition = {
+    /** Refused at admission without it — see `requiredInput` on the type. */
+    requiredInput: ['frameworkKey'],
     key: 'framework-onboarding',
     name: 'Framework onboarding',
     description:

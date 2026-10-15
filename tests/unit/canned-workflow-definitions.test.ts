@@ -5,7 +5,9 @@
  * these definitions (registered, declarative, real tool names, a checkpoint
  * before completion). It never CALLS `args` / `buildItems` / `rationale` /
  * `synthesize`, so the whole computed surface of both workflows — the
- * non-string-input fallback, the missing-outputs fallbacks, the 20-item
+ * non-string-input REFUSAL (#3600, which replaced a fallback that
+ * substituted `''` and cost 7 production runs), the missing-outputs
+ * fallbacks, the 20-item
  * propose cap, the title/section absence branches, and the punch-list's four
  * independent conditions — was unexercised.
  *
@@ -80,14 +82,27 @@ describe('framework-onboarding — READ step arguments', () => {
         });
     });
 
-    it('coerces a NON-string frameworkKey to the empty string', () => {
-        // A run started with a numeric/object input must not send `42` (or
-        // `[object Object]`) to the MCP tool as a framework key.
+    it('REFUSES a non-string frameworkKey rather than coercing it (#3600)', () => {
+        // This asserted `{ frameworkKey: '' }` until #3600. The INTENT was
+        // right — `42` and `[object Object]` must not reach the MCP tool as a
+        // framework key — and the mechanism was the defect: `''` reached it
+        // instead, and `get_framework_status` declares `.optional()`, so falsy
+        // is a supported mode that returns the installable-framework catalogue
+        // rather than the per-framework readout. The tool answered a different
+        // question and the step was recorded DONE.
+        //
+        // Nothing is sent now. The read throws, and `requiredInput` refuses the
+        // run at admission so no step runs at all.
+        //
+        // `null` alone cannot discriminate: the plausible wrong implementation
+        // is `String(x ?? '')`, which also yields '' for null — measured, the
+        // whole file stayed green under it. 42 and an object are what separate
+        // a refusal from a coercion ('42' / '[object Object]'); '' and '   '
+        // are what stop the old fallback being reintroduced as an input.
         const step = readStep(frameworkOnboardingWorkflow, 'frameworkStatus');
-        expect(step.args?.(ctx({ frameworkKey: 42 }))).toEqual({ frameworkKey: '' });
-        expect(step.args?.(ctx({ frameworkKey: { key: 'SOC2' } }))).toEqual({
-            frameworkKey: '',
-        });
+        for (const bad of [null, 42, { key: 'SOC2' }, '', '   ']) {
+            expect(() => step.args?.(ctx({ frameworkKey: bad }))).toThrow(/frameworkKey/);
+        }
     });
 
     it('caps the gap query at 50 requirements', () => {
@@ -275,17 +290,14 @@ describe('audit-prep — READ step arguments', () => {
         ).toEqual({ frameworkKey: 'ISO27001', limit: 50 });
     });
 
-    it('coerces a non-string framework key to the empty string', () => {
-        // `null` ALONE cannot see this: the plausible wrong implementation is
-        // `String(x ?? '')`, and that returns '' for null too — measured, the
-        // whole file stayed green under it. 42 and an object are what separate
-        // the guard from a coercion ('42' / '[object Object]').
+    it('REFUSES a non-string framework key rather than coercing it (#3600)', () => {
+        // See the matching case on `framework-onboarding` for why the old
+        // `{ frameworkKey: '' }` expectation was the defect rather than the
+        // protection, and why `null` alone cannot discriminate.
         const args = readStep(auditPrepWorkflow, 'frameworkStatus').args;
-        expect(args?.(ctx({ frameworkKey: null }))).toEqual({ frameworkKey: '' });
-        expect(args?.(ctx({ frameworkKey: 42 }))).toEqual({ frameworkKey: '' });
-        expect(args?.(ctx({ frameworkKey: { key: 'SOC2' } }))).toEqual({
-            frameworkKey: '',
-        });
+        for (const bad of [null, 42, { key: 'SOC2' }, '', '   ']) {
+            expect(() => args?.(ctx({ frameworkKey: bad }))).toThrow(/frameworkKey/);
+        }
     });
 
     it('reads evidence expiring within 30 days and at most 100 findings', () => {
@@ -461,12 +473,26 @@ describe('audit-prep — drafted policy', () => {
         ]);
     });
 
-    it('still drafts one scaffold when the framework key is absent', () => {
-        // The draft does not depend on any upstream read, so a missing input
-        // degrades the title rather than skipping the step.
-        const items = step.buildItems(ctx({}));
+    it('drafts one scaffold even when every upstream read came back empty', () => {
+        // The property worth keeping from this test's original form: the draft
+        // depends on NO upstream output, so empty reads degrade it rather than
+        // skipping the step. It used to prove that by omitting the framework
+        // key as well, and asserted the resulting title
+        // `' Information Security Policy'` — a policy proposal with a leading
+        // space and no framework named, bound for the approval queue.
+        //
+        // That state is unreachable since #3600: the run is refused at
+        // admission. So the property is asserted the way it was always meant —
+        // key present, outputs empty.
+        const items = step.buildItems(ctx({ frameworkKey: 'ISO27001' }, {}));
         expect(items).toHaveLength(1);
-        expect(items[0].title).toBe(' Information Security Policy');
+        expect(items[0].title).toBe('ISO27001 Information Security Policy');
+    });
+
+    it('refuses to draft a blank-titled policy when the key is missing (#3600)', () => {
+        // The replacement for the assertion above: the old blank title is not
+        // merely untested now, it cannot be produced.
+        expect(() => step.buildItems(ctx({}))).toThrow(/frameworkKey/);
     });
 
     it('names the framework in the rationale', () => {
