@@ -8,17 +8,53 @@
  * afternoon as a 401 somebody has to diagnose. So the durable thing to store is
  * what MINTS a token, not the token.
  *
- * ## Why the refresh grant, and not client credentials
+ * ## TWO GRANTS, and a safety argument that expired (#3467)
  *
- * Measured against the live resource rather than inferred: its service
- * principal exposes `appRoles: []` — ZERO application permissions. Client
- * credentials cannot work against it however the app registration is
- * configured. Access is delegated, which means every token carries a named
- * person's privileges.
+ * This module supported only the refresh grant, on a measurement recorded here
+ * as a reason: the resource's service principal exposed `appRoles: []` — zero
+ * application permissions — so "client credentials cannot work against it
+ * however the app registration is configured".
  *
- * That is a governance property worth stating rather than a limitation to work
- * around: an agent reaching Entra through this connection can never see more
- * than the human it acts for. The ceiling is a person, not an app.
+ * A LATER PROVING RUN MEASURED THE OPPOSITE, and both measurements are real
+ * because they are about DIFFERENT resources. Neither is retracted:
+ *
+ *   · 2026-10-?? — `api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4` (Microsoft MCP
+ *     Server for Enterprise, this module's `ENTRA_MCP_SCOPE`): `appRoles: []`.
+ *     App-only access to THAT resource is not configurable.
+ *   · 2026-10-13 — the gateway at `https://mcp.svc.cloud.microsoft/enterprise`
+ *     answered `initialize` with 200 to a CLIENT-CREDENTIALS token scoped
+ *     `https://mcp.svc.cloud.microsoft/.default`. A
+ *     `graph.microsoft.com/.default` token to the same endpoint is
+ *     `401 InvalidAuthenticationToken — Invalid audience`, and
+ *     `api://mcp.svc.cloud.microsoft/.default` is `AADSTS500011
+ *     invalid_resource`.
+ *
+ * So the old sentence was true of the resource it was measured against and
+ * false as a statement about this provider, which connects to arbitrary MCP
+ * servers. An operator whose server wants app-only auth had one option left —
+ * paste a bearer into `secrets.authorization` — and an Entra access token lives
+ * about an hour, so the connection worked until lunchtime.
+ *
+ * ## The governance difference is kept, as a difference rather than a limit
+ *
+ * A delegated token carries a named person's privileges, so an agent reaching
+ * through such a connection can never see more than the human it acts for: the
+ * ceiling is a person, not an app. An app-only token has no such ceiling.
+ *
+ * That is a real distinction and it is why the two grants are a DISCRIMINATED
+ * UNION with a required `kind` rather than "refresh token present or not". A
+ * defaulted discriminant would let a caller that forgot to say which grant it
+ * meant get one silently, and the grant decides whether a person bounds what
+ * the token can reach.
+ *
+ * ## `offline_access` belongs to one of them only
+ *
+ * `ENTRA_MCP_SCOPE` carries it, and it must be: without it Entra returns an
+ * access token and no refresh token, and the connection is back to lasting an
+ * hour. The client-credentials grant has no user to stay offline on behalf of
+ * and Entra refuses the scope outright, so an app-only credential takes NO
+ * default scope at all — see `AppOnlyCredentials.scope` for why a default
+ * would be worse than a required field here.
  *
  * ## What is NOT stored
  *
@@ -57,6 +93,45 @@ export interface RefreshCredentials {
     /** Defaults to the Entra MCP resource. */
     scope?: string;
 }
+
+/**
+ * An app-only credential: the client-credentials grant (#3467).
+ *
+ * No `refreshToken`, because there is no user session to refresh — the secret
+ * IS the credential and a fresh token is one POST away whenever one is needed.
+ */
+export interface AppOnlyCredentials {
+    tenantId: string;
+    clientId: string;
+    clientSecret: string;
+    /**
+     * REQUIRED, unlike the delegated grant's, and the asymmetry is the point.
+     *
+     * `ENTRA_MCP_SCOPE` is a default that was measured against one specific
+     * resource. The 2026-10-13 run showed exactly what a wrong audience costs:
+     * the gateway answers `401 InvalidAuthenticationToken — Invalid audience`,
+     * which reads as a credential problem and is not one. A default here would
+     * aim every app-only connection at a resource most of them have nothing to
+     * do with, and the failure names neither the default nor the field that
+     * would have fixed it.
+     *
+     * An operator configuring app-only auth knows their server's audience —
+     * it is the one thing they must know — so it is asked for rather than
+     * guessed.
+     */
+    scope: string;
+}
+
+/**
+ * Which grant a connection is configured for.
+ *
+ * `kind` is REQUIRED on both arms. See the header: the grant decides whether a
+ * named person bounds what the token can reach, and that is not a thing to
+ * default.
+ */
+export type McpCredentials =
+    | ({ kind: 'delegated' } & RefreshCredentials)
+    | ({ kind: 'app-only' } & AppOnlyCredentials);
 
 export interface MintedToken {
     accessToken: string;
@@ -160,6 +235,147 @@ export async function mintAccessToken(creds: RefreshCredentials): Promise<Minted
 }
 
 /**
+ * Exchange a client secret for an app-only access token (#3467).
+ *
+ * The SAME `postToTokenEndpoint`, so the two grants cannot disagree about what
+ * a refusal looks like or about which half of Entra's answer is safe to
+ * surface — the code, never the description.
+ *
+ * `rotatedRefreshToken` is always null, and it is returned rather than omitted
+ * so both grants share one result shape. There is nothing to rotate: the
+ * client-credentials grant issues no refresh token, because there is no user
+ * session to resume.
+ */
+export async function mintAppOnlyToken(creds: AppOnlyCredentials): Promise<MintedToken> {
+    if (!GUID.test(creds.tenantId)) {
+        throw new McpTokenError('tenantId must be a GUID');
+    }
+    if (!creds.clientId || !creds.clientSecret) {
+        throw new McpTokenError('clientId and clientSecret are both required');
+    }
+    // ASKED FOR, never defaulted — see `AppOnlyCredentials.scope`. Checked
+    // here as well as at the resolver, because this function is exported and a
+    // second caller must not be able to reach Entra with an empty audience.
+    if (!creds.scope.trim()) {
+        throw new McpTokenError(
+            'scope is required for an app-only credential — it names the audience the '
+                + 'token is for, and a token minted for the wrong one is refused as '
+                + 'an invalid audience rather than as a bad secret',
+        );
+    }
+    // `offline_access` REFUSED rather than stripped. Stripping would quietly
+    // accept a scope an operator copied from the delegated flow and send
+    // something other than what they typed; Entra refuses it anyway, and the
+    // refusal arrives as an AADSTS code that says nothing about which field to
+    // change. The grant has no user to stay offline on behalf of.
+    if (/\boffline_access\b/.test(creds.scope)) {
+        throw new McpTokenError(
+            'offline_access cannot be requested with the client-credentials grant — '
+                + 'it asks for a refresh token on a user\'s behalf and there is no user. '
+                + 'Use the resource\'s own scope, e.g. https://example/.default',
+        );
+    }
+
+    const payload = await postToTokenEndpoint(creds.tenantId, {
+        client_id: creds.clientId,
+        client_secret: creds.clientSecret,
+        grant_type: 'client_credentials',
+        scope: creds.scope.trim(),
+    });
+
+    if (!payload.access_token) {
+        throw new McpTokenError('token endpoint returned no access_token');
+    }
+
+    return {
+        accessToken: payload.access_token,
+        expiresAt: Date.now() + (payload.expires_in ?? 300) * 1000,
+        rotatedRefreshToken: null,
+    };
+}
+
+/** Mint by whichever grant the credential names. */
+export async function mintToken(creds: McpCredentials): Promise<MintedToken> {
+    return creds.kind === 'app-only' ? mintAppOnlyToken(creds) : mintAccessToken(creds);
+}
+
+/**
+ * WHICH CREDENTIAL A CONNECTION IS CONFIGURED WITH, from its config + secrets.
+ *
+ * ONE resolver, and that is a fix rather than a tidy-up (#3467). The shape
+ * checks lived in two places — `authorizationFor` here and
+ * `mcp-server-provider.freshAuthorization` — and that function's docblock
+ * claimed "the shape checks are the same and live in one place, so the two
+ * cannot disagree about what 'configured for OAuth' means". They were two
+ * copies, and they had already drifted: one said `OAuth`, the other said
+ * `Entra`, so an operator met a different sentence depending on whether they
+ * pressed Test or ran an agent. With a second grant to resolve, two copies
+ * would be two answers to "which grant is this".
+ *
+ * Returns null when nothing OAuth-ish is configured — the caller then falls
+ * back to the static header. Throws when a credential is PARTIAL, because a
+ * half-configured connection that quietly used a stale pasted token would work
+ * until that token died and then look like a server problem.
+ */
+export function resolveMcpCredentials(
+    config: Record<string, unknown>,
+    secrets: Record<string, unknown>,
+): McpCredentials | null {
+    const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+
+    const tenantId = str(config.tenantId);
+    const clientId = str(config.clientId);
+    const scope = str(config.scope);
+    const clientSecret = str(secrets.clientSecret);
+    const refreshToken = str(secrets.refreshToken);
+
+    // `scope` is deliberately NOT in this test. It is a property of the SERVER
+    // rather than of the grant, so a connection can carry one while being
+    // authenticated by a static header — and treating it as a sign of OAuth
+    // would turn "I told it my server's audience" into "this connection is
+    // half-configured for Entra".
+    if (!(tenantId || clientId || clientSecret || refreshToken)) return null;
+
+    // THE COMMON THREE FIRST, so the message names the real gap. Checking all
+    // four at once reported "tenantId, clientId, clientSecret and refreshToken
+    // are all required together" to an operator who had deliberately supplied
+    // three of them for an app-only connection — the message was both true of
+    // the old code and the wrong thing to tell them (#3467).
+    if (!tenantId || !clientId || !clientSecret) {
+        throw new McpTokenError(
+            'this connection is partly configured for Entra — tenantId, clientId and '
+                + 'clientSecret are required for either grant, plus a refreshToken for '
+                + 'delegated access or a scope for app-only access',
+        );
+    }
+
+    // THE REFRESH TOKEN SELECTS THE GRANT, because it is the field only one of
+    // them can have. A connection carrying both a refresh token and a scope is
+    // delegated: the scope then names the same audience the delegated flow
+    // asks for, which is what `ENTRA_MCP_SCOPE` defaults to.
+    if (refreshToken) {
+        return {
+            kind: 'delegated',
+            tenantId,
+            clientId,
+            clientSecret,
+            refreshToken,
+            ...(scope ? { scope } : {}),
+        };
+    }
+
+    if (!scope) {
+        throw new McpTokenError(
+            'an app-only connection needs a scope — it names the audience the token is '
+                + 'for, and the wrong audience is refused as an invalid token rather than '
+                + 'as a bad secret. Supply a refreshToken instead for delegated access, '
+                + 'where a named person bounds what the token can reach',
+        );
+    }
+    return { kind: 'app-only', tenantId, clientId, clientSecret, scope };
+}
+
+/**
  * In-process cache of minted tokens, keyed by connection.
  *
  * Deliberately NOT a database column. A cached access token is a live
@@ -184,7 +400,7 @@ export function _resetTokenCache(): void {
  */
 export async function authorizationForConnection(
     connectionId: string,
-    creds: RefreshCredentials,
+    creds: McpCredentials,
     onRotated?: (refreshToken: string) => Promise<void>,
 ): Promise<string> {
     const hit = cache.get(connectionId);
@@ -192,7 +408,7 @@ export async function authorizationForConnection(
         return `Bearer ${hit.accessToken}`;
     }
 
-    const minted = await mintAccessToken(creds);
+    const minted = await mintToken(creds);
     cache.set(connectionId, { accessToken: minted.accessToken, expiresAt: minted.expiresAt });
 
     if (minted.rotatedRefreshToken && onRotated) {
@@ -235,31 +451,15 @@ export async function authorizationFor(
     secrets: Record<string, unknown>,
     onRotated?: (refreshToken: string) => Promise<void>,
 ): Promise<string | undefined> {
-    const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
-
-    const tenantId = str(config.tenantId);
-    const clientId = str(config.clientId);
-    const clientSecret = str(secrets.clientSecret);
-    const refreshToken = str(secrets.refreshToken);
-
-    if (tenantId || clientId || clientSecret || refreshToken) {
-        // PARTIAL is refused rather than silently falling back to the static
-        // header: a half-configured OAuth connection that quietly used a stale
-        // pasted token would work until that token died and then look like a
-        // server problem.
-        if (!tenantId || !clientId || !clientSecret || !refreshToken) {
-            throw new McpTokenError(
-                'this connection is partly configured for OAuth — tenantId, clientId, ' +
-                    'clientSecret and refreshToken are all required together',
-            );
-        }
-        return authorizationForConnection(
-            connectionId,
-            { tenantId, clientId, clientSecret, refreshToken, scope: str(config.scope) || undefined },
-            onRotated,
-        );
+    // SHAPE RESOLVED IN ONE PLACE (#3467). This function used to spell the
+    // field checks itself, as did the provider's validation path; see
+    // `resolveMcpCredentials` for what the two copies cost.
+    const credentials = resolveMcpCredentials(config, secrets);
+    if (credentials) {
+        return authorizationForConnection(connectionId, credentials, onRotated);
     }
 
+    const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
     const staticHeader = str(secrets.authorization);
     return staticHeader || undefined;
 }
