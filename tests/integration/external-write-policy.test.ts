@@ -66,9 +66,17 @@ beforeAll(async () => {
         // `User` or `Tenant`, so both fixtures survive the run and the next
         // `create` dies on a unique constraint in `beforeAll` — which fails every
         // test in the file on something none of them are about.
+        //
+        // TENANT FIRST, THEN USER (#3597). `TenantMembership` holds a key to
+        // both, so deleting the user while a membership survives raises
+        // `TenantMembership_userId_fkey` and produces exactly the whole-file
+        // failure this block exists to prevent. The helper now truncates
+        // memberships, so this ordering is belt to that braces — and it is the
+        // ordering ~90 sibling suites get wrong, harmlessly only because of
+        // that change.
         const fixtureEmail = `owner@${id}.test`;
-        await prisma.user.deleteMany({ where: { emailHash: hashForLookup(fixtureEmail) } });
         await prisma.tenant.deleteMany({ where: { id } });
+        await prisma.user.deleteMany({ where: { emailHash: hashForLookup(fixtureEmail) } });
 
         await prisma.tenant.create({ data: { id, name: id, slug: id } });
         const email = fixtureEmail;

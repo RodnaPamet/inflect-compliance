@@ -66,6 +66,22 @@ async function asTenant<T>(tenantId: string, fn: (tx: PrismaClient) => Promise<T
 
 beforeAll(async () => {
     await resetDatabase(prisma);
+
+    // ── Clear the PREVIOUS run's fixtures before creating this one's (#3597) ──
+    //
+    // `resetDatabase` deliberately does not truncate `Tenant` or `User`, so
+    // fixtures survive a reset — and this block created both from FIXED
+    // constants without deleting them, so every run after the first collided
+    // on `tenant.create` and failed all of the file's tests on something none
+    // of them is about.
+    //
+    // Order is forced by the keys: `UserCalendarConnection` holds one to each
+    // of `Tenant` and `User`, so it goes first, and the two parents can then
+    // go in either order.
+    await prisma.userCalendarConnection.deleteMany({ where: { tenantId: { in: [T1, T2] } } });
+    await prisma.user.deleteMany({ where: { id: { in: [U1, U2, 'ucc-user-temp'] } } });
+    await prisma.tenant.deleteMany({ where: { id: { in: [T1, T2] } } });
+
     for (const [id, name] of [[T1, 'Tenant One'], [T2, 'Tenant Two']] as const) {
         await prisma.tenant.create({ data: { id, name, slug: id } });
     }

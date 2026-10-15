@@ -66,8 +66,17 @@ beforeAll(async () => {
     await deleteAuditRowsForTenants(prisma, [T]);
     await prisma.tenant.deleteMany({ where: { id: T } });
 
-    await prisma.tenant.create({ data: { id: T, name: T, slug: T } });
+    // THE USER TOO (#3597). `resetDatabase` does not truncate `User` — by
+    // design, so fixtures can outlive a reset — and this block deleted the
+    // tenant and not the user, so `user.create` below hit the unique
+    // `emailHash` of the row the PREVIOUS run left and failed every test in
+    // the file on something none of them is about. `T` is a fixed constant, so
+    // the address is the same every run and the collision is certain rather
+    // than occasional.
     const email = `owner@${T}.test`;
+    await prisma.user.deleteMany({ where: { emailHash: hashForLookup(email) } });
+
+    await prisma.tenant.create({ data: { id: T, name: T, slug: T } });
     const user = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
     ctx = makeRequestContext('OWNER', { tenantId: T, userId: user.id });
 });
