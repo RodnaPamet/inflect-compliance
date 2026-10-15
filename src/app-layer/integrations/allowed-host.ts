@@ -216,5 +216,34 @@ export const OKTA_HOSTS: HostAllowlist = {
 export const ORANGEHRM_HOSTS: HostAllowlist = {
     label: 'OrangeHRM',
     suffixes: ['.orangehrm.com', '.orangehrmlive.com'],
-    exact: ['orangehrm.com', 'orangehrmlive.com'],
+    exact: [
+        'orangehrm.com',
+        'orangehrmlive.com',
+        // ─── The self-hosted lab fixture the comment above reserved ─────────
+        //
+        // This is the "reviewed one-line change, once somebody has decided
+        // where that fixture will live" that the docblock asks for. The owner
+        // decided on 2026-10-15: the lab instance (`orangehrm/orangehrm:5.9`
+        // on the `inflect-compliance` VM) is reached at this name.
+        //
+        // ═══ WHY `exact` AND NOT A SUFFIX ═══
+        //
+        // `.34-140-180-255.sslip.io` as a SUFFIX was the obvious entry and it
+        // is the wrong one. sslip.io resolves every name of the form
+        // `<anything>.34-140-180-255.sslip.io` to that one address, so the
+        // suffix would admit every vhost Caddy serves on that VM — including
+        // `inflect.34-140-180-255.sslip.io`, which is the application itself.
+        // That would hand any `admin.manage` holder a credential-bearing fetch
+        // from inside the worker aimed at this deployment's own public
+        // interface, which is precisely the exposure the allowlist exists to
+        // close. One exact name admits the fixture and widens nothing.
+        //
+        // It is also why this entry is safe DESPITE naming a public address:
+        // the name is pinned, so the only thing reachable through it is
+        // whatever Caddy routes for that one Host header.
+        //
+        // If the lab moves, this line moves with it. It is a fixture address,
+        // not a vendor domain, and it is the only entry here that is neither.
+        'orangehrm-lab.34-140-180-255.sslip.io',
+    ],
 };
