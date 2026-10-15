@@ -210,6 +210,27 @@ this document. Keeping the two statements apart is the honest way to hold both.
 **How to update this.** When a phase first runs, replace its row with the
 artefact that proves it. Do not tick anything on the strength of a test.
 
+### What the four unticked criteria mean, as of 2026-10-15
+
+All four now carry a reason, and **none of them is outstanding work**:
+
+| criterion | why it is unticked |
+| --- | --- |
+| the row states the processor is inactive, and nothing in `src/` names TypeSafe | **not tickable by design** — the second half is deliberately false, so the register describes code that exists |
+| legal approval recorded, including zero retention in a signed DPA | **moot** since the 2026-10-14 withdrawal — no active processor, no DPA to execute. Dormant, not discharged |
+| with the kill switch engaged, no model call is made; an unscored agent is denied | **moot** (#3508) — the call site is unreachable, measured |
+| `TYPESAFE_SUBPROCESSOR_ACTIVE` flips in a PR linking the notice and showing the window closed | **moot** — the constant is `false` again, so there is no activation left to justify |
+
+So **173/177 is as complete as this document can be**, and the four are kept
+unticked on purpose: an unticked criterion with a reason attached tells an
+auditor something a tick never could — that the criterion was not satisfied,
+that its subject is gone, and that those are different things.
+
+**What is NOT closed by that** is the table above. The criteria are complete;
+six of seven phases have still never run. Those two statements are both true
+and neither substitutes for the other, which is the entire reason this section
+sits outside the 177.
+
 ---
 
 ### Definition of done
@@ -1193,7 +1214,7 @@ Deliver per the Definition of done. This step is Significant (a new sub-processo
 - [x] The row names every class of field the payload carries, and no other. **Verified #3480:** the register row enumerates the classes sent and then names the exclusions explicitly — email domains, employee numbers, dates, employment status, managers, entitlements, privilege flags, unmapped columns. The "and no other" half is asserted against the code rather than read off the prose: `sends no field the sub-processor entry excludes` and `never sends an email domain` in `identity-match-wire`, plus `sends exactly the allowlisted account fields and no others` and its candidate twin in `legacy-match-state-builder`.
 - [ ] The row states that the processor is inactive, and nothing in `src/` refers to TypeSafe. **HALF TRUE AGAIN as of 2026-10-14, and still not tickable.** The first half holds once more: the register reads `proposed-inactive (withdrawn 2026-10-14)` and the inventory row says WITHDRAWN, because the owner withdrew TypeSafe on the evidence that the path had produced zero verdicts in production while carrying a US transfer and an undischarged DPA obligation. The second half does NOT hold and is not meant to: six files under `src/` still name TypeSafe, deliberately, so the register describes code that exists and the withdrawal stays one constant away from reversible. Deleting the ~9,600 lines of adjudication path is a separate decision. This criterion was written for the end of Step 6a, when both halves were true at once; that state has now been left twice and returned to once, which is why it is annotated rather than ticked.
 - [x] `tests/guardrails/docs-accuracy.test.ts` and `tests/guardrails/sub-processor-coverage.test.ts` are green. **Verified #3480:** both run green, with `sub-processor-record-agrees-with-code` beside them — 157 tests across the five suites in that area.
-- [ ] Legal approval is recorded on the pull request, including zero data retention in the signed DPA. **NOT met, and it is the owner's to close.** `docs/sub-processors.md` records step 2 (compliance/legal review) as "Not performed — waived 2026-10-11": #3246 merged with zero reviews and all four of its legal checkboxes unticked, and no legal or compliance function is named anywhere in this repository. The zero-retention half is unverified too — no executed DPA is held here, only the template, so the register says to treat that row as "the commitment sought, not as a commitment verified". Three of step 2's four confirmations are clerical and checkable off a signed DPA; the fourth, whether SCCs plus a transfer impact assessment are an adequate basis given the vendor holds no DPF certification, needs legal competence nobody here has been identified as holding.
+- [ ] Legal approval is recorded on the pull request, including zero data retention in the signed DPA. **NOT met, and it is the owner's to close.** `docs/sub-processors.md` records step 2 (compliance/legal review) as "Not performed — waived 2026-10-11": #3246 merged with zero reviews and all four of its legal checkboxes unticked, and no legal or compliance function is named anywhere in this repository. The zero-retention half is unverified too — no executed DPA is held here, only the template, so the register says to treat that row as "the commitment sought, not as a commitment verified". Three of step 2's four confirmations are clerical and checkable off a signed DPA; the fourth, whether SCCs plus a transfer impact assessment are an adequate basis given the vendor holds no DPF certification, needs legal competence nobody here has been identified as holding. **MOOT as of 2026-10-14 — owner decision 2026-10-15.** TypeSafe was withdrawn as a proposed sub-processor and `TYPESAFE_SUBPROCESSOR_ACTIVE` is `false` again, so there is no active processor, no processing to cover, no DPA to execute and no transfer to assess. This criterion was written for an ACTIVE sub-processor and cannot be satisfied while there is none — the same reason the activation criterion below is annotated rather than ticked. **It applies again unchanged if TypeSafe is ever reinstated**, and the hard half comes back with it: whether SCCs plus a transfer impact assessment are an adequate basis for a vendor holding no DPF certification is a question the withdrawal postpones rather than answers. The code is retained deliberately, one constant away from reversible, so the obligation is dormant and not discharged — an auditor should be able to tell those apart, which is why this stays UNTICKED with the reason attached instead of being removed.
 - [x] The notice date and the window's closing date are recorded. **Verified #3480:** `docs/notices/2026-10-13-typesafe-ai-sub-processor.md` carries `Issued: 2026-10-14` and `Objection window closes: 2026-11-13`, and the register repeats both. The register also records what the dates do NOT cover: the email leg was not performed because there were no customer tenants to email, so the window runs against the public list alone.
 
 **Exit.** The inventory row is merged, the notice has gone out, and the date on which Jev may be activated is written down.
