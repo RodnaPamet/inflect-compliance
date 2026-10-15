@@ -201,10 +201,22 @@ export function flueModelIsRegistered(
     const providerId = specifier.slice(0, slash);
     const modelId = specifier.slice(slash + 1);
     const provider = providers.find((p) => p.id === providerId);
+    if (!provider) return false;
     // `getModels()` rather than a `models` field: the catalogue is behind a
     // method because a dynamic provider's list changes after `refreshModels()`.
-    // The contract says it must not throw, and pi itself treats a throwing
-    // implementation as having no models — so a refusal is the honest answer
-    // if one ever does.
-    return !!provider?.getModels().some((m) => m.id === modelId);
+    //
+    // WRAPPED, because the sentence below used to be a claim and not a
+    // behaviour (#3617). It said "the contract says it must not throw, and pi
+    // itself treats a throwing implementation as having no models — so a refusal
+    // is the honest answer if one ever does", and then called `getModels()`
+    // bare. A throwing catalogue propagated out of the one check whose whole
+    // purpose is to turn an unresolvable specifier into a NAMED refusal before
+    // dispatch — so the failure it exists to prevent arrived as an unhandled
+    // throw from the gate instead of from pi. Found by the first test ever to
+    // call it with a hostile provider.
+    try {
+        return provider.getModels().some((m) => m.id === modelId);
+    } catch {
+        return false;
+    }
 }
