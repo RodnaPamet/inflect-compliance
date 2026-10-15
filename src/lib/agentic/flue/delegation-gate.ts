@@ -32,16 +32,19 @@
  * { id: runId })`. `turnId` is the model turn. Together they are exactly the
  * key a PER-TURN fan-out cap needs, which is why the cap is per turn.
  *
- * ## The depth signal is an ABSENCE
+ * ## DEPTH IS NOT ENFORCED HERE — and this paragraph used to say it was
  *
- * `ctx.taskId` is undefined for a delegation started by the parent, and is set
- * for anything running inside a delegated task. So "already delegating" is
- * `ctx.taskId !== undefined`, and depth 1 — the owner's decision of
- * 2026-10-15 — is the refusal of any `task` call that carries one.
+ * It claimed `ctx.taskId` distinguishes a delegation started by a parent from
+ * one started inside a task. It does not, on the way in: see the long note at
+ * the removed arm for the measurement (#3581). The claim came from reading the
+ * value AFTER `next()`, where it is indeed set.
  *
- * That is a tighter bound than the runtime's own `MAX_DELEGATION_DEPTH = 4`, a
- * module-level const we cannot configure. Ours does not replace it; it sits
- * inside it.
+ * Depth 1 — the owner's decision of 2026-10-15 — is enforced by the
+ * specialists declaring no nested `useSubagent`, which the runtime backs with
+ * `SubagentNotDeclaredError`. It sits inside the runtime's own
+ * `MAX_DELEGATION_DEPTH = 4`, a module-level const we cannot configure.
+ *
+ * This module bounds FAN-OUT, which is the cap the runtime has none of.
  *
  * ## Why the counter is in a module-level Map
  *
@@ -96,8 +99,15 @@ export function _resetDelegationCounts(): void {
 export class DelegationRefusedError extends Error {
     constructor(
         message: string,
-        /** Which cap refused, for the step ledger. Never the message's wording. */
-        readonly cap: 'depth' | 'fan-out',
+        /**
+         * Which cap refused, for the step ledger. Never the message's wording.
+         *
+         * `'fan-out'` ONLY since #3581. The union carried `'depth'` for an arm
+         * that could not fire, and a type offering a state nothing produces
+         * invites a reader to handle it — and a `switch` with an unreachable
+         * branch is indistinguishable from one with a missing cause.
+         */
+        readonly cap: 'fan-out',
     ) {
         super(message);
         this.name = 'DelegationRefusedError';
@@ -122,18 +132,37 @@ export function gateDelegation(
 ): void {
     if (operation.type !== 'tool' || operation.toolName !== DELEGATION_TOOL_NAME) return;
 
-    // ── DEPTH 1 ────────────────────────────────────────────────────────────
+    // ── DEPTH 1 IS NOT ENFORCED HERE, AND THIS IS WHERE IT USED TO BE ──────
     //
-    // Checked FIRST and without reading the binding, because it is not a
-    // tenant setting: no tenant may raise it, and the refusal says so rather
-    // than naming a limit somebody could go and change.
-    if (ctx.taskId !== undefined) {
-        throw new DelegationRefusedError(
-            'delegation_not_nested: a subagent may not delegate further. Complete '
-                + 'this task yourself and return the result to whoever asked for it.',
-            'depth',
-        );
-    }
+    // An arm stood here refusing any `task` call whose `ctx.taskId` was set.
+    // It could never fire, and it is removed rather than repaired (#3581).
+    //
+    // MEASURED, with the real runtime and a faux provider, logging the whole
+    // `FlueExecutionContext` for every tool operation BEFORE `next()`:
+    //
+    //   root     list_controls  { instanceId, harness:'default', conversationId,
+    //                            session:'default', operationId, turnId: …T }
+    //   parent   task           { …same…,                        turnId: …W }
+    //   delegate list_controls  { …same…,                        turnId: …Z }
+    //
+    // Indistinguishable except for `turnId`. No `taskId`, and `session` reads
+    // `'default'` even for the call running INSIDE the delegation. `taskId` is
+    // populated only AFTER `next()` — which is where it was first measured,
+    // and that was the error. `guardDelegateResult` reads the id from the
+    // result's own `details` and is unaffected.
+    //
+    // WHAT ENFORCES DEPTH 1 INSTEAD is the declaration: no specialist's render
+    // calls `useSubagent`, so a delegate has no agent name to pass and the
+    // runtime answers an undeclared one with `SubagentNotDeclaredError`. That
+    // is checked by `tests/guards/flue-refused-capabilities.test.ts`, where a
+    // failure is a structural fact rather than a runtime path nobody takes.
+    //
+    // This repo already argued the general case, in `refused-capabilities.ts`
+    // about sandboxes: a ban on the import "is stronger than a runtime
+    // assertion would be", and "a never-called checker … would read as defence
+    // while defending nothing". The arm removed here was exactly that, and its
+    // unit test passed by constructing the `ctx.taskId` the arm wanted — a
+    // control that cannot express failure.
 
     // ── FAN-OUT ────────────────────────────────────────────────────────────
     //

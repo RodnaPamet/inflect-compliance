@@ -569,3 +569,132 @@ describe('provider registration never becomes a per-run call', () => {
         expect(resolveFlueModel({ residency: 'EXTERNAL' })).toHaveProperty('ok');
     });
 });
+
+/*
+    ═══ DEPTH 1: NO SPECIALIST DELEGATES FURTHER (#3473, #3581) ═══
+
+    The owner's decision of 2026-10-15 was depth 1 — a subagent may not itself
+    delegate — and this is where it is enforced, for the reason this file's own
+    header gives about sandboxes:
+
+        a guard that refuses the import refuses the capability outright — there
+        is no runtime path around it … A never-called checker is the scaffolding
+        this repo keeps finding: it would read as defence while defending
+        nothing.
+
+    An arm in `delegation-gate.ts` used to refuse a `task` call whose
+    `ctx.taskId` was set. MEASURED, that field is unset on the way IN: the
+    context for a root tool call, for the parent's `task` call and for a tool
+    call inside the delegation are indistinguishable except for `turnId`. So the
+    arm could not fire, and its unit test passed by constructing the value the
+    arm wanted (#3581). It is gone.
+
+    What actually holds the property is that no specialist's render calls
+    `useSubagent`, so a delegate has no agent name to pass and the runtime
+    answers an undeclared one with `SubagentNotDeclaredError`. That is a fact
+    about the source, which is why it is asserted here rather than at runtime —
+    and adding a nested delegate is a visible edit that turns this red.
+
+    `useSubagent` is NOT on the refused list and must not be: the PARENT agent
+    declares the four specialists with it, which is what makes delegation
+    possible at all. The claim is narrower — not "nobody may call it" but "not
+    from inside a delegate's render".
+*/
+describe('depth 1 — the subagents module declares no nested delegate', () => {
+    const SUBAGENTS_DIR = 'src/lib/agentic/flue/subagents/';
+
+    // `repoRelativeFiles()` takes NO arguments — it returns every repo file and
+    // the narrowing is the caller's. The same note sits a few blocks up,
+    // written after a draft that passed an options object, had it silently
+    // ignored, and swept `docs/**`. This draft made the same mistake by
+    // passing a directory.
+    const subagentFiles = (): string[] =>
+        repoRelativeFiles().filter(
+            (f) => f.startsWith(SUBAGENTS_DIR) && /\.tsx?$/.test(f),
+        );
+
+    /** CODE, not prose — comments blanked, so a docstring cannot satisfy or trip this. */
+    const code = (rel: string): string =>
+        codeOf(readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
+
+    /**
+     * Everything these three cases assert, measured once.
+     *
+     * ASSERTED OVER A NAMED OBJECT rather than as substring checks on each
+     * read, for two reasons that agree. A failure says WHICH claim broke
+     * instead of which substring was missing — and the subject is a derived
+     * value rather than a `path.join` read, which
+     * `assertion-needle-uniqueness-ratchet` cannot resolve to a constant path.
+     * Measured: the first draft of this block added four such blind spots and
+     * the ratchet counted them.
+     */
+    function survey() {
+        const files = subagentFiles();
+        const joined = files.map((f) => code(f)).join('\n');
+        const agent = code('src/lib/agentic/flue/agent.ts');
+        const renderStart = agent.indexOf('agent: () => {');
+        const renderEnd = agent.indexOf('return spec.instructions;', renderStart);
+        const render = renderStart >= 0 && renderEnd > renderStart
+            ? agent.slice(renderStart, renderEnd)
+            : '';
+        return {
+            fileCount: files.length,
+            declaresSpecialists: joined.includes('SPECIALISTS'),
+            specialistCount: (joined.match(/name: '[a-z_]+',/g) ?? []).length,
+            moduleNamesUseSubagent: joined.includes('useSubagent'),
+            moduleNamesDefineSubagent: joined.includes('defineSubagent'),
+            moduleImportsRuntime: joined.includes('@flue/runtime'),
+            renderFound: render !== '',
+            renderNamesUseSubagent: render.includes('useSubagent'),
+            renderNamesGeneralSubagent: render.includes('GeneralSubagent'),
+            renderMountsTools: render.includes('useTool(tool)'),
+            renderMountsSkills: render.includes('useSkill('),
+        };
+    }
+
+    it('found the module and the render — otherwise every absence is vacuous', () => {
+        // The denominator. A renamed directory, or a render window that came
+        // out empty, would satisfy every `false` below perfectly.
+        const s = survey();
+        expect({
+            foundFiles: s.fileCount > 0,
+            declaresSpecialists: s.declaresSpecialists,
+            atLeastFour: s.specialistCount >= 4,
+            foundRender: s.renderFound,
+            renderMountsTools: s.renderMountsTools,
+            renderMountsSkills: s.renderMountsSkills,
+        }).toEqual({
+            foundFiles: true,
+            declaresSpecialists: true,
+            atLeastFour: true,
+            foundRender: true,
+            renderMountsTools: true,
+            renderMountsSkills: true,
+        });
+    });
+
+    it('neither the module nor a delegate\'s render declares a subagent', () => {
+        // The module is pure by design and holds no runtime import at all, so
+        // either name appearing there is the start of a nested delegate.
+        //
+        // The render is bound to the arrow passed as `agent:`, NOT the file:
+        // `agent.ts` legitimately calls `useSubagent` in the outer loop that
+        // mounts the four, so a whole-file absence would be false the moment
+        // delegation works at all.
+        const s = survey();
+        expect({
+            moduleUseSubagent: s.moduleNamesUseSubagent,
+            moduleDefineSubagent: s.moduleNamesDefineSubagent,
+            moduleRuntimeImport: s.moduleImportsRuntime,
+            renderUseSubagent: s.renderNamesUseSubagent,
+            renderGeneralSubagent: s.renderNamesGeneralSubagent,
+        }).toEqual({
+            moduleUseSubagent: false,
+            moduleDefineSubagent: false,
+            moduleRuntimeImport: false,
+            renderUseSubagent: false,
+            renderGeneralSubagent: false,
+        });
+    });
+});
+
