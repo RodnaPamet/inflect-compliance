@@ -21,6 +21,14 @@
  *      and the test asserts the ROW EXISTS first — otherwise "not found"
  *      proves only that the id was wrong.
  *
+ *   4. AND THE CHECKPOINT READ BESIDE IT. `getRunCheckpointReview` is the
+ *      other thing the canvas asks about one run (#3472) — the PENDING
+ *      proposals it queued, each with a diff. Same fixture, same tenancy
+ *      question, and one claim neither of the above can make: the diff is
+ *      computed against the target's state AT READ TIME, so it has to be
+ *      asserted against a row that was changed after the proposal was
+ *      written.
+ *
  * Real database, real usecase, real RLS. A mocked Prisma would answer whatever
  * the mock was told, and the claim here is about what the predicate does.
  */
@@ -35,6 +43,10 @@ import {
     MAX_STEP_FEED_TAKE,
     DEFAULT_STEP_FEED_TAKE,
 } from '@/app-layer/usecases/workflow-run-steps';
+import {
+    getRunCheckpointReview,
+    MAX_CHECKPOINT_PROPOSALS,
+} from '@/app-layer/usecases/run-checkpoint-review';
 import { makeRequestContext } from '../helpers/make-context';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -49,6 +61,8 @@ const USER_B = `ub-${SUITE}`;
 const RUN_A = `run-${SUITE}`;
 /** A SECOND run in the SAME tenant. RLS cannot separate these two. */
 const RUN_A2 = `run2-${SUITE}`;
+/** The UPDATE proposal's target, and the row that MOVES under it. */
+const RISK_A = `risk-${SUITE}`;
 
 /** More steps than one page holds, so the cap is exercised rather than described. */
 const STEP_COUNT = DEFAULT_STEP_FEED_TAKE + 7;
@@ -116,10 +130,63 @@ describeFn('the run step feed (real DB, real RLS)', () => {
                 status: 'DONE' as const,
             })),
         });
+
+        // ── THE CHECKPOINT FIXTURE (#3472) ────────────────────────────────
+        //
+        // A real target row, so the UPDATE proposal's diff is computed against
+        // something that exists and can be changed. `title` is the field the
+        // proposal edits and the one the test later moves out from under it.
+        await prisma.risk.create({
+            data: { id: RISK_A, tenantId: TENANT_A, title: 'Original title' },
+        });
+        await prisma.agentProposal.createMany({
+            data: [
+                // PENDING, on this run — the row the panel exists to show.
+                {
+                    id: `p-update-${SUITE}`,
+                    tenantId: TENANT_A,
+                    runId: RUN_A,
+                    stepSeq: 1,
+                    kind: 'RISK',
+                    operation: 'UPDATE',
+                    status: 'PENDING',
+                    targetEntityId: RISK_A,
+                    payloadJson: JSON.stringify({ title: 'Proposed title' }),
+                },
+                // ALREADY DECIDED. A decided proposal is not a decision
+                // waiting on anybody, and a panel that listed it would ask a
+                // reviewer to approve something that is already approved.
+                {
+                    id: `p-done-${SUITE}`,
+                    tenantId: TENANT_A,
+                    runId: RUN_A,
+                    stepSeq: 1,
+                    kind: 'RISK',
+                    operation: 'CREATE',
+                    status: 'ACCEPTED',
+                    payloadJson: JSON.stringify({ title: 'Already accepted' }),
+                },
+                // PENDING, on the SIBLING run of the SAME tenant. The axis RLS
+                // cannot cover, and the one the `runId` predicate is load-
+                // bearing for — exactly as for the step feed above.
+                {
+                    id: `p-other-run-${SUITE}`,
+                    tenantId: TENANT_A,
+                    runId: RUN_A2,
+                    stepSeq: 0,
+                    kind: 'RISK',
+                    operation: 'CREATE',
+                    status: 'PENDING',
+                    payloadJson: JSON.stringify({ title: 'Another run entirely' }),
+                },
+            ],
+        });
     });
 
     afterAll(async () => {
         for (const t of [TENANT_A, TENANT_B]) {
+            await prisma.agentProposal.deleteMany({ where: { tenantId: t } }).catch(() => {});
+            await prisma.risk.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.workflowStep.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.workflowRun.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.$transaction(async (tx) => {
@@ -235,4 +302,133 @@ describeFn('the run step feed (real DB, real RLS)', () => {
         expect(feed.steps[0].tool).toBe('get_framework_status');
         expect(feed.steps[0].scope).not.toBeNull();
     });
+
+    /*
+        ═══ THE CHECKPOINT READ (#3472) ═══
+
+        What the canvas asks when a node is parked on a HUMAN_CHECKPOINT. Four
+        claims, and the third is the one only a real database can make.
+    */
+    describe('one run\'s open checkpoint', () => {
+        it('returns the PENDING proposals of THIS run, and nothing else', async () => {
+            const review = await getRunCheckpointReview(ctxA(), RUN_A);
+            expect(review.proposals.map((p) => p.id)).toEqual([`p-update-${SUITE}`]);
+            // Each exclusion is a different mistake:
+            //   · the ACCEPTED row — a decided proposal is not a decision
+            //     waiting on anybody;
+            //   · the sibling run's row — same tenant, so RLS cannot separate
+            //     them and the `runId` predicate is the whole of it.
+            expect(review.proposals.map((p) => p.id)).not.toContain(`p-done-${SUITE}`);
+            expect(review.proposals.map((p) => p.id)).not.toContain(`p-other-run-${SUITE}`);
+            // And the three rows demonstrably exist — otherwise this asserts
+            // only that the fixture failed to write.
+            const all = await prisma.agentProposal.count({ where: { tenantId: TENANT_A } });
+            expect(all).toBe(3);
+        });
+
+        it('names the run\'s own status, which is NOT the proposal count', async () => {
+            // `AWAITING_APPROVAL` does not mean there are proposals, and a
+            // run with proposals need not be awaiting anybody. They are
+            // separate facts and the projection keeps them separate.
+            const review = await getRunCheckpointReview(ctxA(), RUN_A);
+            expect(review.status).toBe('RUNNING');
+            expect(review.awaitingHuman).toBe(false);
+            expect(review.proposals).toHaveLength(1);
+            expect(review.truncated).toBe(false);
+            expect(review.workflowKey).toBe('audit-prep');
+        });
+
+        it('computes the diff against the target AS IT IS NOW, not as it was', async () => {
+            // THE CLAIM THIS FILE EXISTS TO MAKE for the checkpoint read.
+            // There is no snapshot column and deliberately never will be: a
+            // base captured when the proposal was queued answers "what was
+            // true when the agent looked", and the reviewer is being asked
+            // "what will this do if I approve it now". Those diverge exactly
+            // when it matters — a record edited between proposal and review —
+            // and the stored answer is the one that is confidently wrong.
+            //
+            // So the row is MOVED here, after the proposal was written, and
+            // the diff has to follow it.
+            const before = await getRunCheckpointReview(ctxA(), RUN_A);
+            const beforeDigest = before.proposals[0].diff.baseDigest;
+            expect(before.proposals[0].diff.status).toBe('UPDATE');
+            expect(JSON.stringify(before.proposals[0].diff.fields)).toContain('Original title');
+
+            await prisma.risk.update({
+                where: { id: RISK_A },
+                data: { title: 'Somebody else edited this' },
+            });
+            const after = await getRunCheckpointReview(ctxA(), RUN_A);
+            expect(JSON.stringify(after.proposals[0].diff.fields)).toContain(
+                'Somebody else edited this',
+            );
+            // AND THE FINGERPRINT MOVED WITH IT. This is what makes the
+            // approve path's re-check meaningful: the reviewer's consent is
+            // bound to the base they read, so a base that has changed must
+            // produce a different digest or the binding proves nothing.
+            expect(after.proposals[0].diff.baseDigest).not.toBe(beforeDigest);
+            expect(after.proposals[0].diff.baseDigest).toBeTruthy();
+
+            // Put it back, so a later assertion in this file reads the fixture
+            // it was written against.
+            await prisma.risk.update({
+                where: { id: RISK_A },
+                data: { title: 'Original title' },
+            });
+        });
+
+        it('sends the proposed value as a DIFF FIELD, never as the raw payload', async () => {
+            // The distinction this asserts is not "the proposed value is
+            // hidden" — a reviewer must see what is proposed, and `after`
+            // is where it belongs. It is that the value arrives STRUCTURED,
+            // beside the base it would replace, rather than as the opaque
+            // `payloadJson` blob the old queue rendered into a `<pre>`.
+            //
+            // Asserted over the SERIALISED result, because that is what the
+            // route returns: a field-by-field check only looks at the fields
+            // it already expected, and the failure here would be an EXTRA one.
+            const review = await getRunCheckpointReview(ctxA(), RUN_A);
+            const wire = JSON.stringify(review);
+
+            // The column is absent by NAME…
+            expect(wire).not.toContain('payloadJson');
+            // …and absent by SHAPE: a nested JSON string would serialise with
+            // escaped quotes, which is the signature of a dumped payload and
+            // cannot be produced by the diff's own structure.
+            expect(wire).not.toContain('\\"title\\"');
+
+            // And the value IS there, in the one place it carries meaning —
+            // paired with the base, which is what makes an update reviewable
+            // at all.
+            expect(review.proposals[0].diff.fields).toEqual([
+                expect.objectContaining({
+                    field: 'title',
+                    before: 'Original title',
+                    after: 'Proposed title',
+                    changed: true,
+                }),
+            ]);
+
+            // Timestamps are ISO STRINGS on the way out, because the client
+            // derives its type from this return value and a `Date` there is a
+            // lie the compiler accepts — #3546 shipped within one commit of
+            // calling `.toISOString()` on one.
+            expect(typeof review.proposals[0].createdAt).toBe('string');
+        });
+
+        it("tenant B cannot read tenant A's checkpoint — and the run demonstrably exists", async () => {
+            await expect(getRunCheckpointReview(ctxB(), RUN_A)).rejects.toThrow(/not found/i);
+            const row = await prisma.workflowRun.findUnique({ where: { id: RUN_A } });
+            expect(row?.tenantId).toBe(TENANT_A);
+        });
+
+        it('bounds what one checkpoint can return', async () => {
+            // A bound rather than a page: a checkpoint carrying more than this
+            // is the proposals queue's job, and the panel says so. The cap is
+            // asserted as a number a reader can see, so a change to it is a
+            // change to this line rather than a silent widening.
+            expect(MAX_CHECKPOINT_PROPOSALS).toBe(25);
+        });
+    });
+
 });

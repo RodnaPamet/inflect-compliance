@@ -40,7 +40,7 @@
  * forbids — the count below is information, not permission.
  */
 import { initialize, listTools, McpClientError } from '../mcp/client';
-import { mintAccessToken, McpTokenError } from '../mcp/token';
+import { mintToken, resolveMcpCredentials, McpTokenError } from '../mcp/token';
 import type {
     ConnectionConfigSchema,
     ConnectionValidationResult,
@@ -66,39 +66,35 @@ export interface McpServerSecrets {
 
 
 /**
- * The header to present during VALIDATION — OAuth minted fresh, or the static
- * credential verbatim.
+ * The header to present during VALIDATION — a token minted fresh by whichever
+ * grant this connection is configured for, or the static credential verbatim.
  *
- * Separate from `authorizationFor` only in that it bypasses the cache. The
- * shape checks are the same and live in one place, so the two cannot disagree
- * about what "configured for OAuth" means.
+ * Separate from `authorizationFor` only in that it bypasses the cache.
+ *
+ * ── IT NOW GENUINELY SHARES THE SHAPE CHECKS (#3467) ───────────────────────
+ *
+ * The sentence that stood here said "the shape checks are the same and live in
+ * one place, so the two cannot disagree about what 'configured for OAuth'
+ * means" — while this function held a SECOND COPY of them. They had already
+ * drifted: one message said `OAuth`, this one said `Entra`, so an operator met
+ * a different sentence depending on whether they pressed Test or ran an agent.
+ * With two grants to tell apart, two copies would be two answers to "which
+ * grant is this", and the Test button is exactly where that must not differ
+ * from the runtime.
+ *
+ * So the resolution is `resolveMcpCredentials`, imported, and what remains here
+ * is the one thing that is genuinely different: no cache.
  */
 async function freshAuthorization(
     config: Record<string, unknown>,
     secrets: Record<string, unknown>,
 ): Promise<string | undefined> {
-    const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
-    const tenantId = str(config.tenantId);
-    const clientId = str(config.clientId);
-    const clientSecret = str(secrets.clientSecret);
-    const refreshToken = str(secrets.refreshToken);
-
-    if (tenantId || clientId || clientSecret || refreshToken) {
-        if (!tenantId || !clientId || !clientSecret || !refreshToken) {
-            throw new McpTokenError(
-                'This connection is partly configured for Entra — tenant ID, client ID, '
-                + 'client secret and refresh token are all required together.',
-            );
-        }
-        const minted = await mintAccessToken({
-            tenantId,
-            clientId,
-            clientSecret,
-            refreshToken,
-            scope: str(config.scope) || undefined,
-        });
+    const credentials = resolveMcpCredentials(config, secrets);
+    if (credentials) {
+        const minted = await mintToken(credentials);
         return `Bearer ${minted.accessToken}`;
     }
+    const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
     return str(secrets.authorization) || undefined;
 }
 
@@ -132,18 +128,31 @@ export class McpServerProvider implements IntegrationProvider {
         // its OWN token audience: a `graph.microsoft.com/.default` token is
         // rejected `401 InvalidAuthenticationToken — Invalid audience`, and
         // `https://mcp.svc.cloud.microsoft/.default` is accepted. And it
-        // accepts CLIENT CREDENTIALS, which this provider cannot send — see #3467. The run therefore went
-        // through the static `secrets.authorization` branch, so the OAuth
-        // minting path remains unproved against a vendor.
+        // accepts CLIENT CREDENTIALS.
+        //
+        // #3467 BUILT THE SECOND of those and made the first configurable: the
+        // client-credentials grant exists now, and `scope` is a field rather
+        // than a value only the code could supply. The run itself still went
+        // through the static `secrets.authorization` branch — it had no other
+        // option at the time — so THE MINTING PATH REMAINS UNPROVED AGAINST A
+        // VENDOR, by either grant. That is a statement about the record, and
+        // building the path did not change it: the next proving run is what
+        // would.
         'proving run 2026-10-13 — validateConnection against Microsoft Entra MCP returned valid; static-authorization branch only';
 
     readonly setupGuide =
-        'Enter the server\'s HTTPS endpoint and, if it needs one, an Authorization header '
-        + 'value. Testing the connection performs a real MCP handshake and reports how many '
-        + 'tools the server advertises. Those tools are NOT usable yet: an administrator '
-        + 'reviews and approves them, and they must then be granted to a registered agent. '
-        + 'The server must be reachable on a public address over HTTPS — private and '
-        + 'link-local addresses are refused, and redirects are not followed.';
+        'Enter the server\'s HTTPS endpoint, then choose how it authenticates. A server '
+        + 'behind Microsoft Entra takes the tenant ID, client ID and client secret, plus '
+        + 'EITHER a refresh token (delegated — every token carries a named person\'s '
+        + 'privileges, so an agent can never see more than that person) OR a token scope '
+        + '(app-only — no such ceiling, and the scope must name your server\'s own '
+        + 'audience). Anything else takes a static Authorization header value, which works '
+        + 'but expires with the token you paste. Testing the connection performs a real MCP '
+        + 'handshake and reports how many tools the server advertises. Those tools are NOT '
+        + 'usable yet: an administrator reviews and approves them, and they must then be '
+        + 'granted to a registered agent. The server must be reachable on a public address '
+        + 'over HTTPS — private and link-local addresses are refused, and redirects are '
+        + 'not followed.';
 
     readonly configSchema: ConnectionConfigSchema = {
         configFields: [
@@ -170,6 +179,33 @@ export class McpServerProvider implements IntegrationProvider {
                 required: false,
                 description: 'The app registration authorized against this MCP server.',
             },
+            {
+                key: 'scope',
+                label: 'Token scope (audience)',
+                type: 'string',
+                required: false,
+                // IT WAS ALREADY READ AND COULD NOT BE SET (#3467). `config.scope`
+                // was consulted on the minting path from the day that path landed,
+                // and there was no field for it — so the only reachable value was
+                // the delegated default, and an operator whose server has its own
+                // audience had no way to say so.
+                //
+                // That is the one thing the 2026-10-13 proving run showed matters:
+                // the same gateway answers 200 to a token scoped
+                // `https://mcp.svc.cloud.microsoft/.default` and
+                // `401 InvalidAuthenticationToken — Invalid audience` to a
+                // Graph-scoped one. An operator pasting the token they already had
+                // for Graph gets exactly that, and nothing on the screen names the
+                // audience as the cause.
+                description:
+                    'The resource this server\'s token is for, e.g. '
+                    + 'https://mcp.example.com/.default. REQUIRED for app-only access '
+                    + '(client secret, no refresh token) — there is no safe default, '
+                    + 'because a token minted for the wrong audience is refused as an '
+                    + 'invalid token rather than as a bad secret. Optional for '
+                    + 'delegated access, which defaults to the Microsoft Entra MCP '
+                    + 'resource.',
+            },
         ],
         secretFields: [
             {
@@ -194,9 +230,18 @@ export class McpServerProvider implements IntegrationProvider {
                 label: 'Refresh token',
                 type: 'string',
                 required: false,
+                // ITS PRESENCE SELECTS THE GRANT (#3467), so the description says
+                // what LEAVING IT BLANK means rather than only what filling it in
+                // does. The difference is a governance one: a delegated token
+                // carries a named person's privileges, so an agent reaching through
+                // it can never see more than the human it acts for.
                 description:
                     'Obtained once, interactively. Exchanged for a short-lived access token on '
-                    + 'demand, so the connection keeps working. The access token is never stored.',
+                    + 'demand, so the connection keeps working — the access token is never '
+                    + 'stored. Supplying it selects DELEGATED access, where every token '
+                    + 'carries a named person\'s privileges and an agent can never see more '
+                    + 'than that person. Leave it blank, with a scope set, for APP-ONLY '
+                    + 'access, which has no such ceiling.',
             },
         ],
     };
@@ -227,6 +272,12 @@ export class McpServerProvider implements IntegrationProvider {
         // how an earlier version of this check missed the one real connection
         // that had them.
         const filled = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
+        // `scope` IS DELIBERATELY ABSENT FROM THIS LIST (#3467). It is a
+        // property of the SERVER rather than of the grant, so a connection can
+        // legitimately carry one while being authenticated by a static header —
+        // and counting it here would turn "I told it my server's audience" into
+        // "this connection has two credentials", refusing a save for a field
+        // that is not a credential at all.
         const oauthFields = (
             [
                 ['tenantId', config.tenantId],

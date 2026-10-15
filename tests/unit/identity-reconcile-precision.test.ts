@@ -50,9 +50,15 @@ import {
     type Outcome,
     type SupportingSignal,
     type CandidateScorer,
+    type CandidateBlocker,
     DuplicateRosterIdError,
 } from '@/lib/identity/reconcile/engine';
 import { CORPUS, engineInputFor, type CorpusCase } from '../fixtures/identity-reconcile/corpus';
+// Both fixture sets, because #3550's invariant is derived over every case in
+// both — the held-out set is where the disagreement was independently
+// reproduced, so excluding it would gate the weaker half of the evidence.
+import { HELD_OUT } from '../fixtures/identity-reconcile/held-out';
+import { step4aExtensions } from '@/lib/identity/reconcile/scorers';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -969,5 +975,207 @@ describe('RQ-3b — the three accounts the design names as NON_PERSON', () => {
             now: NOW,
         });
         expect(r.resolutions[0].outcome).toBe('NON_PERSON');
+    });
+});
+
+/**
+ * A tie with NO evidence is `UNMATCHED`, never `AMBIGUOUS` (#3550).
+ *
+ * `in-01` ('J Jones' against Jamie and Jordan Jones) expected `AMBIGUOUS` from
+ * the day the corpus was written, and the engine had always returned
+ * `UNMATCHED`. The held-out set (#3516) then reproduced the same disagreement
+ * on two unseen cases, which is what made it a decision rather than a fixture
+ * slip: three cases, one answer, none of them copied from another.
+ *
+ * WHY THE FIXTURE'S OWN PROSE COULD NOT SETTLE IT. `in-01`'s stated rule was
+ * "the engine must refuse to pick" — and BOTH answers refuse to pick. The
+ * expectation picked `AMBIGUOUS`; nothing in the reasoning required it.
+ *
+ * OWNER DECISION, 2026-10-15: `UNMATCHED`. Two reasons, and the first is the
+ * one that made it safe:
+ *
+ *   · THE REVIEWER LOSES NOTHING. `listReconciliationQueue` includes
+ *     `UNMATCHED` in the queue and selects `candidatesJson` unconditionally
+ *     (`legacy-reviewer-actions.ts:112` maps `r.candidatesJson ?? []` with no
+ *     outcome gate), and the review page renders candidates on
+ *     `candidates.length > 0` rather than on outcome. So both names appear
+ *     either way. The issue's own framing — "does the reviewer see two names,
+ *     or none?" — was wrong, and checking the UI rather than asserting it is
+ *     what found that.
+ *   · `AMBIGUOUS` IS A POSITIVE CLAIM. It says *it is one of these*, and score
+ *     0 with no signals cannot support it. Two people sharing a surname is
+ *     common and uninformative; the outcome's only remaining effect is a badge
+ *     rendered `error` — "the row a reviewer must not skim past" — and spending
+ *     that on the rows where the engine knows least is what makes a red badge
+ *     stop meaning anything.
+ *
+ * GATED HERE, AS AN INVARIANT, NOT AS FIXTURE EQUALITY. The held-out suite
+ * deliberately REPORTS outcome agreement rather than gating it, and its reason
+ * is sound: gating agreement turns the first honest disagreement into a red
+ * build, and the quickest way back to green is editing the fixture. So this
+ * block does not gate agreement. It gates the PROPERTY the decision is about,
+ * derived over every case in both fixture sets — which means a future case of
+ * this shape is covered without anyone remembering to add it.
+ */
+describe('a tie with no evidence is UNMATCHED, never AMBIGUOUS (#3550)', () => {
+    // 4a IS WIRED HERE, unlike the rest of this file, and that is deliberate
+    // rather than inconsistent: Step 3b alone generates no candidate for a
+    // name-based case, so there would be no TIE to have an opinion about —
+    // every case would be `NO_CANDIDATES` and this gate would pass over
+    // nothing. Production wires them at `legacy-reconcile.ts:287`.
+    const resolveAsProduction = (c: CorpusCase) => {
+        const input = engineInputFor(c) as EngineInput;
+        const { scorers, blockers } = step4aExtensions(
+            input.roster as readonly RosterEmployee[],
+            null,
+        );
+        const r = reconcile({ ...input, config: { ...input.config, scorers, blockers } });
+        expect(r.resolutions).toHaveLength(1);
+        return r.resolutions[0];
+    };
+
+    const ALL: readonly CorpusCase[] = [...CORPUS, ...HELD_OUT];
+
+    /**
+     * Two candidates, equal real evidence on each — the shape AMBIGUOUS is for.
+     *
+     * A BLOCKER IS MANDATORY HERE AND THAT IS NOT INCIDENTAL. The engine creates
+     * no candidate of its own for a name-only account: with no blocker in
+     * `config`, `reconcile` returns `NO_CANDIDATES` and the scorer is never
+     * called even once. Writing this control is how that was found, and the
+     * sibling `RQ-3b — supporting signals cannot link, exhaustively` block is
+     * built the same way WITHOUT a blocker — so it enumerates 127 subsets at
+     * score 10,000 over zero candidates (#3559). The property it claims is
+     * true, verified directly; the test does not exercise it.
+     */
+    const evenlyEvidencedTie = () => {
+        const twin = (id: string): RosterEmployee => ({
+            id,
+            fullName: 'Ada Nwosu',
+            status: 'ACTIVE',
+        });
+        const bothBlock: CandidateBlocker = () => ['e-900', 'e-901'];
+        const evenly: CandidateScorer = () => [
+            { kind: 'SIMILARITY', score: 500, evidence: 'equal on both' } as SupportingSignal,
+        ];
+        const r = reconcile({
+            accounts: [{ accountKey: 'anwosu', displayName: 'Ada Nwosu' } as CanonicalAccount],
+            roster: [twin('e-900'), twin('e-901')],
+            directory: [],
+            aliases: [],
+            now: NOW,
+            config: { blockers: [bothBlock], scorers: [evenly] },
+        });
+        expect(r.resolutions).toHaveLength(1);
+        return r.resolutions[0];
+    };
+
+    /** Cases where the engine holds 2+ candidates and no evidence on any. */
+    const zeroEvidenceTies = ALL.map((c) => ({ c, r: resolveAsProduction(c) })).filter(
+        ({ r }) =>
+            r.candidates.length >= 2 &&
+            r.candidates.every((x) => x.score === 0 && x.signals.length === 0),
+    );
+
+    it('finds cases of this shape to gate at all', () => {
+        // THE DENOMINATOR. A filter that matched nothing would make every
+        // assertion below pass over an empty array — the way this gate would
+        // silently stop gating if the blocker ever stopped producing these
+        // candidates.
+        expect(zeroEvidenceTies.length).toBeGreaterThanOrEqual(3);
+        // And the three cases the decision was made on are really in it.
+        expect(zeroEvidenceTies.map(({ c }) => c.id).sort()).toEqual(
+            expect.arrayContaining(['ho2-am-01', 'ho2-in-01', 'in-01']),
+        );
+    });
+
+    it('and no fixture of that shape expects anything else', () => {
+        // THE DECISION, ENCODED WHERE IT CAN DRIFT. The assertion above is an
+        // ENGINE invariant and holds whatever the fixtures say — the engine's
+        // `supporting` filter keys on `signals.length > 0`, so a zero-evidence
+        // tie structurally cannot reach AMBIGUOUS. That means reverting
+        // `in-01` to AMBIGUOUS would NOT fail it; the disagreement would simply
+        // reappear in the held-out suite's report, which is not gated.
+        //
+        // So the expectation is gated too, for this shape only, and derived:
+        // a NEW case of this shape written as AMBIGUOUS fails here immediately,
+        // without anyone having to remember the 2026-10-15 decision.
+        expect(
+            zeroEvidenceTies
+                .filter(({ c }) => c.expected.outcome !== 'UNMATCHED')
+                .map(({ c }) => `${c.id}: fixture expects ${c.expected.outcome}`),
+        ).toEqual([]);
+    });
+
+    it('answers UNMATCHED on every one of them', () => {
+        // Mapped, not looped, so a failure names every case at once and the
+        // subject is not a for-of binding.
+        expect(
+            zeroEvidenceTies
+                .filter(({ r }) => r.outcome !== 'UNMATCHED')
+                .map(({ c, r }) => `${c.id}: ${r.outcome}`),
+        ).toEqual([]);
+    });
+
+    it('still reaches AMBIGUOUS when the evidence really does conflict', () => {
+        // THE POSITIVE CONTROL, and the reason the gate above is not "never
+        // AMBIGUOUS": a change that simply deleted the outcome would pass every
+        // other assertion in this block.
+        //
+        // CONSTRUCTED RATHER THAN DRAWN FROM THE CORPUS, and finding that out
+        // is a result in its own right. `db-02` — two directory connections
+        // whose links are both fresh and point at two DIFFERENT employees — is
+        // the one AMBIGUOUS case either fixture set has, and it is AMBIGUOUS
+        // only at Step 3b. Wired as production wires it, 4a's SIMILARITY
+        // scorer adds 140 to one side (390 vs 250) and it becomes SUGGESTED.
+        // Measured across both fixture sets: AMBIGUOUS is reached by 1 of 45
+        // cases at 3b and ZERO of 45 under production wiring (#3560).
+        //
+        // So the outcome has to be demonstrated directly. Two roster members
+        // with the same full name both block in as candidates, and a scorer
+        // that gives each the same signal leaves a tie the engine cannot break
+        // — evidence on both sides, equal, which is the shape the decision
+        // reserves AMBIGUOUS for.
+        const r = evenlyEvidencedTie();
+        expect(r.outcome).toBe('AMBIGUOUS');
+        // Ambiguous ABOUT something — the distinction the decision turns on,
+        // asserted rather than implied.
+        expect(r.candidates.filter((x) => x.signals.length > 0)).toHaveLength(2);
+    });
+
+    it('separates the two shapes on evidence, not on candidate count', () => {
+        // Both shapes have exactly two candidates. If the engine keyed on "how
+        // many candidates" rather than "what do I know about them", these two
+        // would answer the same way.
+        const tie = zeroEvidenceTies.find(({ c }) => c.id === 'in-01');
+        expect(tie?.r.candidates).toHaveLength(2);
+        expect(tie?.r.outcome).toBe('UNMATCHED');
+
+        const evidenced = evenlyEvidencedTie();
+        expect(evidenced.candidates).toHaveLength(2);
+        expect(evidenced.outcome).not.toEqual(tie?.r.outcome);
+    });
+
+    it('reports how often AMBIGUOUS is reached at all, which is zero (#3560)', () => {
+        // REPORTED, NOT GATED. The number is a property of the fixtures, not of
+        // the engine, so gating it would fail the day somebody adds a case that
+        // reaches the outcome — exactly backwards. It is printed because a
+        // reviewer-visible outcome that no case in a 45-case corpus reaches is
+        // worth somebody deciding about, and because the figure is what stopped
+        // the positive control above from being drawn from the corpus.
+        const reached = ALL.filter((c) => resolveAsProduction(c).outcome === 'AMBIGUOUS');
+        console.log(
+            [
+                '',
+                `  AMBIGUOUS under production wiring: ${reached.length}/${ALL.length}`,
+                `  cases: ${reached.map((c) => c.id).join(', ') || '(none)'}`,
+                '  db-02 is AMBIGUOUS at Step 3b (250 vs 250) and SUGGESTED with 4a',
+                '  wired (390 vs 250) — one SIMILARITY signal breaks the tie. Its',
+                '  margin of 140 is below BULK_MIN_MARGIN (220), so the row is',
+                '  individually reviewable and NOT bulk-confirmable.',
+                '',
+            ].join('\n'),
+        );
+        expect(reached.length).toBeGreaterThanOrEqual(0);
     });
 });

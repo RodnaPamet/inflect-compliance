@@ -37,7 +37,13 @@
  *     enqueue.
  *
  * (2) BULLMQ JOB ID. The enqueue uses
- *     `jobId = ctr:{planId}:{scheduledForIso}`. BullMQ refuses
+ *     `jobId = scheduledJobId('ctr', planId, scheduledForMs)`,
+ *     i.e. `ctr-{planId}-{epochMs}`. COLON-FREE: the id this
+ *     once built by hand embedded an ISO timestamp, whose own
+ *     colons pushed it past BullMQ's three-segment limit, and
+ *     every enqueue threw `Custom Id cannot contain :` for
+ *     seven days while the rollback below retried it 24 times
+ *     an hour (#3554). BullMQ refuses
  *     duplicate ids in the same queue, so a scheduler that crashed
  *     after the DB UPDATE but before the enqueue can retry safely:
  *     the second attempt uses the SAME jobId and BullMQ no-ops on
@@ -75,6 +81,7 @@ import { prisma } from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { enqueue } from './queue';
+import { scheduledJobId } from './fan-out';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -449,7 +456,13 @@ export async function runControlTestScheduler(
                             // Deterministic id — second-layer dedupe in
                             // case the scheduler crashes after the DB
                             // claim and BullMQ retries the tick.
-                            jobId: `ctr:${plan.id}:${scheduledForIso}`,
+                            //
+                            // Built by the factory, not by hand: the previous
+                            // hand-rolled `ctr:{planId}:{scheduledForIso}`
+                            // embedded an ISO timestamp whose own colons pushed
+                            // the id past BullMQ's three-segment limit, and
+                            // every enqueue threw for seven days (#3554).
+                            jobId: scheduledJobId('ctr', plan.id, plan.nextRunAt.getTime()),
                         },
                     );
                     enqueued++;
@@ -461,8 +474,14 @@ export async function runControlTestScheduler(
                     // to the observed `nextRunAt` (guarded on the value we just
                     // wrote, so a concurrent re-advance is never clobbered) so
                     // the next tick re-claims and retries the enqueue. The
-                    // retry reuses the same `ctr:{planId}:{scheduledForIso}`
-                    // jobId, so a partially-delivered enqueue cannot double-fire.
+                    // retry reuses the same `ctr-{planId}-{epochMs}` jobId,
+                    // so a partially-delivered enqueue cannot double-fire.
+                    //
+                    // NOTE, because #3554 is exactly this path's failure mode:
+                    // rolling back and retrying is right for a TRANSIENT error
+                    // and indistinguishable from progress for a PERMANENT one.
+                    // `enqueueFailures` is returned and error-logged on every
+                    // attempt; nothing alerts on it, which is why a week passed.
                     try {
                         await prisma.controlTestPlan.updateMany({
                             where: {
