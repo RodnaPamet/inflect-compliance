@@ -145,6 +145,41 @@ export interface WorkflowDefinition {
      */
     skills?: readonly string[];
 
+    /**
+     * WHICH `input` KEYS THIS WORKFLOW CANNOT RUN WITHOUT (#3600).
+     *
+     * Checked at admission by `startWorkflowRun`, before the run row exists,
+     * and a missing or blank one is a `badRequest` naming the key.
+     *
+     * ── WHY THIS IS A DECLARATION AND NOT A DEFAULT ────────────────────────
+     *
+     * Both workflows that take a `frameworkKey` used to read it as
+     * `typeof ctx.input.frameworkKey === 'string' ? ctx.input.frameworkKey : ''`.
+     * That fallback satisfies the declared `string` and is the whole bug: it
+     * converts "the caller did not say which framework" into a value, and the
+     * two tools downstream disagree about what that value means.
+     * `find_coverage_gaps` declares `z.string().min(1)` and rejects it;
+     * `get_framework_status` declares `.optional()` and treats falsy as a
+     * SUPPORTED mode, returning the installable-framework catalogue instead of
+     * the per-framework readout. So the first step succeeded with the wrong
+     * semantics and was recorded DONE, and only the second step's validator
+     * stopped the run — 7 production failures between 2026-07-02 and
+     * 2026-09-19, all of them this.
+     *
+     * The crash was the lucky part. Had both tools been `.optional()` the run
+     * would have COMPLETED and produced an audit-readiness pack computed
+     * against the wrong scope, with nothing in its record looking wrong.
+     *
+     * So the value must never be produced. A required input is refused at the
+     * door, which is also where this function's other pre-flights live and for
+     * the reason stated there: a refusal after the row exists is "a refusal
+     * wearing the costume of an outage".
+     *
+     * Absent means the workflow needs nothing, which is what `posture-review`
+     * and `access-posture` want — they read no `ctx.input` key at all.
+     */
+    requiredInput?: readonly string[];
+
     key: string;
     name: string;
     description: string;

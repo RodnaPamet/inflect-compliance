@@ -18,7 +18,7 @@ import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/wo
 import { selectRunDriver } from '@/lib/agentic/drivers';
 import { READ_TOOLS } from '@/lib/mcp/tools/registry';
 import { PROPOSE_TOOLS } from '@/lib/mcp/tools/propose-tools';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 /** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
@@ -145,5 +145,154 @@ describe('the Flue engine is reachable from the shipped registry', () => {
         for (const def of asksForFlue) {
             expect(def.steps.filter((s) => s.kind === 'PROPOSE')).toEqual([]);
         }
+    });
+});
+
+/**
+ * A WORKFLOW MAY NOT INVENT A VALUE FOR AN INPUT IT WAS NOT GIVEN (#3600).
+ *
+ * ## The defect
+ *
+ * `audit-prep` and `framework-onboarding` each carried their own copy of
+ *
+ *     typeof ctx.input.frameworkKey === 'string' ? ctx.input.frameworkKey : ''
+ *
+ * The fallback satisfies the declared `string`, so nothing refused it, and `''`
+ * is the one value the two tools downstream disagree about:
+ * `find_coverage_gaps` declares `z.string().min(1)` and rejects it, while
+ * `get_framework_status` declares `.optional()` and reads falsy as a SUPPORTED
+ * mode, returning the installable-framework catalogue rather than the
+ * per-framework readout. Step 0 answered a different question and was recorded
+ * DONE; step 1 then died in a validator. Seven production runs, 2026-07-02 to
+ * 2026-09-19, every one of them this.
+ *
+ * The crash is the lucky part. Had both tools been `.optional()` those runs
+ * would have COMPLETED and produced an audit-readiness pack computed against
+ * the wrong scope, with nothing in the record looking wrong.
+ *
+ * ## Why it lives here rather than in its own file
+ *
+ * `no-epic-named-ratchets` caps the number of guard files on purpose, and the
+ * question it forces has a real answer: this file already reads definition
+ * SOURCE through `read()` and already holds definitions to properties the
+ * engine depends on. It also already imports `listWorkflowDefinitions`, which
+ * is a better population than any directory glob — `diagnosticWorkflow` is
+ * declared inline in the registry, so a guard scoped to `workflows/` would have
+ * covered 4 of the 5 definitions that ship.
+ */
+describe('Canned workflows — a missing input is refused, never invented', () => {
+    /**
+     * A `ctx.input` read whose fallback is an EMPTY value of the right type.
+     * Covers the ternary the defect used and the `??` / `||` spellings of the
+     * same idea. The window is bounded so an unrelated `''` further down the
+     * line cannot be read as this read's fallback.
+     */
+    const EMPTY_FALLBACK = /ctx\.input[^;\n]{0,140}?(\?\?|\|\||:)\s*(''|""|``|\[\s*\]|\{\s*\})/;
+
+    /** Keys a definition's source actually reads, however the read is spelled. */
+    const keysRead = (code: string): string[] => {
+        const keys = new Set<string>();
+        for (const m of code.matchAll(/ctx\.input\.([A-Za-z_$][\w$]*)/g)) keys.add(m[1]);
+        for (const m of code.matchAll(/ctx\.input\[\s*['"]([^'"]+)['"]\s*\]/g)) keys.add(m[1]);
+        for (const m of code.matchAll(/requiredString\(\s*ctx\s*,\s*['"]([^'"]+)['"]\s*\)/g)) keys.add(m[1]);
+        return [...keys].sort();
+    };
+
+    /**
+     * Every registered definition paired with the source that declares it.
+     *
+     * The population comes from the REGISTRY, so a definition added anywhere is
+     * in scope. Pairing is by the `key: '<k>'` literal, which is how each
+     * definition names itself.
+     */
+    const defSources = listWorkflowDefinitions().map((def) => {
+        const candidates = [
+            `src/lib/agentic/workflows/${def.key}.ts`,
+            'src/lib/agentic/workflow-registry.ts',
+        ];
+        const rel = candidates.find((c) => {
+            try {
+                return read(c).includes(`key: '${def.key}'`);
+            } catch {
+                return false;
+            }
+        });
+        return { def, rel, code: rel ? read(rel) : '' };
+    });
+
+    it('locates the source of every registered definition', () => {
+        // Without this the checks below would silently skip a definition whose
+        // file moved — passing because they read an empty string.
+        expect(defSources.filter((d) => !d.rel).map((d) => d.def.key)).toEqual([]);
+        expect(defSources.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('substitutes no empty value for a `ctx.input` read', () => {
+        const offenders = defSources
+            .filter((d) => EMPTY_FALLBACK.test(d.code))
+            .map((d) => d.def.key);
+        expect(offenders).toEqual([]);
+    });
+
+    it('the detector fires on the code that actually shipped — positive control', () => {
+        // Without this, the assertion above cannot be told apart from a regex
+        // that matches nothing.
+        expect(
+            EMPTY_FALLBACK.test(
+                "const k = typeof ctx.input.frameworkKey === 'string' ? ctx.input.frameworkKey : '';",
+            ),
+        ).toBe(true);
+        expect(EMPTY_FALLBACK.test("const k = ctx.input.frameworkKey ?? '';")).toBe(true);
+        expect(EMPTY_FALLBACK.test('const k = ctx.input.frameworkKey || "";')).toBe(true);
+        expect(EMPTY_FALLBACK.test('const a = ctx.input.items ?? [];')).toBe(true);
+        // And not on the sanctioned reader, nor an unrelated empty default.
+        expect(EMPTY_FALLBACK.test("const k = requiredString(ctx, 'frameworkKey');")).toBe(false);
+        expect(EMPTY_FALLBACK.test("const unrelated = somethingElse ?? '';")).toBe(false);
+    });
+
+    it('declares exactly the input keys it reads, in both directions', () => {
+        const mismatches = defSources
+            .map((d) => ({
+                key: d.def.key,
+                read: keysRead(d.code),
+                declared: [...(d.def.requiredInput ?? [])].sort(),
+            }))
+            .filter((d) => d.read.join(',') !== d.declared.join(','))
+            .map((d) => `${d.key}: reads [${d.read}] declares [${d.declared}]`);
+
+        // Both directions. A key read but not declared is the defect class — the
+        // admission gate does not know to require it, so the run starts and
+        // fails downstream. A key declared but not read refuses runs for an
+        // input nothing uses.
+        expect(mismatches).toEqual([]);
+    });
+
+    it('at least two definitions read an input, so the pairing is not vacuous', () => {
+        const withInputs = defSources.filter((d) => keysRead(d.code).length > 0);
+        expect(withInputs.length).toBeGreaterThanOrEqual(2);
+    });
+
+    describe('and the declaration is enforced, not merely declared', () => {
+        const usecase = read('src/app-layer/usecases/workflow-runs.ts');
+        const body = functionBodyOf(usecase, 'startWorkflowRun');
+
+        it('startWorkflowRun calls the admission gate', () => {
+            // `requiredInput` is inert unless something reads it. This is the
+            // difference between a declaration and a rule.
+            expect(body).toContain('assertRequiredInputPresent(');
+        });
+
+        it('calls it BEFORE the run row is written', () => {
+            // The usecase states the rule in its own prose: a refusal after the
+            // row exists "leaves a RUNNING run nothing will ever advance ... a
+            // refusal wearing the costume of an outage". A missing input refused
+            // late is the FAILED variant of that — a row that burned tokens and
+            // died in a tool validator two steps on.
+            const gateAt = body.indexOf('assertRequiredInputPresent(');
+            const rowAt = body.indexOf('createSealedRun(');
+            expect(gateAt).toBeGreaterThanOrEqual(0);
+            expect(rowAt).toBeGreaterThanOrEqual(0);
+            expect(gateAt).toBeLessThan(rowAt);
+        });
     });
 });

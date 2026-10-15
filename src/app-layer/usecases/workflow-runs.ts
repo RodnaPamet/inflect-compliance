@@ -184,6 +184,40 @@ function scannableInput(input: Record<string, unknown>): string {
     return out.join('\n');
 }
 
+/**
+ * Refuse a run whose definition declares `requiredInput` keys the caller did
+ * not supply (#3600).
+ *
+ * BLANK COUNTS AS MISSING, and that is the point rather than a nicety. The
+ * production defect this exists for supplied no key at all; the workflow then
+ * substituted `''` to satisfy its own `string` type, and `''` is exactly the
+ * value the two downstream tools disagree about — rejected by
+ * `find_coverage_gaps`, read as "no key given" by `get_framework_status`, which
+ * answers a different question entirely. A check that admitted `''` or `'   '`
+ * would let the same wrong-scope read back in through the front door.
+ *
+ * A NON-STRING is missing too. `{ frameworkKey: 42 }` cannot name a framework,
+ * and admitting it would push the type error down to the same tool validator
+ * this check exists to stay out of.
+ *
+ * Reports EVERY missing key, not the first. A caller fixing one at a time
+ * learns the shape of the request one round trip at a time.
+ */
+export function assertRequiredInputPresent(
+    def: Pick<WorkflowDefinition, 'key' | 'requiredInput'>,
+    input: Record<string, unknown>,
+): void {
+    const missing = (def.requiredInput ?? []).filter((k) => {
+        const v = input[k];
+        return typeof v !== 'string' || v.trim() === '';
+    });
+    if (missing.length === 0) return;
+    throw badRequest(
+        `Workflow ${def.key} requires a non-empty ${missing.join(', ')}. ` +
+            `Supply ${missing.length === 1 ? 'it' : 'them'} in the run input.`,
+    );
+}
+
 export async function startWorkflowRun(
     ctx: RequestContext,
     workflowKey: string,
@@ -209,6 +243,21 @@ export async function startWorkflowRun(
 
     const def = getWorkflowDefinition(workflowKey);
     if (!def) throw badRequest(`Unknown workflow: ${workflowKey}`);
+
+    // PRE-FLIGHT: the inputs this definition cannot run without (#3600).
+    //
+    // Here, beside `Unknown workflow` above, because it is the same class of
+    // refusal — the request does not make sense against this definition — and
+    // because it must cost nothing: a malformed request should not consume the
+    // tenant's monthly budget check, a concurrency slot, or a scanner call.
+    //
+    // It is also ABOVE `createSealedRun` for the reason the budget pre-flight
+    // states below: a refusal after the row exists leaves a RUNNING run that
+    // nothing will advance. A missing required input used to produce the FAILED
+    // variant of the same mistake — a row that burned tokens and died inside a
+    // tool validator two steps later. See `WorkflowDefinition.requiredInput`
+    // for the 7 production runs that did exactly that.
+    assertRequiredInputPresent(def, input);
 
     // PRE-FLIGHT: the tenant's monthly token budget.
     //
