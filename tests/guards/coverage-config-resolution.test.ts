@@ -165,7 +165,9 @@ function assertCollectCoverageFromIsGlobal(
  */
 function assertProjectsIgnoreTestTree(resolved: ResolvedConfig): void {
     // Guard against the check passing vacuously over an empty project
-    // list — the repo runs a two-project split (node + jsdom).
+    // list. The repo runs THREE projects (node, jsdom, flue); the floor stays
+    // at 2 because the miniature mutation fixtures below declare two, and the
+    // real count is pinned by its own test instead.
     expect(resolved.configs.length).toBeGreaterThanOrEqual(2);
 
     for (const project of resolved.configs) {
@@ -178,6 +180,44 @@ function assertProjectsIgnoreTestTree(resolved: ResolvedConfig): void {
             coveragePathIgnorePatterns:
                 expect.arrayContaining([TESTS_IGNORE_PATTERN]),
         });
+    }
+}
+
+/**
+ * ASSERTION 4 — every project ignores `.claude/` in BOTH ignore lists (#3633).
+ *
+ * `.claude/worktrees/<id>/` holds a FULL checkout of the repo. The two lists do
+ * different jobs and BOTH are needed:
+ *
+ *   - `testPathIgnorePatterns` stops jest RUNNING the worktree copies' tests;
+ *   - `modulePathIgnorePatterns` stops the HASTE MAP crawling them.
+ *
+ * With only the first, every worktree contributes its own `__mocks__/`, and the
+ * project reports `duplicate manual mock found: next-intl` once per worktree.
+ * That is not only noise: jest then resolves the manual mock to ONE copy chosen
+ * arbitrarily, so a test can take its mock from a branch that is weeks old.
+ *
+ * The defect this is aimed at is not a missing line — it is that the fix landed
+ * on `node` and `jsdom`, the comment beside them then described the problem as
+ * solved, and `flue` kept crawling 15 worktrees for months. **CI cannot catch
+ * it**: a fresh runner has no worktrees, so the warning count is zero there and
+ * the job stays green. A per-project assertion is the only thing that sees it.
+ */
+function assertProjectsIgnoreAgentWorktrees(resolved: ResolvedConfig): void {
+    expect(resolved.configs.length).toBeGreaterThanOrEqual(2);
+
+    for (const project of resolved.configs) {
+        const label = String(project.displayName?.name ?? project.id);
+        // Resolved values are ABSOLUTE (rootDir expanded), so match on the
+        // segment rather than on the authored `<rootDir>/.claude/` string.
+        const has = (patterns: readonly string[] | undefined): boolean =>
+            (patterns ?? []).some((pattern) => String(pattern).includes('.claude'));
+
+        expect({
+            project: label,
+            testPaths: has(project.testPathIgnorePatterns),
+            modulePaths: has(project.modulePathIgnorePatterns),
+        }).toEqual({ project: label, testPaths: true, modulePaths: true });
     }
 }
 
@@ -251,6 +291,49 @@ const FIXTURE_THRESHOLD_AT_TOP_LEVEL = `module.exports = {
     ],
 };`;
 
+/**
+ * MUTANT D — the #3633 shape: the worktree ignore lands on ONE project.
+ *
+ * `p1` is correct and `p2` carries only `testPathIgnorePatterns`, which is
+ * exactly how `flue` sat beside `node` and `jsdom`. A per-project loop catches
+ * it; a spot-check of "the config has the pattern" does not.
+ */
+const FIXTURE_WORKTREE_IGNORE_ON_ONE_PROJECT = `module.exports = {
+    collectCoverageFrom: ['src/app-layer/**/*.ts'],
+    projects: [
+        {
+            displayName: 'p1',
+            coveragePathIgnorePatterns: ['/node_modules/', '/tests/'],
+            testPathIgnorePatterns: ['<rootDir>/.claude/'],
+            modulePathIgnorePatterns: ['<rootDir>/.claude/'],
+        },
+        {
+            displayName: 'p2',
+            coveragePathIgnorePatterns: ['/node_modules/', '/tests/'],
+            testPathIgnorePatterns: ['<rootDir>/.claude/'],
+        },
+    ],
+};`;
+
+/** The same two projects, both correct — the control for MUTANT D. */
+const FIXTURE_WORKTREE_IGNORE_ON_BOTH = `module.exports = {
+    collectCoverageFrom: ['src/app-layer/**/*.ts'],
+    projects: [
+        {
+            displayName: 'p1',
+            coveragePathIgnorePatterns: ['/node_modules/', '/tests/'],
+            testPathIgnorePatterns: ['<rootDir>/.claude/'],
+            modulePathIgnorePatterns: ['<rootDir>/.claude/'],
+        },
+        {
+            displayName: 'p2',
+            coveragePathIgnorePatterns: ['/node_modules/', '/tests/'],
+            testPathIgnorePatterns: ['<rootDir>/.claude/'],
+            modulePathIgnorePatterns: ['<rootDir>/.claude/'],
+        },
+    ],
+};`;
+
 const FIXTURE_SCOPE: readonly string[] = ['src/app-layer/**/*.ts'];
 
 // ── tests ─────────────────────────────────────────────────────────────
@@ -262,9 +345,13 @@ describe('jest coverage config — resolved bucket placement', () => {
         real = await resolveJestConfig(REAL_CONFIG_PATH, REPO_ROOT);
     }, 60_000);
 
-    it('resolves both projects from the repo config', () => {
-        const names = real.configs.map((c) => c.displayName?.name);
-        expect(names).toEqual(expect.arrayContaining(['node', 'jsdom']));
+    it('resolves all three projects from the repo config', () => {
+        // Named and COUNTED. `arrayContaining(['node', 'jsdom'])` was the old
+        // assertion, and it kept passing when `flue` was added — which is how a
+        // per-project fix could miss a project without any test noticing. A
+        // fourth project must now be added here deliberately.
+        const names = real.configs.map((c) => c.displayName?.name).sort();
+        expect(names).toEqual(['flue', 'jsdom', 'node']);
     });
 
     it('puts collectCoverageFrom in globalConfig, holding the declared scope', () => {
@@ -277,6 +364,10 @@ describe('jest coverage config — resolved bucket placement', () => {
 
     it('leaves globalConfig.coverageThreshold undefined (see the comment — deliberate)', () => {
         assertJestEnforcesNoThreshold(real);
+    });
+
+    it('gives EVERY project both `.claude/` ignore lists (#3633)', () => {
+        assertProjectsIgnoreAgentWorktrees(real);
     });
 });
 
@@ -353,4 +444,20 @@ describe('jest coverage config — mutation proof', () => {
             expect(fs.existsSync(dir)).toBe(false);
         }
     });
+});
+
+describe('every project ignores the agent worktrees (#3633)', () => {
+    it('passes when both projects carry both lists — the control', async () => {
+        // Without this, MUTANT D below could be failing because the miniature
+        // fixture is stripped down rather than because of its mutation.
+        const resolved = await resolveFixture(FIXTURE_WORKTREE_IGNORE_ON_BOTH);
+        assertProjectsIgnoreAgentWorktrees(resolved);
+    }, 30_000);
+
+    it('catches the worktree ignore landing on only ONE project', async () => {
+        // The #3633 shape exactly: `p2` has `testPathIgnorePatterns` and not
+        // `modulePathIgnorePatterns`, so it still crawls every worktree.
+        const resolved = await resolveFixture(FIXTURE_WORKTREE_IGNORE_ON_ONE_PROJECT);
+        expect(() => assertProjectsIgnoreAgentWorktrees(resolved)).toThrow();
+    }, 30_000);
 });
