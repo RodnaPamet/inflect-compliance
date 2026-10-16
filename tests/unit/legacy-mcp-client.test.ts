@@ -41,6 +41,11 @@ import {
     pullSnapshot,
     profileFirstPage,
     CLIENT_METHODS,
+    mapEgressError,
+    ContractViolationError,
+    SsrfBlockedError,
+    TimeoutError,
+    CapExceededError,
     type PullResult,
 } from '@/lib/mcp/client';
 import {
@@ -1001,3 +1006,112 @@ const PROFILE_TOLERATED = [
     'schemaDrift',
     'oversharing',
 ] as const;
+
+// ───────────── the mapper that decides WHICH of the six it is ─────────────
+
+/**
+ * `mapEgressError` directly, rather than through a pull.
+ *
+ * The module's premise is that six error types exist because an operator does
+ * six DIFFERENT things with them — "collapsing those into 'pull failed' is how
+ * a misconfigured URL and a wrong password become the same support ticket".
+ * This function is what picks which one, and three of its arms had never run:
+ * the passthrough, the abort, and the redirect. The tests above reach it only
+ * through `pullSnapshot`, which cannot produce an `AbortError` or a
+ * `RedirectNotAllowedError` from an injected `fetchImpl`.
+ *
+ * Driven directly because the arms are matched on NAME, deliberately, so that
+ * this module does not import the automation layer's error classes. A test
+ * that constructed real `safeFetch` errors would couple itself to the taxonomy
+ * the source went out of its way not to depend on.
+ */
+describe('mapEgressError picks the type the operator acts on', () => {
+    it('returns one of our own errors UNCHANGED — the same instance, not a copy', async () => {
+        // Idempotence. `asLegacyError` can route an error through here that is
+        // already typed (it calls `mapEgressError(e.cause)` on a wire wrapper),
+        // and re-wrapping a `CapExceededError` as `ssrf-blocked` would send the
+        // operator to fix a URL that is fine.
+        const original = new CapExceededError('total-rows', 10, 11);
+        const mapped = mapEgressError(original);
+        expect(mapped).toBe(original);
+        expect(mapped.kind).toBe('cap-exceeded');
+    });
+
+    it('maps an AbortError to a TIMEOUT, not to a blocked address', async () => {
+        // The operator action differs: a timeout means raise the deadline or
+        // the server is unwell, while ssrf-blocked means fix the configured
+        // URL. An abort reported as blocked sends someone to edit a correct
+        // URL while the slow server stays slow.
+        const abort = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+        const mapped = mapEgressError(abort);
+        expect(mapped.kind).toBe('timeout');
+        expect(mapped).toBeInstanceOf(TimeoutError);
+        // Scope `request`, budget 0: this arm does not KNOW the budget — the
+        // abort carries none — and 0 says so rather than inventing one.
+        expect((mapped as TimeoutError).scope).toBe('request');
+        expect((mapped as TimeoutError).budgetMs).toBe(0);
+    });
+
+    it('maps a redirect refusal named on the ERROR to ssrf-blocked, with the redirect reason', async () => {
+        const e = Object.assign(new Error('nope'), { name: 'RedirectNotAllowedError' });
+        const mapped = mapEgressError(e);
+        expect(mapped.kind).toBe('ssrf-blocked');
+        // The REASON, not just the kind. The catch-all also yields
+        // `ssrf-blocked`, so a kind-only assertion here is satisfied by the
+        // arm being deleted — the same control this file's address cases use.
+        expect((mapped as SsrfBlockedError).reason).toBe('redirect refused');
+        expect((mapped as SsrfBlockedError).reason).not.toBe('egress failed');
+    });
+
+    it('and one named only in the MESSAGE, which is the other half of that ||', async () => {
+        const mapped = mapEgressError(new Error('redirect to another host is not allowed'));
+        expect((mapped as SsrfBlockedError).reason).toBe('redirect refused');
+    });
+
+    it('keeps the address arm distinct from the catch-all', async () => {
+        // The discriminator the file's docblock names: a policy refusal says
+        // `address is not public`, a mere failure says `egress failed`.
+        expect((mapEgressError(new Error('loopback address')) as SsrfBlockedError).reason).toBe(
+            'address is not public',
+        );
+        expect((mapEgressError(new Error('connect ECONNREFUSED')) as SsrfBlockedError).reason).toBe(
+            'egress failed',
+        );
+    });
+
+    it('fails CLOSED on a throw that is not an Error at all', async () => {
+        // `e instanceof Error ? ... : ''` / `String(e)`. A thrown string or
+        // object has no `.name`/`.message`, and the default arm is a typed
+        // refusal rather than a rethrow precisely so an unrecognised egress
+        // failure cannot escape as an untyped error.
+        for (const thrown of ['something odd', {}, null, 42]) {
+            const mapped = mapEgressError(thrown);
+            expect(mapped).toBeInstanceOf(SsrfBlockedError);
+            expect(mapped.kind).toBe('ssrf-blocked');
+        }
+    });
+
+    it('does not quote the thrown message into the mapped error', async () => {
+        // The module's second rule: the body is ATTACKER-SHAPED, and an error
+        // message that quotes it has moved untrusted content into
+        // `AuditLog.detailsJson`, "which is plaintext, hash-chained and never
+        // deleted". The reasons are a closed set of fixed phrases.
+        const mapped = mapEgressError(new Error('ssn=123-45-6789 loopback'));
+        expect(mapped.message).not.toMatch(/123-45-6789/);
+        expect((mapped as SsrfBlockedError).reason).toBe('address is not public');
+    });
+});
+
+describe('ContractViolationError omits the colon when there is no detail', () => {
+    it('reads as a bare phrase, not a dangling separator', async () => {
+        // `${where}${detail ? `: ${detail}` : ''}`. The false arm had never
+        // run, and "contract violation at manifest:" in a log reads as a
+        // truncated message — which is how a complete error gets investigated
+        // as a logging bug.
+        expect(new ContractViolationError('manifest').message).toBe('contract violation at manifest');
+        expect(new ContractViolationError('manifest').message).not.toMatch(/:$/);
+        expect(new ContractViolationError('manifest', 'no snapshotId').message).toBe(
+            'contract violation at manifest: no snapshotId',
+        );
+    });
+});

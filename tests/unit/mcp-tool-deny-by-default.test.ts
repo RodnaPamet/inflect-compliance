@@ -112,7 +112,12 @@ import {
     runReadTool,
     McpToolNotFoundError,
 } from '@/lib/mcp/tools/registry';
-import { listProposeToolDescriptors, runProposeTool } from '@/lib/mcp/tools/propose-tools';
+import {
+    listProposeToolDescriptors,
+    runProposeTool,
+    McpProposeToolNotFoundError,
+} from '@/lib/mcp/tools/propose-tools';
+import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import { getFrameworkStatusTool } from '@/lib/mcp/tools/framework-tools';
 import { listRisksTool } from '@/lib/mcp/tools/risk-tools';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -428,5 +433,92 @@ describe('the audit trail fingerprints the loadable set', () => {
         const [wide, narrow] = invocations().map((r) => r.detailsJson.toolManifestDigest);
         expect(typeof wide).toBe('string');
         expect(narrow).not.toBe(wide);
+    });
+});
+
+// ──────────── the propose funnel's own refusals, before any write ────────────
+
+/**
+ * Three arms of `runProposeTool` that the suites above reach only on the READ
+ * side, and the pin it hands the writer.
+ *
+ * The unknown-name case has a counterpart earlier in this file — "an UNKNOWN
+ * name is a protocol error, not an audited denial" — but that one drives
+ * `runReadTool`. The propose funnel has its own loader call, its own error
+ * class and its own `rpcCode`, so the read test's green says nothing about it.
+ */
+describe('the propose funnel refuses before it writes', () => {
+    it('an unknown propose name is a protocol error, not an audited denial', async () => {
+        // Same reasoning as the read-side test: a name this build never had is
+        // a typo, and auditing it would let any caller fill the rogue-agent
+        // trail with junk. The distinct error class matters because it carries
+        // `MethodNotFound` — a denial would carry an access code and send an
+        // operator to the register to grant a tool that does not exist.
+        const inv = invocationFor();
+
+        await expect(
+            runProposeTool(inv, 'propose_nothing_at_all', { items: [{ title: 'x' }] }),
+        ).rejects.toBeInstanceOf(McpProposeToolNotFoundError);
+        expect(denials()).toEqual([]);
+        expect(proposals).not.toHaveBeenCalled();
+    });
+
+    it('MISSING arguments are an invalid envelope, not an empty batch', async () => {
+        // `proposeArgs.safeParse(rawArgs ?? {})`. The `?? {}` is what makes a
+        // missing argument object reach the schema at all instead of throwing
+        // inside zod, and the schema is then what refuses it. Reading `undefined`
+        // as "zero items to propose" would answer a malformed call with a
+        // success and no proposals — the caller's items silently dropped.
+        const inv = invocationFor();
+
+        await expect(runProposeTool(inv, 'propose_finding', undefined)).rejects.toThrow(
+            /Invalid arguments for "propose_finding"/,
+        );
+        expect(proposals).not.toHaveBeenCalled();
+    });
+
+    it('a malformed item is refused by the envelope, with nothing queued', async () => {
+        const inv = invocationFor();
+
+        await expect(
+            runProposeTool(inv, 'propose_finding', { items: 'not-an-array' }),
+        ).rejects.toThrow(/Invalid arguments for "propose_finding"/);
+        expect(proposals).not.toHaveBeenCalled();
+    });
+
+    it('pins NO_POLICY_CARD — not null — when no card was in force', async () => {
+        // `pinFromCard(inv.policyCard?.inForce ?? null)`. `invocationFor()`
+        // leaves `policyCard` null, which `assertPolicyCardAllows` ALLOWS by
+        // design (an agent with no card is a governance gap, not a refusal),
+        // so this path reaches the writer and the pin is what it records.
+        //
+        // The value is 0 and the distinction is the point, per policy-card-pin's
+        // own docblock: the row records that the question WAS ASKED and the
+        // answer was "none". A null would be indistinguishable from a row
+        // written before pinning existed.
+        const inv = invocationFor();
+
+        await runProposeTool(inv, 'propose_finding', {
+            items: [{ severity: 'LOW', type: 'OTHER', title: 'x' }],
+        });
+
+        expect(proposals).toHaveBeenCalledTimes(1);
+        const [, arg] = proposals.mock.calls[0] as [unknown, { policyCardVersion: number }];
+        expect(arg.policyCardVersion).toBe(NO_POLICY_CARD);
+        expect(arg.policyCardVersion).not.toBeNull();
+    });
+
+    it('and pins the IN-FORCE version when there is a card', async () => {
+        // The positive control. Without it the assertion above is satisfied by
+        // a pin hard-coded to 0, which would erase every card version from the
+        // provenance of every proposal.
+        const inv = invocationFor({ permitted: [...MCP_PROPOSE_TOOL_NAMES] });
+
+        await runProposeTool(inv, 'propose_finding', {
+            items: [{ severity: 'LOW', type: 'OTHER', title: 'x' }],
+        });
+
+        const [, arg] = proposals.mock.calls[0] as [unknown, { policyCardVersion: number }];
+        expect(arg.policyCardVersion).toBeGreaterThan(NO_POLICY_CARD);
     });
 });
