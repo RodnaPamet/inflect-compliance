@@ -770,3 +770,71 @@ describe('the engine clock and the human window, which bound different things', 
         expect(mockCapHalt).not.toHaveBeenCalled();
     });
 });
+
+/**
+ * THE HALT SENTENCE SAYS WHAT ITS NUMBER IS (#3615).
+ *
+ * Every counted kind accumulates UNITS — steps taken, tokens charged, proposals
+ * queued — so "N already spent" is literally true of them. `RUNTIME_MS` does
+ * not accumulate: its `used` is read from the clock.
+ *
+ * Measured in production: a `posture-review` run halted reporting
+ * "12847343 already spent" against a 3600000 cap, which reads as three and a
+ * half hours of churn. The run had been PARKED at a human checkpoint and done
+ * almost nothing — the clock accrued while a person was deciding. An operator
+ * reading that row went looking for a runaway agent and there was none.
+ *
+ * The root cause is closed by `approval-window.ts`, which quotes that same run.
+ * What was left is the sentence.
+ */
+describe('a halt names elapsed time as elapsed, not as work', () => {
+    const capsFor = (kind: RunCapKind, limit: number): EffectiveRunCaps =>
+        capsWith(kind, limit);
+
+    it('a RUNTIME_MS halt says ELAPSED, with units, and explains the checkpoint accrual', () => {
+        // One hour of budget, three and a half hours on the clock — the
+        // production shape.
+        const b = createRunBudget({
+            caps: capsFor('RUNTIME_MS', 3_600_000),
+            now: () => 12_847_343,
+            startedAtMs: 0,
+        });
+        const halt = b.charge('RUNTIME_MS', 0);
+
+        expect(halt).not.toBeNull();
+        expect(halt?.message).toMatch(/12847343ms had ELAPSED/);
+        expect(halt?.message).toMatch(/elapsed time, not work done/);
+        // The clause that stops the next operator hunting a runaway agent.
+        expect(halt?.message).toMatch(/human checkpoint accrues it while doing nothing/);
+        // And the cap is given in the same units as the figure.
+        expect(halt?.message).toMatch(/cap of 3600000ms/);
+    });
+
+    it('and does NOT call that figure spend', () => {
+        // The specific phrasing that misled. Asserted as an absence because
+        // re-introducing it is the regression.
+        const b = createRunBudget({
+            caps: capsFor('RUNTIME_MS', 1_000),
+            now: () => 5_000,
+            startedAtMs: 0,
+        });
+        expect(b.charge('RUNTIME_MS', 0)?.message).not.toMatch(/already spent/);
+        // Nor a refused figure, which is always zero for this kind and reads as
+        // a request nobody made.
+        expect(b.charge('RUNTIME_MS', 0)?.message).not.toMatch(/more asked for/);
+    });
+
+    it('leaves the COUNTED kinds saying "already spent" — the change is scoped', () => {
+        // The control. Those kinds really do accumulate units, so the original
+        // phrasing is correct for them and a blanket rewrite would have made
+        // four messages worse to fix one.
+        const b = createRunBudget({
+            caps: capsFor('STEPS', 2),
+            now: () => 0,
+            startedAtMs: 0,
+            spent: { STEPS: 2, TOOL_CALLS: 0, PROPOSALS: 0, TOKENS: 0 },
+        });
+        const halt = b.charge('STEPS', 1);
+        expect(halt?.message).toMatch(/2 already spent; 1 more asked for and NONE granted/);
+    });
+});
