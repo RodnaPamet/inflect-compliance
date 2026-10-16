@@ -2,9 +2,9 @@
  * RQ2-9 — inherent → residual movement arrows for the risk matrix.
  *
  * Extracted from an inline `useMemo` in `RisksClient` so the admission rule
- * can be tested directly. It used to be covered only by
- * `tests/guards/rq2-9-matrix-movement.test.ts`, which regex-matched the
- * enclosing file; that guard was retired in #1800 and the rendered overlay
+ * can be tested directly. It used to be covered only by a now-retired guard,
+ * `rq2-9-matrix-movement` (removed in #1800), which regex-matched the
+ * enclosing file; the rendered overlay
  * test cannot reach this code, because it takes `movements` as a PROP.
  *
  * THE RULE, and why it is not merely defensive: a risk qualifies only when

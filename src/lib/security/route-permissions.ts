@@ -7,7 +7,7 @@
  *   1. Roll the `requirePermission(...)` middleware across handlers
  *      without duplicating the policy in twelve different files.
  *   2. Guard against a new sensitive route shipping unprotected: the
- *      coverage test in `tests/guards/route-permission-coverage.test.ts`
+ *      coverage test in `tests/guardrails/api-permission-coverage.test.ts`
  *      walks `src/app/api/**\/route.ts` and verifies every in-scope
  *      route has a matching rule AND uses `requirePermission(...)` in
  *      its handler.
@@ -18,7 +18,7 @@
  * Adding or moving an admin/privileged route:
  *   - Add a rule below covering the path + methods.
  *   - Wire `requirePermission(<key>, …)` into the route handler.
- *   - Run `npm test -- tests/guards/route-permission-coverage.test.ts`
+ *   - Run `npm test -- tests/guardrails/api-permission-coverage.test.ts`
  *     to verify the rollout is complete.
  *
  * This file is intentionally narrow in scope. It only enumerates

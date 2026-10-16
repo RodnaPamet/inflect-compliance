@@ -18,7 +18,7 @@
  *
  *   1. Zod schema (`src/env.ts`) — validation error at module load.
  *   2. Startup hook (`src/instrumentation.ts`) — process.exit(1).
- *   3. Test guard (`tests/integration/startup-encryption-check.test.ts`)
+ *   3. Test guard (`tests/unit/security/startup-encryption-check.test.ts`)
  *      — CI fails if either of the above stops checking.
  *
  * The value is documented in source intentionally; its security

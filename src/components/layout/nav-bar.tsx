@@ -20,10 +20,19 @@
  *
  *   - Hoisting the recipe into one primitive (and exporting the
  *     class strings as named consts) gives R14 a single place to
- *     land every slot. The ratchet
- *     `tests/guards/nav-bar-import-discipline.test.ts` locks the
- *     contract: no parallel `<header role="banner">` with the
- *     load-bearing chrome geometry outside this file.
+ *     land every slot. The contract is that there is no parallel
+ *     `<header role="banner">` carrying the load-bearing chrome
+ *     geometry outside this file.
+ *
+ *     NOTHING PINS THAT CONTRACT (#3650). This cited a guard named
+ *     `nav-bar-import-discipline`, which has never existed in this
+ *     repository's history. The contract does
+ *     hold today — `role="banner"` appears in two files and the
+ *     second, `AppShellFrame.tsx`, only mentions it in a comment
+ *     about the nesting bug it fixed — but it holds by habit rather
+ *     than by a guard, and the axe rule it protects
+ *     (`landmark-banner-is-top-level`) will not say so until a
+ *     second banner ships.
  *
  * Slot architecture (locked by PR-1, filled by PR-3 onwards):
  *
@@ -70,7 +79,7 @@ import { useTranslations } from 'next-intl';
 // is a named const so the rationale lives next to the value. A
 // future "just bump height by 4px" PR has to argue against both
 // the doc-comment and the ratchet at
-// `tests/guards/r14-nav-bar-geometry-discipline.test.ts`.
+// `tests/guards/nav-item-geometry-discipline.test.ts`.
 
 /**
  * **64px desktop height.** R14-PR2 bumped this from R2-era 56px
@@ -181,7 +190,7 @@ export const NAV_BAR_POSITION = 'sticky top-0 z-30';
  *
  * `border-b border-border-subtle` (R14-PR2 inline form) is RETIRED
  * — the structural ratchet at
- * `tests/guards/r14-nav-bar-geometry-discipline.test.ts` accepts
+ * `tests/guards/nav-item-geometry-discipline.test.ts` accepts
  * either form (the R14-PR10 evolution is documented inline).
  */
 export const NAV_BAR_SURFACE =

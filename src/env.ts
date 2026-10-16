@@ -357,7 +357,7 @@ export const env = createEnv({
         // work". Every clause of that was true when written and false when
         // read, which is the failure mode a safety argument has — it does not
         // break, it expires. Guarded now by
-        // `tests/guards/subprocessor-prose-agrees-with-constant.test.ts`.
+        // `tests/guardrails/sub-processor-record-agrees-with-code.test.ts`.
         TYPESAFE_API_KEY: z.string().optional(),
         // Laya — Convai Innovations' open-weights System One model, running on
         // infrastructure WE operate. Deployment configuration only: no tenant

@@ -23,8 +23,8 @@
  *
  * The previous rule was `Math.max(C, I, A)`, which let a lone high
  * dimension dominate (4/1/1 → High). See
- * `tests/guards/item-25-weighted-criticality.test.ts` for the ratchet
- * that locks the new behaviour in.
+ * `tests/rendered/asset-criticality.test.tsx` for the ratchet that locks the
+ * new behaviour in.
  */
 export type AssetCriticalityTone = 'success' | 'warning' | 'danger' | 'critical';
 

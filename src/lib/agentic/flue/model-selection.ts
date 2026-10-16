@@ -33,10 +33,15 @@ import { env } from '@/env';
  * each provider ONCE under a stable id, then choose a specifier per run. The
  * registry never mutates after init, so there is no race to lose.
  *
- * This module owns that choice. It deliberately does NOT call `setProvider`;
- * `tests/guards/flue-provider-registration-is-not-per-run.test.ts` keeps it
- * that way, because a single stray per-run call anywhere reintroduces the
- * hazard in full.
+ * This module owns that choice. It deliberately does NOT call `setProvider`,
+ * because a single stray per-run call anywhere reintroduces the hazard in
+ * full.
+ *
+ * NOTHING PINS THAT TODAY (#3650). This cited a guard,
+ * `flue-provider-registration-is-not-per-run`, that has never existed in this
+ * repository's history — so the only thing keeping a per-run `setProvider`
+ * out is this paragraph. Given the hazard above is a CROSS-TENANT EGRESS, a
+ * guard enumerating `setProvider` call sites is worth more than the comment.
  */
 
 /**

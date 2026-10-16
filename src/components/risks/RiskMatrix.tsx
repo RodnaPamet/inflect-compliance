@@ -23,8 +23,10 @@
  *   - "Impact" X-axis title under the grid
  *   - Low / Medium / High / Critical legend chips below
  *
- * The structural ratchet `tests/rendered/risk-matrix-default-parity.test.tsx`
- * locks this so a future "tidy-up" can't drift the visual.
+ * The structural ratchet `tests/unit/risk-matrix-defaults.test.ts` locks this
+ * so a future "tidy-up" can't drift the visual — it pins the 4-band
+ * Low/Medium/High/Critical layout, the legacy thresholds and a hex colour
+ * per band.
  *
  * ## NxN
  *

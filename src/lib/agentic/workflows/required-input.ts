@@ -27,9 +27,12 @@ import type { WorkflowContext } from '../workflow-types';
  * exists, which is where a caller gets a usable error. By the time a step's
  * `args` callback runs, the only way to be here without the value is a
  * definition that reads a key it never declared — a bug in the definition, not
- * in the request. So this throws plainly instead of reporting nicely, and
- * `tests/guards/workflow-required-input-is-declared.test.ts` is what actually
- * prevents that mismatch from shipping.
+ * in the request. So this throws plainly instead of reporting nicely.
+ *
+ * NOTHING PREVENTS THE MISMATCH SHIPPING (#3650). This named a guard,
+ * `workflow-required-input-is-declared`, as what does, and it has never existed — so a definition reading an undeclared key
+ * fails at RUNTIME here rather than in CI, which is the opposite of what the
+ * sentence promised.
  */
 export function requiredString(ctx: WorkflowContext, key: string): string {
     const v = ctx.input[key];

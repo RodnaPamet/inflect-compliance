@@ -14,9 +14,13 @@
  * nothing to an HRIS, and nothing to our own database; it opens no socket; it
  * does not need an AD or an Entra instance, or a queue, to run.
  *
- * That purity is a load-bearing property rather than a style choice, and it is
- * pinned by a guard (`tests/guards/identity-joiner-dry-run-is-inert.test.ts`):
- * this module imports no prisma, no db-context, no provider and no writer. The
+ * That purity is a load-bearing property rather than a style choice: this
+ * module imports no prisma, no db-context, no provider and no writer.
+ *
+ * NO GUARD PINS IT (#3650). This claimed to be pinned by a guard named
+ * `identity-joiner-dry-run-is-inert`, which has never existed here. The property holds today and is checkable in one pass over
+ * this file's imports, which is why the absence is worth fixing rather than
+ * noting. The
  * design's gate-placement rule is the reason —
  *
  *   > Every gate that decides whether a create happens sits ABOVE the DRY_RUN
