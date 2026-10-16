@@ -87,6 +87,8 @@ jest.mock('@/lib/agentic/policy-card-store', () => ({
 import type { AgentRiskTier, AgentStatus } from '@prisma/client';
 
 import prisma from '@/lib/prisma';
+import { appendAuditEntry } from '@/lib/audit';
+import { PrincipalUnresolvedError } from '@/lib/agentic/agent-authority';
 import { resolveAgentAuthority } from '@/lib/agentic/agent-authority';
 import { listGrantedToolNames } from '@/lib/agentic/agent-tool-exposure';
 import { loadPolicyCardInForce } from '@/lib/agentic/policy-card-store';
@@ -551,4 +553,88 @@ describe('the opt-out promise — the rows that must NOT narrow', () => {
             expect(inv.riskTier).toBeNull();
         },
     );
+});
+
+/**
+ * A CREDENTIAL WHOSE PRINCIPAL NO LONGER RESOLVES IS REFUSED, AND RECORDED
+ * (#3617).
+ *
+ * `denyAgentPrincipal` was entirely unexercised — fourteen of the forty-two
+ * uncovered branches in `mcp/auth.ts`, and this file, which drives
+ * `buildMcpInvocation` through every standing in Table B, never drove a denial
+ * at all.
+ *
+ * The rule it enforces is the one the messages state: "an agent holds its
+ * principal's authority and no more". A key minted by someone who has since
+ * been deactivated, removed, or lost membership must stop working — otherwise a
+ * credential outlives the authority it was derived from, which is the whole
+ * point of resolving a principal per request rather than pinning it at mint.
+ */
+describe('a credential whose principal no longer resolves', () => {
+    const REASONS = [
+        ['principal_not_a_member', /no longer a member of this tenant/],
+        ['principal_deactivated', /has been deactivated/],
+        ['principal_removed', /has been removed from this tenant/],
+        ['principal_tenant_unavailable', /could not be resolved in this tenant/],
+    ] as const;
+
+    async function denyWith(reason: string) {
+        settingsRead.mockResolvedValue({ requireRegisteredAgent: false });
+        agentRead.mockResolvedValue(null);
+        const keyCtx = keyContext(true);
+        authority.mockRejectedValue(new PrincipalUnresolvedError(reason as never));
+        const verdict = await evaluateAgentRegistration(keyCtx);
+        return { keyCtx, call: () => buildMcpInvocation(keyCtx, verdict, SURFACE) };
+    }
+
+    it.each(REASONS)('refuses %s with a message naming the cause', async (reason, pattern) => {
+        const { call } = await denyWith(reason);
+        // Each reason gets its OWN sentence. A single generic 403 would leave an
+        // operator unable to tell "re-mint the key" from "reactivate the user".
+        await expect(call()).rejects.toThrow(pattern);
+    });
+
+    it('records ONE AUTHZ_DENIED row against the KEY, not the user', async () => {
+        const { call } = await denyWith('principal_deactivated');
+        await expect(call()).rejects.toThrow();
+
+        expect(appendAuditEntry).toHaveBeenCalledTimes(1);
+        const entry = (appendAuditEntry as jest.Mock).mock.calls[0][0] as {
+            entity: string;
+            entityId: string;
+            action: string;
+            detailsJson: Record<string, unknown>;
+        };
+        // The CREDENTIAL is the thing an operator has to act on; the user is
+        // already carried in `userId`.
+        expect(entry.entity).toBe('TenantApiKey');
+        expect(entry.action).toBe('AUTHZ_DENIED');
+        expect(entry.detailsJson.gate).toBe('agent_principal');
+        expect(entry.detailsJson.reason).toBe('principal_deactivated');
+        // The surface, so the trail says what was being reached for.
+        expect(entry.detailsJson.method).toBe('POST');
+        expect(entry.detailsJson.path).toBe('/api/mcp');
+    });
+
+    it('STILL REFUSES when the audit write fails — the row is best-effort, the denial is not', async () => {
+        // The fail-closed property, and the reason the audit call sits in a
+        // `try`. A sink that is down must not turn a refusal into an
+        // authorisation: the 403 is the control, the row is the record of it.
+        // `mockRejectedValue`, not `...Once`: the assertions below are made on
+        // ONE invocation, because a second call would consume the default
+        // resolved mock and quietly test the audit-SUCCEEDING path instead.
+        (appendAuditEntry as jest.Mock).mockRejectedValue(new Error('audit sink down'));
+        const { call } = await denyWith('principal_removed');
+
+        const err = await call().then(
+            () => null,
+            (e: unknown) => e as Error,
+        );
+
+        expect(err).not.toBeNull();
+        // The caller sees the AUTHORIZATION answer...
+        expect(err?.message).toMatch(/has been removed from this tenant/);
+        // ...and never the plumbing failure, which is logged and swallowed.
+        expect(err?.message).not.toMatch(/audit sink down/);
+    });
 });
