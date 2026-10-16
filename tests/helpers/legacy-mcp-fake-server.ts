@@ -57,6 +57,33 @@ export type FaultName =
     | 'redirect'
     /** The column set changes between pulls. */
     | 'schemaDrift'
+    /**
+     * The manifest declares a contract version the client does not implement.
+     *
+     * Distinct from `unsupportedProtocolVersion`, which is the MCP transport's
+     * own version negotiated at `initialize`. This is the ACCESS contract the
+     * manifest itself claims to speak.
+     */
+    | 'unsupportedContract'
+    /** The manifest's first page URI is not a parseable accounts URI. */
+    | 'unparseablePageUri'
+    /**
+     * The manifest's page list does not start at page 1.
+     *
+     * A client that trusted the advertised URI verbatim would read whatever the
+     * server pointed at; one that rebuilds from its own grammar has to notice
+     * the disagreement instead.
+     */
+    | 'nonSequentialPages'
+    /** A page body reports a different page number than the one requested. */
+    | 'pageNumberMismatch'
+    /**
+     * PAGE ONE reports a different `snapshotId` than the manifest.
+     *
+     * Distinct from `tornSnapshot`, which tears on page 2 and so is invisible to
+     * a single-page read. This is the shape a PROFILE can actually observe.
+     */
+    | 'pageOneSnapshotMismatch'
     /** Two rows share the key column's value. */
     | 'duplicateAccountKey'
     /** A row omits the key column entirely. */
@@ -91,6 +118,11 @@ export const FAULT_NAMES = [
     'duplicateAccountKey',
     'rowWithoutAccountKey',
     'secretShapedValue',
+    'unsupportedContract',
+    'unparseablePageUri',
+    'nonSequentialPages',
+    'pageNumberMismatch',
+    'pageOneSnapshotMismatch',
 ] as const satisfies readonly FaultName[];
 
 /** Fails to compile if a `FaultName` is missing from {@link FAULT_NAMES}. */
@@ -268,8 +300,16 @@ export function createLegacyMcpFakeServer(opts: FakeServerOptions = {}): LegacyM
     }
 
     function manifestBody() {
+        // The page list, which three faults deform. Built first so each
+        // deformation is one named decision rather than a nested ternary.
+        const pages = Array.from(
+            { length: pageCount() },
+            (_, i) => `inflect-access://accounts/${i + 1}`,
+        );
+        if (on('unparseablePageUri')) pages[0] = 'not-a-resource-uri-at-all';
+        if (on('nonSequentialPages')) pages[0] = 'inflect-access://accounts/2';
         return {
-            contract: CONTRACT_VERSION,
+            contract: on('unsupportedContract') ? 'inflect-access/v999' : CONTRACT_VERSION,
             app: { name: 'Mainframe Payroll', owner: 'Finance Systems' },
             snapshot: {
                 id: snapshotId(),
@@ -277,7 +317,7 @@ export function createLegacyMcpFakeServer(opts: FakeServerOptions = {}): LegacyM
                 rowCount: accounts,
             },
             columns: columns(),
-            pages: Array.from({ length: pageCount() }, (_, i) => `inflect-access://accounts/${i + 1}`),
+            pages,
             layout: 'wide' as const,
         };
     }
@@ -348,7 +388,13 @@ export function createLegacyMcpFakeServer(opts: FakeServerOptions = {}): LegacyM
             if (!parsed) {
                 return json(JSON.stringify({ jsonrpc: '2.0', id: body?.id, error: { code: -32602, message: 'unknown resource' } }));
             }
-            const pageSnapshot = on('tornSnapshot') && parsed.page > 1 ? `snap-${pull}-torn` : snapshotId();
+            // Two different tears. `tornSnapshot` changes page 2+, which only a
+            // multi-page PULL can observe; `pageOneSnapshotMismatch` changes
+            // page 1, which is the only shape a single-page PROFILE can see.
+            const torn =
+                (on('tornSnapshot') && parsed.page > 1) ||
+                (on('pageOneSnapshotMismatch') && parsed.page === 1);
+            const pageSnapshot = torn ? `snap-${pull}-torn` : snapshotId();
             return json(
                 jsonRpcResult(body?.id, {
                     contents: [
@@ -357,7 +403,7 @@ export function createLegacyMcpFakeServer(opts: FakeServerOptions = {}): LegacyM
                             mimeType: 'application/json',
                             text: JSON.stringify({
                                 snapshotId: pageSnapshot,
-                                page: parsed.page,
+                                page: on('pageNumberMismatch') ? parsed.page + 1 : parsed.page,
                                 rows: rowsForPage(parsed.page, parsed.fields),
                             }),
                         },

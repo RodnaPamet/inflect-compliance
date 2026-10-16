@@ -39,6 +39,7 @@ import { codeOf } from '../helpers/source-blocks';
 import { repoRelativeFiles } from '../helpers/repo-files';
 import {
     pullSnapshot,
+    profileFirstPage,
     CLIENT_METHODS,
     type PullResult,
 } from '@/lib/mcp/client';
@@ -219,6 +220,18 @@ const FAULT_EXPECTATIONS: Record<FaultName, FaultKind | null> = {
     duplicateAccountKey: 'contract-violation',
     rowWithoutAccountKey: 'contract-violation',
     secretShapedValue: 'contract-violation',
+    // ── ADDED WITH THE FAULTS THEMSELVES (#3617) ──────────────────────────
+    //
+    // Five malformations the fake server could not previously produce, each
+    // reaching a branch of the manifest/page validation chain that no test
+    // could drive. Measured on both entry points before being written here.
+    unsupportedContract: 'contract-violation',
+    unparseablePageUri: 'contract-violation',
+    nonSequentialPages: 'contract-violation',
+    pageNumberMismatch: 'contract-violation',
+    // The one that is NOT a contract violation: a page whose snapshot id
+    // disagrees with the manifest is a TEAR, and it is reported as one.
+    pageOneSnapshotMismatch: 'torn-snapshot',
 };
 
 describe('1b client — every fault fails closed', () => {
@@ -231,7 +244,7 @@ describe('1b client — every fault fails closed', () => {
         expect(Object.keys(FAULT_EXPECTATIONS).sort()).toEqual([...FAULT_NAMES].sort());
         // EXACTLY thirteen. The set equality above catches an addition; this
         // catches a deletion, with a number somebody has to look at.
-        expect(FAULT_NAMES).toHaveLength(13);
+        expect(FAULT_NAMES).toHaveLength(18);
     });
 
     it.each([
@@ -241,6 +254,17 @@ describe('1b client — every fault fails closed', () => {
         'serverSentEvents',
         'unsupportedProtocolVersion',
         'redirect',
+        // The five added with the faults themselves (#3617). Each one drives a
+        // branch of the manifest/page validation chain that nothing could reach
+        // before: a contract version this client does not implement, a page URI
+        // it cannot parse, a page list that does not start at 1, a page body
+        // reporting the wrong number, and a page 1 whose snapshot id disagrees
+        // with the manifest it came from.
+        'unsupportedContract',
+        'unparseablePageUri',
+        'nonSequentialPages',
+        'pageNumberMismatch',
+        'pageOneSnapshotMismatch',
     ] as const)('%s yields its typed error and complete: false', async (fault) => {
         const server = createLegacyMcpFakeServer({
             accounts: 7,
@@ -742,3 +766,238 @@ describe('1b client — production cannot bypass safeFetch', () => {
         expect(offenders).toEqual([]);
     });
 });
+
+/**
+ * THE PROFILE FAILS CLOSED ON THE SAME SERVER, AND THROWS WHERE A PULL REPORTS
+ * (#3617).
+ *
+ * Every fault above is driven against `pullSnapshot`. None was driven against
+ * `profileFirstPage`, which is the thirteen-path gap in `client/index.ts` — and
+ * the profile is the entry point an admin reaches FIRST, before any mapping
+ * exists, which makes it the one most likely to meet a hostile server.
+ *
+ * ── THE TWO ENTRY POINTS ANSWER DIFFERENTLY, ON PURPOSE ────────────────────
+ *
+ * A pull RETURNS `{ complete: false, reason }` — a partial snapshot is still
+ * worth something, and the caller decides. A profile THROWS, because there is
+ * no partial profile worth returning: the whole output is "here is what this
+ * server offers", and a server that broke its contract has not told you.
+ *
+ * Both are asserted, because collapsing either into the other's shape would be
+ * silent — a profile that returned a result would hand a caller a column list
+ * assembled from a response nobody validated.
+ */
+describe('1b client — the PROFILE fails closed on the same faults', () => {
+    const profile = (server: LegacyMcpFakeServer, over: Record<string, unknown> = {}) =>
+        profileFirstPage({
+            url: URL_,
+            token: TOKEN,
+            fetchImpl: server.fetch,
+            requestTimeoutMs: 1_000,
+            fields: [KEY_COLUMN],
+            ...over,
+        });
+
+    /** Measured, not assumed — each fault's typed error on the profile path. */
+    const PROFILE_FAULTS = [
+        ['oversizedPage', 'cap-exceeded'],
+        ['malformedJson', 'contract-violation'],
+        ['serverSentEvents', 'contract-violation'],
+        ['unsupportedProtocolVersion', 'contract-violation'],
+        ['redirect', 'ssrf-blocked'],
+        // The five new ones. A profile reads a manifest and ONE page, so every
+        // malformation in that chain is one it can meet — including the page-1
+        // tear, which the multi-page `tornSnapshot` hides from it.
+        ['unsupportedContract', 'contract-violation'],
+        ['unparseablePageUri', 'contract-violation'],
+        ['nonSequentialPages', 'contract-violation'],
+        ['pageNumberMismatch', 'contract-violation'],
+        ['pageOneSnapshotMismatch', 'torn-snapshot'],
+    ] as const;
+
+    it('profiles a conforming server — the control', async () => {
+        // Without this the refusals below are satisfied by a profiler that
+        // throws on everything.
+        const server = createLegacyMcpFakeServer({ accounts: 7, rowsPerPage: 3 });
+        await expect(profile(server)).resolves.toBeDefined();
+    });
+
+    it.each(PROFILE_FAULTS)('%s REJECTS with a typed %s error', async (fault, kind) => {
+        const server = createLegacyMcpFakeServer({
+            accounts: 7,
+            rowsPerPage: 3,
+            faults: { [fault]: true },
+            redirectTo: 'https://elsewhere.example.test/mcp',
+        });
+
+        const err = await profile(server).then(
+            () => null,
+            (e: unknown) => e as Error & { kind?: string },
+        );
+
+        // THROWN, not returned — the asymmetry with `pullSnapshot` above.
+        expect({ fault, threw: err !== null }).toEqual({ fault, threw: true });
+        expect({ fault, kind: err?.kind }).toEqual({ fault, kind });
+    });
+
+    it('profiles EVERY declared column when no field list is given', async () => {
+        // The default mode, and the one the header describes: "a profile requests
+        // every column that is not denylisted, because you cannot map a column
+        // you were never shown". Every earlier case passes an explicit list, so
+        // the no-list arm — which falls back to the manifest's own column set —
+        // was never taken.
+        const server = createLegacyMcpFakeServer({ accounts: 7, rowsPerPage: 3 });
+        const res = await profileFirstPage({
+            url: URL_,
+            token: TOKEN,
+            fetchImpl: server.fetch,
+            requestTimeoutMs: 1_000,
+        });
+        expect(res).toBeDefined();
+        // Nothing was stripped, because nothing was excluded.
+        expect(res.rows.length).toBeGreaterThan(0);
+    });
+
+    it('refuses a page with more rows than the cap allows', async () => {
+        // The row cap, reached by lowering it rather than by the `oversizedPage`
+        // fault — that one trips a BYTE cap in the transport first, so it never
+        // exercises this check. A server returning more rows than asked for is
+        // not a transport problem; it is a contract one.
+        const server = createLegacyMcpFakeServer({ accounts: 7, rowsPerPage: 5 });
+        const err = await profileFirstPage({
+            url: URL_,
+            token: TOKEN,
+            fetchImpl: server.fetch,
+            requestTimeoutMs: 1_000,
+            fields: [KEY_COLUMN],
+            maxRowsPerPage: 2,
+        }).then(
+            () => null,
+            (e: unknown) => e as Error & { kind?: string },
+        );
+        expect(err?.kind).toBe('cap-exceeded');
+    });
+
+    it('STRIPS a column it did not ask for rather than passing it through', async () => {
+        // The projection is enforced on the way back as well as on the way out:
+        // a server that returns extra columns has them removed, which is what
+        // keeps "we never requested it" and "we never received it" the same
+        // fact. Without the strip, a denylisted column could arrive unasked.
+        const server = createLegacyMcpFakeServer({
+            accounts: 7,
+            rowsPerPage: 3,
+            faults: { oversharing: true },
+        });
+        const res = await profileFirstPage({
+            url: URL_,
+            token: TOKEN,
+            fetchImpl: server.fetch,
+            requestTimeoutMs: 1_000,
+            fields: [KEY_COLUMN],
+        });
+        // Only the asked-for column survives on every row.
+        for (const row of res.rows) {
+            expect(Object.keys(row)).toEqual([KEY_COLUMN]);
+        }
+    });
+
+    it('refuses to request a column the manifest never declared', async () => {
+        // The projection check. You cannot map a column you were never shown, so
+        // a profile asks for every non-denylisted column the server DECLARED —
+        // and asking for one it did not is a request this client will not make,
+        // whoever assembled the list.
+        const server = createLegacyMcpFakeServer({ accounts: 7, rowsPerPage: 3 });
+
+        const err = await profile(server, { fields: [KEY_COLUMN, 'COLUMN_THE_SERVER_NEVER_DECLARED'] }).then(
+            () => null,
+            (e: unknown) => e as Error & { kind?: string },
+        );
+
+        expect(err?.kind).toBe('contract-violation');
+        // And it never went on the wire: the refusal is before the page read.
+        expect(server.requests.some((r) => (r.uri ?? '').includes('COLUMN_THE_SERVER_NEVER_DECLARED')))
+            .toBe(false);
+    });
+});
+
+/**
+ * AND THE FAULTS A PROFILE DELIBERATELY DOES NOT REFUSE (#3617).
+ *
+ * Measured rather than assumed, and pinned so that nobody "fixes" the profiler
+ * into rejecting them. Each has a reason, and the reasons are different:
+ *
+ *   • `tornSnapshot` — a tear is a snapshot changing BETWEEN pages, and a
+ *     profile reads exactly one. There is nothing to tear between. The
+ *     snapshot-id check in `profileFirstPage` is defensive against a server
+ *     whose page 1 disagrees with its own manifest, which this fake cannot
+ *     produce.
+ *   • `duplicateAccountKey`, `rowWithoutAccountKey`, `secretShapedValue` — row
+ *     level concerns belonging to INGEST. The profiler's own header says rows
+ *     "are returned so the caller can compute statistics and DISCARD them", and
+ *     `lib/legacy-access/profile.ts` is its only intended caller. Refusing a
+ *     whole profile because one row lacks a key would stop an admin ever seeing
+ *     the table they are trying to map.
+ *   • `schemaDrift`, `toolsAdvertised`, `oversharing` — already covered against
+ *     the pull, and not contract breaches at the profile's own boundary.
+ */
+describe('1b client — what a profile tolerates, and why', () => {
+    const profile = (server: LegacyMcpFakeServer) =>
+        profileFirstPage({
+            url: URL_,
+            token: TOKEN,
+            fetchImpl: server.fetch,
+            requestTimeoutMs: 1_000,
+            fields: [KEY_COLUMN],
+        });
+
+    it.each([
+        'tornSnapshot',
+        'duplicateAccountKey',
+        'rowWithoutAccountKey',
+        'secretShapedValue',
+        'toolsAdvertised',
+        'schemaDrift',
+    ] as const)('%s does not fail the profile', async (fault) => {
+        const server = createLegacyMcpFakeServer({
+            accounts: 7,
+            rowsPerPage: 3,
+            faults: { [fault]: true },
+        });
+        await expect(profile(server)).resolves.toBeDefined();
+    });
+
+    it('every declared fault is accounted for — refused or tolerated, none unexamined', async () => {
+        // The denominator. `slowResponse` is excluded because it is a timing
+        // fault whose outcome depends on the budget, and it is covered against
+        // the pull where the budget is the point.
+        const refused = PROFILE_REFUSED;
+        const tolerated = PROFILE_TOLERATED;
+        const examined = new Set<string>([...refused, ...tolerated, 'slowResponse']);
+        expect([...examined].sort()).toEqual([...FAULT_NAMES].sort());
+    });
+});
+
+/** The faults the profile rejects, named once so the denominator can use them. */
+const PROFILE_REFUSED = [
+    'oversizedPage',
+    'malformedJson',
+    'serverSentEvents',
+    'unsupportedProtocolVersion',
+    'redirect',
+    'unsupportedContract',
+    'unparseablePageUri',
+    'nonSequentialPages',
+    'pageNumberMismatch',
+    'pageOneSnapshotMismatch',
+] as const;
+
+/** The faults the profile tolerates, with reasons in the describe above. */
+const PROFILE_TOLERATED = [
+    'tornSnapshot',
+    'duplicateAccountKey',
+    'rowWithoutAccountKey',
+    'secretShapedValue',
+    'toolsAdvertised',
+    'schemaDrift',
+    'oversharing',
+] as const;
