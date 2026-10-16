@@ -598,6 +598,21 @@ const flueProject = {
     testEnvironment: 'node',
     testMatch: ['<rootDir>/tests/flue/**/*.test.ts'],
     testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.claude/'],
+    // The companion `node` and `jsdom` already carry, and this project did not
+    // (#3633). `testPathIgnorePatterns` stops jest RUNNING the worktree copies;
+    // it does not stop the haste map CRAWLING them, so every
+    // `.claude/worktrees/<id>/` checkout contributed its own `__mocks__/` and
+    // this project reported `duplicate manual mock found: next-intl` once per
+    // worktree — 15 of them, measured, against 0 for `node` on the same tree.
+    //
+    // A duplicate manual mock is not only noise: jest resolves it to ONE copy,
+    // chosen arbitrarily, so a flue test could take its `next-intl` mock from a
+    // worktree whose branch is weeks old.
+    //
+    // CI never sees it. A fresh runner has no worktrees, so the warning count is
+    // zero there and `Flue runtime` stays green — which is how the gap survived
+    // the fix that named it.
+    modulePathIgnorePatterns: ['<rootDir>/.claude/'],
     extensionsToTreatAsEsm: ['.ts'],
     moduleNameMapper: {
         '^@/env$': '<rootDir>/tests/mocks/env.ts',
