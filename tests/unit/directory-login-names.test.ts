@@ -271,3 +271,41 @@ describe('Step 0b - normaliseLoginName treats directory strings as untrusted', (
         expect(normaliseLoginName('  jsmith  ')).toBe('jsmith');
     });
 });
+
+describe('the login seam gets the characters only the HRIS seam used to strip (#3278)', () => {
+    // Each of these was stripped from an HR name part and NOT from a login
+    // name, because the two seams carried rival character lists. The isolates
+    // are the reason this matters rather than being tidiness: U+2066 LRI,
+    // U+2067 RLI and U+2068 FSI are the current spelling of a bidi override and
+    // do to `samAccountName` exactly what U+202E RLO does — and U+202E was
+    // already covered here, which is precisely how the gap stayed invisible.
+    const C = (cp: number) => String.fromCodePoint(cp);
+
+    it.each([
+        ['U+00AD SOFT HYPHEN', 0x00ad],
+        ['U+2066 LEFT-TO-RIGHT ISOLATE', 0x2066],
+        ['U+2067 RIGHT-TO-LEFT ISOLATE', 0x2067],
+        ['U+2068 FIRST STRONG ISOLATE', 0x2068],
+        ['U+2069 POP DIRECTIONAL ISOLATE', 0x2069],
+    ])('strips %s', (_label, cp) => {
+        expect(normaliseLoginName('admin' + C(cp) + 'evil')).toBe('adminevil');
+    });
+
+    it('still strips what it always stripped, so the union only added', () => {
+        // The other direction. A shared helper that had REPLACED this seam's
+        // class rather than unioned with it would pass every assertion above
+        // and lose these.
+        expect(normaliseLoginName('a' + C(0x2028) + 'b')).toBe('ab');
+        expect(normaliseLoginName('a' + C(0x2029) + 'b')).toBe('ab');
+        expect(normaliseLoginName('a' + C(0x2062) + 'b')).toBe('ab');
+        expect(normaliseLoginName('admin' + C(0x202e) + 'evil')).toBe('adminevil');
+    });
+
+    it('leaves a real login name byte-identical', () => {
+        // The negative control: a normaliser that mangled real values would
+        // satisfy every assertion above.
+        for (const v of ['CORP\\jsmith', 'j.smith-jr_1', 'jose.garcia@corp.example.com']) {
+            expect(normaliseLoginName(v)).toBe(v);
+        }
+    });
+});

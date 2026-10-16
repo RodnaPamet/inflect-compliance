@@ -45,6 +45,7 @@ import {
 import '../integrations/bootstrap'; // populate the provider registry in THIS module graph (see usecases/integrations)
 import { registry } from '../integrations/registry';
 import { isIdentitySyncProvider, type IdentitySyncProvider, type NormalizedIdentityAccount } from '../integrations/providers/identity/types';
+import { normaliseUntrustedSyncText } from '@/lib/text/invisible-chars';
 
 const IDENTITY_PROVIDERS = new Set(['okta', 'google-workspace', 'entra-id', 'active-directory']);
 
@@ -188,20 +189,28 @@ export interface IdentitySyncResult {
  * mangle legitimate values while still not removing a single control
  * character or capping a single byte.
  */
-const LOGIN_NAME_MAX = 256;
-// C0, DEL, C1, and the Unicode bidi/invisible set. Built from a string rather
-// than a literal because U+2028 and U+2029 are line terminators: written
-// literally inside a regex literal they end the expression.
-const LOGIN_NAME_CONTROL = new RegExp(
-    '[\\x00-\\x1F\\x7F-\\x9F\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u2064\\uFEFF]',
-    'g',
-);
-
+/**
+ * ‾‾‾ THE CHARACTER LIST LIVES IN ONE PLACE NOW (#3278) ‾‾‾
+ *
+ * This hand-rolled its own class, and `hris-sync.ts` composed its own from
+ * `stripInvisible` while stating the rule this file broke: *"duplicating a
+ * security-relevant character list is how two copies drift."* It did. Measured
+ * before the change:
+ *
+ *   U+00AD SOFT HYPHEN       stripped by the HRIS seam, NOT by this one
+ *   U+2066..U+2069 ISOLATES  stripped by the HRIS seam, NOT by this one
+ *   U+2028/U+2029, U+2061..U+2064   stripped here, NOT by the HRIS seam
+ *
+ * The isolates are the load-bearing omission. `RLI`/`LRI`/`FSI` are the current
+ * spelling of a bidi override and do to `samAccountName` exactly what `RLO`
+ * does — so the login columns, the ones #3278 held up as already protected,
+ * were missing the attack's modern form while the HR columns were not.
+ *
+ * `normaliseUntrustedSyncText` is the UNION of both. The cap and the
+ * null-rather-than-empty-string rule are unchanged.
+ */
 export function normaliseLoginName(value: string | null | undefined): string | null {
-    if (value == null) return null;
-    const stripped = value.replace(LOGIN_NAME_CONTROL, '').trim();
-    if (stripped === '') return null;
-    return stripped.slice(0, LOGIN_NAME_MAX);
+    return normaliseUntrustedSyncText(value);
 }
 
 export async function runIdentitySync(input: {

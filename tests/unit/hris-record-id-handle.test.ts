@@ -392,3 +392,36 @@ describe('Step 0c hardening — untrusted HRIS text is capped and control-stripp
         }
     });
 });
+
+describe('the HRIS seam gets the characters only the login seam used to strip (#3278)', () => {
+    // The mirror of the login-seam block. These were stripped from
+    // `samAccountName` and NOT from `familyName` or `employeeNumber`, because
+    // `stripInvisible` does not cover them and this seam composed from it.
+    // U+2028 is the one worth naming: a LINE SEPARATOR inside a stored name is
+    // a rendering hazard everywhere the roster is displayed or exported.
+    const C = (cp: number) => String.fromCodePoint(cp);
+
+    it.each([
+        ['U+2028 LINE SEPARATOR', 0x2028],
+        ['U+2029 PARAGRAPH SEPARATOR', 0x2029],
+        ['U+2061 FUNCTION APPLICATION', 0x2061],
+        ['U+2062 INVISIBLE TIMES', 0x2062],
+        ['U+2063 INVISIBLE SEPARATOR', 0x2063],
+        ['U+2064 INVISIBLE PLUS', 0x2064],
+    ])('strips %s', (_label, cp) => {
+        expect(normaliseHrisText('Ivanov' + C(cp))).toBe('Ivanov');
+    });
+
+    it('still strips what it always stripped, so the union only added', () => {
+        expect(normaliseHrisText('EMP' + C(0x200b) + '-7' + C(0x202e))).toBe('EMP-7');
+        expect(normaliseHrisText('Ivanov' + C(0x00ad))).toBe('Ivanov');
+        expect(normaliseHrisText('Ivanov' + C(0x2066))).toBe('Ivanov');
+    });
+
+    it('an employeeNumber of nothing but these is NULL, not an empty string', () => {
+        // The rule the shared helper had to carry across. An empty string reads
+        // downstream as "the HRIS asserts a blank value"; null reads as "it
+        // asserts none", and employeeNumber is a link-strength match signal.
+        expect(normaliseHrisText(C(0x2028) + C(0x2062) + '  ')).toBeNull();
+    });
+});
