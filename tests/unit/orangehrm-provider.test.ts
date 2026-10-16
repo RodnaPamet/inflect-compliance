@@ -1126,3 +1126,338 @@ describe('validateConnection', () => {
         expect(current.refreshToken).toBe('r1');
     });
 });
+
+// ───────────── a sparse row, and a failed call that is not a blank ─────────────
+
+/**
+ * Both describes below cover the same distinction from two directions:
+ * ABSENT and UNREADABLE are different facts, and this module says so in prose
+ * at three separate places. The prose was untested — `normalise`'s fallback
+ * arms and `fetchEnrichment`'s throw were among this file's uncovered branches.
+ *
+ * Nothing here can reach `normalise`'s `empNumber == null` arm: the enrichment
+ * mapper drops a row with no usable `empNumber` before normalise ever sees it
+ * ("rather than sent to a URL with an empty path segment"), so `hrisRecordId`
+ * is null only for a row this path refuses. That arm stays uncovered on
+ * purpose rather than being reached through an export added for a test.
+ */
+describe('a sparse row maps to nulls, and employeeNumber does not borrow the email', () => {
+    /** Every optional column blank or whitespace. `empNumber` stays, or the row is dropped before normalise. */
+    const SPARSE = row(7, {
+        employeeId: '  ',
+        firstName: ' ',
+        middleName: '',
+        lastName: '   ',
+        subunit: { name: '  ' },
+        jobTitle: { title: '  ' },
+    });
+
+    const normaliseSparse = async () => {
+        const fetchImpl = rosterFetch([SPARSE], () => 'sparse@acme.test');
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees).toHaveLength(1);
+        return employees[0];
+    };
+
+    it('falls back to the work email for externalId — provenance needs A value', async () => {
+        expect((await normaliseSparse()).externalId).toBe('sparse@acme.test');
+    });
+
+    it('but NOT for employeeNumber, which is a match signal', async () => {
+        // The asymmetry the source states in a comment: `externalId` keeps its
+        // fallback because nothing matches on it, `employeeNumber` has none
+        // because something does. A work email in this column would be
+        // compared against real badge numbers and match nothing — or, worse,
+        // match another system's email column and reconcile two people as one.
+        const e = await normaliseSparse();
+        expect(e.employeeNumber).toBeNull();
+        expect(e.employeeNumber).not.toBe('sparse@acme.test');
+        expect(e.employeeNumber).not.toBe(e.externalId);
+    });
+
+    it('blanks the three name parts rather than keeping whitespace', async () => {
+        // Trimmed-to-empty becomes null, not `' '`. A padded part would be a
+        // distinct value to a parts comparison, which is the one thing these
+        // three columns exist for.
+        const e = await normaliseSparse();
+        expect([e.givenName, e.middleName, e.familyName]).toEqual([null, null, null]);
+    });
+
+    it('falls back to the work email for fullName, which cannot be empty', async () => {
+        expect((await normaliseSparse()).fullName).toBe('sparse@acme.test');
+    });
+
+    it('nulls department and jobTitle, including when they are whitespace', async () => {
+        const e = await normaliseSparse();
+        expect(e.department).toBeNull();
+        expect(e.jobTitle).toBeNull();
+    });
+});
+
+describe('an enrichment call that fails is not an employee with no email', () => {
+    /**
+     * Rows plus per-employee responses, with each endpoint overridable.
+     * `rosterFetch` always answers both 200; these tests are about what happens
+     * when one does not.
+     */
+    const enrichFetch = (opts: {
+        contact?: (n: number) => Response;
+        job?: (n: number) => Response;
+        rows?: OrangeHrmEmployeeRow[];
+    }) =>
+        mockFetch(async (url) => {
+            const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+            if (contact) {
+                const n = Number(contact[1]);
+                return opts.contact?.(n) ?? json({ data: { workEmail: `p${n}@acme.test` } });
+            }
+            const job = /\/pim\/employees\/(\d+)\/job-details/.exec(url);
+            if (job) {
+                const n = Number(job[1]);
+                return opts.job?.(n) ?? json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
+            }
+            const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
+            return json({ data: offset === 0 ? (opts.rows ?? [row(1)]) : [] });
+        });
+
+    it('THROWS when job-details 500s — it does not emit the employee with null dates', async () => {
+        // The module's own words: a failed call read as an empty field "drops a
+        // real employee from the roster — and a roster missing employees,
+        // reported complete, is what the departure reconcile turns into
+        // terminations". Rejecting costs the run its remaining pages and keeps
+        // the cursor; that is the cheap failure.
+        const fetchImpl = enrichFetch({ job: () => json({}, { ok: false, status: 500 }) });
+        await expect(readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl })).rejects.toThrow(
+            /job-details fetch failed for employee 1 \(HTTP 500\)/,
+        );
+    });
+
+    it('THROWS when contact-details 500s, for the same reason', async () => {
+        const fetchImpl = enrichFetch({ contact: () => json({}, { ok: false, status: 500 }) });
+        await expect(readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl })).rejects.toThrow(
+            /contact-details fetch failed for employee 1 \(HTTP 500\)/,
+        );
+    });
+
+    it('but a 404 on contact-details IS an absent email — that row is dropped and the rest survive', async () => {
+        // 404 is the one status that genuinely means "no such record", so it is
+        // the one status that may become a blank. The employee is then dropped
+        // by `normalise` for having no work email, which is the legitimate
+        // drop: contractors exist. The discriminator against the two tests
+        // above is that this one RESOLVES.
+        //
+        // TWO rows, and only the first 404s. One row would make the roster
+        // ALL-dropped, which this module refuses outright (`rowsSeen > 0 &&
+        // employees.length === 0` — "the departure reconcile reads that as
+        // everyone having left"), and the test would then pass or fail on the
+        // refusal instead of on the drop.
+        const fetchImpl = enrichFetch({
+            rows: [row(1), row(2)],
+            contact: (n) => (n === 1 ? json({}, { ok: false, status: 404 }) : json({ data: { workEmail: 'kept@acme.test' } })),
+        });
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(r.employees.map((e) => e.workEmail)).toEqual(['kept@acme.test']);
+    });
+
+    it('survives a job-details body with no data envelope at all', async () => {
+        const fetchImpl = enrichFetch({ job: () => json({}) });
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees).toHaveLength(1);
+        expect(employees[0].startDate).toBeNull();
+        expect(employees[0].endDate).toBeNull();
+    });
+
+    it('parses both dates into Date objects when the employee has them', async () => {
+        // The truthy arm of both `startDate`/`endDate` ternaries. Every other
+        // test in this file leaves these null, so the `new Date(...)` calls
+        // had never run — a string left unparsed here reaches Prisma as a
+        // string for a DateTime column.
+        const fetchImpl = enrichFetch({
+            job: () => json({ data: { joinedDate: '2020-01-05', employeeTerminationRecord: { id: 9, date: '2024-06-30' } } }),
+        });
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees[0].startDate).toBeInstanceOf(Date);
+        expect(employees[0].startDate?.toISOString()).toBe('2020-01-05T00:00:00.000Z');
+        expect(employees[0].endDate?.toISOString()).toBe('2024-06-30T00:00:00.000Z');
+    });
+});
+
+describe('an OMITTED column is not a blank one', () => {
+    /**
+     * The describe above sends every optional column as `''` or `'   '`. These
+     * send rows with the KEYS ABSENT, which is a different payload and a
+     * different code path: `(row.firstName ?? '')` takes its left arm for `''`
+     * and its right arm only for `null`/`undefined`, and `row.subunit?.name`
+     * short-circuits only when `subunit` itself is missing.
+     *
+     * Both shapes are real. OrangeHRM 5.9's list rows carry the complete key
+     * set (that is what the `row` helper documents), but the provider is fed
+     * from `configJson`-configured hosts running versions nobody has pinned,
+     * and a missing key reaching `new Date(undefined)` or `.trim()` on
+     * undefined is a crash mid-roster rather than a dropped column.
+     */
+    const bare = (empNumber: number) => ({ empNumber }) as unknown as OrangeHrmEmployeeRow;
+
+    it('maps a row carrying nothing but empNumber, without throwing', async () => {
+        const fetchImpl = rosterFetch([bare(4)], () => 'bare@acme.test');
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees).toHaveLength(1);
+        expect(employees[0]).toMatchObject({
+            externalId: 'bare@acme.test',
+            employeeNumber: null,
+            givenName: null,
+            middleName: null,
+            familyName: null,
+            fullName: 'bare@acme.test',
+            department: null,
+            jobTitle: null,
+            hrisRecordId: '4',
+        });
+    });
+
+    it('treats an absent supervisors key as no supervisor, not as a crash', async () => {
+        // `(row.supervisors ?? [])`. A throw here would take the whole page
+        // down during the manager phase, which is after enrichment has already
+        // spent two requests per employee.
+        const fetchImpl = rosterFetch([bare(4)], () => 'bare@acme.test');
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees[0].managerEmail).toBeNull();
+    });
+
+    it('skips a null entry inside supervisors rather than reading empNumber off it', async () => {
+        // `sup?.empNumber == null ? '' : ...` — the `.find(Boolean)` then skips
+        // the empty string and takes the next real supervisor. A list whose
+        // first entry is null must not resolve to "no manager".
+        const fetchImpl = rosterFetch(
+            [row(4, { supervisors: [null, { empNumber: 9 }] as unknown as OrangeHrmEmployeeRow['supervisors'] }), row(9)],
+            (n) => `p${n}@acme.test`,
+        );
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees.find((e) => e.workEmail === 'p4@acme.test')?.managerEmail).toBe('p9@acme.test');
+    });
+
+    it('reads a list body with no data envelope as an empty page, not as a crash', async () => {
+        // `body.data ?? []`. An empty page is how the pass terminates, so the
+        // consequence of throwing instead is that a roster which would have
+        // completed keeps its cursor and retries forever.
+        const fetchImpl = mockFetch(async (url) => {
+            if (/\/pim\/employee\/\d+\//.test(url) || /\/job-details/.test(url)) return json({ data: {} });
+            return json({});
+        });
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(r.employees).toEqual([]);
+        // COMPLETE, and with no resume token. The pair is the point: an empty
+        // first page is a finished pass, not a truncated one, and
+        // `usecases/hris-sync` branches on exactly these two fields. A
+        // `complete: false` here would make an instance with no employees
+        // retry forever.
+        expect(r.complete).toBe(true);
+        expect(r.resumeToken ?? null).toBeNull();
+    });
+
+    it('reads a contact-details body with no data envelope as no email', async () => {
+        // `(contact.workEmail ?? '').trim()` behind `.data ?? {}`. Two rows, so
+        // the all-dropped refusal is not what is being measured.
+        const fetchImpl = mockFetch(async (url) => {
+            const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+            if (contact) return Number(contact[1]) === 1 ? json({}) : json({ data: { workEmail: 'kept@acme.test' } });
+            if (/\/job-details/.test(url)) return json({ data: {} });
+            const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
+            return json({ data: offset === 0 ? [row(1), row(2)] : [] });
+        });
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees.map((e) => e.workEmail)).toEqual(['kept@acme.test']);
+    });
+});
+
+describe('a row whose manager lookup the budget cut short is withheld, not emitted', () => {
+    /**
+     * The one remaining semantic in this module that no test reached: the
+     * `keep` prefix. Its comment states the rule —
+     *
+     *   "A row whose supervisor lookup the budget cut short is not 'an
+     *    employee with no manager' — it is an employee we did not finish
+     *    reading, and emitting it with a null manager would write a wrong
+     *    fact rather than an incomplete one."
+     *
+     * …and the consequence is concrete: `managerEmail` feeds the personnel
+     * graph, and a manager silently nulled on a quarter of the roster is an
+     * org chart that reports as complete.
+     *
+     * DETERMINISTIC, not timed. `deps.now` is injectable, so the budget is
+     * driven off a REQUEST COUNT rather than the wall clock: the flag flips
+     * once the manager phase has issued its first full batch. A test that
+     * raced a real deadline would be the flake it is testing for.
+     */
+    const DEADLINE = 1_700_000_000_000;
+    const ROWS = 12; // > ORANGEHRM_ENRICH_CONCURRENCY (8), < ORANGEHRM_PAGE_SIZE (50): one page, two batches.
+
+    function cutAfterFirstManagerBatch() {
+        let contactCalls = 0;
+        let spent = false;
+        const fetchImpl = mockFetch(async (url) => {
+            const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+            if (contact) {
+                contactCalls += 1;
+                // ROWS enrichment calls, then ORANGEHRM_ENRICH_CONCURRENCY
+                // manager calls. `mapWithConcurrency` takes its whole first
+                // batch before any worker loops, so flipping here means the
+                // first batch lands and every index at or past the limit sees
+                // a spent budget.
+                if (contactCalls >= ROWS + ORANGEHRM_ENRICH_CONCURRENCY) spent = true;
+                return json({ data: { workEmail: `p${contact[1]}@acme.test` } });
+            }
+            if (/\/job-details/.test(url)) return json({ data: {} });
+            const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
+            // Each row's supervisor is OFF this page, so all ROWS of them are
+            // "unknown" and the manager phase has real work to be cut short.
+            const rows = Array.from({ length: ROWS }, (_, k) =>
+                row(k + 1, { supervisors: [{ empNumber: 1000 + k }] as unknown as OrangeHrmEmployeeRow['supervisors'] }),
+            );
+            return json({ data: offset === 0 ? rows : [] });
+        });
+        const now = () => new Date(spent ? DEADLINE + 1 : DEADLINE - 60_000);
+        return { fetchImpl, now };
+    }
+
+    it('emits only the prefix whose managers resolved', async () => {
+        const { fetchImpl, now } = cutAfterFirstManagerBatch();
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, {
+            fetchImpl,
+            now,
+            readDeadlineAt: DEADLINE,
+        });
+        // All 12 rows were read and enriched; only the 8 whose supervisor email
+        // arrived are emitted. The other 4 are withheld, NOT emitted with a
+        // null manager.
+        expect(r.employees).toHaveLength(ORANGEHRM_ENRICH_CONCURRENCY);
+        expect(r.employees.every((e) => e.managerEmail !== null)).toBe(true);
+    });
+
+    it('and reports the run INCOMPLETE with a cursor, rather than complete', async () => {
+        // The pair that matters to `usecases/hris-sync`: `complete: true` here
+        // would let the departure reconcile run against a roster missing four
+        // employees, and absence is read as departure.
+        const { fetchImpl, now } = cutAfterFirstManagerBatch();
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, {
+            fetchImpl,
+            now,
+            readDeadlineAt: DEADLINE,
+        });
+        expect(r.complete).toBe(false);
+        expect(r.resumeToken).toBeTruthy();
+    });
+
+    it('resumes from the withheld row, not past it', async () => {
+        // The cursor's offset must not count the four withheld rows as
+        // consumed; if it did they would be skipped forever and read as
+        // departures. 8 consumed of 12.
+        const { fetchImpl, now } = cutAfterFirstManagerBatch();
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, {
+            fetchImpl,
+            now,
+            readDeadlineAt: DEADLINE,
+        });
+        expect(parseResumeCursor(r.resumeToken).offset).toBe(ORANGEHRM_ENRICH_CONCURRENCY);
+    });
+});
