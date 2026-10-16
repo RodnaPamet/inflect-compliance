@@ -13,6 +13,11 @@
  * The first assertion would pass against a bug in `surviving`; the second would
  * not.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { codeOf } from '../helpers/source-blocks';
+
 import {
     reconcile,
     type CanonicalAccount,
@@ -144,10 +149,25 @@ describe('alias revalidation — each suspension trigger', () => {
         expect(r.verdicts[0].reason).toBe<SuspensionReason>('ACCOUNT_POSTDATES_EMPLOYMENT_END');
     });
 
-    it('every reason the function can emit is in SUSPENSION_REASONS', () => {
+    it('every reason the function can emit is in SUSPENSION_REASONS, and the set names its one outsider', () => {
         // Keeps the exported list honest — it is what the write path and the
         // metrics range over, and a reason missing from it would be a suspension
         // nobody could count.
+        //
+        // ═══ WHY THIS IS NO LONGER AN EQUALITY (#3613) ═══
+        //
+        // It used to assert that the emitted set EQUALS `SUSPENSION_REASONS`,
+        // which was true while this function was the only emitter. It is not
+        // any more: `CONTRADICTED_BY_VETO` is decided by `legacy-reconcile`
+        // AFTER the engine runs, because it depends on vetoes this pass cannot
+        // see — and re-deriving them here is exactly the duplication the
+        // `HR_RECORD_REKEYED` note refuses.
+        //
+        // So the assertion splits in two, and both halves matter. Everything
+        // this function emits must be in the set (or the write path cannot
+        // store it), and the set's only non-emitted member must be the one
+        // documented outsider (or the list has silently grown a reason nobody
+        // emits, which is the other direction of the same rot).
         const emitted = new Set<string>();
         const cases: Array<() => void> = [
             () => emitted.add(String(revalidateAliases({
@@ -174,7 +194,41 @@ describe('alias revalidation — each suspension trigger', () => {
         ];
         cases.forEach((c) => c());
 
-        expect([...emitted].sort()).toEqual([...SUSPENSION_REASONS].sort());
+        // Half one: nothing this function emits is missing from the list.
+        const notListed = [...emitted].filter(
+            (r) => !(SUSPENSION_REASONS as readonly string[]).includes(r),
+        );
+        expect(notListed).toEqual([]);
+
+        // Half two: the list's only member this function does NOT emit is the
+        // one decided elsewhere, named rather than merely tolerated.
+        const notEmitted = SUSPENSION_REASONS.filter((r) => !emitted.has(r));
+        expect(notEmitted).toEqual(['CONTRADICTED_BY_VETO']);
+
+        // The anti-vacuity control: four of the five come from HERE, so a
+        // `revalidateAliases` that stopped emitting would not slip past the
+        // two assertions above by emitting nothing at all.
+        expect(emitted.size).toBe(SUSPENSION_REASONS.length - 1);
+    });
+
+    it('the outsider is emitted by legacy-reconcile, and this says where to look', () => {
+        // A reason in the closed set that NOTHING emits is the same rot as one
+        // that is emitted and unlisted. This pins the claim made above — that
+        // `CONTRADICTED_BY_VETO` has a real producer — to the file that
+        // produces it, so deleting that code fails here rather than leaving a
+        // set member that counts nothing.
+        const src = codeOf(
+            readFileSync(
+                path.join(__dirname, '..', '..', 'src/app-layer/usecases/legacy-reconcile.ts'),
+                'utf8',
+            ),
+        );
+        expect(src).toContain("reason: 'CONTRADICTED_BY_VETO'");
+        // The CALL form, not the bare identifier: the import line carries the
+        // name too, so `toContain('VETO_OVERRIDABLE_BY_CONFIRMATION')` would be
+        // satisfied by an import whose use had been deleted — the green diff
+        // this assertion exists to prevent.
+        expect(src).toContain('VETO_OVERRIDABLE_BY_CONFIRMATION[v.kind]');
     });
 });
 

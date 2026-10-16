@@ -39,10 +39,12 @@
 import {
     reconcile,
     strengthOf,
+    VETO_OVERRIDABLE_BY_CONFIRMATION,
     ALL_SIGNAL_KINDS,
     STRONG_SIGNAL_KINDS,
     SUPPORTING_SIGNAL_KINDS,
     COMPARISON_BUDGET_MULTIPLE,
+    type VetoKind,
     type CanonicalAccount,
     type RosterEmployee,
     type DirectoryAccount,
@@ -415,8 +417,24 @@ describe('RQ-3b — every veto beats every strong signal', () => {
         }
     );
 
-    it('every (strong signal × veto) pair refuses to link to the vetoed candidate', () => {
+    it('every (strong signal × veto) pair resolves as the override table says', () => {
+        // ═══ THE INVARIANT MOVED, AND THIS IS THE NEW ONE (#3613) ═══
+        //
+        // It used to be "every veto beats every strong signal", asserted as
+        // `linkedTo: null` for all twelve pairs. That is still true of eleven,
+        // and the twelfth is the point of the change: a reviewer's
+        // CONFIRMED_ALIAS may override a veto the override table marks
+        // overridable, because a human confirmation is not a score.
+        //
+        // The expectation is DERIVED from `VETO_OVERRIDABLE_BY_CONFIRMATION`
+        // rather than hard-coded, so adding a veto kind or flipping a flag
+        // changes what this test demands without anybody editing it — and
+        // flipping a flag the wrong way reddens it immediately.
+        //
+        // Both directions are pinned below, so neither "nothing is overridable"
+        // nor "everything is" can pass.
         const checked: string[] = [];
+        const linked: string[] = [];
         for (const setup of strongSetups) {
             for (const veto of vetoMakers) {
                 const [account, employee] = veto.apply(setup.account, setup.employee);
@@ -428,16 +446,47 @@ describe('RQ-3b — every veto beats every strong signal', () => {
                     now: NOW,
                 });
                 const res = r.resolutions[0];
-                checked.push(`${setup.name}×${veto.kind}`);
-                // Not LINKED to the vetoed candidate. The outcome may be
-                // SUGGESTED or UNMATCHED; what is forbidden is an auto-link.
-                expect({
-                    pair: `${setup.name}×${veto.kind}`,
-                    linkedTo: res.outcome === 'LINKED' ? res.employeeId : null,
-                }).toEqual({ pair: `${setup.name}×${veto.kind}`, linkedTo: null });
+                const pair = `${setup.name}×${veto.kind}`;
+                checked.push(pair);
+
+                const overridable =
+                    setup.name === 'CONFIRMED_ALIAS'
+                    && VETO_OVERRIDABLE_BY_CONFIRMATION[veto.kind as VetoKind];
+
+                expect({ pair, linkedTo: res.outcome === 'LINKED' ? res.employeeId : null })
+                    .toEqual({ pair, linkedTo: overridable ? 'e-1' : null });
+
+                if (overridable) {
+                    linked.push(pair);
+                    // The overridden veto is still ON THE RECORD. Dropping it
+                    // would make the decision unreviewable — a reviewer needs
+                    // to see what their confirmation outweighed.
+                    expect(res.vetoes.map((v) => v.kind)).toContain(veto.kind);
+                }
             }
         }
         expect(checked).toHaveLength(strongSetups.length * vetoMakers.length);
+
+        // The anti-vacuity control, in both directions. Without it this passes
+        // for a table of all-false (nothing overrides, the old behaviour) and
+        // for all-true (everything does, which would be the dangerous bug).
+        expect(linked).toEqual(['CONFIRMED_ALIAS×EMAIL_DOMAIN_CONFLICT']);
+    });
+
+    it('a veto a CONFIRMED_ALIAS may NOT override still refuses, and still suspends nothing here', () => {
+        // The other half of the table, stated on its own so the reasoning is
+        // visible rather than buried in a loop: two structured employee
+        // numbers that disagree mean one of the records is wrong, and that is
+        // repaired at the source rather than linked past.
+        const r = reconcile({
+            accounts: [{ accountKey: 'anwosu', employeeNumber: '9999' }],
+            roster: [{ id: 'e-1', fullName: 'Ada Nwosu', status: 'ACTIVE', employeeNumber: '1111' }],
+            directory: [],
+            aliases: [{ accountKey: 'anwosu', employeeId: 'e-1' }],
+            now: NOW,
+        });
+        expect(r.resolutions[0].outcome).not.toBe('LINKED');
+        expect(r.resolutions[0].vetoes.map((v) => v.kind)).toContain('EMPLOYEE_NUMBER_CONFLICT');
     });
 });
 
