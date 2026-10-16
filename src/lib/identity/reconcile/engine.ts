@@ -65,6 +65,11 @@ import {
     normaliseUsername,
     baseClean,
 } from './normalise';
+// `familyKeyOf` is the family name the BLOCKER indexes by, and the metric
+// counts with. One function, so the count and the index cannot disagree about
+// what "indexable" means — the mistake `alias-revalidation` warns about for
+// `makeRekeyLookup`.
+import { familyKeyOf } from './family-key';
 
 // ─── Outcomes ──────────────────────────────────────────────────────────────
 
@@ -498,6 +503,31 @@ export interface EngineMetrics {
     readonly comparisons: number;
     /** Accounts for which blocking produced at least one candidate. */
     readonly blockedAccounts: number;
+    /**
+     * Roster employees the family-name blocker could not index (#3612).
+     *
+     * ═══ WHY THIS NUMBER EXISTS ═══
+     *
+     * `accounts - blockedAccounts` says how many accounts got no candidate. It
+     * does not say why, and the two reasons mean opposite things:
+     *
+     *   asked and found nobody      a real key was searched and the person is
+     *                               genuinely not on this roster
+     *   could not form a question   the roster could not be indexed on the key
+     *                               the account offered, so nothing was
+     *                               searched and the empty result says nothing
+     *                               about the roster
+     *
+     * Both resolve `UNMATCHED / NO_CANDIDATES` and a reviewer cannot tell them
+     * apart. This is the number that separates them, and it is the one the
+     * first production reconcile needed: 7 accounts, roster of 5,
+     * `comparisons: 3`, four accounts at zero candidates — one of which had an
+     * employee with a byte-identical display name.
+     *
+     * Derived from the SAME function the blocker indexes with, so the count
+     * and the index can never disagree about what "indexable" means.
+     */
+    readonly rosterWithoutFamilyKey: number;
     readonly byOutcome: Readonly<Record<Outcome, number>>;
 }
 
@@ -966,6 +996,7 @@ export function reconcile(input: EngineInput): EngineResult {
 
     let comparisons = 0;
     let blockedAccounts = 0;
+    const rosterWithoutFamilyKey = input.roster.filter((e) => familyKeyOf(e) === null).length;
     const byOutcome: Record<Outcome, number> = {
         LINKED: 0,
         SUGGESTED: 0,
@@ -1036,6 +1067,7 @@ export function reconcile(input: EngineInput): EngineResult {
         }
 
         if (candidateIds.size > 0) blockedAccounts += 1;
+
 
         const scored: ScoredCandidate[] = [];
         // Sorted ids, so the evaluation order does not depend on which key
@@ -1145,6 +1177,7 @@ export function reconcile(input: EngineInput): EngineResult {
             rosterSize: input.roster.length,
             comparisons,
             blockedAccounts,
+            rosterWithoutFamilyKey,
             byOutcome,
         },
     };
