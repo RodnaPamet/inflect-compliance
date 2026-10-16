@@ -46,6 +46,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { repoFiles } from '../helpers/repo-files';
+
 const DOC = path.resolve(
     __dirname,
     '../../docs/legacy-access-recertification-phases.md'
@@ -91,6 +93,81 @@ function stepTableRows(): string[] {
         out.push(t);
     }
     return out;
+}
+
+/**
+ * The rows of the OPERATIONAL EVIDENCE table — the one asking whether a phase
+ * has run — from its header to the first line that is not a table row.
+ */
+function evidenceTableRows(): string[] {
+    const lines = text.split('\n');
+    const start = lines.findIndex((l) => l.includes('has it run in production?'));
+    if (start < 0) return [];
+    const out: string[] = [];
+    for (let i = start + 2; i < lines.length; i += 1) {
+        const t = lines[i].trim();
+        if (!t.startsWith('|')) break;
+        out.push(t);
+    }
+    return out;
+}
+
+/** A date somebody can look up. */
+const HAS_DATE = /\b20\d{2}-\d{2}-\d{2}\b/;
+/** An identifier somebody can look up: a cuid, a `#NNNN`, or a bare job id. */
+const HAS_ID = /`[a-z0-9]{20,}`|#\d{3,}|`\d{5,}`/;
+/**
+ * A COUNT of a named thing -- `3 journal rows`, `1 \`IdentityAccountLink\``.
+ *
+ * The document's rule is "a row, a run id OR A METRIC VALUE, with a date", and
+ * the first version of this guard omitted the third alternative. It then failed
+ * on phase 0, whose evidence is a date and two counts and is perfectly
+ * checkable. The row was right and the predicate was wrong -- which is the
+ * failure mode a guard is most likely to have and least likely to be suspected
+ * of, since a red test reads as a finding about the subject.
+ *
+ * The space after the digits is what keeps `2026-10-16` from matching here and
+ * satisfying the rule with its own date.
+ */
+const HAS_METRIC = /\b\d+ (?:`[^`]+`|[a-z][a-z ]*)/;
+
+/**
+ * The document's own rule, as a predicate: "An entry names a row, a run id or a
+ * metric value, with a date, so somebody who was not there can check it."
+ *
+ * Exported shape rather than an inline regex so the negative control below can
+ * drive THIS function. A control that re-implements the rule proves only that
+ * two copies agree.
+ */
+function evidenceIsCheckable(runCell: string, evidenceCell: string): boolean {
+    if (!/\byes\b/i.test(runCell)) return true;
+    if (!HAS_DATE.test(evidenceCell)) return false;
+    return HAS_ID.test(evidenceCell) || HAS_METRIC.test(evidenceCell);
+}
+
+/**
+ * Every step the document defines, from its `#### Step Xx` headings.
+ */
+function stepIds(): string[] {
+    return text
+        .split('\n')
+        .map((l) => /^#### Step ([0-9][a-z])\b/.exec(l))
+        .filter((m): m is RegExpExecArray => m !== null)
+        .map((m) => m[1]);
+}
+
+/**
+ * The implementation notes declaring themselves as a given step's, by the
+ * convention every one of the nineteen uses: `(Step 4b)` in the note's text.
+ *
+ * Population from git (`repoFiles`), not a directory walk, so an untracked
+ * scratch file in that subtree cannot satisfy the criterion.
+ */
+function notesForStep(step: string): string[] {
+    const needle = `(Step ${step})`;
+    return repoFiles({ under: 'docs/implementation-notes', extensions: ['.md'] })
+        .filter((f) => fs.readFileSync(f, 'utf8').includes(needle))
+        .map((f) => path.basename(f));
 }
 
 describe('the recert phases table stores no derived status', () => {
@@ -170,5 +247,83 @@ describe('the recert phases table stores no derived status', () => {
             expect({ cell: ok, accepted: PR_CELL.test(ok) })
                 .toEqual({ cell: ok, accepted: true });
         }
+    });
+    it('finds the operational-evidence table at all', () => {
+        // Without this the two assertions below pass over an empty list, which is
+        // how a renamed heading turns a guard into decoration.
+        const rows = evidenceTableRows();
+        expect(rows.length).toBeGreaterThanOrEqual(7);
+    });
+
+    it('every phase claimed as RUN names a date and an identifier', () => {
+        // The document states this rule about itself -- "A green test is not an
+        // entry here. An entry names a row, a run id or a metric value, with a
+        // date" -- and nothing enforced it. A row flipped to `yes` on the
+        // strength of a passing test is exactly what the appendix exists to
+        // prevent, and is indistinguishable from a real entry to a reader who
+        // trusts the column.
+        for (const r of evidenceTableRows()) {
+            const cells = r.split('|');
+            const run = (cells[2] ?? '').trim();
+            const evidence = (cells[3] ?? '').trim();
+            expect({ phase: cells[1]?.trim(), ok: evidenceIsCheckable(run, evidence) })
+                .toEqual({ phase: cells[1]?.trim(), ok: true });
+        }
+    });
+
+    it('refuses a yes whose evidence is unverifiable, and allows an honest no', () => {
+        // The negative control, driving the SAME predicate the assertion above
+        // uses. Without it, a rule that accidentally accepted everything would
+        // look identical to a rule that holds.
+        expect(evidenceIsCheckable('**yes**', 'the tests pass')).toBe(false);
+        expect(evidenceIsCheckable('**yes**', 'it works, 2026-10-16')).toBe(false);
+        expect(evidenceIsCheckable('**yes**', '`cmv9x9bdf00008bs3209exiqn`')).toBe(false);
+        expect(evidenceIsCheckable('**yes, against the reference fixture**', 'green in CI')).toBe(
+            false
+        );
+
+        // And the shapes it must keep accepting, so the control cannot pass by
+        // rejecting everything.
+        expect(
+            evidenceIsCheckable('**yes**', '`cmv9x9bdf00008bs3209exiqn`, `OPEN`, 2026-10-15.')
+        ).toBe(true);
+        expect(evidenceIsCheckable('**yes**', '#3592, 2026-10-15. Connection established')).toBe(
+            true
+        );
+        // A metric value with a date is checkable, and is how phase 0 qualifies.
+        expect(evidenceIsCheckable('**yes**', '2026-09-12 — 3 journal rows')).toBe(true);
+        // A count with no date still fails: the date is not the optional half.
+        expect(evidenceIsCheckable('**yes**', '3 journal rows')).toBe(false);
+
+        // A phase that has NOT run is exempt: the rule is about claims, not rows.
+        expect(evidenceIsCheckable('**no, and cannot**', '`LegacyMatchVerdict` 0')).toBe(true);
+        expect(evidenceIsCheckable('**no**', 'blocked behind phase 3')).toBe(true);
+    });
+    it('finds all nineteen steps, so the next assertion has a population', () => {
+        expect(stepIds()).toHaveLength(19);
+    });
+
+    it('every step has an implementation note — criterion 9, enforced', () => {
+        // This is the criterion the roadmap actually failed. It was missing for
+        // 10 of 19 steps and nothing noticed, because "an implementation note in
+        // docs/implementation-notes/" was a sentence in a definition-of-done and
+        // nothing more. #3623 wrote the ten; this is what stops the eleventh.
+        //
+        // A convention would not hold here for the same reason the status column
+        // did not: the moment to write the note is the moment the work is
+        // finished and attention has moved on.
+        const missing = stepIds().filter((st) => notesForStep(st).length === 0);
+        expect(missing).toEqual([]);
+    });
+
+    it('reports a step with no note as missing, and does not invent one', () => {
+        // The negative control. `notesForStep` returning a non-empty list for
+        // everything -- a broken needle, a readFileSync that throws and is
+        // swallowed -- would make the assertion above vacuous, and a step id
+        // that cannot exist is the cheapest way to show it discriminates.
+        expect(notesForStep('9z')).toEqual([]);
+        // And a real one resolves, so the empty result above is about the step
+        // and not about the search being broken.
+        expect(notesForStep('6c').length).toBeGreaterThan(0);
     });
 });

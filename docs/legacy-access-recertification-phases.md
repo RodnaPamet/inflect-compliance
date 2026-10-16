@@ -206,9 +206,9 @@ metric value, with a date, so somebody who was not there can check it.
 | **0** — directory prerequisites | **yes** | `IdentityWriteJournal` row `APPLIED / DISABLE_ACCOUNT`, 2026-09-12 — the first real directory disable. 1 `IdentityAccountLink`, 3 journal rows. |
 | **1** — the pipe (`legacy-mcp`) | **yes, against the reference fixture** | #3592, 2026-10-15. Connection `cmv9kqroc0000f1s3a3wk9u56` in `inflect-ltd-mo94mi34`; `validateConnection` returned valid over public HTTPS with a Let's Encrypt certificate. The far end's own request log recorded `initialize`, `notifications/initialized` and `resources/read inflect-access://manifest` — so the handshake and manifest read are the SERVER'S evidence, not ours. Production now has 7 `IntegrationConnection` rows: `active-directory` 1, `entra-id` 2, `mcp-server` 3, `legacy-mcp` 1. |
 | **2** — mapping and ingestion | **yes, against the reference fixture** | #3592, 2026-10-15. `LegacyAccessSnapshot` `cmv9kvzqx000301s384fd9rm3` — `COMPLETE`, `rowCount` 7, `rowsReceived` 7, `unparsedDateCount` 0, no refusal, no overshared columns, `pulledAt` 13:32:22.744 → `completedAt` 13:32:23.175. `payloadHash` `f5f146d82b6f…bfb1d449` at algorithm version 1, over mapping v1 confirmed against `columnSetFingerprint` `59e625614052…b7d5c3f1c`. `LegacyAccount` 7, read across three cursor pages at `rowsPerPage: 3`. Job `629290`: `itemsScanned` 7, `itemsActioned` 7, 612 ms. |
-| **3** — deterministic reconciliation | **no — it RAN and refused, which is the finding** | `LegacyAccountResolution` 0. Job `629291` executed and refused `NO_FRESH_ROSTER`, recorded as `IntegrationExecution: legacy-mcp.reconcile / PARTIAL`. The gate is right — a stale roster "mass-produces false orphans and false leavers rather than degrading gently" — and it is unreachable, because **no HRIS sync has ever executed in production**: zero `IntegrationExecution` rows for `bamboohr`, `workday` or `orangehrm`, ever. #3594 is why that is not merely untried — `orangehrm` authenticated with a grant OrangeHRM 5.x does not implement — and #3595 is the same gap in `workday`, whose consent flow has no caller at all. |
-| **4** — assisted reconciliation and review | **no** | `LegacyIdentityAlias` 0. Blocked behind phase 3. |
-| **5** — recertification campaigns | **no** | `AccessReview` 0, `AccessReviewDecision` 0. |
+| **3** — deterministic reconciliation | **yes** | Tenant `proving-run` (`cmv9vs9va0000dns3i3e9sqav`), 2026-10-15 and again 2026-10-16. `LegacyAccountResolution` 28 across four runs — `LINKED/EMAIL_EXACT` 12, `LINKED/CONFIRMED_ALIAS` 1, `SUGGESTED/VETOED` 2, `UNMATCHED/NO_CANDIDATES` 13. Newest run is BullMQ job `632622`, 2026-10-16 10:30:26 UTC: `itemsScanned` 7, `itemsActioned` 7, 590 ms, logged `job processed successfully`. The earlier `NO_FRESH_ROSTER` refusal (job `629291`) was correct and is what the first HRIS sync removed. |
+| **4** — assisted reconciliation and review | **yes** | `LegacyIdentityAlias` `cmv9x7mta00006cs3cpks1nzl` — account `user4`, `MANUAL`, `ACTIVE`, `suspendedReason` null, created from a reviewer link on 2026-10-15 and still unsuspended after three subsequent reconciles. |
+| **5** — recertification campaigns | **yes** | `AccessReview` `cmv9x9bdf00008bs3209exiqn`, `OPEN`, 2026-10-15. 7 `AccessReviewConnectedDecision` rows — one per legacy account — of which 1 carries `CONFIRM` and 6 are undecided. `AccessReviewDecision` is 0, and that is the right table being empty: a legacy subject decision is a `ConnectedDecision`, which is why a count of the wrong table reads as "never ran". |
 | **6** — model adjudication | **no, and cannot** | `LegacyMatchVerdict` 0 for its whole life. Laya is retired, TypeSafe withdrawn, and `legacyMatchAiMode` can only be written `OFF`, so `runLegacyAdjudication` returns before reaching a model. |
 
 **"Against the reference fixture" is doing real work in rows 1 and 2.** It means
@@ -236,17 +236,38 @@ OrangeHRM has never offered. One probe against the real product settled it, and
 the probe only meant anything because it carried a control — an invented grant
 name, to prove that "unsupported" and "rejected" are different answers.
 
-*Measured 2026-10-15 against production. Counts only; no row contents.*
+*Measured 2026-10-16 against production. Counts and enum values only; no row contents.*
 
-**Six of seven phases have never run, and that is EXPECTED rather than broken:**
-nobody has connected a legacy application, and Phases 1–6 cannot execute without
-one. The pipeline is built, tested and waiting for its first real connection.
+**One of seven phases has never run, and it is the one that cannot.** Phases 0
+through 5 have now each executed in production against a real socket. Phase 6
+is unreachable by construction, not unexercised by accident — see its row.
+
+**What the fourth run proved, and why it was run at all.** #3613 was a standing
+reproduction *in production*: `user4` carried a reviewer's `CONFIRMED_ALIAS`
+signal and an `EMAIL_DOMAIN_CONFLICT` veto, and resolved `SUGGESTED/VETOED`
+every run — a human confirmation that the engine then overrode, forever. #3619
+made vetoes individually overridable. The re-run was therefore a **prediction
+with a discriminating outcome**: `EMAIL_DOMAIN_CONFLICT` is the overridable
+kind, so `user4` had to become `LINKED`, and had it stayed `SUGGESTED` the fix
+would have been wrong on real rows whatever its tests said. It resolved
+`LINKED/CONFIRMED_ALIAS`, **with the veto still recorded on the row.** That is
+the part worth keeping: the conflict is not erased by the override, so the
+evidence an auditor reads carries both the objection and the human decision
+that outranked it.
+
+The fix was confirmed present in the deployed bundle before the run, not
+inferred from the merge date — `VETO_OVERRIDABLE_BY_CONFIRMATION` 4 hits in
+`/app/dist/worker.mjs`, with a positive control (`EMAIL_DOMAIN_CONFLICT`, 2)
+and a negative one (an invented symbol, 0), because an image tag of `latest`
+says nothing about what is inside it.
 
 **What it means for a recertification claim.** "173 of 177" is true and says
 *built and tested*. It does not say *exercised*. An auditor asking "show me this
-working on real data" has one answer today — the 2026-09-12 disable — and that
-answer came from a proving run somebody chose to do, not from a criterion in
-this document. Keeping the two statements apart is the honest way to hold both.
+working on real data" now has six answers — the 2026-09-12 disable and Phases
+1–5 — and **every one of them came from a proving run somebody chose to do, not
+from a criterion in this document.** That is the finding, and it did not change
+when the rows went green: 177 criteria still require zero runs. Keeping the two
+statements apart is the honest way to hold both.
 
 **How to update this.** When a phase first runs, replace its row with the
 artefact that proves it. Do not tick anything on the strength of a test.
@@ -267,10 +288,13 @@ unticked on purpose: an unticked criterion with a reason attached tells an
 auditor something a tick never could — that the criterion was not satisfied,
 that its subject is gone, and that those are different things.
 
-**What is NOT closed by that** is the table above. The criteria are complete;
-six of seven phases have still never run. Those two statements are both true
-and neither substitutes for the other, which is the entire reason this section
-sits outside the 177.
+**What is NOT closed by that** is the table above — though what it is open
+about has changed. The criteria are complete, and Phases 0–5 have now run; what
+remains is that **they ran because somebody drove them by hand, against a
+fixture we author, in a tenant we created for the purpose.** No customer has
+connected a legacy application. Those statements are all true together, and
+neither the ticks nor the rows substitute for the other, which is the entire
+reason this section sits outside the 177.
 
 ---
 
