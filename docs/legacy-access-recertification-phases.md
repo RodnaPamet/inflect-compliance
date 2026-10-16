@@ -58,13 +58,29 @@ restate it.
 | 3b | The deterministic engine and the precision ratchet | #3286 |
 | 3c | Persist results and the crosswalk | #3338 |
 | 4a | Naming conventions and similarity | #3296 |
-| 4b | Review queue and alias revalidation | #3344 (part 1) |
+| 4b | Review queue and alias revalidation | #3344, and 6 more † |
 | 5a | Harden the existing access-review flows | #3272 |
-| 5b | Legacy recertification campaigns | — |
+| 5b | Legacy recertification campaigns | #3361, and 3 more † |
 | 6a | Register TypeSafe as a proposed sub-processor | #3246 |
 | 6b | Decision-model client and evaluation harness | #3288 |
-| 6c | Adjudication in the run, and the review lanes | — |
-| 6d | Turn it on | — |
+| 6c | Adjudication in the run, and the review lanes | #3373, and 10 more † |
+| 6d | Turn it on | #3402, and 10 more † |
+
+† **Delivered in parts, which the Definition of done does not permit.** It asks
+for "one branch, one pull request, driven to green and merged". These four took
+seven, four, eleven and eleven commits respectively, so there is no single number
+to put in this column — and until 2026-10-16 three of them held an em dash, which
+read as "no pull request" rather than "more than one".
+
+**That criterion is NOT met for these four steps and should not be ticked.** It is
+a real deviation rather than a formality: a step delivered in eleven parts is a
+different thing to review than one delivered in one, and an em dash is how that
+became invisible. Each step's implementation note lists its pull requests
+individually, so the count is checkable rather than asserted.
+
+The counts come from commit SUBJECTS carrying the step marker — both conventions
+the repository uses, `(Step 6c)` and `fix(6c):`. A `git log --grep` over commit
+BODIES is what produced the wrong first answer, sweeping in unrelated work.
 
 ## Roadmap (future direction)
 
