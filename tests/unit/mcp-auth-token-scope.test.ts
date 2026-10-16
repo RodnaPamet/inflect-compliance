@@ -74,7 +74,10 @@ jest.mock('@/lib/audit', () => ({
     appendAuditEntry: jest.fn().mockResolvedValue(undefined),
 }));
 
+import { createHmac } from 'node:crypto';
+
 import prisma from '@/lib/prisma';
+import { deriveSubkey } from '@/lib/security/encryption';
 import { appendAuditEntry } from '@/lib/audit';
 import { authorizeToolCall, type McpInvocation } from '@/lib/mcp/authorize';
 import {
@@ -400,5 +403,163 @@ describe('a revoked key is refused on the very next invocation', () => {
         const refusal = await refusalOf(() => authorizeToolCall(inv, TOOL_X));
         expect(refusal).toContain('revoked');
         expect(refusal).not.toContain('not granted');
+    });
+});
+
+/**
+ * EVERY WAY A TOKEN CAN BE REJECTED, AND THAT THEY ALL LOOK THE SAME (#3617).
+ *
+ * `verifyExchangedToken` had thirteen uncovered branches — the whole field
+ * validation after the signature check. The file's own header says the refusal
+ * is deliberately coarse: "the reason is available to the caller through the
+ * thrown message only in the coarse form below", because a verifier that said
+ * WHICH check failed would be a format oracle for anyone probing it.
+ *
+ * So the assertions come in pairs: each malformation is refused, and every
+ * refusal carries the IDENTICAL message. The second half is the security
+ * property, and it is the one a well-meaning change breaks — adding
+ * `(bad audience)` to one message would be an improvement in every respect
+ * except the one that matters.
+ *
+ * ── THE FORGERY HAS TO BE VALID, OR NONE OF THIS MEANS ANYTHING ────────────
+ *
+ * Testing a field check needs a token whose SIGNATURE is good and whose payload
+ * is bad. The signing key is HKDF-derived from the master KEK under a purpose
+ * string, so a test can derive the same key — and the first case below mints a
+ * token with it and asserts verify ACCEPTS it. Without that control, a wrong
+ * key would make every case here pass at the signature check instead of the
+ * field check, and the suite would be green for the wrong reason.
+ */
+describe('a token is rejected uniformly, whatever is wrong with it', () => {
+    /** The same purpose string `token-exchange.ts` signs under. */
+    const SIGNING_PURPOSE = 'inflect-mcp-token-exchange-v1';
+    const b64u = (b: Buffer) => b.toString('base64url');
+    const signAs = (encoded: string) =>
+        b64u(createHmac('sha256', deriveSubkey(SIGNING_PURPOSE)).update(encoded).digest());
+
+    /** A token carrying `payload`, signed with a key derived here. */
+    const forge = (payload: unknown): string => {
+        const encoded = b64u(Buffer.from(JSON.stringify(payload), 'utf8'));
+        return `${MCP_EXCHANGED_TOKEN_PREFIX}${encoded}.${signAs(encoded)}`;
+    };
+
+    /**
+     * A key id of this block's own, NOT the suite's `API_KEY_ID`.
+     *
+     * Two reasons, and the second is the load-bearing one. These payloads are
+     * forged rather than minted, so they need any non-empty string and gain
+     * nothing from the real id. And CodeQL reads a value named `API_KEY_ID`
+     * flowing into an HMAC as a password being hashed with insufficient
+     * computational effort — which is wrong here (this is a token signature over
+     * a payload, not a password hash) but the flagged dataflow is real and worth
+     * not having. A literal removes the misleading taint path rather than
+     * suppressing the finding.
+     */
+    const FORGED_KID = 'kid-under-test';
+
+    const validPayload = () => ({
+        v: 1,
+        tid: TENANT,
+        kid: FORGED_KID,
+        aid: 'agent-1',
+        aud: ['list_risks'],
+        res: 'urn:inflect:mcp',
+        iat: Math.floor(T0.getTime() / 1000),
+        exp: Math.floor(T0.getTime() / 1000) + 300,
+        jti: 'test-jti',
+    });
+
+    it('THE CONTROL — a token forged with a key derived here is ACCEPTED', () => {
+        // If this fails, every rejection below is a signature rejection wearing
+        // a field-check costume, and the whole describe is worthless.
+        const claims = verifyExchangedToken(forge(validPayload()), { now: () => T0 });
+        expect(claims.tenantId).toBe(TENANT);
+        expect(claims.apiKeyId).toBe(FORGED_KID);
+        expect(claims.audience).toEqual(['list_risks']);
+    });
+
+    const MALFORMED: ReadonlyArray<readonly [string, unknown]> = [
+        ['a payload version it does not speak', { ...validPayload(), v: 2 }],
+        ['a different resource', { ...validPayload(), res: 'urn:somebody:else' }],
+        ['a non-string tenant id', { ...validPayload(), tid: 42 }],
+        ['an empty tenant id', { ...validPayload(), tid: '' }],
+        ['a non-string key id', { ...validPayload(), kid: null }],
+        ['an empty key id', { ...validPayload(), kid: '' }],
+        ['a non-array audience', { ...validPayload(), aud: 'list_risks' }],
+        ['an EMPTY audience', { ...validPayload(), aud: [] }],
+        ['an audience with a non-string entry', { ...validPayload(), aud: ['ok', 7] }],
+        ['an audience with an empty entry', { ...validPayload(), aud: ['ok', ''] }],
+        ['a non-finite exp', { ...validPayload(), exp: Infinity }],
+        ['a non-finite iat', { ...validPayload(), iat: Number.NaN }],
+    ];
+
+    it.each(MALFORMED)('refuses %s', (_label, payload) => {
+        expect(() => verifyExchangedToken(forge(payload), { now: () => T0 })).toThrow(
+            /invalid or has expired/,
+        );
+    });
+
+    it.each([
+        ['a raw API key, with no exchanged-token prefix', 'ifk_not_an_exchanged_token'],
+        ['a prefix and nothing else', MCP_EXCHANGED_TOKEN_PREFIX],
+        ['no separator at all', `${MCP_EXCHANGED_TOKEN_PREFIX}onlypayload`],
+        ['a separator at the very start', `${MCP_EXCHANGED_TOKEN_PREFIX}.signature`],
+        ['a separator at the very end', `${MCP_EXCHANGED_TOKEN_PREFIX}payload.`],
+        ['a payload that is not base64url JSON', `${MCP_EXCHANGED_TOKEN_PREFIX}!!!not-base64!!!.sig`],
+    ] as const)('refuses %s', (_label, token) => {
+        expect(() => verifyExchangedToken(token, { now: () => T0 })).toThrow(
+            /invalid or has expired/,
+        );
+    });
+
+    it('refuses a signature of the WRONG LENGTH without throwing from the comparator', () => {
+        // The length check exists because `timingSafeEqual` THROWS on a length
+        // mismatch rather than returning false. Without it, a short signature
+        // would surface as an unhandled TypeError instead of a 401 — a different
+        // status, and a different thing in the logs.
+        const encoded = b64u(Buffer.from(JSON.stringify(validPayload()), 'utf8'));
+        expect(() =>
+            verifyExchangedToken(`${MCP_EXCHANGED_TOKEN_PREFIX}${encoded}.short`, {
+                now: () => T0,
+            }),
+        ).toThrow(/invalid or has expired/);
+    });
+
+    it('refuses an EXPIRED token, and expiry is exclusive at the boundary', () => {
+        const payload = validPayload();
+        const atExp = new Date(payload.exp * 1000);
+        // Exactly at `exp` the token is spent — "the alternative admits one
+        // extra call at exactly the wrong second".
+        expect(() => verifyExchangedToken(forge(payload), { now: () => atExp })).toThrow(
+            /invalid or has expired/,
+        );
+        // And one second before, it still works — so the test above is about the
+        // boundary and not about the token being broken.
+        const justBefore = new Date(atExp.getTime() - 1_000);
+        expect(verifyExchangedToken(forge(payload), { now: () => justBefore }).tenantId).toBe(
+            TENANT,
+        );
+    });
+
+    it('gives EVERY rejection the identical message — no oracle', () => {
+        // The property the header promises. Collected rather than asserted
+        // one-by-one, so a single divergent message fails here with the set
+        // printed.
+        const tokens = [
+            'ifk_not_an_exchanged_token',
+            `${MCP_EXCHANGED_TOKEN_PREFIX}onlypayload`,
+            `${MCP_EXCHANGED_TOKEN_PREFIX}!!!not-base64!!!.sig`,
+            ...MALFORMED.map(([, p]) => forge(p)),
+        ];
+        const messages = new Set<string>();
+        for (const t of tokens) {
+            try {
+                verifyExchangedToken(t, { now: () => T0 });
+            } catch (e) {
+                messages.add((e as Error).message);
+            }
+        }
+        // ONE message across every failure mode, structural and semantic alike.
+        expect([...messages]).toEqual(['MCP token is invalid or has expired.']);
     });
 });
