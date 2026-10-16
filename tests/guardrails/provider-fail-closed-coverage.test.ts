@@ -34,6 +34,41 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
  * can't point a provider at an unrelated test). Every test also has to carry a
  * literal ERROR / NOT_APPLICABLE expectation (checked generically below).
  */
+const DEFAULT_MARKER = /'(ERROR|NOT_APPLICABLE)'/;
+
+/**
+ * Per-provider override for the fail-closed EVIDENCE, where the surface is not
+ * a scheduled check (#3629).
+ *
+ * `ERROR` / `NOT_APPLICABLE` is the vocabulary of a check engine. A provider
+ * with no check has a fail-closed surface all the same — a pull that refuses, a
+ * validation that will not manufacture a pass — and it may speak a different
+ * vocabulary entirely.
+ *
+ * The two overrides are not equally necessary, and saying so matters more than
+ * a tidier comment:
+ *
+ *   - `mcp-server` NEEDS one. Its test contains the check vocabulary ZERO
+ *     times — measured — so the default regex would reject a file that proves
+ *     the provider fails closed perfectly well. Without the override the only
+ *     options are a false mapping or a silent exemption.
+ *   - `legacy-mcp` does NOT need one. Its test asserts
+ *     `status).toBe('NOT_APPLICABLE')` twice, so the default would pass. The
+ *     override is here because `refusalReason` is the STRONGER property: the
+ *     pull refused AND recorded why. A `NOT_APPLICABLE` somewhere in a 606-line
+ *     file is weaker evidence than a named refusal.
+ *
+ * Each marker names a REFUSAL assertion, not merely a falsy one: `.valid` being
+ * false, or a `refusalReason` being set. `toBe(false)` alone would match any
+ * boolean in the file.
+ */
+const MARKERS: Readonly<Record<string, RegExp>> = {
+    // The pull refuses and records WHY: `expect(result.refusalReason).toBe(…)`.
+    'legacy-mcp': /\.refusalReason\)\.toBe\(/,
+    // Live validation refuses: `expect(r.valid).toBe(false)`.
+    'mcp-server': /\.valid\)\.toBe\(false\)/,
+};
+
 const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: string }>> = {
     // Cloud posture — all three share the Powerpipe collector; H2 proves a
     // non-zero exit / empty output / missing CLI → ERROR.
@@ -70,9 +105,31 @@ const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: stri
     servicenow: { test: 'tests/unit/servicenow-checks.test.ts', needle: 'change_approved_before_implementation' },
     // GitHub — runCheck returns ERROR when the API call fails.
     github: { test: 'tests/unit/github-integration.test.ts', needle: 'ERROR' },
+    // `legacy-mcp` has NO check surface at all: its fail-closed surface is the
+    // PULL. The design document predicted this entry -- "extended to enumerate
+    // the pull, since sync-only providers escape it today" -- and it was never
+    // added, so the provider the whole recertification roadmap delivers was the
+    // one with no fail-closed obligation. A denylisted overshared column
+    // refuses the pull and stores nothing; the refusal is `PARTIAL` carrying a
+    // named `refusalReason`, never a score over the rows it happened to see.
+    'legacy-mcp': {
+        test: 'tests/integration/legacy-access-pull.test.ts',
+        needle: 'OVERSHARED_DENIED_COLUMN',
+    },
+    // `mcp-server` is the operator's own server and deliberately not a
+    // `ScheduledCheckProvider` (`supportedChecks` is empty, and its docblock
+    // says so in capitals). Its fail-closed surface is live validation, which
+    // refuses before reaching the network on a missing URL or a partly
+    // configured credential -- and, the load-bearing one, "a successful
+    // validation confers nothing".
+    'mcp-server': {
+        test: 'tests/unit/mcp-server-provider.test.ts',
+        needle: 'McpServerProvider',
+    },
 };
 
-const FAIL_CLOSED_MARKER = /'(ERROR|NOT_APPLICABLE)'/;
+/** The evidence regex for a provider: its override, else the check vocabulary. */
+const markerFor = (id: string): RegExp => MARKERS[id] ?? DEFAULT_MARKER;
 
 describe('Provider fail-closed coverage forward-lock', () => {
     /**
@@ -93,7 +150,6 @@ describe('Provider fail-closed coverage forward-lock', () => {
      */
     const covered = registry
         .listProviders()
-        .filter((p) => isScheduledCheckProvider(p) || isHrisSyncProvider(p))
         .map((p) => p.id)
         .sort();
 
@@ -128,7 +184,11 @@ describe('Provider fail-closed coverage forward-lock', () => {
             if (!exists(test)) { problems.push(`${id}: missing test ${test}`); continue; }
             const src = read(test);
             if (!src.includes(needle)) problems.push(`${id}: ${test} does not exercise "${needle}"`);
-            if (!FAIL_CLOSED_MARKER.test(src)) problems.push(`${id}: ${test} has no ERROR/NOT_APPLICABLE expectation`);
+            if (!markerFor(id).test(src)) {
+                problems.push(
+                    `${id}: ${test} has no fail-closed expectation matching ${String(markerFor(id))}`,
+                );
+            }
         }
         expect(problems).toEqual([]);
     });
