@@ -46,7 +46,7 @@ import {
 import '../integrations/bootstrap'; // populate the provider registry in THIS module graph (see usecases/integrations)
 import { registry } from '../integrations/registry';
 import { isHrisSyncProvider, isHrisProviderId, type HrisSyncProvider, type NormalizedEmployee } from '../integrations/providers/hris';
-import { stripInvisible } from '@/lib/text/invisible-chars';
+import { normaliseUntrustedSyncText } from '@/lib/text/invisible-chars';
 
 function makeSystemCtx(tenantId: string): RequestContext {
     return buildSystemContext({ tenantId, job: 'hris-sync' });
@@ -344,14 +344,15 @@ async function raiseRoleChangeRecertification(
  * silent behaviour change to a join key. `department` and `jobTitle` predate
  * Step 0c and are left to their own step.
  */
-const HRIS_TEXT_MAX = 256;
-const HRIS_C0_C1 = /[\x00-\x1F\x7F-\x9F]/g;
-
+/**
+ * Delegates to the shared normaliser (#3278). The composition this docblock
+ * argues for is right and is now in one place: `identity-sync.ts` hand-rolled a
+ * rival list and it diverged — it was missing U+00AD and the bidi ISOLATES
+ * U+2066..U+2069, while this seam was missing U+2028/U+2029 and
+ * U+2061..U+2064. Neither list was a superset of the other.
+ */
 export function normaliseHrisText(value: string | null | undefined): string | null {
-    if (value == null) return null;
-    const stripped = stripInvisible(value).replace(HRIS_C0_C1, '').trim();
-    if (stripped === '') return null;
-    return stripped.slice(0, HRIS_TEXT_MAX);
+    return normaliseUntrustedSyncText(value);
 }
 
 export async function runHrisSync(input: {
