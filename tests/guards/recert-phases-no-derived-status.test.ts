@@ -46,6 +46,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { repoFiles } from '../helpers/repo-files';
+
 const DOC = path.resolve(
     __dirname,
     '../../docs/legacy-access-recertification-phases.md'
@@ -141,6 +143,31 @@ function evidenceIsCheckable(runCell: string, evidenceCell: string): boolean {
     if (!/\byes\b/i.test(runCell)) return true;
     if (!HAS_DATE.test(evidenceCell)) return false;
     return HAS_ID.test(evidenceCell) || HAS_METRIC.test(evidenceCell);
+}
+
+/**
+ * Every step the document defines, from its `#### Step Xx` headings.
+ */
+function stepIds(): string[] {
+    return text
+        .split('\n')
+        .map((l) => /^#### Step ([0-9][a-z])\b/.exec(l))
+        .filter((m): m is RegExpExecArray => m !== null)
+        .map((m) => m[1]);
+}
+
+/**
+ * The implementation notes declaring themselves as a given step's, by the
+ * convention every one of the nineteen uses: `(Step 4b)` in the note's text.
+ *
+ * Population from git (`repoFiles`), not a directory walk, so an untracked
+ * scratch file in that subtree cannot satisfy the criterion.
+ */
+function notesForStep(step: string): string[] {
+    const needle = `(Step ${step})`;
+    return repoFiles({ under: 'docs/implementation-notes', extensions: ['.md'] })
+        .filter((f) => fs.readFileSync(f, 'utf8').includes(needle))
+        .map((f) => path.basename(f));
 }
 
 describe('the recert phases table stores no derived status', () => {
@@ -271,5 +298,32 @@ describe('the recert phases table stores no derived status', () => {
         // A phase that has NOT run is exempt: the rule is about claims, not rows.
         expect(evidenceIsCheckable('**no, and cannot**', '`LegacyMatchVerdict` 0')).toBe(true);
         expect(evidenceIsCheckable('**no**', 'blocked behind phase 3')).toBe(true);
+    });
+    it('finds all nineteen steps, so the next assertion has a population', () => {
+        expect(stepIds()).toHaveLength(19);
+    });
+
+    it('every step has an implementation note — criterion 9, enforced', () => {
+        // This is the criterion the roadmap actually failed. It was missing for
+        // 10 of 19 steps and nothing noticed, because "an implementation note in
+        // docs/implementation-notes/" was a sentence in a definition-of-done and
+        // nothing more. #3623 wrote the ten; this is what stops the eleventh.
+        //
+        // A convention would not hold here for the same reason the status column
+        // did not: the moment to write the note is the moment the work is
+        // finished and attention has moved on.
+        const missing = stepIds().filter((st) => notesForStep(st).length === 0);
+        expect(missing).toEqual([]);
+    });
+
+    it('reports a step with no note as missing, and does not invent one', () => {
+        // The negative control. `notesForStep` returning a non-empty list for
+        // everything -- a broken needle, a readFileSync that throws and is
+        // swallowed -- would make the assertion above vacuous, and a step id
+        // that cannot exist is the cheapest way to show it discriminates.
+        expect(notesForStep('9z')).toEqual([]);
+        // And a real one resolves, so the empty result above is about the step
+        // and not about the search being broken.
+        expect(notesForStep('6c').length).toBeGreaterThan(0);
     });
 });
