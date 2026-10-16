@@ -43,6 +43,29 @@ import { repoFiles, repoRelative } from '../helpers/repo-files';
 import { codeOf } from '../helpers/source-blocks';
 import { dispatchJobId, isValidBullMqJobId, scheduledJobId } from '@/app-layer/jobs/fan-out';
 
+/**
+ * What to do the day the carve-out disappears, carried IN the failure (#3557).
+ *
+ * A guard that fires without naming its remedy spends the reader's time at the
+ * worst moment — every scheduled dispatch is throwing `Custom Id cannot contain
+ * :` and reporting `dispatched: 0, failed: N`, which is how #3554 stayed
+ * invisible for five months.
+ *
+ * The transition cost is MEASURED, not assumed. `dispatchJobId` buckets on
+ * `Math.floor(now / bucketMs)` and every call site passes `DAILY_BUCKET_MS`, so
+ * changing the format can duplicate at most ONE DAY of dispatch per (job, key).
+ * Every executor behind those ten sites is either lock-and-lease protected
+ * (`identity-sync`, `hris-sync`, `sharepoint-delta-sync`) or idempotent at the
+ * domain level (the joiner returns `ACCOUNT_OBSERVED` for a link a COMPLETE
+ * sync already re-observed), so the duplicate is a no-op run rather than a
+ * double action.
+ */
+const REMEDY_WHEN_THE_CARVE_OUT_GOES =
+    'BullMQ dropped the three-segment carve-out. Switch the ten dispatchJobId ' +
+    'call sites to a colon-free id (`${jobName}-${key}-${bucketStart}`), as ' +
+    'scheduledJobId already does, and update this needle. See #3557 — the id ' +
+    'is an idempotency key, so expect one day of duplicate (no-op) dispatch.';
+
 describe('our predicate still matches the installed BullMQ (#3554)', () => {
     // ASKED OF NODE, NOT SPELLED. The first cut of this file joined the repo
     // root to a literal `node_modules/...` path, and
@@ -107,17 +130,35 @@ describe('our predicate still matches the installed BullMQ (#3554)', () => {
         // The shape, not the formatting: minified or re-emitted output changes
         // whitespace and temp-variable names, so the assertion names the two
         // operations that decide the rule.
-        expect(src).toContain("'Custom Id cannot contain :'");
-        expect(src).toMatch(/jobId\.includes\(':'\)/);
+        //
         // THE THREE IS THE WHOLE RULE. If BullMQ ever bans colons outright —
-        // which its error message reads as though it intends to — this needle
-        // goes and this test fails, which is the notice we want. `dispatchJobId`
+        // which its error message reads as though it intends to — these needles
+        // go and this test fails, which is the notice we want. `dispatchJobId`
         // emits exactly two colons and would stop working that day.
         // The `)` in the middle is TypeScript's optional-chaining downlevel
         // emit (`(_e = …?.jobId) === null ? void 0 : _e?.split(':').length) !== 3`),
         // not formatting slack — the needle tolerates it rather than
         // pretending the shipped text is the authored text.
-        expect(src).toMatch(/split\(':'\)\.length\)?\s*!==\s*3/);
+        //
+        // ASSERTED AS BOOLEANS, NOT `expect(src).toMatch(…)` (#3557). Matching
+        // against `src` puts the WHOLE MINIFIED LIBRARY in the failure's
+        // "Received" — hundreds of kilobytes of one-line JS — and says nothing
+        // about what to do. Verified by simulating the future: removing the
+        // carve-out from the installed library failed this test with the library
+        // source as its entire output. The diff below names the remedy instead,
+        // which is the same complaint #3274 makes about a ratchet that reports a
+        // breach without the fix the repo actually uses.
+        expect({
+            errorMessage: src.includes("'Custom Id cannot contain :'"),
+            colonCheck: /jobId\.includes\(':'\)/.test(src),
+            threeSegmentCarveOut: /split\(':'\)\.length\)?\s*!==\s*3/.test(src),
+            remedy: REMEDY_WHEN_THE_CARVE_OUT_GOES,
+        }).toEqual({
+            errorMessage: true,
+            colonCheck: true,
+            threeSegmentCarveOut: true,
+            remedy: REMEDY_WHEN_THE_CARVE_OUT_GOES,
+        });
     });
 
     it('agrees with the library on every id shape we can construct', () => {
