@@ -74,6 +74,128 @@ describe('PersonnelProvider', () => {
         expect(r.status).toBe('FAILED');
         expect(provider.supportedChecks).toContain('offboarded_access_removed');
     });
+
+    /** The `CheckInput` the tests below pass; only the check type varies. */
+    const inputFor = (checkType: string) => ({
+        automationKey: `personnel.${checkType}`,
+        parsed: { provider: 'personnel', checkType, raw: '' },
+        tenantId: 't1',
+        connectionConfig: {},
+        triggeredBy: 'scheduled' as const,
+    });
+
+    /**
+     * ═══ runCheck NEVER MANUFACTURES A SIGNAL (#3647) ═══
+     *
+     * The test above injects `deps.load`, as every test here did, so no test
+     * had seen this provider FAIL — the `catch` arm and the
+     * `mapResultToEvidence` suppression were both entirely unexecuted.
+     *
+     * They matter most on this provider of the three: `offboarded_access_removed`
+     * is the check that notices a TERMINATED employee still holding an ACTIVE
+     * account. A load failure reported as anything but ERROR is that check
+     * answering "no standing access" because it could not look.
+     */
+    describe('a load that throws is an ERROR, never a verdict', () => {
+        it('reports ERROR — not PASSED, and not NOT_APPLICABLE either', async () => {
+            // NOT_APPLICABLE is the subtler wrong answer: it reads as
+            // "assessed, does not apply" rather than "never assessed".
+            const provider = new PersonnelProvider({
+                load: async () => {
+                    throw new Error('employee read failed');
+                },
+                now: () => NOW,
+            });
+
+            const r = await provider.runCheck(inputFor('offboarded_access_removed'));
+
+            expect(r.status).toBe('ERROR');
+            expect(r.status).not.toBe('PASSED');
+            expect(r.status).not.toBe('NOT_APPLICABLE');
+            expect(r.status).not.toBe('FAILED');
+        });
+
+        it('carries the cause in errorMessage, and no join details', async () => {
+            const provider = new PersonnelProvider({
+                load: async () => {
+                    throw new Error('employee read failed');
+                },
+            });
+
+            const r = await provider.runCheck(inputFor('offboarded_access_removed'));
+
+            expect(r.errorMessage).toBe('employee read failed');
+            // An ERROR has no population, so it must not carry counts a reader
+            // would take for a measurement.
+            expect(r.details).toEqual({});
+        });
+
+        it('stringifies a throw that is not an Error', async () => {
+            const provider = new PersonnelProvider({
+                load: async () => {
+                    throw 'raw string failure';
+                },
+            });
+
+            const r = await provider.runCheck(inputFor('offboarded_access_removed'));
+
+            expect(r.status).toBe('ERROR');
+            expect(r.errorMessage).toBe('raw string failure');
+        });
+    });
+
+    describe('mapResultToEvidence suppresses an ERROR', () => {
+        it('returns null, so a failed run files no evidence', async () => {
+            // Evidence is what an auditor reads. Filing a row for an errored
+            // check puts a document in the trail asserting a posture nobody
+            // measured.
+            const evidence = new PersonnelProvider().mapResultToEvidence(
+                inputFor('offboarded_access_removed'),
+                { status: 'ERROR', summary: 'Personnel check failed to run.', details: {}, durationMs: 1, errorMessage: 'boom' },
+            );
+
+            expect(evidence).toBeNull();
+        });
+
+        it('and files it for a real verdict — the positive control', async () => {
+            // Without this, the assertion above is satisfied by a function
+            // returning null for everything, which would stop all personnel
+            // evidence rather than only the errored runs.
+            const evidence = new PersonnelProvider().mapResultToEvidence(
+                inputFor('offboarded_access_removed'),
+                { status: 'PASSED', summary: 'No standing access for departed staff.', details: {}, durationMs: 1 },
+            );
+
+            expect(evidence).not.toBeNull();
+            expect(evidence?.category).toBe('personnel:offboarded_access_removed');
+            expect(evidence?.content).toBe('No standing access for departed staff.');
+        });
+    });
+
+    /*
+     * THE PRODUCTION LOAD PATH IS NOT REACHABLE FROM THIS SUITE, and that is a
+     * property of the suite rather than of the provider. Two arms stay
+     * uncovered here — `if (this.deps.load)`'s else, and the `new Date()` in
+     * `this.deps.now ? ... : new Date()`.
+     *
+     * Measured, not assumed: a `new PersonnelProvider().runCheck(...)` with no
+     * injected loader reaches the real `@/lib/prisma` client and fails with
+     * `logFn is not a function`, because this file mocks
+     * `@/lib/observability/logger` as `{ logger: { info, warn, error } }` and
+     * the client wants more of that module than the three methods the rest of
+     * this suite needs. The provider's `catch` then turns it into an ERROR, so
+     * the symptom is an unexplained ERROR rather than a module failure.
+     *
+     * Widening that mock to satisfy the client would change a double the other
+     * ~20 tests in this file share, to execute two arms. `device.test.ts` gets
+     * this coverage instead, because that suite mocks `@/lib/prisma` itself and
+     * so never constructs a real client — see its "with no injected loader"
+     * block, which asserts the tenant scope and the 10,000-row clamp.
+     *
+     * Do not re-add a no-loader test here without first giving the logger mock
+     * the surface the real client needs; a version that merely asserts "not
+     * FAILED" would pass on the caught error and prove nothing.
+     */
 });
 
 describe('runHrisSync', () => {
