@@ -25,6 +25,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { repoFiles } from '../helpers/repo-files';
 import { codeOf } from '../helpers/source-blocks';
 
 const DESIGN = 'docs/legacy-access-recertification-design.md';
@@ -113,6 +114,65 @@ function regions(): ReadonlyArray<{ heading: string; start: number; end: number 
         });
     }
     return out;
+}
+
+/**
+ * The residency bullet in `### Guards that do not yet exist`, as its lines.
+ *
+ * That list has gone stale TWICE, in opposite directions, with nothing failing
+ * (#3629): #3480 removed a bullet claiming a gap that was already closed, and
+ * #3628 corrected this one, which said "only one AI feature honours
+ * `aiResidency`" when four did. The second kind is criterion 11 failing
+ * silently — work was made true and the Roadmap was not updated.
+ */
+function residencyBullet(): string[] {
+    const start = designLines.findIndex((l) =>
+        /model-calling AI features do not honour `aiResidency`/.test(l),
+    );
+    if (start < 0) return [];
+    const out: string[] = [designLines[start]];
+    for (let i = start + 1; i < designLines.length; i += 1) {
+        // The bullet owns its indented continuation lines and blank lines; the
+        // next bullet, heading, or unindented prose ends it.
+        if (/^\S/.test(designLines[i])) break;
+        out.push(designLines[i]);
+    }
+    return out;
+}
+
+/** The `src/….ts` paths that bullet cites. */
+function citedResidencyPaths(): string[] {
+    const text = residencyBullet().join('\n');
+    return [...new Set(Array.from(text.matchAll(/`(src\/[^`]+\.ts)`/g), (m) => m[1]))].sort();
+}
+
+/**
+ * The file that VALIDATES the setting rather than honouring it in a feature —
+ * it refuses `EXTERNAL` under `LOCAL_ONLY`. Exempt BY NAME so the exemption is
+ * visible, rather than left to a regex that happens not to reach it.
+ */
+const RESIDENCY_VALIDATOR = 'src/app-layer/usecases/tenant-security-settings.ts';
+
+/**
+ * Code that BRANCHES on residency.
+ *
+ * Not "mentions `LOCAL_ONLY`" — 9 files do that in a type, an enum or a
+ * comment. And deliberately not "a `LOCAL_ONLY` comparison followed by a line
+ * STARTING with return/throw", which is what I tried first: it missed
+ * `flue/model-selection.ts`, whose refusal is the guard-clause shape
+ * `if (!baseUrl) return …`, and it picked up the settings validator instead.
+ * A predicate that is wrong in both directions at once is worse than none,
+ * because its output still looks like a measurement.
+ */
+const BRANCHES_ON_RESIDENCY =
+    /(?:if|while)\s*\(.*===?\s*'LOCAL_ONLY'|===?\s*'LOCAL_ONLY'\s*\?|case\s*'LOCAL_ONLY'/;
+
+/** Repo-relative paths of every file under `src/` that branches on residency. */
+function residencyBranchers(): string[] {
+    return repoFiles({ under: 'src', extensions: ['.ts'] })
+        .filter((f) => BRANCHES_ON_RESIDENCY.test(codeOf(fs.readFileSync(f, 'utf-8'))))
+        .map((f) => path.relative(ROOT, f).split(path.sep).join('/'))
+        .sort();
 }
 
 describe('"Current state (true today)" stays true (#3579)', () => {
@@ -222,5 +282,68 @@ describe('"Current state (true today)" stays true (#3579)', () => {
         // under a heading that says "true today".
         const retiredAt = designLines.findIndex((l) => /^## Retired/.test(l));
         expect(retiredAt).toBeGreaterThan(currentState.end - 1);
+    });
+});
+
+describe('the roadmap\'s residency bullet names real honourers (#3629)', () => {
+    it('finds the bullet and the paths it cites', () => {
+        // The population, asserted. A reworded bullet that this matcher stopped
+        // finding would make every assertion below pass over nothing — which is
+        // precisely how the claim went stale twice without failing.
+        expect(residencyBullet().length).toBeGreaterThan(5);
+        expect(citedResidencyPaths().length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('every file it cites really does branch on residency', () => {
+        // Direction one: the bullet must not credit a file whose gate was
+        // removed. This is #3480's direction -- a claim about code that is no
+        // longer true -- applied to the honourers instead of the gaps.
+        const branchers = new Set(residencyBranchers());
+        const citedButNotBranching = citedResidencyPaths().filter((p) => !branchers.has(p));
+        expect(citedButNotBranching).toEqual([]);
+    });
+
+    it('every file that branches on residency is accounted for in the bullet', () => {
+        // Direction two, and the one that actually failed: a fifth feature
+        // starts honouring residency, the bullet keeps its old count, and
+        // nothing anywhere goes red.
+        const cited = new Set(citedResidencyPaths());
+        const unaccounted = residencyBranchers().filter((p) => !cited.has(p));
+        expect(unaccounted).toEqual([]);
+    });
+
+    it('the validator is cited but is not claimed as a feature honourer', () => {
+        // It must be IN the bullet -- otherwise the assertion above fails on it
+        // forever -- and the bullet must say what it actually does, so a reader
+        // does not count five honourers where there are four.
+        expect(residencyBranchers()).toContain(RESIDENCY_VALIDATOR);
+        expect(citedResidencyPaths()).toContain(RESIDENCY_VALIDATOR);
+        expect(residencyBullet().join('\n')).toMatch(/VALIDATES the setting/);
+    });
+
+    it('the predicate reads code, not comments, and sees a guard clause', () => {
+        // The negative control, driving the REAL regex through the REAL comment
+        // masker. Without it, a predicate that matched everything would make
+        // the two directions above agree with each other and with nothing else.
+        expect(BRANCHES_ON_RESIDENCY.test(codeOf("// if (x === 'LOCAL_ONLY') return;\n"))).toBe(
+            false,
+        );
+        expect(BRANCHES_ON_RESIDENCY.test(codeOf("/* case 'LOCAL_ONLY': */\n"))).toBe(false);
+        expect(BRANCHES_ON_RESIDENCY.test(codeOf("type R = 'EXTERNAL' | 'LOCAL_ONLY';\n"))).toBe(
+            false,
+        );
+
+        // And the shapes it must see, including the guard clause my first
+        // predicate missed -- the reason `flue/model-selection.ts` read as
+        // not honouring residency when it does.
+        expect(
+            BRANCHES_ON_RESIDENCY.test(codeOf("if (sel?.residency === 'LOCAL_ONLY') {\n")),
+        ).toBe(true);
+        expect(
+            BRANCHES_ON_RESIDENCY.test(
+                codeOf("if (r === 'LOCAL_ONLY') { if (!u) return bad; return ok; }\n"),
+            ),
+        ).toBe(true);
+        expect(BRANCHES_ON_RESIDENCY.test(codeOf("case 'LOCAL_ONLY':\n"))).toBe(true);
     });
 });

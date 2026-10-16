@@ -186,12 +186,29 @@ assertion.
   construct an external provider without consulting residency.
 
   > **This bullet said "only one AI feature honours `aiResidency`" until
-  > 2026-10-16.** Four do: risk suggestions (pinned by
-  > `tests/guards/ai-residency-enforcement.test.ts`), identity matching, which
-  > returns before constructing anything external under `LOCAL_ONLY`
-  > (`src/app-layer/ai/identity-match/index.ts`), legacy adjudication, which caps
-  > the mode at `LOCAL_ONLY` (`src/lib/legacy-access/adjudication-mode.ts`), and
-  > Flue's model selection. The last two arrived with steps 6c and 3b and the
+  > 2026-10-16.** Four do, and each is named below with the file that BRANCHES
+  > on residency, so the claim can be checked instead of believed —
+  > `tests/guards/current-state-stays-true.test.ts` checks it in both
+  > directions:
+  >
+  > - risk suggestions — `src/app-layer/ai/risk-assessment/index.ts`, also
+  >   pinned by `tests/guards/ai-residency-enforcement.test.ts`
+  > - identity matching, which returns before constructing anything external
+  >   under `LOCAL_ONLY` — `src/app-layer/ai/identity-match/index.ts`
+  > - legacy adjudication, which caps the mode at `LOCAL_ONLY` —
+  >   `src/lib/legacy-access/adjudication-mode.ts`
+  > - Flue's model selection, whose `LOCAL_ONLY` branch short-circuits before
+  >   anything external is considered —
+  >   `src/lib/agentic/flue/model-selection.ts`
+  >
+  > A fifth file branches on residency and is deliberately NOT in that list:
+  > `src/app-layer/usecases/tenant-security-settings.ts` VALIDATES the setting —
+  > it refuses `EXTERNAL` under `LOCAL_ONLY` — rather than honouring it inside a
+  > feature, which is a different role. The guard exempts it BY NAME, so the
+  > exemption is visible rather than hidden in a regex that happens not to reach
+  > it.
+  >
+  > The last two features arrived with steps 6c and 3b and the
   > bullet was not updated, which is criterion 11 unmet for those steps — the
   > same silent-staleness this section suffered in #3480, in the opposite
   > direction: that bullet claimed a gap that was closed, this one undercounted
