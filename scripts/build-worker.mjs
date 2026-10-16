@@ -28,11 +28,50 @@ const common = {
     // Resolves the `@/*` and `@dub/*` path aliases.
     tsconfig: 'tsconfig.json',
     logLevel: 'info',
-    // esbuild emits `import.meta` helpers etc. for ESM; banner keeps
-    // CJS-style `require`/`__dirname` working for any external that
-    // an inlined module reaches for.
+    // ═══ THE CJS SHIMS ESM DOES NOT HAVE ═══
+    //
+    // esbuild emits `import.meta` helpers for ESM, but `require`, `__filename`
+    // and `__dirname` simply do not exist there. This banner supplies all
+    // three, for any inlined module that reaches for them.
+    //
+    // It used to supply only `require`, while this comment claimed it supplied
+    // `__dirname` too — so a reader checking whether `__dirname` was safe in
+    // worker-reachable code found a comment saying yes. It was not:
+    // `dist/worker.mjs` USED it once and DEFINED it zero times (#3611), and
+    // the one use is at module scope, so importing that module threw a
+    // ReferenceError and took every export in it with it.
+    //
+    // What that cost: `legacy-reconcile` adjudicates behind a try/catch whose
+    // comment explains that adjudication must never fail a completed run —
+    // correct, and exactly what turned this into a `warn` line nobody chased.
+    // Every RESOLVED reconcile logged "adjudication failed, run stands" with
+    // `__dirname is not defined`, for the life of the ESM bundle.
+    //
+    // ═══ WHAT `__dirname` RESOLVES TO HERE, WHICH IS NOT WHAT IT LOOKS LIKE ═══
+    //
+    // The BUNDLE's directory — `dist/` — not the source module's. That is the
+    // right answer for `require` and the wrong one for anything resolving a
+    // path relative to its own source file. The only such caller today is
+    // `EVALUATION_DIR` in `ai/identity-match/evaluation-record.ts`, whose
+    // `evaluations/` directory sits beside the SOURCE and is not copied into
+    // `dist`. So the import now succeeds and `listEvaluationRecordFiles()`
+    // returns `[]` from a directory that does not exist, which it already
+    // handles explicitly.
+    //
+    // That is a deliberate choice rather than an oversight, and it is written
+    // down at the other end too: the worker does not read evaluation records.
+    // The canary check that consumes them runs in CI, from source, where
+    // `__dirname` is the source directory. Making the worker able to read them
+    // would mean copying `evaluations/` into `dist` and keeping that in step,
+    // for a consumer that does not exist.
     banner: {
-        js: "import { createRequire as __createRequire } from 'module'; const require = __createRequire(import.meta.url);",
+        js:
+            "import { createRequire as __createRequire } from 'module';"
+            + "import { dirname as __nodeDirname } from 'path';"
+            + "import { fileURLToPath as __nodeFileURLToPath } from 'url';"
+            + "const require = __createRequire(import.meta.url);"
+            + "const __filename = __nodeFileURLToPath(import.meta.url);"
+            + "const __dirname = __nodeDirname(__filename);",
     },
 };
 

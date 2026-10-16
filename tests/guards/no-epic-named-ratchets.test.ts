@@ -302,7 +302,27 @@ describe('epic-named ratchets are not added back', () => {
         // warning, and nothing in the diff that looks like a dropped verdict.
         // Its sibling `legacy-access-pull`, registered forty lines earlier,
         // mapped the same refusal correctly and explained why in a comment.
-        expect(guardFiles().length).toBeLessThan(779);
+        //
+        // RAISED 779 -> 780 on 2026-10-15, for one file, same test applied:
+        // `worker-bundle-defines-its-cjs-shims.test.ts` is named for the
+        // invariant it protects — a bundle that ships a CJS global must define
+        // it, because ESM does not.
+        //
+        // Why a new file: nothing in these directories reads the BUILD SCRIPT
+        // as a contract with the code it bundles. `worker-safe-imports` and
+        // `worker-import-graph` ask what may be imported; this asks whether
+        // what is imported can RUN once bundled, which is a different question
+        // and one no unit test can answer — jest runs from source under CJS,
+        // where `require`, `__filename` and `__dirname` are always defined.
+        //
+        // What it cost to not have it: #3611. The banner defined `require`
+        // only while its own comment claimed it defined `__dirname` too.
+        // `dist/worker.mjs` used `__dirname` once and defined it zero times,
+        // at module scope, so the import threw and took every export in that
+        // file with it. The single symptom was `legacy-reconcile` logging
+        // "adjudication failed, run stands" on every resolved run, from behind
+        // a try/catch that is right to exist — found only by running the job.
+        expect(guardFiles().length).toBeLessThan(780);
     });
 
     /**

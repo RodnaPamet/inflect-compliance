@@ -176,6 +176,26 @@ export interface EvaluationRecord {
  * A directory rather than a database table, deliberately: a record is reviewed
  * in a pull request, and CI recomputes it. A row somebody could INSERT would
  * make "changing a model is a reviewed change" untrue.
+ *
+ * ═══ THIS RESOLVES DIFFERENTLY IN THE WORKER, ON PURPOSE (#3611) ═══
+ *
+ * `__dirname` is the SOURCE directory under jest and `tsx`, and the BUNDLE's
+ * directory (`dist/`) inside the worker, because `build-worker.mjs` supplies
+ * the CJS shims from `import.meta.url`. `evaluations/` sits beside this file
+ * and is not copied into `dist`, so in the worker this points at a directory
+ * that does not exist and `listEvaluationRecordFiles()` returns `[]`.
+ *
+ * That is the intended behaviour, not a gap to close: **the worker does not
+ * read evaluation records.** The canary check that consumes them runs in CI,
+ * from source. Making the worker able to read them would mean copying
+ * `evaluations/` into `dist` and keeping that in step with the directory, for
+ * a consumer that does not exist.
+ *
+ * Until #3611 this line did not merely resolve oddly in the worker — it THREW.
+ * The banner defined `require` and not `__dirname`, and because this is module
+ * scope the ReferenceError took every export in this file with it, which is
+ * why `legacy-reconcile` logged "adjudication failed, run stands" on every
+ * resolved run.
  */
 export const EVALUATION_DIR = path.resolve(__dirname, 'evaluations');
 
