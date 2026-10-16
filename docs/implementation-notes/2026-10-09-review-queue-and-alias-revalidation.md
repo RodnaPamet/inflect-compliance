@@ -1,8 +1,15 @@
 # 2026-10-09 — Review queue and alias revalidation (Step 4b)
 
-**Commits:** six, not one — `5498e6696` (#3344, "part 1"), `a80841da2` (#3349),
-`7208709c4` (#3350), `f0cdefdbe` (#3353), `7437d7142` (#3354), `da392a500`
-(#3357).
+**Commits:** seven, not one — #3344 ("part 1", revalidate confirmed aliases at
+every run), #3349 (a reviewer's decision is not always an employee link), #3350
+(the six reviewer actions and what the server re-checks), #3353 (a decided
+account must leave the queue), #3354 (mount the actions behind
+`requirePermission`), #3357 (the review queue page), and later #3512 (emit the
+reviewer override rate, which the design calls this phase's outcome metric).
+
+Counted from the commits whose subject names the step. The first draft of this
+note said six — it had missed #3512, which carries the `feat(4b):` marker
+rather than `(Step 4b)`.
 
 > **Written after the fact.** Reconstructed on 2026-10-16 from the commit
 > history and the phases document — not from doing the work. The step shipped
@@ -11,10 +18,10 @@
 ## It was delivered in parts, and the status table records only the first
 
 The Definition of done asks for "one branch, one pull request, driven to green
-and merged". This step took six, and the status table's `#3344 (part 1)` is the
-honest consequence — a single-PR column cannot hold a six-PR step.
+and merged". This step took seven, and the status table's `#3344 (part 1)` is
+the honest consequence — a single-PR column cannot hold a seven-PR step.
 
-The six are not arbitrary slices. Read in order they are a dependency chain:
+The first six are not arbitrary slices. Read in order they are a dependency chain:
 revalidate aliases before anything resolves against them (#3344); recognise
 that a reviewer's decision is not always an employee link (#3349); implement
 the six reviewer actions and what the server re-checks (#3350); make a decided
