@@ -121,10 +121,28 @@ describe('undeclared fields are refused', () => {
         ).toThrow(/Unknown configuration field/);
     });
 
-    it('passes an unclassified provider through unchanged', () => {
-        // Failing closed here would break connection creation for any provider
-        // not yet in the registry. The classification guard is what stops that
-        // becoming a silent hole for anything that actually ships.
+    it('passes an unclassified provider through unchanged — and why that is safe', () => {
+        // The pass-through is deliberate, and this comment is the argument for
+        // it. The argument has one load-bearing half, and it was FALSE until
+        // 2026-10-16 (#3629):
+        //
+        //   "The classification guard is what stops that becoming a silent hole
+        //    for anything that actually ships."
+        //
+        // `config-field-classification` carried a baseline, `PROVIDERS_WITHOUT_
+        // RULES`, exempting the three cloud-posture providers — eight declared
+        // config fields between them, all shipped, all returned untouched — and
+        // unlike its sibling `USECASE_WRITTEN_KEYS` that baseline carried no
+        // written reason. So the guard did NOT stop it, for three live
+        // providers, for as long as the baseline stood.
+        //
+        // Those three are now classified and BOTH exemption lists are empty, so
+        // the sentence above is true: a shipped provider that declares a config
+        // field cannot reach this line. That is why the fix was classification
+        // rather than a throw here — a throw also refuses the fictional provider
+        // ids unit tests legitimately use (`datadog` in
+        // `tests/unit/usecases/integrations.test.ts`, 7 times), which is a real
+        // cost for a hole the guard now closes at test time.
         expect(validateProviderConfig('not-a-provider', { anything: 1 })).toEqual({ anything: 1 });
     });
 
@@ -261,5 +279,38 @@ describe('a secret-declared credential is not accepted as config', () => {
         expect(() => validateProviderConfig('orangehrm', { clientId: 'cid' })).not.toThrow();
         expect(() => validateProviderConfig('servicenow', { username: 'svc' })).not.toThrow();
         expect(() => validateProviderConfig('workday', { clientId: 'cid' })).not.toThrow();
+    });
+});
+
+describe('the posture family is classified (#3629)', () => {
+    it('its real fields pass, and an undeclared key is refused BY NAME', () => {
+        // Eight fields across three providers that used to pass unexamined,
+        // because the family had no `CONFIG_FIELD_RULES` entry at all. The keys
+        // come from the LIVE registry, not from reading the provider sources:
+        // the source nests `options: ['soc2', 'cis']` inside the first field, so
+        // a regex over it reports one field where the registry reports three.
+        expect(() =>
+            validateProviderConfig('aws-posture', {
+                benchmark: 'soc2',
+                region: 'eu-west-1',
+                accountId: '123456789012',
+            }),
+        ).not.toThrow();
+        expect(() =>
+            validateProviderConfig('azure-posture', {
+                benchmark: 'cis',
+                tenantId: 't',
+                subscriptionId: 's',
+            }),
+        ).not.toThrow();
+        expect(() =>
+            validateProviderConfig('gcp-posture', { benchmark: 'soc2', projectId: 'p' }),
+        ).not.toThrow();
+
+        // The half that was previously impossible: with no rules entry, an
+        // undeclared key was accepted and stored. Now it is named and refused.
+        expect(() =>
+            validateProviderConfig('aws-posture', { benchmark: 'soc2', rogue: 'x' }),
+        ).toThrow(/Unknown configuration field for aws-posture: rogue/);
     });
 });

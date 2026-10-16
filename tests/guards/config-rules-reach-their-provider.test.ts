@@ -54,12 +54,28 @@ import { registry } from '@/app-layer/integrations/registry';
  * change will show up here.
  */
 const NO_CONFIG_RULES: Readonly<Record<string, string>> = {
-    'azure-posture': 'posture collector; configuration is the credential, which lives in the secrets bag',
-    'gcp-posture': 'posture collector; same shape as azure-posture',
+    // The three cloud-posture providers were here until 2026-10-16 (#3629),
+    // each carrying the reason "posture collector; configuration is the
+    // credential, which lives in the secrets bag".
+    //
+    // That reason was FALSE, and checkable against the registry the whole time.
+    // Each declares config fields ALONGSIDE its secret fields:
+    //
+    //   aws-posture    config [benchmark, region, accountId]
+    //                  secret [roleArn, externalId, accessKeyId, …]
+    //   azure-posture  config [benchmark, tenantId, subscriptionId]
+    //                  secret [clientId, clientSecret]
+    //   gcp-posture    config [benchmark, projectId]
+    //                  secret [serviceAccountJson]
+    //
+    // Eight admin-authored config fields that `validateProviderConfig` returned
+    // untouched — which this list's own docblock says is the one thing nothing
+    // on it may do. A reasoned exemption is better than a bare one, and this is
+    // the failure mode it still has: the reason reads as a decision rather than
+    // a claim, so nobody re-measures it.
     device: 'device inventory is imported, not configured per-connection',
     personnel: 'the internal roster provider — no external connection to configure',
     training: 'training records are imported, not configured per-connection',
-    'aws-posture': 'posture collector; configuration is the credential, which lives in the secrets bag',
 };
 
 /**
