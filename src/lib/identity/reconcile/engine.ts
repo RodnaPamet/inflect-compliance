@@ -988,7 +988,6 @@ export function reconcile(input: EngineInput): EngineResult {
                 signals: [],
                 candidates: [],
                 vetoes: [],
-                blocking: [],
                 note: `service token: ${nonPersonToken}`,
             });
             continue;

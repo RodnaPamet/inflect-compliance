@@ -439,7 +439,7 @@ describe('bulk confirmation', () => {
         // A sole candidate is unopposed, not "ahead by its score". Treating the
         // two alike would fail a weak sole candidate that a strong one passes,
         // which is backwards — the sole candidate is the LESS ambiguous row.
-        expect(candidateMargin([{ employeeId: 'e', score: 1, signals: [], vetoes: [], strongest: null }]))
+        expect(candidateMargin([{ employeeId: 'e', score: 1, signals: [], vetoes: [], blocking: [], strongest: null }]))
             .toBe(Number.POSITIVE_INFINITY);
         expect(candidateMargin([])).toBe(0);
     });
