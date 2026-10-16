@@ -102,4 +102,113 @@ describe('TrainingProvider', () => {
         expect(r.status).toBe('FAILED');
         expect(provider.supportedChecks).toContain('background_check_complete');
     });
+
+    /** The `CheckInput` the tests below pass; only the check type varies. */
+    const inputFor = (checkType: string) => ({
+        automationKey: `training.${checkType}`,
+        parsed: { provider: 'training', checkType, raw: '' },
+        tenantId: 'T1',
+        connectionConfig: {},
+        triggeredBy: 'scheduled' as const,
+    });
+
+    /**
+     * ═══ runCheck NEVER MANUFACTURES A SIGNAL (#3647) ═══
+     *
+     * The test above injects `deps.load`, as every test here did, so no test
+     * had seen this provider FAIL — the `catch` arm and the
+     * `mapResultToEvidence` suppression were both entirely unexecuted.
+     *
+     * `background_check_complete` and `training_completed_annually` are both
+     * checks an auditor reads as evidence that mandatory training and vetting
+     * happened. A load failure reported as anything but ERROR is that evidence
+     * being produced by a check that could not look.
+     */
+    describe('a load that throws is an ERROR, never a verdict', () => {
+        it('reports ERROR — not PASSED, and not NOT_APPLICABLE either', async () => {
+            // NOT_APPLICABLE is the subtler wrong answer: it reads as
+            // "assessed, does not apply" rather than "never assessed", so a
+            // control showing it looks deliberately out of scope.
+            const provider = new TrainingProvider({
+                load: async () => {
+                    throw new Error('assignment read failed');
+                },
+                now: () => NOW,
+            });
+
+            const r = await provider.runCheck(inputFor('training_completed_annually'));
+
+            expect(r.status).toBe('ERROR');
+            expect(r.status).not.toBe('PASSED');
+            expect(r.status).not.toBe('NOT_APPLICABLE');
+            expect(r.status).not.toBe('FAILED');
+        });
+
+        it('carries the cause in errorMessage, and no assignment details', async () => {
+            const provider = new TrainingProvider({
+                load: async () => {
+                    throw new Error('assignment read failed');
+                },
+            });
+
+            const r = await provider.runCheck(inputFor('training_completed_annually'));
+
+            expect(r.errorMessage).toBe('assignment read failed');
+            // An ERROR has no population, so it must not carry counts a reader
+            // would take for a measurement.
+            expect(r.details).toEqual({});
+        });
+
+        it('stringifies a throw that is not an Error', async () => {
+            const provider = new TrainingProvider({
+                load: async () => {
+                    throw 'raw string failure';
+                },
+            });
+
+            const r = await provider.runCheck(inputFor('training_completed_annually'));
+
+            expect(r.status).toBe('ERROR');
+            expect(r.errorMessage).toBe('raw string failure');
+        });
+    });
+
+    describe('mapResultToEvidence suppresses an ERROR', () => {
+        it('returns null, so a failed run files no evidence', async () => {
+            const evidence = new TrainingProvider().mapResultToEvidence(
+                inputFor('training_completed_annually'),
+                { status: 'ERROR', summary: 'Training check failed to run.', details: {}, durationMs: 1, errorMessage: 'boom' },
+            );
+
+            expect(evidence).toBeNull();
+        });
+
+        it('and files it for a real verdict — the positive control', async () => {
+            // Without this, the assertion above is satisfied by a function
+            // returning null for everything, which would stop all training
+            // evidence rather than only the errored runs.
+            const evidence = new TrainingProvider().mapResultToEvidence(
+                inputFor('training_completed_annually'),
+                { status: 'PASSED', summary: 'All assignments current.', details: {}, durationMs: 1 },
+            );
+
+            expect(evidence).not.toBeNull();
+            expect(evidence?.category).toBe('training:training_completed_annually');
+            expect(evidence?.content).toBe('All assignments current.');
+        });
+    });
+
+    /*
+     * THE PRODUCTION LOAD PATH IS NOT REACHABLE FROM THIS SUITE — same cause as
+     * in `personnel.test.ts`, where it is written out in full. In short: this
+     * file mocks `@/lib/observability/logger` down to three methods, so a
+     * no-loader `runCheck` reaches the real `@/lib/prisma` client and fails
+     * with `logFn is not a function`, which the provider's own `catch` then
+     * reports as an unexplained ERROR.
+     *
+     * Two arms stay uncovered here because of that: `if (this.deps.load)`'s
+     * else, and the `new Date()` in `this.deps.now ? ... : new Date()`.
+     * `device.test.ts` covers the equivalent path, because that suite mocks
+     * `@/lib/prisma` itself and never builds a real client.
+     */
 });
