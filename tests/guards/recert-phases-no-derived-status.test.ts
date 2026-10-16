@@ -117,10 +117,31 @@ describe('the recert phases table stores no derived status', () => {
         expect(step).toContain('Pull request');
     });
 
-    it('every recorded pull request is a number or an explicit em dash', () => {
-        // Catches the other way the column rots: a row that says "in review" or
-        // "see branch" instead of a number, which is a status by another name.
-        //
+    /**
+     * The shapes a pull-request cell may take.
+     *
+     * An em dash, a bare number, a numbered part, or a number with a COUNT of
+     * the others — `#3373, and 10 more †`, which the footnote under the table
+     * explains.
+     *
+     * The last of those was added on 2026-10-16 and widening the rule needed an
+     * argument, because the rule exists to stop exactly this kind of edit. Its
+     * purpose is that the cell holds a FACT rather than "a status by another
+     * name". A count of pull requests is a fact: it is checkable against the
+     * commit history, it does not change when somebody's opinion of the work
+     * changes, and it goes stale only if the history does.
+     *
+     * "in review", "see branch", "blocked" and "done" remain rejected, and the
+     * test below feeds each of them in to prove it rather than asserting it.
+     *
+     * Why not reuse `(part 1)`: 4b carried `#3344 (part 1)` for weeks and it
+     * took reading the commit log to learn there were seven. "Part 1" says a
+     * step was split; it does not say into how many, so a reader cannot tell
+     * whether one more pull request is outstanding or six are merged.
+     */
+    const PR_CELL = /^(—|#\d+( \(part \d\))?|#\d+, and \d+ more †)$/;
+
+    it('every recorded pull request is a number, a part, a count, or an explicit em dash', () => {
         // Scoped to the ROWS OF ONE TABLE, not to every row in the document that
         // starts with a step id. The document has a second step-keyed table —
         // dependencies and change class — whose third column is `Standard`, and
@@ -130,8 +151,24 @@ describe('the recert phases table stores no derived status', () => {
         expect(rows.length).toBeGreaterThanOrEqual(15);
         for (const r of rows) {
             const cell = r.split('|')[3].trim();
-            expect({ row: r.slice(0, 12), ok: /^(—|#\d+( \(part \d\))?)$/.test(cell) })
+            expect({ row: r.slice(0, 12), ok: PR_CELL.test(cell) })
                 .toEqual({ row: r.slice(0, 12), ok: true });
+        }
+    });
+
+    it('NEGATIVE CONTROL — the widened rule still refuses a status', () => {
+        // The rule got looser on 2026-10-16, and a looser rule is worth
+        // nothing without evidence of what it still rejects. These are the
+        // shapes the original comment named as the rot it was built to catch.
+        for (const rot of ['in review', 'see branch', 'blocked', 'done', 'WIP', 'n/a', '']) {
+            expect({ cell: rot, accepted: PR_CELL.test(rot) })
+                .toEqual({ cell: rot, accepted: false });
+        }
+        // And the four shapes it must accept, so the control cannot pass by
+        // rejecting everything.
+        for (const ok of ['—', '#3247', '#3344 (part 1)', '#3373, and 10 more †']) {
+            expect({ cell: ok, accepted: PR_CELL.test(ok) })
+                .toEqual({ cell: ok, accepted: true });
         }
     });
 });
