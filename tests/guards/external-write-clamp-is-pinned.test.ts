@@ -89,6 +89,7 @@ import * as path from 'node:path';
 
 import { EXTERNAL_MAX_MODE, LADDER, isAboveClamp } from '@/lib/integrations/external-write-ladder';
 import { codeOf, declarationOf } from '../helpers/source-blocks';
+import { repoFiles, repoRelative } from '../helpers/repo-files';
 
 const LADDER_REL = 'src/lib/integrations/external-write-ladder.ts';
 const LADDER_ABS = path.join(process.cwd(), LADDER_REL);
@@ -182,5 +183,107 @@ describe('the external-write clamp may not move without this file moving too', (
         );
         expect(mutated).not.toContain(`'${PINNED}'`);
         expect(mutated).toContain("'PROPOSE_ONLY'");
+    });
+});
+
+/**
+ * AND THE GRANT-EXPIRY CAP IS DEFINED EXACTLY ONCE (#3314).
+ *
+ * `MAX_GRANT_DAYS = 90` is the same KIND of ceiling as the clamp above — a
+ * bound on unattended writes to somebody else's system — so it belongs under
+ * the same tripwire. It is anchored to this product's `QUARTERLY`
+ * recertification interval, so that a grant cannot outlive the review that
+ * would catch it.
+ *
+ * ── WHY THE COUNT, AND NOT ONLY THE VALUE ──────────────────────────────────
+ *
+ * #3314 records a seam rather than requesting work: `expiryRefusal` and this cap
+ * are product policy living inside the Entra adapter, which is CORRECT while
+ * Entra is the only grant target, and wrong the moment there are two. Its own
+ * instruction is explicit — *"do nothing until a second grant target actually
+ * exists"*, and *"what NOT to do now: lift it pre-emptively"*.
+ *
+ * So this does not lift anything. It makes the trigger LOUD. The failure #3314
+ * fears is asymmetric: a second adapter whose copy of the cap drifted UPWARD
+ * grants access that outlives a review cycle, and nothing fails. Counting the
+ * definitions turns that silent divergence into a red build on the diff that
+ * creates it, pointing at the issue that says what to do.
+ *
+ * Measured 2026-10-16: one definition, and one grant target —
+ * `entra-id/entitlement.ts` of sixteen provider directories.
+ *
+ * A RE-EXPORT IS NOT A DEFINITION, and that distinction is load-bearing here
+ * exactly as it is for the clamp above: `usecases/entra-grant-dispatch.ts`
+ * carries `export { MAX_GRANT_DAYS } from …`, which is a second NAME for one
+ * value and not a second value. A detector that counted it would fail today and
+ * teach the next reader to loosen the count rather than read it.
+ */
+describe('the grant-expiry policy has one home until #3314 says otherwise', () => {
+    const ENTITLEMENT_REL = 'src/app-layer/integrations/providers/entra-id/entitlement.ts';
+
+    /** Every `src` file, comments masked, so prose cannot satisfy a match. */
+    const sources = repoFiles({ under: 'src', extensions: ['.ts'] }).map((abs) => ({
+        rel: repoRelative(abs),
+        code: codeOf(fs.readFileSync(abs, 'utf8')),
+    }));
+
+    /** Files DEFINING a name, as opposed to re-exporting or importing it. */
+    const definersOf = (name: string, keyword: 'const' | 'function'): string[] =>
+        sources
+            .filter((f) => new RegExp(`export\\s+${keyword}\\s+${name}\\b`).test(f.code))
+            .map((f) => f.rel);
+
+    it('pins the cap at 90 days, in the source that declares it', () => {
+        const decl = declarationOf(
+            fs.readFileSync(path.join(process.cwd(), ENTITLEMENT_REL), 'utf8'),
+            'MAX_GRANT_DAYS',
+        );
+        // A failure here is this guard working, exactly as for the clamp: the cap
+        // is the recertification interval, so moving it means a grant can outlive
+        // the review. Change the constant and this line in one reviewed diff.
+        expect(decl).toContain('90');
+        // Not computed from anything settable at runtime — the same direction
+        // that would make the pin above vacuous.
+        expect(decl).not.toMatch(/process\.env/);
+    });
+
+    it('defines the cap in exactly ONE place — the #3314 trigger', () => {
+        const definers = definersOf('MAX_GRANT_DAYS', 'const');
+        // The message is the point of the assertion. A second definition is not
+        // a defect in this guard: it means the precondition #3314 waits for has
+        // arrived, and the fix is to LIFT the policy to a provider-neutral home
+        // rather than to let two adapters each carry a cap that can drift apart.
+        expect(definers).toEqual([ENTITLEMENT_REL]);
+    });
+
+    it('and defines the refusal in exactly one place too', () => {
+        // `expiryRefusal` is the predicate the cap serves — absence refused
+        // rather than defaulted, an unparseable or past date refused, and the cap
+        // refusing rather than clamping. Two copies is the shape this repo names
+        // elsewhere: "the one that mattered would be the quiet one".
+        expect(definersOf('expiryRefusal', 'function')).toEqual([ENTITLEMENT_REL]);
+    });
+
+    it('counts DEFINITIONS, not re-exports — the discriminator', () => {
+        // `entra-grant-dispatch.ts` re-exports the cap. If the two assertions
+        // above counted that, they would be red today and the lesson taken would
+        // be to loosen them. So the positive control is that the re-export
+        // exists, is NOT counted, and the detector still fires on a real second
+        // definition.
+        const dispatch = sources.find((f) => f.rel.endsWith('usecases/entra-grant-dispatch.ts'));
+        expect(dispatch?.code).toMatch(/export\s*\{[^}]*MAX_GRANT_DAYS[^}]*\}\s*from/);
+        expect(definersOf('MAX_GRANT_DAYS', 'const')).not.toContain(
+            'src/app-layer/usecases/entra-grant-dispatch.ts',
+        );
+
+        // And it DOES fire on a definition — run against text rather than
+        // described, so the count above cannot be a regex that matches nothing.
+        const synthetic = 'export const MAX_GRANT_DAYS = 90;';
+        expect(/export\s+const\s+MAX_GRANT_DAYS\b/.test(synthetic)).toBe(true);
+        expect(
+            /export\s+const\s+MAX_GRANT_DAYS\b/.test(
+                "export { MAX_GRANT_DAYS } from './somewhere';",
+            ),
+        ).toBe(false);
     });
 });
