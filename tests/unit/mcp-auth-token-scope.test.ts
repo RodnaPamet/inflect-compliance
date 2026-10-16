@@ -443,10 +443,24 @@ describe('a token is rejected uniformly, whatever is wrong with it', () => {
         return `${MCP_EXCHANGED_TOKEN_PREFIX}${encoded}.${signAs(encoded)}`;
     };
 
+    /**
+     * A key id of this block's own, NOT the suite's `API_KEY_ID`.
+     *
+     * Two reasons, and the second is the load-bearing one. These payloads are
+     * forged rather than minted, so they need any non-empty string and gain
+     * nothing from the real id. And CodeQL reads a value named `API_KEY_ID`
+     * flowing into an HMAC as a password being hashed with insufficient
+     * computational effort — which is wrong here (this is a token signature over
+     * a payload, not a password hash) but the flagged dataflow is real and worth
+     * not having. A literal removes the misleading taint path rather than
+     * suppressing the finding.
+     */
+    const FORGED_KID = 'kid-under-test';
+
     const validPayload = () => ({
         v: 1,
         tid: TENANT,
-        kid: API_KEY_ID,
+        kid: FORGED_KID,
         aid: 'agent-1',
         aud: ['list_risks'],
         res: 'urn:inflect:mcp',
@@ -460,6 +474,7 @@ describe('a token is rejected uniformly, whatever is wrong with it', () => {
         // a field-check costume, and the whole describe is worthless.
         const claims = verifyExchangedToken(forge(validPayload()), { now: () => T0 });
         expect(claims.tenantId).toBe(TENANT);
+        expect(claims.apiKeyId).toBe(FORGED_KID);
         expect(claims.audience).toEqual(['list_risks']);
     });
 
