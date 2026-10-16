@@ -70,9 +70,13 @@ interface FakeAdOptions {
 function fakeAd(opts: FakeAdOptions = {}) {
     const adds: Recorded[] = [];
     const modifies: Recorded[] = [];
+    /** Every bind this client was asked for, so tests can read the DN and count. */
+    const binds: Array<{ dn: string }> = [];
     const client = {
         isBound: true,
-        bind: async () => {},
+        bind: async (dn: string, _pw: string) => {
+            binds.push({ dn });
+        },
         unbind: async () => {},
         search: async () => {
             if (opts.searchThrows) throw opts.searchThrows;
@@ -104,7 +108,7 @@ function fakeAd(opts: FakeAdOptions = {}) {
     const provider = {
         makeClient: async () => client,
     } as never;
-    return { client, adds, modifies, provider };
+    return { client, adds, modifies, provider, binds };
 }
 
 const make = (f: ReturnType<typeof fakeAd>, over: Record<string, unknown> = {}) =>
@@ -726,5 +730,156 @@ describe('AD provisioner — the identifier must be a usable userPrincipalName',
         expect(f.adds[0].attributes?.userPrincipalName).toBe('new.person@corp.example.test');
         // And the sAMAccountName is still the local part, unchanged.
         expect(f.adds[0].attributes?.sAMAccountName).toBe('new.person');
+    });
+});
+
+/**
+ * THE PRECONDITIONS BEFORE A WRITE REACHES A REAL DIRECTORY (#3617).
+ *
+ * `session()` holds the checks that run before any LDAP bind, and they were the
+ * densest uncovered cluster in this file — the write path's own refusals. Every
+ * test above arrives with a complete connection, so a half-configured one had
+ * never been tried.
+ *
+ * It matters more here than almost anywhere on the connector surface. This
+ * provisioner creates and modifies accounts in a customer's directory: a write
+ * attempted against a connection missing its base DN or its credentials is
+ * either an error from the LDAP library with no useful name on it, or — worse,
+ * and the reason `assertPrivateLdapHost` exists — a successful write to
+ * somewhere nobody chose, after which the journal records an account that does
+ * not exist.
+ *
+ * Each refusal NAMES the missing piece, because the operator reading it is
+ * configuring a connection form and "needs a base DN" is a different field from
+ * "needs bind credentials".
+ */
+describe('AD provisioner — a half-configured connection cannot bind', () => {
+    /**
+     * The base DN is absent from this table ON PURPOSE.
+     *
+     * A create with no base DN never reaches `session()`: the OU-containment
+     * check fires first and refuses as a STEP — "not under this connection's
+     * base DN ()" — which is both earlier and a better answer, since it names
+     * the containment problem rather than the missing field. So `session()`'s
+     * own base-DN guard is unreachable from the write path, and is asserted
+     * below through `readAccountState`, which has no containment check to fire
+     * ahead of it.
+     *
+     * Measured rather than assumed: this test originally expected a throw here
+     * and got a refused step.
+     */
+    const HALF_CONFIGURED: ReadonlyArray<readonly [string, Record<string, unknown>, RegExp]> = [
+        ['no LDAPS url', { url: '' }, /needs an LDAPS URL/],
+        ['a whitespace-only url', { url: '   ' }, /needs an LDAPS URL/],
+        ['no bind DN at all', { writeBindDN: '', bindDN: '' }, /needs bind credentials/],
+        ['no bind password at all', { writeBindPassword: '', bindPassword: '' }, /needs bind credentials/],
+    ];
+
+    it('refuses a create with no base DN as a STEP, naming the containment problem', async () => {
+        const f = fakeAd({});
+        const r = await make(f, { baseDN: '' }).createBlockedAccount({
+            identifier: 'new.person@corp.example.test',
+            displayName: 'New Person',
+            employeeId: 'emp-1',
+        });
+        // A refusal the caller can record, not an exception it has to catch.
+        expect(r.kind).toBe('refused');
+        expect((r as { detail?: string }).detail).toMatch(/not under this connection's base DN/);
+        expect(f.adds).toEqual([]);
+    });
+
+    it('refuses a READ with no base DN, where no containment check precedes it', async () => {
+        // `session()`'s own guard, on the one surface that reaches it.
+        const f = fakeAd({});
+        await expect(make(f, { baseDN: '' }).readAccountState(GUID)).rejects.toThrow(
+            /needs a base DN/,
+        );
+    });
+
+    it.each(HALF_CONFIGURED)('refuses the WRITE with %s, and adds nothing', async (_l, over, pattern) => {
+        const f = fakeAd({});
+        const p = make(f, over);
+
+        // The create is where the refusal must surface, and it names the missing
+        // field rather than letting the LDAP library fail on its own terms.
+        await expect(
+            p.createBlockedAccount({
+                identifier: 'new.person@corp.example.test',
+                displayName: 'New Person',
+                employeeId: 'emp-1',
+            }),
+        ).rejects.toThrow(pattern);
+
+        // AND NOTHING REACHED THE DIRECTORY. A refusal that still wrote is the
+        // outcome these checks exist to prevent — after which the journal
+        // records an account whose real state nobody knows.
+        expect(f.adds).toEqual([]);
+        expect(f.modifies).toEqual([]);
+    });
+
+    it.each(HALF_CONFIGURED)('reports the PROBE as unknown with %s — never free, never a throw', async (_l, over) => {
+        // The seam's other half, documented at length in the implementation: "a
+        // FAILED PROBE IS UNKNOWN, NEVER FREE, and never a throw", because a
+        // caller forced to invent an answer has only "free" on offer — and a
+        // create then proceeds straight into a collision.
+        const f = fakeAd({});
+        const probe = await make(f, over).probeIdentifier('someone@corp.example.test');
+
+        expect(probe.kind).toBe('unknown');
+        // It names WHICH questions went unanswered, so the artefact says what
+        // was not checked rather than implying everything was.
+        expect((probe as { namespacesUnavailable?: string[] }).namespacesUnavailable).toEqual([
+            ...AD_COLLISION_NAMESPACES,
+        ]);
+    });
+
+    it('falls back to the READ bind credentials when no write pair is configured', async () => {
+        // `writeBindDN ?? bindDN`. A connection configured once, for reads, is
+        // usable for writes it has separately consented to — otherwise every
+        // tenant would have to enter the same credentials twice.
+        const f = fakeAd({});
+        const p = make(f, {
+            writeBindDN: undefined,
+            writeBindPassword: undefined,
+            bindDN: 'CN=svc-read,OU=Service,DC=corp,DC=example,DC=test',
+            bindPassword: 'read-pw',
+        });
+
+        const probe = await p.probeIdentifier('someone@corp.example.test');
+        // Reached the directory, so the read credentials were accepted — an
+        // `unknown` here would mean the session never opened.
+        expect(probe.kind).not.toBe('unknown');
+    });
+
+    it('prefers the WRITE credentials when both pairs are present', async () => {
+        // The precedence, which is the half a fallback test cannot show. A
+        // connection carrying both must bind as the write principal — the read
+        // one is typically less privileged and would fail the modify later, at a
+        // point where the cause is much harder to see.
+        const f = fakeAd({});
+        const p = make(f, {
+            bindDN: 'CN=svc-read,OU=Service,DC=corp,DC=example,DC=test',
+            bindPassword: 'read-pw',
+        });
+
+        await p.probeIdentifier('someone@corp.example.test');
+        expect(f.binds.map((b) => b.dn)).toEqual([CONNECTION.writeBindDN]);
+    });
+
+    it('binds ONCE across several operations, and rebinds if the client comes unbound', async () => {
+        // `if (client && client.isBound !== false) return client`. Re-binding per
+        // call would multiply LDAP binds by the number of steps in a joiner run;
+        // never rebinding would use a dead handle after the server drops it.
+        const f = fakeAd({});
+        const p = make(f);
+
+        await p.probeIdentifier('a@corp.example.test');
+        await p.probeIdentifier('b@corp.example.test');
+        expect(f.binds).toHaveLength(1);
+
+        // The server dropped it. The next call has to notice.
+        (f.client as { isBound?: boolean }).isBound = false;
+        await p.probeIdentifier('c@corp.example.test');
+        expect(f.binds).toHaveLength(2);
     });
 });
