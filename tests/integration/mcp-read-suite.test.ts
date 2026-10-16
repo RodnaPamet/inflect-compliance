@@ -224,6 +224,90 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
         expect(uris).toContain(`inflect://frameworks/${FW_KEY}/requirements`);
     });
 
+    /**
+     * THE WORK TOOLS ARE REACHABLE THROUGH THE PROTOCOL (#3617).
+     *
+     * Callability only, and deliberately nothing more. This suite seeds no
+     * findings and no tasks, so every assertion about a page SIZE here is
+     * vacuous: measured, `take: 999` in place of the bound reddens nothing at
+     * all, because both tools return an empty array whatever the limit says.
+     *
+     * The page-size default has teeth in
+     * `tests/unit/mcp-work-tools-bound.test.ts`, which asserts the exact value
+     * handed to the usecase. Coverage of this file went from 0 of 8 branches to
+     * 8 of 8 on the strength of two assertions that could not fail; that is why
+     * the bound is asserted where the value is visible instead.
+     */
+    it('list_findings and list_tasks answer through tools/call', async () => {
+        for (const name of ['list_findings', 'list_tasks'] as const) {
+            const { json } = await rpc(keyEveryDomainA, {
+                jsonrpc: '2.0', id: 30, method: 'tools/call',
+                params: { name, arguments: { limit: 1 } },
+            });
+            // The tool resolved and returned a list — the scope held and the
+            // funnel routed. What it contains is this tenant's business.
+            expect(Array.isArray(toolResult(json))).toBe(true);
+        }
+    });
+
+    /**
+     * READING a resource, as distinct from enumerating them (#3617).
+     *
+     * `resources/list` was covered; `resources/read` was not, leaving
+     * `src/lib/mcp/resources.ts` at 1 of 10 branches. The read path is where the
+     * URI is parsed, and a URI from a caller is untrusted input: the suite
+     * enumerated what exists and never asked what happens when somebody asks
+     * for something else.
+     */
+    it('resources/read returns the framework catalogue', async () => {
+        const { json } = await rpc(keyFrameworksA, {
+            jsonrpc: '2.0', id: 20, method: 'resources/read',
+            params: { uri: 'inflect://frameworks' },
+        });
+        const r = json as { result?: { contents?: Array<{ uri: string; text: string }> } };
+        expect(r.result?.contents?.[0].uri).toBe('inflect://frameworks');
+        // JSON, and parseable — the contents are a text block carrying a payload.
+        expect(() => JSON.parse(r.result!.contents![0].text)).not.toThrow();
+    });
+
+    it('resources/read returns per-framework coverage', async () => {
+        const { json } = await rpc(keyFrameworksA, {
+            jsonrpc: '2.0', id: 21, method: 'resources/read',
+            params: { uri: `inflect://frameworks/${FW_KEY}/requirements` },
+        });
+        const r = json as { result?: { contents?: Array<{ text: string }> } };
+        const body = JSON.parse(r.result!.contents![0].text) as {
+            summary?: { total?: number; coveragePercent?: number };
+        };
+        // The shape the resource promises, not merely a 200.
+        expect(body.summary).toBeDefined();
+        expect(typeof body.summary?.total).toBe('number');
+    });
+
+    it('refuses a requirements uri with an EMPTY framework key', async () => {
+        // `inflect://frameworks//requirements` matches both the prefix and the
+        // suffix, so the shape check passes and the key is the empty string. The
+        // explicit emptiness check is what stops that reaching `computeCoverage`
+        // as a framework nobody named.
+        const { json } = await rpc(keyFrameworksA, {
+            jsonrpc: '2.0', id: 22, method: 'resources/read',
+            params: { uri: 'inflect://frameworks//requirements' },
+        });
+        const r = json as { error?: { message: string }; result?: unknown };
+        expect(r.result).toBeUndefined();
+        expect(r.error?.message).toMatch(/invalid framework requirements uri/i);
+    });
+
+    it('refuses an unknown resource uri', async () => {
+        const { json } = await rpc(keyFrameworksA, {
+            jsonrpc: '2.0', id: 23, method: 'resources/read',
+            params: { uri: 'inflect://something-else-entirely' },
+        });
+        const r = json as { error?: { message: string }; result?: unknown };
+        expect(r.result).toBeUndefined();
+        expect(r.error?.message).toMatch(/unknown mcp resource/i);
+    });
+
     it('resources/list refuses a key without frameworks:read', async () => {
         // The behaviour change from `assertCanViewFrameworks` reading the
         // permission instead of the role. `keyRisksA` holds `mcp:read` +
