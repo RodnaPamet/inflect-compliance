@@ -457,3 +457,94 @@ describe('the identifier must be a usable userPrincipalName', () => {
         });
     });
 });
+
+/**
+ * HOW A GRAPH ANSWER BECOMES AN OUTCOME (#3617).
+ *
+ * Every write here classifies the response three ways, and the distinction is
+ * the point of the whole seam:
+ *
+ *   · 2xx            → `applied`        the write landed
+ *   · 5xx            → `indeterminate`  WE DO NOT KNOW whether it landed
+ *   · anything else  → `refused`        it definitely did not
+ *
+ * `createBlockedAccount` has both halves covered above. `assignGroup`,
+ * `issueCredential` and `enableAccount` had only their success paths, which is
+ * eight of this file's uncovered branches and the ones that matter most: a 5xx
+ * misreported as `refused` tells a journal the write did not happen when it may
+ * have, and the next pass either leaves an account half-provisioned or repeats a
+ * write that already took.
+ *
+ * The group add also has an idempotent case worth its own test — Graph answers
+ * an existing membership with a 400, and the implementation reports it APPLIED
+ * because "a retry after a lost response must not report failure for work
+ * already done".
+ */
+describe('a Graph answer is classified, and 5xx is not a refusal', () => {
+    const ID = '00000000-0000-4000-8000-00000000000a';
+    const GROUP = 'group-1';
+
+    describe('assignGroup', () => {
+        it('applies on 2xx', async () => {
+            const { p } = build([[/^POST .*\/members\/\$ref/, { status: 204 }]]);
+            expect((await p.assignGroup(ID, GROUP)).kind).toBe('applied');
+        });
+
+        it('reports an EXISTING membership as applied, not refused', async () => {
+            // Graph answers 400 "One or more added object references already
+            // exist". Idempotent in effect, so the outcome is `applied` — a
+            // retry after a lost response must not report failure for work
+            // already done.
+            const { p } = build([[
+                /^POST .*\/members\/\$ref/,
+                { status: 400, body: { error: { message: 'One or more added object references already exist.' } } },
+            ]]);
+
+            const r = await p.assignGroup(ID, GROUP);
+            expect(r.kind).toBe('applied');
+            expect(r.detail).toMatch(/already a member/i);
+        });
+
+        it('is INDETERMINATE on 5xx — the membership may have been added', async () => {
+            const { p } = build([[/^POST .*\/members\/\$ref/, { status: 503 }]]);
+            const r = await p.assignGroup(ID, GROUP);
+            expect(r.kind).toBe('indeterminate');
+            // And it names the code, so an operator is not left guessing which
+            // failure it was.
+            expect(r.detail).toMatch(/503|Graph did not report/);
+        });
+
+        it('REFUSES on a 4xx that is not the idempotent one', async () => {
+            // The discriminator for the case above: a 400 whose body does not
+            // say "already exist" must NOT be absorbed as success.
+            const { p } = build([[
+                /^POST .*\/members\/\$ref/,
+                { status: 400, body: { error: { message: 'Invalid object reference.' } } },
+            ]]);
+            expect((await p.assignGroup(ID, GROUP)).kind).toBe('refused');
+        });
+
+        it('refuses a 403 — a permission gap is not indeterminate', async () => {
+            const { p } = build([[/^POST .*\/members\/\$ref/, { status: 403 }]]);
+            expect((await p.assignGroup(ID, GROUP)).kind).toBe('refused');
+        });
+    });
+
+    describe('enableAccount', () => {
+        it('is INDETERMINATE on 5xx — the account may now be enabled', async () => {
+            // The direction that matters for a leaver/joiner trail: reporting
+            // `refused` here would record that the account is still blocked when
+            // it may be signed-in-able.
+            const { p } = build([[/^PATCH .*\/users\//, { status: 500 }]]);
+            const r = await p.enableAccount(ID, { onPremisesSyncEnabled: false });
+            expect(r.kind).toBe('indeterminate');
+        });
+
+        it('refuses a 4xx', async () => {
+            const { p } = build([[/^PATCH .*\/users\//, { status: 404 }]]);
+            expect((await p.enableAccount(ID, { onPremisesSyncEnabled: false })).kind).toBe(
+                'refused',
+            );
+        });
+    });
+});
