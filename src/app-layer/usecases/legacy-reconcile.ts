@@ -372,6 +372,25 @@ export async function runLegacyReconcile(
         comparisons: result.metrics.comparisons,
         resolved: stored,
         hrisProvider: freshHris.provider,
+        // ═══ WHY A ZERO-CANDIDATE RUN IS NOT SELF-EXPLANATORY (#3612) ═══
+        //
+        // `accounts - blockedAccounts` is how many got no candidate, and it
+        // was already computed and never logged. On its own it conflates two
+        // reasons that mean opposite things:
+        //
+        //   asked and found nobody     a real key was searched; the person is
+        //                              genuinely not on this roster
+        //   could not form a question  the roster could not be indexed on the
+        //                              key the account offered, so nothing was
+        //                              searched and the empty result says
+        //                              nothing about the roster
+        //
+        // `rosterWithoutFamilyKey` separates them, and is derived from the
+        // same function the blocker indexes with so the two cannot disagree.
+        //
+        // All counts. Never an account key, never an employee id.
+        blockedAccounts: result.metrics.blockedAccounts,
+        rosterWithoutFamilyKey: result.metrics.rosterWithoutFamilyKey,
     });
 
     return {

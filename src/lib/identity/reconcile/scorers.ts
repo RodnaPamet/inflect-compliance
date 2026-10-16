@@ -48,6 +48,7 @@ import {
     parseConvention,
     type ParsedConvention,
 } from './conventions';
+import { familyKeyOf } from './family-key';
 import { baseClean, normaliseUsername, translitVariants } from './normalise';
 import { scoreNames } from './similarity';
 
@@ -317,11 +318,24 @@ export function makeFamilyNameBlocker(roster: readonly RosterEmployee[]): Candid
         } else byFamily.set(k, [id]);
     };
 
+    // ═══ ONE RULE FOR BOTH SIDES OF THIS COMPARISON (#3612) ═══
+    //
+    // This used to index with `nameParts`, which derives a family name from a
+    // full name only at EXACTLY two tokens — while the LOOKUP below uses
+    // `context.accountName.family`, which takes the last token at any count.
+    // So an account offering `Example` found nothing, because the employee
+    // named `User 4 Example` had been excluded from the index by a rule the
+    // lookup does not apply.
+    //
+    // `familyKeyOf` is the lookup side's rule, made explicit and shared.
+    // `nameParts` keeps its strictness where it belongs: generating the
+    // username a convention expects, where a wrong guess is a wrong link
+    // rather than one extra candidate for the scorers to judge.
     for (const e of roster) {
-        const parts = nameParts(e);
-        if (!parts) continue;
-        add(parts.family, e.id);
-        for (const v of translitVariants(parts.family)) add(v.value, e.id);
+        const family = familyKeyOf(e);
+        if (!family) continue;
+        add(family, e.id);
+        for (const v of translitVariants(family)) add(v.value, e.id);
     }
     for (const [k, v] of byFamily) byFamily.set(k, [...v].sort());
 
