@@ -226,7 +226,16 @@ export interface RunCapHalt {
     readonly kind: RunCapKind;
     readonly limit: number;
     readonly source: RunCapSource;
-    /** Units already spent when the refusal happened. Never exceeds `limit`. */
+    /**
+     * Units already spent when the refusal happened. Never exceeds `limit`.
+     *
+     * EXCEPT for `RUNTIME_MS`, where it is ELAPSED MILLISECONDS read from the
+     * clock rather than units accumulated — see `charge`, which takes `0` for
+     * that kind because "the clock has already spent whatever it has spent".
+     * `haltMessage` says so in as many words for that kind (#3615): the figure
+     * describes how long the run's clock has been running, not how much work it
+     * did, and a run parked at a checkpoint accrues it while doing nothing.
+     */
     readonly used: number;
     /** Units this charge asked for. NONE of them were granted. */
     readonly refused: number;
@@ -234,18 +243,51 @@ export interface RunCapHalt {
     readonly message: string;
 }
 
+/**
+ * The sentence an operator reads off a halted run.
+ *
+ * ── WHY `RUNTIME_MS` GETS ITS OWN CLAUSE (#3615) ───────────────────────────
+ *
+ * Every other kind accumulates UNITS: steps taken, tokens charged, proposals
+ * queued. "N already spent" is literally true of them. `RUNTIME_MS` does not
+ * accumulate — its `used` is read from the clock — so the same phrasing claimed
+ * work that had not happened.
+ *
+ * Measured: a `posture-review` run halted reporting "12847343 already spent"
+ * against a 3600000 cap, which reads as three and a half hours of churn. The
+ * run had in fact been PARKED at a human checkpoint and done almost nothing;
+ * the clock accrued while a person was deciding. An operator reading that row
+ * looked for a runaway agent and there was none.
+ *
+ * The root cause — a checkpoint wait bounded by a ceiling chosen for unattended
+ * execution — is closed by `approval-window.ts`, which quotes this very run.
+ * What is left is the sentence, and this is it: say ELAPSED, name the units, and
+ * do not report a `refused` figure for a kind whose charge is always zero.
+ */
 function haltMessage(
     kind: RunCapKind,
     cap: EffectiveRunCap,
     used: number,
     refused: number,
 ): string {
+    const tail =
+        'The remaining work was not done and was not trimmed to fit — a run that ' +
+        'silently continued on a subset nobody chose would be indistinguishable ' +
+        'from one that finished.';
+
+    if (kind === 'RUNTIME_MS') {
+        return (
+            `Run halted at its RUNTIME_MS cap of ${cap.limit}ms (set by the ${cap.source}). ` +
+            `${used}ms had ELAPSED on the run's clock — elapsed time, not work done: a run ` +
+            'waiting at a human checkpoint accrues it while doing nothing. ' +
+            tail
+        );
+    }
+
     return (
         `Run halted at its ${kind} cap of ${cap.limit} (set by the ${cap.source}). ` +
         `${used} already spent; ${refused} more asked for and NONE granted. ` +
-        'The remaining work was not done and was not trimmed to fit — a run that ' +
-        'silently continued on a subset nobody chose would be indistinguishable ' +
-        'from one that finished.'
+        tail
     );
 }
 
