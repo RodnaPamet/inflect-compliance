@@ -145,11 +145,17 @@ const ORPHAN_RULES: readonly string[] = [
  * `NO_CONFIG_RULES`, with a reason per entry. Two lists, one fact: if they
  * ever disagree, that guard's rule 2 is the one that fails.
  */
-const PROVIDERS_WITHOUT_RULES: readonly string[] = [
-    'aws-posture: declares config fields but has NO rules entry',
-    'azure-posture: declares config fields but has NO rules entry',
-    'gcp-posture: declares config fields but has NO rules entry',
-];
+/**
+ * Providers that declare config fields and carry no rules entry.
+ *
+ * EMPTY, and it may only shrink (#3629). It held the three cloud-posture
+ * providers — eight declared fields between them that `validateProviderConfig`
+ * returned untouched — and carried NO written reason, while its sibling
+ * `USECASE_WRITTEN_KEYS` has a test demanding one for every entry. A baseline
+ * without a reason is indistinguishable from an oversight, which is what this
+ * one turned out to be.
+ */
+const PROVIDERS_WITHOUT_RULES: readonly string[] = [];
 
 describe('config field classification — the cross-walk config-schema.ts claims', () => {
     it('the population is real: providers are registered and rules exist', () => {

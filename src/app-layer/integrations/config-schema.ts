@@ -333,6 +333,36 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         repo: { kind: 'inert' },
         branch: { kind: 'inert' },
     },
+    // ── The posture family (#3629) ──────────────────────────────────────────
+    //
+    // These three declared config fields and had NO entry here, so
+    // `validateProviderConfig` returned their whole `configJson` untouched —
+    // including keys no schema declares. Classified from the LIVE registry, not
+    // from reading the provider sources: the source has `options: ['soc2',
+    // 'cis']` nested inside the first field, and a regex over it reports one
+    // field where the registry reports three.
+    //
+    // All eight are `inert` by this type's own definition — an identifier, a
+    // threshold, a display toggle. `benchmark` is the one worth saying out loud:
+    // it selects a Powerpipe benchmark id, and an unexpected value reaches
+    // `execFile('powerpipe', ['benchmark', 'run', id, …])` as a single argv
+    // element. That is not a shell, so an odd value is a failed run that reports
+    // ERROR, not an injection. The reason to classify it anyway is the other
+    // half: with no entry, an UNKNOWN key was accepted and stored.
+    'aws-posture': {
+        benchmark: { kind: 'inert' },
+        region: { kind: 'inert' },
+        accountId: { kind: 'inert' },
+    },
+    'azure-posture': {
+        benchmark: { kind: 'inert' },
+        tenantId: { kind: 'inert' },
+        subscriptionId: { kind: 'inert' },
+    },
+    'gcp-posture': {
+        benchmark: { kind: 'inert' },
+        projectId: { kind: 'inert' },
+    },
     'mcp-server': {
         // Where a granted agent's tool calls are SENT, so the one field here
         // that carries reach. No vendor allowlist can apply — an MCP server is
@@ -524,6 +554,13 @@ export function validateProviderConfig(
     }
     const config = configJson as Record<string, unknown>;
     const rules = CONFIG_FIELD_RULES[providerId];
+    // An unclassified provider's config passes through, and the TEST that pins
+    // this behaviour carries the argument for it (#3629). The argument has one
+    // load-bearing half -- "the classification guard is what stops that becoming
+    // a silent hole for anything that actually ships" -- and that half was FALSE
+    // while `PROVIDERS_WITHOUT_RULES` exempted the three cloud-posture
+    // providers. Classifying them and emptying that baseline is what makes the
+    // sentence true, which is why the fix is there and not a throw here.
     if (!rules) return config;
 
     for (const [key, raw] of Object.entries(config)) {
