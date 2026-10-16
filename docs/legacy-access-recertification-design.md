@@ -181,9 +181,23 @@ assertion.
   and HRIS providers.** A provider that only syncs is never checked.
 - **`validateProviderConfig` passes an unclassified provider's `configJson` through
   unvalidated.**
-- **Only one AI feature honours `aiResidency`.** Risk suggestions route to a local
-  gateway under `LOCAL_ONLY`, pinned by `tests/guards/ai-residency-enforcement.test.ts`.
-  Compliance posture, questionnaire autofill and vendor-document extraction do not.
+- **Three of the six model-calling AI features do not honour `aiResidency`.**
+  Compliance posture, questionnaire autofill and vendor-document extraction each
+  construct an external provider without consulting residency.
+
+  > **This bullet said "only one AI feature honours `aiResidency`" until
+  > 2026-10-16.** Four do: risk suggestions (pinned by
+  > `tests/guards/ai-residency-enforcement.test.ts`), identity matching, which
+  > returns before constructing anything external under `LOCAL_ONLY`
+  > (`src/app-layer/ai/identity-match/index.ts`), legacy adjudication, which caps
+  > the mode at `LOCAL_ONLY` (`src/lib/legacy-access/adjudication-mode.ts`), and
+  > Flue's model selection. The last two arrived with steps 6c and 3b and the
+  > bullet was not updated, which is criterion 11 unmet for those steps — the
+  > same silent-staleness this section suffered in #3480, in the opposite
+  > direction: that bullet claimed a gap that was closed, this one undercounted
+  > work that was done. The three features NAMED above were re-measured and the
+  > list is unchanged. `decision-log` and `guard` are deliberately absent: they
+  > make no external model call, so they need no residency gate.
 
 ### Conventions and similarity are wired in, and still cannot link
 
