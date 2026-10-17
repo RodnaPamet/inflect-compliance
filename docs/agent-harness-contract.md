@@ -88,7 +88,8 @@ met.
 `INCOMPLETE_SOURCE`; `severity` is `LOW`, `MEDIUM`, `HIGH` or `CRITICAL`;
 `discoveredId` and `evidence` are pointers or `null`. A scan that discovers no
 agents is not a clean scan; the receiving side treats an empty population as a
-finding in its own right.
+finding in its own right. The receiving side does not act on this member: it
+derives its own findings (see **Transport**).
 
 ## Bounds
 
@@ -117,8 +118,59 @@ finding in its own right.
 
 ## Transport
 
-This document defines the report and its verification. The route that receives
-reports, and the tables it writes, are specified by step `1a` (#3665).
+A scanner posts the serialised report, unchanged, to
+`POST /api/t/{tenantSlug}/admin/agents/harness-scans`. The route reads at most
+the size bound before it parses anything: a declared `Content-Length` above it
+is refused unread, and a body that streams past it is cut off. The usecase is
+`src/app-layer/usecases/agent-harness-scans.ts`, the only writer of the scan
+tables.
+
+**Who may post.** The route requires `admin.agent_harness_ingest`. OWNER and
+ADMIN hold it; a scanner holds it through an API key with the
+`admin:harness_ingest` scope, which grants that one key and nothing else. A
+scanner key does not need, and should not have, any other scope.
+
+**Whose reports count.** The tenant registers the scanner's public key with
+`POST /api/t/{tenantSlug}/admin/agents/harness-scanner-keys`
+(`{ agentId, publicKey }`, raw 32-byte Ed25519 key in hex or base64). That
+route requires `admin.agent_registry`, never the ingest key, so a scanner
+cannot vouch for itself. Each key belongs to one registered agent, the scanner,
+and is identified by the SHA-256 of its SPKI form, so two spellings of one key
+are one key. `DELETE …/harness-scanner-keys/{keyId}` revokes a key; it then
+verifies nothing, and its row stays for the scans it signed.
+
+**What the ingest adds to the contract's refusals.** After the contract's own
+checks pass:
+
+| Code | Status | Cause |
+|---|---|---|
+| `SCANNER_MISMATCH` | 400 | `scan.scanner.agentId` is not the agent the signing key belongs to. |
+| `SUBMITTER_MISMATCH` | 403 | The API key is bound to an agent other than that scanner. |
+| `REPLAY` | 409 | A scan with this `scan.id` is already ingested for the tenant. |
+
+Every refusal is reported as `harness_report_refused: <CODE>` and writes
+nothing.
+
+**What a verified report becomes.** One `AgentHarnessScan` (signer, digest of
+the signed body, signature, the per-source completeness), one `DiscoveredAgent`
+per agent keyed by `discoveredId`, and one `AgentHarnessScanItem` per agent.
+The ingest DERIVES each agent's level with the ladder and its reach from its
+tools, and links `registeredAgentId` only when the register holds that row; a
+claimed id the register does not hold is treated as no link at all. The
+report's own `findings` member is not acted on: the ingest raises its own
+findings, with `sourceKind = 'AGENT_HARNESS'`, from what it derived —
+`SHADOW_AGENT`, `UNPINNED_WRITE_TOOL`, `HARNESS_SHORTFALL`, `LEVEL_DROP`,
+`EMPTY_SCAN` and `INCOMPLETE_SOURCE` — and resolves one only on positive
+evidence. An agent absent from a scan resolves nothing about it.
+`ORPHAN_CREDENTIAL` is not derived from the agents' credentials, so the ingest
+raises none.
+
+**Accepting a shortfall.** A `HARNESS_SHORTFALL` closes when a later scan shows
+the agent at the bar, or when the agent's owner records a time-limited
+acceptance at `POST /api/t/{tenantSlug}/admin/agents/harness-acceptances`
+(at most 365 days). The nightly exception expiry monitor reopens the shortfall
+when the acceptance lapses and the agent is still below the bar. The bar is
+report-only throughout: no level or acceptance gates an agent.
 
 ## Versioning
 

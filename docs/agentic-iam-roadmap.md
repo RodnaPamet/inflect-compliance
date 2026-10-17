@@ -67,11 +67,25 @@ JSON, then the Ed25519 signature by a trusted key, and only then the schema. A
 report cannot state its own level, cannot carry a credential value, and cannot
 declare completeness: completeness is derived from its sources.
 
+### The harness ingest
+
+A tenant registers a scanner's public key against the registered agent that is
+the scanner, and the scanner posts signed reports with an API key scoped to
+`admin:harness_ingest` alone (`docs/agent-harness-contract.md`, Transport).
+`src/app-layer/usecases/agent-harness-scans.ts` is the only writer of the scan,
+the discovered agents and the per-agent items. What a verified report means is
+decided by the pure planner `src/lib/agentic/harness-findings.ts`: the level is
+derived, the register decides whether an agent is shadow, and a finding closes
+only on positive evidence. A shortfall below the bar (H3 for an agent that can
+write or whose reach is unknown, H2 for a read-only one) is a finding that never
+gates the agent; its owner may accept it for at most a year, and the nightly
+exception expiry monitor reopens it when the acceptance lapses.
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Five separate admin rights. | No discovery of agents outside Inflect; no scanner; no stored harness levels. |
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Five separate admin rights. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. No scanner ships yet, so nothing discovers agents outside Inflect; no page renders the scans. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. | No integration passport; no A2A peers. |
 | Skills | Eight original, licensed skills, two of them for IAM and declared by no workflow. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. The two IAM skills ship evaluation sets; the catalogue budget binds per workflow and per run. | No evaluation records and no mount gate; no skill hash pinned on runs; no workflow mounts the IAM skills. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |

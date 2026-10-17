@@ -178,7 +178,13 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // — a credential that could grant itself tools or rewrite its own card. This
     // one is the agent ACTING, which is precisely what a bearer token is for,
     // and holding it confers no power to widen it.
-    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'] },
+    //
+    // `harness_ingest` is its own action for the same kind of reason: it is
+    // what a harness SCANNER's key carries (#3665), and a scanner that could
+    // also edit tenant settings would be a scanner nobody should run. It only
+    // lets a key submit a report; a report counts only when signed by a key the
+    // tenant registered for that scanner, which takes `agent_registry`.
+    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'], harness_ingest: ['agent_harness_ingest'] },
     // MCP capability gate (Epic MCP). These are CAPABILITY scopes, not
     // resource permissions — they deliberately map to NO PermissionSet flags
     // (empty action arrays). `mcp:read` gates access to the read-only MCP tool

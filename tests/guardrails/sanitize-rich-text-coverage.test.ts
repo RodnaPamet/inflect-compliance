@@ -182,6 +182,8 @@ const RICH_TEXT_COVERAGE: Readonly<
     // RQ2-1/RQ2-2 — score-change justification narrative; sanitised
     // at the single recordScoreEvent write seam.
     RiskScoreEvent: { usecases: ['src/app-layer/usecases/risk-score-events.ts'], sanitizer: 'sanitizePlainText' },
+    // #3665 — harness shortfall acceptance rationale; one write seam.
+    AgentHarnessAcceptance: { usecases: ['src/app-layer/usecases/agent-harness-acceptance.ts'], sanitizer: 'sanitizePlainText' },
     RiskTreatmentPlan: { usecases: ['src/app-layer/usecases/risk-treatment-plan.ts'], sanitizer: 'sanitizePlainText' },
     TreatmentMilestone: { usecases: ['src/app-layer/usecases/risk-treatment-plan.ts'], sanitizer: 'sanitizePlainText' },
     // NIS2 Article 23 incident response — incident narrative, the filed

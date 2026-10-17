@@ -393,6 +393,23 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'match: no other rule in this map matches /admin/mcp/** at all, ' +
             'so without it the path carries no declared permission.',
     },
+    // ── Harness assurance (#3665) ───────────────────────────────────
+    //
+    // SUBMITTING a scan is the scanner's authority, not the register's: the
+    // key a scanner's API key carries is `agent_harness_ingest` and nothing
+    // wider. Above the catch-all so a POST resolves here. Reading scans,
+    // registering a scanner's signing key and recording a shortfall acceptance
+    // fall to the catch-all's `agent_registry`, because each decides whose
+    // reports count or which risk the tenant carries.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/harness-scans$`),
+        methods: ['POST'],
+        permission: 'admin.agent_harness_ingest',
+        note:
+            'Submit a signed inflect-agent-harness/1 report. The key alone ' +
+            'ingests nothing: the report must be signed by a scanner key the ' +
+            'tenant registered, which takes admin.agent_registry.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),
         permission: 'admin.agent_registry',
