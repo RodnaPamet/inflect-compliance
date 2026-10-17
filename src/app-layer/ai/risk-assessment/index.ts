@@ -89,7 +89,11 @@ export function getProvider(sel?: ProviderSelection): RiskSuggestionProvider {
                 logger.warn('ANTHROPIC_API_KEY not set, falling back to baseline template provider', { component: 'ai' });
                 return new StubRiskSuggestionProvider(/* isFallbackMode */ true);
             }
-            return new AnthropicRiskSuggestionProvider(apiKey, env.ANTHROPIC_MODEL ?? undefined);
+            return new AnthropicRiskSuggestionProvider(
+                apiKey,
+                env.ANTHROPIC_MODEL ?? undefined,
+                env.ANTHROPIC_WORKSPACE_ID,
+            );
         }
         default:
             return new StubRiskSuggestionProvider();

@@ -10,7 +10,9 @@
  * This is the SAME credential the compliance-posture summary uses:
  * `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL` (default claude-haiku-4-5). Wiring
  * risk suggestions to it means one key to rotate, one spend line, and one
- * model-pinning decision across both AI surfaces.
+ * model-pinning decision across both AI surfaces. An organisation-level key
+ * also needs `ANTHROPIC_WORKSPACE_ID`, sent as the `anthropic-workspace-id`
+ * header (see src/lib/ai/anthropic-workspace.ts) — shared the same way.
  *
  * EXTERNAL provider — reachable only after the factory's LOCAL_ONLY
  * short-circuit. A LOCAL_ONLY tenant must never construct this class; the
@@ -21,6 +23,7 @@ import { buildRiskAssessmentPrompt } from './prompt-builder';
 import { RiskSuggestionOutputSchema } from './schemas';
 import { StubRiskSuggestionProvider } from './stub-provider';
 import { logger } from '@/lib/observability/logger';
+import { anthropicWorkspaceHeaders } from '@/lib/ai/anthropic-workspace';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -73,11 +76,17 @@ export class AnthropicRiskSuggestionProvider implements RiskSuggestionProvider {
     readonly providerName = 'anthropic';
     private apiKey: string;
     private model: string;
+    private workspaceId: string | null;
     private fallback: StubRiskSuggestionProvider;
 
-    constructor(apiKey: string, model?: string) {
+    /**
+     * `workspaceId` is `ANTHROPIC_WORKSPACE_ID`, passed by the factory beside
+     * the key it belongs with. Absent, the request carries no workspace header.
+     */
+    constructor(apiKey: string, model?: string, workspaceId?: string | null) {
         this.apiKey = apiKey;
         this.model = model ?? DEFAULT_ANTHROPIC_MODEL;
+        this.workspaceId = workspaceId ?? null;
         this.fallback = new StubRiskSuggestionProvider(/* isFallbackMode */ true);
 
         // AISVS C12.4.3 / C12.5.3 — a model override is a config change and is
@@ -116,6 +125,7 @@ export class AnthropicRiskSuggestionProvider implements RiskSuggestionProvider {
                     'x-api-key': this.apiKey,
                     'anthropic-version': ANTHROPIC_VERSION,
                     'content-type': 'application/json',
+                    ...anthropicWorkspaceHeaders(this.workspaceId),
                 },
                 body: JSON.stringify({
                     model: this.model,

@@ -282,6 +282,53 @@ describe('AnthropicCompliancePostureProvider', () => {
     });
 });
 
+/**
+ * An organisation-level ANTHROPIC_API_KEY is refused with HTTP 400 unless the
+ * request names its workspace. Driven through the FACTORY, because the factory
+ * is what reads `ANTHROPIC_WORKSPACE_ID` — a test that constructed the provider
+ * with the id in hand would stay green if the factory stopped passing it.
+ */
+describe('AnthropicCompliancePostureProvider — anthropic-workspace-id', () => {
+    const ok = {
+        ok: true,
+        status: 200,
+        json: async () => ({ content: [{ type: 'text', text: GOOD_JSON }] }),
+    };
+
+    async function headersSentByTheFactoryProvider(): Promise<Record<string, string>> {
+        mockEnv.AI_POSTURE_PROVIDER = 'anthropic';
+        mockEnv.ANTHROPIC_API_KEY = 'sk-test';
+        fetchMock.mockResolvedValueOnce(ok);
+        const res = await getCompliancePostureProvider().generate(makeInput());
+        // A real call, not a fallback — the headers below are the ones that left.
+        expect(res.isFallback).toBe(false);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        return fetchMock.mock.calls[0][1].headers;
+    }
+
+    it('sends the configured workspace id beside the key', async () => {
+        mockEnv.ANTHROPIC_WORKSPACE_ID = 'wrkspc_01TESTWORKSPACE';
+        const headers = await headersSentByTheFactoryProvider();
+        expect(headers['anthropic-workspace-id']).toBe('wrkspc_01TESTWORKSPACE');
+        expect(headers['x-api-key']).toBe('sk-test');
+    });
+
+    it('sends exactly the headers it always sent when no workspace id is set', async () => {
+        const headers = await headersSentByTheFactoryProvider();
+        expect(headers).toEqual({
+            'x-api-key': 'sk-test',
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+        });
+    });
+
+    it('treats a blank workspace id as unset', async () => {
+        mockEnv.ANTHROPIC_WORKSPACE_ID = '   ';
+        const headers = await headersSentByTheFactoryProvider();
+        expect('anthropic-workspace-id' in headers).toBe(false);
+    });
+});
+
 describe('OpenRouterCompliancePostureProvider', () => {
     const ok = (content: string) => ({
         ok: true,

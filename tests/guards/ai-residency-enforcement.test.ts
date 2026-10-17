@@ -22,6 +22,7 @@ const mutableEnv: Record<string, string | undefined> = {
     OPENROUTER_MODEL: undefined,
     ANTHROPIC_API_KEY: 'anthropic-test',
     ANTHROPIC_MODEL: undefined,
+    ANTHROPIC_WORKSPACE_ID: undefined,
     AI_LOCAL_BASE_URL: 'http://local-gateway:8080',
     AI_LOCAL_MODEL: 'llama3.1',
     AI_LOCAL_API_KEY: undefined,
@@ -70,6 +71,7 @@ beforeEach(() => {
     mutableEnv.OPENROUTER_API_KEY = 'test-key';
     mutableEnv.ANTHROPIC_API_KEY = 'anthropic-test';
     mutableEnv.ANTHROPIC_MODEL = undefined;
+    mutableEnv.ANTHROPIC_WORKSPACE_ID = undefined;
     mutableEnv.AI_LOCAL_BASE_URL = 'http://local-gateway:8080';
     mutableEnv.AI_LOCAL_MODEL = 'llama3.1';
 });
@@ -141,14 +143,20 @@ describe('EXTERNAL residency (default) — unchanged', () => {
         expect(openRouterCtor).not.toHaveBeenCalled();
     });
 
-    it('passes the SAME key + model the compliance-posture summary uses', () => {
+    it('passes the SAME key + model + workspace the compliance-posture summary uses', () => {
         // The whole point of the anthropic arm: one credential, one model pin
         // shared with the posture Hero. If this ever reads a risk-specific env
-        // var instead, that shared-key property is silently gone.
+        // var instead, that shared-key property is silently gone. The workspace
+        // id belongs to the key, so it is shared the same way.
         mutableEnv.AI_RISK_PROVIDER = 'anthropic';
         mutableEnv.ANTHROPIC_MODEL = 'claude-haiku-4-5';
+        mutableEnv.ANTHROPIC_WORKSPACE_ID = 'wrkspc_01TESTWORKSPACE';
         getProvider();
-        expect(anthropicCtor).toHaveBeenCalledWith('anthropic-test', 'claude-haiku-4-5');
+        expect(anthropicCtor).toHaveBeenCalledWith(
+            'anthropic-test',
+            'claude-haiku-4-5',
+            'wrkspc_01TESTWORKSPACE',
+        );
     });
 
     it('degrades to the stub when ANTHROPIC_API_KEY is absent — never throws', () => {

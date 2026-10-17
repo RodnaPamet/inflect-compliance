@@ -45,6 +45,7 @@ function deploymentProviders(): readonly Provider[] {
     return buildFlueProviders(
         {
             externalApiKey: env.ANTHROPIC_API_KEY,
+            externalWorkspaceId: env.ANTHROPIC_WORKSPACE_ID,
             localBaseUrl: env.AI_LOCAL_BASE_URL,
             localApiKey: env.AI_LOCAL_API_KEY,
         },

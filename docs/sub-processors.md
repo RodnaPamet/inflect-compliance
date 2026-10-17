@@ -175,7 +175,8 @@ Common to both:
 - **Transfer:** Anthropic US/global; per its terms.
 - **Vendor pages:** https://www.anthropic.com/legal/privacy · https://www.anthropic.com/legal/commercial-terms
 - **Operator-optional:** both default to `stub` (deterministic local providers — no external call). Set `AI_POSTURE_PROVIDER=anthropic` and/or `AI_RISK_PROVIDER=anthropic`, plus `ANTHROPIC_API_KEY` (model via `ANTHROPIC_MODEL`), to enable. `…=openrouter` routes the same respective payload through OpenRouter instead.
-- **Env:** `AI_POSTURE_PROVIDER`, `AI_RISK_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (`src/env.ts`).
+- **Workspace:** an API key created inside an Anthropic workspace needs nothing more. An ORGANISATION-level key is refused by Anthropic with HTTP 400 unless each request names its workspace, so set `ANTHROPIC_WORKSPACE_ID` (a `wrkspc_…` identifier, not a secret) and every request to the Anthropic API — both features above, and the Flue agent runtime's external provider, which uses the same key — carries the header `anthropic-workspace-id: <id>`. Unset, no request carries it. The header names which of the operator's own workspaces the request is billed and governed under; it sends no customer data and changes nothing about what each payload contains (`src/lib/ai/anthropic-workspace.ts`).
+- **Env:** `AI_POSTURE_PROVIDER`, `AI_RISK_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_WORKSPACE_ID` (`src/env.ts`).
 
 ### HaveIBeenPwned — password breach check
 - **PII shared:** **none** — only the first 5 hex chars of the SHA-1 of a candidate password (k-anonymity range query). The full hash/password never leaves the server.
