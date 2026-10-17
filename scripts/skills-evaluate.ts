@@ -42,6 +42,10 @@
  *   ANTHROPIC_API_KEY=... npm run skills:evaluate -- --skill soa-authoring
  *   ANTHROPIC_API_KEY=... npm run skills:evaluate -- --model claude-haiku-4-5
  *
+ * In CI it runs from the manual workflow `.github/workflows/skills-evaluate.yml`,
+ * which holds the credential as a repository secret and uploads the records as
+ * an artifact to be committed in a pull request.
+ *
  * Exits non-zero if any skill's record would not pass; that skill's record is
  * not written, and its per-kind result is printed.
  */

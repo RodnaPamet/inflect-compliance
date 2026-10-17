@@ -112,6 +112,13 @@ stores the revision the API reports, and writes `evaluation-record.json` beside
 the skill only when the record passes. The cases are synthetic; no tenant data
 is sent.
 
+The credential is a repository secret, so records are normally made by the
+manual workflow `.github/workflows/skills-evaluate.yml` (Actions → "Skill
+evaluation records" → Run workflow). It runs the same command and uploads the
+passing records as an artifact, which is then committed in a pull request like
+any other change. A push by the workflow itself would not trigger CI, which is
+why it does not commit.
+
 ## The mount gate
 
 A run may mount a skill only when all of these hold. Each failure is a named

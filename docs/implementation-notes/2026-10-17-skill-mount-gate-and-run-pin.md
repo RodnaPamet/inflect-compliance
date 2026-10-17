@@ -37,6 +37,7 @@ writes only a record that passes.
 | `src/lib/agentic/flue/execute.ts` | Fails a resumed run whose skills no longer match its pin. |
 | `prisma/schema/agentic.prisma`, migration `20261017200000_workflow_run_mounted_skills` | The column, the array CHECK, the write-once trigger. |
 | `scripts/skills-evaluate.ts` | The recorder. |
+| `.github/workflows/skills-evaluate.yml` | Runs the recorder with the repository secret; uploads records as an artifact. |
 | `src/app/t/[tenantSlug]/(app)/agents/runs/[runId]/` | The run detail page shows the pin. |
 
 ## Decisions
@@ -59,3 +60,12 @@ writes only a record that passes.
 - **The corpus unit test mocks the gate.** Its resolution tests are about
   mechanics; the gate and the corpus under the real gate are tested separately,
   so a mocked gate can never hide a skill that fails the real one.
+- **Records come from a manual CI workflow, as an artifact.** The credential is
+  a repository secret, so no session holds it. The workflow does not commit:
+  a push made with `GITHUB_TOKEN` triggers no CI, and a branch without its
+  required checks cannot merge. The run URL is the record's provenance.
+- **The audit entry carries a digest of the pin, not the pin.** The run's
+  `WORKFLOW_RUN_STARTED` row records `mountedSkillCount` and a SHA-256 over the
+  canonical JSON of `mountedSkills`, so the hash-chained trail binds the
+  write-once column, and the payload stays a shape `no-raw-prompt-logging` can
+  read.

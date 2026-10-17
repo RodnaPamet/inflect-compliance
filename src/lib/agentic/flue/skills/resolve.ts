@@ -31,10 +31,24 @@ import {
     type LoadedSkill,
     type SkillCorpus,
 } from './index';
-import type { FlueSkillDocument } from '../run-binding';
 import { canonicalJson } from '@/lib/canonical-json';
 
 import { checkSkillMountable, SkillNotMountableError, type MountedSkillPin, type MountVerdict } from './mount-gate';
+
+/**
+ * The document a run binding carries — `FlueSkillDocument` in `run-binding.ts`,
+ * by shape rather than by import. `workflow-runs.ts` reaches this module to pin
+ * a run's skills before its row exists, and `run-binding.ts`'s own type imports
+ * lead to `@flue/runtime`, which the node project cannot load
+ * (`tests/guards/flue-esm-modules-stay-off-the-static-graph.test.ts`). The two
+ * cannot drift: `execute.ts` hands this module's result to `bindRun`, so `tsc`
+ * checks the shapes agree.
+ */
+export interface ResolvedSkillDocument {
+    readonly name: string;
+    readonly description: string;
+    readonly instructions: string;
+}
 
 /** Cached: the corpus is read-only files, and re-reading per run buys nothing. */
 let corpus: SkillCorpus | null = null;
@@ -73,10 +87,10 @@ function mountable(c: SkillCorpus, name: string, unknownReason: string): { skill
     return { skill, pin: v.pin };
 }
 
-export function resolveSkillsFor(declared: readonly string[] | undefined): FlueSkillDocument[] {
+export function resolveSkillsFor(declared: readonly string[] | undefined): ResolvedSkillDocument[] {
     if (!declared || declared.length === 0) return [];
     const c = shippedCorpus();
-    const resolved: FlueSkillDocument[] = [];
+    const resolved: ResolvedSkillDocument[] = [];
     for (const name of declared) {
         const { skill } = mountable(c, name, 'declared by a workflow definition but not in the shipped corpus');
         resolved.push({ name: skill.name, description: skill.description, instructions: skill.instructions });

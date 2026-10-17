@@ -53,6 +53,7 @@
  * request — so the property is tested as "no further tool executed after the
  * revoke", with a spy on the tool itself.
  */
+import { createHash } from 'node:crypto';
 import { WorkflowRunStatus } from '@prisma/client';
 
 import { runInTenantContext, runInGlobalContext } from '@/lib/db/rls-middleware';
@@ -75,6 +76,7 @@ import {
     type ContentProvenance,
 } from '@/lib/agentic/content-provenance';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
+import { canonicalJson } from '@/lib/canonical-json';
 import { SkillLoadError } from '@/lib/agentic/flue/skills';
 import { resolveSkillPins } from '@/lib/agentic/flue/skills/resolve';
 import type { MountedSkillPin } from '@/lib/agentic/flue/skills/mount-gate';
@@ -486,9 +488,14 @@ export async function startWorkflowRun(
             // The pin, in the trail as well as on the row. The row can be
             // deleted with its tenant; the hash-chained entry is what survives.
             policyCardVersion,
-            // …and the skills it was taught, by name, version and hash. No
-            // skill text: the hash identifies the document in the repository.
-            mountedSkills,
+            // …and WHAT IT WAS TAUGHT, as a digest over the row's pin rather
+            // than the pin itself. The trail then binds the write-once column:
+            // an auditor recomputes SHA-256 over the canonical JSON of
+            // `mountedSkills` and compares. A digest also keeps the payload a
+            // shape `no-raw-prompt-logging` can read; the list, as an
+            // identifier, is a field bag it cannot.
+            mountedSkillCount: mountedSkills.length,
+            mountedSkillsDigest: createHash('sha256').update(canonicalJson(mountedSkills)).digest('hex'),
             // Which engine walked this run, and — when it was not the one
             // configured — why not. In the hash-chained trail rather than only
             // in a log line, because "which engine executed this" is a question
