@@ -163,10 +163,14 @@ describe('a re-dispatch inside the same day is a no-op', () => {
         expect(opts.jobId).toContain('t1');
         expect(opts.jobId).toContain('entra-id');
         expect(opts.jobId).not.toContain('c1');
-        // BullMQ rejects a custom id whose colons do not split it into exactly
-        // three parts — the leaver's own test was green for weeks on an id every
-        // enqueue threw on, because it checked the key material and not validity.
-        expect(opts.jobId.split(':')).toHaveLength(3);
+        // VALIDITY, not just key material — the leaver's own test was green for
+        // weeks on an id every enqueue threw on, because it checked the material
+        // and never that the id was acceptable.
+        //
+        // Asserted as NO COLON rather than three segments (#3557). Three was
+        // valid only under BullMQ's carve-out for old repeatable ids, whose own
+        // TODO promises to drop it; counting segments would now pass trivially.
+        expect(opts.jobId).not.toContain(':');
     });
 });
 

@@ -133,19 +133,31 @@ export function dispatchJobId(
     if (!Number.isFinite(bucketMs) || bucketMs <= 0) {
         throw new Error(`dispatchJobId: bucketMs must be a positive number, got ${bucketMs}`);
     }
-    // THE KEY MUST NOT CONTAIN A COLON, and this is not a style rule.
+    // COLON-FREE, which is why this no longer depends on a carve-out (#3557).
     //
-    // BullMQ accepts a custom job id containing ':' ONLY when it splits into
-    // exactly three parts — a back-compat carve-out for old repeatable ids:
+    // This emitted `${jobName}:${key}:${bucket}` — exactly two colons, exactly
+    // three segments — and was valid only because BullMQ carves out
+    // three-segment ids for old repeatable jobs:
     //
     //     if (jobId.includes(':') && jobId.split(':').length !== 3) throw
     //
-    // This template contributes exactly two colons, so a caller passing a
-    // composite key such as `${tenantId}:${provider}` produces four segments
-    // and every enqueue throws `Custom Id cannot contain :`.
+    // The library's own TODO beside that line says the next breaking change
+    // replaces it with `include(':')`, which rejects ANY colon. Every id this
+    // function produced would have become invalid on that upgrade, across all
+    // twelve dispatchers at once — and the symptom is the one below: a
+    // dispatcher reporting `dispatched: 0, failed: N` while everything around
+    // it looks healthy.
     //
-    // That is not hypothetical. The leaver dispatch passed that exact key, so
-    // from the day it was wired it reported `dispatched: 0, failed: 1` every
+    // So the format moved to `-`, matching `scheduledJobId` above, and the
+    // question stops being "do we still fit the carve-out".
+    //
+    // THE KEY STILL HAS ITS COLONS REPLACED, and that matters MORE now, not
+    // less. A colon reaching the id from a composite key would be the only
+    // colon in it — fine today, rejected outright by the stricter check this
+    // change exists to survive.
+    //
+    // That is not hypothetical. The leaver dispatch passed `${tenantId}:${provider}`,
+    // so from the day it was wired it reported `dispatched: 0, failed: 1` every
     // night and the scheduled leaver path never ran once. It looked healthy
     // from the outside: the schedule was registered, the worker was up, and a
     // MANUAL trigger — which passes no jobId — worked perfectly, which is what
@@ -155,8 +167,17 @@ export function dispatchJobId(
     // silent nightly no-op into a loud nightly crash, which is better but still
     // broken; substituting a separator keeps the id stable, deterministic and
     // dedupe-correct, which is what the caller actually wanted.
+    //
+    // THE CHANGEOVER COSTS ONE BUCKET, measured. The id is an idempotency key,
+    // so ids under the old format do not dedupe against the new ones: for one
+    // DAILY_BUCKET_MS window each (job, key) could be enqueued twice. Every
+    // executor behind these twelve sites is either lock-and-lease protected
+    // (`identity-sync`, `hris-sync`, `sharepoint-delta-sync`) or idempotent at
+    // the domain level — the joiner returns `ACCOUNT_OBSERVED` for a link a
+    // COMPLETE sync already re-observed — so the duplicate is a no-op run
+    // rather than a double action.
     const safeKey = key.replace(/:/g, '_');
-    return `${jobName}:${safeKey}:${Math.floor(now / bucketMs)}`;
+    return `${jobName}-${safeKey}-${Math.floor(now / bucketMs)}`;
 }
 
 export interface FanOutResult {

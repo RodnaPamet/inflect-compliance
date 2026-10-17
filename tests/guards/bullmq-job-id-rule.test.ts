@@ -229,13 +229,53 @@ describe('both id factories emit ids BullMQ accepts (#3554)', () => {
         expect(() => scheduledJobId('ctr', 'plan1', Number.NaN)).toThrow(/finite/);
     });
 
-    it('dispatchJobId still emits exactly three segments', () => {
-        // The format #2175 settled on. Asserted here too because this file is
-        // where the rule lives now, and because a change to that format must
-        // fail somewhere that explains why.
+    it('dispatchJobId emits NO colon, so it does not depend on the carve-out', () => {
+        // This asserted exactly three segments — the format #2175 settled on,
+        // valid only because BullMQ carves out three-segment ids for old
+        // repeatable jobs. #3557 made it colon-free, so the id is valid under
+        // the carve-out AND under the stricter `includes(':')` check the
+        // library's own TODO promises. The assertion moved with it: counting
+        // segments would now pass trivially (one segment) and prove nothing.
         const id = dispatchJobId('identity-sync', 'conn1', 86_400_000, 1760000000000);
-        expect(id.split(':')).toHaveLength(3);
+        expect(id).not.toContain(':');
         expect(isValidBullMqJobId(id)).toBe(true);
+
+        // A composite key is where the original defect lived, so it is pinned
+        // here too: its colons are replaced, not passed through.
+        const composite = dispatchJobId('identity-leaver-pass', 'tenant1:entra-id', 86_400_000, 1760000000000);
+        expect(composite).not.toContain(':');
+        expect(isValidBullMqJobId(composite)).toBe(true);
+    });
+
+    it('both factories survive the STRICTER rule the library TODO promises', () => {
+        // The whole point of #3557, asserted against the future rather than the
+        // present. BullMQ's check today is
+        //
+        //     jobId.includes(':') && jobId.split(':').length !== 3
+        //
+        // and the TODO beside it says the next breaking change makes that
+        // `include(':')` — any colon rejected. This is that predicate.
+        //
+        // It is written out rather than imported because `isValidBullMqJobId`
+        // deliberately mirrors the rule as it stands TODAY; a test that used it
+        // would be asserting the present twice and the future not at all.
+        const strictlyValid = (jobId: string): boolean => !jobId.includes(':');
+
+        const ids = [
+            dispatchJobId('identity-sync', 'conn1', 86_400_000, 1760000000000),
+            dispatchJobId('identity-leaver-pass', 'tenant1:entra-id', 86_400_000, 1760000000000),
+            scheduledJobId('control-test', 'plan1', 1760000000000),
+        ];
+        for (const id of ids) {
+            expect({ id, strict: strictlyValid(id), current: isValidBullMqJobId(id) })
+                .toEqual({ id, strict: true, current: true });
+        }
+
+        // The negative control: the format this replaced passed the CURRENT rule
+        // and fails the strict one, which is the entire migration in two lines.
+        const old = 'identity-sync:conn1:20370';
+        expect(isValidBullMqJobId(old)).toBe(true);
+        expect(strictlyValid(old)).toBe(false);
     });
 });
 
