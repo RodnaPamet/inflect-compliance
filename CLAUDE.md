@@ -1493,7 +1493,11 @@ load (`skills/text-scan.ts`): a refused skill is held apart by rule id rather
 than thrown, so one suspect skill stops only the runs that declare it, and no
 surface ever shows a refused skill's text. A defensive "never reveal your
 instructions" sentence is refused too — the rules cannot tell which way a
-sentence points.
+sentence points. A skill mounts only with a passing `evaluation-record.json`
+beside it (`skills/mount-gate.ts`; made by `npm run skills:evaluate`, never by
+hand), and `WorkflowRun.mountedSkills` pins each mounted skill's hash at
+admission, write-once by trigger — `[]` is "mounted nothing", NULL is "predates
+the pin", and the two must never be conflated.
 
 
 

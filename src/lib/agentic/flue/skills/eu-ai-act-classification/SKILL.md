@@ -5,6 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original guidance; cites Regulation (EU) 2024/1689 by article and annex number
   version: '1'
+  evaluation: evaluation-set.json
 ---
 
 Two questions decide everything downstream, and they are independent:

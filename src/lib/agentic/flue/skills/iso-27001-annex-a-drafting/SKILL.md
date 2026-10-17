@@ -5,6 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original drafting guidance; cites ISO/IEC 27001:2022 Annex A by CONTROL IDENTIFIER only
   version: '1'
+  evaluation: evaluation-set.json
   isoText: none — no Annex A control titles or text are reproduced here (#3478)
 ---
 

@@ -21,8 +21,8 @@ on a run is `resolve.ts` beside it, and the evaluation format is
 | 4 | **Licensed and sourced.** | Every skill states a licence, a source and a version. Standards are cited by identifier; sold standard text, such as ISO Annex A control titles, is never reproduced. | The loader refuses a missing licence; `tests/unit/flue-skills-corpus.test.ts` spot-checks ISO titles |
 | 5 | **Reviewed as code.** | A change is a pull request. The product shows skills read-only, and the directory of readable documents is the record of what agents can be taught. | `tests/rendered/agent-skills-tab.test.tsx` counts zero edit controls |
 | 6 | **Output discipline.** | A procedure ends in a proposal or a named gap, cites the artefact it relied on, refuses when a required input is missing, and never treats an absence of exceptions as evidence. | `metadata.output` and `metadata.requiredInput`, validated by the loader; run admission refuses a missing required input (`src/lib/agentic/workflows/required-input.ts`) |
-| 7 | **Evaluated before mounted.** | Each version ships an evaluation set, and a record of a real model's answers must pass the set's thresholds before a run may mount it. | The format: `evaluation-record.ts`. The mount gate: step 1b (#3666) |
-| 8 | **Pinned on the run.** | A run records each mounted skill's name, version and content hash, so "what did the agent know" is answerable per run. | Step 1b (#3666) |
+| 7 | **Evaluated before mounted.** | Each version ships an evaluation set, and a record of a real model's answers must pass the set's thresholds before a run may mount it. | `checkSkillMountable` in `mount-gate.ts`, applied by the resolver; records are made by `npm run skills:evaluate` |
+| 8 | **Pinned on the run.** | A run records each mounted skill's name, version and content hash, so "what did the agent know" is answerable per run. | `WorkflowRun.mountedSkills`, written at admission and refused any later change by a trigger; a resume whose skills no longer match the pin fails |
 | 9 | **Injection-safe text.** | No URL the model is told to fetch, no instruction about revealing its context, no tool name outside the declared set, no secret-shaped string. | `scanSkillText` in `text-scan.ts`, run by the loader on every document; see below |
 
 ## Frontmatter
@@ -88,7 +88,10 @@ authored with the skill. It holds the cases a reviewer agreed the skill must
 handle, each with a machine-checkable expectation (`mustInclude`,
 `mustNotInclude`), and a threshold per kind of case. It records the SHA-256 of
 the instructions it was written for, so editing the instructions without
-revisiting the cases is refused.
+revisiting the cases is refused. A case may carry a `rationale`: which line of
+the skill it tests, and why its expectation tells a right answer from the
+likely wrong one. The rationale is never scored; it is what a reviewer reads to
+judge whether a case proves anything.
 
 Every set covers four kinds of case:
 
@@ -104,6 +107,51 @@ gave, with the time it ran. Pass rates are recomputed from the raw answers every
 time and are never stored; a record that carries a rate is refused as malformed.
 A set carries no answers, so nothing in the repository can show a pass that no
 model produced.
+
+`npm run skills:evaluate` makes a record. It sends each case to the model the
+Flue runtime is configured with (`ANTHROPIC_MODEL`), with the skill's
+instructions as the system prompt and the case input as the user message,
+stores the revision the API reports, and writes `evaluation-record.json` beside
+the skill only when the record passes. The cases are synthetic; no tenant data
+is sent.
+
+The credential is a repository secret, so records are normally made by the
+manual workflow `.github/workflows/skills-evaluate.yml` (Actions → "Skill
+evaluation records" → Run workflow). It runs the same command and uploads the
+passing records as an artifact, which is then committed in a pull request like
+any other change. A push by the workflow itself would not trigger CI, which is
+why it does not commit.
+
+## The mount gate
+
+A run may mount a skill only when all of these hold. Each failure is a named
+refusal, and a run that declares the skill is refused before its row exists:
+
+| Refusal | Meaning |
+|---|---|
+| `NOT_EVALUATED` | The skill names no evaluation set. |
+| `HASH_MISMATCH`, `VERSION_MISMATCH`, `NAME_MISMATCH`, `MALFORMED` | The set does not belong to this exact skill text, or a file does not parse. |
+| `NO_RECORD` | The set exists and no model has answered it. |
+| `SET_MISMATCH` | The record answered a different set from the committed one; adding a case means re-recording. |
+| `UNANSWERED_CASE`, `UNKNOWN_ANSWER`, `DUPLICATE_ANSWER`, `BELOW_THRESHOLD` | The record, recomputed from its raw answers, does not pass. |
+
+CI fails for any registered workflow that declares a skill the gate refuses,
+and for any committed record that no longer passes.
+
+The gate does not require the record's model to be the model a given run uses.
+A run's model is chosen per tenant by residency, and a record per model would
+refuse every skill to a tenant on a model nobody recorded. The record shows a
+real model passed the text; the run's own pin records what that run was taught.
+
+## The pin on every run
+
+`WorkflowRun.mountedSkills` holds one `{ name, version, contentHash }` per skill
+the run mounted, written when the run is admitted. `[]` means the run mounted
+none; `NULL` means the run predates the pin. A database trigger refuses any
+change to the column once the row exists, including filling in a `NULL`. When a
+run resumes after a checkpoint, the skills it would mount are compared with the
+pin, and a mismatch (a deploy changed a skill mid-run) fails the run before
+anything reaches the model. The run detail page lists the pin.
 
 ## Who may author skills
 
