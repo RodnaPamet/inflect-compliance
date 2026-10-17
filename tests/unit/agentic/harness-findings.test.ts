@@ -8,6 +8,7 @@
  */
 import { validReportBody, validIncompleteReportBody } from '../../helpers/agent-harness-fake-scanner';
 import {
+    firstSecretShapedMember,
     isHarnessShortfall,
     planHarnessScan,
     reachOf,
@@ -160,6 +161,32 @@ describe('a scan closes a finding only on positive evidence', () => {
         body.agents = [body.agents[0]];
         const plan = planHarnessScan(body, prior());
         expect(plan.resolve.some((r) => r.includes('shadow-1'))).toBe(false);
+    });
+});
+
+describe('a secret-shaped value anywhere is found, and named by path', () => {
+    // Built at runtime so no literal credential pattern sits in this file.
+    const secret = () => ['gh', 'p_', 'Q'.repeat(36)].join('');
+
+    it('a valid report carries none', () => {
+        expect(firstSecretShapedMember(validReportBody())).toBeNull();
+    });
+
+    it('finds one in a member the contract does not check, and names the path, not the value', () => {
+        const body = validReportBody();
+        body.agents[1].tools[0].name = secret();
+        const at = firstSecretShapedMember(body);
+        expect(at).toBe('agents[1].tools[0].name');
+        expect(at).not.toContain(secret());
+    });
+
+    it('reaches every depth: an evidence pointer and a source reason', () => {
+        const a = validReportBody();
+        a.agents[0].verdicts[0] = { ...a.agents[0].verdicts[0], evidence: `kv://x/${secret()}` };
+        expect(firstSecretShapedMember(a)).toBe('agents[0].verdicts[0].evidence');
+        const b = validReportBody();
+        b.scan.scanner.version = secret();
+        expect(firstSecretShapedMember(b)).toBe('scan.scanner.version');
     });
 });
 

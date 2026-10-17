@@ -182,6 +182,18 @@ describe('a refused report writes nothing', () => {
         expect(await harnessRowCounts(T1)).toEqual(before);
     });
 
+    it('a secret-shaped value in any member is refused, named by path, and nothing is written', async () => {
+        const before = await harnessRowCounts(T1);
+        const secret = ['gh', 'p_', 'Q'.repeat(36)].join('');
+        const body = bodyFor(T1, 'scan_secret', (b) => {
+            b.agents[1].tools[0].name = secret;
+        });
+        const refusal = ingest(T1, body);
+        await expect(refusal).rejects.toThrow('harness_report_refused: SECRET_IN_REPORT: agents[1].tools[0].name');
+        await expect(ingest(T1, body)).rejects.not.toThrow(secret);
+        expect(await harnessRowCounts(T1)).toEqual(before);
+    });
+
     it('a credential bound to another agent may not submit the scanner’s report', async () => {
         const ctx = { ...ctxFor(T1), agentId: seeded[T1].targetAgentId };
         await expect(ingestHarnessReport(ctx, seeded[T1].scanner.serialise(bodyFor(T1, 'scan_submitter')))).rejects.toThrow(

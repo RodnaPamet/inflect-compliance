@@ -66,7 +66,39 @@ import {
     type HarnessLevel,
     type HarnessReach,
 } from './harness-ladder';
-import type { HarnessReportAgent, HarnessReportBody } from './harness-contract';
+import { looksLikeSecret, type HarnessReportAgent, type HarnessReportBody } from './harness-contract';
+
+/**
+ * The path of the first string member of a verified body whose value is
+ * secret-shaped, or null (DPIA condition 10, `docs/agentic-harness-scanner-dpia.md`).
+ *
+ * The contract refuses a secret-shaped value inside a credential reference
+ * only. Every other string — an id, a tool name, an evidence pointer, a server
+ * URL — is free for a careless or compromised scanner to fill, and the ingest
+ * stores most of them. So the ingest refuses a report in which ANY string
+ * matches, and names the member, never the value: the refusal reaches a log
+ * line, and repeating the secret there would be the leak it prevents.
+ */
+export function firstSecretShapedMember(body: HarnessReportBody): string | null {
+    const walk = (node: unknown, path: string): string | null => {
+        if (typeof node === 'string') return looksLikeSecret(node) ? path : null;
+        if (Array.isArray(node)) {
+            for (let i = 0; i < node.length; i++) {
+                const hit = walk(node[i], `${path}[${i}]`);
+                if (hit) return hit;
+            }
+            return null;
+        }
+        if (node !== null && typeof node === 'object') {
+            for (const [key, value] of Object.entries(node)) {
+                const hit = walk(value, path ? `${path}.${key}` : key);
+                if (hit) return hit;
+            }
+        }
+        return null;
+    };
+    return walk(body, '');
+}
 
 /** The `Finding.sourceKind` every harness finding carries — its reconcile key space. */
 export const HARNESS_FINDING_SOURCE_KIND = 'AGENT_HARNESS';

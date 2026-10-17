@@ -2338,7 +2338,7 @@ model AgentHarnessScanItem {
 
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   scan            AgentHarnessScan @relation(fields: [scanId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  discoveredAgent DiscoveredAgent  @relation(fields: [discoveredAgentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  discoveredAgent DiscoveredAgent  @relation(fields: [discoveredAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
 
   @@unique([tenantId, scanId, discoveredAgentId])
   @@index([tenantId, discoveredAgentId])
@@ -2371,7 +2371,7 @@ model AgentHarnessAcceptance {
   updatedAt         DateTime          @updatedAt
 
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  discoveredAgent DiscoveredAgent @relation(fields: [discoveredAgentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  discoveredAgent DiscoveredAgent @relation(fields: [discoveredAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
 
   @@unique([id, tenantId])
   @@index([tenantId, discoveredAgentId])

@@ -46,6 +46,7 @@ import {
     type HarnessReportBody,
 } from '@/lib/agentic/harness-contract';
 import {
+    firstSecretShapedMember,
     HARNESS_FINDING_SOURCE_KIND,
     planHarnessScan,
     type PlannedFinding,
@@ -98,6 +99,10 @@ export async function ingestHarnessReport(ctx: RequestContext, raw: string): Pro
                 throw badRequest(`harness_report_refused: ${verdict.reason}${issues}`);
             }
             const body = verdict.body;
+            // The contract checks credential references; the ingest checks
+            // every other string (DPIA condition 10). Named by path only.
+            const secretAt = firstSecretShapedMember(body);
+            if (secretAt) throw badRequest(`harness_report_refused: SECRET_IN_REPORT: ${secretAt}`);
             const fingerprint = harnessKeyFingerprint(verdict.signerKey);
             const key = keys.find((k) => k.keyFingerprint === fingerprint);
             if (!key) throw badRequest('harness_report_refused: UNTRUSTED_SIGNER');
