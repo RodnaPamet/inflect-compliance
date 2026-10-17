@@ -1068,7 +1068,27 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
 //   could not resolve are now resolved lexically, so they are no longer
 //   blind spots. The same change that raised the two ceilings above
 //   lowered this one, and that is the trade it makes.
-const UNANALYSABLE_READ_BASELINE = 1401;
+/**
+ * RAISED 1401 -> 1402 on 2026-10-17 (#3650), by exactly one.
+ *
+ * Four guards landed, three of which are repo-wide scans: they walk
+ * `repoFiles({ under: 'src' })` and read each file, so their path is built in a
+ * loop and lands in `path-not-constant` — the category this ratchet's own
+ * message names as un-analysable. The fix it suggests, "read the file through a
+ * constant path", is not available to a guard whose whole job is "no file under
+ * src/ does X"; the fourth guard (`identity-joiner-pass-stays-pure`) does have a
+ * single subject and does use a constant path.
+ *
+ * Why one and not four: most of what those three assert is over a COMPUTED
+ * ARRAY — the call sites found, the definitions parsed — not over file text, so
+ * only one assertion per-se reads a whole file in a way this detector counts.
+ * That the overshoot is one rather than four is itself the evidence that the
+ * scanning shape was kept narrow.
+ *
+ * Raised rather than suppressed, and by the measured amount rather than a round
+ * number, so the next raise is as visible as this one.
+ */
+const UNANALYSABLE_READ_BASELINE = 1402;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
