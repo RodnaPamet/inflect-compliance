@@ -24,15 +24,15 @@
  *     `<header role="banner">` carrying the load-bearing chrome
  *     geometry outside this file.
  *
- *     NOTHING PINS THAT CONTRACT (#3650). This cited a guard named
- *     `nav-bar-import-discipline`, which has never existed in this
- *     repository's history. The contract does
- *     hold today — `role="banner"` appears in two files and the
- *     second, `AppShellFrame.tsx`, only mentions it in a comment
- *     about the nesting bug it fixed — but it holds by habit rather
- *     than by a guard, and the axe rule it protects
- *     (`landmark-banner-is-top-level`) will not say so until a
- *     second banner ships.
+ *     PINNED BY `tests/guards/one-banner-landmark-in-src.test.ts`,
+ *     which asserts EXACTLY one — floor as well as ceiling, because
+ *     a refactor that deleted the banner outright would satisfy
+ *     "no parallel banner" and lose the landmark axe
+ *     `landmark-banner-is-top-level` is about. It masks comments:
+ *     `AppShellFrame.tsx` mentions `role="banner"` while explaining
+ *     the nesting bug it fixed, and a raw scan reads that as a
+ *     second banner. It cited `nav-bar-import-discipline` before
+ *     that, and that file had never existed (#3650).
  *
  * Slot architecture (locked by PR-1, filled by PR-3 onwards):
  *

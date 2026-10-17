@@ -29,10 +29,15 @@ import type { WorkflowContext } from '../workflow-types';
  * definition that reads a key it never declared — a bug in the definition, not
  * in the request. So this throws plainly instead of reporting nicely.
  *
- * NOTHING PREVENTS THE MISMATCH SHIPPING (#3650). This named a guard,
- * `workflow-required-input-is-declared`, as what does, and it has never existed — so a definition reading an undeclared key
- * fails at RUNTIME here rather than in CI, which is the opposite of what the
- * sentence promised.
+ * PREVENTED BY `tests/guards/workflow-reads-only-declared-input.test.ts`,
+ * which asserts that every key a definition reads through these helpers
+ * appears in its own `requiredInput`. That is the one combination admission
+ * cannot catch: `workflow-runs.ts` refuses a run whose CALLER omitted a
+ * declared key, so a key that is read but never declared is admitted and
+ * then dies on the read, mid-run, in front of the operator.
+ *
+ * It named `workflow-required-input-is-declared` before that, and that file
+ * had never existed (#3650).
  */
 export function requiredString(ctx: WorkflowContext, key: string): string {
     const v = ctx.input[key];

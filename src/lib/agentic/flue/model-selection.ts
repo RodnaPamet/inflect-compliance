@@ -37,11 +37,15 @@ import { env } from '@/env';
  * because a single stray per-run call anywhere reintroduces the hazard in
  * full.
  *
- * NOTHING PINS THAT TODAY (#3650). This cited a guard,
- * `flue-provider-registration-is-not-per-run`, that has never existed in this
- * repository's history — so the only thing keeping a per-run `setProvider`
- * out is this paragraph. Given the hazard above is a CROSS-TENANT EGRESS, a
- * guard enumerating `setProvider` call sites is worth more than the comment.
+ * PINNED BY `tests/guards/flue-provider-is-never-set-per-run.test.ts`, which
+ * scans every file under `src/` for a `setProvider(` CALL with comments
+ * masked — this paragraph quotes the function three times, and a raw scan
+ * would report the explanation as the breach. It also refuses to match
+ * `setProviders(`, the React state setter two admin pages use.
+ *
+ * It cited `flue-provider-registration-is-not-per-run` before that, and that
+ * file had never existed (#3650) — so the only thing keeping a per-run call
+ * out of a CROSS-TENANT EGRESS path was this paragraph.
  */
 
 /**

@@ -340,7 +340,35 @@ describe('epic-named ratchets are not added back', () => {
         // `setProvider` rule, whose own docblock calls the hazard it guards a
         // cross-tenant egress. A dead link tells a reader the citation moved;
         // these told a reader the protection existed, so they stopped looking.
-        expect(guardFiles().length).toBeLessThan(781);
+        // RAISED 781 -> 785 on 2026-10-17, for FOUR files, same test applied to
+        // each: every one is named for the invariant it protects, and none for
+        // the issue that found it. They close #3650, where four docblocks
+        // asserted in the present tense that a named guard pinned an invariant —
+        // and all four named a file that has never existed in this history.
+        //
+        //   identity-joiner-pass-stays-pure       the pass reaches nothing, so a
+        //                                         dry run provably writes nothing
+        //   flue-provider-is-never-set-per-run    no per-run `setProvider`; the
+        //                                         race it prevents is a
+        //                                         CROSS-TENANT EGRESS by the
+        //                                         module's own description
+        //   workflow-reads-only-declared-input    a key read but not declared is
+        //                                         the one case admission cannot
+        //                                         catch, so it died mid-run
+        //   one-banner-landmark-in-src            exactly one `role="banner"`,
+        //                                         floor as well as ceiling
+        //
+        // Why four files and not one: the ratchet below forbids an epic-named
+        // file, and a file named for a single invariant cannot honestly carry
+        // four unrelated ones across four subsystems. Three of the four also
+        // need comment MASKING for opposite reasons to each other, which is a
+        // trap to leave in one shared file.
+        //
+        // What it cost to not have them: nothing yet, measurably — all four
+        // properties still held when the guards were written. That is the
+        // argument FOR them rather than against: each was protected only by a
+        // paragraph that told the reader it was protected by a test.
+        expect(guardFiles().length).toBeLessThan(785);
     });
 
     /**
