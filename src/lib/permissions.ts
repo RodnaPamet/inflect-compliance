@@ -287,6 +287,26 @@ export type PermissionSet = {
          * protection.
          */
         agent_external_tools: boolean;
+        /**
+         * SUBMITTING a harness scan (#3665): a scanner in the client's
+         * environment posting its signed report.
+         *
+         * A SIXTH agent key because it is held by a different principal from
+         * the other five. They are held by the people who govern agents; this
+         * is held by the scanner, through its API key, and nothing else that
+         * key carries should let it do more. Folding it into `agent_registry`
+         * would hand every scanner the switch that admits new agents.
+         *
+         * The key is necessary, not sufficient. A report is ingested only when
+         * it is signed by a public key the tenant registered for that scanner,
+         * which takes `agent_registry` — so the authority to report and the
+         * authority to decide whose reports count stay apart.
+         *
+         * Granted to OWNER and ADMIN by default so a person can upload a report
+         * by hand; the scanner's API key carries it through the
+         * `admin:harness_ingest` scope.
+         */
+        agent_harness_ingest: boolean;
     };
 };
 
@@ -348,7 +368,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'tenant_lifecycle', 'owner_management',
         'compliance_dsar_view', 'compliance_dsar_manage',
         'agent_registry', 'agent_tool_exposure', 'agent_policy_card',
-        'agent_kill_switch', 'agent_external_tools',
+        'agent_kill_switch', 'agent_external_tools', 'agent_harness_ingest',
     ],
 };
 
@@ -391,6 +411,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_registry: true, agent_tool_exposure: true,
                     agent_policy_card: true,
                     agent_kill_switch: true, agent_external_tools: true,
+                    agent_harness_ingest: true,
                 },
             };
         case 'ADMIN':
@@ -432,6 +453,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // not the authority to admit new ones.
                     agent_policy_card: true,
                     agent_kill_switch: true, agent_external_tools: true,
+                    agent_harness_ingest: true,
                 },
             };
         case 'EDITOR':
@@ -455,7 +477,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false },
             };
         case 'AUDITOR':
             return {
@@ -479,7 +501,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false },
             };
         case 'READER':
         default:
@@ -501,7 +523,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false },
             };
     }
 }

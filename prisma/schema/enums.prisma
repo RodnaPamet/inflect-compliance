@@ -1981,6 +1981,26 @@ enum AgentRiskTier {
   CRITICAL
 }
 
+/// A rung of the harness ladder (#3665) — `HARNESS_LEVELS` in
+/// `src/lib/agentic/harness-ladder.ts`, which owns the ORDER. The database
+/// stores the value; nothing compares two of these except through `rungOf`.
+enum AgentHarnessLevel {
+  H0
+  H1
+  H2
+  H3
+  H4
+  H5
+}
+
+/// What a discovered agent can reach, as far as the harness bar cares
+/// (`HarnessReach` in `harness-ladder.ts`). UNKNOWN is held to the higher bar.
+enum AgentHarnessReach {
+  READ_ONLY
+  WRITE_OR_EXTERNAL
+  UNKNOWN
+}
+
 /// What became of one agent-driven write to a customer's third-party system
 /// (#2861). Modelled on `IdentityWriteOutcome`, including the distinction that
 /// enum paid for.

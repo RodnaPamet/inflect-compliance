@@ -67,6 +67,11 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AgentBehaviourWindow: "tests/integration/agent-circuit-breaker-isolation.test.ts",
     AgentCircuitBreaker: "tests/integration/agent-circuit-breaker-isolation.test.ts",
     AgenticEvidenceArtefact: "tests/integration/agentic-evidence-isolation.test.ts",
+    AgentHarnessScannerKey: "tests/integration/agent-harness-ingest.test.ts",
+    AgentHarnessScan: "tests/integration/agent-harness-ingest.test.ts",
+    AgentHarnessScanItem: "tests/integration/agent-harness-ingest.test.ts",
+    DiscoveredAgent: "tests/integration/agent-harness-ingest.test.ts",
+    AgentHarnessAcceptance: "tests/integration/agent-harness-ingest.test.ts",
 };
 
 /**

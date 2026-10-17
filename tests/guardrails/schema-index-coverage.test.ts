@@ -433,6 +433,19 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'AgentRiskAssessmentRepository.listAnswers filters by [tenantId, assessmentId]',
     },
+    // ── Agent harness scans (#3665) ─────────────────────────────────
+    {
+        model: 'AgentHarnessScan',
+        fields: ['tenantId', 'asOf'],
+        justification:
+            'agent-harness-scans.listHarnessScans filters by tenantId and orders by asOf desc, bounded take ≤200',
+    },
+    {
+        model: 'AgentHarnessAcceptance',
+        fields: ['tenantId', 'discoveredAgentId'],
+        justification:
+            'agent-harness-acceptance.listHarnessAcceptances filters by [tenantId, discoveredAgentId?]; the scan ingest reads the in-force acceptances of a set of discovered agents by the same pair',
+    },
     // ── Agent policy card (AgentPolicyCardRepository) ───────────────
     {
         model: 'AgentPolicyCardVersion',
@@ -646,6 +659,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'listRegisteredAgents filters by (tenantId, deletedAt IS NULL, +status) and orders by createdAt desc — covered by @@index([tenantId, status]) + @@index([tenantId, deletedAt]) + @@index([tenantId, createdAt]); bounded take ≤200.',
     // Tool exposure — read per (tenantId, agentId) on every MCP invocation and
     // by the admin surface; there is no other shape.
+    // Harness ingest (#3665) — both read per tenant with a bounded take.
+    AgentHarnessScannerKey:
+        'listHarnessScannerKeys and the scan ingest filter by tenantId (+ revokedAt IS NULL) only — a tenant trusts a handful of scanner keys, covered by the tenantId-leading @@unique([tenantId, keyFingerprint]) and @@index([tenantId, agentId]); bounded take ≤200.',
+    DiscoveredAgent:
+        'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) only — exactly the @@unique([tenantId, discoveredId]); bounded by the report\'s agent count.',
     RegisteredAgentTool:
         'listGrantedToolNames and listAgentTools both filter by (tenantId, agentId) and nothing else — covered by @@index([tenantId, agentId]) with the tenantId-leading @@unique([tenantId, agentId, toolName]) behind it; bounded take ≤200.',
     // MCP agent proposals — listAgentProposals filters by tenantId (+ optional

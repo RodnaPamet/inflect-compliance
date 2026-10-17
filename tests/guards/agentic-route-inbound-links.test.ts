@@ -224,6 +224,16 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/[agentId]/status/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/tools/route.ts',
     't/[tenantSlug]/admin/agents/kill-switch/route.ts',
+    // #3665 — the harness ingest. `harness-scans` is MACHINE surface: a
+    // scanner POSTs a signed report with an API key scoped to
+    // `admin:harness_ingest` and nothing else, so no page calls it and none
+    // should. The other three are the register's half — which keys are
+    // trusted, and the owner's time-limited acceptance of a shortfall —
+    // API-only until the harness matrix tab, the follow-up step, renders them.
+    't/[tenantSlug]/admin/agents/harness-acceptances/route.ts',
+    't/[tenantSlug]/admin/agents/harness-scanner-keys/[keyId]/route.ts',
+    't/[tenantSlug]/admin/agents/harness-scanner-keys/route.ts',
+    't/[tenantSlug]/admin/agents/harness-scans/route.ts',
     't/[tenantSlug]/admin/agents/reports/export/route.ts',
     't/[tenantSlug]/admin/agents/reports/route.ts',
     't/[tenantSlug]/admin/agents/review-quality/route.ts',

@@ -391,6 +391,10 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  on ControlException) — without this entry the encryption
     //  would be incidental rather than declared.
     RiskScoreEvent: ['justification'],
+    // Harness shortfall acceptance (#3665) — ControlException's shape, and its
+    // `justification` for the same reason: an owner's rationale for carrying a
+    // risk, which names systems and people. Never filtered or sorted on.
+    AgentHarnessAcceptance: ['justification'],
 
     // ─── Epic MCP Phase 3 — agent proposal queue ───────
     // `payloadJson` is the agent-proposed business content (risk/control/policy/

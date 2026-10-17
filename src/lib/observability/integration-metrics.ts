@@ -37,6 +37,7 @@ let _leaverPassOutcome: Counter | null = null;
 let _joinerPassOutcome: Counter | null = null;
 let _leaverNotification: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+let _harnessScan: Counter | null = null;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
 let _aiTokens: Histogram | null = null;
@@ -360,6 +361,31 @@ export function recordIdentityWritesUnsettled(attrs: { tenantId: string; count: 
  * non-zero rate means a compliance record is incomplete, and the CI pipeline
  * that produced the scan has no other way to learn it.
  */
+/**
+ * One harness-scan submission (#3665), by how it ended.
+ *
+ * Emitted on every terminal path, refusals included, and with `empty` beside
+ * `complete`, because the two quiet failures look alike from the scanner's
+ * side: a scanner that stopped posting, and one posting reports with nothing
+ * in them. A refusal carries its stable reason code (`BAD_SIGNATURE`,
+ * `UNTRUSTED_SIGNER`, `REPLAY`, …) — never anything from the report.
+ *
+ * No tenant label: a handful of outcomes and reasons.
+ */
+export function recordHarnessScanOutcome(attrs:
+    | { outcome: 'ingested'; complete: boolean; empty: boolean }
+    | { outcome: 'refused'; reason: string }): void {
+    if (!_harnessScan) {
+        _harnessScan = getMeter().createCounter('agent_harness.scan.outcome', {
+            description: 'Harness scan submissions by outcome',
+            unit: '1',
+        });
+    }
+    _harnessScan.add(1, attrs.outcome === 'ingested'
+        ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
+        : { outcome: attrs.outcome, reason: attrs.reason });
+}
+
 export function recordScannerFindingsTruncated(attrs: { source: string; dropped: number }): void {
     if (attrs.dropped <= 0) return;
     if (!_scannerFindingsTruncated) _scannerFindingsTruncated = getMeter().createCounter('scanner.findings.truncated', { description: 'Above-threshold scanner findings dropped at the materialisation cap', unit: '1' });

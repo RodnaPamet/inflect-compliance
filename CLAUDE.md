@@ -1481,6 +1481,29 @@ schema. The report cannot state a level, cannot carry a credential value, and
 cannot declare completeness; all three are derived or refused.
 `tests/helpers/agent-harness-fake-scanner.ts` is the reference implementation.
 
+**The harness ingest** (`usecases/agent-harness-scans.ts`, since #3665) is the
+only writer of `AgentHarnessScan`, `DiscoveredAgent` and `AgentHarnessScanItem`;
+the key and acceptance usecases are the only writers of theirs, and
+`tests/guards/agent-harness-single-write-seam.test.ts` holds all five. Four
+rules in it are easy to undo:
+
+- **Whose reports count is the register's decision, never the scanner's.**
+  Registering a key takes `admin.agent_registry`; posting a report takes
+  `admin.agent_harness_ingest`, which an API key gets from the
+  `admin:harness_ingest` scope. Do not let the ingest key register keys: a
+  scanner that could would vouch for any report it liked.
+- **The report's claims are inputs, not facts.** The level is derived by the
+  ladder; `registeredAgentId` links only to a row the register holds; the
+  report's own `findings` member is not acted on. All of it is decided in the
+  pure planner `src/lib/agentic/harness-findings.ts`, where it is unit-tested.
+- **A scan closes a finding only on positive evidence.** An agent absent from a
+  scan resolves nothing about it, and "no unpinned write tool" counts only when
+  the `mcp` source was read in full. An empty scan is `EMPTY_SCAN`, not a clean
+  bill (invariant 5 of the recertification section, applied here).
+- **The scanner's findings are written through `FindingRepository`, not
+  `createFinding`**, because the principal is a key that holds the ingest
+  permission and nothing else. Every write is still sanitised and audited.
+
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
 `resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):
