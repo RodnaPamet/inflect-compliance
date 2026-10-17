@@ -117,7 +117,15 @@ describe('a re-dispatch inside the same day is a no-op', () => {
         expect(opts.jobId).not.toContain('c1');
         // The rule the id actually has to satisfy, from
         // node_modules/bullmq/dist/cjs/classes/job.js.
-        expect(opts.jobId.split(':')).toHaveLength(3);
+        // VALIDITY, which is the point this test was reworked to make — now
+
+        // asserted as NO COLON rather than as three segments (#3557).
+
+        // Three segments was valid only under BullMQ's carve-out for old
+
+        // repeatable ids; counting them would now pass trivially at one.
+
+        expect(opts.jobId).not.toContain(':');
     });
 });
 

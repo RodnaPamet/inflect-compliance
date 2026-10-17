@@ -52,7 +52,12 @@ describe('dispatchJobId — BullMQ will actually accept the id', () => {
         );
 
         expect(bullmqWouldReject(id)).toBe(false);
-        expect(id.split(':')).toHaveLength(3);
+        // NO COLON AT ALL (#3557), which is strictly stronger than the
+        // three-segment form this used to assert. Three segments were valid
+        // only because BullMQ carves out three-segment ids for old repeatable
+        // jobs; its own TODO says the next breaking change rejects any colon,
+        // and an id with none survives that without a migration.
+        expect(id).not.toContain(':');
         // Both halves of the key survive, so the id still discriminates one
         // tenant's pass from another's.
         expect(id).toContain('cmo94mi360000fvnl1fv9ca9t');
@@ -67,11 +72,18 @@ describe('dispatchJobId — BullMQ will actually accept the id', () => {
         expect(a).not.toBe(b);
     });
 
-    it('the single-key form is unchanged', async () => {
-        // The sync dispatch already produced a valid three-segment id, and this
-        // fix must not move it — its dedupe behaviour is load-bearing.
-        const id = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, T('2026-08-29T03:00:00Z'));
-        expect(id).toBe(`identity-sync:conn-1:${Math.floor(T('2026-08-29T03:00:00Z') / DAILY_BUCKET_MS)}`);
+    it('the single-key form is colon-free and still bucket-stable', async () => {
+        // This asserted `identity-sync:conn-1:<bucket>` and was named "the
+        // single-key form is UNCHANGED", because #2175 only had to stop the
+        // four-segment id. #3557 changed the separator for every form, so the
+        // name was no longer true and is corrected rather than left to mislead.
+        //
+        // What must NOT move is the bucket arithmetic — that is the dedupe
+        // behaviour, and it is pinned below exactly as before.
+        const at = T('2026-08-29T03:00:00Z');
+        const id = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, at);
+        expect(id).toBe(`identity-sync-conn-1-${Math.floor(at / DAILY_BUCKET_MS)}`);
+        expect(id).not.toContain(':');
         expect(bullmqWouldReject(id)).toBe(false);
     });
 });
