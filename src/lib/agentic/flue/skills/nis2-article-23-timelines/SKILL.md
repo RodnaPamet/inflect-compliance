@@ -5,6 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original guidance; cites Directive (EU) 2022/2555 Article 23 by article and paragraph
   version: '1'
+  evaluation: evaluation-set.json
 ---
 
 Article 23 sets three deadlines, each measured **from the moment the entity

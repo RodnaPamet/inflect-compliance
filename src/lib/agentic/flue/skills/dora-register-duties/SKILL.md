@@ -5,6 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original guidance; cites Regulation (EU) 2022/2554 Articles 28–30 by article
   version: '1'
+  evaluation: evaluation-set.json
 ---
 
 The register is a **contractual-arrangement** record, not a vendor list. The

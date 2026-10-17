@@ -78,6 +78,27 @@ describe('the two drafted IAM skills', () => {
     });
 });
 
+describe('every shipped skill carries its evaluation set', () => {
+    // The whole corpus, not a list: a skill added without a set fails here
+    // rather than reaching the mount gate as NOT_EVALUATED in production.
+    const corpus = loadAllSkills();
+
+    it('reads the whole corpus', () => {
+        expect(corpus.length).toBeGreaterThanOrEqual(8);
+    });
+
+    it.each(corpus.map((s) => s.name))('%s names a set that matches its instructions and version', (name) => {
+        const skill = corpus.find((s) => s.name === name)!;
+        expect(skill.metadata.evaluation).toBe('evaluation-set.json');
+        expect(checkEvaluationSet(readEvaluationSet(skill), skill)).toMatchObject({ ok: true });
+    });
+
+    it.each(corpus.map((s) => s.name))('%s: every case says why it proves anything', (name) => {
+        const set = readEvaluationSet(corpus.find((s) => s.name === name)!) as SkillEvaluationSet;
+        expect(set.cases.filter((c) => !c.rationale).map((c) => c.id)).toEqual([]);
+    });
+});
+
 describe('evaluation sets', () => {
     const skill = loadAllSkills().find((s) => s.name === 'nhi-ownership-attribution');
     if (!skill) throw new Error('drafted skill missing');

@@ -88,7 +88,10 @@ authored with the skill. It holds the cases a reviewer agreed the skill must
 handle, each with a machine-checkable expectation (`mustInclude`,
 `mustNotInclude`), and a threshold per kind of case. It records the SHA-256 of
 the instructions it was written for, so editing the instructions without
-revisiting the cases is refused.
+revisiting the cases is refused. A case may carry a `rationale`: which line of
+the skill it tests, and why its expectation tells a right answer from the
+likely wrong one. The rationale is never scored; it is what a reviewer reads to
+judge whether a case proves anything.
 
 Every set covers four kinds of case:
 
