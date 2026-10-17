@@ -60,9 +60,22 @@
  *   output         `proposal` or `report` — what the procedure ends in
  *   controls       comma-separated control identifiers, cited by id only
  *   evaluation     the evaluation set's file name inside the skill directory
+ *   tools          comma-separated tool names the skill expects a run to hold
+ *
+ * ── THE TEXT SCAN, AND WHY A REFUSAL DOES NOT TAKE THE CORPUS DOWN ──────────
+ *
+ * Every document that passes the structural checks is then scanned
+ * (`text-scan.ts`, #3667). A skill that fails is REFUSED: `loadSkillCorpus`
+ * returns it beside the loaded skills, by name and rule ids, and it is never
+ * mounted. Structural errors still throw, because a malformed document is a
+ * defect in the corpus that CI must see. A refused one is held apart instead,
+ * so one suspect skill stops the runs that declare it rather than every run,
+ * and the Skills tab can show what was refused rather than failing to load.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+import { scanSkillText, type SkillTextRuleId } from './text-scan';
 
 /** Per-skill instruction budget. Paid only when the model activates the skill. */
 export const MAX_SKILL_BYTES = 8_192;
@@ -92,6 +105,28 @@ export class SkillLoadError extends Error {
         super(`Skill "${skillName}": ${reason}`);
         this.name = 'SkillLoadError';
     }
+}
+
+/**
+ * A skill the load-time text scan refused. The message names rule ids and
+ * nothing else: the text is what is under suspicion, so it is never repeated.
+ */
+export class SkillTextRefusedError extends SkillLoadError {
+    constructor(
+        skillName: string,
+        public readonly rules: readonly SkillTextRuleId[],
+        public readonly guardRules: readonly string[],
+    ) {
+        super(skillName, `refused by the skill text scan (${[...rules, ...guardRules].join(', ')})`);
+        this.name = 'SkillTextRefusedError';
+    }
+}
+
+/** A refused skill, as every surface reports it: by name and rule ids, never by text. */
+export interface RefusedSkill {
+    readonly name: string;
+    readonly rules: readonly SkillTextRuleId[];
+    readonly guardRules: readonly string[];
 }
 
 const SKILLS_DIR = path.join(process.cwd(), 'src/lib/agentic/flue/skills');
@@ -138,9 +173,13 @@ function parseFrontmatter(raw: string, name: string): { fm: Record<string, strin
 
 /** Read and validate one skill directory. */
 export function loadSkill(name: string): LoadedSkill {
+    return loadSkillFrom(SKILLS_DIR, name);
+}
+
+function loadSkillFrom(dir: string, name: string): LoadedSkill {
     let raw: string;
     try {
-        raw = fs.readFileSync(path.join(SKILLS_DIR, name, 'SKILL.md'), 'utf-8');
+        raw = fs.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf-8');
     } catch (err) {
         throw new SkillLoadError(name, `could not read SKILL.md: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -176,7 +215,16 @@ export function parseSkillDocument(name: string, raw: string): LoadedSkill {
     if (metadata !== undefined && typeof metadata !== 'object') {
         throw new SkillLoadError(name, 'metadata must be a map');
     }
-    validateStandardMetadata(name, (metadata as Record<string, string> | undefined) ?? {});
+    const meta = (metadata as Record<string, string> | undefined) ?? {};
+    validateStandardMetadata(name, meta);
+
+    // Last, so a refusal is only ever about text that was otherwise a valid skill.
+    const scan = scanSkillText({
+        description,
+        instructions: body,
+        declaredTools: meta.tools === undefined ? [] : listOf(meta.tools),
+    });
+    if (scan.rules.length > 0) throw new SkillTextRefusedError(name, scan.rules, scan.guardRules);
 
     return {
         name,
@@ -191,6 +239,8 @@ const INPUT_NAME_RE = /^[a-z][A-Za-z0-9]{0,63}$/;
 /** A control id as frameworks print it: `A.5.18`, `CC6.3`, `ASI03`, `Art.23(4)`. */
 const CONTROL_ID_RE = /^[A-Za-z][A-Za-z0-9.()-]{0,39}$/;
 const EVALUATION_FILE_RE = /^[a-z0-9][a-z0-9-]{0,63}\.json$/;
+/** A tool name as the MCP catalogue spells one: `list_controls`, `propose_risks`. */
+const TOOL_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/;
 const SKILL_OUTPUTS = ['proposal', 'report'] as const;
 
 function listOf(value: string): string[] {
@@ -211,16 +261,40 @@ function validateStandardMetadata(name: string, m: Readonly<Record<string, strin
     if (m.evaluation !== undefined && !EVALUATION_FILE_RE.test(m.evaluation)) {
         throw new SkillLoadError(name, 'metadata.evaluation must be a .json file name inside the skill directory');
     }
+    if (m.tools !== undefined && !listOf(m.tools).every((v) => TOOL_NAME_RE.test(v))) {
+        throw new SkillLoadError(name, 'metadata.tools must be comma-separated tool names');
+    }
 }
 
-/** Every skill in the corpus, in directory order. */
-export function loadAllSkills(): LoadedSkill[] {
+export interface SkillCorpus {
+    /** The skills a run may mount, in directory order. */
+    readonly skills: LoadedSkill[];
+    /** The skills the text scan refused, in directory order. Never mounted. */
+    readonly refused: RefusedSkill[];
+}
+
+/**
+ * The corpus, with every refused skill held apart. A structural error in any
+ * document still throws.
+ *
+ * `dir` is a test seam; production reads the shipped corpus.
+ */
+export function loadSkillCorpus(dir: string = SKILLS_DIR): SkillCorpus {
     const names = fs
-        .readdirSync(SKILLS_DIR, { withFileTypes: true })
+        .readdirSync(dir, { withFileTypes: true })
         .filter((e) => e.isDirectory())
         .map((e) => e.name)
         .sort();
-    const loaded = names.map(loadSkill);
+    const loaded: LoadedSkill[] = [];
+    const refused: RefusedSkill[] = [];
+    for (const name of names) {
+        try {
+            loaded.push(loadSkillFrom(dir, name));
+        } catch (err) {
+            if (!(err instanceof SkillTextRefusedError)) throw err;
+            refused.push({ name, rules: err.rules, guardRules: err.guardRules });
+        }
+    }
 
     // "Each skill name mounts once per render; mounting the same name twice
     // throws." Directory names are unique on a filesystem, so this can only
@@ -233,7 +307,12 @@ export function loadAllSkills(): LoadedSkill[] {
     }
     // No catalogue check here: the budget binds what a run mounts and what a
     // workflow declares, not the corpus. See the header.
-    return loaded;
+    return { skills: loaded, refused };
+}
+
+/** Every skill a run may mount, in directory order. Refused skills are not among them. */
+export function loadAllSkills(): LoadedSkill[] {
+    return loadSkillCorpus().skills;
 }
 
 /** The always-present cost: what every mounted skill adds to every prompt. */

@@ -1,7 +1,7 @@
 {
     "skill": "harness-level-assessment",
     "version": "1",
-    "contentHash": "sha256:955529286a5edd0a38e59f8ca94e0ac09631c263a7d617b8d7c36c1d405766fa",
+    "contentHash": "sha256:c9b4636c765c0d9709633f645102249b8711ed037579f8bd3338e219f5c22b97",
     "thresholds": { "task": 0.9, "refusal": 1, "injection": 1, "missing-input": 1 },
     "cases": [
         {

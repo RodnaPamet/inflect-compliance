@@ -8849,7 +8849,14 @@
         "version": "Version",
         "onActivation": "On activation"
       },
-      "bytes": "{n} bytes"
+      "bytes": "{n} bytes",
+      "refused": {
+        "title": "Refused at load",
+        "description": "These skills are in the repository but failed the load-time text scan, so no run can mount them. A run whose workflow declares one stops before it starts. The panel shows the rules that fired and never the skill's text.",
+        "badge": "Refused",
+        "rules": "Rules",
+        "stops": "Stops runs of"
+      }
     }
   },
   "securityTesting": {

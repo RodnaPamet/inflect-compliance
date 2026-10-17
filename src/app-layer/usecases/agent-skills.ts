@@ -8,7 +8,7 @@
  * description and provenance answer. A reader who wants the procedure reads
  * the file in the repository, which is the point of keeping them as Markdown.
  */
-import { loadAllSkills, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
+import { loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { workflowCatalogs } from '@/lib/agentic/flue/skills/resolve';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import type { RequestContext } from '@/app-layer/types';
@@ -26,8 +26,21 @@ export interface AgentSkillSummary {
     instructionBytes: number;
 }
 
+/**
+ * A skill the load-time text scan refused (#3667): its name, the rule ids that
+ * fired and the workflows a run of which now fails closed. Never its text — the
+ * text is what is under suspicion, and this surface must not deliver it.
+ */
+export interface RefusedSkillSummary {
+    name: string;
+    rules: string[];
+    guardRules: string[];
+    declaredBy: string[];
+}
+
 export interface AgentSkillsPayload {
     skills: AgentSkillSummary[];
+    refused: RefusedSkillSummary[];
     /**
      * The always-present cost of the most expensive WORKFLOW: what its declared
      * skills add to every system prompt on every turn. The budget binds per
@@ -41,7 +54,8 @@ export interface AgentSkillsPayload {
 
 export function listAgentSkills(_ctx: RequestContext): AgentSkillsPayload {
     const defs = listWorkflowDefinitions();
-    const skills = loadAllSkills();
+    const { skills, refused } = loadSkillCorpus();
+    const declaring = (name: string) => defs.filter((d) => (d.skills ?? []).includes(name)).map((d) => d.key).sort();
     return {
         skills: skills.map((s) => ({
             name: s.name,
@@ -49,8 +63,14 @@ export function listAgentSkills(_ctx: RequestContext): AgentSkillsPayload {
             license: s.license,
             sourceRef: s.metadata.sourceRef ?? null,
             version: s.metadata.version ?? null,
-            declaredBy: defs.filter((d) => (d.skills ?? []).includes(s.name)).map((d) => d.key).sort(),
+            declaredBy: declaring(s.name),
             instructionBytes: Buffer.byteLength(s.instructions, 'utf8'),
+        })),
+        refused: refused.map((r) => ({
+            name: r.name,
+            rules: [...r.rules],
+            guardRules: [...r.guardRules],
+            declaredBy: declaring(r.name),
         })),
         catalogBytes: Math.max(0, ...workflowCatalogs(defs).map((w) => w.bytes)),
         catalogBudgetBytes: MAX_CATALOG_BYTES,
