@@ -8,6 +8,8 @@
  *
  * Requires ANTHROPIC_API_KEY; the model defaults to ANTHROPIC_MODEL
  * (claude-haiku-4-5) — a small, cheap model is plenty for a short narrative.
+ * An organisation-level key also needs ANTHROPIC_WORKSPACE_ID, sent as the
+ * `anthropic-workspace-id` header (see src/lib/ai/anthropic-workspace.ts).
  */
 import type {
     CompliancePostureProvider,
@@ -18,6 +20,7 @@ import { buildPosturePrompt } from './prompt-builder';
 import { parsePostureJson } from './parse';
 import { computeDeterministicSummary } from './stub-provider';
 import { logger } from '@/lib/observability/logger';
+import { anthropicWorkspaceHeaders } from '@/lib/ai/anthropic-workspace';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -28,10 +31,16 @@ export class AnthropicCompliancePostureProvider implements CompliancePostureProv
     readonly providerName = 'anthropic';
     private apiKey: string;
     private model: string;
+    private workspaceId: string | null;
 
-    constructor(apiKey: string, model?: string) {
+    /**
+     * `workspaceId` is `ANTHROPIC_WORKSPACE_ID`, passed by the factory beside
+     * the key it belongs with. Absent, the request carries no workspace header.
+     */
+    constructor(apiKey: string, model?: string, workspaceId?: string | null) {
         this.apiKey = apiKey;
         this.model = model ?? DEFAULT_ANTHROPIC_MODEL;
+        this.workspaceId = workspaceId ?? null;
     }
 
     async generate(input: PostureSummaryInput): Promise<PostureSummaryResult> {
@@ -59,6 +68,7 @@ export class AnthropicCompliancePostureProvider implements CompliancePostureProv
                     'x-api-key': this.apiKey,
                     'anthropic-version': ANTHROPIC_VERSION,
                     'content-type': 'application/json',
+                    ...anthropicWorkspaceHeaders(this.workspaceId),
                 },
                 body: JSON.stringify({
                     model: this.model,

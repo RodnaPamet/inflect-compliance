@@ -2,6 +2,8 @@ import { createProvider, type Model, type Provider } from '@earendil-works/pi-ai
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 
+import { anthropicWorkspaceHeaders } from '@/lib/ai/anthropic-workspace';
+
 import { FLUE_PROVIDER_IDS } from './model-selection';
 import type { FlueProviderTerms } from './runtime-bootstrap';
 
@@ -90,8 +92,22 @@ export interface FlueProviderModels {
     localModels?: readonly string[];
 }
 
-function externalProvider(apiKey: string, modelId: string): Provider {
+function externalProvider(
+    apiKey: string,
+    modelId: string,
+    workspaceId: string | null | undefined,
+): Provider {
     const baseUrl = 'https://api.anthropic.com';
+    // ON THE MODEL, not on the provider, because that is the field pi sends.
+    //
+    // `createProvider` accepts a provider-level `headers` too, and stores it —
+    // but pi 0.83's `Models` never reads it back, so a header put there is
+    // silently not sent. `Model.headers` is merged into the request auth by
+    // `Models.getAuth(model)` AND into the SDK client's default headers by the
+    // anthropic-messages API itself, so it reaches the wire whichever path a
+    // caller takes. Absent when no workspace id is configured, which leaves the
+    // model — and so the request — exactly as it was.
+    const workspaceHeaders = anthropicWorkspaceHeaders(workspaceId);
     const model: Model<'anthropic-messages'> = {
         id: modelId,
         name: modelId,
@@ -103,6 +119,7 @@ function externalProvider(apiKey: string, modelId: string): Provider {
         cost: { ...NO_COST },
         contextWindow: EXTERNAL_CONTEXT_WINDOW,
         maxTokens: EXTERNAL_MAX_TOKENS,
+        ...(Object.keys(workspaceHeaders).length > 0 ? { headers: workspaceHeaders } : {}),
     };
     return createProvider<'anthropic-messages'>({
         id: FLUE_PROVIDER_IDS.external,
@@ -180,7 +197,9 @@ export function buildFlueProviders(
         );
     }
     if (terms.externalApiKey && models.externalModel) {
-        providers.push(externalProvider(terms.externalApiKey, models.externalModel));
+        providers.push(
+            externalProvider(terms.externalApiKey, models.externalModel, terms.externalWorkspaceId),
+        );
     }
     return providers;
 }

@@ -26,6 +26,7 @@ import {
     DEFAULT_ANTHROPIC_MODEL,
     extractJsonObject,
 } from '@/app-layer/ai/risk-assessment/anthropic-provider';
+import { getProvider } from '@/app-layer/ai/risk-assessment';
 import { logger } from '@/lib/observability/logger';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,6 +81,65 @@ describe('AnthropicRiskSuggestionProvider — request shape', () => {
         expect(body.messages).toHaveLength(1);
         expect(body.messages[0].role).toBe('user');
         expect(body.model).toBe(DEFAULT_ANTHROPIC_MODEL);
+    });
+});
+
+/**
+ * An organisation-level ANTHROPIC_API_KEY is refused with HTTP 400 unless the
+ * request names its workspace. Driven through the FACTORY (`getProvider`),
+ * because the factory is what reads `ANTHROPIC_WORKSPACE_ID`: a test that
+ * constructed the provider with the id in hand would stay green if the factory
+ * stopped passing it. `@/env` maps to `tests/mocks/env.ts`, which reads
+ * `process.env` on every access.
+ */
+describe('AnthropicRiskSuggestionProvider — anthropic-workspace-id', () => {
+    const KEYS = ['AI_RISK_PROVIDER', 'ANTHROPIC_API_KEY', 'ANTHROPIC_WORKSPACE_ID'] as const;
+    const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
+    beforeEach(() => {
+        for (const k of KEYS) saved[k] = process.env[k];
+        process.env.AI_RISK_PROVIDER = 'anthropic';
+        process.env.ANTHROPIC_API_KEY = 'secret-key';  // pragma: allowlist secret -- synthetic key for a mocked fetch
+        delete process.env.ANTHROPIC_WORKSPACE_ID;
+    });
+    afterEach(() => {
+        for (const k of KEYS) {
+            if (saved[k] === undefined) delete process.env[k];
+            else process.env[k] = saved[k];
+        }
+    });
+
+    async function headersSentByTheFactoryProvider(): Promise<Record<string, string>> {
+        mockFetch(() => Promise.resolve(okResponse(claudeBody(JSON.stringify(SUGG)))));
+        const provider = getProvider();
+        expect(provider.providerName).toBe('anthropic');
+        const out = await provider.generateSuggestions(input);
+        // A real call, not a fallback — the headers below are the ones that left.
+        expect(out.isFallback).toBe(false);
+        const calls = (global.fetch as jest.Mock).mock.calls;
+        expect(calls).toHaveLength(1);
+        return calls[0][1].headers;
+    }
+
+    it('sends the configured workspace id beside the key', async () => {
+        process.env.ANTHROPIC_WORKSPACE_ID = 'wrkspc_01TESTWORKSPACE';
+        const headers = await headersSentByTheFactoryProvider();
+        expect(headers['anthropic-workspace-id']).toBe('wrkspc_01TESTWORKSPACE');
+        expect(headers['x-api-key']).toBe('secret-key');
+    });
+
+    it('sends exactly the headers it always sent when no workspace id is set', async () => {
+        const headers = await headersSentByTheFactoryProvider();
+        expect(headers).toEqual({
+            'x-api-key': 'secret-key',
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+        });
+    });
+
+    it('treats a blank workspace id as unset', async () => {
+        process.env.ANTHROPIC_WORKSPACE_ID = '   ';
+        const headers = await headersSentByTheFactoryProvider();
+        expect('anthropic-workspace-id' in headers).toBe(false);
     });
 });
 

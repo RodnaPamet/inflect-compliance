@@ -63,6 +63,18 @@ import { FLUE_PROVIDER_IDS } from './model-selection';
 export interface FlueProviderTerms {
     /** `ANTHROPIC_API_KEY`, or absent. */
     externalApiKey?: string | null;
+    /**
+     * `ANTHROPIC_WORKSPACE_ID`, or absent — the workspace an organisation-level
+     * `externalApiKey` belongs to, sent as `anthropic-workspace-id` on every
+     * external request.
+     *
+     * Deliberately NOT part of `flueProviderIdsFor`'s answer, for the same
+     * reason as `localApiKey`: it qualifies a route the credential already
+     * makes, and makes none of its own. A workspace id with no key is not a
+     * route; a key with no workspace id is one (a workspace-scoped key needs
+     * nothing more).
+     */
+    externalWorkspaceId?: string | null;
     /** `AI_LOCAL_BASE_URL` / tenant override, or absent. */
     localBaseUrl?: string | null;
     /**

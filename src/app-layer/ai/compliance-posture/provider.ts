@@ -3,7 +3,8 @@
  *
  * Selects the provider from `AI_POSTURE_PROVIDER` (default 'stub'):
  *   - 'stub'       — deterministic, no network, no key (the zero-config default)
- *   - 'anthropic'  — direct Claude API   (needs ANTHROPIC_API_KEY)
+ *   - 'anthropic'  — direct Claude API   (needs ANTHROPIC_API_KEY; plus
+ *                    ANTHROPIC_WORKSPACE_ID for an organisation-level key)
  *   - 'openrouter' — OpenRouter          (needs OPENROUTER_API_KEY)
  *
  * On any misconfiguration (unknown value, or the selected provider's key is
@@ -30,7 +31,11 @@ export function getCompliancePostureProvider(): CompliancePostureProvider {
                 });
                 return new StubCompliancePostureProvider(/* isFallbackMode */ true);
             }
-            return new AnthropicCompliancePostureProvider(apiKey, env.ANTHROPIC_MODEL ?? undefined);
+            return new AnthropicCompliancePostureProvider(
+                apiKey,
+                env.ANTHROPIC_MODEL ?? undefined,
+                env.ANTHROPIC_WORKSPACE_ID,
+            );
         }
         case 'openrouter': {
             const apiKey = env.OPENROUTER_API_KEY;

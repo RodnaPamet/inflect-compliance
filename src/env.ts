@@ -333,6 +333,16 @@ export const env = createEnv({
         // sensitivity — see docs/sub-processors.md before enabling either.
         ANTHROPIC_API_KEY: z.string().optional(),
         ANTHROPIC_MODEL: z.string().default('claude-haiku-4-5'),
+        // The workspace an ORGANISATION-level ANTHROPIC_API_KEY's requests
+        // belong to (`wrkspc_...`). An identifier, not a secret, and optional
+        // in every environment: a key created inside a workspace needs nothing
+        // here. An organisation-level key is refused with HTTP 400 unless each
+        // request carries `anthropic-workspace-id`, so when this is set every
+        // Anthropic caller — the posture summary, risk suggestions and the
+        // Flue runtime's external provider — sends it, via
+        // `anthropicWorkspaceHeaders` in src/lib/ai/anthropic-workspace.ts.
+        // Unset, their requests are unchanged.
+        ANTHROPIC_WORKSPACE_ID: z.string().trim().optional(),
 
         // ── Legacy-access decision models (Step 6b) ──────────────────────
         // Jev — TypeSafe AI's hosted System One model. The EXTERNAL path for
@@ -567,6 +577,7 @@ export const env = createEnv({
         AI_POSTURE_PROVIDER: process.env.AI_POSTURE_PROVIDER,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
+        ANTHROPIC_WORKSPACE_ID: process.env.ANTHROPIC_WORKSPACE_ID,
         TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY,
 
         AUDIT_STREAM_RETRY_ENABLED: process.env.AUDIT_STREAM_RETRY_ENABLED,
