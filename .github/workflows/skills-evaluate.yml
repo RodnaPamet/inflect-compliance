@@ -1,0 +1,90 @@
+# ───────────────────────────────────────────────────────────────
+#  Skill evaluation records (#3666)
+#
+#  A Flue skill mounts only when a committed `evaluation-record.json` — its
+#  evaluation set plus the answers a named model revision gave — passes the
+#  set's thresholds, recomputed from the raw answers
+#  (`src/lib/agentic/flue/skills/mount-gate.ts`). A record can only come from
+#  asking a real model, and the credential for that is a repository secret,
+#  so the asking happens here rather than in anybody's session.
+#
+#  MANUAL ONLY. A record is a claim about one model revision at one moment;
+#  re-recording on a schedule would churn the files and hide the moment a
+#  revision changed behaviour.
+#
+#  THE RECORDS ARE AN ARTIFACT, NOT A COMMIT. A commit or pull request made
+#  with `GITHUB_TOKEN` does not trigger CI, so a branch this job pushed would
+#  sit without its required checks. The artifact is committed by a person or
+#  an agent, whose push runs CI like any other change. The run's URL is the
+#  provenance: which commit, which model, when.
+#
+#  The cases are synthetic and live in this repository; no tenant data is sent.
+# ───────────────────────────────────────────────────────────────
+name: Skill evaluation records
+
+on:
+  workflow_dispatch:
+    inputs:
+      skill:
+        description: 'One skill to record (blank: every skill that names an evaluation set)'
+        required: false
+        default: ''
+      model:
+        description: 'Model id (blank: the ANTHROPIC_MODEL repository variable, else the runtime default)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skills-evaluate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Record skill evaluations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+
+      - name: Ask the model and write the records
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ inputs.model || vars.ANTHROPIC_MODEL }}
+          SKILL: ${{ inputs.skill }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "::error::The ANTHROPIC_API_KEY repository secret is not set."
+            exit 1
+          fi
+          # Exits non-zero when any skill's record would not pass. The records
+          # that did pass are still uploaded below, so one failing skill does
+          # not cost the others their run.
+          status=0
+          if [ -n "${SKILL}" ]; then
+            npm run --silent skills:evaluate -- --skill "${SKILL}" || status=$?
+          else
+            npm run --silent skills:evaluate || status=$?
+          fi
+          echo "status=${status}" >> "$GITHUB_ENV"
+
+      - name: Upload the records
+        uses: actions/upload-artifact@v7
+        with:
+          name: skill-evaluation-records
+          path: src/lib/agentic/flue/skills/*/evaluation-record.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail if any skill did not pass
+        run: |
+          if [ "${status:-1}" != "0" ]; then
+            echo "::error::At least one skill's record did not pass; see the step above."
+            exit 1
+          fi
