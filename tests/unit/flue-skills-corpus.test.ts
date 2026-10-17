@@ -7,7 +7,28 @@
  * nothing until the model activates it. Capping only "total skill payload"
  * bounds the rare case and leaves the per-turn cost unbounded, so both are
  * capped and the catalog one is asserted hardest.
+ *
+ * ── THE MOUNT GATE IS MOCKED HERE, AND ONLY HERE ────────────────────────────
+ *
+ * The resolution tests below are about the resolver's mechanics — documents in,
+ * unknown names refused, the per-turn budget — and the shipped skills have no
+ * evaluation records until somebody runs `npm run skills:evaluate` against a
+ * model. So the gate treats every skill as evaluated in this file. The gate
+ * itself, and the corpus held to the REAL gate, are in
+ * `tests/unit/agentic/skill-mount-gate.test.ts`.
  */
+jest.mock('@/lib/agentic/flue/skills/mount-gate', () => {
+    const actual = jest.requireActual('@/lib/agentic/flue/skills/mount-gate');
+    const { skillContentHash } = jest.requireActual('@/lib/agentic/flue/skills/evaluation-record');
+    return {
+        ...actual,
+        checkSkillMountable: (skill: { name: string; instructions: string; metadata: { version?: string } }) => ({
+            ok: true,
+            pin: { name: skill.name, version: skill.metadata.version ?? '', contentHash: skillContentHash(skill.instructions) },
+        }),
+    };
+});
+
 import {
     loadAllSkills,
     loadSkillCorpus,
