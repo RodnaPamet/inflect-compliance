@@ -81,6 +81,13 @@ write or whose reach is unknown, H2 for a read-only one) is a finding that never
 gates the agent; its owner may accept it for at most a year, and the nightly
 exception expiry monitor reopens it when the acceptance lapses.
 
+The data protection impact assessment for the scanner and the ingest is
+[`docs/agentic-harness-scanner-dpia.md`](agentic-harness-scanner-dpia.md). It
+names the conditions step `1a` must meet for the assessment to hold, and which
+issue or pull request owns each, and it records that the scanner introduces no
+sub-processor. The owner's merge of the pull request that carries it is its
+signature (decision 9).
+
 ### Integration passport and A2A threat model
 
 Two documents specify UC5's new parts.
@@ -200,6 +207,339 @@ run; injection-safe text — and the lifecycle that enforces it.
    Inflect-original. (`0b`, `1b`, `1d`, `4c`)
 6. **The orphan pass** suspends and kills with reason `OWNER_DEPARTED` as a system
    actor; a lift needs a completed ownership transfer. (`2b`)
+
+### Decisions recorded by the owner on 2026-10-17
+
+The owner made and recorded these in the working session of 2026-10-17 that
+drafted steps `0c`, `0d`, `0e`, `1a` and `1b`. They continue the numbering
+of decisions 1 to 6 above.
+
+7. **A harness-shortfall risk acceptance lives on a sibling model**,
+   `AgentHarnessAcceptance`, with `ControlException`'s shape and watched by the
+   same expiry monitor (`exception-expiry-monitor` in
+   `src/app-layer/jobs/schedules.ts`), so there is one expiry mechanism. A
+   `ControlException` is per control and a shortfall is per agent, which is why
+   the row is a sibling and not a reuse. Shipped in #3688. (`1a`)
+8. **Skill evaluation records are produced by the CI workflow
+   `.github/workflows/skills-evaluate.yml`**, with the `ANTHROPIC_API_KEY`
+   repository secret. The workflow is on `main` (#3690); it runs on manual
+   dispatch and uploads the records as an artifact, which a person or an agent
+   commits. This decision does not settle when the mount gate of #3689
+   begins to enforce. (`1b`)
+9. **Governance sign-off is the owner's merge.** For the governance documents
+   of steps `0c`, `0d` and `0e`, the owner's merge of the pull request that
+   carries the document is the sign-off, and auto-merge on green is the owner's
+   standing authorisation for that merge. The owner re-confirmed this on
+   2026-10-17 when asked directly, choosing auto-merge on green over holding the
+   pull request for sign-off. The merge does not supply an external party's
+   act, such as internal audit's approval, PwC's agreement or the security
+   owner's review: each is stated as recorded on the step issue when given, and
+   never as given before then. For `0e`, the signature covers
+   [the DPIA](agentic-harness-scanner-dpia.md) as written, with its two
+   [lawful-basis questions](agentic-harness-scanner-dpia.md#lawful-basis) open.
+   (`0c`, `0d`, `0e`)
+10. **The pilot estate is Inflect's own.** Its sources are an Entra tenant (its
+    service principals and app registrations), MCP servers and CI/CD
+    pipelines, and the Inflect register is always in scope. Inflect has no
+    secrets vault. Okta and agent runtimes were not named, so neither is in
+    the pilot. No owner has been named for any source. See [Pilot](#pilot).
+    (`0e`)
+11. **Harness scans are Business records, not regulatory artefacts.**
+    `AgentHarnessScan` and `AgentHarnessScanItem` are purged with the tenant;
+    the hash-chained `AGENT_HARNESS_SCAN_INGESTED` audit row, carrying the
+    report digest and the signer, is what survives. `DiscoveredAgent` and
+    `AgentHarnessAcceptance` are Business records too, matching
+    `docs/data-retention.md` on `main`. Scan items and acceptances reference
+    `DiscoveredAgent` with `ON DELETE NO ACTION`, implemented by #3692 (forward
+    migration `20261017215000_harness_discovered_agent_no_cascade`), which
+    replaced the `ON DELETE CASCADE` that #3688 shipped.
+    See [Retention classes](#retention-classes). (`0e`, `1a`)
+12. **Three rules of the A2A threat model are requirements on step `4b`.** R17:
+    a run started by an inbound A2A task never dispatches an external write
+    above `PROPOSE_ONLY`. R13: inbound A2A is refused unless the tenant has set
+    both `agentMonthlyTokenBudget` and `agentMaxConcurrentRuns`. R18: a peer's
+    agent card is re-checked before every message against a copy at most 15
+    minutes old. R3, which permission key governs the peer register and pin
+    routes, stays an open recommendation for step `2e`. (`2e`, `4b`)
+
+### Permission keys
+
+Decided in step `0e` (#3664) and signed with it (decision 9). This covers every
+privileged route the step issues plan through Phase 4, and records the routes
+of `1a` that #3688 shipped as they are on `main`. One row is a proposal rather
+than a decision: the key for the A2A peer register and pin routes of `2e` is
+open (decision 12). Every route below carries a literal `requirePermission` and
+a rule in `src/lib/security/route-permissions.ts`, except the two endpoints
+under [Token-gated endpoints](#token-gated-endpoints), which say why. Key names
+follow `PERMISSION_SCHEMA` in `src/lib/permissions.ts`.
+
+**Two keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
+and one new key:
+
+| Key | Gates | Granted by role | Bearer tokens |
+|---|---|---|---|
+| `admin.agent_harness_ingest` | Submitting a signed report, `POST /api/t/:slug/admin/agents/harness-scans` (`1a`, shipped in #3688), and the scanner's read of the register (`1a`, below) | OWNER, ADMIN | The `admin:harness_ingest` scope grants it and nothing else (`SCOPE_ACTION_MAP` in `src/lib/auth/api-key-auth.ts`). `*` carries it too: `*` is ADMIN's set minus the four agent-governance flags, and ADMIN holds it |
+| `admin.agent_skill_review` | Authoring, approving and retiring a tenant skill (`4c`) | OWNER, ADMIN | Not carried by `*`, and no scope maps to it |
+
+- **Reading scans takes the register key.** `GET …/admin/agents/harness-scans`
+  lists scans under `admin.agent_registry`, and `listHarnessScans` in
+  `src/app-layer/usecases/agent-harness-scans.ts` refuses a caller without it.
+  #3687 builds the harness matrix and the shadow list as a tab on
+  `/agents/reports` through `listHarnessScans`, and that page refuses anyone
+  without `admin.agent_registry`
+  (`src/app/t/[tenantSlug]/(app)/agents/reports/page.tsx`). `4a`'s scan health
+  reads the same scans under the same key. AUDITOR does not hold
+  `admin.agent_registry`, so it reads none of them. A view key split from
+  `admin.agent_registry` for an auditor's read of the inventory is the case the
+  `agent_registry` docstring names and leaves undone; whether to add one is
+  open.
+- **Submitting is a key of its own.** The other five agent keys are held by the
+  people who govern agents; the ingest key is held by the scanner, through its
+  API key, and nothing else that key carries should let it do more (the
+  `agent_harness_ingest` docstring). Folding it into `admin.agent_registry`
+  would hand every scanner the switch that admits agents.
+- **The key never vouches for a report; the signature does.** The ingest
+  refuses a report not signed by a scanner key the tenant registered
+  (`UNTRUSTED_SIGNER`), and registering one at `…/admin/agents/harness-scanner-keys`
+  takes `admin.agent_registry`, never the ingest key. A credential that can
+  push a report cannot add its own signer. That is also what limits a `*`
+  key: it carries the ingest key, and it does not carry `admin.agent_registry`.
+- **A signing key speaks for one scanner.** Each scanner key belongs to one
+  registered agent. The ingest refuses a report whose `scan.scanner.agentId` is
+  not that agent (`SCANNER_MISMATCH`), and, when the API key that posts it is
+  bound to an agent (`TenantApiKey.agentId`), a key bound to any other agent
+  (`SUBMITTER_MISMATCH`). A credential bound to no agent, such as a person
+  uploading a report by hand, is held to the signature alone.
+- **The scanner reads the register by its ingest key.** No API-key scope maps
+  to `admin.agent_registry`, the key behind the human register read, so an MCP
+  read tool that mirrored that key could be reached by no key at all. The
+  scanner reads the register only to reconcile what it ingests, so `1a`'s read
+  tool is authorized on `admin.agent_harness_ingest` and is served by
+  `/api/mcp` only to an agent granted it under `admin.agent_tool_exposure`. It
+  returns only what the report's `inflect-register` source carries. No MCP tool
+  returns `RegisteredAgent` rows today (see [Pilot](#pilot)). Two points about
+  that tool are open: `/api/mcp` also requires the `mcp:read` capability scope
+  (`src/lib/mcp/auth.ts`), while the contract's Transport section says a
+  scanner key needs no scope but `admin:harness_ingest`; and a tool's
+  `resourceScope` names an action of `read`, `write` or `admin`
+  (`ScopeAction` in `src/lib/mcp/tools/types.ts`), which cannot name
+  `admin:harness_ingest`.
+- **A tenant skill's reviewer is never its author.** Step `4c` (#3680) asks for
+  "a new skill-review right", and `admin.agent_skill_review` is it. One key
+  gates authoring and approval, because #3680 gives the authoring surface on
+  the Skills tab to holders of the right, and the usecase refuses an approval
+  by the version's author. `*` does not carry it, for the reason it does not
+  carry the four agent-governance flags: a skill is text mounted into an
+  agent's context, and a key held by an agent that could approve skill text
+  could teach itself.
+- **Workpaper routes need a privileged root.** A workpaper route that `3b` or
+  `3d` places under `/api/t/:slug/audits/` sits under no entry of
+  `PRIVILEGED_ROOTS` in `tests/guardrails/api-permission-coverage.test.ts`,
+  whose only `audits` entries are the leaf roots `audits/auditors/access` and
+  `audits/auditors/[auditorId]`, so each step adds its directory there. Without
+  it, layer 1 checks nothing about the route. The `1a` routes need no new root:
+  they sit under `src/app/api/t/[tenantSlug]/admin`, the first entry of
+  `PRIVILEGED_ROOTS`.
+
+**Every other planned route, by step:**
+
+| Route (step) | Key | Why this key |
+|---|---|---|
+| Read scans, the harness matrix and the shadow list (`1a`) | `admin.agent_registry` | Shipped in #3688 for `GET …/admin/agents/harness-scans`; #3687 reads the matrix through `listHarnessScans` (above). |
+| Add, list or revoke a trusted scanner key (`1a`) | `admin.agent_registry` | Shipped in #3688 at `…/admin/agents/harness-scanner-keys` and `…/harness-scanner-keys/[keyId]`. It decides whose reports the tenant believes (above). |
+| Record, renew or list an `AgentHarnessAcceptance` (`1a`) | `admin.agent_registry`, held by the agent's owner | Shipped in #3688 at `…/admin/agents/harness-acceptances` (`GET`, `POST`). The route takes `admin.agent_registry`, and `acceptHarnessShortfall` in `src/app-layer/usecases/agent-harness-acceptance.ts` refuses anyone but the registered agent's owner, because accepting a risk is the act of the person accountable for it. A shadow agent has no owner, so it is registered before its shortfall can be accepted. There is no separate approval: a renewal is a new acceptance, of at most 365 days, that revokes the one in force. No API key carries `admin.agent_registry`, so no bearer token records an acceptance. |
+| Registration intake from a `SHADOW_AGENT` finding (`2a`) | `admin.agent_registry` | It creates a DRAFT register row and its AI-system entry. |
+| Retire an agent, with its cascade (`2a`) | `admin.agent_registry` | The existing `DELETE /api/t/:slug/admin/agents/[agentId]`. See the cascade table below. |
+| Propose, and complete, an agent ownership transfer (`2a`) | `admin.tenant_lifecycle` | Ownership transfer sits under tenant lifecycle, the key whose docstring already lists "transfer ownership". |
+| Set the orphan pass's mode (`2b`) | `admin.tenant_lifecycle` | The key `/admin/identity-write-policy` carries for the identity ladder: the mode decides whether a scheduled job stops agents unattended. |
+| Lift an `OWNER_DEPARTED` kill (`2b`) | `admin.agent_kill_switch` | The existing kill-switch route. The completed transfer is a precondition in the usecase, not a second key. |
+| Show a connection's passport (`2d`) | `admin.manage` | The view sits on the integrations admin page, and `/admin/integrations(/.*)?` resolves to `admin.manage`, the key of the integration settings beside it. Passports are derived (#3672), so the view writes nothing. |
+| Register an A2A peer, approve its card pin, re-approve a changed card (`2e`) | Open for `2e` (decision 12). Proposed here: `admin.agent_external_tools` | #3673 names it: a peer is a destination agents act towards, and this key already decides whether an agent may act outside the platform. `*` carries it (`scopesToPermissions` subtracts only the four agent-governance flags, deliberately), and decision 4 and #3673 have a human approve each pin, so the pin approval also refuses a caller whose context carries an `apiKeyId`. |
+| Create, decide, close and read an `AGENT` campaign (`3a`) | `access_reviews.create`, `.decide`, `.close`, `.view` | The existing access-review routes and keys. |
+| Read an `AGENT` campaign's reviewer packs (`3a`) | `access_reviews.view` | Every role holds it, and a pack carries register data, so the usecase narrows the read to the campaign's assigned reviewer or a holder of `admin.agent_registry`, as `decide` narrows to the assigned reviewer. |
+| Accept or reject a narrowing in a campaign (`3a`) | `access_reviews.decide` | The effect is a grant delete, which only narrows, so it does not also need `admin.agent_tool_exposure`. |
+| Set a membership's line of defence (`3b`) | `admin.owner_management` | OWNER-only; see below. |
+| Register or activate an auditor agent (`3b`) | `admin.agent_registry` | The existing routes. The independence check is a refusal inside `registerAgent` and `activateRegisteredAgent`. |
+| Read workpapers (`3b`, `3c`) | `audits.manage` | A workpaper on leaver timeliness or privileged access lists exceptions about named people's access, and `audits.view` is held by every role, READER included (`src/lib/permissions.ts`). OWNER and ADMIN hold `audits.manage`. A THIRD-line reviewer reads the workpapers assigned to them through `3d`'s review route, and the external auditor reads them in a pack (`4d`). An internal-audit member who needs every workpaper gets a custom role carrying `audits.manage`. `3b` places `AuditWorkpaper` in `prisma/schema/audit-workflow.prisma`, beside `Audit`. |
+| Read and record the outcome of a sampled workpaper (`3d`) | `audits.view` | Every role holds it, so the usecase admits only the workpaper's assigned reviewer, who must be THIRD-line and must not own the auditor agent, as `decide` narrows to the assigned reviewer. Requiring `audits.manage` would shut out an internal auditor on the AUDITOR role, which does not hold it. The draw and the assignment are a scheduled sweep, with no route. |
+| Show the scan health per estate and per source (`4a`) | `admin.agent_registry` | It reads scans, under the key their list takes. |
+| Kill an A2A peer, and lift the kill (`4b`) | `admin.agent_kill_switch` | The key that stops an agent stops a peer: there is no second authority model (decision 4). `*` does not carry it. |
+| Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | New; see above. |
+| Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | The existing gates, and `audits.manage` for workpapers | No new route. Packs go through the pack usecases behind `assertCanManageAuditPacks`, which admits EDITOR; putting workpapers into a pack reads them, so that part also requires `audits.manage`, which EDITOR does not hold. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |
+
+Steps `1b`, `1c`, `1d`, `3c` and `4e` plan no route of their own. `1b` extends
+the run detail page that the existing run routes serve, and `3c`'s handlers run
+on the control-test runner as the registered auditor agent, under that agent's
+grants.
+
+#### Token-gated endpoints
+
+Two planned endpoints take no `requirePermission`, because no session or role
+stands behind the caller, and nothing in the permission system can express who
+it is:
+
+| Endpoint (step) | Gate | Why |
+|---|---|---|
+| `read_service_principal_state` and `disable_service_principal`, on `/api/mcp/entra-grant` or a sibling route under `src/app/api/mcp/` (`2c`) | The per-connection token, as on the grant endpoint | The only client is Inflect's own external-write dispatch. The header of `src/app/api/mcp/entra-grant/route.ts` sets the precedent: the gate is the token, and every refusal that can be attributed to a tenant writes the `AUTHZ_DENIED` row `requirePermission` would have written. |
+| The inbound A2A task endpoint (`4b`) | The pinned peer's signature over the task, checked against its approved card before the body is read | The caller is another organisation's agent, and its reach is the receiving agent's grants (decision 4), not a key of its own. Every refusal that can be attributed to a tenant writes `AUTHZ_DENIED`. |
+
+Each is triaged into the `PROTOCOL_CREDENTIAL` class of
+`tests/guardrails/api-route-has-some-authorization.test.ts`, where `/api/mcp`,
+`/api/mcp/entra-grant` and `/api/mcp/token` already sit. A new route fails that
+test until it is triaged.
+
+**The retirement cascade is one act under one key.** Retirement takes
+`admin.agent_registry` alone. It does not also ask for the keys that gate each
+effect on its own, because every effect takes authority away (rule 2), and a
+holder of a narrower key keeps the standalone verb they hold today.
+
+| Cascade verb (`2a`) | Effect | Gate for the same verb on its own today |
+|---|---|---|
+| Revoke every key bound to the agent | `TenantApiKey.revokedAt` set where `agentId` is the agent | `admin.manage`, at `/admin/api-keys/[keyId]` |
+| Drop its tool grants | `RegisteredAgentTool` rows deleted | `admin.agent_tool_exposure`, at `/admin/agents/[agentId]/tools` |
+| Expire its open proposals | `AgentProposal` rows moved from `PENDING` to `EXPIRED` | No key: the `agent-proposal-expiry` job expires them, and a person rejects one at `/agent-proposals/[id]/reject` behind `assertCanWrite` and no key |
+| Freeze its policy card | No further `AgentPolicyCardVersion` | `admin.agent_policy_card`, at `/admin/agents/[agentId]/policy-card` |
+| Withdraw its evidence artefacts | `AgenticEvidenceArtefact` withdrawn with a reason | No key: only the emission usecase withdraws (`src/app-layer/usecases/agentic-evidence-emission.ts`) |
+
+Today `retireRegisteredAgent` refuses while any proposal is `PENDING`, and its
+docstring rejects cascading on purpose. Expiring them in the cascade replaces
+that refusal, so `2a` rewrites the docstring with the change.
+
+**Agent ownership transfer.** Both steps of `transferAgentOwnership` carry a
+literal `requirePermission('admin.tenant_lifecycle')`, and the second step
+cannot be performed by the first actor. The person who completes step two must
+therefore hold the key as well: with the built-in roles an agent passes only to
+an OWNER, or to a member an OWNER has given a custom role carrying the key.
+Registration accepts any active member as owner (`assertOwnerInTenant`), so
+this narrows who can receive an agent by transfer, and the owner accepts that
+narrowing in signing.
+
+**A membership's line of defence is OWNER-only.** The route takes
+`admin.owner_management`, which `getPermissionsForRole` grants to OWNER and
+denies ADMIN explicitly, and no API key carries it: `scopesToPermissions`
+builds `*` from ADMIN's set, and no scope maps to it. A custom role can carry
+the key when an OWNER authors it (`assertGrantWithinOwnAuthority` in
+`src/app-layer/usecases/custom-roles.ts`), and decision 3 has an OWNER set the
+value, so the usecase also requires the caller's built-in role,
+`TenantMembership.role`, to be OWNER. No member sets the line of their own
+membership: the independence check reads the value, and a line its holder
+declared is a claim, not a control. A tenant with one OWNER therefore cannot
+declare that OWNER's line; it adds a second OWNER, or another member owns the
+auditor agent. Every change writes an audit row. A NULL value means not
+declared and never satisfies the independence check.
+
+**Rule order.** `ROUTE_PERMISSIONS` is first-match-wins. The line-of-defence
+rule precedes `/admin/members(/.*)?`, which resolves to `admin.members`, and
+the transfer rule precedes `/admin/agents(/.*)?`, which resolves to
+`admin.agent_registry`. So does any `2e` peer rule or `4c` skill rule placed
+under `/admin/agents/`, as the `POST` rule for `/admin/agents/harness-scans`,
+which resolves to `admin.agent_harness_ingest`, does on `main` (#3688). ADMIN holds both of those keys, so a rule placed below
+its catch-all would record a different gate from the one the handler enforces.
+
+### Retention classes
+
+Decided in step `0e` and signed with it (decision 9), using the seven categories
+of [`docs/data-retention.md`](data-retention.md). Each model gets its inventory
+row in that document in the pull request that adds it, which
+`tests/guardrails/retention-policy-coverage.test.ts` enforces. That row follows
+this table. A step that classifies a model otherwise amends this table in the
+same pull request and gives its reason. Periods for a regulatory artefact stay
+a legal decision, as that document records.
+
+| Model (step) | Class | Reason |
+|---|---|---|
+| `AgentHarnessScan` (`1a`) | Business record | The signed record of what one scan saw and who signed it: an inventory of the client's own agents, which a tenant deletion asks Inflect to remove, so it is purged with the tenant and is not a regulatory artefact (decision 11). The hash-chained `AGENT_HARNESS_SCAN_INGESTED` audit row, carrying the report digest and the signer, is what survives. No sweep deletes a scan by age. |
+| `AgentHarnessScanItem` (`1a`) | Business record | One agent's derived level and verdicts in one scan. The matrix, `LEVEL_DROP` and the shortfall all read it, so it is kept with its scan, deleted with it and purged with the tenant (decision 11). |
+| `DiscoveredAgent` (`1a`) | Business record | The current inventory, updated in place by every ingest and never deleted by age (decision 11). What any one scan saw is kept on its scan items, and nothing kept with a scan may be deleted with this row: scan items and acceptances reference it with `ON DELETE NO ACTION`, implemented by #3692, which replaces the `ON DELETE CASCADE` that #3688 shipped. |
+| `AgentHarnessAcceptance` (`1a`) | Business record | A time-limited risk acceptance with an expiry and renewal lineage, classed with `ControlException`, whose shape it has (decision 7). It names people by user id, and its row says so ([DPIA](agentic-harness-scanner-dpia.md), condition 7). |
+| `AgentHarnessScannerKey` (`1a`) | Configuration | One public key the tenant trusts to sign harness reports, bound to one registered scanner agent; public material only. Kept as long as the scans it verified, because a scan's signature is checkable only against the key that verified it. Shipped in #3688 with this class in `docs/data-retention.md`. |
+| `AgentOwnershipTransfer` (`2a`) | Business record | Who handed an agent's accountability to whom, and when. Kept as long as `RegisteredAgent`, which is long-lived for the same incident-review question. |
+| `PeerAgent` (`2e`) | Business record | An A2A peer registered as a principal: an owner, an endpoint, a signing-key reference, and a pinned card hash with who approved it and when. The class `RegisteredAgent` has, for the same reason: an incident review months later asks which peers agents could reach and who was accountable. |
+| `AuditWorkpaper` (`3b`) | Regulatory artefact | The auditor agent's re-performance of one procedure for one period, with a one-way review stamp. An audit relies on it, so it is not pruned by age. |
+| The sampled-workpaper review (`3d`) | Regulatory artefact | One row per sampled workpaper: the reviewer's outcome and stable dissent codes, with no free text. `AgentProposalSampleAudit` is the pattern and has this class; it cannot be reused, because every row of it requires a proposal. Kept as long as the workpaper it judges, because a disagreement rate whose history can be pruned cannot be trended. |
+| The A2A task receipt, sent and received (`4b`) | Regulatory artefact | Signed evidence of an agent action, the class `AgentActionReceipt` has. That model holds receipts from an external mediator and fits neither a receipt Inflect signs nor a peer's, so `4b` either adds a model under this class or states why it reuses one. |
+| `TenantSkill` (`4c`) | Configuration | The mutable head of one tenant skill: its status and which version is current. The class `AgentPolicyCard` has, for the same shape. |
+| `TenantSkillVersion` (`4c`) | Regulatory artefact | One immutable version, with its content hash, its evaluation record and its approver. `WorkflowRun.mountedSkills` pins the hash a run mounted, so a version is kept and never edited, as `AgentPolicyCardVersion` is. Its instructions are encrypted at rest (#3680). |
+
+Planned changes that add no model:
+
+- `WorkflowRun.mountedSkills` (`1b`) takes its model's class, Operational. A
+  prune of runs, if one is built, takes their pins with them.
+- `TenantMembership`'s line-of-defence column (`3b`) takes its model's class,
+  Configuration.
+- Step `2b` writes execution rows, findings, notifications and tasks to existing
+  tables. Its mode is a column on an existing model and takes that model's
+  class.
+- Step `2c` writes `ExternalWriteJournal` and prior-state rows to the existing
+  external-write tables.
+- Step `2d` stores no passport: passports are derived and emitted as `Evidence`
+  (#3672).
+- Step `3a` reuses `AccessReview` and `AccessReviewConnectedDecision`, as the
+  `LEGACY_APP` campaigns do, and `AgentProposal` for narrowings. A pack that
+  `3a` persists as a model of its own is a Regulatory artefact, kept with its
+  campaign.
+- Step `3c` writes `AuditWorkpaper` rows and finding proposals.
+- Step `4a`'s scan health reads `AgentHarnessScan`. If `4a` gives an estate a
+  model of its own, it is Configuration.
+- Step `4d` uses `AuditPack`, `AuditorAccount` and `AuditorPackAccess`, and
+  records the auditor's conclusion as `Evidence`.
+
+### Pilot
+
+The pilot client is Inflect, and the estate is Inflect's own (decision 10): the
+production deployment, which is the Compose stack on the GCP VM
+`inflect-compliance` in project `hazel-design-419410`, zone `europe-west1-b`
+(CLAUDE.md, "Production VM"); Inflect's Entra tenant; MCP servers; the
+GitHub workflows that build and release it; and
+Inflect's own tenant on that deployment, where the report is pushed. Which
+source kinds are in the pilot is decision 10. The rest of each row is derived
+from repository files, and where the repository cannot tell, the row says so.
+
+**No source has a named owner.** The owner has named no person for any of them
+(decision 10) and the repository names none, so every Owner cell reads "Not
+named" and the `0e` hardening item for named owners stays unticked. The gap is
+tracked on #3664.
+
+| Source kind | In the pilot | What it is | Evidence | Owner |
+|---|---|---|---|---|
+| The pilot as a whole | Yes | Inflect's own estate, reported into Inflect's own tenant | Decision 10; CLAUDE.md, "Production VM" | Not named |
+| `entra-sp` | Yes | Inflect's Entra tenant: its service principals and app registrations. The repository shows that the product has an Entra app registration, because the Entra consent callback serves every tenant from one registered redirect URI; which directory holds that registration it does not say. | Decision 10; `src/app/api/integrations/mcp-server/callback/route.ts` | Not named |
+| `mcp` | Yes | MCP servers. Decision 10 does not say which, and the repository cannot tell: #3686 reads every configured MCP server. The repository shows two kinds. Inflect serves its own: `/api/mcp`, read tools and propose tools behind the registration gate, and `/api/mcp/entra-grant`, a two-tool server whose intended client is Inflect's own dispatch job, both in the `app` service (`/api/mcp/token` is the token exchange, not a server). And a tenant can connect external MCP servers, through the `mcp-server` and `legacy-mcp` integration providers; which ones Inflect's own tenant has connected is production data the repository cannot read. | Decision 10; `src/app/api/mcp/route.ts`, `src/app/api/mcp/entra-grant/route.ts`, `src/app/api/mcp/token/route.ts`, `src/app-layer/integrations/providers/mcp-server-provider.ts`, `src/app-layer/integrations/providers/legacy-mcp/index.ts` | Not named |
+| `cicd` | Yes | GitHub Actions, 15 workflows on `main`. One calls a model: `skills-evaluate.yml` (#3690), run on manual dispatch, calls the Anthropic API with the repository secret `ANTHROPIC_API_KEY` (decision 8). The `flue` job in `ci.yml` runs the agent loop against a scripted fake provider, with no credential and no network. Three non-human identities act: the per-run `GITHUB_TOKEN` that every job receives, a GitHub App release identity minted from `RELEASE_APP_ID` and the secret `RELEASE_APP_PRIVATE_KEY` (`release.yml`), and the `ANTHROPIC_API_KEY` of `skills-evaluate.yml`. `ghcr-publish.yml` publishes the image the VM runs. | Decision 10; `.github/workflows/*.yml` | Not named |
+| `inflect-register` | Yes, always | The `RegisteredAgent` rows of Inflect's own tenant. Which tenant that is, and what its register holds, is production data the repository cannot read. | Decision 10; `prisma/schema/agentic.prisma` `RegisteredAgent` | Not named |
+| `vault` | No | Inflect has no secrets vault. CLAUDE.md names a host environment file on the VM as where production secrets live, and an environment file is not an inventory the scanner can read. | Decision 10; CLAUDE.md, "Production VM" | Not named |
+| `okta-app` | No | Not named by the owner, and no repository file names an Okta org of Inflect's. | Decision 10 | Not named |
+| `runtime` | No | Agent runtimes were not named by the owner. Listed as inventory only: the Compose stack runs `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower` and `caddy`; `app` and `worker` run one image, `ghcr.io/rodnapamet/inflect-compliance:latest`; agentic runs execute as the `agent-run-execute` job; and `watchtower` pulls new `app` and `worker` images, a non-human principal with no model loop. | Decision 10; `deploy/docker-compose.prod.yml`, `src/app-layer/jobs/executor-registry.ts`, CLAUDE.md | Not named |
+
+What this means for Phase 1:
+
+- **Three of the scanner's four sources are in the pilot.** The scanner of
+  #3686 reads `entra-sp`, one vault, `mcp` and `inflect-register`. Inflect has
+  no vault, so the recommendation on #3664 that the pilot sit on Entra with a
+  vault and an internal MCP server is met for Entra and MCP and not for the
+  vault. `1a`'s exit can be met on the sources the estate has when the vault reader is
+  proven on the fake scanner's fixtures alone, the pilot scan lists only the
+  sources it read, and the #3686 pull request names the vault reader as the one
+  with no pilot population rather than reading as a pilot of all four. That
+  reader's first real population is a later client estate of step `4a`.
+- **Okta and runtime readers have no pilot population either.** Neither kind
+  is in the pilot. Step `4a` (#3678) adds an Okta reader and no step builds a
+  `runtime` reader; a reader for either is proven on fixtures only, because
+  Inflect's estate has none named.
+- **`cicd` is in the pilot and no step builds its reader.** #3686 reads the
+  four kinds above and #3678 adds Okta and a second vault, so the pilot scan
+  does not read the three CI/CD identities in the table. Which step builds a
+  `cicd` reader is open.
+- **The register has no read for the scanner.** No tool in
+  `src/lib/mcp/tools/` and no resource in `src/lib/mcp/resources.ts` returns
+  `RegisteredAgent` rows, so `1a` builds the read its scanner uses, under the
+  ingest key, `admin.agent_harness_ingest` ([Permission keys](#permission-keys)).
+- **The scanner is registered first.** `scan.scanner.agentId` names the scanner
+  in the register (rule 1), so the pilot scanner is a registered agent in
+  Inflect's tenant before the first scan.
+- **The GCP project's own service accounts are not covered.** They are
+  agent-shaped principals, and no kind in `SOURCE_KINDS` reads them, so no
+  planned step scans them.
 
 ### Phases and steps
 

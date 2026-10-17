@@ -138,7 +138,9 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // of the agentic IAM plan). No existing key moved.
         // Moved 2026-10-17 the same way: one entry added in sorted position
         // (docs/agentic-audit-procedures.md, step 0d of #3654).
-        keyOrderSha: '745f52eee13a1d737384fe8c2611d757f07c37028f43464c6deb8d998639afbc',
+        // Moved again 2026-10-17 by one sorted ADDITION, the scanner DPIA
+        // (#3664): a three-line diff, +3/-0.
+        keyOrderSha: '2be64ed9a0975a2acefaa3ee78ebadbaffd6ac2782d7df4bddb29e7cb0473bcb',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
