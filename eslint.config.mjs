@@ -235,6 +235,42 @@ const config = [
         },
     },
     {
+        // ── The harness ladder is REPORT-ONLY (owner decision, 2026-10-17) ──
+        //
+        // A harness level (H0-H5) raises findings; it never gates activation or
+        // a tool call. The cheapest way to break that is an import, so the
+        // authority funnel may not import the ladder at all: a stale or failed
+        // scan must never be able to stop a working agent. See #3660 and the
+        // docblock in src/lib/agentic/harness-ladder.ts.
+        files: [
+            'src/lib/mcp/**/*',
+            'src/lib/agentic/agent-authority.ts',
+            'src/lib/agentic/agent-registration-gate.ts',
+            'src/lib/agentic/agent-tool-exposure.ts',
+            'src/lib/agentic/agent-credential-state.ts',
+            'src/lib/agentic/autonomy-ceiling.ts',
+            'src/lib/agentic/policy-card*.ts',
+            'src/lib/agentic/kill-switch.ts',
+            'src/lib/agentic/circuit-breaker*.ts',
+            'src/app-layer/usecases/agent-registry.ts',
+            'src/app-layer/usecases/workflow-runs.ts',
+        ],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            group: ['@/lib/agentic/harness-ladder', '**/harness-ladder'],
+                            message:
+                                'The harness ladder is report-only: a level raises findings and never gates a call or an activation. Do not import it into the authority funnel.',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    {
         files: ['src/lib/security/**/*', 'src/middleware.ts'],
         rules: {
             '@typescript-eslint/no-explicit-any': 'error',
