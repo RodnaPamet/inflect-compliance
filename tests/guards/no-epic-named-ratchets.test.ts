@@ -376,7 +376,14 @@ describe('epic-named ratchets are not added back', () => {
         // from verified ones. It is not folded into
         // `directory-identity-tables-single-write-seam`, whose name and allowlist
         // are about a different subsystem's tables.
-        expect(guardFiles().length).toBeLessThan(786);
+        //
+        // RAISED 786 -> 787 on 2026-10-17, for ONE file, the same test:
+        // `ai-risk-tier-unclassified-writers` is named for its invariant —
+        // nothing writes the UNCLASSIFIED AI-system tier in the deploy that
+        // only teaches readers the value (#3691). It holds the empty writer
+        // allowlist the second deploy (#3669) amends, which no existing guard
+        // owns.
+        expect(guardFiles().length).toBeLessThan(787);
     });
 
     /**

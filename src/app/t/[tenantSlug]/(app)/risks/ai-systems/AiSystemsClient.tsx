@@ -15,11 +15,12 @@ import { Robot } from '@inflect/ui/components/ui/icons/nucleo/robot';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
 import { createColumns } from '@/components/ui/table';
-import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
+import { aiActTierTone } from '@/lib/eu-ai-act/tier-display';
 import { buildAiSystemFilters, AI_SYSTEM_FILTER_KEYS } from './filter-defs';
 import { NewAiSystemModal } from './NewAiSystemModal';
 
@@ -41,13 +42,6 @@ interface Props {
     tenantSlug: string;
     canWrite: boolean;
 }
-
-export const TIER_VARIANT: Record<string, StatusBadgeVariant> = {
-    PROHIBITED: 'error',
-    HIGH: 'error',
-    LIMITED: 'warning',
-    MINIMAL: 'neutral',
-};
 
 const ROLE_LABEL: Record<string, string> = { PROVIDER: 'Provider', DEPLOYER: 'Deployer' };
 
@@ -105,7 +99,8 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
     const summary = useMemo(() => {
         const high = initialRows.filter((r) => r.riskTier === 'HIGH').length;
         const prohibited = initialRows.filter((r) => r.riskTier === 'PROHIBITED').length;
-        return { total: initialRows.length, high, prohibited };
+        const unclassified = initialRows.filter((r) => r.riskTier === 'UNCLASSIFIED').length;
+        return { total: initialRows.length, high, prohibited, unclassified };
     }, [initialRows]);
 
     const columns = useMemo(
@@ -129,7 +124,7 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
                     header: tx('aiSystems.colRiskTier'),
                     accessorFn: (r) => r.riskTier,
                     cell: ({ row }) => (
-                        <StatusBadge variant={TIER_VARIANT[row.original.riskTier] ?? 'neutral'}>
+                        <StatusBadge variant={aiActTierTone(row.original.riskTier)}>
                             {row.original.riskTier}
                         </StatusBadge>
                     ),
@@ -193,6 +188,7 @@ function AiSystemsInner({ initialRows, tenantSlug, canWrite }: Props) {
                         total: summary.total,
                         high: summary.high,
                         prohibited: summary.prohibited,
+                        unclassified: summary.unclassified,
                     }),
                     actions: canWrite ? (
                         <Button variant="primary" icon={<Plus />} onClick={() => setShowNew(true)}>

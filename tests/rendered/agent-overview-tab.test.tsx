@@ -189,7 +189,10 @@ interface Agent {
     createdAt: string;
     vendor?: { name: string | null } | null;
     owner: { name: string | null; email: string | null } | null;
-    aiSystem: { id: string; riskTier: 'PROHIBITED' | 'HIGH' | 'LIMITED' | 'MINIMAL' | null } | null;
+    aiSystem: {
+        id: string;
+        riskTier: 'UNCLASSIFIED' | 'PROHIBITED' | 'HIGH' | 'LIMITED' | 'MINIMAL' | null;
+    } | null;
     _count: { apiKeys: number };
     registrationEnforced: boolean;
     driver: 'static' | 'flue';
@@ -379,9 +382,36 @@ describe('the two taxonomies are never crossed', () => {
         expect(screen.queryByTestId('agent-overview-ai-system-link')).not.toBeInTheDocument();
     });
 
+    it('an agent inside an UNCLASSIFIED AI system reads exactly as an agent in no AI system', () => {
+        // UNCLASSIFIED (#3691) is a provisional AI-system entry nobody has
+        // classified. It is a stored value, not a tier the Regulation defines,
+        // so the fact must say what it says for no classification at all —
+        // never print the enum literal, and never the tier it is likeliest to
+        // be mistaken for.
+        const noSystem = renderTab(makeAgent({ riskTier: 'MODERATE', aiSystem: null }));
+        const unclassifiedLabel = factValue(EN.aiActLabel);
+        noSystem.unmount();
+        expect(unclassifiedLabel).toBe(AGENT_DETAIL.unclassified);
+
+        renderTab(
+            makeAgent({ riskTier: 'MODERATE', aiSystem: { id: 'sys-9', riskTier: 'UNCLASSIFIED' } }),
+        );
+
+        expect(factValue(EN.aiActLabel)).toBe(unclassifiedLabel);
+        // The system itself is real, so the way to it stays — it is where a
+        // person goes to classify it.
+        expect(
+            within(fact(EN.aiActLabel)).getByTestId('agent-overview-ai-system-link'),
+        ).toBeInTheDocument();
+        // Case-sensitive on purpose: the catalogue's "Unclassified" is the
+        // answer; the enum literal is the leak.
+        expect(fact(EN.aiActLabel).textContent).not.toMatch(/UNCLASSIFIED|MINIMAL/);
+    });
+
     it('the two enums are disjoint apart from HIGH, which is why the label is the only disambiguator', () => {
         const AGENT_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'];
-        const AI_ACT_TIERS = ['PROHIBITED', 'HIGH', 'LIMITED', 'MINIMAL'];
+        // Every value the AI-system column can hold, UNCLASSIFIED (#3691) included.
+        const AI_ACT_TIERS = ['UNCLASSIFIED', 'PROHIBITED', 'HIGH', 'LIMITED', 'MINIMAL'];
         expect(AGENT_TIERS.filter((v) => AI_ACT_TIERS.includes(v))).toEqual(['HIGH']);
         // And the label under which the AI Act value renders names the
         // Regulation, so the reader is never left inferring which is which.

@@ -168,6 +168,13 @@ export async function generateConformityDraft(ctx: RequestContext, aiSystemId: s
     const { docType } = GenerateConformityDraftSchema.parse(input);
 
     const system = await getAiSystem(ctx, aiSystemId);
+    // A provisional entry nobody has classified is refused for its own reason:
+    // "not high-risk" would be a classification it has not received.
+    if (system.riskTier === 'UNCLASSIFIED') {
+        throw badRequest(
+            'This AI system has not been classified against the EU AI Act yet. Classify it before generating conformity artifacts.',
+        );
+    }
     if (system.riskTier !== 'HIGH') {
         throw badRequest(
             'Conformity artifacts are only generated for HIGH-risk AI systems (Art 11 / Annex IV / Annex V apply to high-risk systems).',

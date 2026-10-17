@@ -1306,7 +1306,7 @@
     "aiSystems": {
       "risksCrumb": "Risks",
       "title": "AI Systems",
-      "description": "{total, plural, one {# AI system} other {# AI systems}} registered · {high} high-risk · {prohibited} prohibited. Each classified against the EU AI Act (Regulation (EU) 2024/1689) and mapped to its obligations.",
+      "description": "{total, plural, one {# AI system} other {# AI systems}} registered · {high} high-risk · {prohibited} prohibited{unclassified, plural, =0 {} other { · # not yet classified}}. Each classified system is mapped to the obligations its EU AI Act (Regulation (EU) 2024/1689) tier carries.",
       "addSystem": "System",
       "colSystem": "System",
       "colRiskTier": "Risk tier",
@@ -1349,6 +1349,8 @@
       },
       "detail": {
         "metaLine": "{tier} risk · {clause} · {role}",
+        "notClassifiedLine": "Not yet classified against the EU AI Act · {role}",
+        "notClassifiedNotice": "This entry is provisional and has not been classified. It carries no EU AI Act obligations until it is, and it is not minimal-risk.",
         "unclassified": "unclassified",
         "classificationHeading": "Classification",
         "rowDrivingClause": "Driving clause",
@@ -1370,6 +1372,7 @@
       },
       "filterEnums": {
         "riskTier": {
+          "UNCLASSIFIED": "Not classified",
           "PROHIBITED": "Prohibited",
           "HIGH": "High",
           "LIMITED": "Limited",

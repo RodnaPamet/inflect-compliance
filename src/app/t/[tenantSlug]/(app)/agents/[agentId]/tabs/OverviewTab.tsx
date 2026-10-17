@@ -22,6 +22,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import type { StoredAiRiskTier } from '@/lib/eu-ai-act/classification';
 
 import { AutonomyScale } from '../AutonomyScale';
 import type { RegistryWritableTabProps } from './types';
@@ -98,7 +99,7 @@ interface AgentDetail {
      * identifier that survives a display name nobody set.
      */
     owner: { name: string | null; email: string | null } | null;
-    aiSystem: { id: string; riskTier: 'PROHIBITED' | 'HIGH' | 'LIMITED' | 'MINIMAL' | null } | null;
+    aiSystem: { id: string; riskTier: StoredAiRiskTier | null } | null;
     /**
      * LIVE credentials. `getById` filters revoked and expired keys out of this
      * count — unlike the register list's Keys column, which still counts
@@ -465,7 +466,11 @@ export function OverviewTab({
 
                     <Fact label={t('agentDetail.overview.aiActLabel')}>
                         <span className="flex flex-wrap items-center gap-tight">
-                            {agent.aiSystem?.riskTier ?? t('agentDetail.unclassified')}
+                            {/* A provisional UNCLASSIFIED entry reads exactly as
+                                no classification does — never as a tier. */}
+                            {agent.aiSystem?.riskTier && agent.aiSystem.riskTier !== 'UNCLASSIFIED'
+                                ? agent.aiSystem.riskTier
+                                : t('agentDetail.unclassified')}
                             {/* The rationale is not repeated here. The AI-system
                                 detail page already renders the clause the
                                 classifier landed on and why, and two surfaces

@@ -10,6 +10,7 @@ import type { AiDeploymentRole } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { parseEnumListFilter } from '../domain/list-filter';
+import type { AiRiskTier as ClassifiedAiRiskTier } from '@/lib/eu-ai-act/classification';
 
 const listSelect = {
     id: true,
@@ -92,7 +93,13 @@ export class AiSystemRepository {
             useContext: string | null;
             provider: string | null;
             deploymentRole: AiDeploymentRole;
-            riskTier: AiRiskTier;
+            /**
+             * A CLASSIFIED tier only — the classifier's output type, not the
+             * column's. UNCLASSIFIED is a different act (a provisional entry
+             * from the registration intake, #3669) and this method cannot
+             * store it. `tests/guards/ai-risk-tier-unclassified-writers.test.ts`.
+             */
+            riskTier: ClassifiedAiRiskTier;
             classificationClauseId: string;
             classificationRationale: string;
             /**

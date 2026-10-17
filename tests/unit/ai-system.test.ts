@@ -99,4 +99,26 @@ describe('generateConformityDraft (propose-not-commit)', () => {
         ).rejects.toThrow(/HIGH-risk/);
         expect(mockProposal).not.toHaveBeenCalled();
     });
+
+    it('refuses an UNCLASSIFIED system as not classified, not as not-HIGH, and queues nothing', async () => {
+        // A provisional entry from the registration intake (#3669): nobody has
+        // classified it, so "not high-risk" would be a classification it never
+        // received. It must be refused for its OWN reason.
+        mockGetById.mockResolvedValueOnce({
+            id: 'ai-4', name: 'Provisional entry', riskTier: 'UNCLASSIFIED', requirementLinks: [],
+            provider: null, deploymentRole: 'DEPLOYER', status: 'ACTIVE',
+            purpose: null, useContext: null, classificationClauseId: null, classificationRationale: null,
+        });
+        const err = await generateConformityDraft(makeRequestContext('EDITOR'), 'ai-4', {
+            docType: 'ANNEX_IV_TECHNICAL_DOCUMENTATION',
+        }).then(
+            () => null,
+            (e: unknown) => e,
+        );
+        expect(err).toBeInstanceOf(Error);
+        expect(err).toMatchObject({ status: 400 });
+        expect((err as Error).message).toMatch(/has not been classified against the EU AI Act/);
+        expect((err as Error).message).not.toMatch(/HIGH-risk/);
+        expect(mockProposal).not.toHaveBeenCalled();
+    });
 });

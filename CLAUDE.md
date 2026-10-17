@@ -1504,6 +1504,17 @@ rules in it are easy to undo:
   `createFinding`**, because the principal is a key that holds the ingest
   permission and nothing else. Every write is still sanitised and audited.
 
+**The `UNCLASSIFIED` AI-system tier** (#3691, deploy 1 of 2 for step 2a) marks
+a provisional `AiSystem` entry that nobody has classified. Every reader treats
+it as not classified, never as `MINIMAL`: not in a tone, a count, a filter or
+the conformity check. Nothing writes it until #3669's registration intake,
+which joins `WRITERS` in `tests/guards/ai-risk-tier-unclassified-writers.test.ts`
+in its own pull request. Until then that list is empty, and its emptiness is
+the property. `AiSystemRepository.create` takes the classifier's four-tier
+`AiRiskTier` from `src/lib/eu-ai-act/classification.ts`, not the column's type,
+so neither the classifier nor that writer can produce the value. Do not widen
+the parameter. Readers use `StoredAiRiskTier`.
+
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
 `resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):

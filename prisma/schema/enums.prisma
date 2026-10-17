@@ -1648,7 +1648,15 @@ enum AiDeploymentRole {
 /// EU AI Act risk tier. PROHIBITED (Art 5) > HIGH (Art 6 + Annex III) >
 /// LIMITED (Art 50 transparency) > MINIMAL (Art 95 voluntary). Strict
 /// precedence; see src/lib/eu-ai-act/classification.ts.
+///
+/// UNCLASSIFIED is not a tier the Act defines and the classifier never
+/// returns it: it marks a provisional entry nobody has classified yet (#3691,
+/// the registration intake of #3669). Every reader treats it as "not
+/// classified", never as MINIMAL. It was added in two deploys: the first only
+/// taught every reader the value, so no running container could meet one it
+/// did not know.
 enum AiRiskTier {
+  UNCLASSIFIED
   PROHIBITED
   HIGH
   LIMITED
