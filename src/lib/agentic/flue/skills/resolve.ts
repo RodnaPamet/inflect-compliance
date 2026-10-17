@@ -12,7 +12,7 @@
  * claims, which is the shape of defect that shows up as a bad answer rather
  * than as a failure.
  */
-import { loadAllSkills, assertCatalogWithinBudget, SkillLoadError, type LoadedSkill } from './index';
+import { loadAllSkills, assertCatalogWithinBudget, catalogBytes, SkillLoadError, type LoadedSkill } from './index';
 import type { FlueSkillDocument } from '../run-binding';
 
 /** Cached: the corpus is read-only files, and re-reading per run buys nothing. */
@@ -43,4 +43,44 @@ export function resolveSkillsFor(declared: readonly string[] | undefined): FlueS
 /** Test seam: drop the cache so a suite can vary the corpus. */
 export function resetSkillCache(): void {
     corpus = null;
+}
+
+/** The fields of a workflow definition this module reads. */
+export interface DeclaresSkills {
+    readonly key: string;
+    readonly skills?: readonly string[];
+}
+
+/**
+ * The always-present catalogue cost of each workflow: what every turn of a run
+ * of that workflow pays for its declared skills. Fails closed on a skill the
+ * corpus does not ship, exactly as a run would.
+ */
+export function workflowCatalogs(defs: readonly DeclaresSkills[]): Array<{ key: string; bytes: number }> {
+    const byName = new Map(allSkills().map((s) => [s.name, s]));
+    return defs.map((d) => {
+        const declared = (d.skills ?? []).map((name) => {
+            const skill = byName.get(name);
+            if (!skill) throw new SkillLoadError(name, `declared by workflow "${d.key}" but not in the shipped corpus`);
+            return skill;
+        });
+        return { key: d.key, bytes: catalogBytes(declared) };
+    });
+}
+
+/**
+ * Every workflow's declared skills must fit the per-turn budget. The budget
+ * binds here and at run time (`resolveSkillsFor`), never on the corpus as a
+ * whole: the corpus may hold more than any one prompt pays for.
+ */
+export function assertWorkflowCatalogsWithinBudget(defs: readonly DeclaresSkills[]): void {
+    const byName = new Map(allSkills().map((s) => [s.name, s]));
+    for (const d of defs) {
+        const declared: LoadedSkill[] = (d.skills ?? []).map((name) => {
+            const skill = byName.get(name);
+            if (!skill) throw new SkillLoadError(name, `declared by workflow "${d.key}" but not in the shipped corpus`);
+            return skill;
+        });
+        assertCatalogWithinBudget(declared);
+    }
 }

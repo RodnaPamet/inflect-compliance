@@ -129,7 +129,7 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // first attempt at that edit WAS the rewrite this pin exists for, a
         // `json.dumps(indent=2, sort_keys-style)` that changed 831 lines while
         // the file still parsed.
-        keyOrderSha: '811c1468cbe3dcca2d2a8231970b874db63162a3cdcb1a4a06643ac35e34adf1',
+        keyOrderSha: '5aea923597a9f5446e3f9c9e11f28c333737e42ac1db4055940a62873bcdcbdc',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

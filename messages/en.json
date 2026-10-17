@@ -8840,7 +8840,7 @@
         "title": "The corpus, not this agent's history",
         "description": "These are the skills the product ships. A run loads only what its workflow definition declares, so this list is what an agent can be taught — not a record of what any one run used."
       },
-      "catalogCost": "Catalogue cost: {used} of {budget} bytes. Every mounted skill's name and description sit in each system prompt, on every turn; instructions cost nothing until the model activates the skill.",
+      "catalogCost": "Largest catalogue cost of any workflow: {used} of {budget} bytes. Each skill a workflow mounts puts its name and description in every system prompt of that workflow's runs, on every turn; instructions cost nothing until the model activates the skill.",
       "declaredBy": "Declared by {keys}",
       "declaredByNone": "No workflow declares it",
       "field": {
