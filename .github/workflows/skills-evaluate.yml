@@ -85,6 +85,18 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      # A skill that did not pass leaves its answers, case by case, so the
+      # failure can be read rather than inferred from a pass rate. Never a
+      # record: a separate artifact, from a gitignored directory outside the
+      # skills tree, kept for a week.
+      - name: Upload what did not pass, for diagnosis
+        uses: actions/upload-artifact@v7
+        with:
+          name: skill-evaluation-failures
+          path: skill-evaluation-failures/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Fail if any skill did not pass
         run: |
           if [ "${status:-1}" != "0" ]; then

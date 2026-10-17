@@ -50,18 +50,24 @@
  * an artifact to be committed in a pull request.
  *
  * Exits non-zero if any skill's record would not pass; that skill's record is
- * not written, and its per-kind result is printed.
+ * not written, and its per-kind result is printed. Its answers go to
+ * `skill-evaluation-failures/<skill>.json` instead, with each case marked
+ * passed or not — gitignored, outside the skills tree, and never a record.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { loadSkillCorpus, skillDirectory, type LoadedSkill } from '../src/lib/agentic/flue/skills';
 import {
+    answerPasses,
     checkEvaluationRecord,
     checkEvaluationSet,
     readEvaluationSet,
 } from '../src/lib/agentic/flue/skills/evaluation-record';
 import { EVALUATION_RECORD_FILE } from '../src/lib/agentic/flue/skills/mount-gate';
+
+/** Where a run that did not pass leaves its answers for diagnosis. Gitignored. */
+const FAILURES_DIR = path.join(process.cwd(), 'skill-evaluation-failures');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -182,7 +188,24 @@ async function evaluate(auth: ApiAuth, model: string, skill: LoadedSkill): Promi
     };
     const verdict = checkEvaluationRecord(record, skill);
     if (!verdict.ok) {
-        console.error(`✗ ${skill.name}: ${verdict.reason} — ${verdict.detail}; nothing written`);
+        // Kept for DIAGNOSIS, never as a record: outside the skills tree, under a
+        // gitignored directory, and named for the skill rather than
+        // `evaluation-record.json`, so the mount gate cannot read it and nobody
+        // can commit it by accident. It says which case failed and with what
+        // answer, which a pass rate alone cannot — an expectation a correct
+        // answer misses and an answer that is wrong look identical as a ratio.
+        const failed = path.join(FAILURES_DIR, `${skill.name}.json`);
+        fs.mkdirSync(FAILURES_DIR, { recursive: true });
+        fs.writeFileSync(failed, `${JSON.stringify({
+            ...record,
+            verdict: { reason: verdict.reason, detail: verdict.detail },
+            cases: setCheck.set.cases.map((c) => ({
+                caseId: c.id,
+                kind: c.kind,
+                passed: answerPasses(c.expect, answers.find((a) => a.caseId === c.id)?.answer ?? ''),
+            })),
+        }, null, 4)}\n`);
+        console.error(`✗ ${skill.name}: ${verdict.reason} — ${verdict.detail}; nothing written (diagnosis in ${path.relative(process.cwd(), failed)})`);
         return false;
     }
     const out = path.join(skillDirectory(skill.name), EVALUATION_RECORD_FILE);
