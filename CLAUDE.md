@@ -1454,6 +1454,34 @@ implementation of reminders, closing and the evidence PDF.
 
 
 
+### Agentic AI for IAM roadmap
+
+Six use cases that extend IAM controls to autonomous agents, in five phases.
+**`docs/agentic-iam-roadmap.md` is the source of truth for intent**, and the
+step issues under #3654 are the work, one pull request each. Rules that bind
+every step are listed at the end of that document.
+
+**The harness ladder** (`src/lib/agentic/harness-ladder.ts`, H0–H5) has three
+properties that are each one careless edit from being undone:
+
+- **Unanswered counts as no.** A rung is met only when every criterion on it and
+  below it is met WITH an evidence reference; a met verdict with no evidence is
+  not met, and a criterion reported twice is judged on its worse answer.
+- **The ladder is report-only** (owner decision, 2026-10-17). A level raises
+  findings and never gates an activation or a tool call. `eslint.config.mjs`
+  refuses an import of the ladder from the authority funnel's files at error
+  level; do not widen the ladder's reach by moving a gate into a file that
+  block does not list.
+- **Order lives in one place** and comparison is ordinal (`levelAtLeast`).
+
+**The scanner report contract** (`inflect-agent-harness/1`,
+`docs/agent-harness-contract.md`, `src/lib/agentic/harness-contract.ts`) is
+verified in one order: size, JSON, signature by a TRUSTED key, then the strict
+schema. The report cannot state a level, cannot carry a credential value, and
+cannot declare completeness; all three are derived or refused.
+`tests/helpers/agent-harness-fake-scanner.ts` is the reference implementation.
+
+
 
 
 ## Testing Conventions

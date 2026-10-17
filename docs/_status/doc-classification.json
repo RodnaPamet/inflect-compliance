@@ -11,6 +11,12 @@
         "docs/adr/0002-agent-behaviour-window-retention.md": {
             "class": "authoritative"
         },
+        "docs/agent-harness-contract.md": {
+            "class": "authoritative"
+        },
+        "docs/agentic-iam-roadmap.md": {
+            "class": "living"
+        },
         "docs/api-consumer-guide.md": {
             "class": "authoritative"
         },
