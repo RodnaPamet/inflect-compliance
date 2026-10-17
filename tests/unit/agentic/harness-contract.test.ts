@@ -72,6 +72,21 @@ describe('every malformation the contract names is refused with its reason', () 
         if (expected === 'SCHEMA') expect(result.issues?.length).toBeGreaterThan(0);
     });
 
+    it('a SCHEMA refusal names no part of the body: an unknown key is counted, never quoted', () => {
+        // Built at runtime so no literal credential pattern sits in this file.
+        const secret = ['gh', 'p_', 'Q'.repeat(36)].join('');
+        expect(looksLikeSecret(secret)).toBe(true);
+        const body = validReportBody() as unknown as { agents: Array<Record<string, unknown>> } & Record<string, unknown>;
+        body.agents[0][secret] = 'x';
+        body[`${secret}_root`] = 'y';
+        const result = verifyAndParseHarnessReport(scanner.serialise(body), [scanner.publicKeyHex]);
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.reason).toBe('SCHEMA');
+        expect(result.issues).toEqual(expect.arrayContaining(['agents.0: 1 unrecognized key', '(root): 1 unrecognized key']));
+        expect((result.issues ?? []).join(' ')).not.toContain(secret);
+    });
+
     it('produces every refusal code at least once, so no code is untested', () => {
         const codes: HarnessRefusal[] = [
             'TOO_LARGE', 'NOT_JSON', 'NOT_AN_OBJECT', 'UNSIGNED', 'MALFORMED_SIGNATURE', 'UNTRUSTED_SIGNER', 'BAD_SIGNATURE', 'SCHEMA',

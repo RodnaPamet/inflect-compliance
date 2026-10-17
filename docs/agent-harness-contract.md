@@ -79,8 +79,10 @@ could not read: an unread source is reported `INCOMPLETE`.
 
 A credential `ref` MUST match `scheme://locator` and MUST NOT contain a value
 with the shape of a secret (a GitHub, AWS, Slack or OpenAI-style token, a JWT, a
-private-key block). A verdict with `met: true` and no evidence counts as not
-met.
+private-key block). The same rule holds for **every** string in the report: the
+contract checks credential references, and the ingest refuses a report in which
+any other string member has a secret's shape (`SECRET_IN_REPORT`, under
+Transport). A verdict with `met: true` and no evidence counts as not met.
 
 ### Findings
 
@@ -114,7 +116,7 @@ derives its own findings (see **Transport**).
 | `MALFORMED_SIGNATURE` | The signature member or its encodings do not parse. |
 | `UNTRUSTED_SIGNER` | The signing key is not one this tenant trusts. |
 | `BAD_SIGNATURE` | The signature does not verify over the canonical body. |
-| `SCHEMA` | The body breaks this contract; the refusal lists each issue. |
+| `SCHEMA` | The body breaks this contract; the refusal lists each issue by path. An issue names no part of the body: an unknown key is counted, never quoted, because a key is content the signer chose. |
 
 ## Transport
 
@@ -144,6 +146,7 @@ checks pass:
 
 | Code | Status | Cause |
 |---|---|---|
+| `SECRET_IN_REPORT` | 400 | A string member has the shape of a secret. The refusal names the member's path, never its value. |
 | `SCANNER_MISMATCH` | 400 | `scan.scanner.agentId` is not the agent the signing key belongs to. |
 | `SUBMITTER_MISMATCH` | 403 | The API key is bound to an agent other than that scanner. |
 | `REPLAY` | 409 | A scan with this `scan.id` is already ingested for the tenant. |

@@ -329,6 +329,25 @@ export function harnessKeyFingerprint(material: string): string | null {
 }
 
 /**
+ * One schema issue as refusal text that carries nothing of the body.
+ *
+ * The refusal reaches the caller and, through the API wrapper, the error log
+ * and the trace span, so it must not repeat what the report contained. Zod's
+ * message for an unknown key NAMES the key, and a key is body content the
+ * signer chose: a secret-shaped name would be logged verbatim. Unknown keys are
+ * therefore counted, never named; any other message that still matches a
+ * secret shape falls back to the issue code.
+ */
+function describeSchemaIssue(issue: z.core.$ZodIssue): string {
+    const path = issue.path.join('.') || '(root)';
+    if (issue.code === 'unrecognized_keys') {
+        const n = issue.keys.length;
+        return `${path}: ${n} unrecognized key${n === 1 ? '' : 's'}`;
+    }
+    return looksLikeSecret(issue.message) ? `${path}: ${issue.code}` : `${path}: ${issue.message}`;
+}
+
+/**
  * Check a raw report against the contract, in the only safe order: size, JSON,
  * signature by a TRUSTED key, then schema. `trustedSignerKeys` are the public
  * keys of scanners registered for this tenant; a report signed by any other
@@ -373,11 +392,7 @@ export function verifyAndParseHarnessReport(
 
     const schema = HarnessReportBodySchema.safeParse(body);
     if (!schema.success) {
-        return {
-            ok: false,
-            reason: 'SCHEMA',
-            issues: schema.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
-        };
+        return { ok: false, reason: 'SCHEMA', issues: schema.error.issues.map(describeSchemaIssue) };
     }
     return { ok: true, body: schema.data, signerKey, complete: isScanComplete(schema.data) };
 }
