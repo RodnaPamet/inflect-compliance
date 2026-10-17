@@ -210,10 +210,9 @@ export function checkEvaluationRecord(
  * when the skill names none — an ordinary answer, which the mount gate (1b)
  * treats as "not evaluated", never as "passed".
  */
-export function readEvaluationSet(skill: LoadedSkill): unknown | null {
+export function readEvaluationSet(skill: LoadedSkill, dir: string = skillDirectory(skill.name)): unknown | null {
     const file = skill.metadata.evaluation;
     if (file === undefined) return null;
-    const dir = skillDirectory(skill.name);
     const full = path.join(dir, file);
     if (path.dirname(full) !== dir) return null;
     return JSON.parse(fs.readFileSync(full, 'utf-8')) as unknown;

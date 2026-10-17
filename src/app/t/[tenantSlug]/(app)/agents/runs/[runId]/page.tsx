@@ -5,6 +5,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { projectRunSteps } from '@/lib/agentic/run-step-projection';
+import { parseMountedSkillPins } from '@/lib/agentic/flue/skills/mount-gate';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 
 import { AgentRunDetailClient, type RunStepRow } from './AgentRunDetailClient';
@@ -105,6 +106,9 @@ export default async function AgentRunDetailPage({
                 // field here — the usecase returns the whole row and the whole
                 // row is not something to hand a browser.
                 parentExecutionId: run.parentExecutionId,
+                // WHAT IT WAS TAUGHT (#3666): names, versions and hashes, or
+                // null for a run that predates the pin.
+                mountedSkills: parseMountedSkillPins(run.mountedSkills),
             }}
             steps={steps}
         />

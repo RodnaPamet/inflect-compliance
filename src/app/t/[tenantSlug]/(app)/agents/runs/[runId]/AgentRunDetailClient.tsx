@@ -55,6 +55,13 @@ export interface RunHeader {
      * somebody had clicked something.
      */
     parentExecutionId: string | null;
+    /**
+     * WHAT THIS RUN WAS TAUGHT (#3666) — each mounted skill's name, version and
+     * content hash, pinned when the run was admitted. `[]` means it mounted
+     * none; null means the row predates the pin, which is a different fact and
+     * is shown as one.
+     */
+    mountedSkills: Array<{ name: string; version: string; contentHash: string }> | null;
 }
 
 const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 'neutral'> = {
@@ -271,6 +278,9 @@ export function AgentRunDetailClient({
     // and `useMemo` here would cost a dependency nobody re-reads for an
     // allocation nobody measured.
     const spans = delegationSpans(steps);
+    // Absent reads as "not recorded", the same as NULL: a header built before
+    // the field existed must not render as "mounted nothing".
+    const pinnedSkills = run.mountedSkills ?? null;
 
     return (
         <EntityDetailLayout
@@ -343,6 +353,27 @@ export function AgentRunDetailClient({
                         {t('runs.detail.causedBy', { executionId: run.parentExecutionId })}
                     </p>
                 )}
+                {/* WHAT IT WAS TAUGHT. Hashes rather than text: the hash
+                    names the exact document in the repository, and the text
+                    of a skill is the repository's to show, not this page's. */}
+                <div data-testid="run-mounted-skills" className="space-y-tight">
+                    <Heading level={3} className="text-sm">{t('runs.detail.skillsTitle')}</Heading>
+                    {pinnedSkills === null ? (
+                        <p className="text-sm text-content-muted">{t('runs.detail.skillsNotRecorded')}</p>
+                    ) : pinnedSkills.length === 0 ? (
+                        <p className="text-sm text-content-muted">{t('runs.detail.skillsNone')}</p>
+                    ) : (
+                        <ul className="space-y-tight text-sm">
+                            {pinnedSkills.map((s) => (
+                                <li key={s.name} className="flex flex-wrap items-baseline gap-x-compact">
+                                    <span className="text-content-default">{s.name}</span>
+                                    <span className="text-content-muted">{t('runs.detail.skillVersion', { version: s.version })}</span>
+                                    <code className="break-all text-xs text-content-muted">{s.contentHash}</code>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
                 {run.errorMessage && (
                     <p className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}>
                         {run.errorMessage}

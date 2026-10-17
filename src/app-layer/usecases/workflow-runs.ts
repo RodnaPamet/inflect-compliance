@@ -75,6 +75,9 @@ import {
     type ContentProvenance,
 } from '@/lib/agentic/content-provenance';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
+import { SkillLoadError } from '@/lib/agentic/flue/skills';
+import { resolveSkillPins } from '@/lib/agentic/flue/skills/resolve';
+import type { MountedSkillPin } from '@/lib/agentic/flue/skills/mount-gate';
 import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import { assertWithinMonthlyBudget } from '@/lib/agentic/monthly-budget-policy';
 import {
@@ -447,15 +450,25 @@ export async function startWorkflowRun(
         }
     }
 
+    // ── WHAT THIS RUN WILL BE TAUGHT, PINNED BEFORE ITS ROW EXISTS (#3666) ──
+    //
+    // A Flue run mounts the skills its definition declares; a static run mounts
+    // none, and records the empty list rather than NULL, because "mounted
+    // nothing" and "predates the pin" are different facts. Resolving here also
+    // applies the mount gate and the text scan: a skill that has no passing
+    // evaluation record, or that the scan refused, stops the run BEFORE its row
+    // is written — the reason the registration check above sits here too.
+    const mountedSkills = chosenDriver === 'flue' ? pinSkillsOrRefuse(def.skills) : [];
+
     // Row + first chain link (seq 0, prev null), one transaction. An `input`
     // already over the size cap fails here and no run is created.
     //
-    // The pin is passed IN rather than resolved inside: `createSealedRun` owns
-    // the seal, not the authority question, and the pin has to be resolved
-    // before the row exists because it is write-once at the database.
+    // The pins are passed IN rather than resolved inside: `createSealedRun` owns
+    // the seal, not the authority question, and both pins have to be resolved
+    // before the row exists because they are write-once at the database.
     const run = await createSealedRun(
         ctx, workflowKey, context, policyCardVersion, chosenDriver, concurrencyCap,
-        opts.parentExecutionId ?? null,
+        opts.parentExecutionId ?? null, mountedSkills,
     );
 
     await appendAuditEntry({
@@ -473,6 +486,9 @@ export async function startWorkflowRun(
             // The pin, in the trail as well as on the row. The row can be
             // deleted with its tenant; the hash-chained entry is what survives.
             policyCardVersion,
+            // …and the skills it was taught, by name, version and hash. No
+            // skill text: the hash identifies the document in the repository.
+            mountedSkills,
             // Which engine walked this run, and — when it was not the one
             // configured — why not. In the hash-chained trail rather than only
             // in a log line, because "which engine executed this" is a question
@@ -1057,6 +1073,21 @@ async function recordRunSettlementMetrics(
  * moved to the only place a start can report it — there is no run yet to mark
  * FAILED.
  */
+/**
+ * The skills a Flue run declares, as pins — or a named 400 when any of them
+ * cannot be mounted (unknown, refused by the text scan, or without a passing
+ * evaluation record). The skill loader's own error names the skill and the
+ * reason, never the skill's text.
+ */
+function pinSkillsOrRefuse(declared: readonly string[] | undefined): MountedSkillPin[] {
+    try {
+        return resolveSkillPins(declared);
+    } catch (err) {
+        if (err instanceof SkillLoadError) throw badRequest(`skill_not_mountable: ${err.message}`);
+        throw err;
+    }
+}
+
 async function createSealedRun(
     ctx: RequestContext,
     workflowKey: string,
@@ -1080,6 +1111,12 @@ async function createSealedRun(
      * a crash skips.
      */
     parentExecutionId: string | null,
+    /**
+     * WHAT THE RUN WILL BE TAUGHT (#3666): each mounted skill's name, version
+     * and content hash. Written in the CREATE because the column is write-once
+     * at the database from the moment the row exists.
+     */
+    mountedSkills: readonly MountedSkillPin[],
 ): Promise<{ id: string }> {
     try {
         return await runInTenantContext(ctx, async (db) => {
@@ -1120,6 +1157,9 @@ async function createSealedRun(
                     // updated after the walk: a run that crashes mid-step still
                     // has to be able to say what was executing it.
                     driver: driver === 'flue' ? 'FLUE' : 'STATIC',
+                    // …and what it was TAUGHT. `[]` for a run that mounts no
+                    // skill, never NULL: NULL means the row predates the pin.
+                    mountedSkills: mountedSkills.map((p) => ({ name: p.name, version: p.version, contentHash: p.contentHash })),
                 },
                 select: { id: true },
             });

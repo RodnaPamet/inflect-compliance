@@ -504,6 +504,24 @@ model WorkflowRun {
   /// later segments on the other engine. The per-segment truth would belong on
   /// `WorkflowStep`, and this column would keep meaning what it says.
   driver            AgentDriverMode   @default(STATIC)
+  /// WHAT THIS RUN WAS TAUGHT (#3666): one `{ name, version, contentHash }`
+  /// per skill the run mounted, in declaration order, written in the CREATE.
+  ///
+  /// Three states, the same split `policyCardVersion` makes:
+  ///   NULL   the row predates the pin — nobody recorded what it was taught.
+  ///   []     the pin was resolved and the run mounted nothing (a static run,
+  ///          or a Flue run whose definition declares no skill).
+  ///   [...]  the skills it mounted, each pinned by the SHA-256 of the exact
+  ///          instructions, so "what did the agent know" is answerable after
+  ///          the skill has been edited.
+  ///
+  /// WRITE-ONCE at the database, stricter than the card pin: a trigger refuses
+  /// ANY change once the row exists, including NULL → value, because a later
+  /// fill could only ever be a reconstruction. CHECKed to be a JSON array.
+  ///
+  /// Names and hashes only — no skill text — so it is not in the Epic B
+  /// encryption manifest; the hash points at the document in the repository.
+  mountedSkills     Json?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)

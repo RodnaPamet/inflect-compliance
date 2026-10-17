@@ -73,6 +73,9 @@ const EN = jest.requireActual('../../messages/en.json') as {
                 outputLabel: string;
                 decisionLink: string;
                 emptyTitle: string;
+                skillVersion: string;
+                skillsNone: string;
+                skillsNotRecorded: string;
             };
         };
     };
@@ -91,7 +94,8 @@ const RUN: RunHeader = {
     completedAt: '2026-09-01T10:04:00.000Z',
     summary: null,
     errorMessage: null,
-    parentExecutionId: null
+    parentExecutionId: null,
+    mountedSkills: null,
 };
 
 function step(over: Partial<RunStepRow> = {}): RunStepRow {
@@ -659,6 +663,38 @@ describe('what caused the run', () => {
     it('says nothing when nothing caused it', () => {
         renderDetail([step()], { ...RUN, parentExecutionId: null });
         expect(screen.queryByTestId('run-caused-by')).toBeNull();
+    });
+});
+
+/**
+ * #3666 — what the run was taught, from its write-once pin.
+ *
+ * Three states, and the page keeps them apart: a list of skills by name,
+ * version and hash; "mounted no skill" for an empty pin; and "not recorded" for
+ * a run that predates the pin. Collapsing the last two would tell a reader an
+ * old run was taught nothing, which nobody checked.
+ */
+describe('what the run was taught', () => {
+    const pin = { name: 'soa-authoring', version: '1', contentHash: `sha256:${'a'.repeat(64)}` };
+
+    it('lists each mounted skill with its version and hash', () => {
+        renderDetail([step()], { ...RUN, driver: 'FLUE', mountedSkills: [pin] });
+        const section = screen.getByTestId('run-mounted-skills');
+        expect(section).toHaveTextContent('soa-authoring');
+        expect(section).toHaveTextContent(D.skillVersion.replace('{version}', '1'));
+        expect(section).toHaveTextContent(pin.contentHash);
+    });
+
+    it('says the run mounted nothing for an empty pin', () => {
+        renderDetail([step()], { ...RUN, mountedSkills: [] });
+        expect(screen.getByTestId('run-mounted-skills')).toHaveTextContent(D.skillsNone);
+    });
+
+    it('says the pin was not recorded, rather than "nothing", for an older run', () => {
+        renderDetail([step()], { ...RUN, mountedSkills: null });
+        const section = screen.getByTestId('run-mounted-skills');
+        expect(section).toHaveTextContent(D.skillsNotRecorded);
+        expect(section).not.toHaveTextContent(D.skillsNone);
     });
 });
 
