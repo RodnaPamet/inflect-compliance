@@ -322,7 +322,25 @@ describe('epic-named ratchets are not added back', () => {
         // file with it. The single symptom was `legacy-reconcile` logging
         // "adjudication failed, run stands" on every resolved run, from behind
         // a try/catch that is right to exist — found only by running the job.
-        expect(guardFiles().length).toBeLessThan(780);
+        // RAISED 780 -> 781 on 2026-10-16, for one file, same test applied:
+        // `cited-test-paths-exist.test.ts` is named for the invariant it
+        // protects — a source file that cites a test must cite one that exists.
+        //
+        // Why a new file: nothing in these directories reads a DOCBLOCK as a
+        // claim about the test suite. The nearest neighbours check that a named
+        // surface still exists (`quality-coverage-integrity`) or that copy keys
+        // resolve (`agents-copy-keys-resolve`); neither looks at what `src/`
+        // asserts about `tests/`. It also has to NOT strip comments, which is
+        // the opposite of the convention every scanning guard here follows, so
+        // folding it into one of them would set a trap for the next author.
+        //
+        // What it cost to not have it: 12 of 188 cited test paths did not exist
+        // (#3355), and four of those claimed in the present tense that a named
+        // guard pinned an invariant nothing pinned (#3650) — including the Flue
+        // `setProvider` rule, whose own docblock calls the hazard it guards a
+        // cross-tenant egress. A dead link tells a reader the citation moved;
+        // these told a reader the protection existed, so they stopped looking.
+        expect(guardFiles().length).toBeLessThan(781);
     });
 
     /**

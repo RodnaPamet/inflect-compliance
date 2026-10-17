@@ -65,8 +65,8 @@ import { logger } from '@/lib/observability/logger';
  *     transition is one PR per model rather than one big bang).
  *
  * Adding a new managed field: pick the right mapping flavour, then
- * add a unit test in `tests/unit/security/pii-middleware.test.ts`
- * to lock in the where/data behaviours.
+ * add a unit test under `tests/unit/security/` to lock in the
+ * where/data behaviours.
  */
 interface PiiFieldSpec {
     plain: string;
