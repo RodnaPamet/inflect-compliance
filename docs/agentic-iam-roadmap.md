@@ -108,6 +108,27 @@ Two documents specify UC5's new parts.
   governs the peer register and pin routes (R3) is the model's recommendation,
   open for step `2e`.
 
+### Audit procedure catalogue
+
+`docs/agentic-audit-procedures.md` is catalogue version 1 of the agentic
+auditor's procedures: leaver timeliness, recertification completeness,
+time-bounded access expiry, privileged access, agent authority conformance, stop
+control, approval quality and evidence sufficiency. Each names its control
+identifiers, its population as a table and filter with inclusions and
+exclusions, a keyed sample with a stated epoch, the attributes tested, the raw
+rows its re-performance recomputes, its exception and what makes it
+INCONCLUSIVE; an empty population is never a pass. It proposes library v1 as the
+first five. The repository owner's merge of its pull request is the repository
+owner's sign-off and adopts version 1 for this repository. The merge does not
+supply internal audit's approval or PwC's agreement: neither is recorded on
+#3663, each is recorded there when given, and while both are open library v1 is
+proposed to them, not approved or agreed. The catalogue records the ownership
+rule of decision 3: the second line is to own and operate the auditor agent, and
+internal audit is to approve its procedures and sample its workpapers. No
+auditor agent, workpaper or line-of-defence value exists on `main`, no handler
+runs any procedure, and each procedure's PwC methodology reference is open: PwC
+supplies it, and it is recorded on #3663 when given.
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
@@ -117,7 +138,7 @@ Two documents specify UC5's new parts.
 | Skills | Eight original, licensed skills, two of them for IAM and declared by no workflow. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. The two IAM skills ship evaluation sets; the catalogue budget binds per workflow and per run. | No evaluation records and no mount gate; no skill hash pinned on runs; no workflow mounts the IAM skills. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
-| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts. | No IAM audit procedures, no workpapers, no auditor independence check. |
+| Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
 | Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. | Offboarding a person does nothing to the agents they own; retiring an agent only flips its status. |
 
 ## Roadmap (future direction)

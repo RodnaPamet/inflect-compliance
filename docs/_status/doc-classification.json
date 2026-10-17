@@ -20,6 +20,9 @@
         "docs/agent-skill-standard.md": {
             "class": "authoritative"
         },
+        "docs/agentic-audit-procedures.md": {
+            "class": "authoritative"
+        },
         "docs/agentic-iam-roadmap.md": {
             "class": "living"
         },
