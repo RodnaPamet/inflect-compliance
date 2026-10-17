@@ -116,7 +116,10 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // First time this pin has recorded a DELETION rather than an addition.
         // The digest cannot tell the two apart, which is why the reason is
         // written rather than inferred from the count.
-        keyOrderSha: '9a128ccc17c47e44174e1a55357a6d503444c200a45cb223562181c0284fa1bc',
+        // Updated again 2026-10-17: one entry added for
+        // `skills-evaluate.yml:record` (#3666), the manual job that records
+        // skill evaluations with the repository secret. A pure append, +5/-0.
+        keyOrderSha: '69176b945d3b6559e2eced86490f26c91fd861e4c6b36a27ea9df4b4753bb35a',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
