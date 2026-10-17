@@ -136,7 +136,9 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Moved 2026-10-17 by ADDING two entries in their sorted positions
         // (docs/a2a-threat-model.md and docs/integration-passport.md, step 0c
         // of the agentic IAM plan). No existing key moved.
-        keyOrderSha: 'a6ed22f1e4acc3b82031ee54703dac9eee668a0f61ca6f677e6bea93b8c9685f',
+        // Moved 2026-10-17 the same way: one entry added in sorted position
+        // (docs/agentic-audit-procedures.md, step 0d of #3654).
+        keyOrderSha: '745f52eee13a1d737384fe8c2611d757f07c37028f43464c6deb8d998639afbc',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
