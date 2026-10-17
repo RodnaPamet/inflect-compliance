@@ -42,6 +42,9 @@
  *   ANTHROPIC_API_KEY=... npm run skills:evaluate -- --skill soa-authoring
  *   ANTHROPIC_API_KEY=... npm run skills:evaluate -- --model claude-haiku-4-5
  *
+ * An organisation-level key also needs `ANTHROPIC_WORKSPACE_ID=wrkspc_...`;
+ * a key created inside a workspace does not.
+ *
  * In CI it runs from the manual workflow `.github/workflows/skills-evaluate.yml`,
  * which holds the credential as a repository secret and uploads the records as
  * an artifact to be committed in a pull request.
@@ -86,8 +89,21 @@ function parseArgs(argv: readonly string[]): Args {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * The credential, and the workspace an organisation-level key must name.
+ *
+ * A key created inside a workspace carries its workspace; an organisation key
+ * does not, and the API refuses its requests unless `anthropic-workspace-id`
+ * says which workspace they belong to. The header is sent only when
+ * `ANTHROPIC_WORKSPACE_ID` is set, so a workspace key works unchanged.
+ */
+interface ApiAuth {
+    apiKey: string;
+    workspaceId: string | null;
+}
+
 /** One case, one request. Returns the text the model gave and the revision the API reported. */
-async function ask(apiKey: string, model: string, system: string, input: string): Promise<{ answer: string; revision: string }> {
+async function ask(auth: ApiAuth, model: string, system: string, input: string): Promise<{ answer: string; revision: string }> {
     for (let attempt = 1; ; attempt++) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -96,7 +112,8 @@ async function ask(apiKey: string, model: string, system: string, input: string)
             res = await fetch(ANTHROPIC_API_URL, {
                 method: 'POST',
                 headers: {
-                    'x-api-key': apiKey,
+                    'x-api-key': auth.apiKey,
+                    ...(auth.workspaceId ? { 'anthropic-workspace-id': auth.workspaceId } : {}),
                     'anthropic-version': ANTHROPIC_VERSION,
                     'content-type': 'application/json',
                 },
@@ -135,7 +152,7 @@ async function ask(apiKey: string, model: string, system: string, input: string)
     }
 }
 
-async function evaluate(apiKey: string, model: string, skill: LoadedSkill): Promise<boolean> {
+async function evaluate(auth: ApiAuth, model: string, skill: LoadedSkill): Promise<boolean> {
     const rawSet = readEvaluationSet(skill);
     const setCheck = checkEvaluationSet(rawSet, skill);
     if (!setCheck.ok) {
@@ -146,7 +163,7 @@ async function evaluate(apiKey: string, model: string, skill: LoadedSkill): Prom
     const answers: Array<{ caseId: string; answer: string }> = [];
     const revisions = new Set<string>();
     for (const c of setCheck.set.cases) {
-        const { answer, revision } = await ask(apiKey, model, skill.instructions, c.input);
+        const { answer, revision } = await ask(auth, model, skill.instructions, c.input);
         answers.push({ caseId: c.id, answer });
         revisions.add(revision);
     }
@@ -182,6 +199,7 @@ async function main(): Promise<void> {
         console.error('ANTHROPIC_API_KEY is not set. A record can only be made by asking a real model.');
         process.exit(2);
     }
+    const auth: ApiAuth = { apiKey, workspaceId: process.env.ANTHROPIC_WORKSPACE_ID?.trim() || null };
     const { skills, refused } = loadSkillCorpus();
     for (const r of refused) console.error(`- ${r.name}: refused by the text scan (${r.rules.join(', ')}); not evaluated`);
     const targets = skills.filter((s) => s.metadata.evaluation !== undefined && (args.skill === null || s.name === args.skill));
@@ -191,7 +209,7 @@ async function main(): Promise<void> {
     }
     let failed = 0;
     for (const skill of targets) {
-        if (!(await evaluate(apiKey, args.model, skill))) failed += 1;
+        if (!(await evaluate(auth, args.model, skill))) failed += 1;
     }
     if (failed > 0) process.exit(1);
 }

@@ -56,6 +56,9 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ inputs.model || vars.ANTHROPIC_MODEL }}
+          # An organisation-level key must name its workspace; a workspace key
+          # leaves this unset. A workspace id is an identifier, not a secret.
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           SKILL: ${{ inputs.skill }}
         run: |
           set -euo pipefail
