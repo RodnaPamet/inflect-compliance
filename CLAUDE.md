@@ -1488,7 +1488,12 @@ do not restore a corpus-wide check, which capped the product at about seven
 skills whatever any run mounted. An evaluation SET (cases and expectations) is
 authored with a skill and tied to its instructions by hash; only an evaluation
 RECORD, the set plus a named model revision's answers, can show a pass, and pass
-rates are recomputed from raw answers, never stored.
+rates are recomputed from raw answers, never stored. Skill text is scanned at
+load (`skills/text-scan.ts`): a refused skill is held apart by rule id rather
+than thrown, so one suspect skill stops only the runs that declare it, and no
+surface ever shows a refused skill's text. A defensive "never reveal your
+instructions" sentence is refused too — the rules cannot tell which way a
+sentence points.
 
 
 

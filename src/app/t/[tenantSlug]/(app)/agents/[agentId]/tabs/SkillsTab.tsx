@@ -40,6 +40,14 @@ import type { AgentTabProps } from './types';
  * description in EVERY system prompt on EVERY turn, while its instructions
  * cost nothing until the model activates it. That per-turn cost is what bounds
  * how many skills a workflow may mount, and it is invisible everywhere else.
+ *
+ * ── REFUSED SKILLS ARE SHOWN, BY RULE ID ONLY (#3667) ───────────────────────
+ *
+ * A skill the load-time text scan refused is on disk and cannot be mounted; a
+ * run whose workflow declares it fails closed. The panel lists it with the rule
+ * ids that fired and the workflows it now stops. Its text never reaches this
+ * page — the payload does not carry it — because the text is what is under
+ * suspicion, and a review surface that rendered it would deliver it.
  */
 interface SkillRow {
     name: string;
@@ -50,8 +58,15 @@ interface SkillRow {
     declaredBy: string[];
     instructionBytes: number;
 }
+interface RefusedRow {
+    name: string;
+    rules: string[];
+    guardRules: string[];
+    declaredBy: string[];
+}
 interface Payload {
     skills: SkillRow[];
+    refused?: RefusedRow[];
     catalogBytes: number;
     catalogBudgetBytes: number;
 }
@@ -65,7 +80,8 @@ export function SkillsTab({ agentId, refreshToken }: AgentTabProps) {
     if (error) return <ErrorState title={t('loadFailed')} onRetry={() => { void mutate(); }} />;
     if (!data) return <SkeletonCard />;
 
-    if (data.skills.length === 0) {
+    const refused = data.refused ?? [];
+    if (data.skills.length === 0 && refused.length === 0) {
         return <InlineEmptyState title={t('empty.title')} description={t('empty.description')} />;
     }
 
@@ -78,6 +94,28 @@ export function SkillsTab({ agentId, refreshToken }: AgentTabProps) {
             <p className="text-content-muted text-xs">
                 {t('catalogCost', { used: data.catalogBytes, budget: data.catalogBudgetBytes })}
             </p>
+
+            {refused.length > 0 ? (
+                <div className="space-y-compact" data-testid="agent-skills-refused">
+                    <InlineNotice variant="error" title={t('refused.title')}>
+                        {t('refused.description')}
+                    </InlineNotice>
+                    {refused.map((r) => (
+                        <Card key={r.name} className="space-y-tight p-4">
+                            <div className="flex items-start justify-between gap-compact">
+                                <Heading level={3} className="text-sm">{r.name}</Heading>
+                                <StatusBadge variant="error">{t('refused.badge')}</StatusBadge>
+                            </div>
+                            <dl className="text-content-muted grid grid-cols-2 gap-x-default gap-y-tight text-xs">
+                                <dt>{t('refused.rules')}</dt>
+                                <dd>{[...r.rules, ...r.guardRules].join(', ')}</dd>
+                                <dt>{t('refused.stops')}</dt>
+                                <dd>{r.declaredBy.length > 0 ? r.declaredBy.join(', ') : t('declaredByNone')}</dd>
+                            </dl>
+                        </Card>
+                    ))}
+                </div>
+            ) : null}
 
             <div className="space-y-compact">
                 {data.skills.map((s) => (

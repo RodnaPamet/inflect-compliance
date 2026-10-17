@@ -10,6 +10,7 @@
  */
 import {
     loadAllSkills,
+    loadSkillCorpus,
     loadSkill,
     parseSkillDocument,
     catalogBytes,
@@ -41,6 +42,12 @@ describe('the Flue skill corpus', () => {
             'nis2-article-23-timelines',
             'soa-authoring',
         ]);
+    });
+
+    it('every shipped skill passes the load-time text scan (#3667)', () => {
+        // `loadAllSkills` silently omits a refused skill, so the name list above
+        // would also catch one — but as a missing name. This says why.
+        expect(loadSkillCorpus().refused).toEqual([]);
     });
 
     it.each([...skills.map((s) => [s.name, s] as const)])(

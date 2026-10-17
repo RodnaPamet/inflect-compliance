@@ -264,3 +264,41 @@ describe('read-only is asserted, not described', () => {
         expect(screen.getByText('soa-authoring')).toBeInTheDocument();
     });
 });
+
+describe('a refused skill is shown by rule id, never by text (#3667)', () => {
+    const refused = {
+        name: 'bad-skill',
+        rules: ['skill.reveal_context'],
+        guardRules: ['inj.instruction_override.reveal_prompt'],
+        declaredBy: ['review-prep'],
+    };
+
+    it('lists the refused skill with its rules and the runs it stops', () => {
+        renderTab({ data: { skills: [skill()], refused: [refused], catalogBytes: 900, catalogBudgetBytes: 4000 } });
+        const section = screen.getByTestId('agent-skills-refused');
+        expect(within(section).getByText(copy('refused.title'))).toBeInTheDocument();
+        expect(within(section).getByText('bad-skill')).toBeInTheDocument();
+        expect(within(section).getByText('skill.reveal_context, inj.instruction_override.reveal_prompt')).toBeInTheDocument();
+        expect(within(section).getByText('review-prep')).toBeInTheDocument();
+    });
+
+    it('renders a corpus that holds only refused skills instead of calling it empty', () => {
+        // "No skills are shipped" would be false: they are shipped, and refused.
+        renderTab({ data: { skills: [], refused: [refused], catalogBytes: 0, catalogBudgetBytes: 4000 } });
+        expect(screen.queryByText(copy('empty.title'))).toBeNull();
+        expect(screen.getByTestId('agent-skills-refused')).toBeInTheDocument();
+    });
+
+    it('adds no control, so the panel stays read-only with a refusal on it', () => {
+        const { container } = renderTab({
+            data: { skills: [skill()], refused: [refused], catalogBytes: 900, catalogBudgetBytes: 4000 },
+        });
+        const panel = within(container).getByTestId('agent-skills-agent-1');
+        expect(panel.querySelectorAll('button, input, select, textarea, [role="button"]')).toHaveLength(0);
+    });
+
+    it('omits the section when nothing is refused', () => {
+        renderTab({ data: { skills: [skill()], refused: [], catalogBytes: 900, catalogBudgetBytes: 4000 } });
+        expect(screen.queryByTestId('agent-skills-refused')).toBeNull();
+    });
+});
