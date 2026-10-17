@@ -23,6 +23,9 @@
         "docs/agentic-audit-procedures.md": {
             "class": "authoritative"
         },
+        "docs/agentic-harness-scanner-dpia.md": {
+            "class": "authoritative"
+        },
         "docs/agentic-iam-roadmap.md": {
             "class": "living"
         },
