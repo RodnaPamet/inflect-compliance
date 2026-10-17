@@ -31,6 +31,7 @@ import type { PrismaClient } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { enqueueEmail } from '../notifications/enqueue';
 import { appendAuditEntry } from '@/lib/audit';
+import { reopenExpiredHarnessAcceptances } from '../usecases/agent-harness-acceptance';
 
 export const REMINDER_WINDOWS: readonly (30 | 14 | 7)[] = [30, 14, 7];
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -57,6 +58,8 @@ export interface ExceptionExpiryMonitorResult {
      *  EXPIRED in this run. Each one emits a `CONTROL_EXCEPTION_EXPIRED`
      *  audit row. */
     transitionedToExpired: number;
+    /** Harness shortfalls reopened because their acceptance expired (#3665). */
+    harnessShortfallsReopened: number;
 }
 
 /**
@@ -148,6 +151,11 @@ export async function runExceptionExpiryMonitor(
         tenantId,
     );
 
+    // ── Phase 1b — the harness-shortfall acceptances (#3665). The same
+    //   monitor on purpose, by the owner's decision: one expiry mechanism in
+    //   behaviour, not two that could drift apart.
+    const harnessShortfallsReopened = await reopenExpiredHarnessAcceptances(db, now, tenantId);
+
     let enqueued = 0;
     let skippedDuplicate = 0;
     let skippedNoEmail = 0;
@@ -228,6 +236,7 @@ export async function runExceptionExpiryMonitor(
         skippedNoEmail,
         skippedNoRecipient,
         transitionedToExpired,
+        harnessShortfallsReopened,
     };
 
     logger.info('exception-expiry monitor scan complete', {

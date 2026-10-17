@@ -94,6 +94,8 @@ const EXCLUSIONS: Record<string, string> = {
         'Cron bookkeeping — when the scheduler will next emit a report. Nobody is accountable for it arriving; the job is.',
 
     // ── Range bounds whose OTHER end is already projected.
+    'AgentHarnessAcceptance.expiresAt':
+        'When an accepted harness shortfall stops being accepted (#3665). It IS a real deadline — ControlException.expiresAt, its model, is projected — but a calendar event needs an href, and no surface renders an acceptance yet: the agent harness matrix tab is the follow-up step that does. Until then the expiry is not silent: the nightly exception-expiry monitor reopens the HARNESS_SHORTFALL finding the acceptance closed, and that finding is on the findings register. Project this column in the same pull request as the matrix tab, which removes this entry.',
     'AccessReview.periodEndAt':
         'The review campaign period bound; `AccessReview.dueAt` is the actual deadline and IS projected as access-review-due.',
 

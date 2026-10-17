@@ -368,7 +368,15 @@ describe('epic-named ratchets are not added back', () => {
         // properties still held when the guards were written. That is the
         // argument FOR them rather than against: each was protected only by a
         // paragraph that told the reader it was protected by a test.
-        expect(guardFiles().length).toBeLessThan(785);
+        //
+        // RAISED 785 -> 786 on 2026-10-17, for ONE file, the same test applied:
+        // `agent-harness-single-write-seam` is named for its invariant. The
+        // harness tables' level and register link are claims only the verifying
+        // ingest may make, and a second writer would make them indistinguishable
+        // from verified ones. It is not folded into
+        // `directory-identity-tables-single-write-seam`, whose name and allowlist
+        // are about a different subsystem's tables.
+        expect(guardFiles().length).toBeLessThan(786);
     });
 
     /**

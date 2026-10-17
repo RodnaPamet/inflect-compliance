@@ -151,6 +151,15 @@ const ADMIN_ONLY_ROUTES = [
     // here because this route WRITES: it creates a retained Evidence row per
     // call, where its read-only sibling deliberately writes nothing at all.
     'admin/agents/reports/export/route.ts',
+    // Harness ingest (#3665). The scan POST has its own rule,
+    // `admin.agent_harness_ingest`, above the subtree rule — a scanner key
+    // is scoped to it alone. Keys and acceptances fall to the subtree rule:
+    // deciding whose reports count, and accepting a shortfall, are the
+    // register's authority.
+    'admin/agents/harness-scans/route.ts',
+    'admin/agents/harness-scanner-keys/route.ts',
+    'admin/agents/harness-scanner-keys/[keyId]/route.ts',
+    'admin/agents/harness-acceptances/route.ts',
     // Quarantine triage — the proposals the agentic output guard refused, with
     // the content that was attempted. Read-only, gated on
     // `admin.agent_registry` by its own rule in ROUTE_PERMISSIONS (nothing in

@@ -719,6 +719,12 @@ model RegisteredAgent {
   /// before it existed has none, and an absent breaker refuses nothing.
   behaviourWindows AgentBehaviourWindow[]
   circuitBreaker   AgentCircuitBreaker?
+  /// Harness assurance (#3665): the keys this agent signs scans with when it
+  /// is a scanner, the scans it signed, and the discovered agents a scan
+  /// reconciled to this register row.
+  harnessScannerKeys AgentHarnessScannerKey[]
+  harnessScans       AgentHarnessScan[]
+  discoveredAs       DiscoveredAgent[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -2188,4 +2194,186 @@ model ExternalToolPriorStateRead {
   /// detail rather than a decision somebody made.
   @@unique([tenantId, writeToolName])
   @@index([tenantId])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HARNESS ASSURANCE (#3665, UC1)
+// ═══════════════════════════════════════════════════════════════════
+//
+// A scanner in the client's environment reports, as a signed
+// `inflect-agent-harness/1` report, every agent-shaped principal it found
+// and the harness each one runs under. Inflect verifies the signature
+// against a key the tenant trusts BEFORE it reads the body, derives each
+// level with the harness ladder (a report cannot state one), and records
+// what it saw. `usecases/agent-harness-scans.ts` is the ONLY writer of
+// DiscoveredAgent, AgentHarnessScan and AgentHarnessScanItem — pinned by
+// `tests/guards/agent-harness-single-write-seam.test.ts`.
+//
+// IDENTIFIERS ONLY. Nothing here holds free text from the report: ids,
+// references, hashes, counts and the criterion verdicts with their
+// evidence POINTERS. The one free-text column is an acceptance's
+// justification, which a person writes, and it is in the encryption
+// manifest.
+
+/// A public key the tenant trusts to sign harness reports. The scanner is a
+/// registered agent (rule 1 of the roadmap), so a key belongs to one.
+model AgentHarnessScannerKey {
+  id              String    @id @default(cuid())
+  tenantId        String
+  /// The scanner, as a register row. A report signed by this key must name
+  /// this agent as its scanner.
+  agentId         String
+  /// Ed25519 public key as the contract carries it: hex or base64, raw 32 bytes.
+  publicKey       String
+  /// sha256 of the decoded raw key. The uniqueness key, so one key cannot be
+  /// registered twice under two spellings.
+  keyFingerprint  String
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  /// A revoked key verifies nothing; the row stays for the scans it signed.
+  revokedAt       DateTime?
+  revokedByUserId String?
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  RegisteredAgent    @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  scans  AgentHarnessScan[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, keyFingerprint])
+  @@index([tenantId, agentId])
+}
+
+/// One verified, ingested harness report.
+model AgentHarnessScan {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  /// `scan.id` from the report — the scanner's own id, unique per tenant, so
+  /// a replayed report is refused rather than counted twice.
+  scanRef             String
+  scannerAgentId      String
+  scannerKeyId        String
+  scannerVersion      String
+  /// `sha256:` hash of the scanner's own tool surface, as it reported it.
+  scannerManifestHash String
+  /// The moment the report describes.
+  asOf                DateTime
+  /// sha256 over the canonical JSON of the report without its signature — the
+  /// message the signature covers. With `signature` and the key, a later
+  /// reader can re-verify the scan without trusting this row.
+  reportDigest        String
+  signature           String
+  /// DERIVED: every source COMPLETE. A report cannot declare it.
+  complete            Boolean
+  /// `[{ kind, status, rows, reason? }]`, one per source, as reported.
+  sourcesJson         Json
+  agentCount          Int
+  createdAt           DateTime @default(now())
+
+  tenant     Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scanner    RegisteredAgent        @relation(fields: [scannerAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  scannerKey AgentHarnessScannerKey @relation(fields: [scannerKeyId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  items      AgentHarnessScanItem[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, scanRef])
+  @@index([tenantId, asOf])
+  @@index([tenantId, scannerAgentId])
+  @@index([tenantId, scannerKeyId])
+}
+
+/// An agent-shaped principal some scan found, keyed by the id the source gave
+/// it. Lives across scans; each scan adds an AgentHarnessScanItem.
+model DiscoveredAgent {
+  id                String            @id @default(cuid())
+  tenantId          String
+  /// Stable id in the source that found it, e.g. `entra:sp:<objectId>`.
+  discoveredId      String
+  /// Every source kind that saw it in the latest scan.
+  discoveredVia     String[]
+  /// The register row the latest scan reconciled it to, or null: SHADOW.
+  /// Set only when the register row exists in this tenant, whatever the
+  /// report claims.
+  registeredAgentId String?
+  /// Owner as the source records it — `user` or `group` and its id there.
+  ownerKind         String?
+  ownerRef          String?
+  firstSeenAt       DateTime
+  lastSeenAt        DateTime
+  lastScanId        String
+  /// The level the latest scan derived. LEVEL_DROP compares against it.
+  lastLevel         AgentHarnessLevel
+  lastReach         AgentHarnessReach
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  registeredAgent RegisteredAgent?         @relation(fields: [registeredAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  items           AgentHarnessScanItem[]
+  acceptances     AgentHarnessAcceptance[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, discoveredId])
+  @@index([tenantId, registeredAgentId])
+  @@index([tenantId, lastSeenAt])
+}
+
+/// One agent in one scan: the derived level and the verdicts it came from.
+model AgentHarnessScanItem {
+  id                String            @id @default(cuid())
+  tenantId          String
+  scanId            String
+  discoveredAgentId String
+  /// Derived by `scoreHarness`, never copied from the report.
+  level             AgentHarnessLevel
+  reach             AgentHarnessReach
+  /// `[{ criterion, met, evidence }]` as reported. The level is recomputable
+  /// from these, which is why they are kept.
+  verdictsJson      Json
+  /// Criteria standing between this agent and the next rung.
+  blockingNextRung  String[]
+  /// `[{ server, name, manifestHash, pinned, readOnlyHint }]` — identifiers
+  /// and hashes; a tool's description text never crosses the contract.
+  toolsJson         Json
+  createdAt         DateTime          @default(now())
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scan            AgentHarnessScan @relation(fields: [scanId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  discoveredAgent DiscoveredAgent  @relation(fields: [discoveredAgentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, scanId, discoveredAgentId])
+  @@index([tenantId, discoveredAgentId])
+}
+
+/// A time-limited acceptance of one agent's HARNESS_SHORTFALL (#3665, owner
+/// decision 2026-10-17): the shape of ControlException — required
+/// justification, who accepted, a required expiry, renewal lineage — per
+/// agent rather than per control, and swept by the same expiry monitor. An
+/// expired acceptance reopens the shortfall it closed.
+model AgentHarnessAcceptance {
+  id                String            @id @default(cuid())
+  tenantId          String
+  discoveredAgentId String
+  /// The level accepted. A further drop is a LEVEL_DROP finding in its own right.
+  acceptedLevel     AgentHarnessLevel
+  /// Required free-text reason. Encrypted at rest via the manifest.
+  justification     String
+  /// The agent's owner, who carries the risk.
+  acceptedByUserId  String
+  /// Required, and CHECKed to be after creation.
+  expiresAt         DateTime
+  /// The acceptance this one renews, if any.
+  renewedFromId     String?
+  revokedAt         DateTime?
+  revokedByUserId   String?
+  /// When the expiry monitor handled this row's expiry, so it reopens once.
+  expiryProcessedAt DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  discoveredAgent DiscoveredAgent @relation(fields: [discoveredAgentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, discoveredAgentId])
+  @@index([tenantId, expiresAt])
 }

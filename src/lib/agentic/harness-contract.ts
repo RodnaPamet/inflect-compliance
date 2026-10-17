@@ -317,6 +317,18 @@ function sameKeyMaterial(a: string, b: string): boolean {
 }
 
 /**
+ * A key's identity independent of its spelling: SHA-256 over its SPKI DER, the
+ * same form `sameKeyMaterial` compares. Hex and base64 spellings of one key
+ * share a fingerprint, so a tenant cannot register one key twice. Null when the
+ * material is not an Ed25519 public key.
+ */
+export function harnessKeyFingerprint(material: string): string | null {
+    const key = ed25519PublicKeyFromMaterial(material);
+    if (!key) return null;
+    return createHash('sha256').update(key.export({ type: 'spki', format: 'der' })).digest('hex');
+}
+
+/**
  * Check a raw report against the contract, in the only safe order: size, JSON,
  * signature by a TRUSTED key, then schema. `trustedSignerKeys` are the public
  * keys of scanners registered for this tenant; a report signed by any other

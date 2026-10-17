@@ -108,6 +108,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_policy_card: true,
             agent_kill_switch: true,
             agent_external_tools: true,
+            agent_harness_ingest: true,
         });
     });
 
@@ -128,6 +129,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_policy_card: true,
             agent_kill_switch: true,
             agent_external_tools: true,
+            agent_harness_ingest: true,
         });
     });
 
@@ -148,6 +150,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_policy_card: false,
             agent_kill_switch: false,
             agent_external_tools: false,
+            agent_harness_ingest: false,
         });
     });
 
@@ -168,6 +171,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_policy_card: false,
             agent_kill_switch: false,
             agent_external_tools: false,
+            agent_harness_ingest: false,
         });
     });
 
@@ -188,6 +192,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_policy_card: false,
             agent_kill_switch: false,
             agent_external_tools: false,
+            agent_harness_ingest: false,
         });
     });
 });
