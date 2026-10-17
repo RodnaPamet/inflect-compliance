@@ -5,6 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original guidance; cites control identifiers only, no standard text (#3478)
   version: '1'
+  evaluation: evaluation-set.json
 ---
 
 The SoA is where a management system states **what it decided and why**. An

@@ -67,6 +67,12 @@ const CaseSchema = z
         kind: z.enum(CASE_KINDS),
         input: z.string().min(1).max(MAX_TEXT),
         expect: Expectation,
+        /**
+         * Which line of the skill the case tests and why its expectation
+         * separates a right answer from the likely wrong one. Never scored; it
+         * is what lets a reviewer judge whether the case proves anything.
+         */
+        rationale: z.string().min(1).max(2_048).optional(),
     })
     .strict();
 

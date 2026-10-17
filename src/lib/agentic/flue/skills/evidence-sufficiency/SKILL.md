@@ -5,6 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original guidance
   version: '1'
+  evaluation: evaluation-set.json
 ---
 
 Evidence is sufficient when a reader who distrusts the claim could verify it

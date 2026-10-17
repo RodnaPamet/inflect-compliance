@@ -35,10 +35,12 @@ writes only a record that passes.
 | `src/lib/agentic/flue/skills/resolve.ts` | Gate applied per skill, cached; `resolveSkillPins`, `assertWorkflowSkillsMountable`, `skillPinDrift`. |
 | `src/app-layer/usecases/workflow-runs.ts` | Pins at admission, before the row; named 400 on refusal; pin in the audit entry. |
 | `src/lib/agentic/flue/execute.ts` | Fails a resumed run whose skills no longer match its pin. |
-| `prisma/schema/agentic.prisma`, migration `20261017200000_workflow_run_mounted_skills` | The column, the array CHECK, the write-once trigger. |
+| `prisma/schema/agentic.prisma`, migration `20261017220000_workflow_run_mounted_skills` | The column, the array CHECK, the write-once trigger. |
 | `scripts/skills-evaluate.ts` | The recorder. |
 | `.github/workflows/skills-evaluate.yml` | Runs the recorder with the repository secret; uploads records as an artifact. |
 | `src/app/t/[tenantSlug]/(app)/agents/runs/[runId]/` | The run detail page shows the pin. |
+| `src/lib/agentic/flue/skills/*/evaluation-set.json` | A set for each of the six original skills, beside the two drafted with the standard. |
+| `src/lib/agentic/flue/skills/evaluation-record.ts` | Optional, unscored `rationale` on a case. |
 
 ## Decisions
 
@@ -64,6 +66,18 @@ writes only a record that passes.
   a repository secret, so no session holds it. The workflow does not commit:
   a push made with `GITHUB_TOKEN` triggers no CI, and a branch without its
   required checks cannot merge. The run URL is the record's provenance.
+- **Every shipped skill carries a set, and every case says why it proves
+  anything.** The six sets were authored against each skill's own sentences,
+  reviewed adversarially for cases a wrong answer could pass, and revised. Each
+  case's `rationale` names the line it tests and why its expectation tells a
+  right answer from the likely wrong one; without it, a reviewer cannot judge
+  whether a `mustNotInclude` catches the failure or only a phrasing of it. The
+  field is never scored. `tests/unit/agentic/skill-standard.test.ts` holds the
+  whole corpus to both rules rather than a list of names.
+- **No skill mounts yet.** Sets are committed here; records are not, because
+  only the CI workflow may produce one. Until the first records land, every
+  skill is `NO_RECORD` and no workflow declares one, so the gate refuses
+  nothing in use.
 - **The audit entry carries a digest of the pin, not the pin.** The run's
   `WORKFLOW_RUN_STARTED` row records `mountedSkillCount` and a SHA-256 over the
   canonical JSON of `mountedSkills`, so the hash-chained trail binds the
