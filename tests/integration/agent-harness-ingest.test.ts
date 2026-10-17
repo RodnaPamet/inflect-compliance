@@ -182,6 +182,31 @@ describe('a refused report writes nothing', () => {
         expect(await harnessRowCounts(T1)).toEqual(before);
     });
 
+    it('a secret-shaped value in any member is refused, named by path, and nothing is written', async () => {
+        const before = await harnessRowCounts(T1);
+        const secret = ['gh', 'p_', 'Q'.repeat(36)].join('');
+        const body = bodyFor(T1, 'scan_secret', (b) => {
+            b.agents[1].tools[0].name = secret;
+        });
+        const refusal = ingest(T1, body);
+        await expect(refusal).rejects.toThrow('harness_report_refused: SECRET_IN_REPORT: agents[1].tools[0].name');
+        await expect(ingest(T1, body)).rejects.not.toThrow(secret);
+        expect(await harnessRowCounts(T1)).toEqual(before);
+    });
+
+    it('a secret-shaped unknown KEY is refused as SCHEMA without the key reaching the error', async () => {
+        // The walk above checks values; a key name only ever leaves through the
+        // schema refusal, which the API wrapper logs and traces verbatim.
+        const before = await harnessRowCounts(T1);
+        const secret = ['gh', 'p_', 'Q'.repeat(36)].join('');
+        const body = bodyFor(T1, 'scan_secret_key') as unknown as { agents: Array<Record<string, unknown>> };
+        body.agents[0][secret] = 'x';
+        const raw = seeded[T1].scanner.serialise(body);
+        await expect(ingestHarnessReport(ctxFor(T1), raw)).rejects.toThrow('harness_report_refused: SCHEMA: agents.0: 1 unrecognized key');
+        await expect(ingestHarnessReport(ctxFor(T1), raw)).rejects.not.toThrow(secret);
+        expect(await harnessRowCounts(T1)).toEqual(before);
+    });
+
     it('a credential bound to another agent may not submit the scanner’s report', async () => {
         const ctx = { ...ctxFor(T1), agentId: seeded[T1].targetAgentId };
         await expect(ingestHarnessReport(ctx, seeded[T1].scanner.serialise(bodyFor(T1, 'scan_submitter')))).rejects.toThrow(
@@ -409,5 +434,58 @@ describe('an acceptance is the owner’s, and it lapses', () => {
         );
         expect(rows.length).toBeGreaterThan(0);
         for (const r of rows) expect(r.justification).toMatch(/^v[12]:/);
+    });
+});
+
+describe('deleting a discovered agent cannot take its record with it', () => {
+    // The DPIA's retention rule: scan items and acceptances are kept with the
+    // scan, so neither may disappear because their agent row did. Each foreign
+    // key is proved on its own — the item FK on an agent with no acceptance,
+    // the acceptance FK after the items are gone — so reverting either one to
+    // CASCADE turns exactly one of these red.
+    const constraint = (table: string) => `${table}_discoveredAgentId_tenantId_fkey`;
+
+    it('both foreign keys are NO ACTION in the database', async () => {
+        const rows = await prisma.$queryRawUnsafe<Array<{ conname: string; confdeltype: string }>>(
+            // Both cast: Prisma cannot deserialize Postgres's single-byte "char".
+            `SELECT conname::text AS conname, confdeltype::text AS confdeltype FROM pg_constraint
+              WHERE conname = ANY($1::text[]) ORDER BY conname`,
+            [constraint('AgentHarnessAcceptance'), constraint('AgentHarnessScanItem')],
+        );
+        expect(rows).toEqual([
+            { conname: constraint('AgentHarnessAcceptance'), confdeltype: 'a' },
+            { conname: constraint('AgentHarnessScanItem'), confdeltype: 'a' },
+        ]);
+    });
+
+    it('an agent with scan items cannot be deleted, and its items survive', async () => {
+        const agent = await prisma.discoveredAgent.findFirstOrThrow({
+            where: { tenantId: T1, discoveredId: 'entra:sp:shadow-1' },
+            select: { id: true },
+        });
+        const items = await prisma.agentHarnessScanItem.count({ where: { tenantId: T1, discoveredAgentId: agent.id } });
+        expect(items).toBeGreaterThan(0);
+        expect(await prisma.agentHarnessAcceptance.count({ where: { discoveredAgentId: agent.id } })).toBe(0);
+        await expect(prisma.discoveredAgent.delete({ where: { id: agent.id } })).rejects.toThrow(constraint('AgentHarnessScanItem'));
+        expect(await prisma.agentHarnessScanItem.count({ where: { tenantId: T1, discoveredAgentId: agent.id } })).toBe(items);
+    });
+
+    it('an agent with an acceptance cannot be deleted even once its items are gone', async () => {
+        const agent = await prisma.discoveredAgent.findFirstOrThrow({
+            where: { tenantId: T2, discoveredId: 'entra:sp:registered-1' },
+            select: { id: true },
+        });
+        const acceptances = await prisma.agentHarnessAcceptance.count({ where: { tenantId: T2, discoveredAgentId: agent.id } });
+        const items = await prisma.agentHarnessScanItem.count({ where: { tenantId: T2, discoveredAgentId: agent.id } });
+        expect(acceptances).toBeGreaterThan(0);
+        // Inside one transaction, so the refusal rolls the item delete back too.
+        await expect(
+            prisma.$transaction(async (tx) => {
+                await tx.agentHarnessScanItem.deleteMany({ where: { tenantId: T2, discoveredAgentId: agent.id } });
+                await tx.discoveredAgent.delete({ where: { id: agent.id } });
+            }),
+        ).rejects.toThrow(constraint('AgentHarnessAcceptance'));
+        expect(await prisma.agentHarnessAcceptance.count({ where: { tenantId: T2, discoveredAgentId: agent.id } })).toBe(acceptances);
+        expect(await prisma.agentHarnessScanItem.count({ where: { tenantId: T2, discoveredAgentId: agent.id } })).toBe(items);
     });
 });
