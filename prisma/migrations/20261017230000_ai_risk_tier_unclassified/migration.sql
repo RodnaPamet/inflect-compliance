@@ -1,0 +1,11 @@
+-- UNCLASSIFIED AI-system risk tier (#3691), deploy 1 of 2.
+--
+-- A provisional AiSystem entry created by the registration intake (#3669) has
+-- not been classified, and the column's MINIMAL default would claim it had. This
+-- deploy only ADDS the value; nothing writes it until the intake ships, so no
+-- running container can read a value its client does not know.
+--
+-- ADD VALUE, never RENAME or DROP: an added value breaks no cast an old
+-- container emits. BEFORE 'PROHIBITED' so "not classified" sorts ahead of
+-- every classified tier, matching the declaration order in enums.prisma.
+ALTER TYPE "AiRiskTier" ADD VALUE IF NOT EXISTS 'UNCLASSIFIED' BEFORE 'PROHIBITED';

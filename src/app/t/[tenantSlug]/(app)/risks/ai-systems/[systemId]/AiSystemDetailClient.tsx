@@ -13,11 +13,12 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Button } from '@/components/ui/button';
 import { EntityPrevNextNav } from '@/components/ui/entity-prev-next-nav';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { TIER_VARIANT } from '../AiSystemsClient';
+import { aiActTierTone } from '@/lib/eu-ai-act/tier-display';
 
 export interface AiSystemDetail {
     id: string;
@@ -126,9 +127,13 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
                 ]}
                 title={system.name}
                 titleAdornment={stepper}
-                description={tx('aiSystems.detail.metaLine', { tier: system.riskTier, clause: system.classificationClauseId ?? tx('aiSystems.detail.unclassified'), role: system.deploymentRole === 'PROVIDER' ? tx('aiSystems.provider') : tx('aiSystems.deployer') })}
+                description={
+                    system.riskTier === 'UNCLASSIFIED'
+                        ? tx('aiSystems.detail.notClassifiedLine', { role: system.deploymentRole === 'PROVIDER' ? tx('aiSystems.provider') : tx('aiSystems.deployer') })
+                        : tx('aiSystems.detail.metaLine', { tier: system.riskTier, clause: system.classificationClauseId ?? tx('aiSystems.detail.unclassified'), role: system.deploymentRole === 'PROVIDER' ? tx('aiSystems.provider') : tx('aiSystems.deployer') })
+                }
                 actions={
-                    <StatusBadge variant={TIER_VARIANT[system.riskTier] ?? 'neutral'}>
+                    <StatusBadge variant={aiActTierTone(system.riskTier)}>
                         {system.riskTier}
                     </StatusBadge>
                 }
@@ -136,8 +141,13 @@ export function AiSystemDetailClient({ system, tenantSlug, canWrite }: Props) {
 
             <Card>
                 <Heading level={2} className="mb-2 text-sm font-semibold text-content-emphasis">{tx('aiSystems.detail.classificationHeading')}</Heading>
+                {system.riskTier === 'UNCLASSIFIED' && (
+                    <InlineNotice variant="warning" className="mb-2" id="ai-system-not-classified">
+                        {tx('aiSystems.detail.notClassifiedNotice')}
+                    </InlineNotice>
+                )}
                 <Row label={tx('aiSystems.colRiskTier')}>
-                    <StatusBadge variant={TIER_VARIANT[system.riskTier] ?? 'neutral'}>{system.riskTier}</StatusBadge>
+                    <StatusBadge variant={aiActTierTone(system.riskTier)}>{system.riskTier}</StatusBadge>
                 </Row>
                 <Row label={tx('aiSystems.detail.rowDrivingClause')}>{system.classificationClauseId ?? '—'}</Row>
                 <Row label={tx('aiSystems.colBasis')}>{system.classificationRationale ?? '—'}</Row>

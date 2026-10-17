@@ -18,7 +18,21 @@
  * model, or dataset. It is authored solely from the Regulation.
  */
 
+/** A tier the Act defines, and the only thing the classifier can return. */
 export type AiRiskTier = 'PROHIBITED' | 'HIGH' | 'LIMITED' | 'MINIMAL';
+
+/**
+ * What `AiSystem.riskTier` can hold: a classified tier, or UNCLASSIFIED for a
+ * provisional entry nobody has classified (#3691). UNCLASSIFIED is deliberately
+ * outside `AiRiskTier`, so the classifier cannot return it and a writer typed
+ * with `AiRiskTier` cannot store it. Read it as "not classified", never as
+ * MINIMAL.
+ */
+export type StoredAiRiskTier = AiRiskTier | 'UNCLASSIFIED';
+
+export function isClassifiedTier(tier: StoredAiRiskTier): tier is AiRiskTier {
+    return tier !== 'UNCLASSIFIED';
+}
 
 interface ClauseOption {
     /** Stable machine id used in the questionnaire + persisted on the row. */

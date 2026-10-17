@@ -108,6 +108,10 @@ import { enumOrderReport } from '../helpers/prisma-enum-order';
  *   TrainingAssignment.status       src/app-layer/usecases/training.ts:31
  *   Vendor.criticality              src/app-layer/repositories/VendorRepository.ts:100, :115
  *   Task.priority                   src/app-layer/repositories/TaskRepository.ts:179
+ *   AiSystem.riskTier               src/app-layer/repositories/AiSystemRepository.ts:75
+ *                                   (added 2026-10-17 with UNCLASSIFIED, #3691: the register
+ *                                   lists unclassified systems first because the type puts
+ *                                   the value BEFORE 'PROHIBITED', not by any sort in code)
  *
  * THE LINE NUMBERS ARE PROSE AND WILL ROT; the `model`/`field` pair below is
  * re-derived from `prisma/schema` on every run, so a renamed field or a
@@ -130,6 +134,7 @@ const ORDINAL_SENSITIVE: ReadonlyArray<{
     { model: 'TrainingAssignment', field: 'status', prismaEnum: 'TrainingStatus' },
     { model: 'Vendor', field: 'criticality', prismaEnum: 'VendorCriticality' },
     { model: 'Task', field: 'priority', prismaEnum: 'TaskPriority' },
+    { model: 'AiSystem', field: 'riskTier', prismaEnum: 'AiRiskTier' },
 ];
 
 /**

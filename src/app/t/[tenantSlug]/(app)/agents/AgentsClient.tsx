@@ -40,6 +40,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useGuardedPush } from '@/lib/nav/use-guarded-push';
+import { aiActTierTone } from '@/lib/eu-ai-act/tier-display';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo/plus';
 import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
 import { EntityListPage } from '@/components/layout/EntityListPage';
@@ -115,14 +116,6 @@ const TIER_VARIANT: Record<string, StatusBadgeVariant> = {
     MODERATE: 'info',
     HIGH: 'warning',
     CRITICAL: 'error',
-};
-
-/** The Regulation's classification of the AI system the agent belongs to. */
-const AI_ACT_VARIANT: Record<string, StatusBadgeVariant> = {
-    PROHIBITED: 'error',
-    HIGH: 'error',
-    LIMITED: 'warning',
-    MINIMAL: 'neutral',
 };
 
 const AUTONOMY_MAX = 6;
@@ -380,7 +373,10 @@ function AgentsInner({
                         row.original.aiSystem ? (
                             <span className="inline-flex items-center gap-tight">
                                 <StatusBadge
-                                    variant={AI_ACT_VARIANT[row.original.aiSystem.riskTier] ?? 'neutral'}
+                                    // The Regulation's classification of the AI system the agent
+                                    // belongs to, toned by the same table as the AI-system
+                                    // register; an unknown value is a warning, never neutral.
+                                    variant={aiActTierTone(row.original.aiSystem.riskTier)}
                                 >
                                     {row.original.aiSystem.riskTier}
                                 </StatusBadge>

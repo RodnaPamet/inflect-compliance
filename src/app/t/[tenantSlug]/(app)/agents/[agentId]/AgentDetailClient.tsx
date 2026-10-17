@@ -132,7 +132,11 @@ export function AgentDetailClient({
         },
         {
             label: t('agentDetail.metaAiAct'),
-            value: agent.aiActRiskTier ?? t('agentDetail.unclassified'),
+            // A provisional UNCLASSIFIED entry reads as no classification.
+            value:
+                agent.aiActRiskTier && agent.aiActRiskTier !== 'UNCLASSIFIED'
+                    ? agent.aiActRiskTier
+                    : t('agentDetail.unclassified'),
         },
     ];
 

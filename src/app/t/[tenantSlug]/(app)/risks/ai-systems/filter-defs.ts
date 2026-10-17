@@ -18,7 +18,9 @@ type T = (key: string, values?: Record<string, unknown>) => string;
 /** Shared filter-group resolver (`useTranslations('common.filterGroups')`). */
 type TGroup = (key: string) => string;
 
-const AI_RISK_TIER_KEYS = ['PROHIBITED', 'HIGH', 'LIMITED', 'MINIMAL'] as const;
+// UNCLASSIFIED first, as the enum orders it: a provisional entry nobody has
+// classified (#3691) is filtered for on its own and never folded into MINIMAL.
+const AI_RISK_TIER_KEYS = ['UNCLASSIFIED', 'PROHIBITED', 'HIGH', 'LIMITED', 'MINIMAL'] as const;
 
 function aiRiskTierLabels(t: T): Record<string, string> {
     return Object.fromEntries(AI_RISK_TIER_KEYS.map((k) => [k, t(`aiSystems.filterEnums.riskTier.${k}`)]));
