@@ -17,10 +17,12 @@
  * That purity is a load-bearing property rather than a style choice: this
  * module imports no prisma, no db-context, no provider and no writer.
  *
- * NO GUARD PINS IT (#3650). This claimed to be pinned by a guard named
- * `identity-joiner-dry-run-is-inert`, which has never existed here. The property holds today and is checkable in one pass over
- * this file's imports, which is why the absence is worth fixing rather than
- * noting. The
+ * PINNED BY `tests/guards/identity-joiner-pass-stays-pure.test.ts`, which
+ * holds this file to an import ALLOWLIST rather than a denylist — a denylist
+ * of prisma/db/provider/writer would pass the moment a database helper
+ * arrived under a name none of those four words appear in. It claimed a
+ * guard named `identity-joiner-dry-run-is-inert` for three days, and that
+ * file had never existed (#3650): the property held, but by habit. The
  * design's gate-placement rule is the reason —
  *
  *   > Every gate that decides whether a create happens sits ABOVE the DRY_RUN
