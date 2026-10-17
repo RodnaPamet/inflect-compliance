@@ -14,7 +14,7 @@
  *
  * None of it proves the mount. A resolver that answers correctly into an agent
  * that also loaded the corpus by default would pass every one of those cases —
- * the corpus ships six skills, and "implicit global loading" is exactly the
+ * the corpus ships several skills, and "implicit global loading" is exactly the
  * failure where a run gets expertise its definition never asked for. That
  * failure is invisible from the resolver's side, and it is not a compile error:
  * `useSkill` can be called as many times as anybody likes.
@@ -140,7 +140,7 @@ describe('the skills a run mounts', () => {
     });
 
     it('does NOT announce a skill the definition did not declare', async () => {
-        // THE CRITERION. The corpus ships six skills and the loader can read
+        // THE CRITERION. The corpus ships several skills and the loader can read
         // them all; a run that declared one must be told about one. Implicit
         // global loading is the failure this closes, and it is a behaviour of
         // the mount rather than of the resolver — which cannot see it.

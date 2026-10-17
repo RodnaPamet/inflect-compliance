@@ -1481,6 +1481,15 @@ schema. The report cannot state a level, cannot carry a credential value, and
 cannot declare completeness; all three are derived or refused.
 `tests/helpers/agent-harness-fake-scanner.ts` is the reference implementation.
 
+**Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
+binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
+`resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):
+do not restore a corpus-wide check, which capped the product at about seven
+skills whatever any run mounted. An evaluation SET (cases and expectations) is
+authored with a skill and tied to its instructions by hash; only an evaluation
+RECORD, the set plus a named model revision's answers, can show a pass, and pass
+rates are recomputed from raw answers, never stored.
+
 
 
 

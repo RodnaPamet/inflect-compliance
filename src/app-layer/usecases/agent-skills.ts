@@ -8,7 +8,8 @@
  * description and provenance answer. A reader who wants the procedure reads
  * the file in the repository, which is the point of keeping them as Markdown.
  */
-import { loadAllSkills } from '@/lib/agentic/flue/skills';
+import { loadAllSkills, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
+import { workflowCatalogs } from '@/lib/agentic/flue/skills/resolve';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -28,9 +29,11 @@ export interface AgentSkillSummary {
 export interface AgentSkillsPayload {
     skills: AgentSkillSummary[];
     /**
-     * The always-present cost: what every mounted skill adds to every system
-     * prompt on every turn. Surfaced because it is the number that bounds how
-     * many skills a workflow can mount, and it is invisible otherwise.
+     * The always-present cost of the most expensive WORKFLOW: what its declared
+     * skills add to every system prompt on every turn. The budget binds per
+     * workflow and per run, not across the corpus (owner decision, 2026-10-17),
+     * so the honest figure is the largest one any run pays. Zero while no
+     * workflow declares a skill.
      */
     catalogBytes: number;
     catalogBudgetBytes: number;
@@ -49,7 +52,7 @@ export function listAgentSkills(_ctx: RequestContext): AgentSkillsPayload {
             declaredBy: defs.filter((d) => (d.skills ?? []).includes(s.name)).map((d) => d.key).sort(),
             instructionBytes: Buffer.byteLength(s.instructions, 'utf8'),
         })),
-        catalogBytes: skills.reduce((n, s) => n + Buffer.byteLength(`${s.name}: ${s.description}\n`, 'utf8'), 0),
-        catalogBudgetBytes: 2_048,
+        catalogBytes: Math.max(0, ...workflowCatalogs(defs).map((w) => w.bytes)),
+        catalogBudgetBytes: MAX_CATALOG_BYTES,
     };
 }

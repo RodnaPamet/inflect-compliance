@@ -21,6 +21,8 @@ import {
     type LoadedSkill,
 } from '@/lib/agentic/flue/skills';
 import { listAgentSkills } from '@/app-layer/usecases/agent-skills';
+import { assertWorkflowCatalogsWithinBudget, workflowCatalogs } from '@/lib/agentic/flue/skills/resolve';
+import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 
 describe('the Flue skill corpus', () => {
     const skills = loadAllSkills();
@@ -33,7 +35,9 @@ describe('the Flue skill corpus', () => {
             'dora-register-duties',
             'eu-ai-act-classification',
             'evidence-sufficiency',
+            'harness-level-assessment',
             'iso-27001-annex-a-drafting',
+            'nhi-ownership-attribution',
             'nis2-article-23-timelines',
             'soa-authoring',
         ]);
@@ -75,12 +79,22 @@ describe('the Flue skill corpus', () => {
         }
     });
 
-    it('the ALWAYS-PRESENT catalog fits its budget, and the budget is real', () => {
-        const bytes = catalogBytes(skills);
-        expect(bytes).toBeGreaterThan(0);
-        expect(bytes).toBeLessThanOrEqual(MAX_CATALOG_BYTES);
-        // eslint-disable-next-line no-console
-        console.log(`#3470 — skill catalog: ${bytes}/${MAX_CATALOG_BYTES} bytes across ${skills.length} skills`);
+    it('every WORKFLOW\'s always-present catalogue fits the budget; the corpus as a whole need not', () => {
+        // The budget binds what a run pays per turn, which is what its workflow
+        // declares — not the corpus (owner decision, 2026-10-17, #3661).
+        expect(() => assertWorkflowCatalogsWithinBudget(listWorkflowDefinitions())).not.toThrow();
+        for (const w of workflowCatalogs(listWorkflowDefinitions())) {
+            expect(w.bytes).toBeLessThanOrEqual(MAX_CATALOG_BYTES);
+        }
+    });
+
+    it('refuses a workflow whose declared skills exceed the per-turn budget, and one declaring an unknown skill', () => {
+        // Positive control for the per-workflow check: the shipped workflows
+        // fit, so without this the assertion above could be checking nothing.
+        const everything = { key: 'mounts-everything-twice', skills: [...skills, ...skills].map((s) => s.name) };
+        expect(catalogBytes([...skills, ...skills])).toBeGreaterThan(MAX_CATALOG_BYTES);
+        expect(() => assertWorkflowCatalogsWithinBudget([everything])).toThrow(/every turn/);
+        expect(() => assertWorkflowCatalogsWithinBudget([{ key: 'w', skills: ['no-such-skill'] }])).toThrow(SkillLoadError);
     });
 
     it('refuses a catalog that would exceed the per-turn budget', () => {
@@ -151,9 +165,13 @@ describe('resolving a workflow definition\'s declared skills', () => {
         expect(() => resolveSkillsFor(['no-such-skill'])).toThrow(/not in the shipped corpus/);
     });
 
-    it('a definition mounting everything still pays a bounded per-turn cost', () => {
+    it('refuses a run whose mounted skills exceed the per-turn budget', () => {
+        // The run-time half of the per-workflow budget (#3661). The corpus may
+        // outgrow one prompt; a run may not. Declaring the corpus twice is over
+        // budget for any corpus of six or more skills, so this cannot pass by
+        // the corpus happening to be small.
         const all = loadAllSkills().map((s) => s.name);
-        expect(() => resolveSkillsFor(all)).not.toThrow();
+        expect(() => resolveSkillsFor([...all, ...all])).toThrow(/every turn/);
     });
 });
 
@@ -172,10 +190,12 @@ describe('the Skills tab payload', () => {
         expect(one).not.toHaveProperty('instructions');
     });
 
-    it('reports the per-turn catalogue cost beside its budget', () => {
+    it('reports the largest per-workflow catalogue cost beside its budget', () => {
         const payload = listAgentSkills({ tenantId: 't', tenantSlug: 't', userId: 'u' } as never);
-        expect(payload.catalogBytes).toBeGreaterThan(0);
+        const largest = Math.max(0, ...workflowCatalogs(listWorkflowDefinitions()).map((w) => w.bytes));
+        expect(payload.catalogBytes).toBe(largest);
         expect(payload.catalogBytes).toBeLessThanOrEqual(payload.catalogBudgetBytes);
+        expect(payload.catalogBudgetBytes).toBe(MAX_CATALOG_BYTES);
     });
 
     it('names the workflows that declare each skill, and says so when none do', () => {

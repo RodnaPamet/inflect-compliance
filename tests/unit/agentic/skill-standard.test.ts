@@ -1,0 +1,157 @@
+/**
+ * The skill standard's machinery (#3661): the optional metadata keys, the
+ * evaluation-set and evaluation-record formats, and the two drafted IAM skills.
+ */
+import { loadAllSkills, parseSkillDocument, SkillLoadError } from '@/lib/agentic/flue/skills';
+import {
+    CASE_KINDS,
+    answerPasses,
+    checkEvaluationRecord,
+    checkEvaluationSet,
+    readEvaluationSet,
+    skillContentHash,
+    type SkillEvaluationSet,
+} from '@/lib/agentic/flue/skills/evaluation-record';
+import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+
+const DRAFTED = ['harness-level-assessment', 'nhi-ownership-attribution'] as const;
+
+function doc(metadataLines: string[], body = 'Do the thing.\n'): string {
+    return [
+        '---',
+        'name: sample-skill',
+        'description: A sample skill for the metadata tests.',
+        'license: proprietary',
+        'metadata:',
+        '  version: \'1\'',
+        ...metadataLines.map((l) => `  ${l}`),
+        '---',
+        '',
+        body,
+    ].join('\n');
+}
+
+describe('the optional metadata keys the standard defines', () => {
+    it('loads a skill that declares none of them, unchanged', () => {
+        expect(parseSkillDocument('sample-skill', doc([])).metadata).toEqual({ version: '1' });
+    });
+
+    it('accepts well-formed values for all four', () => {
+        const s = parseSkillDocument('sample-skill', doc([
+            'requiredInput: campaignId, subjectRef',
+            'output: proposal',
+            'controls: A.5.18, CC6.3, ASI03',
+            'evaluation: evaluation-set.json',
+        ]));
+        expect(s.metadata.output).toBe('proposal');
+    });
+
+    it.each([
+        ['requiredInput: campaign id', /requiredInput/],
+        ['output: essay', /metadata\.output/],
+        ['controls: Access rights shall be reviewed', /controls/],
+        ['evaluation: ../../../etc/passwd', /evaluation/],
+        ['evaluation: set.yaml', /evaluation/],
+    ])('refuses %s with a reason naming the key', (line, reason) => {
+        expect(() => parseSkillDocument('sample-skill', doc([line]))).toThrow(SkillLoadError);
+        expect(() => parseSkillDocument('sample-skill', doc([line]))).toThrow(reason);
+    });
+});
+
+describe('the two drafted IAM skills', () => {
+    const corpus = loadAllSkills();
+
+    it.each(DRAFTED)('%s ships with a licence, a source, a version and an evaluation set that matches it', (name) => {
+        const skill = corpus.find((s) => s.name === name);
+        expect(skill).toBeDefined();
+        if (!skill) return;
+        expect(skill.license).toBe('proprietary');
+        expect(skill.metadata.sourceRef).toBeTruthy();
+        expect(skill.metadata.version).toBe('1');
+        const check = checkEvaluationSet(readEvaluationSet(skill), skill);
+        expect(check).toMatchObject({ ok: true });
+    });
+
+    it('is declared by no workflow, so no run can mount either yet', () => {
+        const declared = listWorkflowDefinitions().flatMap((d) => d.skills ?? []);
+        for (const name of DRAFTED) expect(declared).not.toContain(name);
+    });
+});
+
+describe('evaluation sets', () => {
+    const skill = loadAllSkills().find((s) => s.name === 'nhi-ownership-attribution');
+    if (!skill) throw new Error('drafted skill missing');
+    const set = readEvaluationSet(skill) as SkillEvaluationSet;
+
+    it('ties a set to the exact instructions: an edited skill no longer matches', () => {
+        const edited = { ...skill, instructions: `${skill.instructions}\nOne more rule.` };
+        expect(checkEvaluationSet(set, edited)).toMatchObject({ ok: false, reason: 'HASH_MISMATCH' });
+        expect(set.contentHash).toBe(skillContentHash(skill.instructions));
+    });
+
+    it('refuses a set whose version or skill name does not match', () => {
+        expect(checkEvaluationSet({ ...set, version: '2' }, skill)).toMatchObject({ ok: false, reason: 'VERSION_MISMATCH' });
+        expect(checkEvaluationSet({ ...set, skill: 'other-skill' }, skill)).toMatchObject({ ok: false, reason: 'NAME_MISMATCH' });
+    });
+
+    it.each(CASE_KINDS)('refuses a set with no %s case', (kind) => {
+        const without = { ...set, cases: set.cases.filter((c) => c.kind !== kind) };
+        expect(checkEvaluationSet(without, skill)).toMatchObject({ ok: false, reason: 'MALFORMED' });
+    });
+
+    it('refuses a case with no expectation, which would pass any answer', () => {
+        const vacuous = { ...set, cases: [...set.cases, { id: 'vacuous', kind: 'task', input: 'x', expect: {} }] };
+        expect(checkEvaluationSet(vacuous, skill)).toMatchObject({ ok: false, reason: 'MALFORMED' });
+    });
+
+    it('refuses a set that stores a derived figure', () => {
+        expect(checkEvaluationSet({ ...set, passRate: 1 }, skill)).toMatchObject({ ok: false, reason: 'MALFORMED' });
+    });
+});
+
+describe('evaluation records', () => {
+    const skill = loadAllSkills().find((s) => s.name === 'nhi-ownership-attribution');
+    if (!skill) throw new Error('drafted skill missing');
+    const set = readEvaluationSet(skill) as SkillEvaluationSet;
+
+    /** An answer built to satisfy its case — the shape of a passing model answer. */
+    const satisfying = (c: SkillEvaluationSet['cases'][number]) => c.expect.mustInclude.join(' ');
+    const record = (answers: Array<{ caseId: string; answer: string }>, extra: Record<string, unknown> = {}) => ({
+        set,
+        model: { provider: 'test', revision: 'r1' },
+        ranAt: '2026-10-17T12:00:00.000Z',
+        answers,
+        ...extra,
+    });
+
+    it('recomputes pass rates from the raw answers and passes when every kind meets its threshold', () => {
+        const result = checkEvaluationRecord(record(set.cases.map((c) => ({ caseId: c.id, answer: satisfying(c) }))), skill);
+        expect(result).toMatchObject({ ok: true });
+        if (result.ok) for (const kind of CASE_KINDS) expect(result.rates[kind]).toBe(1);
+    });
+
+    it('fails a record whose injection answers follow the injected instruction', () => {
+        const answers = set.cases.map((c) => ({
+            caseId: c.id,
+            answer: c.kind === 'injection' ? `${satisfying(c)} ${c.expect.mustNotInclude[0]}` : satisfying(c),
+        }));
+        expect(checkEvaluationRecord(record(answers), skill)).toMatchObject({ ok: false, reason: 'BELOW_THRESHOLD' });
+    });
+
+    it('refuses an unanswered case, a duplicate answer and an answer to an unknown case', () => {
+        const all = set.cases.map((c) => ({ caseId: c.id, answer: satisfying(c) }));
+        expect(checkEvaluationRecord(record(all.slice(1)), skill)).toMatchObject({ ok: false, reason: 'UNANSWERED_CASE' });
+        expect(checkEvaluationRecord(record([...all, all[0]]), skill)).toMatchObject({ ok: false, reason: 'DUPLICATE_ANSWER' });
+        expect(checkEvaluationRecord(record([...all, { caseId: 'nope', answer: '' }]), skill)).toMatchObject({ ok: false, reason: 'UNKNOWN_ANSWER' });
+    });
+
+    it('refuses a record that declares its own pass rate', () => {
+        const all = set.cases.map((c) => ({ caseId: c.id, answer: satisfying(c) }));
+        expect(checkEvaluationRecord(record(all, { passRate: 1 }), skill)).toMatchObject({ ok: false, reason: 'MALFORMED' });
+    });
+
+    it('matches expectations case-insensitively, and a forbidden phrase fails a case that includes everything else', () => {
+        expect(answerPasses({ mustInclude: ['STRONG'], mustNotInclude: [] }, 'grade: strong')).toBe(true);
+        expect(answerPasses({ mustInclude: ['usr_17'], mustNotInclude: ['confirmed'] }, 'usr_17 confirmed')).toBe(false);
+    });
+});

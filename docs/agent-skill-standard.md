@@ -1,0 +1,76 @@
+# The agent skill standard
+
+What a skill must be before an agent may be taught with it. A **skill** is a
+Markdown document an agent loads at run time: a name and a description the model
+reads on every turn, and instructions it reads when it decides the task matches.
+It is instruction text the model trusts, so it is treated as part of the agent's
+supply chain: written to a standard, reviewed, evaluated and pinned.
+
+The corpus lives in `src/lib/agentic/flue/skills/`, one directory per skill. The
+loader is `src/lib/agentic/flue/skills/index.ts`, the resolver that mounts skills
+on a run is `resolve.ts` beside it, and the evaluation format is
+`evaluation-record.ts`.
+
+## The nine rules
+
+| # | Rule | What it means | Enforced by |
+|---|---|---|---|
+| 1 | **A skill teaches; it never grants.** | Tools come from grants. A skill that names a tool confers nothing, and a delegated specialist's skills are intersected with what the parent workflow declared. | `src/lib/agentic/flue/subagents/index.ts` (narrowing); the tool funnel in `src/lib/mcp/authorize.ts` |
+| 2 | **Declared, not ambient.** | A run mounts exactly the skills its workflow declares. An unknown name fails closed. | `resolveSkillsFor` in `resolve.ts`; `tests/flue/agent-mounts-only-declared-skills.test.ts` |
+| 3 | **Bounded.** | At most 8 KiB of instructions per skill. The catalogue line (name and description) costs bytes on every turn, so each workflow's declared skills, and each run's mounted skills, fit in 2 KiB. The corpus as a whole is not capped. | `MAX_SKILL_BYTES`, `MAX_CATALOG_BYTES` and `assertWorkflowCatalogsWithinBudget` |
+| 4 | **Licensed and sourced.** | Every skill states a licence, a source and a version. Standards are cited by identifier; sold standard text, such as ISO Annex A control titles, is never reproduced. | The loader refuses a missing licence; `tests/unit/flue-skills-corpus.test.ts` spot-checks ISO titles |
+| 5 | **Reviewed as code.** | A change is a pull request. The product shows skills read-only, and the directory of readable documents is the record of what agents can be taught. | `tests/rendered/agent-skills-tab.test.tsx` counts zero edit controls |
+| 6 | **Output discipline.** | A procedure ends in a proposal or a named gap, cites the artefact it relied on, refuses when a required input is missing, and never treats an absence of exceptions as evidence. | `metadata.output` and `metadata.requiredInput`, validated by the loader; run admission refuses a missing required input (`src/lib/agentic/workflows/required-input.ts`) |
+| 7 | **Evaluated before mounted.** | Each version ships an evaluation set, and a record of a real model's answers must pass the set's thresholds before a run may mount it. | The format: `evaluation-record.ts`. The mount gate: step 1b (#3666) |
+| 8 | **Pinned on the run.** | A run records each mounted skill's name, version and content hash, so "what did the agent know" is answerable per run. | Step 1b (#3666) |
+| 9 | **Injection-safe text.** | No URL the model is told to fetch, no instruction about revealing its context, no tool name outside the declared set, no secret-shaped string. | Step 1c (#3667) |
+
+## Frontmatter
+
+```yaml
+---
+name: access-review-preparation        # equals the directory name
+description: What the skill does, and when to use it. Read on every turn.
+license: proprietary                   # required
+metadata:
+  sourceRef: original guidance; cites ISO/IEC 27001:2022 A.5.18 by identifier only
+  version: '1'
+  requiredInput: campaignId, subjectRef  # optional: camelCase input names
+  output: proposal                       # optional: proposal or report
+  controls: A.5.18, CC6.3                # optional: control identifiers only
+  evaluation: evaluation-set.json        # optional: a file in this directory
+---
+```
+
+The four optional keys are validated when present and ignored when absent. A
+malformed value is a load error that names the key.
+
+## Evaluation sets and records
+
+An **evaluation set** (`evaluation-set.json`, named by `metadata.evaluation`) is
+authored with the skill. It holds the cases a reviewer agreed the skill must
+handle, each with a machine-checkable expectation (`mustInclude`,
+`mustNotInclude`), and a threshold per kind of case. It records the SHA-256 of
+the instructions it was written for, so editing the instructions without
+revisiting the cases is refused.
+
+Every set covers four kinds of case:
+
+| Kind | What it checks |
+|---|---|
+| `task` | The skill does its job on a well-formed input. |
+| `refusal` | It declines what it must not do, and says why. |
+| `injection` | Instructions inside the input do not become instructions. |
+| `missing-input` | Without a required input it names the gap rather than guessing. |
+
+An **evaluation record** is the set plus the answers one named model revision
+gave, with the time it ran. Pass rates are recomputed from the raw answers every
+time and are never stored; a record that carries a rate is refused as malformed.
+A set carries no answers, so nothing in the repository can show a pass that no
+model produced.
+
+## Who may author skills
+
+Skills are reviewed in the repository. The repository corpus is Inflect-original
+guidance; third-party methodology enters only as skills a tenant authors under
+its own licence, behind the same rules (step 4c, #3680).

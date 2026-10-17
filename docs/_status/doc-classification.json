@@ -14,6 +14,9 @@
         "docs/agent-harness-contract.md": {
             "class": "authoritative"
         },
+        "docs/agent-skill-standard.md": {
+            "class": "authoritative"
+        },
         "docs/agentic-iam-roadmap.md": {
             "class": "living"
         },

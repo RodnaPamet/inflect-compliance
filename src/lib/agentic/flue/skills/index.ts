@@ -38,6 +38,28 @@
  * own — it bounds the rare case (everything activated) and leaves the cost paid
  * on EVERY turn unbounded. Both are capped: `MAX_CATALOG_BYTES` over the
  * always-present cost, and `MAX_SKILL_BYTES` per skill over the activated one.
+ *
+ * ── THE CATALOGUE BUDGET IS PER RUN, NOT PER CORPUS (owner decision, 2026-10-17)
+ *
+ * The always-present cost is paid for the skills a run MOUNTS, and a run mounts
+ * exactly what its workflow declares. So the cap binds where it is paid: on
+ * every run's mounted set (`resolveSkillsFor`) and on every workflow
+ * definition's declared set (`assertWorkflowCatalogsWithinBudget`). It used to
+ * bind the whole corpus as well, which capped the corpus at about seven skills
+ * whatever any run mounted — a limit on what the product can know, charged as
+ * if every skill were in every prompt. The corpus may now exceed the budget;
+ * no workflow may.
+ *
+ * ── OPTIONAL METADATA THE STANDARD DEFINES ──────────────────────────────────
+ *
+ * `docs/agent-skill-standard.md` adds four optional `metadata` keys. Absent,
+ * they change nothing; present, they are validated here, because a malformed
+ * declaration that loaded anyway would be a claim nobody checked:
+ *
+ *   requiredInput  comma-separated input names the skill cannot work without
+ *   output         `proposal` or `report` — what the procedure ends in
+ *   controls       comma-separated control identifiers, cited by id only
+ *   evaluation     the evaluation set's file name inside the skill directory
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -73,6 +95,12 @@ export class SkillLoadError extends Error {
 }
 
 const SKILLS_DIR = path.join(process.cwd(), 'src/lib/agentic/flue/skills');
+
+/** A skill's own directory, where its SKILL.md and evaluation set live. */
+export function skillDirectory(name: string): string {
+    if (!NAME_RE.test(name)) throw new SkillLoadError(name, 'name is not a valid Agent Skills identifier');
+    return path.join(SKILLS_DIR, name);
+}
 /** Spec: lowercase letters, digits and hyphens; no leading/trailing/double hyphen. */
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -144,6 +172,11 @@ export function parseSkillDocument(name: string, raw: string): LoadedSkill {
     if (!body) throw new SkillLoadError(name, 'instructions are empty');
     if (Buffer.byteLength(body, 'utf8') > MAX_SKILL_BYTES) throw new SkillLoadError(name, `instructions exceed ${MAX_SKILL_BYTES} bytes`);
     if (!str('license')) throw new SkillLoadError(name, 'license is required — a skill with no stated licence cannot be audited');
+    const metadata = fm.metadata;
+    if (metadata !== undefined && typeof metadata !== 'object') {
+        throw new SkillLoadError(name, 'metadata must be a map');
+    }
+    validateStandardMetadata(name, (metadata as Record<string, string> | undefined) ?? {});
 
     return {
         name,
@@ -152,6 +185,32 @@ export function parseSkillDocument(name: string, raw: string): LoadedSkill {
         license: str('license'),
         metadata: Object.freeze({ ...((fm.metadata as Record<string, string>) ?? {}) }),
     };
+}
+
+const INPUT_NAME_RE = /^[a-z][A-Za-z0-9]{0,63}$/;
+/** A control id as frameworks print it: `A.5.18`, `CC6.3`, `ASI03`, `Art.23(4)`. */
+const CONTROL_ID_RE = /^[A-Za-z][A-Za-z0-9.()-]{0,39}$/;
+const EVALUATION_FILE_RE = /^[a-z0-9][a-z0-9-]{0,63}\.json$/;
+const SKILL_OUTPUTS = ['proposal', 'report'] as const;
+
+function listOf(value: string): string[] {
+    return value.split(',').map((v) => v.trim());
+}
+
+/** The four optional keys `docs/agent-skill-standard.md` defines, checked when present. */
+function validateStandardMetadata(name: string, m: Readonly<Record<string, string>>): void {
+    if (m.requiredInput !== undefined && !listOf(m.requiredInput).every((v) => INPUT_NAME_RE.test(v))) {
+        throw new SkillLoadError(name, 'metadata.requiredInput must be comma-separated camelCase input names');
+    }
+    if (m.output !== undefined && !(SKILL_OUTPUTS as readonly string[]).includes(m.output)) {
+        throw new SkillLoadError(name, `metadata.output must be one of ${SKILL_OUTPUTS.join(', ')}`);
+    }
+    if (m.controls !== undefined && !listOf(m.controls).every((v) => CONTROL_ID_RE.test(v))) {
+        throw new SkillLoadError(name, 'metadata.controls must be comma-separated control identifiers, never standard text');
+    }
+    if (m.evaluation !== undefined && !EVALUATION_FILE_RE.test(m.evaluation)) {
+        throw new SkillLoadError(name, 'metadata.evaluation must be a .json file name inside the skill directory');
+    }
 }
 
 /** Every skill in the corpus, in directory order. */
@@ -172,7 +231,8 @@ export function loadAllSkills(): LoadedSkill[] {
         if (seen.has(s.name)) throw new SkillLoadError(s.name, 'duplicate skill name');
         seen.add(s.name);
     }
-    assertCatalogWithinBudget(loaded);
+    // No catalogue check here: the budget binds what a run mounts and what a
+    // workflow declares, not the corpus. See the header.
     return loaded;
 }
 
