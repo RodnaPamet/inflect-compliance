@@ -132,7 +132,11 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // first attempt at that edit WAS the rewrite this pin exists for, a
         // `json.dumps(indent=2, sort_keys-style)` that changed 831 lines while
         // the file still parsed.
-        keyOrderSha: '5aea923597a9f5446e3f9c9e11f28c333737e42ac1db4055940a62873bcdcbdc',
+        //
+        // Moved 2026-10-17 by ADDING two entries in their sorted positions
+        // (docs/a2a-threat-model.md and docs/integration-passport.md, step 0c
+        // of the agentic IAM plan). No existing key moved.
+        keyOrderSha: 'a6ed22f1e4acc3b82031ee54703dac9eee668a0f61ca6f677e6bea93b8c9685f',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in
