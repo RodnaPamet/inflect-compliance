@@ -81,6 +81,33 @@ write or whose reach is unknown, H2 for a read-only one) is a finding that never
 gates the agent; its owner may accept it for at most a year, and the nightly
 exception expiry monitor reopens it when the acceptance lapses.
 
+### Integration passport and A2A threat model
+
+Two documents specify UC5's new parts.
+
+- `docs/integration-passport.md` specifies the passport of every `mcp-server`
+  connection: twelve fields, the table and column each is read from on `main`,
+  and the drift rule step 2d applies to each, with who owns the resulting
+  finding. Two facts have no source today and are listed as gaps: the
+  connection's accountable owner, and whether each pinned tool declares a write.
+  No passport is built on `main`.
+- `docs/a2a-threat-model.md` models A2A traffic in both directions, hop by hop,
+  naming for each hop the trust boundary, the STRIDE threats and the control.
+  No A2A traffic exists on `main`. The model requires that A2A traffic pass
+  through the existing funnel with no second authority model, and that a peer's
+  agent card be pinned by hash so that a changed card refuses traffic until a
+  person re-approves it; steps `2e` and `4b` build both. Each control is either
+  on `main`, cited by file and symbol, or assigned to step `2d`, `2e` or `4b`,
+  and the residual risks list every assigned control with the step that closes
+  it. On 2026-10-17 the owner accepted three of those controls as requirements
+  on step `4b`: inbound A2A is refused for a tenant that has not set both
+  `agentMonthlyTokenBudget` and `agentMaxConcurrentRuns` (R13); a run started
+  by an inbound A2A task never dispatches an external write above
+  `PROPOSE_ONLY` (R17); and a peer's agent card is re-checked before every
+  message against a copy at most 15 minutes old (R18). Which permission key
+  governs the peer register and pin routes (R3) is the model's recommendation,
+  open for step `2e`.
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
