@@ -155,7 +155,7 @@ export async function runAgentCredentialHygiene(input: {
             const connections = await drainPages((cursor) =>
                 db.integrationConnection.findMany({
                     where: { tenantId: ctx.tenantId, provider: MCP_SERVER_PROVIDER_ID },
-                    select: { id: true, name: true, configJson: true, secretEncrypted: true },
+                    select: { id: true, name: true, configJson: true, secretEncrypted: true, ownerUserId: true },
                     orderBy: { id: 'asc' },
                     take: DRAIN_PAGE_SIZE,
                     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -176,13 +176,29 @@ export async function runAgentCredentialHygiene(input: {
                 }),
             );
 
-            // `namedOwnerUserId: null` for every connection, because no column
-            // holds one (integration passport P11; step 2d adds it).
+            // The accountable owner is `IntegrationConnection.ownerUserId`
+            // (integration passport P11), and only while that person holds an
+            // ACTIVE membership here — the passport's own rule. A named owner
+            // who has left is no owner, so the rule fires again.
+            const ownerIds = [
+                ...new Set(connections.map((c) => c.ownerUserId).filter((id): id is string => id !== null)),
+            ];
+            const activeOwners = new Set(
+                ownerIds.length === 0
+                    ? []
+                    : (
+                          await db.tenantMembership.findMany({
+                              where: { tenantId: ctx.tenantId, userId: { in: ownerIds }, status: 'ACTIVE' },
+                              select: { userId: true },
+                              take: ownerIds.length,
+                          })
+                      ).map((m) => m.userId),
+            );
             const connectionFacts: ConnectionFacts[] = connections.map((c) => ({
                 id: c.id,
                 name: c.name,
                 grantKind: grantKindOf(c.configJson, c.secretEncrypted),
-                namedOwnerUserId: null,
+                namedOwnerUserId: c.ownerUserId !== null && activeOwners.has(c.ownerUserId) ? c.ownerUserId : null,
             }));
             const keyFacts: KeyFacts[] = keys.map((k) => ({
                 id: k.id,

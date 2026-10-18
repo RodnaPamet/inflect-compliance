@@ -275,6 +275,22 @@ describe('resolution is on positive evidence only', () => {
         expect(result.held).toBe(1);
         expect((await prisma.finding.findFirstOrThrow({ where: { tenantId: T1, sourceRef: ref } })).status).toBe('OPEN');
     });
+
+    it("closes an app-only connection's finding only once its named owner is an ACTIVE member", async () => {
+        const ref = hygieneSourceRef('CONNECTION_APP_ONLY_NO_OWNER', 'connection', ids.appOnly);
+        const status = async () =>
+            (await prisma.finding.findFirstOrThrow({ where: { tenantId: T1, sourceRef: ref } })).status;
+
+        // A named owner who has left is no owner (passport P11): still open.
+        await prisma.integrationConnection.update({ where: { id: ids.appOnly }, data: { ownerUserId: ids.departed } });
+        await runAgentCredentialHygiene({ tenantId: T1 });
+        expect(await status()).toBe('OPEN');
+
+        await prisma.integrationConnection.update({ where: { id: ids.appOnly }, data: { ownerUserId: ids.owner } });
+        const named = await runAgentCredentialHygiene({ tenantId: T1 });
+        expect(named.resolved).toBe(1);
+        expect(await status()).toBe('CLOSED');
+    });
 });
 
 describe('two tenants, and the empty one', () => {

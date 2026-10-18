@@ -336,8 +336,10 @@ credential is a key bound to an agent or one the `/api/mcp` capability gate
 admits; an integration key with resource scopes only is not one, and fires
 nothing. No tenant setting
 holds a rotation age, so the rule uses a 90-day product default and says so on
-the row and in each finding. No connection has an owner column (passport field
-P11, step `2d`), so every app-only connection fires its rule. Findings are
+the row and in each finding. A connection's accountable owner is
+`IntegrationConnection.ownerUserId` (passport field P11, step `2d`), counted only
+while that person holds an ACTIVE membership, so an app-only connection fires
+its rule until an owner who is still a member is named. Findings are
 `OBSERVATION`s with `sourceKind = AGENT_CREDENTIAL_HYGIENE`, written through
 `FindingRepository` and audited as a JOB; one closes only when a complete read
 shows its rule no longer fires, and a connection whose secret will not decrypt
@@ -357,7 +359,7 @@ tenant-wide control-check list.
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
-| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No registration intake from a shadow-agent finding; no tenant setting for a key rotation age; no owner field on a connection. |
+| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No registration intake from a shadow-agent finding; no tenant setting for a key rotation age (#3708). |
 
 ## Roadmap (future direction)
 
@@ -504,6 +506,12 @@ changed what #3698 built.
     disable acts on a customer's people. The orphan pass acts only on agents.
     The key rotation age stays the 90-day product default until #3708 adds a
     per-tenant setting. (`2b`)
+18. **The agent inventory gets a view key.** `admin.agent_registry_view` is
+    read-only and has an API-key scope, so an agent granted
+    `get_discovered_agent` can read the discovered agent it reviews. It also
+    gates reading agent runs, proposals and the governance pack. `AI_ADMIN` and
+    AUDITOR hold it, and the DPIA names the model as a reader of the source
+    owner reference. (`1d`, #3710)
 
 ### Permission keys
 
@@ -536,8 +544,10 @@ and one new key:
   token reaches it, and an agent-bound key cannot be offered it. AUDITOR does not hold
   `admin.agent_registry`, so it reads none of them. A view key split from
   `admin.agent_registry` for an auditor's read of the inventory is the case the
-  `agent_registry` docstring names and leaves undone; whether to add one is
-  open.
+  `agent_registry` docstring names and leaves undone. The owner decided on
+  2026-10-18 to add one (#3710): `admin.agent_registry_view`, with an API-key
+  scope, so an agent can be offered `get_discovered_agent`. It also gates
+  reading agent runs, proposals and the governance pack.
 - **Submitting is a key of its own.** The other five agent keys are held by the
   people who govern agents; the ingest key is held by the scanner, through its
   API key, and nothing else that key carries should let it do more (the

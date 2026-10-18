@@ -46,13 +46,13 @@
  * A per-tenant age is an open question for the owner, not something this pass
  * invents a column for.
  *
- * ## The connection rule, and why it fires on every app-only connection today
+ * ## The connection rule
  *
- * The integration passport (`docs/integration-passport.md`, field P11) records
- * that `IntegrationConnection` has no owner column; step 2d adds one. Until it
- * does, `namedOwnerUserId` is null for every connection, so every app-only
- * `mcp-server` connection fires. That is the rule working: an app-only grant is
- * a token no person bounds, and nobody is named to answer for it. The grant kind
+ * The accountable owner is `IntegrationConnection.ownerUserId` (integration
+ * passport field P11, step 2d), counted only while that person holds an ACTIVE
+ * membership — the passport's own rule. An app-only `mcp-server` connection
+ * with no such owner fires: an app-only grant is a token no person bounds, and
+ * nobody is named to answer for it. The grant kind
  * is resolved by the runtime's own resolver, `resolveMcpCredentials`, and only
  * the kind is kept — the passport's "one secret read, presence only" rule.
  *
@@ -138,7 +138,7 @@ export interface ConnectionFacts {
     id: string;
     name: string;
     grantKind: ConnectionGrantKind;
-    /** No column holds this today (passport P11) — always null until step 2d. */
+    /** `IntegrationConnection.ownerUserId` when that person is an ACTIVE member here, else null (passport P11). */
     namedOwnerUserId: string | null;
 }
 
@@ -320,8 +320,8 @@ export function planHygiene(input: {
                 description:
                     `The external MCP server connection "${conn.name}" authenticates with an app-only ` +
                     'grant — a token no person bounds — and no accountable owner is named for it. ' +
-                    'Connections carry no owner field yet (integration passport field P11), so the ' +
-                    "workspace's OWNERs answer for it until one is named.",
+                    "Name one on the connection's admin page (integration passport field P11); until " +
+                    "then the workspace's OWNERs answer for it.",
             });
         }
     }

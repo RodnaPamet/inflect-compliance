@@ -99,8 +99,12 @@ returns assert / resolve / hold; the usecase creates, reopens and closes
   real weakness, an MCP-capable key that names no agent, under LOW findings on CI
   keys. Integration keys are counted on the row (`otherLiveKeys`) so the pass says
   what it looked past, and a tenant holding only integration keys is not swept.
-- **Hygiene's "no named owner" fires on every app-only connection** because no
-  owner column exists (passport P11); step 2d gives it a source.
+- **Hygiene's "no named owner" reads 2d's owner column.** An app-only connection
+  fires until `IntegrationConnection.ownerUserId` names someone who is still an
+  ACTIVE member, which is the passport's own P11 rule. The two passes therefore
+  raise different findings about one gap: the passport's `CONNECTION_OWNER_MISSING`
+  is about every connection, and hygiene's HIGH finding is about the app-only
+  grant that nobody bounds.
 - **06:00 is shared with the kill-switch drill**, the issue's stated time. The
   drill's 06:00 exists to keep its finding out of the identity chain's minutes;
   hygiene is not in that chain, and neither job reads what the other writes.
