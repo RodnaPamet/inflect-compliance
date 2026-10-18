@@ -552,8 +552,43 @@ export const METRIC_DEFINITIONS = {
         excludes: [
             'the scheduled drill’s canary kills, which are exercises against ' +
                 'an id no credential resolves to and are counted separately',
+            'OWNER_DEPARTED kills (reasonCode = OWNER_DEPARTED), which the ' +
+                'owner-orphan pass engages because an agent’s accountable owner ' +
+                'left — a lifecycle containment, not an incident, counted ' +
+                'separately as incidents.owner_departed_engagements',
             'the platform-wide kill, which is global and has no tenant to scope to',
         ],
+    },
+    'incidents.owner_departed_engagements': {
+        id: 'incidents.owner_departed_engagements',
+        label: 'Kills engaged because an agent’s owner left',
+        population:
+            'rows in AgentKillSwitch engaged inside the window with reasonCode = ' +
+            'OWNER_DEPARTED',
+        moment: 'OVER_WINDOW',
+        includes: [
+            'every OWNER_DEPARTED kill the owner-orphan pass engaged, as the system ' +
+                'actor system:agent-owner-orphan-pass, whether or not it has since been ' +
+                'lifted after a completed ownership transfer',
+        ],
+        excludes: [
+            'kills a person engaged, whatever their reason text says — the code is a ' +
+                'column only the system writes, never the free-text reason',
+            'agents the pass found at DRY_RUN, which it recorded and did not stop',
+            'the drill canary’s kills',
+        ],
+    },
+    'incidents.owner_departed_in_force_now': {
+        id: 'incidents.owner_departed_in_force_now',
+        label: 'OWNER_DEPARTED kills currently in force',
+        population:
+            'rows in AgentKillSwitch with reasonCode = OWNER_DEPARTED and liftedAt IS NULL',
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'kills engaged before the report window and still in force — each is an ' +
+                'agent waiting for an ownership transfer to complete',
+        ],
+        excludes: ['kills a person engaged', 'drill canary kills', 'the global platform kill'],
     },
     'incidents.drill_canary_engagements': {
         id: 'incidents.drill_canary_engagements',
@@ -573,7 +608,11 @@ export const METRIC_DEFINITIONS = {
             'kills engaged before the report window — a stop still in force is a ' +
                 'fact about now, not about the window',
         ],
-        excludes: ['drill canary kills', 'the global platform kill'],
+        excludes: [
+            'drill canary kills',
+            'OWNER_DEPARTED kills, counted as incidents.owner_departed_in_force_now',
+            'the global platform kill',
+        ],
     },
     'incidents.longest_kill_minutes': {
         id: 'incidents.longest_kill_minutes',
@@ -584,7 +623,11 @@ export const METRIC_DEFINITIONS = {
             'a kill still in force, measured to the report generation instant ' +
                 'and flagged per row as unlifted',
         ],
-        excludes: ['drill canary kills'],
+        excludes: [
+            'drill canary kills',
+            'OWNER_DEPARTED kills, which last as long as an ownership transfer takes ' +
+                'and are not an incident’s duration',
+        ],
     },
     'incidents.drills_run': {
         id: 'incidents.drills_run',

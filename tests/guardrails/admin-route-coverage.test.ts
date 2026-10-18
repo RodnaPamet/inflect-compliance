@@ -92,6 +92,10 @@ const ADMIN_ONLY_ROUTES = [
     // nothing already running.
     'admin/agents/concurrency/route.ts',
     'admin/agents/kill-switch/route.ts',
+    // The owner-orphan pass's mode and recorded passes (#3670) —
+    // `admin.tenant_lifecycle`, the identity ladder's key: the mode decides
+    // whether a scheduled job stops agents unattended.
+    'admin/agents/owner-orphan-pass/route.ts',
     // #3470 — the Flue skill corpus behind the Skills tab. Read-only, and
     // `admin.agent_registry` rather than the per-agent exposure key: a
     // skill is instruction text delivered to a model and is tenant-wide.

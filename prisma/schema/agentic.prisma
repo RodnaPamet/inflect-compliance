@@ -1597,6 +1597,22 @@ model AgentKillSwitch {
   /// read back by an operator surface and by the drill's evidence record.
   /// REQUIRED: a kill with no stated reason is an outage nobody can review.
   reason          String
+  /// A STRUCTURED reason, set only by the system and never by a person (#3670).
+  ///
+  /// NULL on every kill a human engages. The one code today is
+  /// `OWNER_DEPARTED`, written by the owner-orphan pass when it stops an agent
+  /// whose accountable owner has left. Reports count those kills apart from
+  /// incidents, and a lift is refused until a two-step ownership transfer of
+  /// the agent has completed after the kill — so the code must not be
+  /// forgeable from the free-text `reason`, which a person types.
+  ///
+  /// TEXT with a CHECK rather than a Postgres enum, for the reason this file
+  /// gives above. The CHECK pins the code to its writer: `OWNER_DEPARTED` is
+  /// representable only on an AGENT-scope row engaged by
+  /// `system:agent-owner-orphan-pass`. A trigger makes the column immutable and
+  /// refuses the lift of an OWNER_DEPARTED row unless a COMPLETED transfer of
+  /// that agent, to the person lifting it, completed after the kill.
+  reasonCode      String?
   engagedByUserId String
   engagedAt       DateTime @default(now())
 

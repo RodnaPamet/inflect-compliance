@@ -230,6 +230,10 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/[agentId]/ownership-transfer/complete/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/ownership-transfer/route.ts',
     't/[tenantSlug]/admin/agents/kill-switch/route.ts',
+    // #3670 — the owner-orphan pass's mode and its recorded passes. API-only
+    // until a page renders them, like the ownership transfer it hands its
+    // orphans to; the pass itself runs on a schedule and needs no page to act.
+    't/[tenantSlug]/admin/agents/owner-orphan-pass/route.ts',
     // #3665 — the harness ingest. `harness-scans` is MACHINE surface: a
     // scanner POSTs a signed report with an API key scoped to
     // `admin:harness_ingest` and nothing else, so no page calls it and none

@@ -71,6 +71,7 @@ import {
     UpdateRegisteredAgentSchema,
 } from '../schemas/agent-registry.schemas';
 import type { RequestContext } from '../types';
+import { SYSTEM_PRINCIPAL } from '../context-system';
 
 /**
  * Three-state preserving sanitiser: `undefined` means "leave the column alone",
@@ -1090,6 +1091,47 @@ export async function suspendRegisteredAgent(ctx: RequestContext, id: string) {
     return runInTenantContext(ctx, async (db) => {
         await assertLifecycleMovable(db, ctx, id, 'SUSPENDED');
         return applyRegisteredAgentStatus(db, ctx, id, 'SUSPENDED', 'AGENT_SUSPENDED');
+    });
+}
+
+/**
+ * Suspend an ACTIVE agent because its accountable owner has left — the
+ * owner-orphan pass's half of the containment (#3670). The kill switch is the
+ * other half, engaged first by the pass through `engageOwnerDepartedKill`.
+ *
+ * NOT reachable by a person: the context must be the system principal with
+ * actor type JOB, so the `AGENT_SUSPENDED` audit row carries no user and names
+ * nobody, and records `reasonCode: OWNER_DEPARTED` so the trail says why.
+ * Conditional on ACTIVE (`suspendIfActive`), so a person's concurrent move —
+ * a retirement, a suspension of their own — stands, and `suspended: false`
+ * reports it. Reactivating the agent afterwards is the ordinary
+ * `activateRegisteredAgent`, by whoever holds the register key; the kill stays
+ * in force until the new owner lifts it.
+ */
+export async function suspendAgentForOwnerDeparture(
+    ctx: RequestContext,
+    input: { agentId: string },
+): Promise<{ suspended: boolean }> {
+    if (ctx.actorType !== 'JOB' || ctx.userId !== SYSTEM_PRINCIPAL) {
+        throw forbidden('An agent is suspended for its owner\'s departure only by the owner-orphan pass.');
+    }
+    return runInTenantContext(ctx, async (db) => {
+        const moved = await RegisteredAgentRepository.suspendIfActive(db, ctx, input.agentId);
+        if (moved === 0) return { suspended: false };
+        await logEvent(db, ctx, {
+            action: 'AGENT_SUSPENDED',
+            entityType: 'RegisteredAgent',
+            entityId: input.agentId,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'RegisteredAgent',
+                operation: 'update',
+                summary: 'Registered agent moved to SUSPENDED because its owner left (OWNER_DEPARTED)',
+                before: { status: 'ACTIVE' },
+                after: { status: 'SUSPENDED', reasonCode: 'OWNER_DEPARTED' },
+            },
+        });
+        return { suspended: true };
     });
 }
 

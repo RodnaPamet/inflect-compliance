@@ -1499,6 +1499,23 @@ executorRegistry.register('agent-kill-switch-drill', async (payload) => {
     return runAgentKillSwitchDrillJob({ tenantId: payload.tenantId });
 });
 
+// agent-owner-orphan-pass (#3670): stop the agents whose owner has left. The
+// payload is passed THROUGH with `tenantId` NAMED, for the drill's reason: an
+// absent tenantId is the scheduled sweep, a present one runs that tenant, and a
+// payload forwarded opaquely is how a targeted run becomes an all-tenant one.
+// What each tenant's pass may do is its own `agentOrphanPassMode`.
+executorRegistry.register('agent-owner-orphan-pass', async (payload) => {
+    const { runAgentOwnerOrphanPassJob } = await import('./agent-owner-orphan-pass');
+    return runAgentOwnerOrphanPassJob({ tenantId: payload.tenantId });
+});
+
+// agent-credential-hygiene (#3670): findings for weak agent credentials, and
+// nothing else — no credential is written. `tenantId` named, as above.
+executorRegistry.register('agent-credential-hygiene', async (payload) => {
+    const { runAgentCredentialHygieneJob } = await import('./agent-credential-hygiene');
+    return runAgentCredentialHygieneJob({ tenantId: payload.tenantId });
+});
+
 // agentic-evidence-emission: turn receipts + AI decision records into evidence
 // attached to the agentic controls they discharge. Payload passed THROUGH, both
 // fields NAMED: an absent tenantId is the scheduled sweep and an absent asOf is

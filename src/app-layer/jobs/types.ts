@@ -852,6 +852,8 @@ export interface JobPayloadMap {
     'agent-proposal-sample-audit': AgentProposalSampleAuditPayload;
     'agentic-evidence-emission': AgenticEvidenceEmissionPayload;
     'integration-passport-sweep': IntegrationPassportSweepPayload;
+    'agent-owner-orphan-pass': AgentOwnerOrphanPassPayload;
+    'agent-credential-hygiene': AgentCredentialHygienePayload;
 }
 
 /**
@@ -879,6 +881,26 @@ export interface JobPayloadMap {
 export interface IntegrationPassportSweepPayload {
     tenantId?: string;
     asOf?: string;
+}
+
+/**
+ * agent-owner-orphan-pass — stop the agents whose accountable owner has left
+ * (#3670). `tenantId` absent is the scheduled sweep, which DISCOVERS the
+ * tenants holding an agent or a non-DISABLED orphan-pass mode; present runs
+ * exactly that tenant, which is what the integration test drives. What a pass
+ * may DO is the tenant's own `agentOrphanPassMode`, not anything here.
+ */
+export interface AgentOwnerOrphanPassPayload {
+    tenantId?: string;
+}
+
+/**
+ * agent-credential-hygiene — raise findings for weak agent credentials
+ * (#3670). `tenantId` absent is the scheduled sweep; present runs one tenant.
+ * Findings only: no shape of this payload writes a credential.
+ */
+export interface AgentCredentialHygienePayload {
+    tenantId?: string;
 }
 
 /**
@@ -1221,6 +1243,26 @@ export const JOB_DEFAULTS: Record<JobName, {
         // timeout on a large tenant) would fail the same way three times in
         // ~35 seconds, and should surface once. Each tenant's failure is caught
         // inside the sweep and counted; next Sunday is the retry.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'agent-owner-orphan-pass': {
+        // ONE attempt. A pass that stops agents is not retried three times in
+        // ~35 seconds: each attempt writes an execution row and rings a bell
+        // per orphan, and at AUTOMATIC each would re-run the containment. Every
+        // tenant's failure is already its own ERROR row; tomorrow's tick is the
+        // retry, on a population that has actually moved.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'agent-credential-hygiene': {
+        // ONE attempt. The reconcile is idempotent on (rule, credential), so a
+        // retry would rewrite nothing — and also prove nothing. Tomorrow's tick
+        // is the retry.
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,

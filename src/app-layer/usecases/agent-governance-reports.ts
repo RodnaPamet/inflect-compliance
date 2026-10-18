@@ -66,6 +66,7 @@ import { countTenantGuardBlocksInWindow } from '@/lib/agentic/circuit-breaker-st
 import { badRequest } from '@/lib/errors/types';
 import { UNATTENDED_AUTONOMY } from '@/lib/agentic/agent-risk-scoring';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
+import { isOwnerDepartedKill } from '@/lib/agentic/owner-orphan';
 import {
     evaluateMonthlyBudgetForRun,
     spentThisMonth,
@@ -583,6 +584,8 @@ export interface KillHistoryRow {
     agentId: string | null;
     agentName: string | null;
     reason: string;
+    /** `OWNER_DEPARTED` for the owner-orphan pass's kills; null for a person's. */
+    reasonCode: string | null;
     engagedByUserId: string;
     engagedAt: Date;
     liftedAt: Date | null;
@@ -647,6 +650,12 @@ export interface IncidentHistoryBody {
     kills: KillHistoryRow[];
     /** Counted apart from real kills — an exercise is not an incident. */
     drillCanaryKills: KillHistoryRow[];
+    /**
+     * Counted apart from incidents too (#3670): the owner-orphan pass's
+     * containment of an agent whose owner left is a lifecycle act, and its
+     * duration is how long a transfer took, not how long an incident lasted.
+     */
+    ownerDepartedKills: KillHistoryRow[];
     drills: DrillHistoryRow[];
     breakers: BreakerTripRow[];
 }
@@ -712,8 +721,8 @@ export async function buildIncidentHistoryReport(
                 orderBy: { engagedAt: 'desc' },
                 take: HISTORY_ROW_CAP,
                 select: {
-                    id: true, agentId: true, reason: true, engagedByUserId: true,
-                    engagedAt: true, liftedAt: true, liftedByUserId: true,
+                    id: true, agentId: true, reason: true, reasonCode: true,
+                    engagedByUserId: true, engagedAt: true, liftedAt: true, liftedByUserId: true,
                 },
             }),
             // A kill engaged BEFORE the window and still in force is a fact
@@ -721,7 +730,7 @@ export async function buildIncidentHistoryReport(
             db.agentKillSwitch.findMany({
                 where: { tenantId: ctx.tenantId, liftedAt: null },
                 take: HISTORY_ROW_CAP,
-                select: { id: true, agentId: true },
+                select: { id: true, agentId: true, reasonCode: true },
             }),
             db.agentKillSwitchDrill.findMany({
                 where: { tenantId: ctx.tenantId, startedAt: { gte: window.since } },
@@ -760,6 +769,7 @@ export async function buildIncidentHistoryReport(
         id: string;
         agentId: string | null;
         reason: string;
+        reasonCode: string | null;
         engagedByUserId: string;
         engagedAt: Date;
         liftedAt: Date | null;
@@ -772,6 +782,7 @@ export async function buildIncidentHistoryReport(
             agentId: r.agentId,
             agentName: r.agentId === null ? null : nameById.get(r.agentId) ?? null,
             reason: r.reason,
+            reasonCode: r.reasonCode,
             engagedByUserId: r.engagedByUserId,
             engagedAt: r.engagedAt,
             liftedAt: r.liftedAt,
@@ -781,11 +792,21 @@ export async function buildIncidentHistoryReport(
         };
     };
 
+    // THREE POPULATIONS, and every kill row is in exactly one. Canary first:
+    // the drill never writes a reason code, so the order cannot misfile one.
+    // OWNER_DEPARTED is read off the CODE column, which only the system
+    // writes — a person typing "OWNER_DEPARTED" as a reason makes an incident.
     const allKills = loaded.killRows.map(toKillRow);
-    const kills = allKills.filter((k) => !isCanary(k.agentId));
     const drillCanaryKills = allKills.filter((k) => isCanary(k.agentId));
+    const ownerDepartedKills = allKills.filter((k) => !isCanary(k.agentId) && isOwnerDepartedKill(k));
+    const kills = allKills.filter((k) => !isCanary(k.agentId) && !isOwnerDepartedKill(k));
 
-    const inForceReal = loaded.inForceRows.filter((r) => !isCanary(r.agentId));
+    const inForceOwnerDeparted = loaded.inForceRows.filter(
+        (r) => !isCanary(r.agentId) && isOwnerDepartedKill(r),
+    );
+    const inForceReal = loaded.inForceRows.filter(
+        (r) => !isCanary(r.agentId) && !isOwnerDepartedKill(r),
+    );
 
     const drills: DrillHistoryRow[] = loaded.drillRows;
     /** The subset a sum may run over — see `incidents.tool_calls_after_kill`. */
@@ -848,6 +869,8 @@ export async function buildIncidentHistoryReport(
             'runs.paused': measured(runCount(loaded.runsNow, 'PAUSED')),
             'incidents.kill_engagements': measured(kills.length),
             'incidents.drill_canary_engagements': measured(drillCanaryKills.length),
+            'incidents.owner_departed_engagements': measured(ownerDepartedKills.length),
+            'incidents.owner_departed_in_force_now': measured(inForceOwnerDeparted.length),
             'incidents.kills_in_force_now': measured(inForceReal.length),
             'incidents.longest_kill_minutes':
                 kills.length === 0
@@ -907,7 +930,7 @@ export async function buildIncidentHistoryReport(
                     ? notAssessed('NO_MONTHLY_BUDGET_CONFIGURED')
                     : measured(budget.budgetTokens - tokensSpentThisMonth),
         },
-        { kills, drillCanaryKills, drills, breakers },
+        { kills, drillCanaryKills, ownerDepartedKills, drills, breakers },
     );
 }
 

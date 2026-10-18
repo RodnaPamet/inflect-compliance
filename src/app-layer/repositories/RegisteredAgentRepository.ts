@@ -503,6 +503,23 @@ export class RegisteredAgentRepository {
     }
 
     /**
+     * ACTIVE → SUSPENDED, and nothing else — the owner-orphan pass's suspension
+     * (#3670).
+     *
+     * Conditional on ACTIVE rather than on "not RETIRED" like `setStatus`: the
+     * pass read the agent ACTIVE, and if a person moved it in between — retired
+     * it, or already suspended it — their move stands and this changes nothing.
+     * Zero is that answer, not an error.
+     */
+    static async suspendIfActive(db: PrismaTx, ctx: RequestContext, id: string): Promise<number> {
+        const res = await db.registeredAgent.updateMany({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null, status: 'ACTIVE' },
+            data: { status: 'SUSPENDED' },
+        });
+        return res.count;
+    }
+
+    /**
      * Move the accountable owner — the completion of a two-step ownership
      * transfer, and the ONLY write of `ownerUserId` after registration (#3698;
      * the register's PATCH refuses the field).

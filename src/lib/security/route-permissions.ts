@@ -377,6 +377,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'first-match-wins would otherwise record admin.agent_registry.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/owner-orphan-pass$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            "Read or set the owner-orphan pass's mode (#3670), and read its " +
+            'recorded passes. Tenant lifecycle — the key the identity ladder ' +
+            'carries — because the mode decides whether a scheduled job stops ' +
+            'agents unattended, and ADMIN holds the register key. Above the ' +
+            'catch-all: first-match-wins would otherwise record ' +
+            'admin.agent_registry.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/agents\\/kill-switch$`),
         permission: 'admin.agent_kill_switch',
         note:

@@ -102,7 +102,9 @@ function resolveEnvSchema(overrides: Record<string, string | undefined>): Resolv
 const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'access-review-overdue-escalation',
     'access-review-reminder',
+    'agent-credential-hygiene',
     'agent-kill-switch-drill',
+    'agent-owner-orphan-pass',
     'agent-proposal-expiry',
     'agent-proposal-sample-audit',
     'agent-run-reaper',

@@ -1224,6 +1224,97 @@ export function recordKillSwitchDrill(attrs: { outcome: string }): void {
     _agentKillDrill.add(1, { outcome: attrs.outcome });
 }
 
+// ── Agent owner-orphan pass and credential hygiene (#3670) ─────────────────
+
+let _agentOrphanPass: Counter | null = null;
+let _agentOrphanPassOrphans: Counter | null = null;
+let _credentialHygiene: Counter | null = null;
+let _credentialHygieneFindings: Counter | null = null;
+
+/**
+ * One owner-orphan pass, per tenant, by how it ended — and the orphans it
+ * found, by rung.
+ *
+ * Emitted on EVERY terminal path, the refusals included, for the leaver's
+ * reason: the failure most likely to go unnoticed is the pass not running, and
+ * a scheduler that stopped would otherwise look exactly like a quiet week.
+ * `swept_nobody` is the sweep that found no tenant to check at all.
+ *
+ * ALERT ON — `outcome="error"` or `outcome="partial"` at any rate; and the
+ * ABSENCE of any outcome for longer than two scheduled intervals. A rate of
+ * `orphans` at `mode="AUTOMATIC"` is the number of agents stopped unattended,
+ * the figure to watch the first week a tenant is widened.
+ *
+ * No tenant label: a handful of outcomes x three rungs.
+ */
+export function recordAgentOwnerOrphanPass(attrs: {
+    outcome:
+        | 'mode_disabled'
+        | 'mode_above_clamp'
+        | 'no_active_agents'
+        | 'dry_run'
+        | 'contained'
+        | 'partial'
+        | 'error'
+        | 'swept_nobody';
+    mode: string;
+    orphans: number;
+}): void {
+    if (!_agentOrphanPass) {
+        _agentOrphanPass = getMeter().createCounter('agentic.owner_orphan_pass.outcome', {
+            description: 'Agent owner-orphan passes by terminal outcome',
+            unit: '1',
+        });
+    }
+    _agentOrphanPass.add(1, { outcome: attrs.outcome, mode: attrs.mode });
+    if (attrs.orphans > 0) {
+        if (!_agentOrphanPassOrphans) {
+            _agentOrphanPassOrphans = getMeter().createCounter('agentic.owner_orphan_pass.orphans', {
+                description: 'Agents found whose accountable owner has left, by the rung the pass ran at',
+                unit: '1',
+            });
+        }
+        _agentOrphanPassOrphans.add(attrs.orphans, { mode: attrs.mode });
+    }
+}
+
+/**
+ * One credential-hygiene pass, per tenant, by how it ended, and the findings it
+ * moved, by transition.
+ *
+ * `partial` is a pass that could not judge every connection (a secret that
+ * would not decrypt): those findings are held, neither raised nor resolved.
+ * `no_live_credentials` is an empty population, recorded as such and never as
+ * a clean result.
+ *
+ * ALERT ON — `outcome="error"`; and the absence of any outcome for two
+ * scheduled intervals. A steady rate of `transition="opened"` after the first
+ * week is new weak credentials being minted, which is the trend to read.
+ */
+export function recordAgentCredentialHygiene(attrs: {
+    outcome: 'completed' | 'partial' | 'no_live_credentials' | 'error' | 'swept_nobody';
+    opened: number;
+    reopened: number;
+    resolved: number;
+}): void {
+    if (!_credentialHygiene) {
+        _credentialHygiene = getMeter().createCounter('agentic.credential_hygiene.outcome', {
+            description: 'Agent credential-hygiene passes by terminal outcome',
+            unit: '1',
+        });
+    }
+    _credentialHygiene.add(1, { outcome: attrs.outcome });
+    if (!_credentialHygieneFindings) {
+        _credentialHygieneFindings = getMeter().createCounter('agentic.credential_hygiene.findings', {
+            description: 'Credential-hygiene findings moved by a pass, by transition',
+            unit: '1',
+        });
+    }
+    if (attrs.opened > 0) _credentialHygieneFindings.add(attrs.opened, { transition: 'opened' });
+    if (attrs.reopened > 0) _credentialHygieneFindings.add(attrs.reopened, { transition: 'reopened' });
+    if (attrs.resolved > 0) _credentialHygieneFindings.add(attrs.resolved, { transition: 'resolved' });
+}
+
 // ── Agent behavioural circuit breaker (OWASP ASI08 / ASI10) ────────────────
 
 let _breakerVerdict: Counter | null = null;

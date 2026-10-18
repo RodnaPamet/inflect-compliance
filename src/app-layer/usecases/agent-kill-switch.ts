@@ -43,9 +43,17 @@
  * `liftedAt: null`, so exactly one of two concurrent lifts claims it.
  */
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
+import type { PrismaTx } from '@/lib/db-context';
+import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { KILL_SWITCH_DRILL_AGENT_ID, type KillScope } from '@/lib/agentic/kill-switch';
+import {
+    isOwnerDepartedKill,
+    ORPHAN_PASS_ACTOR,
+    ownerDepartedReasonText,
+    type DepartureSignal,
+} from '@/lib/agentic/owner-orphan';
+import { SYSTEM_PRINCIPAL } from '../context-system';
 
 import { logger } from '@/lib/observability/logger';
 import { assertCanRead, assertCanWrite } from '../policies/common';
@@ -63,6 +71,12 @@ export interface KillSwitchRecord {
     scope: Extract<KillScope, 'AGENT' | 'TENANT'>;
     agentId: string | null;
     reason: string;
+    /**
+     * The structured reason, or null for every kill a person engaged (#3670).
+     * `OWNER_DEPARTED` is the owner-orphan pass's: counted apart from incidents,
+     * and lifted only by the agent's new owner after a completed transfer.
+     */
+    reasonCode: string | null;
     engagedByUserId: string;
     engagedAt: Date;
     liftedAt: Date | null;
@@ -129,10 +143,17 @@ function requireReason(raw: unknown, field: string): string {
     return clean;
 }
 
+/** The columns every read of a kill row selects, so the record shape cannot drift. */
+const KILL_ROW_SELECT = {
+    id: true, agentId: true, reason: true, reasonCode: true, engagedByUserId: true,
+    engagedAt: true, liftedAt: true, liftedByUserId: true, liftReason: true,
+} as const;
+
 function toRecord(row: {
     id: string;
     agentId: string | null;
     reason: string;
+    reasonCode: string | null;
     engagedByUserId: string;
     engagedAt: Date;
     liftedAt: Date | null;
@@ -189,10 +210,7 @@ export async function engageKillSwitch(
 
         const existing = await db.agentKillSwitch.findFirst({
             where: { tenantId: ctx.tenantId, agentId, liftedAt: null },
-            select: {
-                id: true, agentId: true, reason: true, engagedByUserId: true,
-                engagedAt: true, liftedAt: true, liftedByUserId: true, liftReason: true,
-            },
+            select: KILL_ROW_SELECT,
         });
         // IDEMPOTENT. An operator hammering the stop button during an incident
         // must get "yes, it is stopped" rather than a unique-violation 500. The
@@ -207,10 +225,7 @@ export async function engageKillSwitch(
                 reason,
                 engagedByUserId: ctx.userId,
             },
-            select: {
-                id: true, agentId: true, reason: true, engagedByUserId: true,
-                engagedAt: true, liftedAt: true, liftedByUserId: true, liftReason: true,
-            },
+            select: KILL_ROW_SELECT,
         });
 
         // Resolved into a local BEFORE the sink. Not style: `no-raw-prompt-logging`
@@ -309,10 +324,33 @@ export async function liftKillSwitch(
     const liftReason = requireReason(input.liftReason, 'liftReason');
 
     return runInTenantContext(ctx, async (db) => {
-        const claimed = await db.agentKillSwitch.updateMany({
-            where: { id: switchId, tenantId: ctx.tenantId, liftedAt: null },
-            data: { liftedAt: new Date(), liftedByUserId: ctx.userId, liftReason },
+        // AN OWNER_DEPARTED KILL HAS A PRECONDITION (#3670). Asked before the
+        // claim, so a refused lift changes nothing; the trigger
+        // `agent_kill_switch_reason_code_guard` asks the same question below the
+        // usecase for any writer that does not come through here.
+        const target = await db.agentKillSwitch.findFirst({
+            where: { id: switchId, tenantId: ctx.tenantId },
+            select: { id: true, agentId: true, reasonCode: true, engagedAt: true, liftedAt: true },
         });
+        if (target && target.liftedAt === null && isOwnerDepartedKill(target)) {
+            await assertOwnerDepartedKillLiftable(db, ctx, target);
+        }
+
+        let claimed: { count: number };
+        try {
+            claimed = await db.agentKillSwitch.updateMany({
+                where: { id: switchId, tenantId: ctx.tenantId, liftedAt: null },
+                data: { liftedAt: new Date(), liftedByUserId: ctx.userId, liftReason },
+            });
+        } catch (err) {
+            // The trigger refused: the agent was re-owned, or the transfer the
+            // check above read is no longer the one that names this person,
+            // between the read and the write. Said as the same refusal.
+            if (err instanceof Error && err.message.includes(OWNER_DEPARTED_LIFT_DB_REFUSAL)) {
+                throw conflict(OWNER_DEPARTED_LIFT_REFUSED_MESSAGE);
+            }
+            throw err;
+        }
         if (claimed.count !== 1) {
             const present = await db.agentKillSwitch.findFirst({
                 where: { id: switchId, tenantId: ctx.tenantId },
@@ -324,10 +362,7 @@ export async function liftKillSwitch(
 
         const row = await db.agentKillSwitch.findFirstOrThrow({
             where: { id: switchId, tenantId: ctx.tenantId },
-            select: {
-                id: true, agentId: true, reason: true, engagedByUserId: true,
-                engagedAt: true, liftedAt: true, liftedByUserId: true, liftReason: true,
-            },
+            select: KILL_ROW_SELECT,
         });
 
         const scope = killScopeOf(row.agentId);
@@ -352,11 +387,160 @@ export async function liftKillSwitch(
                     // review reaches for first and the two timestamps it comes
                     // from live on a table retention may eventually reach.
                     stoppedForMs,
+                    // NULL for every human kill; OWNER_DEPARTED for the pass's.
+                    reasonCode: row.reasonCode,
                 },
             },
         });
 
         return toRecord(row);
+    });
+}
+
+/** The trigger's refusal code, matched when the database refuses a lift. */
+const OWNER_DEPARTED_LIFT_DB_REFUSAL = 'AGENT_OWNER_DEPARTED_LIFT_REFUSED';
+
+const OWNER_DEPARTED_LIFT_REFUSED_MESSAGE =
+    "This kill was engaged because the agent's owner left the workspace (OWNER_DEPARTED). " +
+    'It cannot be lifted until a two-step ownership transfer of the agent has completed ' +
+    'after the kill: an OWNER proposes the new owner, the new owner accepts, and the new ' +
+    'owner then lifts this kill with a reason.';
+
+/**
+ * May this person lift this OWNER_DEPARTED kill? (Q6 of the roadmap, #3670.)
+ *
+ * Two conditions, and both are the decision rather than either alone:
+ *
+ *   1. A COMPLETED `AgentOwnershipTransfer` of the agent exists whose
+ *      `completedAt` is AFTER the kill was engaged. A transfer that completed
+ *      before the kill is the history that led to the departed owner, not the
+ *      remedy for their departure.
+ *   2. The person lifting is the agent's CURRENT owner, and that owner is the
+ *      person the latest such transfer named. "The new owner lifts it with a
+ *      reason": the accountability the kill says is missing is restored by the
+ *      transfer, and the person who now carries it is the one who restarts it.
+ *
+ * The kill-switch key (`admin.agent_kill_switch`, at the route) is still
+ * required; this adds a precondition to it rather than a second key, as the
+ * permission table of `docs/agentic-iam-roadmap.md` records. A retired or
+ * removed agent cannot be transferred, so its OWNER_DEPARTED kill stays — inert,
+ * because a retired agent's credentials are revoked, and visible in the history.
+ */
+async function assertOwnerDepartedKillLiftable(
+    db: PrismaTx,
+    ctx: RequestContext,
+    kill: { id: string; agentId: string | null; engagedAt: Date },
+): Promise<void> {
+    if (kill.agentId === null) throw conflict(OWNER_DEPARTED_LIFT_REFUSED_MESSAGE);
+    const agent = await db.registeredAgent.findFirst({
+        where: { id: kill.agentId, tenantId: ctx.tenantId, deletedAt: null },
+        select: { ownerUserId: true },
+    });
+    if (!agent) {
+        throw conflict(
+            'This OWNER_DEPARTED kill names an agent that is no longer in the register, so ' +
+                'no ownership transfer of it can complete and the kill stays in force.',
+        );
+    }
+    const transfer = await db.agentOwnershipTransfer.findFirst({
+        where: {
+            tenantId: ctx.tenantId,
+            agentId: kill.agentId,
+            status: 'COMPLETED',
+            completedAt: { gt: kill.engagedAt },
+        },
+        orderBy: { completedAt: 'desc' },
+        select: { toOwnerUserId: true },
+    });
+    if (!transfer) throw conflict(OWNER_DEPARTED_LIFT_REFUSED_MESSAGE);
+    if (ctx.userId !== agent.ownerUserId || transfer.toOwnerUserId !== agent.ownerUserId) {
+        throw forbidden(
+            "Only the agent's new owner — the person the completed ownership transfer named — " +
+                'can lift a kill engaged because the previous owner left.',
+        );
+    }
+}
+
+/**
+ * Stop one agent because its accountable owner has left — the owner-orphan
+ * pass's kill, and the only writer of `reasonCode` (#3670).
+ *
+ * NOT reachable by a person. The context must be the system principal with
+ * actor type JOB — what `buildSystemContext` builds — so the audit row is
+ * written with no user (the `system` sentinel maps to NULL at the audit seam)
+ * and `actorType: 'JOB'`, and names nobody. The kill row records
+ * `ORPHAN_PASS_ACTOR` as `engagedByUserId`, which the database CHECK requires
+ * beside the code; the route's engage path writes the caller's own user id and
+ * can therefore never produce an OWNER_DEPARTED row.
+ *
+ * AGENT scope only. Idempotent the way the human engage is: an agent-scope kill
+ * already in force is left standing (the partial unique index admits one per
+ * target), whatever engaged it, and `created: false` says so. No
+ * `AGENT_KILL_SWITCH_ENGAGED` bell: it would route to the agent's owner, who is
+ * the person who left — the pass sends `AGENT_OWNER_DEPARTED` to the
+ * workspace's OWNERs instead.
+ */
+export async function engageOwnerDepartedKill(
+    ctx: RequestContext,
+    input: { agentId: string; signals: readonly DepartureSignal[] },
+): Promise<{ record: KillSwitchRecord; created: boolean }> {
+    if (ctx.actorType !== 'JOB' || ctx.userId !== SYSTEM_PRINCIPAL) {
+        throw forbidden('An OWNER_DEPARTED kill is engaged only by the owner-orphan pass.');
+    }
+    if (input.agentId === KILL_SWITCH_DRILL_AGENT_ID) {
+        throw badRequest('The drill canary has no owner to depart.');
+    }
+    if (input.signals.length === 0) {
+        throw badRequest('An OWNER_DEPARTED kill needs the departure signal that caused it.');
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        const agent = await db.registeredAgent.findFirst({
+            where: { id: input.agentId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true },
+        });
+        if (!agent) throw notFound('Registered agent not found');
+
+        const existing = await db.agentKillSwitch.findFirst({
+            where: { tenantId: ctx.tenantId, agentId: input.agentId, liftedAt: null },
+            select: KILL_ROW_SELECT,
+        });
+        if (existing) return { record: toRecord(existing), created: false };
+
+        const row = await db.agentKillSwitch.create({
+            data: {
+                tenantId: ctx.tenantId,
+                agentId: input.agentId,
+                reason: ownerDepartedReasonText(input.signals),
+                reasonCode: 'OWNER_DEPARTED',
+                engagedByUserId: ORPHAN_PASS_ACTOR,
+            },
+            select: KILL_ROW_SELECT,
+        });
+
+        // Every value is a member of the row just written or a literal — no
+        // person, no reason text. The departed owner is identified by the
+        // agent, which is `entityId`'s subject. AGENT scope is a literal
+        // because this path cannot write any other: `agentId` is required.
+        await logEvent(db, ctx, {
+            action: 'AGENT_KILL_ENGAGED',
+            entityType: 'AgentKillSwitch',
+            entityId: row.id,
+            detailsJson: {
+                category: 'access',
+                entityName: 'AgentKillSwitch',
+                operation: 'create',
+                summary: 'Kill switch ENGAGED at AGENT scope, reason code OWNER_DEPARTED',
+                after: {
+                    killScope: 'AGENT',
+                    agentId: row.agentId,
+                    engagedByUserId: row.engagedByUserId,
+                    reasonCode: row.reasonCode,
+                },
+            },
+        });
+
+        return { record: toRecord(row), created: true };
     });
 }
 
@@ -390,10 +574,7 @@ export async function listKillSwitches(
             },
             orderBy: { engagedAt: 'desc' },
             take,
-            select: {
-                id: true, agentId: true, reason: true, engagedByUserId: true,
-                engagedAt: true, liftedAt: true, liftedByUserId: true, liftReason: true,
-            },
+            select: KILL_ROW_SELECT,
         });
         // The DRILLS come back on the same read, and that pairing is the point.
         // "What is stopped here" and "is the stop control proven to work" are
