@@ -88,6 +88,15 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — task-detail links sub-table (R11-PR8); EntityDetailLayout owns chrome.',
 
     // ─── (b) Multi-table / multi-section pages ─────────────────────
+    // #3687 — the harness tab's four stacked sub-tables on /agents/reports.
+    'agents/reports/harness/MatrixGrid.tsx':
+        '(b) multi-section — one fixed column per ladder criterion, each cell its evidence reference; hiding a criterion column would hide the evidence (or its absence) the matrix exists to show.',
+    'agents/reports/harness/ShadowList.tsx':
+        '(b) multi-section — fixed derived columns (discovered id, via, first/last seen, last level, why it is shadow); per-column hide/show not meaningful.',
+    'agents/reports/harness/ScanHistory.tsx':
+        '(b) multi-section — read-only fixed-column scan log (as of, received, scanner, version, scan, completeness, agents, sources); per-column hide/show not meaningful.',
+    'agents/reports/harness/ScannerKeysCard.tsx':
+        '(b) multi-section — the scanner-key register, a short fixed-column list (scanner, fingerprint, added, status, revoke); per-column hide/show not meaningful.',
     'admin/api-keys/page.tsx':
         '(b) multi-table page — active + revoked stacked tables; a per-table gear would noise the chrome.',
     'admin/members/page.tsx':

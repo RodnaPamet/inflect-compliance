@@ -39,32 +39,62 @@
  * with the largest blast radius and undo both decisions at once.
  *
  * That rule is enforced by the SHAPE of the inputs rather than by a reviewer
- * remembering it: `ReceiptFact` and `DecisionFact` below are the complete set of
- * fields an artefact may render, and neither carries `scannedSummary`,
- * `signature`, `inputDigest` or `outputSummary`. A future field that should not
- * be rendered is excluded by not being added here.
+ * remembering it: `ReceiptFact`, `DecisionFact` and `HarnessScanFact` below are
+ * the complete set of fields an artefact may render, and none carries
+ * `scannedSummary`, `signature`, `inputDigest` or `outputSummary`. A future
+ * field that should not be rendered is excluded by not being added here.
  *
  * What an artefact DOES carry is counts, closed vocabulary (verdicts, outcomes,
  * tool names from our own catalogue), the population digest, and the query that
  * reproduces the population. Pointers, not payload.
+ *
+ * ── THE HARNESS KIND (#3687) ───────────────────────────────────────────────
+ *
+ * A month of verified harness scans is the third kind, and it differs from the
+ * other two in one way that matters: its population can be INCOMPLETE, and
+ * zero is never complete. A receipt either exists or it does not; a scan
+ * describes an agent population that its sources may not have been read in
+ * full, or that it found empty. So this kind alone carries a COMPLETENESS, and
+ * the completeness decides the Evidence status — `APPROVED` only when every
+ * scanner's latest scan of the month read all of its sources and found at least
+ * one agent, AND every scanner that held a trusted key in the month reported
+ * at all; `NEEDS_REVIEW` otherwise. An incomplete month is emitted as what it
+ * is, with the reasons stated, never as complete evidence.
+ *
+ * `HarnessScanFact` deliberately carries no owner reference from any source, no
+ * user identifier, no acceptance justification, no verdict evidence pointer, no
+ * credential reference, no tool server address and no agent name (DPIA
+ * condition 8: this is the widest surface a scan's data could reach).
+ * Identifiers, levels, counts and completeness only. The harness level is
+ * REPORTED here and gates nothing — the ladder is report-only.
  */
 import { createHash } from 'crypto';
 
 import { canonicalJson } from '@/lib/canonical-json';
+import { HARNESS_LEVELS, type HarnessLevel } from './harness-ladder';
+import type { HarnessScanCompleteness, HarnessStoredReach } from './harness-read-model';
 
 // ── Kinds ───────────────────────────────────────────────────────────────────
 
 export const ARTEFACT_KIND_RECEIPTS = 'AGENT_ACTION_RECEIPTS';
 export const ARTEFACT_KIND_DECISIONS = 'AI_DECISION_RECORDS';
+export const ARTEFACT_KIND_HARNESS_SCANS = 'AGENT_HARNESS_SCANS';
 
 export type AgenticArtefactKind =
     | typeof ARTEFACT_KIND_RECEIPTS
-    | typeof ARTEFACT_KIND_DECISIONS;
+    | typeof ARTEFACT_KIND_DECISIONS
+    | typeof ARTEFACT_KIND_HARNESS_SCANS;
 
-/** Every kind, in emission order. Mirrors the DB CHECK on `kind`. */
+/**
+ * Every kind, in emission order. Mirrors the DB CHECK on `kind`, which
+ * migration 20261017235500 widened to the third; a kind added here without
+ * widening the CHECK fails on its first write, and the integration suite pins
+ * that every kind listed here is one the CHECK accepts.
+ */
 export const AGENTIC_ARTEFACT_KINDS: readonly AgenticArtefactKind[] = [
     ARTEFACT_KIND_RECEIPTS,
     ARTEFACT_KIND_DECISIONS,
+    ARTEFACT_KIND_HARNESS_SCANS,
 ];
 
 export type ArtefactWithdrawalReason =
@@ -161,6 +191,31 @@ export const EVIDENCE_TARGETS: readonly EvidenceTarget[] = [
             'lifetime of the system. The artefact is the periodic attestation that ' +
             'the records exist and how many there are.',
     },
+    {
+        kind: ARTEFACT_KIND_HARNESS_SCANS,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI10',
+        reason:
+            'Rogue Agents — agents operating outside the sanctioned inventory. A ' +
+            'verified harness scan reconciles every agent-shaped principal its ' +
+            'sources hold against the agent register; the period artefact states ' +
+            'which scans ran, whether each read its sources in full, how many ' +
+            'agents each found and how many are not in the register.',
+    },
+    {
+        kind: ARTEFACT_KIND_HARNESS_SCANS,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI03',
+        reason:
+            'Identity and Privilege Abuse — agent identities and credentials that ' +
+            'exceed what the task needs, or that no accountable principal answers ' +
+            'for. Each scan scores every agent against the harness ladder (owner, ' +
+            'bound credential, declared grant kind, audience-scoped tokens); the ' +
+            'artefact reports the level and reach tallies and how many agents sit ' +
+            'below the report-only bar.',
+    },
 ];
 
 /** The obligations one kind attaches to. */
@@ -217,7 +272,7 @@ export function monthlyPeriod(asOf: Date): ArtefactPeriod {
 export function sourcePopulationDigest(
     kind: AgenticArtefactKind,
     periodStart: Date,
-    facts: readonly (ReceiptFact | DecisionFact)[],
+    facts: readonly (ReceiptFact | DecisionFact | HarnessScanFact | HarnessBoundsFact | HarnessSilentScannersFact)[],
 ): string {
     // THE RENDERED FACTS, not the population.
     //
@@ -280,6 +335,110 @@ export interface DecisionFact {
     readonly guardVerdict: string | null;
     readonly humanOutcome: string;
 }
+
+/** One source of a scan, re-validated from the stored record (closed vocabulary). */
+export interface HarnessSourceFact {
+    readonly kind: string;
+    readonly status: string;
+    readonly rows: number;
+    readonly reason: string | null;
+}
+
+/**
+ * The tallies over one scan's agents. All six levels and all three reaches are
+ * always present, zeros included: a level with no agents is a fact an assessor
+ * reads, and a missing key reads as a level the product does not have.
+ */
+export interface HarnessTallies {
+    readonly levels: Readonly<Record<HarnessLevel, number>>;
+    readonly reach: Readonly<Record<HarnessStoredReach, number>>;
+    /** Below the report-only bar for its reach. Reported; it gates nothing. */
+    readonly belowBar: number;
+    /** Not linked to a live register row AS OF THE EMISSION (unregistered, or its register row deleted). */
+    readonly notInRegister: number;
+}
+
+/**
+ * The COMPLETE set of fields a harness artefact may render about one scan.
+ *
+ * Absent by shape, and each absence is a decision (DPIA condition 8):
+ * `DiscoveredAgent.ownerRef` / `ownerKind` and every user id (acceptor,
+ * revoker, key registrant, register owner); the acceptance justification; the
+ * verdicts' evidence pointers; tool server addresses; credential references;
+ * the discovered ids and register names of the agents; and the report
+ * signature. `scanRef` and `scannerVersion` are scanner-chosen strings and
+ * arrive sanitised and bounded.
+ */
+export interface HarnessScanFact {
+    readonly id: string;
+    readonly scanRef: string;
+    readonly scannerAgentId: string;
+    readonly scannerVersion: string;
+    /** ISO instant — the moment the report describes, which orders scans. */
+    readonly asOf: string;
+    readonly reportDigest: string;
+    /** This is its scanner's latest scan in the period (by `asOf`). */
+    readonly latestForScanner: boolean;
+    readonly completeness: HarnessScanCompleteness;
+    /** `null` = the stored sources failed re-validation (the scan reads as INCOMPLETE). */
+    readonly sources: readonly HarnessSourceFact[] | null;
+    readonly agentCount: number;
+    /**
+     * Set only for a scanner's latest scan, and only when every one of its
+     * stored items was read and they agree with `agentCount`. `null` on a
+     * latest scan makes the artefact INCOMPLETE — a count the emitter could not
+     * vouch for is not stated as one.
+     */
+    readonly tallies: HarnessTallies | null;
+}
+
+/** The bounds the emitter applied. Digested with the scans, so a bound tripping rewrites the body. */
+export interface HarnessBoundsFact {
+    readonly bounds: true;
+    /** More scans fell in the period than the emitter reads. */
+    readonly scansTruncated: boolean;
+    /** The latest scans' agents exceed what the emitter tallies; every tally is withheld. */
+    readonly tallyTruncated: boolean;
+    /** More scanners reported in the period than the emitter tallies. */
+    readonly scannersTruncated: boolean;
+}
+
+/**
+ * The scanners that held a TRUSTED key at some moment of the period and
+ * reported no scan in it. A scanner that goes silent is the gap no scan can
+ * describe: the scans that did arrive say nothing about the sources the silent
+ * one reads, so each id here makes the month INCOMPLETE. Digested with the
+ * scans, so a scanner going silent (or reporting again) rewrites the body.
+ */
+export interface HarnessSilentScannersFact {
+    readonly silentScanners: true;
+    /** Register ids of the silent scanners, sorted. */
+    readonly agentIds: readonly string[];
+    /** More key holders than the emitter reads, so a silent scanner may go unnamed. */
+    readonly truncated: boolean;
+}
+
+export interface HarnessPeriodFacts {
+    readonly scans: readonly HarnessScanFact[];
+    readonly bounds: HarnessBoundsFact;
+    readonly silent: HarnessSilentScannersFact;
+}
+
+/**
+ * Every fact a harness artefact's digest covers, in one place, so the emitter
+ * and anything that recomputes the digest cannot disagree about what "the body
+ * changed" means.
+ */
+export function harnessDigestFacts(
+    facts: HarnessPeriodFacts,
+): readonly (HarnessScanFact | HarnessBoundsFact | HarnessSilentScannersFact)[] {
+    return [...facts.scans, facts.bounds, facts.silent];
+}
+
+/** How many scanners' latest scans one artefact tallies. Shared with the emitter, which reads to this bound. */
+export const HARNESS_SCANNER_CAP = 20;
+/** How many scans the per-scan list names before summarising. */
+const HARNESS_SCAN_LINE_CAP = 50;
 
 export interface ArtefactBody {
     readonly title: string;
@@ -420,6 +579,253 @@ export function buildDecisionArtefact(
     return {
         title: `AI decision records (EU AI Act Art 12) — ${period.label}`,
         content: lines.join('\n'),
+    };
+}
+
+// ── Harness scans (#3687) ───────────────────────────────────────────────────
+
+export type HarnessArtefactCompleteness = 'COMPLETE' | 'INCOMPLETE' | 'NO_SCAN';
+
+/** Newest first by `asOf`, then by id, so the body does not depend on row order. */
+function byAsOfDesc(a: HarnessScanFact, b: HarnessScanFact): number {
+    if (a.asOf !== b.asOf) return a.asOf < b.asOf ? 1 : -1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Every reason the period's facts fall short of complete evidence, in a fixed
+ * order. Empty means COMPLETE — the completeness below is DERIVED from this
+ * list, so an INCOMPLETE artefact can never be emitted without saying why.
+ */
+export function harnessIncompleteReasons(facts: HarnessPeriodFacts): string[] {
+    const reasons: string[] = [];
+    if (facts.bounds.scansTruncated) {
+        reasons.push('more scans fell in the period than the emitter reads, so the newest were read and the rest were not');
+    }
+    if (facts.bounds.scannersTruncated) {
+        reasons.push(`more than ${HARNESS_SCANNER_CAP} scanners reported in the period, so not every scanner is tallied`);
+    }
+    if (facts.bounds.tallyTruncated) {
+        reasons.push('the latest scans hold more agents than the emitter tallies, so every tally is withheld');
+    }
+    if (facts.silent.truncated) {
+        reasons.push('more scanners held a trusted key in the period than the emitter reads, so a scanner that reported nothing may not be named here');
+    }
+    for (const id of facts.silent.agentIds) {
+        // A scanner that sent nothing is not a scanner that found nothing: the
+        // sources it reads went unread for the whole period.
+        reasons.push(`scanner ${id} held a trusted key in the period but reported no scan in it, so the sources it reads are unevidenced`);
+    }
+    const latest = facts.scans.filter((s) => s.latestForScanner).sort(byAsOfDesc);
+    if (facts.scans.length > 0 && latest.length === 0) {
+        reasons.push('no scan in the period is marked as its scanner\'s latest, so none can speak for the estate');
+    }
+    for (const s of latest) {
+        // EACH scanner's LATEST scan, not the first or the best: an older
+        // complete scan says nothing about the estate after the scanner's
+        // newest one stopped short, and a second scanner's complete scan says
+        // nothing about the sources the first one reads.
+        if (s.completeness === 'EMPTY') {
+            reasons.push(`scanner ${s.scannerAgentId}'s latest scan (${s.scanRef}) found no agent — an empty population evidences nothing`);
+        } else if (s.completeness !== 'COMPLETE') {
+            reasons.push(`scanner ${s.scannerAgentId}'s latest scan (${s.scanRef}) did not read all of its sources in full`);
+        } else if (s.tallies === null && !facts.bounds.tallyTruncated && !facts.bounds.scannersTruncated) {
+            reasons.push(`scanner ${s.scannerAgentId}'s latest scan (${s.scanRef}) could not be tallied from its stored agents`);
+        }
+    }
+    return reasons;
+}
+
+/**
+ * The artefact's completeness. `NO_SCAN` for a period with no scan at all:
+ * a month in which nothing looked for agents is not a month with no agents,
+ * so it is its own answer rather than a zero.
+ */
+export function harnessArtefactCompleteness(facts: HarnessPeriodFacts): HarnessArtefactCompleteness {
+    if (facts.scans.length === 0 && !facts.bounds.scansTruncated) return 'NO_SCAN';
+    return harnessIncompleteReasons(facts).length === 0 ? 'COMPLETE' : 'INCOMPLETE';
+}
+
+/**
+ * The Evidence status a harness artefact's completeness calls for. Only a
+ * COMPLETE month is `APPROVED`, which is what makes it count toward coverage
+ * (`coverageQualifyingEvidenceWhere`); anything else is `NEEDS_REVIEW`, the
+ * product's existing out-of-band demotion. The level never enters this: the
+ * ladder is report-only, so an estate full of H0 agents read in full is
+ * COMPLETE evidence of exactly that.
+ *
+ * This is the PLAN, not what is written over the row — see
+ * `harnessStatusCorrection` for which of the two wins.
+ */
+export function harnessArtefactEvidenceStatus(c: HarnessArtefactCompleteness): 'APPROVED' | 'NEEDS_REVIEW' {
+    return c === 'COMPLETE' ? 'APPROVED' : 'NEEDS_REVIEW';
+}
+
+export type HarnessPlannedStatus = 'APPROVED' | 'NEEDS_REVIEW';
+
+/**
+ * Whether the emitter rewrites a harness artefact's Evidence status, and to
+ * what — `null` to leave the status a person (or another job) set.
+ *
+ * ONE-DIRECTIONAL BY DESIGN. The completeness claim is the emitter's, the review
+ * decision is a person's, and the two meet on one column:
+ *
+ *   • DEMOTION ALWAYS WINS. An incomplete month (`planned` NEEDS_REVIEW) whose
+ *     Evidence reads APPROVED — approved by hand, or approved by this emitter
+ *     before a later scan fell short — is put back, because APPROVED is what
+ *     counts toward coverage and an incomplete month must never count. This is
+ *     the only status the emitter overrides a person on, and it is the unsafe
+ *     direction only.
+ *   • PROMOTION IS UNDOING ITS OWN DEMOTION, nothing else. A month that has
+ *     become complete is raised from NEEDS_REVIEW to APPROVED only when the
+ *     previous plan was NEEDS_REVIEW too — i.e. the NEEDS_REVIEW is the
+ *     emitter's own incompleteness verdict. A NEEDS_REVIEW the stale-review
+ *     sweep set on a month that was already complete is the sweep's, and
+ *     re-approving it would flip the row every morning the two jobs run.
+ *   • A REVIEW DECISION STANDS. SUBMITTED, REJECTED and DRAFT are never
+ *     rewritten: none of them counts toward coverage, so leaving them is safe,
+ *     and overwriting REJECTED with APPROVED would skip the reviewer and the
+ *     segregation-of-duties check the review flow holds.
+ *
+ * A person may re-submit an incomplete month through the ordinary review flow
+ * — to record why it is short, say — but an approval of it does not stand:
+ * the way to an APPROVED month is a complete scan.
+ */
+export function harnessStatusCorrection(input: {
+    readonly planned: HarnessPlannedStatus;
+    readonly current: string;
+    readonly previousPlanned: HarnessPlannedStatus | null;
+}): HarnessPlannedStatus | null {
+    if (input.planned === 'NEEDS_REVIEW' && input.current === 'APPROVED') return 'NEEDS_REVIEW';
+    if (input.planned === 'APPROVED' && input.current === 'NEEDS_REVIEW' && input.previousPlanned === 'NEEDS_REVIEW') {
+        return 'APPROVED';
+    }
+    return null;
+}
+
+/**
+ * What a harness artefact deliberately omits. In the artefact because the
+ * reader is an assessor, and "these counts name no agent and no owner" should
+ * reach them where they notice the absence, not only in a design document.
+ */
+const HARNESS_REDACTION_CONTRACT =
+    'REDACTION CONTRACT — this artefact reports identifiers, levels, counts and ' +
+    'completeness only. It deliberately carries no owner reference from any source, ' +
+    'no user identifier, no acceptance justification, no evidence pointer, no ' +
+    'credential reference, no tool server address and no agent name: the text is ' +
+    'rendered into PDF exports and reachable through an audit-pack share link, so ' +
+    'it is the widest surface a scan\'s data could reach. Each scan is re-verifiable ' +
+    'from its stored report digest and signature, and the agents behind these ' +
+    'counts are listed, to holders of the agent-register right, on the harness ' +
+    'matrix of the agent reports page. Harness levels are reported here and gate ' +
+    'nothing: the ladder is report-only.';
+
+const COMPLETENESS_LINE: Readonly<Record<HarnessScanCompleteness, string>> = {
+    COMPLETE: 'COMPLETE — every source read in full, at least one agent found',
+    INCOMPLETE: 'INCOMPLETE — a source was not read in full, or its stored record is unreadable',
+    EMPTY: 'EMPTY — no agent found; an empty population evidences nothing',
+};
+
+function sourcesLine(sources: HarnessScanFact['sources']): string {
+    if (sources === null) return 'stored sources unreadable — the scan is treated as incomplete';
+    return sources
+        .map((s) =>
+            s.status === 'COMPLETE'
+                ? `${s.kind}: COMPLETE (${s.rows} rows)`
+                : `${s.kind}: ${s.status} — ${s.reason ?? 'no reason recorded'} (${s.rows} rows)`,
+        )
+        .join(' · ');
+}
+
+function scannerBlock(s: HarnessScanFact): string[] {
+    const lines = [
+        `Scanner ${s.scannerAgentId} — scan ${s.scanRef}, as of ${s.asOf}, scanner version ${s.scannerVersion}, report digest ${s.reportDigest}`,
+        `  Completeness: ${COMPLETENESS_LINE[s.completeness]}`,
+        `  Sources — ${sourcesLine(s.sources)}`,
+    ];
+    if (s.tallies === null) {
+        lines.push(`  Agents: ${s.agentCount} · tallies withheld — the emitter could not read every stored agent of this scan`);
+        return lines;
+    }
+    const t = s.tallies;
+    lines.push(
+        `  Agents: ${s.agentCount} · by level — ${HARNESS_LEVELS.map((l) => `${l}: ${t.levels[l]}`).join(' · ')}`,
+        `  Reach — READ_ONLY: ${t.reach.READ_ONLY} · WRITE_OR_EXTERNAL: ${t.reach.WRITE_OR_EXTERNAL} · UNKNOWN: ${t.reach.UNKNOWN}`,
+        `  Below the report-only bar: ${t.belowBar} · Not in the agent register as of this emission: ${t.notInRegister}`,
+    );
+    return lines;
+}
+
+/** The artefact for one period of verified harness scans. */
+export function buildHarnessScanArtefact(
+    period: ArtefactPeriod,
+    facts: HarnessPeriodFacts,
+    digest: string,
+): ArtefactBody & { readonly completeness: HarnessArtefactCompleteness } {
+    const completeness = harnessArtefactCompleteness(facts);
+    const reasons = harnessIncompleteReasons(facts);
+    const scans = [...facts.scans].sort(byAsOfDesc);
+    const latest = scans.filter((s) => s.latestForScanner);
+    const count = (c: HarnessScanCompleteness) => scans.filter((s) => s.completeness === c).length;
+
+    const completenessLine =
+        completeness === 'COMPLETE'
+            ? 'Artefact completeness: COMPLETE — every scanner\'s latest scan in the period read all of its sources in full and found at least one agent'
+            : completeness === 'NO_SCAN'
+            ? `Artefact completeness: NO SCAN RECEIVED — the agent inventory is UNEVIDENCED for ${period.label}; a period with no scan is not a period with no agents`
+            : `Artefact completeness: INCOMPLETE — ${reasons.join('; ')}`;
+
+    const lines = [
+        `Period: ${period.label} (${period.start.toISOString()} .. ${period.end.toISOString()}, end exclusive)`,
+        completenessLine,
+        `Harness scans described in the period: ${scans.length} (complete and non-empty: ${count('COMPLETE')} · incomplete: ${count('INCOMPLETE')} · empty: ${count('EMPTY')})`,
+    ];
+    if (facts.silent.agentIds.length > 0) {
+        lines.push(
+            `Scanners that held a trusted key in the period and reported no scan: ${facts.silent.agentIds.join(', ')}`,
+        );
+    }
+
+    if (latest.length > 0) {
+        lines.push('', 'The latest scan of each scanner in the period:');
+        for (const s of latest.slice(0, HARNESS_SCANNER_CAP)) lines.push(...scannerBlock(s));
+        if (latest.length > HARNESS_SCANNER_CAP) {
+            lines.push(`(+${latest.length - HARNESS_SCANNER_CAP} further scanners, listed below and not tallied)`);
+        }
+    }
+
+    if (scans.length > 0) {
+        lines.push('', 'Every scan in the period:');
+        for (const s of scans.slice(0, HARNESS_SCAN_LINE_CAP)) {
+            lines.push(`  ${s.asOf} · ${s.scanRef} · scanner ${s.scannerAgentId} · ${s.completeness} · ${s.agentCount} agents`);
+        }
+        if (scans.length > HARNESS_SCAN_LINE_CAP) {
+            lines.push(`  (+${scans.length - HARNESS_SCAN_LINE_CAP} further scans, counted above)`);
+        }
+    }
+
+    const bounded = [
+        facts.bounds.scansTruncated ? 'scans' : null,
+        facts.bounds.scannersTruncated ? 'scanners' : null,
+        facts.bounds.tallyTruncated ? 'agent tallies' : null,
+    ].filter((b): b is string => b !== null);
+    if (bounded.length > 0) {
+        lines.push('', `BOUNDED: the emitter stopped reading at its bound for ${bounded.join(', ')}; the counts above describe what was read, not the whole period.`);
+    }
+
+    lines.push(
+        '',
+        `Population digest (SHA-256 over the rendered scan facts): ${digest}`,
+        '',
+        HARNESS_REDACTION_CONTRACT,
+    );
+
+    const suffix =
+        completeness === 'COMPLETE' ? '' : completeness === 'NO_SCAN' ? ' — NO SCAN RECEIVED' : ' — INCOMPLETE';
+    return {
+        title: `Agent harness scans — ${period.label}${suffix}`,
+        content: lines.join('\n'),
+        completeness,
     };
 }
 

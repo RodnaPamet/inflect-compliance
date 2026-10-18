@@ -396,14 +396,19 @@ async function reconcileFindings(
     return { findingsOpened, findingsReopened, findingsResolved };
 }
 
-/** The most recent scans, newest first. */
+/**
+ * The most recent scans, newest first BY THE MOMENT THEY DESCRIBE (`asOf`), not
+ * by when they arrived: a backfilled older report must not pose as the current
+ * one. Ties break on arrival and then id, so "the latest scan" is one row
+ * however often the page is read.
+ */
 export async function listHarnessScans(ctx: RequestContext, opts: { take?: number } = {}) {
     assertMayRead(ctx);
     const take = Math.min(Math.max(opts.take ?? 50, 1), 200);
     return runInTenantContext(ctx, (db) =>
         db.agentHarnessScan.findMany({
             where: { tenantId: ctx.tenantId },
-            orderBy: { asOf: 'desc' },
+            orderBy: [{ asOf: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
             take,
             select: {
                 id: true,

@@ -85,10 +85,14 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // own self-consistency test requires every entry to be >= 2, and it is right:
     // a listed 1 is indistinguishable from not being listed.
     // "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx": 1,
-    // Three distinct primary regions, never on screen together: the
-    // header "map requirement" toggle, the inline map-form submit, and
-    // the per-framework-applicability justify modal's confirm (PR3 item 3).
-    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlMappingsTab.tsx": 3,
+    // Two distinct primary regions, never on screen together: the inline
+    // map-form submit and the per-framework-applicability justify modal's
+    // confirm (PR3 item 3). 3 -> 2 (#3687): the header "map requirement"
+    // toggle was demoted to secondary — it is a disclosure toggle, and it IS on
+    // screen with the form submit whenever the form is open, so the two were
+    // one region with two primaries. It paid for one of the harness tab's
+    // primaries under the product-wide ceiling in primary-secondary-ratio.
+    "src/app/t/[tenantSlug]/(app)/controls/[controlId]/_tabs/ControlMappingsTab.tsx": 2,
     // Epic G-3 "Send assessment" modal confirm — its own dialog region,
     // never on screen with the page-header CTAs. The legacy in-app "Start"
     // flow (a second primary) was retired when the assessments tab unified
@@ -116,11 +120,15 @@ const PRIMARY_BUDGET: Record<string, number> = {
     "src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx": 5,
     "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/VendorTemplateBuilderClient.tsx": 4,
 
-    // R3-P2 — 4 primaries, but two are runtime-mutually-exclusive: the
+    // R3-P2 — 3 primaries, but two are runtime-mutually-exclusive: the
     // "Start test" CTA (PLANNED-state guided-run region) and the
     // "Complete" CTA (RUNNING-state result form) never render together
-    // (isPlanned vs isRunning). Plus the two evidence-form primaries.
-    "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx": 4,
+    // (isPlanned vs isRunning). Plus the evidence form's submit. 4 -> 3
+    // (#3687): the evidence section's show/hide toggle was demoted to
+    // secondary — it sits beside the form's own primary submit and reads
+    // "Cancel" while the form is open, and a Cancel is never primary. It paid
+    // for one of the harness tab's primaries under the product-wide ceiling.
+    "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx": 3,
     // 3 page-level primaries + 1 for the close-resolution Modal's
     // confirm CTA (a distinct modal region added when terminal status
     // changes started prompting for a resolution note) + 2 for the

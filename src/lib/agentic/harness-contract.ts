@@ -45,7 +45,13 @@ import { z } from 'zod';
 import { canonicalJson } from '@/lib/canonical-json';
 import { ed25519PublicKeyFromMaterial } from '@/lib/mcp/receipt-verification';
 
-import { ALL_HARNESS_CRITERIA, isHarnessCriterionId, type HarnessCriterionId } from './harness-ladder';
+import {
+    ALL_HARNESS_CRITERIA,
+    isHarnessCriterionId,
+    type CriterionVerdict,
+    type HarnessCriterionId,
+} from './harness-ladder';
+import type { StoredSource } from './harness-read-model';
 
 export const HARNESS_CONTRACT_ID = 'inflect-agent-harness/1';
 
@@ -114,6 +120,16 @@ const SECRET_SHAPES: readonly RegExp[] = [
     /sk-[A-Za-z0-9]{20,}/,
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
     /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,
+    // A URL carrying a password in its userinfo: `scheme://user:password@host`.
+    // The authority ends at the first `/`, `?`, `#` or `\`, so an `@` or a `:`
+    // further along — `kv://prod/agents:reporting@v2` — is a locator, not a
+    // credential. The username may itself hold an `@` (an e-mail address); the
+    // password is everything after its first `:` up to the LAST `@`. A username
+    // alone (`ssh://git@host`) is not matched: it is not a secret, and a token
+    // used AS the username is caught by its own shape above. The match starts
+    // at the literal `://` — whatever the scheme, or none — which keeps the scan
+    // linear: a leading scheme class would be retried at every offset.
+    /:\/\/[^/?#\\\s:]*:[^/?#\\\s]*[^/?#\\\s@]@/,
 ];
 
 export function looksLikeSecret(value: string): boolean {
@@ -128,7 +144,7 @@ const credentialRef = z
     .regex(REFERENCE, 'a credential must be a scheme://locator reference, never a value')
     .refine((v) => !looksLikeSecret(v), 'a credential reference must not contain a secret-shaped value');
 
-const SourceSchema = z
+export const HarnessSourceSchema = z
     .object({
         kind: sourceKind,
         status: z.enum(['COMPLETE', 'INCOMPLETE']),
@@ -184,7 +200,7 @@ const SkillSchema = z
     })
     .strict();
 
-const VerdictSchema = z
+export const HarnessVerdictSchema = z
     .object({
         criterion: z.custom<HarnessCriterionId>(
             (v) => typeof v === 'string' && isHarnessCriterionId(v),
@@ -204,7 +220,7 @@ const AgentSchema = z
         credentials: z.array(CredentialSchema).max(MAX_CREDENTIALS_PER_AGENT),
         tools: z.array(ToolSchema).max(MAX_TOOLS_PER_AGENT),
         skills: z.array(SkillSchema).max(MAX_SKILLS_PER_AGENT),
-        verdicts: z.array(VerdictSchema).max(ALL_HARNESS_CRITERIA.length * 2),
+        verdicts: z.array(HarnessVerdictSchema).max(ALL_HARNESS_CRITERIA.length * 2),
     })
     .strict();
 
@@ -236,7 +252,7 @@ export const HarnessReportBodySchema = z
             })
             .strict(),
         population: z
-            .object({ sources: z.array(SourceSchema).min(1).max(MAX_SOURCES) })
+            .object({ sources: z.array(HarnessSourceSchema).min(1).max(MAX_SOURCES) })
             .strict(),
         agents: z.array(AgentSchema).max(MAX_AGENTS),
         findings: z.array(FindingSchema).max(MAX_FINDINGS),
@@ -282,6 +298,35 @@ export function harnessSignedMessage(body: unknown): Buffer {
 /** Is the scan complete? Derived from its sources, never declared. */
 export function isScanComplete(body: Pick<HarnessReportBody, 'population'>): boolean {
     return body.population.sources.length > 0 && body.population.sources.every((s) => s.status === 'COMPLETE');
+}
+
+// ─── Reading back what the ingest stored ───
+//
+// `sourcesJson` and `verdictsJson` are written by the ingest from a body that
+// passed the strict schema, so on the happy path re-parsing them is a no-op. It
+// is done anyway because a JSON column is not a type: a row edited by hand, or
+// written by an older build, must read as UNREADABLE — and every reader treats
+// unreadable as the unfavourable answer (an incomplete scan, an unmet
+// criterion) rather than trusting a shape it did not check.
+
+/**
+ * A scan's stored sources, re-validated against the contract (strict, each kind
+ * once, at least one). `null` is "could not be read" — never an empty list,
+ * because zero sources would read as a scan that looked nowhere and found it
+ * clean.
+ */
+export function parseStoredHarnessSources(json: unknown): StoredSource[] | null {
+    const parsed = z.array(HarnessSourceSchema).min(1).max(MAX_SOURCES).safeParse(json);
+    if (!parsed.success) return null;
+    const kinds = parsed.data.map((s) => s.kind);
+    if (new Set(kinds).size !== kinds.length) return null;
+    return parsed.data.map((s) => ({ kind: s.kind, status: s.status, rows: s.rows, reason: s.reason ?? null }));
+}
+
+/** One scan item's stored verdicts, re-validated. `null` is "could not be read". */
+export function parseStoredHarnessVerdicts(json: unknown): CriterionVerdict[] | null {
+    const parsed = z.array(HarnessVerdictSchema).max(ALL_HARNESS_CRITERIA.length * 2).safeParse(json);
+    return parsed.success ? parsed.data : null;
 }
 
 /** Why a report was refused. Stable codes: the ingest records them. */

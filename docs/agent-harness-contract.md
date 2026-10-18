@@ -79,7 +79,7 @@ could not read: an unread source is reported `INCOMPLETE`.
 
 A credential `ref` MUST match `scheme://locator` and MUST NOT contain a value
 with the shape of a secret (a GitHub, AWS, Slack or OpenAI-style token, a JWT, a
-private-key block). The same rule holds for **every** string in the report: the
+private-key block, or a URL carrying a password: `scheme://user:password@host`). The same rule holds for **every** string in the report: the
 contract checks credential references, and the ingest refuses a report in which
 any other string member has a secret's shape (`SECRET_IN_REPORT`, under
 Transport). A verdict with `met: true` and no evidence counts as not met.

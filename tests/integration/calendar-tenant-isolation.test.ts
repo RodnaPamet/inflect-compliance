@@ -21,13 +21,15 @@
  * real work here rather than sitting behind a passing test — but it also means
  * a reviewer must not read a green run as "every loader still carries its
  * tenant predicate". The unit suite's `where`-shape sweep is what asserts that,
- * across all nineteen sources.
+ * across all twenty sources.
  *
- * A representative spread of sources rather than all nineteen — seeding every
+ * A representative spread of sources rather than all twenty — seeding every
  * entity graph would be a fixture larger than the thing under test, and these
- * four cover the distinct shapes: a plain tenant-scoped model, one reached
- * through a soft-deletable parent, one with two date columns unioned by
- * `fetchNearest`, and one whose owner is inherited.
+ * cover the distinct shapes: a plain tenant-scoped model, one reached through a
+ * soft-deletable parent, one with two date columns unioned by `fetchNearest`,
+ * one whose owner is inherited, and (#3687) one whose filter runs through TWO
+ * relations — a harness acceptance, reached through its discovered agent to
+ * the agent's register row, both under RLS.
  */
 import { PrismaClient, Role, MembershipStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -118,12 +120,59 @@ async function seedTenant(tenantId: string, tag: string): Promise<string> {
         },
     });
 
+    // 5. A harness-shortfall acceptance (#3687): filtered through its
+    //    discovered agent to the register row, so the join crosses two
+    //    RLS-protected tables. `createdAt` is pinned before the expiry, which
+    //    the table CHECKs.
+    const aiSystem = await globalPrisma.aiSystem.create({
+        data: { tenantId, name: `${tag} host`, ownerUserId: user.id },
+    });
+    const registered = await globalPrisma.registeredAgent.create({
+        data: {
+            tenantId,
+            aiSystemId: aiSystem.id,
+            name: `${tag} agent`,
+            autonomyLevel: 2,
+            dataAccessScope: 'READ_TENANT_DATA',
+            reversibility: 'COMPENSABLE',
+            provenance: 'FIRST_PARTY',
+            status: 'ACTIVE',
+            ownerUserId: user.id,
+            createdByUserId: user.id,
+        },
+    });
+    const discovered = await globalPrisma.discoveredAgent.create({
+        data: {
+            tenantId,
+            discoveredId: `entra:sp:${tag}`,
+            discoveredVia: ['entra-sp'],
+            registeredAgentId: registered.id,
+            firstSeenAt: FROM,
+            lastSeenAt: FROM,
+            lastScanId: 'no-scan',
+            lastLevel: 'H2',
+            lastReach: 'WRITE_OR_EXTERNAL',
+        },
+    });
+    await globalPrisma.agentHarnessAcceptance.create({
+        data: {
+            tenantId,
+            discoveredAgentId: discovered.id,
+            acceptedLevel: 'H2',
+            justification: `${tag} justification`,
+            acceptedByUserId: user.id,
+            expiresAt: IN_RANGE,
+            createdAt: FROM,
+        },
+    });
+
     return user.id;
 }
 
 async function teardown() {
     const ids = [TENANT_A, TENANT_B];
     for (const model of [
+        'agentHarnessAcceptance', 'discoveredAgent', 'registeredAgent', 'aiSystem',
         'vendorDocument', 'vendor', 'task', 'risk', 'policy',
     ] as const) {
         // @ts-expect-error — indexed model access is the point of the loop
@@ -161,6 +210,16 @@ describeFn('calendar — cross-tenant isolation', () => {
         // isolation assertion below while proving nothing.
         expect(res.events.length).toBeGreaterThan(0);
         expect(res.events.some((e) => e.entityName?.includes(`${SUITE}-a`))).toBe(true);
+    });
+
+    it('projects tenant A’s harness acceptance, through both relations, under RLS', async () => {
+        const ctx = makeRequestContext('OWNER', { tenantId: TENANT_A, userId: userA });
+        const res = await getComplianceCalendarEvents(ctx as never, {
+            from: FROM, to: TO, now: NOW,
+        });
+        const harness = res.events.filter((e) => e.type === 'agent-harness-acceptance-expiry');
+        expect(harness.map((e) => e.entityName)).toEqual([`${SUITE}-a agent`]);
+        expect(harness[0].ownerUserId).toBe(userA);
     });
 
     it('never leaks tenant B rows into tenant A’s calendar', async () => {

@@ -6,8 +6,11 @@ import {
     ALL_HARNESS_CRITERIA,
     HARNESS_CRITERIA,
     HARNESS_LEVELS,
+    collapseVerdicts,
+    criterionState,
     isHarnessCriterionId,
     isShortfall,
+    isVerdictEvidenced,
     levelAtLeast,
     rungOf,
     scoreHarness,
@@ -103,5 +106,78 @@ describe('the report-only shortfall bar', () => {
         ['H5', 'write-or-external', false],
     ] as const)('%s with %s reach is a shortfall: %s', (level, reach, expected) => {
         expect(isShortfall(level, reach)).toBe(expected);
+    });
+});
+
+describe('the per-criterion rule a matrix cell renders (#3687)', () => {
+    it('only a met verdict with a non-blank evidence reference is EVIDENCED', () => {
+        expect(criterionState({ criterion: 'H1.owner', met: true, evidence: 'register:owner' })).toBe('EVIDENCED');
+        expect(criterionState({ criterion: 'H1.owner', met: true, evidence: null })).toBe('MET_UNEVIDENCED');
+        expect(criterionState({ criterion: 'H1.owner', met: true, evidence: '  \t ' })).toBe('MET_UNEVIDENCED');
+        expect(criterionState({ criterion: 'H1.owner', met: false, evidence: 'register:owner' })).toBe('NOT_MET');
+        expect(criterionState(undefined)).toBe('UNANSWERED');
+        expect(isVerdictEvidenced({ criterion: 'H1.owner', met: true, evidence: ' x ' })).toBe(true);
+        expect(isVerdictEvidenced({ criterion: 'H1.owner', met: true, evidence: ' ' })).toBe(false);
+    });
+
+    it('collapses a criterion reported twice to its least favourable answer, in either order', () => {
+        const good: CriterionVerdict = { criterion: 'H1.owner', met: true, evidence: 'register:owner' };
+        const bare: CriterionVerdict = { criterion: 'H1.owner', met: true, evidence: null };
+        const no: CriterionVerdict = { criterion: 'H1.owner', met: false, evidence: null };
+        expect(collapseVerdicts([good, bare]).get('H1.owner')).toBe(bare);
+        expect(collapseVerdicts([bare, good]).get('H1.owner')).toBe(bare);
+        // NOT_MET is less favourable than met-without-evidence, either way round.
+        expect(collapseVerdicts([bare, no]).get('H1.owner')).toBe(no);
+        expect(collapseVerdicts([no, bare]).get('H1.owner')).toBe(no);
+        expect(collapseVerdicts([good, no, good]).get('H1.owner')).toBe(no);
+    });
+
+    it('keeps the first of two equally favourable answers, and one entry per criterion', () => {
+        const first: CriterionVerdict = { criterion: 'H2.policy_card', met: true, evidence: 'a' };
+        const second: CriterionVerdict = { criterion: 'H2.policy_card', met: true, evidence: 'b' };
+        const map = collapseVerdicts([first, second, { criterion: 'H1.owner', met: false, evidence: null }]);
+        expect(map.get('H2.policy_card')).toBe(first);
+        expect([...map.keys()].sort()).toEqual(['H1.owner', 'H2.policy_card']);
+    });
+
+    it('PROPERTY: the level is the highest rung whose criteria, and every lower rung\'s, all render EVIDENCED', () => {
+        // The cells and the level are two readings of one rule. A cell rule that
+        // drifted from the level rule (a cell read from `met`, a collapse that
+        // kept the first answer) shows a row whose cells and level disagree.
+        let seed = 0x3687;
+        const rand = () => {
+            seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+            return seed / 0x7fffffff;
+        };
+        const answer = (criterion: HarnessCriterionId): CriterionVerdict => {
+            const r = rand();
+            if (r < 0.7) return { criterion, met: true, evidence: `evidence:${criterion}` };
+            if (r < 0.8) return { criterion, met: true, evidence: rand() < 0.5 ? null : '   ' };
+            return { criterion, met: false, evidence: rand() < 0.5 ? null : `looked:${criterion}` };
+        };
+        for (let run = 0; run < 500; run++) {
+            const verdicts: CriterionVerdict[] = [];
+            for (const c of ALL_HARNESS_CRITERIA) {
+                const r = rand();
+                if (r < 0.1) continue; // unanswered
+                verdicts.push(answer(c));
+                if (r > 0.85) verdicts.push(answer(c)); // reported twice
+            }
+            // Shuffle, so order is part of what is tested.
+            for (let i = verdicts.length - 1; i > 0; i--) {
+                const j = Math.floor(rand() * (i + 1));
+                [verdicts[i], verdicts[j]] = [verdicts[j], verdicts[i]];
+            }
+            const cells = collapseVerdicts(verdicts);
+            let expected: HarnessLevel = 'H0';
+            for (const level of HARNESS_LEVELS.slice(1)) {
+                const all = (HARNESS_CRITERIA[level] as readonly HarnessCriterionId[]).every(
+                    (c) => criterionState(cells.get(c)) === 'EVIDENCED',
+                );
+                if (!all) break;
+                expected = level;
+            }
+            expect(scoreHarness(verdicts).level).toBe(expected);
+        }
     });
 });

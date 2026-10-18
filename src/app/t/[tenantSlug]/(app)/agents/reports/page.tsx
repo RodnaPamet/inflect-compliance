@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { buildAgentGovernancePack } from '@/app-layer/usecases/agent-governance-reports';
 import { getAgentGovernanceStatus } from '@/app-layer/usecases/agent-registry';
+import { getHarnessMatrix, getHarnessScannerKeysView } from '@/app-layer/usecases/agent-harness-matrix';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 
 import { ReportsClient } from './ReportsClient';
@@ -38,11 +39,36 @@ import { ReportsClient } from './ReportsClient';
  *
  * The permission is the register key, matching the route's: the pack names
  * people — who approved what, who owns which agent.
+ *
+ * ── THE HARNESS TAB (#3687) ─────────────────────────────────────────
+ *
+ * A second view behind the SAME `admin.agent_registry` gate, chosen by
+ * `?tab=harness`; anything else (or nothing) is the pack. The server reads ONLY
+ * the selected tab: the harness tab never builds the pack and the pack tab never
+ * reads a scan, so neither tab pays for the other and a refused caller starts
+ * neither read.
+ *
+ *   · "IT HAS NO FILTERS" STILL HOLDS. A tab chooses which fixed artefact is on
+ *     screen; it filters neither. The harness view renders the same thing for
+ *     the same rows every visit.
+ *   · IT ALSO READS LIVE AND STORES NOTHING (`getHarnessMatrix`,
+ *     `getHarnessScannerKeysView`). It is read-only apart from the owner's
+ *     shortfall acceptance and the scanner-key register, which post to their
+ *     own routes (`harness-acceptances`, `harness-scanner-keys`) and then
+ *     refresh this server read. The accept action is shown only where the
+ *     acceptance usecase would take it — the same rule decides both.
+ *   · AN EMPTY SCAN POPULATION IS A FINDING. The inventory's empty state is "a
+ *     complete answer" because the register is the whole population by
+ *     definition. A scan population is the opposite: no scan means nothing
+ *     looked for agents outside the register, so "no agents" would be a claim
+ *     about an estate nobody observed.
  */
 export default async function AgentReportsPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ tenantSlug: string }>;
+    searchParams?: Promise<{ tab?: string | string[] }>;
 }) {
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
@@ -53,6 +79,39 @@ export default async function AgentReportsPage({
             <ForbiddenPage
                 title={t('register.accessTitle')}
                 message={t('register.accessMessage')}
+            />
+        );
+    }
+
+    // The menu entry must ask the same question its DESTINATION asks, or it
+    // offers a link that renders a ForbiddenPage.
+    const canReviewProposals = Boolean(ctx.appPermissions?.admin?.view);
+    const canInvestigate = Boolean(ctx.appPermissions?.admin?.agent_registry);
+    // The SAME question the export usecase asks. Filing the pack writes into the
+    // evidence library, which is the library's grant to give and not the
+    // register's — so holding this page is not holding this button, and the two
+    // keys are read separately here rather than one being inferred from the
+    // other.
+    const canExport = Boolean(ctx.appPermissions?.evidence?.edit);
+
+    // AFTER the gate, and only for the tab asked for.
+    const requested = ((await searchParams) ?? {}).tab;
+    if ((Array.isArray(requested) ? requested[0] : requested) === 'harness') {
+        const [harness, scannerKeys] = await Promise.all([
+            getHarnessMatrix(ctx),
+            getHarnessScannerKeysView(ctx),
+        ]);
+        return (
+            <ReportsClient
+                tab="harness"
+                tenantSlug={resolved.tenantSlug}
+                // JSON-safe by construction (ISO strings); the round trip is the
+                // pack's, and keeps the server/client boundary honest.
+                harness={JSON.parse(JSON.stringify(harness))}
+                scannerKeys={JSON.parse(JSON.stringify(scannerKeys))}
+                canReviewProposals={canReviewProposals}
+                canInvestigate={canInvestigate}
+                canExport={canExport}
             />
         );
     }
@@ -74,16 +133,9 @@ export default async function AgentReportsPage({
             // component boundary does not.
             pack={JSON.parse(JSON.stringify(pack))}
             enforcing={governance.enforcing}
-            // The menu entry must ask the same question its DESTINATION asks, or
-            // it offers a link that renders a ForbiddenPage.
-            canReviewProposals={Boolean(ctx.appPermissions?.admin?.view)}
-            canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
-            // The SAME question the export usecase asks. Filing the pack writes
-            // into the evidence library, which is the library's grant to give
-            // and not the register's — so holding this page is not holding this
-            // button, and the two keys are read separately here rather than one
-            // being inferred from the other.
-            canExport={Boolean(ctx.appPermissions?.evidence?.edit)}
+            canReviewProposals={canReviewProposals}
+            canInvestigate={canInvestigate}
+            canExport={canExport}
         />
     );
 }

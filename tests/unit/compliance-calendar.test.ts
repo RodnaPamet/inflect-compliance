@@ -49,6 +49,9 @@ const mockVendorAssessmentFindMany = jest.fn();
 const mockAssetVulnerabilityFindMany = jest.fn();
 const mockAuditFindMany = jest.fn();
 
+// #3687 — an agent's harness-shortfall acceptance lapsing.
+const mockAgentHarnessAcceptanceFindMany = jest.fn();
+
 /** Every per-source `findMany` the aggregation fans out to. */
 const ALL_SOURCE_MOCKS = [
         mockEvidenceFindMany,
@@ -70,6 +73,7 @@ const ALL_SOURCE_MOCKS = [
         mockVendorAssessmentFindMany,
         mockAssetVulnerabilityFindMany,
         mockAuditFindMany,
+        mockAgentHarnessAcceptanceFindMany,
 ];
 
 const mockTaskCount = jest.fn().mockResolvedValue(0);
@@ -170,6 +174,9 @@ beforeEach(() => {
         audit: {
             findMany: (...a: unknown[]) => mockAuditFindMany(...a),
         },
+        agentHarnessAcceptance: {
+            findMany: (...a: unknown[]) => mockAgentHarnessAcceptanceFindMany(...a),
+        },
     };
     const invokeWithDb = async (
         _ctx: unknown,
@@ -208,6 +215,7 @@ function allPermissions(): unknown {
             view: true, manage: true, members: true, sso: true, scim: true,
             tenant_lifecycle: true, owner_management: true,
             compliance_dsar_view: true, compliance_dsar_manage: true,
+            agent_registry: true,
         },
     };
 }
@@ -563,6 +571,7 @@ describe('per-source truncation keeps the NEAREST deadlines', () => {
         ['trainingAssignment', () => mockTrainingFindMany, 'dueAt'],
         ['incidentNotification', () => mockIncidentNotificationFindMany, 'dueAt'],
         ['controlException', () => mockControlExceptionFindMany, 'expiresAt'],
+        ['agentHarnessAcceptance', () => mockAgentHarnessAcceptanceFindMany, 'expiresAt'],
         ['vendorAssessment', () => mockVendorAssessmentFindMany, 'nextReviewAt'],
         ['treatmentMilestone', () => mockTreatmentMilestoneFindMany, 'dueDate'],
         ['riskTreatmentPlan', () => mockTreatmentPlanFindMany, 'targetDate'],
@@ -1111,7 +1120,7 @@ describe('one definition of "day"', () => {
 // ─── The nav badge counts something DIFFERENT from the page ──────────
 //
 // `getMyUpcomingTaskCount` counts ONE model, filtered to the caller. The page
-// beside it aggregates nineteen sources tenant-wide. That divergence is
+// beside it aggregates twenty sources tenant-wide. That divergence is
 // intentional — the badge answers "what do I personally owe?", the page
 // answers "what does the org owe?" — but nothing asserted it, and the old
 // name (`getUpcomingDeadlineCount`) promised the page's answer.
@@ -1135,7 +1144,7 @@ describe('nav badge vs calendar page', () => {
         expect(where.tenantId).toBe(TENANT_ID);
     });
 
-    it('counts TASKS only — not the other eighteen sources', async () => {
+    it('counts TASKS only — not the other nineteen sources', async () => {
         const { getMyUpcomingTaskCount } = await import(
             '@/app-layer/usecases/compliance-calendar'
         );
@@ -1186,5 +1195,93 @@ describe('nav badge vs calendar page', () => {
 
         expect(page.events.length).toBeGreaterThan(0);
         expect(badge).toBe(0);
+    });
+});
+
+// ─── #3687 — a harness-shortfall acceptance lapsing ──────────────────
+//
+// The acceptance is ControlException's sibling: when it lapses, the nightly
+// monitor reopens the shortfall finding it closed. The event must reach the
+// owner who carries the risk, land on the harness tab's row for that agent,
+// and reveal nothing of the acceptance beyond the agent's register name —
+// calendar titles leave the product.
+
+describe('the harness shortfall acceptance expiry', () => {
+    const EXPIRES = new Date('2026-06-20T23:59:59.999Z');
+
+    async function aggregate(ctx: unknown = makeCtx()) {
+        const { getComplianceCalendarEvents } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        return getComplianceCalendarEvents(ctx as never, { from: FROM, to: TO, now: NOW });
+    }
+
+    it('projects one event per acceptance, onto the harness tab row, owned by whoever accepted', async () => {
+        mockAgentHarnessAcceptanceFindMany.mockResolvedValue([
+            {
+                id: 'acc-1',
+                expiresAt: EXPIRES,
+                discoveredAgentId: 'da-1',
+                acceptedByUserId: OWNER,
+                discoveredAgent: { discoveredId: 'entra:sp:one', registeredAgent: { name: 'Reconciler' } },
+            },
+        ]);
+        const res = await aggregate();
+        const events = res.events.filter((e) => e.type === 'agent-harness-acceptance-expiry');
+        expect(events).toEqual([
+            {
+                id: 'AGENT_HARNESS_ACCEPTANCE:acc-1:agent-harness-acceptance-expiry',
+                type: 'agent-harness-acceptance-expiry',
+                category: 'control',
+                title: 'Harness acceptance expires: Reconciler',
+                entityName: 'Reconciler',
+                date: EXPIRES.toISOString(),
+                status: 'scheduled',
+                entityType: 'AGENT_HARNESS_ACCEPTANCE',
+                entityId: 'acc-1',
+                href: `/t/${TENANT_SLUG}/agents/reports?tab=harness#harness-acceptance-da-1`,
+                ownerUserId: OWNER,
+            },
+        ]);
+    });
+
+    it('reads only acceptances still on the clock, on a live register row, nearest first', async () => {
+        await aggregate();
+        const args = mockAgentHarnessAcceptanceFindMany.mock.calls[0][0];
+        expect(args.where).toEqual({
+            tenantId: TENANT_ID,
+            revokedAt: null,
+            expiryProcessedAt: null,
+            expiresAt: { gte: FROM, lte: TO },
+            discoveredAgent: { registeredAgent: { deletedAt: null } },
+        });
+        expect(args.orderBy).toEqual({ expiresAt: 'asc' });
+        expect(args.take).toBeGreaterThan(0);
+    });
+
+    it('never selects the justification, the source owner reference or who revoked', async () => {
+        await aggregate();
+        const { select } = mockAgentHarnessAcceptanceFindMany.mock.calls[0][0];
+        expect(Object.keys(select).sort()).toEqual(
+            ['acceptedByUserId', 'discoveredAgent', 'discoveredAgentId', 'expiresAt', 'id'],
+        );
+        expect(Object.keys(select.discoveredAgent.select).sort()).toEqual(['discoveredId', 'registeredAgent']);
+    });
+
+    it('is omitted, and never queried, for a caller without admin.agent_registry', async () => {
+        const base = allPermissions() as { admin: Record<string, boolean> };
+        const ctx = { ...makeCtx(), appPermissions: { ...base, admin: { ...base.admin, agent_registry: false } } };
+        const res = await aggregate(ctx);
+        expect(res.omittedSources).toContain('agent-harness-acceptance');
+        expect(mockAgentHarnessAcceptanceFindMany).not.toHaveBeenCalled();
+        // The gate is per source: the control exceptions beside it still ran.
+        expect(mockControlExceptionFindMany).toHaveBeenCalled();
+    });
+
+    it('puts the register key into the calendar route\'s baseline', async () => {
+        const { CALENDAR_BASELINE_PERMISSIONS } = await import(
+            '@/app-layer/usecases/compliance-calendar'
+        );
+        expect(CALENDAR_BASELINE_PERMISSIONS).toContain('admin.agent_registry');
     });
 });

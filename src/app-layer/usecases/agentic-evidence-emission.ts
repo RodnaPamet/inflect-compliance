@@ -35,9 +35,43 @@
  *
  * The artefact body is built by the pure builders in `evidence-artefact.ts`,
  * whose input types are the complete list of fields an artefact may render. No
- * `scannedSummary`, no `signature`, no `inputDigest`, no `outputSummary`. See
- * that module's header for why `Evidence.content` is the wrong place for any of
+ * `scannedSummary`, no `signature`, no `inputDigest`, no `outputSummary`, and
+ * for a harness scan no owner reference, user id, justification, evidence
+ * pointer, credential reference, tool server address or agent name. See that
+ * module's header for why `Evidence.content` is the wrong place for any of
  * them.
+ *
+ * ── HARNESS SCANS (#3687): THE ONE KIND WHOSE STATUS IS A CLAIM ────────────
+ *
+ * Receipts and decision records are emitted `APPROVED` and the emitter never
+ * touches their status again: a count of records that exist is true whatever
+ * the count is. A month of harness scans is different — its population can be
+ * incomplete, and an empty one evidences nothing — so its Evidence status is
+ * planned from the artefact's completeness (`harnessArtefactEvidenceStatus`),
+ * written on create, and afterwards corrected in ONE direction
+ * (`harnessStatusCorrection`): a month whose plan is NEEDS_REVIEW is put back
+ * whenever it is found APPROVED, by hand or otherwise, and a NEEDS_REVIEW is
+ * raised only when it was the emitter's own verdict. A review decision —
+ * SUBMITTED, REJECTED, or a NEEDS_REVIEW the stale-review sweep set on a month
+ * that was already complete — stands. Every status the emitter changes writes a
+ * `STATUS_CHANGE` audit row. That is what holds "an incomplete scan is never
+ * emitted as complete evidence" after the first write, not only at it, without
+ * the emitter becoming a second reviewer.
+ *
+ * A month is also not closed when its last tick runs. The scheduled pass
+ * re-emits the PREVIOUS month every day and any older month a scan was
+ * ingested into since its artefact was last emitted
+ * (`reconcileClosedHarnessPeriods`), then puts back every closed month whose
+ * plan is NEEDS_REVIEW and whose Evidence reads APPROVED. Without that, the
+ * scan a daily scanner sends after the month's final 06:30 tick — and every
+ * report backfilled into a closed month — would never reach the artefact,
+ * which would go on calling a month complete whose latest scan was not.
+ *
+ * The kind is emitted only for a tenant that has registered a scanner key at
+ * least once. Before that there is no capability to evidence, and every ASI
+ * tenant would collect a monthly "no scan received" artefact for a scanner it
+ * cannot run; after it, a month with no scan IS the finding — and so, per
+ * scanner, is a scanner that held a trusted key in the month and sent nothing.
  */
 import { Prisma } from '@prisma/client';
 import { internal } from '@/lib/errors/types';
@@ -50,19 +84,33 @@ import { logEvent } from '@/app-layer/events/audit';
 import {
     AGENTIC_ARTEFACT_KINDS,
     ARTEFACT_KIND_DECISIONS,
+    ARTEFACT_KIND_HARNESS_SCANS,
     ARTEFACT_KIND_RECEIPTS,
     EVIDENCE_TARGETS,
+    HARNESS_SCANNER_CAP,
     buildDecisionArtefact,
+    buildHarnessScanArtefact,
     buildReceiptArtefact,
     buildWithdrawalNotice,
+    harnessArtefactEvidenceStatus,
+    harnessDigestFacts,
+    harnessStatusCorrection,
     monthlyPeriod,
     sourcePopulationDigest,
     type AgenticArtefactKind,
     type ArtefactPeriod,
     type ArtefactWithdrawalReason,
     type DecisionFact,
+    type HarnessPeriodFacts,
+    type HarnessPlannedStatus,
+    type HarnessScanFact,
+    type HarnessTallies,
     type ReceiptFact,
 } from '@/lib/agentic/evidence-artefact';
+import { parseStoredHarnessSources } from '@/lib/agentic/harness-contract';
+import { isHarnessShortfall } from '@/lib/agentic/harness-findings';
+import { HARNESS_LEVELS, type HarnessLevel } from '@/lib/agentic/harness-ladder';
+import { harnessScanCompleteness, type HarnessStoredReach } from '@/lib/agentic/harness-read-model';
 import { frameworkFamilyId } from '@/app-layer/domain/framework-representation';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -70,6 +118,17 @@ import type { RequestContext } from '@/app-layer/types';
 const FRAMEWORK_CATALOGUE_CAP = 500;
 /** Bound on the records one artefact may count. */
 const POPULATION_CAP = 20_000;
+/** Bound on the harness scans one month's artefact reads; one past it is read to know. */
+const HARNESS_SCAN_CAP = 200;
+/** Bound on the scanners holding a trusted key one month's artefact reads. A tenant trusts a handful. */
+const HARNESS_KEY_HOLDER_CAP = 200;
+/** Closed months one tick may re-emit. The previous month is always one of them. */
+const CLOSED_PERIOD_CAP = 12;
+/** Closed-month artefacts, and late scans into them, one tick reads. */
+const CLOSED_ARTEFACT_CAP = 500;
+const LATE_SCAN_CAP = 1_000;
+/** Approved-but-incomplete harness artefacts one tick puts back. */
+const UNSAFE_APPROVAL_CAP = 500;
 
 // ── Result shape ────────────────────────────────────────────────────────────
 
@@ -314,13 +373,180 @@ async function loadDecisionFacts(
         provider: safeLabel(r.provider),
         guardVerdict: r.guardVerdict === null ? null : safeLabel(r.guardVerdict),
     }));
-    return rows.map((r) => ({
-        id: r.id,
-        feature: r.feature,
-        provider: r.provider,
-        guardVerdict: r.guardVerdict,
-        humanOutcome: String(r.humanOutcome),
-    }));
+}
+
+type MutableTallies = {
+    count: number;
+    levels: Record<HarnessLevel, number>;
+    reach: Record<HarnessStoredReach, number>;
+    belowBar: number;
+    notInRegister: number;
+};
+
+function emptyTallies(): MutableTallies {
+    const levels = {} as Record<HarnessLevel, number>;
+    for (const l of HARNESS_LEVELS) levels[l] = 0;
+    return { count: 0, levels, reach: { READ_ONLY: 0, WRITE_OR_EXTERNAL: 0, UNKNOWN: 0 }, belowBar: 0, notInRegister: 0 };
+}
+
+/**
+ * The month's verified harness scans, as the facts an artefact may render.
+ *
+ * Read from the tables directly, under the emitter's own tenant transaction,
+ * rather than through `listHarnessScans`, which carries the register-read gate
+ * of a human surface; the emitter's caller is the job. Only the columns
+ * `HarnessScanFact` renders are selected — no `signature`, no `verdictsJson`,
+ * no `toolsJson`, no `ownerRef` — so they cannot reach a builder by accident.
+ *
+ * "Latest" is by `asOf`, the moment a report describes, with the ingest's
+ * tiebreak (`createdAt`, then `id`), the same order the harness matrix uses: a
+ * backfilled older report does not pose as the month's current reading.
+ */
+async function loadHarnessFacts(
+    db: PrismaTx,
+    ctx: RequestContext,
+    period: ArtefactPeriod,
+): Promise<HarnessPeriodFacts> {
+    const rows = await db.agentHarnessScan.findMany({
+        where: { tenantId: ctx.tenantId, asOf: { gte: period.start, lt: period.end } },
+        select: {
+            id: true,
+            scanRef: true,
+            scannerAgentId: true,
+            scannerVersion: true,
+            asOf: true,
+            reportDigest: true,
+            complete: true,
+            agentCount: true,
+            sourcesJson: true,
+        },
+        orderBy: [{ asOf: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        take: HARNESS_SCAN_CAP + 1,
+    });
+    const scansTruncated = rows.length > HARNESS_SCAN_CAP;
+    const scans = rows.slice(0, HARNESS_SCAN_CAP);
+
+    // Each scanner's latest scan is its first occurrence in that order.
+    const latestByScanner = new Map<string, string>();
+    for (const s of scans) {
+        if (!latestByScanner.has(s.scannerAgentId)) latestByScanner.set(s.scannerAgentId, s.id);
+    }
+    const latestIds = [...latestByScanner.values()];
+    const talliedIds = latestIds.slice(0, HARNESS_SCANNER_CAP);
+    const scannersTruncated = latestIds.length > HARNESS_SCANNER_CAP;
+
+    // One read for every tallied scan's agents — never one per scan.
+    const items = talliedIds.length === 0
+        ? []
+        : await db.agentHarnessScanItem.findMany({
+              where: { tenantId: ctx.tenantId, scanId: { in: talliedIds } },
+              select: {
+                  scanId: true,
+                  level: true,
+                  reach: true,
+                  discoveredAgent: {
+                      select: { registeredAgentId: true, registeredAgent: { select: { deletedAt: true } } },
+                  },
+              },
+              take: POPULATION_CAP + 1,
+          });
+    const tallyTruncated = items.length > POPULATION_CAP;
+
+    const tallies = new Map<string, MutableTallies>(talliedIds.map((id) => [id, emptyTallies()]));
+    if (!tallyTruncated) {
+        for (const item of items) {
+            const t = tallies.get(item.scanId);
+            if (!t) continue;
+            t.count += 1;
+            t.levels[item.level] += 1;
+            t.reach[item.reach] += 1;
+            // Reported, never gating: the ladder is report-only.
+            if (isHarnessShortfall(item.level, item.reach)) t.belowBar += 1;
+            // A register row deleted after the scan linked it leaves a stale
+            // link (the FK is NO ACTION), so it counts as not in the register.
+            const registered = item.discoveredAgent.registeredAgentId !== null
+                && item.discoveredAgent.registeredAgent !== null
+                && item.discoveredAgent.registeredAgent.deletedAt === null;
+            if (!registered) t.notInRegister += 1;
+        }
+    }
+
+    const facts: HarnessScanFact[] = scans.map((s) => {
+        const sources = parseStoredHarnessSources(s.sourcesJson);
+        const t = tallies.get(s.id);
+        // A tally is stated only when every stored agent of the scan was read
+        // and they agree with the scan's own count. Otherwise it is withheld,
+        // which makes the artefact INCOMPLETE rather than a number nobody read.
+        const stated: HarnessTallies | null =
+            !tallyTruncated && t !== undefined && t.count === s.agentCount
+                ? { levels: t.levels, reach: t.reach, belowBar: t.belowBar, notInRegister: t.notInRegister }
+                : null;
+        return {
+            id: s.id,
+            scanRef: safeLabel(s.scanRef),
+            scannerAgentId: s.scannerAgentId,
+            scannerVersion: safeLabel(s.scannerVersion),
+            asOf: s.asOf.toISOString(),
+            reportDigest: s.reportDigest,
+            latestForScanner: latestByScanner.get(s.scannerAgentId) === s.id,
+            // The ONE expression for "complete" — the harness matrix renders
+            // the same one, so the tab and the evidence cannot disagree.
+            completeness: harnessScanCompleteness({
+                complete: s.complete,
+                agentCount: s.agentCount,
+                sourcesReadable: sources !== null,
+            }),
+            sources:
+                sources === null
+                    ? null
+                    : sources.map((src) => ({ kind: src.kind, status: src.status, rows: src.rows, reason: src.reason })),
+            agentCount: s.agentCount,
+            tallies: stated,
+        };
+    });
+
+    // The scanners that held a TRUSTED key at some moment of the period —
+    // registered before it ended, not revoked before it began — and reported
+    // nothing in it. Compared by scanner, not by key: a scanner that rotated
+    // its key mid-month reported through the new one, and its old key's
+    // silence is not the scanner's.
+    const holders = await db.agentHarnessScannerKey.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            createdAt: { lt: period.end },
+            OR: [{ revokedAt: null }, { revokedAt: { gt: period.start } }],
+        },
+        select: { agentId: true },
+        distinct: ['agentId'],
+        orderBy: { agentId: 'asc' },
+        take: HARNESS_KEY_HOLDER_CAP + 1,
+    });
+    const holderIds = holders.slice(0, HARNESS_KEY_HOLDER_CAP).map((h) => h.agentId);
+    // Read separately from the capped scan list above, so a scanner whose only
+    // scans fell past that cap is not mistaken for a silent one.
+    const reporting = holderIds.length === 0
+        ? []
+        : await db.agentHarnessScan.findMany({
+              where: {
+                  tenantId: ctx.tenantId,
+                  asOf: { gte: period.start, lt: period.end },
+                  scannerAgentId: { in: holderIds },
+              },
+              select: { scannerAgentId: true },
+              distinct: ['scannerAgentId'],
+              take: holderIds.length,
+          });
+    const reported = new Set(reporting.map((r) => r.scannerAgentId));
+
+    return {
+        scans: facts,
+        bounds: { bounds: true, scansTruncated, tallyTruncated, scannersTruncated },
+        silent: {
+            silentScanners: true,
+            agentIds: holderIds.filter((id) => !reported.has(id)).sort(),
+            truncated: holders.length > HARNESS_KEY_HOLDER_CAP,
+        },
+    };
 }
 
 // ── Emission ────────────────────────────────────────────────────────────────
@@ -333,6 +559,49 @@ interface ArtefactPlan {
     readonly recordCount: number;
     readonly title: string;
     readonly content: string;
+    /**
+     * The Evidence status the artefact's completeness calls for, or `null`
+     * when the emitter judges none. `null` for receipts and decision records:
+     * they are created `APPROVED` and their status is left to the review flow
+     * afterwards, as it always was. A harness artefact's status IS its
+     * completeness claim: written on create, and afterwards corrected by
+     * `harnessStatusCorrection` — see the module header.
+     */
+    readonly evidenceStatus: HarnessPlannedStatus | null;
+}
+
+/** A stored planned status, narrowed to the two the emitter writes; anything else reads as none. */
+function asPlannedStatus(value: string | null): HarnessPlannedStatus | null {
+    return value === 'APPROVED' || value === 'NEEDS_REVIEW' ? value : null;
+}
+
+/**
+ * One audit row per Evidence status the emitter changes — the same
+ * `STATUS_CHANGE` shape the review flow writes, so "who moved this row's
+ * status, and why" has one answer on the trail whichever side moved it.
+ */
+async function logEmitterStatusChange(
+    db: PrismaTx,
+    ctx: RequestContext,
+    change: { evidenceId: string; from: string; to: HarnessPlannedStatus; period: ArtefactPeriod },
+): Promise<void> {
+    const reason =
+        change.to === 'NEEDS_REVIEW'
+            ? `The agent harness scans of ${change.period.label} are not complete evidence; an incomplete month does not stand as APPROVED`
+            : `The agent harness scans of ${change.period.label} are now complete evidence`;
+    await logEvent(db, ctx, {
+        action: 'STATUS_CHANGE',
+        entityType: 'Evidence',
+        entityId: change.evidenceId,
+        details: `Agentic evidence emitter: ${change.from} -> ${change.to}`,
+        detailsJson: {
+            category: 'status_change',
+            entityName: 'Evidence',
+            fromStatus: change.from,
+            toStatus: change.to,
+            reason,
+        },
+    });
 }
 
 /**
@@ -359,12 +628,36 @@ async function writeArtefact(
                         periodStart: plan.period.start,
                     },
                 },
-                select: { id: true, evidenceId: true, sourceDigest: true, status: true },
+                select: {
+                    id: true,
+                    evidenceId: true,
+                    sourceDigest: true,
+                    status: true,
+                    plannedEvidenceStatus: true,
+                    // Through the relation, not a second Evidence read: the
+                    // status is the artefact's own row's, in the same query.
+                    evidence: { select: { status: true } },
+                },
             });
 
             if (existing) {
+                // ONE-DIRECTIONAL: an incomplete month found APPROVED is put
+                // back; a NEEDS_REVIEW is raised only when it was the emitter's
+                // own verdict; a review decision otherwise stands.
+                const previousPlanned = asPlannedStatus(existing.plannedEvidenceStatus);
+                const correction = plan.evidenceStatus === null
+                    ? null
+                    : harnessStatusCorrection({
+                          planned: plan.evidenceStatus,
+                          current: existing.evidence.status,
+                          previousPlanned,
+                      });
+                const planMoved = plan.evidenceStatus !== previousPlanned;
                 const unchanged =
-                    existing.status === 'CURRENT' && existing.sourceDigest === plan.digest;
+                    existing.status === 'CURRENT' &&
+                    existing.sourceDigest === plan.digest &&
+                    correction === null &&
+                    !planMoved;
                 if (unchanged) {
                     // The population has not moved. Only the liveness stamp does —
                     // `updatedAt` deliberately stays put, so "the emitter is alive"
@@ -391,7 +684,12 @@ async function writeArtefact(
                 // identity exists to prevent.
                 await db.evidence.update({
                     where: { id: existing.evidenceId },
-                    data: { title: plan.title, content: plan.content, isArchived: false },
+                    data: {
+                        title: plan.title,
+                        content: plan.content,
+                        isArchived: false,
+                        ...(correction !== null ? { status: correction } : {}),
+                    },
                 });
                 await db.agenticEvidenceArtefact.update({
                     where: { id: existing.id },
@@ -403,8 +701,17 @@ async function writeArtefact(
                         withdrawnAt: null,
                         withdrawnReason: null,
                         lastEmittedAt: new Date(),
+                        plannedEvidenceStatus: plan.evidenceStatus,
                     },
                 });
+                if (correction !== null) {
+                    await logEmitterStatusChange(db, ctx, {
+                        evidenceId: existing.evidenceId,
+                        from: existing.evidence.status,
+                        to: correction,
+                        period: plan.period,
+                    });
+                }
                 return {
                     artefactId: existing.id,
                     evidenceId: existing.evidenceId,
@@ -433,7 +740,7 @@ async function writeArtefact(
                     // `control-test-runner`'s convention, so generated artefacts
                     // filter alongside every other automated one.
                     category: 'integration',
-                    status: 'APPROVED',
+                    status: plan.evidenceStatus ?? 'APPROVED',
                     ownerUserId: actorUserId,
                 },
                 select: { id: true },
@@ -456,6 +763,7 @@ async function writeArtefact(
                     evidenceId: evidence.id,
                     sourceDigest: plan.digest,
                     recordCount: plan.recordCount,
+                    plannedEvidenceStatus: plan.evidenceStatus,
                 },
                 select: { id: true },
             });
@@ -493,11 +801,14 @@ async function writeArtefact(
  */
 export async function emitAgenticEvidence(
     ctx: RequestContext,
-    options: { asOf?: Date } = {},
+    options: { asOf?: Date; kinds?: readonly AgenticArtefactKind[] } = {},
 ): Promise<EmissionReport> {
     assertCanWrite(ctx);
 
     const period = monthlyPeriod(options.asOf ?? new Date());
+    // Every kind unless the caller narrows it: re-asserting a closed month is
+    // a harness concern only, and recounting its receipts is not.
+    const wants = (kind: AgenticArtefactKind) => !options.kinds || options.kinds.includes(kind);
 
     const prepared = await runInTenantContext(ctx, async (db) => {
         const { byKind, anyInstalled } = await resolveTargetControls(db, ctx);
@@ -505,8 +816,17 @@ export async function emitAgenticEvidence(
             return { anyInstalled: false, plans: [] as ArtefactPlan[], actorUserId: null };
         }
 
-        const needReceipts = (byKind.get(ARTEFACT_KIND_RECEIPTS) ?? []).length > 0;
-        const needDecisions = (byKind.get(ARTEFACT_KIND_DECISIONS) ?? []).length > 0;
+        const receiptTargets = wants(ARTEFACT_KIND_RECEIPTS) ? byKind.get(ARTEFACT_KIND_RECEIPTS) ?? [] : [];
+        const decisionTargets = wants(ARTEFACT_KIND_DECISIONS) ? byKind.get(ARTEFACT_KIND_DECISIONS) ?? [] : [];
+        const harnessTargets = wants(ARTEFACT_KIND_HARNESS_SCANS) ? byKind.get(ARTEFACT_KIND_HARNESS_SCANS) ?? [] : [];
+        const needReceipts = receiptTargets.length > 0;
+        const needDecisions = decisionTargets.length > 0;
+        // Opted in once a scanner key has EVER been registered — revoked keys
+        // count, because a tenant that stopped scanning is exactly the tenant
+        // whose empty months must be reported, and key rows are never deleted.
+        const needHarness =
+            harnessTargets.length > 0 &&
+            (await db.agentHarnessScannerKey.count({ where: { tenantId: ctx.tenantId } })) > 0;
 
         const receipts = needReceipts ? await loadReceiptFacts(db, ctx, period) : [];
         const decisions = needDecisions ? await loadDecisionFacts(db, ctx, period) : [];
@@ -525,7 +845,7 @@ export async function emitAgenticEvidence(
         const decisionBody = buildDecisionArtefact(period, decisions, decisionDigest);
 
         const plans: ArtefactPlan[] = [];
-        for (const control of byKind.get(ARTEFACT_KIND_RECEIPTS) ?? []) {
+        for (const control of receiptTargets) {
             plans.push({
                 kind: ARTEFACT_KIND_RECEIPTS,
                 control,
@@ -534,9 +854,10 @@ export async function emitAgenticEvidence(
                 recordCount: receipts.length,
                 title: `${receiptBody.title} — ${control.code}`,
                 content: `Control: ${control.code} (${control.requirementCode})\n${receiptBody.content}`,
+                evidenceStatus: null,
             });
         }
-        for (const control of byKind.get(ARTEFACT_KIND_DECISIONS) ?? []) {
+        for (const control of decisionTargets) {
             plans.push({
                 kind: ARTEFACT_KIND_DECISIONS,
                 control,
@@ -545,7 +866,32 @@ export async function emitAgenticEvidence(
                 recordCount: decisions.length,
                 title: `${decisionBody.title} — ${control.code}`,
                 content: `Control: ${control.code} (${control.requirementCode})\n${decisionBody.content}`,
+                evidenceStatus: null,
             });
+        }
+
+        if (needHarness) {
+            const harness = await loadHarnessFacts(db, ctx, period);
+            // The bounds are digested with the scans, so a bound tripping (or
+            // clearing) rewrites the body as surely as a new scan does.
+            const harnessDigest = sourcePopulationDigest(
+                ARTEFACT_KIND_HARNESS_SCANS,
+                period.start,
+                harnessDigestFacts(harness),
+            );
+            const harnessBody = buildHarnessScanArtefact(period, harness, harnessDigest);
+            for (const control of harnessTargets) {
+                plans.push({
+                    kind: ARTEFACT_KIND_HARNESS_SCANS,
+                    control,
+                    period,
+                    digest: harnessDigest,
+                    recordCount: harness.scans.length,
+                    title: `${harnessBody.title} — ${control.code}`,
+                    content: `Control: ${control.code} (${control.requirementCode})\n${harnessBody.content}`,
+                    evidenceStatus: harnessArtefactEvidenceStatus(harnessBody.completeness),
+                });
+            }
         }
 
         // The evidence must be owned by a real user — `Evidence.ownerUserId` is a
@@ -593,6 +939,145 @@ export async function emitAgenticEvidence(
         anyTargetInstalled: prepared.anyInstalled,
         artefacts,
     };
+}
+
+// ── Closed harness months ───────────────────────────────────────────────────
+
+export interface ClosedHarnessReconciliation {
+    /** The closed months re-emitted, newest first. */
+    readonly periodLabels: readonly string[];
+    readonly artefacts: readonly EmittedArtefact[];
+    /** Evidence ids put back to NEEDS_REVIEW by the closed-month sweep. */
+    readonly demotedEvidenceIds: readonly string[];
+}
+
+/**
+ * Re-assert the harness months the daily tick has moved past.
+ *
+ * `emitAgenticEvidence` without `asOf` evidences the CURRENT month, so a month
+ * is last recomputed by its final 06:30 tick. Two things arrive after that and
+ * would otherwise never reach its artefact:
+ *
+ *   1. the scan a daily scanner sends later on the month's last day, which is
+ *      the month's true latest — re-emitting the PREVIOUS month every tick
+ *      catches it, along with any report backfilled into it;
+ *   2. a report backfilled into an OLDER month — re-emitted when a scan with
+ *      `asOf` in that month was ingested after its artefact was last emitted.
+ *      Only months that already carry a harness artefact: a month that never
+ *      had evidence claims nothing a late scan could make false.
+ *
+ * Then every harness artefact whose plan is NEEDS_REVIEW and whose Evidence
+ * reads APPROVED is put back, whatever its month — a reviewer approving an
+ * incomplete October in December is the same unsafe approval as in October.
+ *
+ * `now` is injected so the months are a function of the caller's argument.
+ */
+export async function reconcileClosedHarnessPeriods(
+    ctx: RequestContext,
+    options: { now?: Date } = {},
+): Promise<ClosedHarnessReconciliation> {
+    assertCanWrite(ctx);
+    const now = options.now ?? new Date();
+    const current = monthlyPeriod(now);
+    const previous = monthlyPeriod(new Date(current.start.getTime() - 1));
+
+    const older = await runInTenantContext(ctx, async (db) => {
+        const closed = await db.agenticEvidenceArtefact.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                kind: ARTEFACT_KIND_HARNESS_SCANS,
+                status: 'CURRENT',
+                periodStart: { lt: previous.start },
+            },
+            select: { periodStart: true, lastEmittedAt: true },
+            orderBy: { periodStart: 'desc' },
+            take: CLOSED_ARTEFACT_CAP,
+        });
+        if (closed.length === 0) return [];
+        // A month's artefacts (one per control) were last emitted together; the
+        // earliest stamp is the one a late scan must beat.
+        const emittedAt = new Map<number, number>();
+        for (const a of closed) {
+            const key = a.periodStart.getTime();
+            const at = a.lastEmittedAt.getTime();
+            emittedAt.set(key, Math.min(emittedAt.get(key) ?? at, at));
+        }
+        const earliestStart = Math.min(...emittedAt.keys());
+        const earliestEmit = Math.min(...emittedAt.values());
+        const late = await db.agentHarnessScan.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                asOf: { gte: new Date(earliestStart), lt: previous.start },
+                createdAt: { gt: new Date(earliestEmit) },
+            },
+            select: { asOf: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take: LATE_SCAN_CAP,
+        });
+        const months = new Set<number>();
+        for (const scan of late) {
+            const key = monthlyPeriod(scan.asOf).start.getTime();
+            const at = emittedAt.get(key);
+            if (at !== undefined && scan.createdAt.getTime() > at) months.add(key);
+        }
+        return [...months];
+    });
+
+    const starts = [...new Set([previous.start.getTime(), ...older])].sort((a, b) => b - a);
+    if (starts.length > CLOSED_PERIOD_CAP) {
+        // Loud, and not lost: the months left out keep their late scans, so the
+        // next tick finds them again.
+        log('warn', 'Agentic evidence: more closed harness months to re-emit than one tick takes', {
+            tenantId: ctx.tenantId,
+            months: starts.length,
+            cap: CLOSED_PERIOD_CAP,
+        });
+    }
+
+    const periodLabels: string[] = [];
+    const artefacts: EmittedArtefact[] = [];
+    for (const start of starts.slice(0, CLOSED_PERIOD_CAP)) {
+        const report = await emitAgenticEvidence(ctx, { asOf: new Date(start), kinds: [ARTEFACT_KIND_HARNESS_SCANS] });
+        periodLabels.push(report.periodLabel);
+        artefacts.push(...report.artefacts);
+    }
+
+    const demotedEvidenceIds = await runInTenantContext(ctx, async (db) => {
+        // The plan is the emitter's verdict as of each month's last emission,
+        // which the loop above has just refreshed for the months it touched.
+        const unsafe = await db.agenticEvidenceArtefact.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                kind: ARTEFACT_KIND_HARNESS_SCANS,
+                status: 'CURRENT',
+                plannedEvidenceStatus: 'NEEDS_REVIEW',
+                evidence: { status: 'APPROVED' },
+            },
+            select: { evidenceId: true, periodStart: true },
+            orderBy: { periodStart: 'desc' },
+            take: UNSAFE_APPROVAL_CAP,
+        });
+        const ids: string[] = [];
+        for (const row of unsafe) {
+            // Conditional, so a status a reviewer moved again since the read is
+            // left alone rather than overwritten.
+            const moved = await db.evidence.updateMany({
+                where: { id: row.evidenceId, tenantId: ctx.tenantId, status: 'APPROVED' },
+                data: { status: 'NEEDS_REVIEW' },
+            });
+            if (moved.count === 0) continue;
+            await logEmitterStatusChange(db, ctx, {
+                evidenceId: row.evidenceId,
+                from: 'APPROVED',
+                to: 'NEEDS_REVIEW',
+                period: monthlyPeriod(row.periodStart),
+            });
+            ids.push(row.evidenceId);
+        }
+        return ids;
+    });
+
+    return { periodLabels, artefacts, demotedEvidenceIds };
 }
 
 // ── Withdrawal ──────────────────────────────────────────────────────────────

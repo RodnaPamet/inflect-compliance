@@ -40,15 +40,21 @@ import {
     type StoredReach,
 } from '@/lib/agentic/harness-findings';
 import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
+import {
+    JUSTIFICATION_MAX_CHARS,
+    JUSTIFICATION_MIN_CHARS,
+    MAX_ACCEPTANCE_DAYS,
+    shortfallAcceptanceRefusal,
+} from '@/lib/agentic/harness-acceptance-rules';
 
-/** The longest an acceptance may run before it must be renewed. */
-export const MAX_ACCEPTANCE_DAYS = 365;
+/** The bound lives with the rule the harness tab shares; re-exported for existing importers. */
+export { MAX_ACCEPTANCE_DAYS };
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const AcceptHarnessShortfallSchema = z
     .object({
         discoveredAgentId: z.string().min(1).max(64),
-        justification: z.string().trim().min(20).max(4_000),
+        justification: z.string().trim().min(JUSTIFICATION_MIN_CHARS).max(JUSTIFICATION_MAX_CHARS),
         expiresAt: z.string().datetime(),
     })
     .strict();
@@ -76,14 +82,17 @@ export async function acceptHarnessShortfall(ctx: RequestContext, input: z.infer
             },
         });
         if (!agent) throw notFound('Discovered agent not found');
-        if (!agent.registeredAgent || agent.registeredAgent.deletedAt !== null) {
-            throw badRequest('A shadow agent has no owner to accept its risk; register it first');
-        }
-        if (agent.registeredAgent.ownerUserId !== ctx.userId) {
-            throw forbidden('Only the agent’s owner may accept its harness shortfall');
-        }
-        if (!isHarnessShortfall(agent.lastLevel as HarnessLevel, agent.lastReach as StoredReach)) {
-            throw badRequest('The agent’s latest scan is at the bar; there is no shortfall to accept');
+        // The SAME rule the harness tab decides its accept action with, so the
+        // action is never shown and then refused, or hidden from the owner.
+        switch (shortfallAcceptanceRefusal(agent, ctx.userId)) {
+            case 'SHADOW':
+                throw badRequest('A shadow agent has no owner to accept its risk; register it first');
+            case 'NOT_OWNER':
+                throw forbidden('Only the agent’s owner may accept its harness shortfall');
+            case 'NO_SHORTFALL':
+                throw badRequest('The agent’s latest scan is at the bar; there is no shortfall to accept');
+            case null:
+                break;
         }
 
         // A renewal supersedes whatever is in force, so exactly one acceptance

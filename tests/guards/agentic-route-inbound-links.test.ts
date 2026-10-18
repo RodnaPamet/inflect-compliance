@@ -227,9 +227,13 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // #3665 — the harness ingest. `harness-scans` is MACHINE surface: a
     // scanner POSTs a signed report with an API key scoped to
     // `admin:harness_ingest` and nothing else, so no page calls it and none
-    // should. The other three are the register's half — which keys are
-    // trusted, and the owner's time-limited acceptance of a shortfall —
-    // API-only until the harness matrix tab, the follow-up step, renders them.
+    // should — the harness tab reads scans server-side through the usecases.
+    // The other three are the register's half, and since #3687 the harness
+    // tab on `/agents/reports` calls them: POST `harness-acceptances` (the
+    // owner's accept and renew), POST `harness-scanner-keys` (register a key)
+    // and DELETE `harness-scanner-keys/[keyId]` (revoke one). Their GETs stay
+    // API surface, because the tab reads the same rows server-side. The
+    // describe at the end of this file pins both halves of that.
     't/[tenantSlug]/admin/agents/harness-acceptances/route.ts',
     't/[tenantSlug]/admin/agents/harness-scanner-keys/[keyId]/route.ts',
     't/[tenantSlug]/admin/agents/harness-scanner-keys/route.ts',
@@ -599,5 +603,33 @@ describe('the route list is complete — a new agentic page cannot land unlisted
         // it has no content anybody needs a link to.
         const withJsx = REDIRECT_SHIMS.filter((r) => /return\s*\(/.test(shimCode(r)));
         expect(withJsx).toEqual([]);
+    });
+});
+
+describe('the harness register half is called from the tab; the machine surface is not (#3687)', () => {
+    /**
+     * Which files under `(app)/agents/` CALL a path, by a needle that only a
+     * call writes: the path closed by a quote, or followed by an interpolated
+     * id. Comments are stripped, so a docstring naming the route does not count.
+     * Asserted on arrays of paths, not on file text.
+     */
+    const callers = (needle: string): string[] =>
+        SOURCES.filter((s) => s.rel.startsWith(`${APP}/agents/`) && s.code.includes(needle)).map((s) => s.rel);
+    const HARNESS = `${APP}/agents/reports/harness`;
+
+    it('the owner\'s accept and renew POST harness-acceptances from the accept dialog', () => {
+        expect(callers("/admin/agents/harness-acceptances'")).toContain(`${HARNESS}/AcceptShortfallModal.tsx`);
+    });
+
+    it('a key is registered from the register dialog, and revoked from the key card', () => {
+        expect(callers("/admin/agents/harness-scanner-keys'")).toContain(`${HARNESS}/RegisterScannerKeyModal.tsx`);
+        expect(callers('/admin/agents/harness-scanner-keys/${')).toContain(`${HARNESS}/ScannerKeysCard.tsx`);
+    });
+
+    it('no page calls the scan ingest — it is a scanner\'s, behind its own API-key scope', () => {
+        const pageCallers = SOURCES.filter(
+            (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/harness-scans'),
+        ).map((s) => s.rel);
+        expect(pageCallers).toEqual([]);
     });
 });

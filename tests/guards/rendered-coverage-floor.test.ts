@@ -330,7 +330,9 @@ const ROOT = path.resolve(__dirname, '../..');
 // of a tree this commit is not against. The number has to come from the
 // measurement the assertion makes, ON THE TREE BEING COMMITTED — not from a
 // convenient count beside it, and not from one taken before the base moved.
-const RENDERED_TEST_FLOOR = 355;
+//   356 (#3687): + agent-harness-matrix-tab.test.tsx, counted the same way.
+//   358 (#3687): + agent-harness-accept-modal and agent-harness-scanner-keys.
+const RENDERED_TEST_FLOOR = 358;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

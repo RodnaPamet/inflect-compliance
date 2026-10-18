@@ -117,11 +117,23 @@ describe('looksLikeSecret', () => {
         fragments('AK', 'IA', 'Q'.repeat(16)),
         fragments('-----BEGIN ', 'PRIVATE KEY-----'),
         fragments('xo', 'xb-', '1234567890-abc'),
+        fragments('https://svc-reader:', 'S3cret', 'Pass', '@vault.corp.example/v1/audit'),
+        fragments('ldaps://cn=svc:', 'hunter', '22', '@dc1.corp:636'),
+        fragments('see https://ops@corp.example:', 'pa', 'ss', '@host.example/x'),
     ])('flags a credential shape', (value) => {
         expect(looksLikeSecret(value)).toBe(true);
     });
 
-    it.each(['kv://prod/agents/reporting', 'vault://secret/data/agents/sales-bot', 'keyid://9f1c'])('accepts the reference %s', (value) => {
+    it.each([
+        'kv://prod/agents/reporting',
+        'vault://secret/data/agents/sales-bot',
+        'keyid://9f1c',
+        // A `:` and an `@` AFTER the authority are a locator, not a credential.
+        'kv://prod/agents:reporting@v2',
+        // A username alone is not a secret.
+        'ssh://git@github.example/org/repo',
+        'https://graph.example.com/servicePrincipals/1',
+    ])('accepts the reference %s', (value) => {
         expect(looksLikeSecret(value)).toBe(false);
     });
 });

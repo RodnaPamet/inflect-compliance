@@ -1918,10 +1918,11 @@ model AgenticEvidenceArtefact {
   /// `EVIDENCE_TARGETS` in `src/lib/agentic/evidence-artefact.ts`.
   controlId String
 
-  /// `AGENT_ACTION_RECEIPTS` | `AI_DECISION_RECORDS`. TEXT + CHECK rather than a
-  /// Postgres enum, for the reason the `@@map("WorkItem*")` pins record: an
-  /// `ALTER TYPE` mid-rolling-deploy makes still-running old containers fail
-  /// with SQLSTATE 42704, and this vocabulary is one a follow-up will widen.
+  /// `AGENT_ACTION_RECEIPTS` | `AI_DECISION_RECORDS` | `AGENT_HARNESS_SCANS`
+  /// (the third added by migration 20261017235500, #3687). TEXT + CHECK rather
+  /// than a Postgres enum, for the reason the `@@map("WorkItem*")` pins record:
+  /// an `ALTER TYPE` mid-rolling-deploy makes still-running old containers fail
+  /// with SQLSTATE 42704, so widening this vocabulary is a CHECK swap instead.
   kind String
 
   /// UTC month boundaries — `periodStart` inclusive, `periodEnd` exclusive.
@@ -1958,6 +1959,17 @@ model AgenticEvidenceArtefact {
   /// which does not move when a run finds the population unchanged. An operator
   /// asking "is the emitter alive" reads this one.
   lastEmittedAt DateTime @default(now())
+
+  /// The Evidence status the artefact's own completeness called for at its last
+  /// emission (`APPROVED` | `NEEDS_REVIEW`), NOT the status the Evidence row
+  /// holds — a person or the stale-review sweep may have moved that since.
+  /// Kept so the emitter can tell its own incompleteness verdict from a review
+  /// decision: it promotes a NEEDS_REVIEW only when this says the NEEDS_REVIEW
+  /// was its own (`harnessStatusCorrection`), and a closed month whose plan
+  /// says NEEDS_REVIEW is put back whenever it is found APPROVED. NULL for the
+  /// kinds whose status the emitter does not judge (receipts, decisions). Added
+  /// by migration 20261017235500 (#3687).
+  plannedEvidenceStatus EvidenceStatus?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

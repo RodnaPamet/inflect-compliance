@@ -7,6 +7,15 @@
  * `emitAgenticEvidence` is a function somebody has to remember to call, which is
  * the spreadsheet again with a nicer interface.
  *
+ * Three kinds of record become artefacts: mediator-signed action receipts, AI
+ * decision records, and (#3687) verified agent harness scans. A month of harness
+ * scans is emitted as what it is — an incomplete or empty month is
+ * `NEEDS_REVIEW` evidence that says why, never complete evidence — and only for
+ * a tenant that has registered a scanner key; see the usecase header. The
+ * scheduled tick (no `asOf`) also re-asserts the closed harness months a late
+ * scan reached (`reconcileClosedHarnessPeriods`); a backfill of one named month
+ * does not.
+ *
  * ── THE TENANT SET IS THE PRECISE ONE ──────────────────────────────────────
  *
  * Tenants with at least one live control linked to a target requirement. Not
@@ -36,6 +45,7 @@ import { prisma } from '@/lib/prisma';
 import { buildDelegatedJobContext } from '../context-system';
 import {
     emitAgenticEvidence,
+    reconcileClosedHarnessPeriods,
     withdrawStaleAgenticEvidence,
 } from '../usecases/agentic-evidence-emission';
 import { EVIDENCE_TARGETS } from '@/lib/agentic/evidence-artefact';
@@ -113,6 +123,8 @@ export interface EmissionSweepResult {
     updated: number;
     unchanged: number;
     withdrawn: number;
+    /** Approved harness months put back to NEEDS_REVIEW because their scans are not complete evidence. */
+    demoted: number;
     /** Tenants that could not be emitted for — reported, never silently dropped. */
     skipped: number;
 }
@@ -131,6 +143,7 @@ export async function runAgenticEvidenceEmission(
         updated: 0,
         unchanged: 0,
         withdrawn: 0,
+        demoted: 0,
         skipped: 0,
     };
 
@@ -158,7 +171,16 @@ export async function runAgenticEvidenceEmission(
 
         try {
             const report = await emitAgenticEvidence(ctx, payload.asOf ? { asOf: new Date(payload.asOf) } : {});
-            for (const artefact of report.artefacts) {
+            const emitted = [...report.artefacts];
+            // The scheduled tick, not a backfill of one named month: also
+            // re-assert the harness months the tick has moved past, or the
+            // scan sent after a month's last tick never reaches its artefact.
+            if (!payload.asOf) {
+                const closed = await reconcileClosedHarnessPeriods(ctx, { now: new Date() });
+                emitted.push(...closed.artefacts);
+                result.demoted += closed.demotedEvidenceIds.length;
+            }
+            for (const artefact of emitted) {
                 if (artefact.outcome === 'created') result.created += 1;
                 else if (artefact.outcome === 'updated') result.updated += 1;
                 else if (artefact.outcome === 'unchanged') result.unchanged += 1;
@@ -204,6 +226,7 @@ export async function runAgenticEvidenceEmissionJob(
                 updated: r.updated,
                 unchanged: r.unchanged,
                 withdrawn: r.withdrawn,
+                demoted: r.demoted,
             },
         };
     }, { tenantId: payload.tenantId });
