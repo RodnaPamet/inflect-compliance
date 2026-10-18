@@ -187,10 +187,10 @@ name, and the amend dialog shows the owner read-only.
 
 That recipient set is narrow on purpose, and the owner accepted it on
 2026-10-18 as the interim state (decision 14 below). The edge gate reads the
-session's primary — oldest — membership role rather than the role in the tenant
-being called, so an OWNER here whose oldest membership elsewhere is READER is
-refused on every admin route, these two included. That limitation fails closed
-and is documented, not fixed, by this change (decision 15 below).
+built-in role in the tenant being called, from the session's membership for
+that tenant (#3701), so the recipient set is exactly what step two meets. Until
+#3701 it read the primary — oldest — membership's role instead (decision 15
+below).
 
 ### What the six use cases stand on
 
@@ -338,7 +338,8 @@ changed what #3698 built.
 15. **The edge gate's primary-membership limitation stays documented, not
     fixed, in `2a`.** The edge reads the role of the session's oldest
     membership, not the role in the tenant being called. It fails closed, and
-    #3701 tracks the fix. (`2a`)
+    #3701 tracks the fix. (`2a`) Fixed by #3701 on 2026-10-18: the edge now
+    reads the role in the tenant the URL names.
 
 ### Permission keys
 

@@ -35,8 +35,8 @@
  * role and admits only ADMIN and OWNER. A custom role carrying the key is
  * therefore enough only on an ADMIN membership; on a READER, EDITOR or AUDITOR
  * membership the edge refuses the request before the route runs. See
- * `TRANSFER_RECIPIENT_MEMBERSHIP_ROLES` for the one edge case the step-one check
- * cannot see (the edge reads the session's primary membership).
+ * `TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`: the edge reads the role in THIS
+ * tenant's membership (#3701), which is the role the step-one check reads.
  *
  * The usecase re-asserts the key (`assertCanTransferAgentOwnership`) as defence in
  * depth — a second caller of these functions cannot reach them with less — but
