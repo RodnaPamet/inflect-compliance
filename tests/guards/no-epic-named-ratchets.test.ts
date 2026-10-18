@@ -398,7 +398,17 @@ describe('epic-named ratchets are not added back', () => {
         // It is not folded into `agent-harness-single-write-seam`, whose
         // tables and allowlist belong to the harness ingest, nor into
         // `access-review-agent-scope`, which is about the scope VALUE.
-        expect(guardFiles().length).toBeLessThan(789);
+        //
+        // RAISED 789 -> 790 on 2026-10-18, for ONE file, the same test:
+        // `client-reachable-modules-import-no-node-builtins` is named for its
+        // invariant — nothing a `'use client'` file reaches imports a `node:`
+        // specifier, and nothing the workflow registry reaches imports a Node
+        // built-in at all (#3674, deploy 2, whose `node:crypto` in a workflow
+        // step failed `next build`). The nearest guard,
+        // `no-usecase-imports-in-client`, checks one DIRECT import per client
+        // file; this one walks the transitive graph, which that guard's name
+        // and allowlist do not describe, so it is not folded in there.
+        expect(guardFiles().length).toBeLessThan(790);
     });
 
     /**

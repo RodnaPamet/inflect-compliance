@@ -5,8 +5,10 @@
  * step and one SYNTHESIS step, and nothing else: no PROPOSE step, no
  * checkpoint. The read is `get_agent_recertification_evidence`, which reads
  * stored rows only; the synthesis is `planAgentReviewPacks`, a pure function
- * that hashes each pack and plans the narrowings its evidence supports. The run
- * writes no record of the campaign — `prepareAgentReviewPacks` reads this run's
+ * that plans each pack and the narrowings its evidence supports. It hashes
+ * nothing: the workflow registry is reachable from a client component, so
+ * nothing here may need `node:crypto`, and the usecase hashes each pack's
+ * sections as it stores them. The run writes no record of the campaign — `prepareAgentReviewPacks` reads this run's
  * recorded steps, re-derives the plan from the READ step's output, and only
  * then writes the packs and narrowings.
  *

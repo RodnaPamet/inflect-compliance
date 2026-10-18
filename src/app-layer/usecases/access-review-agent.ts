@@ -59,16 +59,15 @@ import {
     RECERT_SAMPLE_DISSENT_CODES,
     RecertificationEvidenceSchema,
     agentCampaignEvidenceBytes,
-    agentCampaignEvidenceHash,
     buildAgentCampaignEvidence,
     observationWindow,
     planAgentReviewPacks,
     sectionsOf,
-    sha256Of,
     type AgentCampaignEvidence,
     type PackPlan,
     type RecertificationEvidence,
 } from '@/lib/agentic/agent-recertification';
+import { agentCampaignEvidenceHash, sha256Of } from '@/lib/agentic/agent-recertification-hash';
 import { ASI_LIBRARY_URN } from '@/lib/agentic/evidence-artefact';
 import { canonicalJson } from '@/lib/canonical-json';
 import {
@@ -389,9 +388,11 @@ export interface PreparePacksResult {
  * what this compares against: a plan the usecase writes must be one the stored
  * evidence implies, so a recorded synthesis that disagrees with its own read —
  * a tampered row, or a planner change between the run and the write — is
- * refused rather than trusted.
+ * refused rather than trusted. The plan carries no hash (the server hashes the
+ * sections it stores), so this is the check that the plan follows. Exported so
+ * the refusal is unit-testable without forging a run.
  */
-function checkedPlan(evidence: RecertificationEvidence, recorded: unknown): PackPlan {
+export function checkedPlan(evidence: RecertificationEvidence, recorded: unknown): PackPlan {
     const derived = planAgentReviewPacks(evidence);
     const parsed = PackPlanSchema.safeParse(recorded);
     if (!parsed.success || canonicalJson(parsed.data) !== canonicalJson(derived)) {
@@ -586,14 +587,16 @@ export async function prepareAgentReviewPacks(
     return runInTenantContext(ctx, async (db) => {
         const ownerByDecision = new Map(head.subjects.map((x) => [x.id, x.subjectOwnerUserId]));
 
-        const packRows = prepared.flatMap(({ evidence, plan, runId, agentId: preparedBy }) =>
+        const packRows = prepared.flatMap(({ evidence, runId, agentId: preparedBy }) =>
             evidence.subjects.map((x) => {
+                // The hash is over exactly the sections stored, computed here
+                // rather than in the plan: the plan is built by a workflow
+                // step the client bundle reaches, and hashing needs
+                // `node:crypto`. That the plan follows from this evidence was
+                // checked by `checkedPlan`; every subject has its pack there,
+                // because the plan is derived from the same evidence.
                 const sections = sectionsOf(x);
                 const contentHash = sha256Of(sections);
-                const planned = plan.packs.find((p) => p.decisionId === x.decisionId);
-                if (!planned || planned.contentHash !== contentHash) {
-                    refuse('PACK_PLAN_MISMATCH', `pack ${x.decisionId} does not hash to its plan`);
-                }
                 return {
                     tenantId: ctx.tenantId,
                     accessReviewId,

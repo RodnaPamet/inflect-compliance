@@ -31,10 +31,12 @@ prepare     POST /access-reviews/:id/agent-packs prepareAgentReviewPacks
               each run:
                 READ       get_agent_recertification_evidence  (stored rows only; the
                            funnel applies the AGENT's grants, card, autonomy, kill)
-                SYNTHESIS  planAgentReviewPacks                (pure: hash + narrowings)
+                SYNTHESIS  planAgentReviewPacks                (pure: packs + narrowings)
               re-derive each plan from the run's recorded READ output, refuse a
-              recorded plan that disagrees, then ONE transaction:
-                AccessReviewAgentPack × subjects, AccessReviewAgentNarrowing × proposals
+              recorded plan that disagrees (PACK_PLAN_MISMATCH), then ONE
+              transaction:
+                AccessReviewAgentPack × subjects (sha256Of(sections), hashed here),
+                AccessReviewAgentNarrowing × proposals
 
 decide      POST …/agent-narrowings/:id            decideAgentNarrowing
               ACCEPT → RegisteredAgentToolRepository.revokeGrant (delete by id)
@@ -71,7 +73,9 @@ tables:
 |---|---|
 | `prisma/migrations/20261018130100_agent_recertification_campaigns/` | columns, three tables, CHECKs, four triggers, grants (no DELETE), RLS |
 | `prisma/schema/audit-workflow.prisma`, `auth.prisma`, `enums.prisma` | the models, the decision's and the campaign's new columns, `AgentNarrowingOutcome` |
-| `src/lib/agentic/agent-recertification.ts` | pure: window, evidence schema, narrowing rule, pack plan and hash, closing evidence and hash |
+| `src/lib/agentic/agent-recertification.ts` | pure and client-reachable: window, evidence schema, narrowing rule, pack plan, closing evidence and its bytes |
+| `src/lib/agentic/agent-recertification-hash.ts` | server only: the pack hash and the closing evidence hash (`node:crypto`) |
+| `tests/guards/client-reachable-modules-import-no-node-builtins.test.ts` | no `node:` import reachable from a client file; no Node built-in at all reachable from the workflow registry |
 | `src/app-layer/usecases/agent-recertification-evidence.ts` | the read behind the tool; writes nothing |
 | `src/lib/mcp/tools/access-review-tools.ts` | `get_agent_recertification_evidence`, registered with the read tools |
 | `src/lib/agentic/workflows/agent-recertification-pack.ts` | the static READ + SYNTHESIS workflow |
@@ -107,6 +111,19 @@ tables:
   step already plans the packs; the usecase re-plans from the READ step's
   recorded output and refuses a mismatch, so the rows written are what the
   stored evidence implies, whatever happened to the recorded synthesis.
+- **The plan carries no hash; the server hashes what it stores.** The first
+  build put the pack's `sha256:` hash in the plan, and the plan module imported
+  `node:crypto`. A client component reaches that module — `RuleBuilderModal`
+  imports the workflow registry, which imports every workflow definition and
+  so the pack workflow's SYNTHESIS step — and `next build` failed with
+  `UnhandledSchemeError`. A bare `crypto` import would have compiled, only by
+  bundling `crypto-browserify` into the processes page. So the hashes moved to
+  a server-only module and the usecase computes each pack's hash over the
+  sections it writes. The hash means what it meant: it was always over the
+  stored sections, and the plan's correctness is the separate re-derivation
+  check above. The guard walks the static import graph — it is not an ESLint
+  rule, because "reachable from" is a property of the graph, not of any one
+  file.
 - **One run per 20 agents.** A single run over 500 agents would exceed
   `MAX_CONTEXT_BYTES`; paging keeps every run bounded and the packs are written
   only after every page succeeded.

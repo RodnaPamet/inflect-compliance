@@ -30,8 +30,8 @@ import {
     AGENT_RECERTIFICATION_EVIDENCE_TOOL,
     AGENT_RECERTIFICATION_PACK_WORKFLOW,
     NARROWING_BASIS,
-    sha256Of,
 } from '@/lib/agentic/agent-recertification';
+import { sha256Of } from '@/lib/agentic/agent-recertification-hash';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(120_000);

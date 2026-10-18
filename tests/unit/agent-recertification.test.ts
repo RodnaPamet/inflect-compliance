@@ -1,7 +1,7 @@
 /**
  * #3674 — the pure half of agent recertification: the narrowing rule, the pack
- * plan and its hash, the closing evidence and its hash, and the catalogue
- * facts the evidence is filed against.
+ * plan and the check that it follows from its evidence, the hashes, the
+ * closing evidence, and the catalogue facts the evidence is filed against.
  *
  * The database half — creation, the owner rule, the one-way stamps, the close
  * — is `tests/integration/access-review-agent-campaign.test.ts`.
@@ -16,18 +16,21 @@ import {
     PROPOSAL_KIND_BY_PROPOSE_TOOL,
     USE_WINDOW_DAYS,
     agentCampaignEvidenceBytes,
-    agentCampaignEvidenceHash,
     buildAgentCampaignEvidence,
     narrowingsFor,
     observationWindow,
     planAgentReviewPacks,
     sectionsOf,
-    sha256Of,
     type AgentCampaignEvidenceRows,
     type SubjectEvidence,
 } from '@/lib/agentic/agent-recertification';
+import { agentCampaignEvidenceHash, sha256Of } from '@/lib/agentic/agent-recertification-hash';
 import { PROPOSE_TOOLS } from '@/lib/mcp/tools/propose-tools';
-import { AGENT_RECERT_EVIDENCE_OBLIGATIONS, assertStaticRunIsPreparersOwn } from '@/app-layer/usecases/access-review-agent';
+import {
+    AGENT_RECERT_EVIDENCE_OBLIGATIONS,
+    assertStaticRunIsPreparersOwn,
+    checkedPlan,
+} from '@/app-layer/usecases/access-review-agent';
 import { ISO27001_FAMILY_URN, SOC2_FAMILY_URN } from '@/app-layer/domain/framework-representation';
 import { ASI_LIBRARY_URN } from '@/lib/agentic/evidence-artefact';
 import { codeOf } from '../helpers/source-blocks';
@@ -124,13 +127,15 @@ describe('a narrowing is proposed only where the evidence supports deleting a gr
 });
 
 describe('the pack plan', () => {
-    it('hashes each pack’s sections, and plans its narrowings', () => {
+    it('plans each pack’s narrowings and carries no hash — the server hashes the sections it stores', () => {
         const s = subject();
         const plan = planAgentReviewPacks(evidence([s]));
         expect(plan.packs).toHaveLength(1);
-        expect(plan.packs[0].contentHash).toBe(sha256Of(sectionsOf(s)));
-        expect(plan.packs[0].contentHash).toMatch(/^sha256:[0-9a-f]{64}$/);
+        // The plan is built by a workflow step the client bundle reaches, so
+        // it holds nothing that needs node:crypto.
+        expect(Object.keys(plan.packs[0]).sort()).toEqual(['agentId', 'decisionId', 'narrowings']);
         expect(plan.packs[0].narrowings.map((n) => n.grantId)).toEqual(['g-1']);
+        expect(sha256Of(sectionsOf(s))).toMatch(/^sha256:[0-9a-f]{64}$/);
     });
 
     it('the sections carry neither identifier, so the hash is about the evidence', () => {
@@ -139,8 +144,8 @@ describe('the pack plan', () => {
     });
 
     it('a pack whose evidence changes gets another hash', () => {
-        const before = planAgentReviewPacks(evidence([subject()])).packs[0].contentHash;
-        const after = planAgentReviewPacks(evidence([subject({ guardFlags: { FLAGGED: 1 } })])).packs[0].contentHash;
+        const before = sha256Of(sectionsOf(subject()));
+        const after = sha256Of(sectionsOf(subject({ guardFlags: { FLAGGED: 1 } })));
         expect(after).not.toBe(before);
     });
 
@@ -151,6 +156,26 @@ describe('the pack plan', () => {
     it('malformed evidence is refused, never planned as an empty campaign', () => {
         expect(() => planAgentReviewPacks({ accessReviewId: 'ar-1' })).toThrow();
         expect(() => planAgentReviewPacks(null)).toThrow();
+    });
+});
+
+describe('a recorded plan is used only when it follows from its recorded evidence', () => {
+    const e = evidence([subject()]);
+    const parsed = () => JSON.parse(JSON.stringify(planAgentReviewPacks(e)));
+
+    it('accepts the plan the evidence implies, and returns the re-derived one', () => {
+        expect(checkedPlan(e, parsed())).toEqual(planAgentReviewPacks(e));
+    });
+
+    it('refuses, by name, a plan that drops a narrowing, names another agent, or does not parse', () => {
+        const dropped = parsed();
+        dropped.packs[0].narrowings = [];
+        expect(() => checkedPlan(e, dropped)).toThrow(/^PACK_PLAN_MISMATCH:/);
+        const other = parsed();
+        other.packs[0].agentId = 'ag-other';
+        expect(() => checkedPlan(e, other)).toThrow(/^PACK_PLAN_MISMATCH:/);
+        expect(() => checkedPlan(e, { packs: 'none' })).toThrow(/^PACK_PLAN_MISMATCH:/);
+        expect(() => checkedPlan(e, null)).toThrow(/^PACK_PLAN_MISMATCH:/);
     });
 });
 

@@ -1677,7 +1677,14 @@ wrote nothing. Rules that are easy to undo:
   `prepareAgentReviewPacks` reads each run's recorded steps, RE-DERIVES the
   plan from the READ output and refuses a recorded plan that disagrees, then
   writes every pack and narrowing in one transaction. One run per
-  `PACK_PAGE_SIZE` agents, so a run's context stays bounded.
+  `PACK_PAGE_SIZE` agents, so a run's context stays bounded. The plan carries
+  NO hash: a client component imports the workflow registry, so every workflow
+  step is in the browser bundle and may not need a Node built-in — a
+  `node:crypto` there failed `next build`, and a bare `crypto` only compiles by
+  bundling a polyfill. The usecase hashes each pack's stored sections with
+  `sha256Of` from the server-only `agent-recertification-hash.ts`;
+  `tests/guards/client-reachable-modules-import-no-node-builtins.test.ts` walks
+  the import graph and holds it for every workflow.
 - **A REGISTERED AGENT prepares every pack, and never its own** (roadmap rules
   1 and 8; decision 19). The campaign names `preparerAgentId` — ACTIVE, scored,
   un-killed, un-latched, granted the read tool — which prepares every pack but

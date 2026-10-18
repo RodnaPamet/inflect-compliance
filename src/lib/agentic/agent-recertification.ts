@@ -6,11 +6,23 @@
  * rows, the pack proposes the NARROWING its evidence supports, and a person
  * decides every subject. This module owns everything about that which needs no
  * database: the shape of the evidence the read tool returns, the narrowing
- * rule, the pack hash, and the closing evidence document and its hash.
+ * rule, the pack plan, and the closing evidence document and its bytes.
  *
  * PURE and server-free, so the workflow's SYNTHESIS step can call it, the
  * usecase can call it again to check the step's answer, and a test can call it
  * with nothing but literals.
+ *
+ * ── Client-reachable, so no Node built-in ────────────────────────────────
+ *
+ * A client component reaches this module: `RuleBuilderModal` imports the
+ * workflow registry, which imports every workflow definition, and the pack
+ * workflow's SYNTHESIS step calls `planAgentReviewPacks`. A `node:crypto`
+ * import here broke `next build`; a bare `crypto` would compile only by
+ * bundling a browser polyfill into the processes page. So the HASHES live in
+ * `agent-recertification-hash.ts`, which only the server imports, and the plan
+ * carries none: the usecase hashes each pack's sections when it writes them.
+ * `tests/guards/client-reachable-modules-import-no-node-builtins.test.ts`
+ * fails if a Node built-in becomes reachable from the registry again.
  *
  * ── The narrowing rule, and the two ways it could lie ──────────────────
  *
@@ -28,7 +40,6 @@
  * A narrowing only ever DELETES a grant. There is no rule here, or anywhere in
  * the campaign, that proposes adding one or raising a card.
  */
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 import { canonicalJson } from '@/lib/canonical-json';
@@ -211,7 +222,6 @@ export const PackPlanSchema = z.object({
     packs: z.array(z.object({
         decisionId: z.string().min(1),
         agentId: z.string().min(1),
-        contentHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
         narrowings: z.array(z.object({
             grantId: z.string().min(1),
             toolName: z.string().min(1),
@@ -224,15 +234,14 @@ export const PackPlanSchema = z.object({
 
 export type PackPlan = z.infer<typeof PackPlanSchema>;
 
-/** `sha256:<hex>` over the canonical JSON of a value. */
-export function sha256Of(value: unknown): string {
-    return `sha256:${createHash('sha256').update(canonicalJson(value)).digest('hex')}`;
-}
-
 /**
- * The SYNTHESIS step: one pack per subject, its content hash and its
- * narrowings. Throws on evidence that does not parse — a step that quietly
- * planned nothing from a malformed read would look like a clean campaign.
+ * The SYNTHESIS step: one pack per subject and its narrowings. Throws on
+ * evidence that does not parse — a step that quietly planned nothing from a
+ * malformed read would look like a clean campaign.
+ *
+ * No hash: the pack's content hash is computed by the server when it writes
+ * the pack (`sha256Of` in `agent-recertification-hash.ts`), over the very
+ * sections it stores — see the module header for why it is not here.
  */
 export function planAgentReviewPacks(evidence: unknown): PackPlan {
     const e = RecertificationEvidenceSchema.parse(evidence);
@@ -242,7 +251,6 @@ export function planAgentReviewPacks(evidence: unknown): PackPlan {
         packs: e.subjects.map((s) => ({
             decisionId: s.decisionId,
             agentId: s.agentId,
-            contentHash: sha256Of(sectionsOf(s)),
             narrowings: narrowingsFor(s),
         })),
     };
@@ -411,15 +419,10 @@ export function buildAgentCampaignEvidence(rows: AgentCampaignEvidenceRows) {
 
 export type AgentCampaignEvidence = ReturnType<typeof buildAgentCampaignEvidence>;
 
-/** The bytes the evidence file holds: the canonical JSON of the document. */
+/**
+ * The bytes the evidence file holds: the canonical JSON of the document. Its
+ * hash is `agentCampaignEvidenceHash` in `agent-recertification-hash.ts`.
+ */
 export function agentCampaignEvidenceBytes(doc: AgentCampaignEvidence): string {
     return canonicalJson(doc);
-}
-
-/**
- * The content hash: hex SHA-256 of exactly the bytes stored, so it equals the
- * stored file's `sha256` and anybody holding the file can check it.
- */
-export function agentCampaignEvidenceHash(doc: AgentCampaignEvidence): string {
-    return createHash('sha256').update(agentCampaignEvidenceBytes(doc), 'utf8').digest('hex');
 }
