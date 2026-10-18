@@ -49,7 +49,7 @@ import {
 } from '@/lib/mcp/external-tool-name';
 import { verifyToolManifest, type ApprovedToolManifest } from '@/lib/mcp/tool-manifest';
 
-import { assertCanAdmin } from '../policies/common';
+import { assertAgentGovernanceAdmin } from '../policies/agent-governance.policies';
 import {
     manifestStateOf,
     writeToolManifestPin,
@@ -139,7 +139,7 @@ export async function listExternalMcpTools(
     ctx: RequestContext,
     connectionId: string,
 ): Promise<ExternalToolCatalogue> {
-    assertCanAdmin(ctx);
+    assertAgentGovernanceAdmin(ctx, 'agent_registry');
 
     const connection = await runInTenantContext(ctx, (db) =>
         db.integrationConnection.findFirst({
@@ -281,7 +281,7 @@ export async function approveExternalToolManifest(
     ctx: RequestContext,
     input: unknown,
 ): Promise<ApproveToolManifestResult> {
-    assertCanAdmin(ctx);
+    assertAgentGovernanceAdmin(ctx, 'agent_registry');
 
     const parsed = ApproveExternalToolSchema.safeParse(input);
     if (!parsed.success) {

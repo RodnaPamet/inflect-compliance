@@ -40,8 +40,10 @@ async function buildPostureCronContext(
     const member = await prisma.tenantMembership.findFirst({
         where: { tenantId, status: 'ACTIVE' },
         // Role is a Postgres enum ordered by declaration
-        // (OWNER, ADMIN, EDITOR, READER, AUDITOR), so `asc` surfaces an
-        // OWNER/ADMIN first and falls back to any active member.
+        // (OWNER, ADMIN, EDITOR, READER, AUDITOR, AI_ADMIN), so `asc`
+        // surfaces an OWNER/ADMIN first and falls back to any active member.
+        // AI_ADMIN is last on purpose (#3699): it must never sort as more
+        // senior than the roles above it.
         orderBy: { role: 'asc' },
         select: { userId: true, role: true },
     });

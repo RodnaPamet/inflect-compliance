@@ -39,6 +39,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { badRequest, forbidden, notFound } from '@/lib/errors/types';
+import { isAssignableTenantRole, unassignableRoleMessage } from '@/lib/roles';
 import {
     CreateAccessReviewSchema,
     SubmitDecisionSchema,
@@ -588,6 +589,23 @@ export async function closeAccessReview(
             throw badRequest(
                 `Cannot close: ${pending.length} decision(s) are still pending. ` +
                     `Every subject must be CONFIRMed, REVOKEd, or MODIFYd before close.`,
+            );
+        }
+
+        // A MODIFY whose target role no writer may write yet (AI_ADMIN, #3699
+        // deploy 1) refuses the whole close BEFORE any row executes, like a
+        // pending decision. `SubmitDecisionSchema` refuses it at submission;
+        // this is the read-side half, for a row stored around the schema.
+        const unassignable = decisions.find(
+            (d) =>
+                d.decision === 'MODIFY' &&
+                d.modifiedToRole !== null &&
+                !isAssignableTenantRole(d.modifiedToRole),
+        );
+        if (unassignable?.modifiedToRole) {
+            throw badRequest(
+                `Cannot close: a MODIFY decision targets a role that cannot be written. ` +
+                    unassignableRoleMessage(unassignable.modifiedToRole),
             );
         }
 

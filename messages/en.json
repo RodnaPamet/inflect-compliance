@@ -10362,7 +10362,8 @@
     "ADMIN": "Admin",
     "EDITOR": "Editor",
     "READER": "Reader",
-    "AUDITOR": "Auditor"
+    "AUDITOR": "Auditor",
+    "AI_ADMIN": "AI admin"
   },
   "orgRoles": {
     "ORG_ADMIN": "Org admin",

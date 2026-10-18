@@ -31,7 +31,8 @@ export function makeRequestContext(
             canWrite: r === 'OWNER' || r === 'ADMIN' || r === 'EDITOR',
             canAdmin: r === 'OWNER' || r === 'ADMIN',
             canAudit: r === 'OWNER' || r === 'ADMIN' || r === 'AUDITOR',
-            canExport: r !== 'READER',
+            // AI_ADMIN (#3699) sits on READER's rung of the coarse ladder.
+            canExport: r !== 'READER' && r !== 'AI_ADMIN',
         },
         appPermissions: getPermissionsForRole(r),
         ...overrides,

@@ -112,7 +112,8 @@ export type CreateRegisteredAgentInput = z.infer<typeof CreateRegisteredAgentSch
 
 /**
  * Why an amend cannot move the owner (#3698): the accountable owner moves only by
- * a TWO-STEP transfer — proposed by one holder of `admin.tenant_lifecycle`,
+ * a TWO-STEP transfer — proposed by one holder of `admin.agent_ownership`
+ * (#3699; `admin.tenant_lifecycle` until then),
  * accepted by the person it names — at `…/admin/agents/:id/ownership-transfer`.
  * The register's PATCH takes `admin.agent_registry`, which ADMIN holds, so a
  * one-step owner change here would be a bypass of that rule by the role the owner

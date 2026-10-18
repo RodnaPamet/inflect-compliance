@@ -53,7 +53,8 @@ import {
 } from './external-tool-target-populations';
 
 import { logEvent } from '../events/audit';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import type { RequestContext } from '../types';
 
 /**
@@ -469,7 +470,7 @@ export async function saveParameterSet(
     ctx: RequestContext,
     input: unknown,
 ): Promise<ParameterSetState> {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = SaveParameterSetSchema.safeParse(input);
     if (!parsed.success) {
         throw badRequest('Invalid parameter set', parsed.error.flatten());
@@ -594,7 +595,7 @@ export async function proposeParameterChange(
     ctx: RequestContext,
     input: unknown,
 ): Promise<ParameterSetState> {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = ProposeParameterChangeSchema.safeParse(input);
     if (!parsed.success) {
         throw badRequest('Invalid parameter change', parsed.error.flatten());
@@ -808,7 +809,7 @@ export async function signParameterChange(
     ctx: RequestContext,
     input: unknown,
 ): Promise<ParameterSetState> {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = SignParameterChangeSchema.safeParse(input);
     if (!parsed.success) {
         throw badRequest('Invalid parameter approval signature', parsed.error.flatten());
@@ -983,7 +984,7 @@ export async function approveParameterChange(
     ctx: RequestContext,
     input: unknown,
 ): Promise<ParameterSetState> {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = ApproveParameterChangeSchema.safeParse(input);
     if (!parsed.success) {
         throw badRequest('Invalid parameter approval', parsed.error.flatten());

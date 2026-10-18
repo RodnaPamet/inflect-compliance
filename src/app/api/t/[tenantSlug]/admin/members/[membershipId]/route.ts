@@ -5,9 +5,11 @@ import { assignCustomRole } from '@/app-layer/usecases/custom-roles';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
+import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
 
 const UpdateMemberSchema = z.object({
-    role: z.enum(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER']).optional(),
+    // The roles a writer may write — AI_ADMIN is refused until deploy 2 of #3699.
+    role: z.enum(ASSIGNABLE_TENANT_ROLES).optional(),
     customRoleId: z.string().nullable().optional(),
 });
 

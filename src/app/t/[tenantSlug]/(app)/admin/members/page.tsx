@@ -139,14 +139,24 @@ function apiErrorMessage(body: unknown, fallback: string): string {
     return fallback;
 }
 
+/**
+ * The roles this page OFFERS — a picker, so a writer's list. AI_ADMIN (#3699)
+ * is deliberately absent until deploy 2 lets an OWNER assign it here; until
+ * then the API refuses it too (`ASSIGNABLE_TENANT_ROLES`).
+ */
 const ROLES = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'] as const;
+/**
+ * Badge tone per role — a reader, so it names every role a row can carry,
+ * AI_ADMIN included: an AI_ADMIN member renders a labelled badge today even
+ * though nothing here can make one.
+ */
 const ROLE_VARIANT: Record<string, 'error' | 'info' | 'warning' | 'neutral'> = {
     ADMIN: 'error',
     EDITOR: 'info',
     AUDITOR: 'warning',
     READER: 'neutral',
+    AI_ADMIN: 'info',
 };
-const ROLE_CB_OPTIONS: ComboboxOption[] = ROLES.map(r => ({ value: r, label: r }));
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = {
     ACTIVE: 'success',
     INVITED: 'warning',
@@ -156,8 +166,19 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'
 
 export default function MembersAdminPage() {
     const t = useTranslations('admin');
+    const tRoles = useTranslations('roles');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    // A role's display label (`roles.*`), falling back to the raw value for one
+    // the catalogue does not know rather than throwing.
+    const roleLabel = useCallback(
+        (role: string) => (tRoles.has(role) ? tRoles(role) : role),
+        [tRoles],
+    );
+    const roleOptions: ComboboxOption[] = useMemo(
+        () => ROLES.map((r) => ({ value: r, label: roleLabel(r) })),
+        [roleLabel],
+    );
 
     // ─── State ───
     const [members, setMembers] = useState<Member[]>([]);
@@ -571,9 +592,9 @@ export default function MembersAdminPage() {
                                     <Combobox
                                         hideSearch
                                         id={`role-select-${m.id}`}
-                                        selected={ROLE_CB_OPTIONS.find(o => o.value === pendingRole) ?? null}
+                                        selected={roleOptions.find(o => o.value === pendingRole) ?? null}
                                         setSelected={(opt) => setPendingRole(opt?.value ?? pendingRole)}
-                                        options={ROLE_CB_OPTIONS}
+                                        options={roleOptions}
                                         matchTriggerWidth
                                         buttonProps={{ className: 'text-xs py-1 px-2 w-full sm:w-28' }}
                                     />
@@ -631,7 +652,7 @@ export default function MembersAdminPage() {
                                     }}
                                     id={`role-badge-${m.id}`}
                                 >
-                                    {m.role}
+                                    {roleLabel(m.role)}
                                     {m.status === 'ACTIVE' && <ChevronDown className="w-3.5 h-3.5 ml-0.5" />}
                                 </button>
                             </Tooltip>
@@ -775,7 +796,7 @@ export default function MembersAdminPage() {
         // changes — otherwise the inline edit row's combobox would
         // render with a stale selection.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [editingRoleId, pendingRole, pendingCustomRoleId, changingRole, customRoles, openMenuId, t],
+        [editingRoleId, pendingRole, pendingCustomRoleId, changingRole, customRoles, openMenuId, t, roleLabel, roleOptions],
     );
 
     // ─── Invites DataTable columns ───
@@ -795,7 +816,7 @@ export default function MembersAdminPage() {
                 accessorKey: 'role',
                 cell: ({ row }) => (
                     <StatusBadge variant={ROLE_VARIANT[row.original.role] || 'neutral'} icon={null}>
-                        {row.original.role}
+                        {roleLabel(row.original.role)}
                     </StatusBadge>
                 ),
             },
@@ -816,7 +837,7 @@ export default function MembersAdminPage() {
                 ),
             },
         ]),
-        [t],
+        [t, roleLabel],
     );
 
     // ─── Loading state ───
@@ -932,9 +953,9 @@ export default function MembersAdminPage() {
                             <Combobox
                                 hideSearch
                                 id="invite-role-select"
-                                selected={ROLE_CB_OPTIONS.find(o => o.value === inviteRole) ?? null}
+                                selected={roleOptions.find(o => o.value === inviteRole) ?? null}
                                 setSelected={(opt) => setInviteRole(opt?.value ?? 'READER')}
-                                options={ROLE_CB_OPTIONS}
+                                options={roleOptions}
                                 matchTriggerWidth
                             />
                         </div>

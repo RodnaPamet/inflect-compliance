@@ -1,0 +1,17 @@
+-- AI_ADMIN tenant role (#3699), deploy 1 of 2.
+--
+-- A built-in role that runs the agent register and can own and receive agents
+-- without holding the tenant-wide admin keys. This deploy only ADDS the value:
+-- every reader of TenantMembership.role handles it, and nothing writes it until
+-- deploy 2, so no running container can read a role its Prisma client does not
+-- know.
+--
+-- ADD VALUE, never RENAME or DROP: an added value breaks no cast an old
+-- container emits. APPENDED (no BEFORE/AFTER) on purpose: three job actor
+-- pickers sort TenantMembership.role ascending to find the most senior member,
+-- and this role holds less tenant authority than every existing one, so it
+-- must sort last — never ahead of ADMIN. enums.prisma declares it last too.
+--
+-- Alone in its migration: a value added by ADD VALUE cannot be used in the
+-- same transaction that adds it.
+ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'AI_ADMIN';

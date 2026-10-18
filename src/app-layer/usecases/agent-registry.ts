@@ -31,7 +31,8 @@
  */
 import { AgentDataAccessScope, AgentStatus, SuggestionItemStatus } from '@prisma/client';
 
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { runInTenantContext } from '@/lib/db-context';
 import {
     AGENTIC_CHECK_IDS,
@@ -726,7 +727,7 @@ export async function getRegisteredAgent(ctx: RequestContext, id: string) {
 }
 
 export async function createRegisteredAgent(ctx: RequestContext, input: unknown) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = CreateRegisteredAgentSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
@@ -820,7 +821,7 @@ function assertRaiseWithinTier(
 }
 
 export async function updateRegisteredAgent(ctx: RequestContext, id: string, input: unknown) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = UpdateRegisteredAgentSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
@@ -942,7 +943,7 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
  * the route admits.
  */
 function assertCanRetireAgent(ctx: RequestContext) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     if (!ctx.appPermissions?.admin?.agent_registry) {
         throw forbidden(
             'Retiring an agent requires permission to manage the agent register. ' +
@@ -1087,7 +1088,7 @@ async function assertLifecycleMovable(
  * would only make the permanent state reversible.
  */
 export async function suspendRegisteredAgent(ctx: RequestContext, id: string) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     return runInTenantContext(ctx, async (db) => {
         await assertLifecycleMovable(db, ctx, id, 'SUSPENDED');
         return applyRegisteredAgentStatus(db, ctx, id, 'SUSPENDED', 'AGENT_SUSPENDED');
@@ -1165,7 +1166,7 @@ export async function suspendAgentForOwnerDeparture(
  * retirement is permanent (#3698), see `assertLifecycleMovable`.
  */
 export async function activateRegisteredAgent(ctx: RequestContext, id: string) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     return runInTenantContext(ctx, async (db) => {
         // A retired agent is refused before its score is even read: retirement
         // is permanent, and "complete its assessment" would be the wrong fix.
@@ -1199,7 +1200,7 @@ export async function activateRegisteredAgent(ctx: RequestContext, id: string) {
  * would make the first failure mode reachable.
  */
 export async function registerAgent(ctx: RequestContext, input: unknown) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = RegisterAgentSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {

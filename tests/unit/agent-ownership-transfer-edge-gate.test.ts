@@ -6,9 +6,10 @@
  *
  * Step one refuses a recipient who could never complete step two, so it has to
  * predict every gate step two meets. Two of them: the route's literal
- * `requirePermission('admin.tenant_lifecycle')`, and BEFORE it the edge
- * middleware's admin-path gate, which reads the session's BUILT-IN role and
- * answers 403 "Admin access required" unless it is ADMIN or OWNER. A custom
+ * `requirePermission('admin.agent_ownership')` (#3699), and BEFORE it the edge
+ * middleware's admin-path gate, which reads the session's BUILT-IN role in the
+ * URL's tenant and answers 403 "Admin access required" unless it is ADMIN or
+ * OWNER — or AI_ADMIN, on the agent paths these routes sit under. A custom
  * role never enters that check, so a READER whose custom role carries the key
  * passes `requirePermission` and never reaches it.
  *
@@ -19,7 +20,6 @@
  * disagrees with the other.
  */
 import { NextRequest } from 'next/server';
-import { Role } from '@prisma/client';
 
 jest.mock('../../src/lib/rate-limit/authRateLimit', () => ({
     checkAuthRateLimit: jest.fn().mockResolvedValue({ ok: true }),
@@ -37,11 +37,12 @@ import {
     isTransferRecipientMembershipRole,
     TRANSFER_RECIPIENT_MEMBERSHIP_ROLES,
 } from '@/lib/agentic/ownership-transfer';
+import { TENANT_ROLES } from '@/lib/roles';
 
 const mockGetToken = getToken as jest.Mock;
 
 /** A signed-in member of `acme` whose (primary) built-in role is `role`. */
-function tokenFor(role: Role) {
+function tokenFor(role: string) {
     return {
         sub: 'user-1',
         userId: 'user-1',
@@ -72,7 +73,10 @@ const ROUTES: Array<[string, string]> = [
 beforeEach(() => jest.clearAllMocks());
 
 describe('the edge admits exactly the built-in roles step one accepts as a recipient', () => {
-    const roles = Object.values(Role);
+    // `TENANT_ROLES`, not `Object.values(Role)`: it is checked against the
+    // `Role` TYPE at compile time, so it cannot lag a runtime client generated
+    // before AI_ADMIN existed.
+    const roles: readonly string[] = TENANT_ROLES;
 
     it('covers every built-in role, and the set names only real ones', () => {
         expect(roles.length).toBeGreaterThan(TRANSFER_RECIPIENT_MEMBERSHIP_ROLES.length);

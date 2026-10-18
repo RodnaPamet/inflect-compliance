@@ -55,7 +55,8 @@ import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
 import type { AgentDataAccessScope } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { logEvent } from '../events/audit';
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
@@ -343,7 +344,7 @@ function assertGrantWithinDeclaredDataScope(
 }
 
 export async function grantAgentTool(ctx: RequestContext, agentId: string, input: unknown) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_tool_exposure');
     const { toolName } = AgentToolGrantSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
@@ -424,7 +425,7 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
 }
 
 export async function revokeAgentTool(ctx: RequestContext, agentId: string, toolName: string) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_tool_exposure');
     return runInTenantContext(ctx, async (db) => {
         // No `assertAgentGrantable` here, deliberately: revoking must work on a
         // RETIRED agent too. Taking authority away is never the move to refuse

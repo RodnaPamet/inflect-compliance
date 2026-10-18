@@ -242,7 +242,7 @@ describe('the accountable owner must be an active member of this tenant', () => 
         // Until #3698 this asserted that an amend refused a non-member owner,
         // which implied an amend could move the owner to a member. It cannot:
         // the PATCH takes `admin.agent_registry`, which ADMIN holds, and the
-        // owner moves only by the transfer under `admin.tenant_lifecycle`.
+        // owner moves only by the transfer under `admin.agent_ownership`.
         // A member and a non-member are refused alike, by name, before
         // anything is read or written.
         const { db } = useDb();

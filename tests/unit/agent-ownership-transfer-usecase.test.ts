@@ -19,9 +19,11 @@
  *      before looking for an open one, and maps the partial-unique race and the
  *      retired-agent trigger to a conflict;
  *   5. a recipient's BUILT-IN membership role is asked as well as the key: the
- *      edge refuses a non-ADMIN/OWNER role before the route runs;
+ *      edge refuses a READER, EDITOR or AUDITOR role before the route runs, and
+ *      admits an AI_ADMIN (#3699), which holds the key by default;
  *   6. a lapsed cancel is stamped and committed before it is refused;
- *   7. every verb asserts `admin.tenant_lifecycle` before touching the database.
+ *   7. every verb asserts `admin.agent_ownership` (#3699) before touching the
+ *      database.
  */
 
 jest.mock('@/lib/db-context', () => ({
@@ -237,14 +239,14 @@ describe('step one', () => {
     });
 
     it.each([
-        ['a READER', { role: 'READER', customRole: { baseRole: 'READER', permissionsJson: { admin: { tenant_lifecycle: true } } } }],
-        ['an EDITOR', { role: 'EDITOR', customRole: { baseRole: 'EDITOR', permissionsJson: { admin: { tenant_lifecycle: true } } } }],
-        ['an AUDITOR', { role: 'AUDITOR', customRole: { baseRole: 'AUDITOR', permissionsJson: { admin: { tenant_lifecycle: true } } } }],
+        ['a READER', { role: 'READER', customRole: { baseRole: 'READER', permissionsJson: { admin: { agent_ownership: true } } } }],
+        ['an EDITOR', { role: 'EDITOR', customRole: { baseRole: 'EDITOR', permissionsJson: { admin: { agent_ownership: true } } } }],
+        ['an AUDITOR', { role: 'AUDITOR', customRole: { baseRole: 'AUDITOR', permissionsJson: { admin: { agent_ownership: true } } } }],
     ])('refuses %s membership even when its custom role carries the key', async (_l, membership) => {
         const db = useDb({ transfer: null, membership });
         await expect(
             proposeAgentOwnershipTransfer(ctxFor('owner-a'), 'agent-1', { toOwnerUserId: 'owner-b' }),
-        ).rejects.toThrow(/an OWNER, or an ADMIN whose custom role carries/);
+        ).rejects.toThrow(/an OWNER, an AI admin, or an ADMIN whose custom role carries/);
         expect(db.agentOwnershipTransfer.create).not.toHaveBeenCalled();
     });
 
@@ -253,11 +255,39 @@ describe('step one', () => {
             transfer: null,
             membership: {
                 role: 'ADMIN',
-                customRole: { baseRole: 'READER', permissionsJson: { admin: { tenant_lifecycle: true } } },
+                customRole: { baseRole: 'READER', permissionsJson: { admin: { agent_ownership: true } } },
             },
         });
         await proposeAgentOwnershipTransfer(ctxFor('owner-a'), 'agent-1', { toOwnerUserId: 'owner-b' });
         expect(db.agentOwnershipTransfer.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts an AI_ADMIN membership with no custom role — it holds the key by default (#3699)', async () => {
+        const db = useDb({ transfer: null, membership: { role: 'AI_ADMIN', customRole: null } });
+        await proposeAgentOwnershipTransfer(ctxFor('owner-a'), 'agent-1', { toOwnerUserId: 'owner-b' });
+        expect(db.agentOwnershipTransfer.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an AI_ADMIN membership whose custom role withdraws the key', async () => {
+        const db = useDb({
+            transfer: null,
+            membership: {
+                role: 'AI_ADMIN',
+                customRole: { baseRole: 'READER', permissionsJson: { admin: { agent_ownership: false } } },
+            },
+        });
+        await expect(
+            proposeAgentOwnershipTransfer(ctxFor('owner-a'), 'agent-1', { toOwnerUserId: 'owner-b' }),
+        ).rejects.toThrow(/agent ownership permission/);
+        expect(db.agentOwnershipTransfer.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a plain ADMIN membership — the register key is not the ownership key', async () => {
+        const db = useDb({ transfer: null, membership: { role: 'ADMIN', customRole: null } });
+        await expect(
+            proposeAgentOwnershipTransfer(ctxFor('owner-a'), 'agent-1', { toOwnerUserId: 'owner-b' }),
+        ).rejects.toThrow(/agent ownership permission/);
+        expect(db.agentOwnershipTransfer.create).not.toHaveBeenCalled();
     });
 
     it('stamps a lapsed transfer BEFORE looking for an open one', async () => {
@@ -319,7 +349,7 @@ describe('a lapsed cancel is stamped, committed, and only then refused', () => {
     });
 });
 
-describe('every verb takes admin.tenant_lifecycle before touching the database', () => {
+describe('every verb takes admin.agent_ownership before touching the database', () => {
     it.each([
         ['read', () => getAgentOwnershipTransfers(ctxFor('admin-1', 'ADMIN'), 'agent-1')],
         ['propose', () => proposeAgentOwnershipTransfer(ctxFor('admin-1', 'ADMIN'), 'agent-1', { toOwnerUserId: 'owner-b' })],
@@ -329,5 +359,29 @@ describe('every verb takes admin.tenant_lifecycle before touching the database',
         useDb();
         await expect(call()).rejects.toBeInstanceOf(ForbiddenError);
         expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it('a context holding tenant lifecycle but NOT agent ownership is refused — the key moved (#3699)', async () => {
+        useDb();
+        const base = makeRequestContext('ADMIN', { tenantId: 'tenant-1', userId: 'admin-1' });
+        const lifecycleOnly = {
+            ...base,
+            appPermissions: {
+                ...base.appPermissions,
+                admin: { ...base.appPermissions.admin, tenant_lifecycle: true, agent_ownership: false },
+            },
+        };
+        await expect(getAgentOwnershipTransfers(lifecycleOnly, 'agent-1')).rejects.toBeInstanceOf(
+            ForbiddenError,
+        );
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
+    it('an AI_ADMIN context passes the gate (the read reaches the database)', async () => {
+        useDb({ transfer: null });
+        const ai = makeRequestContext('AI_ADMIN', { tenantId: 'tenant-1', userId: 'ai-1' });
+        expect(ai.permissions.canWrite).toBe(false);
+        await getAgentOwnershipTransfers(ai, 'agent-1').catch(() => undefined);
+        expect(mockRunInTx).toHaveBeenCalled();
     });
 });

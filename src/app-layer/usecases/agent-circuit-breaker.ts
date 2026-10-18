@@ -52,7 +52,8 @@ import {
 import { countGuardBlocksInWindow } from '@/lib/agentic/circuit-breaker-store';
 import { recordAgentBreakerClose } from '@/lib/observability/integration-metrics';
 
-import { assertCanAdmin, assertCanRead } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertAgentGovernanceAdmin } from '../policies/agent-governance.policies';
 import { logEvent } from '../events/audit';
 import type { RequestContext } from '../types';
 
@@ -357,7 +358,7 @@ export async function closeAgentCircuitBreaker(
     agentId: string,
     reason: BreakerCloseReason,
 ) {
-    assertCanAdmin(ctx);
+    assertAgentGovernanceAdmin(ctx, 'agent_registry');
     return runInTenantContext(ctx, async (db) => {
         const breaker = await db.agentCircuitBreaker.findUnique({
             where: { tenantId_agentId: { tenantId: ctx.tenantId, agentId } },

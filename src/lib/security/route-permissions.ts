@@ -367,13 +367,14 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/ownership-transfer(\\/complete)?$`),
-        permission: 'admin.tenant_lifecycle',
+        permission: 'admin.agent_ownership',
         note:
             'Propose, read, cancel and complete a two-step agent ownership ' +
-            'transfer (#3698, step 0e). Tenant lifecycle, not agent_registry: ' +
-            "ADMIN holds the register key, and an agent's accountable owner " +
-            'must not be movable by the role it is accountable to. The person ' +
-            'completing step two must hold this key too. Above the catch-all: ' +
+            'transfer (#3698). Its own key since #3699 (admin.tenant_lifecycle ' +
+            'before it), held by OWNER and AI_ADMIN and NOT by ADMIN: ADMIN ' +
+            "holds the register key, and an agent's accountable owner must not " +
+            'be movable by the role it is accountable to. The person completing ' +
+            'step two must hold this key too. Above the catch-all: ' +
             'first-match-wins would otherwise record admin.agent_registry.',
     },
     {

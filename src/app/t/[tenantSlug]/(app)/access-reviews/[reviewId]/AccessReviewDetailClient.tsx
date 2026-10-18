@@ -36,9 +36,23 @@ import { FormField } from '@/components/ui/form-field';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
+import { TENANT_ROLES, type AssignableTenantRole } from '@/lib/roles';
 
-const ALL_ROLES = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR'] as const;
-type Role = (typeof ALL_ROLES)[number];
+/**
+ * The roles a MODIFY decision may target — a writer's list, because closing the
+ * campaign writes the target to the membership. AI_ADMIN (#3699) is absent
+ * until deploy 2 (`ASSIGNABLE_TENANT_ROLES`, which the API enforces).
+ */
+const MODIFY_TARGET_ROLES = [
+    'OWNER',
+    'ADMIN',
+    'EDITOR',
+    'READER',
+    'AUDITOR',
+] as const satisfies readonly AssignableTenantRole[];
+type ModifyTargetRole = (typeof MODIFY_TARGET_ROLES)[number];
+/** A role a row can CARRY — a reader's type, so AI_ADMIN included. */
+type Role = (typeof TENANT_ROLES)[number];
 type DecisionType = 'CONFIRM' | 'REVOKE' | 'MODIFY';
 type Status = 'OPEN' | 'IN_REVIEW' | 'CLOSED';
 
@@ -811,11 +825,11 @@ function DecisionDialog({
 }) {
     const t = useTranslations('accessReviews');
     const [notes, setNotes] = useState('');
-    const [modifiedToRole, setModifiedToRole] = useState<Role>('READER');
+    const [modifiedToRole, setModifiedToRole] = useState<ModifyTargetRole>('READER');
     const [error, setError] = useState<string | null>(null);
 
     const targetRoles = useMemo(
-        () => ALL_ROLES.filter((r) => r !== decision.row.snapshotRole),
+        () => MODIFY_TARGET_ROLES.filter((r) => r !== decision.row.snapshotRole),
         [decision.row.snapshotRole],
     );
 
@@ -880,7 +894,7 @@ function DecisionDialog({
                             <select
                                 className="input"
                                 value={modifiedToRole}
-                                onChange={(e) => setModifiedToRole(e.target.value as Role)}
+                                onChange={(e) => setModifiedToRole(e.target.value as ModifyTargetRole)}
                                 data-testid="decision-modal-modified-to-role"
                             >
                                 {targetRoles.map((r) => (

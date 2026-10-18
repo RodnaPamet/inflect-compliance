@@ -248,11 +248,12 @@ keep whatever keys and grants they held then.
 
 An agent's owner moves only by a two-step transfer
 (`…/admin/agents/[agentId]/ownership-transfer` and `…/ownership-transfer/complete`,
-both a literal `requirePermission('admin.tenant_lifecycle')`, and API-only: no
-page calls them). Step one names the new owner, who must be an active OWNER, or
-an active ADMIN whose custom role carries `admin.tenant_lifecycle` — the routes
-sit under `/admin/`, where the edge admits only the ADMIN and OWNER built-in
-roles; step two is completed by that person and never
+both a literal `requirePermission('admin.agent_ownership')`, and API-only: no
+page calls them). Step one names the new owner, who must be an active OWNER, an
+active `AI_ADMIN`, or an active ADMIN whose custom role carries
+`admin.agent_ownership` — the routes sit under `/admin/`, where the edge admits
+the ADMIN and OWNER built-in roles, and `AI_ADMIN` on the agent paths only;
+step two is completed by that person and never
 by the one who started it, and re-checks that the agent is not retired or
 removed, is still owned by the person it was proposed away from, and that the
 completer is still an active member holding the key. A proposal lasts seven
@@ -264,8 +265,11 @@ anyone but the recipient unrepresentable, a partial unique index admits one
 `app_user` cannot delete one. The register's `PATCH` refuses `ownerUserId` by
 name, and the amend dialog shows the owner read-only.
 
-That recipient set is narrow on purpose, and the owner accepted it on
-2026-10-18 as the interim state (decision 14 below). The edge gate reads the
+The recipient set was narrower until #3699: both routes took
+`admin.tenant_lifecycle`, so an agent passed only to an OWNER, which the owner
+accepted on 2026-10-18 as the interim state (decision 14 below). #3699 moved
+both routes to their own key, `admin.agent_ownership`, which OWNER and the new
+built-in `AI_ADMIN` role hold and ADMIN does not. The edge gate reads the
 built-in role in the tenant being called, from the session's membership for
 that tenant (#3701), so the recipient set is exactly what step two meets. Until
 #3701 it read the primary — oldest — membership's role instead (decision 15
@@ -349,11 +353,35 @@ Both jobs emit outcome metrics (`agentic.owner_orphan_pass.*`,
 `agentic.credential_hygiene.*`), and their execution rows are excluded from the
 tenant-wide control-check list.
 
+### The AI_ADMIN role
+
+`AI_ADMIN` (#3699) is a built-in tenant role that runs the agent register and
+can own and receive agents. It holds the seven agent keys
+(`admin.agent_registry`, `agent_tool_exposure`, `agent_policy_card`,
+`agent_kill_switch`, `agent_external_tools`, `agent_harness_ingest` and
+`agent_ownership`) on top of READER's read access, and none of the tenant-wide
+admin keys: no members, SSO, SCIM, billing or security settings, tenant
+lifecycle, owner management, DSAR register or admin console. Its coarse tier is
+READER's, and the agent usecases accept the agent key as their floor, so it
+writes nothing outside the agent register. The edge admits it to
+`/api/t/:slug/admin/agents/**`, `/api/t/:slug/admin/mcp/quarantine` and the
+agent redirect pages under `/t/:slug/admin` (`AI_ADMIN_ADMIN_PATH_PREFIXES` in
+`src/lib/auth/guard.ts`) and refuses it on every other admin path. Identity
+providers can never confer it: SCIM's ceiling, the Entra group-mapping schema
+and resolver (`NEVER_GROUP_MAPPED_ROLES`) and SSO JIT all exclude it.
+
+It ships in two deploys, for the same reason `UNCLASSIFIED` did: a running
+container whose Prisma client predates a value fails every read of a row that
+carries it. Deploy 1 is on `main`: the enum value exists, every reader of a role
+handles it, and nothing writes it — every membership-role writer reads
+`ASSIGNABLE_TENANT_ROLES` in `src/lib/roles.ts`, which excludes it. Nothing in
+the product can assign the role until deploy 2.
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Five separate admin rights. The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`, and which nothing writes until `2a`'s intake (#3669). | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key; nothing assigns the role yet (deploy 1 of #3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`, and which nothing writes until `2a`'s intake (#3669). | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
@@ -493,7 +521,11 @@ changed what #3698 built.
     OWNER, or to an ADMIN whose custom role carries `admin.tenant_lifecycle`.
     This is the accepted interim state. A new built-in `AI_ADMIN` role widens who
     can receive an agent, in its own pull request (#3699); the edge gate is not widened
-    for the transfer paths in the meantime. (`2a`)
+    for the transfer paths in the meantime. (`2a`) Widened by #3699 deploy 1 on
+    2026-10-18: both routes take a new key, `admin.agent_ownership`, held by
+    OWNER and `AI_ADMIN`; the edge admits `AI_ADMIN` to the agent paths only.
+    ADMIN does not hold the key — the default the issue named, kept pending the
+    owner's confirmation.
 15. **The edge gate's primary-membership limitation stays documented, not
     fixed, in `2a`.** The edge reads the role of the session's oldest
     membership, not the role in the tenant being called. It fails closed, and
@@ -524,12 +556,13 @@ a rule in `src/lib/security/route-permissions.ts`, except the two endpoints
 under [Token-gated endpoints](#token-gated-endpoints), which say why. Key names
 follow `PERMISSION_SCHEMA` in `src/lib/permissions.ts`.
 
-**Two keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
-and one new key:
+**Three keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
+the seventh, which #3699 shipped, and one new key:
 
 | Key | Gates | Granted by role | Bearer tokens |
 |---|---|---|---|
 | `admin.agent_harness_ingest` | Submitting a signed report, `POST /api/t/:slug/admin/agents/harness-scans` (`1a`, shipped in #3688), and the scanner's read of the register (`1a`, below) | OWNER, ADMIN | The `admin:harness_ingest` scope grants it and nothing else (`SCOPE_ACTION_MAP` in `src/lib/auth/api-key-auth.ts`). `*` carries it too: `*` is ADMIN's set minus the four agent-governance flags, and ADMIN holds it |
+| `admin.agent_ownership` | Proposing, reading, cancelling and completing an agent ownership transfer, `…/admin/agents/[agentId]/ownership-transfer` and `…/complete` (`2a`, shipped in #3699; `admin.tenant_lifecycle` until then) | OWNER, AI_ADMIN. Not ADMIN, which holds `admin.agent_registry`: an agent's accountable owner must not be movable by the role that owner is accountable to. An OWNER can grant it to an ADMIN through a custom role | Not carried by `*` (ADMIN's set, which lacks it), and no scope maps to it |
 | `admin.agent_skill_review` | Authoring, approving and retiring a tenant skill (`4c`) | OWNER, ADMIN | Not carried by `*`, and no scope maps to it |
 
 - **Reading scans takes the register key.** `GET …/admin/agents/harness-scans`
@@ -605,7 +638,7 @@ and one new key:
 | Record, renew or list an `AgentHarnessAcceptance` (`1a`) | `admin.agent_registry`, held by the agent's owner | Shipped in #3688 at `…/admin/agents/harness-acceptances` (`GET`, `POST`). The route takes `admin.agent_registry`, and `acceptHarnessShortfall` in `src/app-layer/usecases/agent-harness-acceptance.ts` refuses anyone but the registered agent's owner, because accepting a risk is the act of the person accountable for it. A shadow agent has no owner, so it is registered before its shortfall can be accepted. There is no separate approval: a renewal is a new acceptance, of at most 365 days, that revokes the one in force. No API key carries `admin.agent_registry`, so no bearer token records an acceptance. |
 | Registration intake from a `SHADOW_AGENT` finding (`2a`) | `admin.agent_registry` | It creates a DRAFT register row and its AI-system entry. |
 | Retire an agent, with its cascade (`2a`) | `admin.agent_registry` | The existing `DELETE /api/t/:slug/admin/agents/[agentId]`. See the cascade table below. |
-| Propose, and complete, an agent ownership transfer (`2a`) | `admin.tenant_lifecycle` | Ownership transfer sits under tenant lifecycle, the key whose docstring already lists "transfer ownership". |
+| Propose, and complete, an agent ownership transfer (`2a`) | `admin.agent_ownership` | Decided as `admin.tenant_lifecycle` in 0e, the key whose docstring lists "transfer ownership"; #3699 gave it its own key so the built-in `AI_ADMIN` role can hold it without holding tenant lifecycle. ADMIN holds neither. |
 | Set the orphan pass's mode (`2b`) | `admin.tenant_lifecycle` | The key `/admin/identity-write-policy` carries for the identity ladder: the mode decides whether a scheduled job stops agents unattended. Shipped by `2b` (#3670) at `…/admin/agents/owner-orphan-pass` (`GET`, `PUT`), with its rule above the register's catch-all. |
 | Lift an `OWNER_DEPARTED` kill (`2b`) | `admin.agent_kill_switch` | The existing kill-switch route. The completed transfer is a precondition in the usecase, not a second key. Shipped by `2b` (#3670): the usecase also requires the lifter to be the agent's new owner, and a trigger holds both rules below it. |
 | Show a connection's passport (`2d`) | `admin.manage` | The view sits on the integrations admin page, and `/admin/integrations(/.*)?` resolves to `admin.manage`, the key of the integration settings beside it. Passports are derived (#3672), so the view writes nothing. |
@@ -655,14 +688,16 @@ holder of a narrower key keeps the standalone verb they hold today.
 | Expire its open proposals | `AgentProposal` rows moved from `PENDING` to `EXPIRED` | No key: the `agent-proposal-expiry` job expires them, and a person rejects one at `/agent-proposals/[id]/reject` behind `assertCanWrite` and no key |
 | Freeze its policy card | No further `AgentPolicyCardVersion` | `admin.agent_policy_card`, at `/admin/agents/[agentId]/policy-card` |
 | Revoke its harness scanner signing keys | `AgentHarnessScannerKey.revokedAt` set where `agentId` is the agent (added by `2a`, #3698: an unrevoked key keeps verifying reports after its scanner is retired) | `admin.agent_registry`, at `/admin/agents/harness-scanner-keys/[keyId]` |
-| Cancel its open ownership transfer | `AgentOwnershipTransfer.status` moved from `PENDING` to `CANCELLED`, by the retiring actor; a lapsed one to `EXPIRED`, with no actor (added by `2a`, #3698: a retired agent can never be completed into) | `admin.tenant_lifecycle`, at `/admin/agents/[agentId]/ownership-transfer` |
+| Cancel its open ownership transfer | `AgentOwnershipTransfer.status` moved from `PENDING` to `CANCELLED`, by the retiring actor; a lapsed one to `EXPIRED`, with no actor (added by `2a`, #3698: a retired agent can never be completed into) | `admin.agent_ownership` (`admin.tenant_lifecycle` until #3699), at `/admin/agents/[agentId]/ownership-transfer` |
 | Withdraw its evidence artefacts | None attributable, so none withdrawn (amended by `2a`, #3698, and settled by decision 13). Every `AgenticEvidenceArtefact` is a tenant-wide aggregate per period, and the agent's past actions stay correctly counted in `CURRENT` artefacts; the summary audit row records `evidenceArtefactsWithdrawn: 0` and the basis. Per-agent evidence a retirement can withdraw is #3700 | No key: only the emission usecase withdraws (`src/app-layer/usecases/agentic-evidence-emission.ts`) |
 
 `2a` shipped the cascade (#3698): `retireRegisteredAgent` no longer refuses while
 a proposal is `PENDING`, and its docstring records why the old refusal went.
 
 **Agent ownership transfer.** Both steps of `transferAgentOwnership` carry a
-literal `requirePermission('admin.tenant_lifecycle')`, and the second step
+literal `requirePermission('admin.agent_ownership')` (#3699; 0e decided
+`admin.tenant_lifecycle`, which the rest of this paragraph records), and the
+second step
 cannot be performed by the first actor. The person who completes step two must
 therefore hold the key as well: with the built-in roles an agent passes only to
 an OWNER, or to a member an OWNER has given a custom role carrying the key.
@@ -677,7 +712,8 @@ key would pass the route and never reach it, so step one refuses them.
 Admitting them would mean widening the edge gate for these paths, which is a
 separate decision. The owner accepted the narrow set as the interim state on
 2026-10-18; a new built-in `AI_ADMIN` role widens it in its own pull request —
-see decision 14.)
+see decision 14. Widened by #3699: the key is now `admin.agent_ownership`, held
+by OWNER and `AI_ADMIN`, and the edge admits `AI_ADMIN` to the agent paths.)
 
 **A membership's line of defence is OWNER-only.** The route takes
 `admin.owner_management`, which `getPermissionsForRole` grants to OWNER and

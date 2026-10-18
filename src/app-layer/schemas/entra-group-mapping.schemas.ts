@@ -10,7 +10,15 @@
  */
 import { z } from 'zod';
 
-/** The roles an Entra group may map to (every Role except OWNER). */
+/**
+ * The roles an Entra group may map to: every Role except OWNER and AI_ADMIN.
+ *
+ * AI_ADMIN (#3699) holds the agent keys, including the one that makes its
+ * holder a possible owner of an agent, so it is granted by an OWNER in the
+ * product and never by an identity provider's group. The resolver refuses it
+ * too (`NEVER_GROUP_MAPPED_ROLES` in `src/lib/auth/entra-role-mapping.ts`), so
+ * a row written around this schema cannot yield it either.
+ */
 export const ENTRA_MAPPABLE_ROLES = ['ADMIN', 'EDITOR', 'READER', 'AUDITOR'] as const;
 export type EntraMappableRole = (typeof ENTRA_MAPPABLE_ROLES)[number];
 

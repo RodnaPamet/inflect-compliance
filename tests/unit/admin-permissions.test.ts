@@ -109,6 +109,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_kill_switch: true,
             agent_external_tools: true,
             agent_harness_ingest: true,
+            agent_ownership: true,
         });
     });
 
@@ -130,6 +131,8 @@ describe('PermissionSet admin capabilities', () => {
             agent_kill_switch: true,
             agent_external_tools: true,
             agent_harness_ingest: true,
+            // #3699 — ADMIN holds the register key and NOT the ownership key.
+            agent_ownership: false,
         });
     });
 
@@ -151,6 +154,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_kill_switch: false,
             agent_external_tools: false,
             agent_harness_ingest: false,
+            agent_ownership: false,
         });
     });
 
@@ -172,6 +176,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_kill_switch: false,
             agent_external_tools: false,
             agent_harness_ingest: false,
+            agent_ownership: false,
         });
     });
 
@@ -193,6 +198,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_kill_switch: false,
             agent_external_tools: false,
             agent_harness_ingest: false,
+            agent_ownership: false,
         });
     });
 });

@@ -5,8 +5,8 @@
  * two-person rules downstream compare against, and what 2b's departed-owner
  * pass will read. So it moves only by a TWO-STEP transfer: step one records who
  * should become the owner, and only that person completes it — never the person
- * who started it. Both steps take `admin.tenant_lifecycle` (step 0e). The
- * usecases are `src/app-layer/usecases/agent-ownership-transfer.ts`; this module
+ * who started it. Both steps take `admin.agent_ownership` (#3699; step 0e put
+ * them on `admin.tenant_lifecycle` until then). The usecases are `src/app-layer/usecases/agent-ownership-transfer.ts`; this module
  * is the part the usecases, the database refusals and the tests all read, and it
  * carries no server import.
  */
@@ -42,31 +42,34 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Both steps live under `/api/t/:slug/admin/`, and the edge middleware answers
  * every such request 403 "Admin access required" — before any handler or
  * `requirePermission` runs, and writing no `AUTHZ_DENIED` row — unless the
- * session's built-in role is ADMIN or OWNER (`src/middleware.ts`, "Admin-only
- * paths"). A custom role never enters that check: `assignCustomRole` writes
- * only `customRoleId`, so a READER an OWNER gave a custom role carrying
- * `admin.tenant_lifecycle` still reads as READER at the edge, and could never
- * reach step two. Step one therefore asks both questions step two will meet:
- * this role, at the edge, and the key, at the route.
+ * role in the URL tenant's membership is ADMIN or OWNER, or is AI_ADMIN on one
+ * of the agent paths (`checkAdminAccess` and `AI_ADMIN_ADMIN_PATH_PREFIXES` in
+ * `src/lib/auth/guard.ts`). A custom role never enters that check:
+ * `assignCustomRole` writes only `customRoleId`, so a READER an OWNER gave a
+ * custom role carrying `admin.agent_ownership` still reads as READER at the
+ * edge, and could never reach step two. Step one therefore asks both questions
+ * step two will meet: this role, at the edge, and the key, at the route.
  *
- * So the recipients are: an OWNER, or an ADMIN whose custom role carries the
- * key. `tests/unit/agent-ownership-transfer-edge-gate.test.ts` runs the real
+ * So the recipients are: an OWNER; an AI_ADMIN (#3699), which holds the key by
+ * default and which the edge admits to `/admin/agents/**`; or an ADMIN whose
+ * custom role carries the key — ADMIN does not hold it by default.
+ * `tests/unit/agent-ownership-transfer-edge-gate.test.ts` runs the real
  * middleware against the completion route for every built-in role and fails if
  * this set and the edge ever disagree.
  *
- * This narrow set is the owner's accepted INTERIM state (decided 2026-10-18).
- * A new built-in `AI_ADMIN` role is to widen who can receive an agent, in its
- * own pull request; widening it here instead — admitting a READER, EDITOR or
- * AUDITOR custodian by loosening the edge gate for these paths — would be a
- * security-middleware change this module must not make on its own.
+ * Until #3699 the set was OWNER and ADMIN and the key was
+ * `admin.tenant_lifecycle`: the owner's accepted interim state (2026-10-18),
+ * under which an agent could pass only to an OWNER. The AI_ADMIN role is what
+ * widened it, with the edge admitting that role to the agent paths only.
+ * Admitting a READER, EDITOR or AUDITOR custodian here would still mean
+ * loosening the edge gate for these paths, which this module must not do on
+ * its own.
  *
  * The role the edge reads is the one in THIS tenant's membership, taken from
  * the session's `memberships[]` entry for the URL's slug (#3701), so this
- * predicate and the edge read the same row. Until #3701 the edge read the
- * session's primary (oldest) membership instead, which refused an OWNER here
- * whose oldest membership was a READER elsewhere.
+ * predicate and the edge read the same row.
  */
-export const TRANSFER_RECIPIENT_MEMBERSHIP_ROLES = ['OWNER', 'ADMIN'] as const;
+export const TRANSFER_RECIPIENT_MEMBERSHIP_ROLES = ['OWNER', 'ADMIN', 'AI_ADMIN'] as const;
 
 /** Whether a built-in membership role can reach the transfer routes at all. */
 export function isTransferRecipientMembershipRole(role: string): boolean {

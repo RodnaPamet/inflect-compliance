@@ -497,6 +497,74 @@ export function checkTenantAccess(
 export const EDGE_ADMIN_ROLES: ReadonlySet<string> = new Set(['ADMIN', 'OWNER']);
 
 /**
+ * The ONLY admin paths the edge admits an `AI_ADMIN` to (#3699) — tenant
+ * templates, `[slug]` standing for the URL's tenant slug, each matched as the
+ * path itself or a sub-path on a SEGMENT boundary.
+ *
+ * `AI_ADMIN` runs the agent register and holds the agent keys and no
+ * tenant-wide admin key, so it reaches exactly the admin surface those keys
+ * gate:
+ *
+ *   - `/api/t/[slug]/admin/agents`          every agent admin API — the
+ *     register, policy cards, tool grants, the kill switch, harness scans and
+ *     scanner keys, parameter sets, reports, skills, and the two-step
+ *     ownership transfer (`admin.agent_ownership`);
+ *   - `/api/t/[slug]/admin/mcp/quarantine`  the quarantine triage read, gated
+ *     `admin.agent_registry` — the one agent-key API outside `/admin/agents`,
+ *     and the only data path of `/agents/quarantine`;
+ *   - `/t/[slug]/admin/agents`, `/t/[slug]/admin/mcp/agent-receipts`,
+ *     `/t/[slug]/admin/mcp/quarantine`  the agent PAGES still under `/admin`,
+ *     all compatibility redirects to `/t/[slug]/agents/**`, which is not an
+ *     admin path at all.
+ *
+ * NOT `/admin/mcp` itself (agent CREDENTIALS, `admin.view`), not
+ * `/admin/security-settings/agent-enforcement` (`admin.manage`), not
+ * `/admin/agent-driver` (`admin.tenant_lifecycle`): those keys are tenant-wide
+ * and the role holds none of them. Every other `/admin/**` path refuses it.
+ *
+ * The edge only PRE-FILTERS. The handler's literal `requirePermission` stays
+ * the authority on every one of these routes, and is what writes
+ * `AUTHZ_DENIED`. `tests/unit/ai-admin-edge-allowlist.test.ts` pins this list
+ * by exact set equality and runs the real middleware for an AI_ADMIN against a
+ * sample of every other admin root, derived from the filesystem.
+ */
+export const AI_ADMIN_ADMIN_PATH_PREFIXES: readonly string[] = [
+    '/api/t/[slug]/admin/agents',
+    '/api/t/[slug]/admin/mcp/quarantine',
+    '/t/[slug]/admin/agents',
+    '/t/[slug]/admin/mcp/agent-receipts',
+    '/t/[slug]/admin/mcp/quarantine',
+];
+
+/**
+ * Whether `pathname` is inside `AI_ADMIN_ADMIN_PATH_PREFIXES`.
+ *
+ * Fails closed on anything not in canonical form, because an allowlist that
+ * reasons about segments must be shown segments: a percent-encoding (`%2F`
+ * would make `agents%2F..%2Fmembers` one segment to this function and a
+ * different route to a decoder downstream), a backslash, an empty segment
+ * (`//`), or a `.`/`..` segment. The URL parser normalises dot segments before
+ * the middleware sees the path; refusing them here costs nothing and does not
+ * depend on it. A prefix is matched as itself or `<prefix>/…`, never by bare
+ * `startsWith`, so `/admin/agents-evil` and `/admin/agentsX` are not inside
+ * `/admin/agents`.
+ */
+export function isAiAdminAdminPath(pathname: string): boolean {
+    if (/[%\\]/.test(pathname)) return false;
+    const match = pathname.match(/^(\/api)?\/t\/([^/]+)(\/.*)?$/);
+    if (!match) return false;
+    const rest = match[3] ?? '';
+    const segments = rest.split('/').slice(1);
+    // A single trailing slash is the path itself; any other empty segment is not canonical.
+    const inner = segments.length > 0 && segments[segments.length - 1] === '' ? segments.slice(0, -1) : segments;
+    if ([match[2], ...inner].some((s) => s === '' || s === '.' || s === '..')) return false;
+    const template = `${match[1] ?? ''}/t/[slug]${rest}`;
+    return AI_ADMIN_ADMIN_PATH_PREFIXES.some(
+        (prefix) => template === prefix || template.startsWith(`${prefix}/`),
+    );
+}
+
+/**
  * Pure gate function: may this session reach an admin path, judged by the
  * role it holds IN THE TENANT THE PATH NAMES (#3701)?
  *
@@ -509,7 +577,9 @@ export const EDGE_ADMIN_ROLES: ReadonlySet<string> = new Set(['ADMIN', 'OWNER'])
  * a question about the wrong tenant.
  *
  * Returns:
- *   'allow' — the role here is an admin role
+ *   'allow' — the role here is an admin role, or is AI_ADMIN and the path is
+ *             one of the agent admin paths (`AI_ADMIN_ADMIN_PATH_PREFIXES`,
+ *             #3699)
  *   'deny'  — the role here is not
  *   'defer' — the URL's tenant is not in the claim. This gate does not own
  *             that answer: the tenant-access gate does, and it refuses
@@ -535,7 +605,11 @@ export function checkAdminAccess(
     }
     const here = memberships?.find((m) => m.slug === urlSlug);
     if (!here) return 'defer';
-    return EDGE_ADMIN_ROLES.has(here.role) ? 'allow' : 'deny';
+    if (EDGE_ADMIN_ROLES.has(here.role)) return 'allow';
+    // #3699 — AI_ADMIN in THIS tenant, on an agent admin path only. A flat
+    // path (above) never admits it: it names no tenant, so no agent register.
+    if (here.role === 'AI_ADMIN' && isAiAdminAdminPath(pathname)) return 'allow';
+    return 'deny';
 }
 
 // ── Org-route gate (mirror of the tenant gate) ───────────────────────

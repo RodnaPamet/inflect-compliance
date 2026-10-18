@@ -111,6 +111,9 @@ const ROLE_HIERARCHY: Record<Role, number> = {
     EDITOR: 3,
     AUDITOR: 2,
     READER: 1,
+    // #3699 — a sidecar like AUDITOR: READER's rung in the linear chain. Its
+    // agent authority lives in its PermissionSet, not here.
+    AI_ADMIN: 1,
 };
 
 export function hasMinRole(userRole: Role, minRole: Role): boolean {
@@ -132,7 +135,8 @@ export function hasMinRole(userRole: Role, minRole: Role): boolean {
  * are the legacy path used by policies + a few admin-style routes.
  */
 export function canRead(role: Role): boolean {
-    return ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR'].includes(role);
+    // AI_ADMIN (#3699) reads like a READER.
+    return ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN'].includes(role);
 }
 
 /** Can write/mutate data (OWNER, ADMIN, EDITOR) */

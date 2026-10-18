@@ -23,6 +23,13 @@ import {
 } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
 
+/**
+ * The roles a custom role may be built on. A custom role's base IS the role a
+ * membership resolves to (`effectiveRole` in `resolveTenantContext`), so this is
+ * a membership-role writer's list. AI_ADMIN (#3699) is absent: nothing may
+ * write it in deploy 1, and whether a custom role may be built on it is deploy
+ * 2's question. OWNER is absent as before.
+ */
 const VALID_BASE_ROLES: Role[] = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
 
 // ─── List Custom Roles ───

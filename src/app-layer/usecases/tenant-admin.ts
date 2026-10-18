@@ -24,9 +24,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import type { Role } from '@prisma/client';
-
-// ─── Valid roles for assignment ───
-const VALID_ROLES: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
+import { isAssignableTenantRole, unassignableRoleMessage } from '@/lib/roles';
 
 // Safety cap on the two whole-tenant membership scans below. Both feed
 // surfaces that legitimately want every member (the admin roster, and the
@@ -170,8 +168,10 @@ export async function updateTenantMemberRole(
 ) {
     assertCanChangeRoles(ctx);
 
-    if (!VALID_ROLES.includes(input.role)) {
-        throw badRequest(`Invalid role: ${input.role}`);
+    // `ASSIGNABLE_TENANT_ROLES`, not `Role`: AI_ADMIN is a real enum value
+    // that nothing may write until deploy 2 of #3699.
+    if (!isAssignableTenantRole(input.role)) {
+        throw badRequest(unassignableRoleMessage(input.role));
     }
 
     return runInTenantContext(ctx, async (db) => {

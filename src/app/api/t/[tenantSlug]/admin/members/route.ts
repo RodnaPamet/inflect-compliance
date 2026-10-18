@@ -5,10 +5,12 @@ import { createInviteToken, listPendingInvites } from '@/app-layer/usecases/tena
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
+import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
 
 const InviteMemberSchema = z.object({
     email: z.string().email('Valid email required'),
-    role: z.enum(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER'] as const),
+    // The roles a writer may write — AI_ADMIN is refused until deploy 2 of #3699.
+    role: z.enum(ASSIGNABLE_TENANT_ROLES),
 });
 
 export const GET = withApiErrorHandling(

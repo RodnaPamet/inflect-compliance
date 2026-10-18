@@ -56,7 +56,8 @@ import {
 import { SYSTEM_PRINCIPAL } from '../context-system';
 
 import { logger } from '@/lib/observability/logger';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { logEvent } from '../events/audit';
 import {
     createAgenticNotification,
@@ -186,7 +187,7 @@ export async function engageKillSwitch(
     ctx: RequestContext,
     input: { agentId?: string | null; reason: string },
 ): Promise<KillSwitchRecord> {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_kill_switch');
     const reason = requireReason(input.reason, 'reason');
     const agentId = input.agentId ?? null;
 
@@ -320,7 +321,7 @@ export async function liftKillSwitch(
     switchId: string,
     input: { liftReason: string },
 ): Promise<KillSwitchRecord> {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_kill_switch');
     const liftReason = requireReason(input.liftReason, 'liftReason');
 
     return runInTenantContext(ctx, async (db) => {

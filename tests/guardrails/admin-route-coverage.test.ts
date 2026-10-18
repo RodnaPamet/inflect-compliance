@@ -103,8 +103,8 @@ const ADMIN_ONLY_ROUTES = [
     // Deny-by-default MCP tool exposure — its own key,
     // `admin.agent_tool_exposure`, narrower than the register's.
     'admin/agents/[agentId]/tools/route.ts',
-    // The two-step agent ownership transfer (#3698) — `admin.tenant_lifecycle`,
-    // NOT the register's key: ADMIN holds `agent_registry`, and an agent's
+    // The two-step agent ownership transfer (#3698) — `admin.agent_ownership`
+    // since #3699 (`admin.tenant_lifecycle` before it), NOT the register's key: ADMIN holds `agent_registry`, and an agent's
     // accountable owner must not be movable by the role it is accountable to.
     // Step one (propose), its read and its cancel; then step two, completed by
     // the person it names and never by the person who started it.

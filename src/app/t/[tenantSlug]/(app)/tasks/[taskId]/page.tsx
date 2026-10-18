@@ -314,7 +314,9 @@ export default function TaskDetailPage() {
     // owns its own autosave lifecycle.
     const [showEditModal, setShowEditModal] = useState(false);
 
-    const canComment = role !== 'READER';
+    // AI_ADMIN (#3699) reads tasks like a READER and may not comment either —
+    // `assertCanCommentOnTasks` refuses it (no `tasks.edit`).
+    const canComment = role !== 'READER' && role !== 'AI_ADMIN';
 
     // #102 item 5 — the page read the task and each tab via raw
     // useState + useEffect + fetch, and every mutation re-fetched the
