@@ -4,13 +4,15 @@
 -- 20261018130000_access_review_agent_scope, and every container now reads it.
 -- This migration adds what an AGENT campaign writes:
 --
+--   AccessReview                   + preparerAgentId, crossPreparerAgentId
+--                                  (the two registered agents that prepare the packs)
 --   AccessReviewConnectedDecision  + subjectAgentId, subjectOwnerUserId
 --                                  (an agent subject, and its owner frozen)
 --   AccessReviewAgentPack          one reviewer pack per agent subject
 --   AccessReviewAgentNarrowing     one proposed grant deletion
 --   AccessReviewDecisionSampleAudit one decision drawn for a second human
 --
--- Forward-only and additive: two nullable columns on an existing table, a new
+-- Forward-only and additive: nullable columns on two existing tables, a new
 -- enum TYPE used only by a new table, three new tables. The previous image
 -- reads none of the new columns or tables, so a rolling deploy is safe in both
 -- directions. The one behavioural change to an EXISTING table is the one-way
@@ -18,6 +20,10 @@
 
 -- CreateEnum
 CREATE TYPE "AgentNarrowingOutcome" AS ENUM ('PENDING', 'ACCEPTED', 'REJECTED');
+
+-- AlterTable
+ALTER TABLE "AccessReview" ADD COLUMN     "crossPreparerAgentId" TEXT,
+ADD COLUMN     "preparerAgentId" TEXT;
 
 -- AlterTable
 ALTER TABLE "AccessReviewConnectedDecision" ADD COLUMN     "subjectAgentId" TEXT,
@@ -31,6 +37,7 @@ CREATE TABLE "AccessReviewAgentPack" (
     "decisionId" TEXT NOT NULL,
     "agentId" TEXT NOT NULL,
     "preparedByRunId" TEXT NOT NULL,
+    "preparedByAgentId" TEXT NOT NULL,
     "preparedByUserId" TEXT NOT NULL,
     "windowStart" TIMESTAMP(3) NOT NULL,
     "windowEnd" TIMESTAMP(3) NOT NULL,
@@ -159,6 +166,24 @@ ALTER TABLE "AccessReviewConnectedDecision" ADD CONSTRAINT "AccessReviewConnecte
 
 ALTER TABLE "AccessReviewAgentNarrowing" ADD CONSTRAINT "AccessReviewAgentNarrowing_owner_not_decider"
     CHECK ("decidedByUserId" IS NULL OR "decidedByUserId" <> "subjectOwnerUserId");
+
+-- An AGENT campaign names two DIFFERENT preparing agents; no other scope names
+-- any. Roadmap rule 8 — the auditor is not the auditee — is why there are two:
+-- every agent that can prepare a pack is ACTIVE, so it is always in the frozen
+-- population, and its own pack must come from somebody else.
+ALTER TABLE "AccessReview" ADD CONSTRAINT "AccessReview_agent_preparers"
+    CHECK (
+        ("scope" = 'AGENT'
+            AND "preparerAgentId" IS NOT NULL
+            AND "crossPreparerAgentId" IS NOT NULL
+            AND "preparerAgentId" <> "crossPreparerAgentId")
+        OR ("scope" <> 'AGENT' AND "preparerAgentId" IS NULL AND "crossPreparerAgentId" IS NULL)
+    );
+
+-- Rule 8 again, on the pack itself, for any writer: no agent prepares the pack
+-- it is reviewed by.
+ALTER TABLE "AccessReviewAgentPack" ADD CONSTRAINT "AccessReviewAgentPack_not_self_prepared"
+    CHECK ("preparedByAgentId" <> "agentId");
 
 -- A narrowing's stamp is all-or-nothing, and only an ACCEPTED one executes.
 ALTER TABLE "AccessReviewAgentNarrowing" ADD CONSTRAINT "AccessReviewAgentNarrowing_stamp_consistent"

@@ -361,8 +361,12 @@ model AccessReviewAgentPack {
   /// The workflow run whose READ step produced the sections. No FK: a run is
   /// operational and may be pruned; the pack is the record that outlives it.
   preparedByRunId  String
-  /// Who started the preparation. No FK, matching `grantedByUserId`: the
-  /// record must survive the account.
+  /// The registered agent whose run prepared it — the campaign's preparer,
+  /// or for the preparer's own pack its cross-preparer. A CHECK refuses it
+  /// equal to `agentId`: no agent prepares the pack it is reviewed by.
+  preparedByAgentId String
+  /// Who STARTED the preparation; the run is the agent's. No FK, matching
+  /// `grantedByUserId`: the record must survive the account.
   preparedByUserId String
   /// The observation window: the 90 days before the campaign froze its
   /// population. `windowEnd` is `AccessReview.createdAt`, so every page of

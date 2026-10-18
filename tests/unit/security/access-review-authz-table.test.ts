@@ -90,6 +90,19 @@ jest.mock('@/app-layer/usecases/access-review-connected', () => ({
     listConnectedDecisions: () => { ran('listConnectedDecisions'); return Promise.resolve([]); },
     submitConnectedDecision: () => { ran('submitConnectedDecision'); return Promise.resolve({ decisionId: 'd1', decision: 'CONFIRM' }); },
     closeConnectedAccessReview: () => { ran('closeConnectedAccessReview'); return Promise.resolve({ accessReviewId: 'r1', executed: 2, remediationTasks: 0 }); },
+    // #3674 — the verdict route asks the row's scope (after authorisation) to
+    // send an AGENT subject to the agent decide. Not a usecase run: no `ran`.
+    scopeOfConnectedDecision: () => Promise.resolve('CONNECTED_APP'),
+}));
+// #3674 — the agent campaign's routes, stubbed the same way.
+jest.mock('@/app-layer/usecases/access-review-agent', () => ({
+    createAgentAccessReview: () => { ran('createAgentAccessReview'); return Promise.resolve({ accessReviewId: 'r1', subjectCount: 2 }); },
+    getAgentReviewPacks: () => { ran('getAgentReviewPacks'); return Promise.resolve({ packs: [] }); },
+    prepareAgentReviewPacks: () => { ran('prepareAgentReviewPacks'); return Promise.resolve({ packs: 2 }); },
+    decideAgentNarrowing: () => { ran('decideAgentNarrowing'); return Promise.resolve({ outcome: 'ACCEPTED' }); },
+    recordAgentDecisionSampleOutcome: () => { ran('recordAgentDecisionSampleOutcome'); return Promise.resolve({ outcome: 'CONCURRED' }); },
+    submitAgentDecision: () => { ran('submitAgentDecision'); return Promise.resolve({ decision: 'CONFIRM' }); },
+    closeAgentAccessReview: () => { ran('closeAgentAccessReview'); return Promise.resolve({ accessReviewId: 'r1' }); },
 }));
 
 import type { Role } from '@prisma/client';
@@ -109,6 +122,10 @@ import { POST as CLOSE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId
 import { PUT as DECIDE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/decisions/[decisionId]/route';
 import { GET as LIST_CONNECTED } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/connected-decisions/route';
 import { POST as DECIDE_CONNECTED } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/connected-decisions/[decisionId]/route';
+import { POST as CREATE_AGENTS } from '@/app/api/t/[tenantSlug]/access-reviews/agents/route';
+import { GET as READ_PACKS, POST as PREPARE_PACKS } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-packs/route';
+import { POST as DECIDE_NARROWING } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-narrowings/[narrowingId]/route';
+import { POST as ANSWER_SAMPLE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-samples/[sampleId]/route';
 
 const ROLES: readonly Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER'] as const;
 
@@ -187,6 +204,12 @@ describe('Step 5a — every access-review route resolves to its intended key', (
         ['GET', `${T}/r1/connected-decisions`, 'access_reviews.view'],
         ['POST', `${T}/r1/connected-decisions/d1`, 'access_reviews.decide'],
         ['GET', `${T}/r1/evidence`, 'access_reviews.view'],
+        // #3674 — the agent campaign's leaves (the roadmap's 3a keys).
+        ['POST', `${T}/agents`, 'access_reviews.create'],
+        ['GET', `${T}/r1/agent-packs`, 'access_reviews.view'],
+        ['POST', `${T}/r1/agent-packs`, 'access_reviews.create'],
+        ['POST', `${T}/r1/agent-narrowings/d1`, 'access_reviews.decide'],
+        ['POST', `${T}/r1/agent-samples/d1`, 'access_reviews.decide'],
     ];
 
     it.each(CASES)('%s %s → %s', (method, path, key) => {
@@ -274,6 +297,11 @@ function cases(): Case[] {
         { name: 'PUT /access-reviews/:id/decisions/:did', key: 'decide', call: () => DECIDE(makeReq('PUT', `${T}/r1/decisions/d1`, { decision: 'CONFIRM' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1', decisionId: 'd1' }) } as never) },
         { name: 'GET /access-reviews/:id/connected-decisions', key: 'view', call: () => LIST_CONNECTED(makeReq('GET', `${T}/r1/connected-decisions`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
         { name: 'POST /access-reviews/:id/connected-decisions/:did', key: 'decide', call: () => DECIDE_CONNECTED(makeReq('POST', `${T}/r1/connected-decisions/d1`, { decision: 'CONFIRM' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1', decisionId: 'd1' }) } as never) },
+        { name: 'POST /access-reviews/agents', key: 'create', call: () => CREATE_AGENTS(makeReq('POST', `${T}/agents`, { name: 'Q4', reviewerUserId: 'u1' }), { params: Promise.resolve({ tenantSlug: 'acme' }) } as never) },
+        { name: 'GET /access-reviews/:id/agent-packs', key: 'view', call: () => READ_PACKS(makeReq('GET', `${T}/r1/agent-packs`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
+        { name: 'POST /access-reviews/:id/agent-packs', key: 'create', call: () => PREPARE_PACKS(makeReq('POST', `${T}/r1/agent-packs`), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
+        { name: 'POST /access-reviews/:id/agent-narrowings/:nid', key: 'decide', call: () => DECIDE_NARROWING(makeReq('POST', `${T}/r1/agent-narrowings/n1`, { outcome: 'ACCEPT' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1', narrowingId: 'n1' }) } as never) },
+        { name: 'POST /access-reviews/:id/agent-samples/:sid', key: 'decide', call: () => ANSWER_SAMPLE(makeReq('POST', `${T}/r1/agent-samples/s1`, { outcome: 'CONCURRED' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1', sampleId: 's1' }) } as never) },
     ];
 }
 
@@ -318,10 +346,10 @@ describe('Step 5a — the real routes allow and deny exactly as the ladder did',
 
     it('denials really did occur for the non-admin roles — a count, not a vibe', () => {
         // Guards against the whole block above silently becoming all-allow:
-        // 3 non-admin roles x 3 admin-gated cases (2 create + 1 close) = 9.
+        // 3 non-admin roles x 5 admin-gated cases (4 create + 1 close) = 15.
         const denied = ROLES.flatMap((role) =>
             cases().filter((c) => !getPermissionsForRole(role).access_reviews[c.key]),
         );
-        expect(denied).toHaveLength(9);
+        expect(denied).toHaveLength(15);
     });
 });

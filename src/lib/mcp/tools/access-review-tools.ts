@@ -8,6 +8,9 @@
  * narrowings it plans are persisted by the campaign usecase, which re-derives
  * them from this tool's recorded output before it writes one.
  *
+ * A registered agent calling it never reads its own subject (roadmap rule 8);
+ * see `readAgentRecertificationEvidence`.
+ *
  * Gated as the human pack read is: `access_reviews.view` (the `access_reviews`
  * read scope for a key), and inside the usecase the campaign's reviewer or a
  * holder of `admin.agent_registry`, because a pack is register data and every
@@ -25,6 +28,8 @@ const evidenceArgs = z
     .object({
         accessReviewId: z.string().min(1).max(64),
         page: z.number().int().min(0).max(1000).optional(),
+        /** Read exactly this agent's subject — the cross-preparer's one pack. */
+        onlyAgentId: z.string().min(1).max(64).optional(),
     })
     .strict();
 
@@ -42,6 +47,7 @@ export const getAgentRecertificationEvidenceTool: McpReadTool<z.infer<typeof evi
         properties: {
             accessReviewId: { type: 'string' },
             page: { type: 'integer', minimum: 0, maximum: 1000 },
+            onlyAgentId: { type: 'string' },
         },
         required: ['accessReviewId'],
         additionalProperties: false,
@@ -55,5 +61,6 @@ export const getAgentRecertificationEvidenceTool: McpReadTool<z.infer<typeof evi
             'GET /api/t/:slug/access-reviews/:reviewId/agent-packs (requirePermission ' +
             'access_reviews.view; the usecase narrows to the reviewer or admin.agent_registry)',
     },
-    run: async (ctx: RequestContext, args) => readAgentRecertificationEvidence(ctx, args.accessReviewId, args.page ?? 0),
+    run: async (ctx: RequestContext, args) =>
+        readAgentRecertificationEvidence(ctx, args.accessReviewId, args.page ?? 0, args.onlyAgentId ?? null),
 };

@@ -170,14 +170,16 @@ function rows(over: Partial<AgentCampaignEvidenceRows> = {}): AgentCampaignEvide
             id: 'ar-1', tenantId: 't-1', name: 'Q4 agents', periodStartAt: null, periodEndAt: null,
             reviewerUserId: 'u-rev', createdByUserId: 'u-admin', createdAt: WINDOW_END,
             closedAt: at, closedByUserId: 'u-admin', snapshotTruncated: false,
+            preparerAgentId: 'ag-1', crossPreparerAgentId: 'ag-2',
         },
         subjects: [
             { decisionId: 'dec-2', subjectRef: 'agent:ag-2', subjectAgentId: 'ag-2', subjectOwnerUserId: 'u-o2', snapshotJson: { kind: 'AGENT', agentId: 'ag-2' }, decision: 'CONFIRM', decidedAt: at, decidedByUserId: 'u-rev', notes: null },
             { decisionId: 'dec-1', subjectRef: 'agent:ag-1', subjectAgentId: 'ag-1', subjectOwnerUserId: 'u-o1', snapshotJson: { kind: 'AGENT', agentId: 'ag-1' }, decision: 'REVOKE', decidedAt: at, decidedByUserId: 'u-rev', notes: 'unused' },
         ],
         packs: [
-            { decisionId: 'dec-1', contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-1' },
-            { decisionId: 'dec-2', contentHash: 'sha256:' + 'b'.repeat(64), preparedByRunId: 'run-1' },
+            // ag-1's own pack by the cross-preparer ag-2; ag-2's by the preparer ag-1.
+            { decisionId: 'dec-1', contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-2', preparedByAgentId: 'ag-2' },
+            { decisionId: 'dec-2', contentHash: 'sha256:' + 'b'.repeat(64), preparedByRunId: 'run-1', preparedByAgentId: 'ag-1' },
         ],
         narrowings: [
             { id: 'n-2', decisionId: 'dec-1', grantId: 'g-2', toolName: 'list_tasks', grantedByUserId: 'u-admin', grantedAt: WINDOW.start, basis: NARROWING_BASIS, outcome: 'REJECTED', decidedAt: at, decidedByUserId: 'u-rev', executedAt: null, executionResult: null },
@@ -230,7 +232,8 @@ describe('the closing evidence recomputes from the stored rows', () => {
         expect(doc.schema).toBe(AGENT_CAMPAIGN_EVIDENCE_SCHEMA);
         expect(doc.subjectCount).toBe(2);
         expect(doc.subjects.map((s) => s.subjectRef)).toEqual(['agent:ag-1', 'agent:ag-2']);
-        expect(doc.subjects[0].pack).toEqual({ contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-1' });
+        expect(doc.subjects[0].pack).toEqual({ contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-2', preparedByAgentId: 'ag-2' });
+        expect(doc.campaign).toMatchObject({ preparerAgentId: 'ag-1', crossPreparerAgentId: 'ag-2' });
         expect(doc.subjects[0].narrowings.map((n) => [n.id, n.outcome, n.executionResult])).toEqual([
             ['n-1', 'ACCEPTED', 'GRANT_DELETED'],
             ['n-2', 'REJECTED', null],

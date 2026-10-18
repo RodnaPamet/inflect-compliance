@@ -236,6 +236,9 @@ export class AccessReviewRepository {
             dueAt?: Date | null;
             snapshotTruncated: boolean;
             createdAt: Date;
+            /** The two registered agents that prepare the packs (rule 8). */
+            preparerAgentId: string;
+            crossPreparerAgentId: string;
         },
     ) {
         return db.accessReview.create({
@@ -254,6 +257,8 @@ export class AccessReviewRepository {
                 // pack's observation window ends at this instant, and the
                 // caller reads its subjects at the same one.
                 createdAt: data.createdAt,
+                preparerAgentId: data.preparerAgentId,
+                crossPreparerAgentId: data.crossPreparerAgentId,
             },
             select: accessReviewListSelect,
         });

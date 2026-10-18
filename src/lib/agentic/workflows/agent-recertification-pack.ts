@@ -10,14 +10,20 @@
  * recorded steps, re-derives the plan from the READ step's output, and only
  * then writes the packs and narrowings.
  *
- * Input: { accessReviewId, page } — `page` as a decimal string, because run
- * input admission validates strings (see `requiredInput`). One run covers
- * `PACK_PAGE_SIZE` agents, so its context stays inside `MAX_CONTEXT_BYTES`
- * whatever the campaign's size.
+ * Input: { accessReviewId, page, subject } — `page` as a decimal string,
+ * because run input admission validates strings (see `requiredInput`); `subject`
+ * is `*` for every subject but the running agent's own, or one agent's id for
+ * the cross-preparer's single pack. One run covers `PACK_PAGE_SIZE` agents, so
+ * its context stays inside `MAX_CONTEXT_BYTES` whatever the campaign's size.
+ *
+ * It runs AS A REGISTERED AGENT — the campaign's preparer or cross-preparer —
+ * so its one read goes through the funnel with that agent's grants, card and
+ * autonomy terms; the admin who asked only started it.
  */
 import type { WorkflowContext, WorkflowDefinition } from '../workflow-types';
 import {
     AGENT_RECERTIFICATION_EVIDENCE_TOOL,
+    PACK_SUBJECT_ALL_BUT_SELF,
     planAgentReviewPacks,
 } from '../agent-recertification';
 import { requiredString } from './required-input';
@@ -34,7 +40,7 @@ function pageOf(ctx: WorkflowContext): number {
 
 export const agentRecertificationPackWorkflow: WorkflowDefinition = {
     /** Refused at admission without them — see `requiredInput` on the type. */
-    requiredInput: ['accessReviewId', 'page'],
+    requiredInput: ['accessReviewId', 'page', 'subject'],
     // A literal, as every definition names itself (the canned-workflow guard
     // pairs a definition with its source by it); the constant the campaign
     // usecase starts the run by must equal it, which the write-seam guard
@@ -51,7 +57,14 @@ export const agentRecertificationPackWorkflow: WorkflowDefinition = {
             kind: 'READ',
             label: 'evidence',
             tool: AGENT_RECERTIFICATION_EVIDENCE_TOOL,
-            args: (ctx) => ({ accessReviewId: requiredString(ctx, 'accessReviewId'), page: pageOf(ctx) }),
+            args: (ctx) => {
+                const subject = requiredString(ctx, 'subject');
+                return {
+                    accessReviewId: requiredString(ctx, 'accessReviewId'),
+                    page: pageOf(ctx),
+                    ...(subject === PACK_SUBJECT_ALL_BUT_SELF ? {} : { onlyAgentId: subject }),
+                };
+            },
         },
         {
             kind: 'SYNTHESIS',

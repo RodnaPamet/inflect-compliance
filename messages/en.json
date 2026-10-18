@@ -9547,7 +9547,12 @@
     "agentNarrowingsTitle": "Proposed narrowings",
     "agentNarrowingsHint": "Each pack proposes removing the grants its agent held for the whole window and never called. Removing a grant takes effect immediately; nothing here can add one.",
     "agentSampleTitle": "Second review",
-    "agentSampleHint": "These decisions were drawn at close for a second person, who neither made the decision nor owns the agent."
+    "agentSampleHint": "These decisions were drawn at close for a second person, who neither made the decision nor owns the agent.",
+    "fieldPreparer": "Preparing agent",
+    "preparerHint": "The registered agent that prepares every reviewer pack except its own. It must be active, risk-scored and granted get_agent_recertification_evidence.",
+    "fieldCrossPreparer": "Second preparing agent",
+    "crossPreparerHint": "Prepares the first agent's own pack — an agent never prepares the pack it is reviewed by.",
+    "agentPackPreparedBy": "Prepared by {agent}"
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",

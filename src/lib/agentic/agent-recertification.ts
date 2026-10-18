@@ -51,6 +51,9 @@ export const AGENT_RECERTIFICATION_PACK_WORKFLOW = 'agent-recertification-pack';
 /** The read tool its one READ step calls. */
 export const AGENT_RECERTIFICATION_EVIDENCE_TOOL = 'get_agent_recertification_evidence';
 
+/** The pack run's `subject` input meaning "every subject but the running agent's own". */
+export const PACK_SUBJECT_ALL_BUT_SELF = '*';
+
 const MS_PER_DAY = 86_400_000;
 
 /**
@@ -285,6 +288,8 @@ export interface AgentCampaignEvidenceRows {
         readonly closedAt: Date | null;
         readonly closedByUserId: string | null;
         readonly snapshotTruncated: boolean;
+        readonly preparerAgentId: string | null;
+        readonly crossPreparerAgentId: string | null;
     };
     readonly subjects: ReadonlyArray<{
         readonly decisionId: string;
@@ -297,7 +302,12 @@ export interface AgentCampaignEvidenceRows {
         readonly decidedByUserId: string | null;
         readonly notes: string | null;
     }>;
-    readonly packs: ReadonlyArray<{ readonly decisionId: string; readonly contentHash: string; readonly preparedByRunId: string }>;
+    readonly packs: ReadonlyArray<{
+        readonly decisionId: string;
+        readonly contentHash: string;
+        readonly preparedByRunId: string;
+        readonly preparedByAgentId: string;
+    }>;
     readonly narrowings: ReadonlyArray<{
         readonly id: string;
         readonly decisionId: string;
@@ -344,6 +354,8 @@ export function buildAgentCampaignEvidence(rows: AgentCampaignEvidenceRows) {
             closedAt: iso(rows.campaign.closedAt),
             closedByUserId: rows.campaign.closedByUserId,
             snapshotTruncated: rows.campaign.snapshotTruncated,
+            preparerAgentId: rows.campaign.preparerAgentId,
+            crossPreparerAgentId: rows.campaign.crossPreparerAgentId,
         },
         subjectCount: rows.subjects.length,
         subjects: [...rows.subjects]
@@ -362,6 +374,7 @@ export function buildAgentCampaignEvidence(rows: AgentCampaignEvidenceRows) {
                     ? {
                         contentHash: packByDecision.get(s.decisionId)!.contentHash,
                         preparedByRunId: packByDecision.get(s.decisionId)!.preparedByRunId,
+                        preparedByAgentId: packByDecision.get(s.decisionId)!.preparedByAgentId,
                     }
                     : null,
                 narrowings: rows.narrowings

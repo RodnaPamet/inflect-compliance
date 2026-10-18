@@ -1678,6 +1678,22 @@ wrote nothing. Rules that are easy to undo:
   plan from the READ output and refuses a recorded plan that disagrees, then
   writes every pack and narrowing in one transaction. One run per
   `PACK_PAGE_SIZE` agents, so a run's context stays bounded.
+- **A REGISTERED AGENT prepares every pack, and never its own** (roadmap rules
+  1 and 8; owner decision 2026-10-18). The campaign names two ACTIVE, scored,
+  un-killed, un-latched agents granted the read tool: `preparerAgentId`
+  prepares every pack but its own and `crossPreparerAgentId` prepares exactly
+  that one — two, because every agent able to prepare is ACTIVE and so always
+  in the frozen population. Each run is started with the requester's context
+  and the agent bound (`{ ...ctx, agentId }`, the seam `agent-invoke-dispatch`
+  uses), so the read is the agent's: deny-by-default over ITS grants, its card,
+  its autonomy ceiling; the requester's permissions are one term of the
+  intersection, never a way around it. Eligibility is asked at creation AND at
+  preparation, each refusal named (`PREPARER_*`); a credential or an agent
+  cannot start preparation (`PREPARE_REQUIRES_PERSON`). Rule 8 is held three
+  times: the evidence read excludes `ctx.agentId`'s own subject and refuses it
+  when asked (`SELF_PACK_REFUSED`), the usecase refuses a run that returned it,
+  and CHECKs refuse `preparedByAgentId = agentId` on a pack and a campaign
+  whose two preparers are missing or equal.
 - **A narrowing only deletes.** It is proposed for a grant held for the WHOLE
   90-day window before creation with no recorded call in it — never for a grant
   younger than the window, never from a truncated grant list. Accepting deletes

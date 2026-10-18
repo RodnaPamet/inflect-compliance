@@ -25,6 +25,7 @@ import {
     submitAgentDecision,
 } from '@/app-layer/usecases/access-review-agent';
 import { readAgentRecertificationEvidence } from '@/app-layer/usecases/agent-recertification-evidence';
+import { startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import {
     AGENT_RECERTIFICATION_EVIDENCE_TOOL,
     AGENT_RECERTIFICATION_PACK_WORKFLOW,
@@ -75,6 +76,8 @@ async function clearCampaigns(): Promise<void> {
 async function clearOwnRows(): Promise<void> {
     const t = { tenantId: { in: TENANTS } };
     await clearCampaigns();
+    await prisma.agentKillSwitch.deleteMany({ where: t });
+    await prisma.agentCircuitBreaker.deleteMany({ where: t });
     await prisma.agentBehaviourWindow.deleteMany({ where: t });
     await prisma.registeredAgentTool.deleteMany({ where: t });
     await prisma.agentProposal.deleteMany({ where: t });
@@ -174,6 +177,10 @@ beforeAll(async () => {
             toolNames: ['get_compliance_posture'],
         },
     });
+    // The two preparing agents' read grant, given TODAY: younger than the window,
+    // so it is never itself proposed for deletion.
+    A.gEvA = (await grant(T1, agentA.id, AGENT_RECERTIFICATION_EVIDENCE_TOOL, new Date())).id;
+    A.gEvB = (await grant(T1, agentB.id, AGENT_RECERTIFICATION_EVIDENCE_TOOL, new Date())).id;
     // Outside the population: a RETIRED agent holds no authority, a deleted one is gone.
     A.retired = (await makeAgent(T1, 'agentOwner', 'RETIRED')).id;
     const deleted = await makeAgent(T1, 'agentOwner');
@@ -190,10 +197,13 @@ afterEach(async () => {
     await clearCampaigns();
 });
 
-const create = (tenantId = T1, reviewer: Person = 'reviewer') =>
+/** agentA prepares every pack but its own; agentB prepares agentA's. */
+const create = (tenantId = T1, reviewer: Person = 'reviewer', preparers: { p?: string; c?: string } = {}) =>
     createAgentAccessReview(as(tenantId, 'owner'), {
         name: 'Q4 agent recertification',
         reviewerUserId: users[tenantId][reviewer],
+        preparerAgentId: preparers.p ?? A.agentA,
+        crossPreparerAgentId: preparers.c ?? A.agentB,
     });
 
 async function decisionFor(accessReviewId: string, agentId: string) {
@@ -213,7 +223,9 @@ async function asTenant<T>(tenantId: string, fn: (tx: PrismaClient) => Promise<T
 
 describe('a campaign over zero agents is refused at creation', () => {
     it('refuses NO_SUBJECTS in a tenant with no registered agent, and writes no campaign', async () => {
-        await expect(create(T2)).rejects.toThrow(/^NO_SUBJECTS:/);
+        // Asked BEFORE the preparers: an empty population is the first refusal,
+        // whatever agents the request names.
+        await expect(create(T2, 'reviewer', { p: 'none-1', c: 'none-2' })).rejects.toThrow(/^NO_SUBJECTS:/);
         expect(await prisma.accessReview.count({ where: { tenantId: T2 } })).toBe(0);
     });
 });
@@ -248,13 +260,17 @@ describe('creation freezes the population of agents that can hold authority', ()
 
     it('the reviewer must be an active member', async () => {
         await expect(
-            createAgentAccessReview(as(T1, 'owner'), { name: 'x', reviewerUserId: users[T2].reviewer }),
+            createAgentAccessReview(as(T1, 'owner'), {
+                name: 'x', reviewerUserId: users[T2].reviewer, preparerAgentId: A.agentA, crossPreparerAgentId: A.agentB,
+            }),
         ).rejects.toThrow(/REVIEWER_NOT_A_MEMBER/);
     });
 
     it('only OWNER and ADMIN create one', async () => {
         await expect(
-            createAgentAccessReview(as(T1, 'reviewer'), { name: 'x', reviewerUserId: users[T1].reviewer }),
+            createAgentAccessReview(as(T1, 'reviewer'), {
+                name: 'x', reviewerUserId: users[T1].reviewer, preparerAgentId: A.agentA, crossPreparerAgentId: A.agentB,
+            }),
         ).rejects.toThrow();
         expect(await prisma.accessReview.count({ where: { tenantId: T1 } })).toBe(0);
     });
@@ -263,26 +279,30 @@ describe('creation freezes the population of agents that can hold authority', ()
 // ─── Packs ─────────────────────────────────────────────────────────────
 
 describe('every pack section reads stored rows only, through read tools', () => {
-    it('prepares one pack per subject from a workflow run of one READ and one SYNTHESIS', async () => {
+    it('prepares one pack per subject from agent runs of one READ and one SYNTHESIS each', async () => {
         const r = await create();
         const prepared = await prepareAgentReviewPacks(as(T1, 'owner'), r.accessReviewId);
         expect(prepared.packs).toBe(2);
-        expect(prepared.runIds).toHaveLength(1);
+        // One page by the preparer (every subject but its own), one run by the
+        // cross-preparer (the preparer's own pack).
+        expect(prepared.runIds).toHaveLength(2);
 
-        const run = await prisma.workflowRun.findUniqueOrThrow({ where: { id: prepared.runIds[0] } });
-        expect(run.workflowKey).toBe(AGENT_RECERTIFICATION_PACK_WORKFLOW);
-        expect(run.status).toBe('COMPLETED');
-        const steps = await prisma.workflowStep.findMany({ where: { runId: run.id }, orderBy: { seq: 'asc' } });
-        expect(steps.map((s) => [s.kind, s.toolCalled])).toEqual([
-            ['READ', AGENT_RECERTIFICATION_EVIDENCE_TOOL],
-            ['SYNTHESIS', null],
-        ]);
-        // The run proposed nothing: no proposal row exists for the tenant.
+        const runs = await prisma.workflowRun.findMany({ where: { id: { in: [...prepared.runIds] } } });
+        for (const run of runs) {
+            expect(run.workflowKey).toBe(AGENT_RECERTIFICATION_PACK_WORKFLOW);
+            expect(run.status).toBe('COMPLETED');
+            const steps = await prisma.workflowStep.findMany({ where: { runId: run.id }, orderBy: { seq: 'asc' } });
+            expect(steps.map((s) => [s.kind, s.toolCalled])).toEqual([
+                ['READ', AGENT_RECERTIFICATION_EVIDENCE_TOOL],
+                ['SYNTHESIS', null],
+            ]);
+        }
+        // The runs proposed nothing: no proposal row exists for the tenant.
         expect(await prisma.agentProposal.count({ where: { tenantId: T1 } })).toBe(0);
 
         const packs = await prisma.accessReviewAgentPack.findMany({ where: { accessReviewId: r.accessReviewId } });
         for (const p of packs) {
-            expect(p.preparedByRunId).toBe(run.id);
+            expect(prepared.runIds).toContain(p.preparedByRunId);
             // The stored hash is the hash of the stored sections.
             expect(p.contentHash).toBe(sha256Of(p.sectionsJson));
         }
@@ -318,6 +338,182 @@ describe('every pack section reads stored rows only, through read tools', () => 
         await expect(readAgentRecertificationEvidence(as(T1, 'reader'), r.accessReviewId)).rejects.toThrow(/admin\.agent_registry/);
         expect((await getAgentReviewPacks(as(T1, 'reviewer'), r.accessReviewId)).packs).toHaveLength(2);
         expect((await getAgentReviewPacks(as(T1, 'admin2'), r.accessReviewId)).packs).toHaveLength(2);
+    });
+});
+
+// ─── A registered agent prepares every pack ────────────────────────────
+
+/** A throwaway agent for a refusal, removed from the population afterwards. */
+async function withAgent<T>(
+    status: 'ACTIVE' | 'SUSPENDED',
+    setup: (agentId: string) => Promise<void>,
+    fn: (agentId: string) => Promise<T>,
+): Promise<T> {
+    const agent = await makeAgent(T1, 'admin2', status);
+    try {
+        await setup(agent.id);
+        return await fn(agent.id);
+    } finally {
+        await prisma.agentKillSwitch.deleteMany({ where: { tenantId: T1, agentId: agent.id } });
+        await prisma.agentCircuitBreaker.deleteMany({ where: { tenantId: T1, agentId: agent.id } });
+        await prisma.registeredAgent.update({ where: { id: agent.id }, data: { deletedAt: new Date() } });
+    }
+}
+
+const grantRead = (agentId: string) => grant(T1, agentId, AGENT_RECERTIFICATION_EVIDENCE_TOOL, new Date()).then(() => undefined);
+
+describe('a registered agent prepares each pack, and never its own', () => {
+    it('each pack is prepared by a named agent’s run, and the run row carries that agent', async () => {
+        const r = await create();
+        const prepared = await prepareAgentReviewPacks(as(T1, 'owner'), r.accessReviewId);
+        const runs = await prisma.workflowRun.findMany({ where: { id: { in: [...prepared.runIds] } }, select: { id: true, agentId: true } });
+        expect(runs.map((x) => x.agentId).sort()).toEqual([A.agentA, A.agentB].sort());
+
+        const packs = await prisma.accessReviewAgentPack.findMany({ where: { accessReviewId: r.accessReviewId } });
+        const byAgent = new Map(packs.map((p) => [p.agentId, p]));
+        // agentB's pack by the preparer, agentA's own by the cross-preparer.
+        expect(byAgent.get(A.agentB)?.preparedByAgentId).toBe(A.agentA);
+        expect(byAgent.get(A.agentA)?.preparedByAgentId).toBe(A.agentB);
+        for (const p of packs) {
+            expect(p.preparedByAgentId).not.toBe(p.agentId);
+            const run = runs.find((x) => x.id === p.preparedByRunId);
+            expect(run?.agentId).toBe(p.preparedByAgentId);
+            expect(p.preparedByUserId).toBe(users[T1].owner);
+        }
+        const started = await prisma.auditLog.findMany({
+            where: { tenantId: T1, action: 'WORKFLOW_RUN_STARTED', entityId: { in: [...prepared.runIds] } },
+            select: { userId: true, metadataJson: true },
+        });
+        expect(started).toHaveLength(2);
+        for (const row of started) {
+            // The person STARTED it; the run is the agent's.
+            expect(row.userId).toBe(users[T1].owner);
+            expect([A.agentA, A.agentB]).toContain((row.metadataJson as { agentId?: string }).agentId);
+        }
+    });
+
+    it('creation refuses, by name, a missing or repeated preparer', async () => {
+        const base = { name: 'x', reviewerUserId: users[T1].reviewer };
+        await expect(createAgentAccessReview(as(T1, 'owner'), base)).rejects.toThrow(/^PREPARER_REQUIRED:/);
+        await expect(
+            createAgentAccessReview(as(T1, 'owner'), { ...base, preparerAgentId: A.agentA }),
+        ).rejects.toThrow(/^PREPARER_REQUIRED:/);
+        await expect(
+            createAgentAccessReview(as(T1, 'owner'), { ...base, preparerAgentId: A.agentA, crossPreparerAgentId: A.agentA }),
+        ).rejects.toThrow(/^PREPARERS_MUST_DIFFER:/);
+        await expect(create(T1, 'reviewer', { p: 'no-such-agent' })).rejects.toThrow(/^PREPARER_NOT_FOUND:/);
+        await expect(create(T1, 'reviewer', { c: A.retired })).rejects.toThrow(/^PREPARER_NOT_FOUND:|^PREPARER_NOT_ACTIVE:/);
+        expect(await prisma.accessReview.count({ where: { tenantId: T1 } })).toBe(0);
+    });
+
+    it('creation refuses a preparer that is not ACTIVE, unscored, killed, latched, or lacks the read grant', async () => {
+        await withAgent('SUSPENDED', grantRead, (id) =>
+            expect(create(T1, 'reviewer', { p: id })).rejects.toThrow(/^PREPARER_NOT_ACTIVE:/));
+        await withAgent('ACTIVE', async (id) => {
+            await grantRead(id);
+            await prisma.registeredAgent.update({ where: { id }, data: { riskTier: null, riskTierScoredAt: null } });
+        }, (id) => expect(create(T1, 'reviewer', { p: id })).rejects.toThrow(/^PREPARER_UNSCORED:/));
+        await withAgent('ACTIVE', async (id) => {
+            await grantRead(id);
+            await prisma.agentKillSwitch.create({
+                data: { tenantId: T1, agentId: id, reason: 'test', engagedByUserId: users[T1].owner },
+            });
+        }, (id) => expect(create(T1, 'reviewer', { c: id })).rejects.toThrow(/^PREPARER_KILL_SWITCHED:/));
+        await withAgent('ACTIVE', async (id) => {
+            await grantRead(id);
+            await prisma.agentCircuitBreaker.create({
+                data: {
+                    tenantId: T1, agentId: id, state: 'OPEN',
+                    trippedAt: new Date(), trippedWindow: '2026-10-18T00', trippedSignals: ['GUARD_BLOCK'],
+                },
+            });
+        }, (id) => expect(create(T1, 'reviewer', { c: id })).rejects.toThrow(/^PREPARER_BREAKER_LATCHED:/));
+        await withAgent('ACTIVE', async () => undefined, (id) =>
+            expect(create(T1, 'reviewer', { p: id })).rejects.toThrow(/^PREPARER_LACKS_READ_GRANT:/));
+        expect(await prisma.accessReview.count({ where: { tenantId: T1 } })).toBe(0);
+    });
+
+    it('preparation asks again: a preparer that lost its grant since creation is refused, and nothing is run', async () => {
+        const r = await create();
+        await prisma.registeredAgentTool.delete({ where: { id: A.gEvB } });
+        try {
+            await expect(prepareAgentReviewPacks(as(T1, 'owner'), r.accessReviewId)).rejects.toThrow(/^PREPARER_LACKS_READ_GRANT:/);
+            expect(await prisma.workflowRun.count({ where: { tenantId: T1 } })).toBe(0);
+            expect(await prisma.accessReviewAgentPack.count({ where: { accessReviewId: r.accessReviewId } })).toBe(0);
+        } finally {
+            A.gEvB = (await grant(T1, A.agentB, AGENT_RECERTIFICATION_EVIDENCE_TOOL, new Date())).id;
+        }
+    });
+
+    it('preparation is started by a person, never by a credential or an agent', async () => {
+        const r = await create();
+        await expect(
+            prepareAgentReviewPacks({ ...as(T1, 'owner'), apiKeyId: 'key-1' }, r.accessReviewId),
+        ).rejects.toThrow(/^PREPARE_REQUIRES_PERSON:/);
+        await expect(
+            prepareAgentReviewPacks({ ...as(T1, 'owner'), agentId: A.agentA }, r.accessReviewId),
+        ).rejects.toThrow(/^PREPARE_REQUIRES_PERSON:/);
+    });
+
+    it('an agent never reads its own subject: excluded from its pages, refused when asked for', async () => {
+        const r = await create();
+        const asAgentA = { ...as(T1, 'owner'), agentId: A.agentA };
+        const page = await readAgentRecertificationEvidence(asAgentA, r.accessReviewId, 0);
+        expect(page.subjects.map((x) => x.agentId)).toEqual([A.agentB]);
+        expect(page.total).toBe(1);
+        await expect(
+            readAgentRecertificationEvidence(asAgentA, r.accessReviewId, 0, A.agentA),
+        ).rejects.toThrow(/SELF_PACK_REFUSED/);
+        const cross = await readAgentRecertificationEvidence({ ...as(T1, 'owner'), agentId: A.agentB }, r.accessReviewId, 0, A.agentA);
+        expect(cross.subjects.map((x) => x.agentId)).toEqual([A.agentA]);
+    });
+
+    it('the database refuses a pack prepared by the agent it describes', async () => {
+        const r = await create();
+        const subject = await decisionFor(r.accessReviewId, A.agentA);
+        await expect(
+            prisma.accessReviewAgentPack.create({
+                data: {
+                    tenantId: T1, accessReviewId: r.accessReviewId, decisionId: subject.id, agentId: A.agentA,
+                    preparedByRunId: 'run-x', preparedByAgentId: A.agentA, preparedByUserId: users[T1].owner,
+                    windowStart: new Date(Date.now() - 90 * DAY), windowEnd: new Date(), sectionsJson: {},
+                    contentHash: 'sha256:' + '0'.repeat(64),
+                },
+            }),
+        ).rejects.toThrow(/not_self_prepared/);
+        await expect(
+            prisma.accessReview.update({ where: { id: r.accessReviewId }, data: { crossPreparerAgentId: A.agentA } }),
+        ).rejects.toThrow(/agent_preparers/);
+    });
+
+    it('the requester’s own permissions never widen what the run can read', async () => {
+        // The OWNER can read every pack's evidence directly…
+        const r = await create();
+        expect((await readAgentRecertificationEvidence(as(T1, 'owner'), r.accessReviewId)).subjects).toHaveLength(2);
+        // …but the same OWNER starting the pack run for an agent NOT granted the
+        // read tool gets nothing: the call is the agent's, and its grants are
+        // deny-by-default.
+        await withAgent('ACTIVE', async () => undefined, async (id) => {
+            const run = await startWorkflowRun({ ...as(T1, 'owner'), agentId: id }, AGENT_RECERTIFICATION_PACK_WORKFLOW, {
+                accessReviewId: r.accessReviewId, page: '0', subject: '*',
+            });
+            expect(run.status === 'COMPLETED' && run.stepFailures === 0).toBe(false);
+            const read = await prisma.workflowStep.findFirst({ where: { runId: run.runId, kind: 'READ' } });
+            expect(read?.status).not.toBe('DONE');
+            expect((await prisma.workflowRun.findUniqueOrThrow({ where: { id: run.runId } })).agentId).toBe(id);
+            // The funnel's own refusal, attributed to the agent, with the OWNER's
+            // role beside it: the person's authority was there and did not help.
+            const denials = await prisma.auditLog.findMany({
+                where: { tenantId: T1, action: 'AUTHZ_DENIED', entity: 'McpTool' },
+                select: { detailsJson: true },
+            });
+            expect(denials.map((d) => d.detailsJson)).toContainEqual(expect.objectContaining({
+                tool: AGENT_RECERTIFICATION_EVIDENCE_TOOL,
+                reason: 'tool_not_granted',
+                agentId: id,
+                role: 'OWNER',
+            }));
+        });
     });
 });
 

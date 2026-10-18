@@ -123,6 +123,8 @@ interface PacksPayload {
 function pack(decisionId: string) {
     return {
         id: `pk-${decisionId}`, decisionId, agentId: `ag-${decisionId}`, preparedByRunId: 'run-1',
+        // Never the agent itself: ag-1's pack by ag-2, every other by ag-1.
+        preparedByAgentId: decisionId === '1' ? 'ag-2' : 'ag-1',
         windowStart: '2026-07-20T00:00:00.000Z', windowEnd: '2026-10-18T00:00:00.000Z',
         sectionsJson: {
             grants: [
@@ -205,6 +207,7 @@ describe('the detail page reads an AGENT campaign', () => {
         expect(screen.queryByTestId('agent-decision-select-1')).not.toBeInTheDocument();
         expect(screen.getByTestId('agent-narrowing-accept-n-1')).toBeInTheDocument();
         expect(screen.getByTestId('agent-pack-1')).toHaveTextContent('1 of 2 grants unused in the window');
+        expect(screen.getByTestId('agent-pack-prepared-by-1')).toHaveTextContent('Prepared by Agent 2');
         view.unmount();
 
         packsPayload = { packs: [pack('1'), pack('2')], narrowings: [narrowing('n-1', '1', 'REJECTED')], samples: [], evidence: null };
@@ -301,5 +304,15 @@ describe('the register reads an AGENT campaign', () => {
         const option = document.getElementById('access-review-scope-AGENT');
         expect(option).not.toBeNull();
         expect(option!.closest('label')).toHaveTextContent('Registered agents');
+    });
+
+    it('asks an AGENT campaign for its two preparing agents', async () => {
+        render(withClient(<AccessReviewsClient tenantSlug="acme" initialReviews={[]} />));
+        fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));
+        expect(screen.queryByTestId('access-review-new-preparer')).not.toBeInTheDocument();
+        fireEvent.click(document.getElementById('access-review-scope-AGENT')!);
+        await waitFor(() => expect(screen.getByTestId('access-review-new-preparer')).toBeInTheDocument());
+        expect(screen.getByTestId('access-review-new-cross-preparer')).toBeInTheDocument();
+        expect(screen.getByText('Second preparing agent')).toBeInTheDocument();
     });
 });

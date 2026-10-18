@@ -911,6 +911,14 @@ model AccessReview {
   /// is indistinguishable from a directory of exactly N), so the usecase reads
   /// `MAX_SUBJECTS + 1` and records the verdict here.
   snapshotTruncated    Boolean            @default(false)
+  /// Step 3a (#3674) — an AGENT campaign's two preparing agents, named at
+  /// creation and never changed. `preparerAgentId` prepares every reviewer
+  /// pack except its own; `crossPreparerAgentId` prepares exactly that one
+  /// (roadmap rule 8: the auditor is not the auditee). Both NULL for every
+  /// other scope; a CHECK holds the pairing. No FK, as the pack's `agentId`
+  /// has none: the campaign's record must not depend on the register's.
+  preparerAgentId      String?
+  crossPreparerAgentId String?
   createdByUserId      String
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt

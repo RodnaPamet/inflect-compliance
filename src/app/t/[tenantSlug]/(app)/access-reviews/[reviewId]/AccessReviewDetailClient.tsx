@@ -161,6 +161,8 @@ interface AgentPackRow {
     decisionId: string;
     agentId: string;
     preparedByRunId: string;
+    /** The registered agent whose run prepared it — never `agentId` itself. */
+    preparedByAgentId: string;
     windowStart: string;
     windowEnd: string;
     sectionsJson: unknown;
@@ -398,6 +400,15 @@ export function AccessReviewDetailClient({
     }, [narrowings]);
     const pendingNarrowings = narrowings.filter((n) => n.outcome === 'PENDING').length;
     const agentRowById = useMemo(() => new Map(connectedRows.map((r) => [r.id, r])), [connectedRows]);
+    // Every preparing agent is ACTIVE, so it is a subject too: its name is in a snapshot.
+    const agentNameByAgentId = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const r of connectedRows) {
+            const snap = readAgentSubjectSnapshot(r.snapshotJson);
+            if (snap) m.set(snap.agentId, snap.agentName ?? snap.agentId);
+        }
+        return m;
+    }, [connectedRows]);
     /** The agent's frozen owner, from the subject's snapshot. */
     const ownerOf = useCallback(
         (decisionId: string): string | null =>
@@ -760,6 +771,9 @@ export function AccessReviewDetailClient({
                                 {sum.breakerTripped ? ` · ${t('agentPackBreakerTripped')}` : ''}
                                 {sum.kills > 0 ? ` · ${t('agentPackKills', { count: sum.kills })}` : ''}
                             </div>
+                            <div className="text-content-muted" data-testid={`agent-pack-prepared-by-${row.original.id}`}>
+                                {t('agentPackPreparedBy', { agent: agentNameByAgentId.get(pack.preparedByAgentId) ?? pack.preparedByAgentId })}
+                            </div>
                             <div className="font-mono text-content-muted">
                                 {pack.contentHash.slice(0, 19)}…
                             </div>
@@ -823,7 +837,7 @@ export function AccessReviewDetailClient({
                 },
             },
         ]),
-        [t, packByDecision, pendingByDecision, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase],
+        [t, packByDecision, pendingByDecision, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase, agentNameByAgentId],
     );
 
     const agentNameOf = useCallback((decisionId: string): string => {

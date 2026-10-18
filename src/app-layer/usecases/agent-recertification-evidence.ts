@@ -30,6 +30,18 @@
  * of `admin.agent_registry` (`mayReadAgentSubjects`). Every role holds
  * `access_reviews.view`, and a pack is register data.
  *
+ * ── The auditor is not the auditee (roadmap rule 8) ──────────────────────
+ *
+ * When the caller IS a registered agent (`ctx.agentId`, which a pack run
+ * carries), its own subject is never read: excluded from the population the
+ * pages cover, and refused by name when asked for (`SELF_PACK_REFUSED`). So an
+ * agent cannot prepare the pack it is reviewed by however it is driven — the
+ * campaign's orchestration routes that one pack to the cross-preparer, and this
+ * is the half that holds for any caller of the read tool.
+ *
+ * `onlyAgentId` narrows the read to one subject: the cross-preparer's run reads
+ * exactly the preparer's pack.
+ *
  * @module app-layer/usecases/agent-recertification-evidence
  */
 import { runInTenantContext } from '@/lib/db-context';
@@ -94,9 +106,13 @@ export async function readAgentRecertificationEvidence(
     ctx: RequestContext,
     accessReviewId: string,
     page = 0,
+    onlyAgentId: string | null = null,
 ): Promise<RecertificationEvidence> {
     assertCanRead(ctx);
     if (!Number.isInteger(page) || page < 0) throw badRequest('page must be a non-negative integer');
+    if (ctx.agentId && onlyAgentId === ctx.agentId) {
+        throw forbidden('SELF_PACK_REFUSED: a registered agent may not read the evidence for its own reviewer pack');
+    }
 
     return runInTenantContext(ctx, async (db) => {
         const review = await db.accessReview.findFirst({
@@ -115,11 +131,20 @@ export async function readAgentRecertificationEvidence(
 
         const window = observationWindow(review.createdAt);
 
-        const total = await db.accessReviewConnectedDecision.count({
-            where: { tenantId: ctx.tenantId, accessReviewId },
-        });
+        // The population this read covers: one subject, or every subject but
+        // the calling agent's own.
+        const scope = {
+            tenantId: ctx.tenantId,
+            accessReviewId,
+            ...(onlyAgentId
+                ? { subjectAgentId: onlyAgentId }
+                : ctx.agentId
+                    ? { NOT: { subjectAgentId: ctx.agentId } }
+                    : {}),
+        };
+        const total = await db.accessReviewConnectedDecision.count({ where: scope });
         const subjects = await db.accessReviewConnectedDecision.findMany({
-            where: { tenantId: ctx.tenantId, accessReviewId },
+            where: scope,
             select: { id: true, subjectAgentId: true },
             orderBy: [{ subjectRef: 'asc' }, { id: 'asc' }],
             skip: page * PACK_PAGE_SIZE,

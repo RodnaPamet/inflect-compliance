@@ -353,6 +353,19 @@ function CreateCampaignButton({
     // access-review-connected usecase accepts.
     const [directory, setDirectory] = useState<string>('all');
     const [reviewerUserId, setReviewerUserId] = useState('');
+    // #3674 — an AGENT review names two registered agents: one prepares every
+    // reviewer pack but its own, the other prepares that one (an agent never
+    // prepares the pack it is reviewed by). Offered from the ACTIVE agents;
+    // the server re-checks every term (scored, not killed, granted the read).
+    const [preparerAgentId, setPreparerAgentId] = useState('');
+    const [crossPreparerAgentId, setCrossPreparerAgentId] = useState('');
+    const agentsQuery = useTenantSWR<{ agents?: Array<{ id: string; name: string }> }>(
+        scope === 'AGENT' ? '/admin/agents?status=ACTIVE' : null,
+    );
+    const agentOptions: ComboboxOption[] = useMemo(
+        () => (agentsQuery.data?.agents ?? []).map((a) => ({ value: a.id, label: a.name })),
+        [agentsQuery.data],
+    );
 
     // Which directories actually have ACTIVE synced accounts.
     //
@@ -445,6 +458,7 @@ function CreateCampaignButton({
                       name,
                       description: description || undefined,
                       provider: isConnected && directory !== 'all' ? directory : undefined,
+                      ...(isAgent ? { preparerAgentId, crossPreparerAgentId } : {}),
                       reviewerUserId,
                       dueAt: dueAt ? dueAt.toISOString() : undefined,
                   }
@@ -478,6 +492,8 @@ function CreateCampaignButton({
             setDescription('');
             setReviewerUserId('');
             setDirectory('all');
+            setPreparerAgentId('');
+            setCrossPreparerAgentId('');
             setScope('ALL_USERS');
             setDueAt(null);
             onCreated(data.accessReviewId);
@@ -611,6 +627,32 @@ function CreateCampaignButton({
                                         )}
                                     </div>
                                 </FormField>
+                            ) : null}
+                            {scope === 'AGENT' ? (
+                                <>
+                                    <FormField label={t('fieldPreparer')} hint={t('preparerHint')} required>
+                                        <div data-testid="access-review-new-preparer">
+                                            <Combobox
+                                                id="access-review-preparer-select"
+                                                selected={agentOptions.find((o) => o.value === preparerAgentId) ?? null}
+                                                setSelected={(opt) => setPreparerAgentId(opt?.value ?? '')}
+                                                options={agentOptions}
+                                                matchTriggerWidth
+                                            />
+                                        </div>
+                                    </FormField>
+                                    <FormField label={t('fieldCrossPreparer')} hint={t('crossPreparerHint')} required>
+                                        <div data-testid="access-review-new-cross-preparer">
+                                            <Combobox
+                                                id="access-review-cross-preparer-select"
+                                                selected={agentOptions.find((o) => o.value === crossPreparerAgentId) ?? null}
+                                                setSelected={(opt) => setCrossPreparerAgentId(opt?.value ?? '')}
+                                                options={agentOptions.filter((o) => o.value !== preparerAgentId)}
+                                                matchTriggerWidth
+                                            />
+                                        </div>
+                                    </FormField>
+                                </>
                             ) : null}
                             <FormField label={t('fieldReviewer')} required>
                                 {/* People-picker over the tenant's members

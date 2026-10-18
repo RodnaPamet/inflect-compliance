@@ -442,15 +442,25 @@ agent's owner at that moment stamped on the row, and refuses an empty
 population (`NO_SUBJECTS`). The scope value reached the database enum in a first
 deploy that only taught readers.
 
-Each subject's reviewer pack is prepared by the `agent-recertification-pack`
-workflow, a static run of one READ step on the `get_agent_recertification_evidence`
-read tool and one pure SYNTHESIS step, one run per 20 agents. The pack holds the
+A campaign names two registered agents that prepare its packs, each `ACTIVE`,
+risk-scored, not stopped by a kill switch or an open breaker, and granted
+`get_agent_recertification_evidence`; each failing term is refused by name, at
+creation and again at preparation. The first prepares every pack but its own;
+the second prepares exactly that one, so no agent prepares the pack it is
+reviewed by. An admin starts the preparation; the runs are the agents': each
+is a workflow run attributed to its agent, whose one read goes through the
+funnel under that agent's grants, card and autonomy terms, so the admin's own
+permissions never widen what it reads.
+
+Each pack is prepared by the `agent-recertification-pack` workflow, a static
+run of one READ step on the `get_agent_recertification_evidence` read tool and
+one pure SYNTHESIS step, one run per 20 agents. The pack holds the
 agent's grants with grantor and date, which granted tools it called in the 90
 days before the campaign, its proposals and their outcomes per grant, its card
 versions since its last closed campaign, its time-bounded grants and whether
 each expired on time, guard flags, breaker trips, kill engagements and its
-harness level and drift, with a `sha256:` hash of the sections and the run that
-read them. Packs are readable by the campaign's reviewer and by holders of
+harness level and drift, with a `sha256:` hash of the sections, the run that
+read them and the agent whose run it was. Packs are readable by the campaign's reviewer and by holders of
 `admin.agent_registry`, as the subjects are.
 
 A pack proposes a narrowing for each grant held for the whole window with no
@@ -477,7 +487,7 @@ campaign's rows; the packs read shows whether it still does.
 | Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key; nothing assigns the role yet (deploy 1 of #3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
-| Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs read by a read-only workflow, narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
+| Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
 | Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). No tenant setting for a key rotation age (#3708). |
@@ -646,6 +656,20 @@ changed what #3698 built.
     gates reading agent runs, proposals and the governance pack. `AI_ADMIN` and
     AUDITOR hold it, and the DPIA names the model as a reader of the source
     owner reference. (`1d`, #3710)
+19. **A registered agent prepares each reviewer pack, and never its own.** An
+    agent campaign names two ACTIVE, scored agents granted
+    `get_agent_recertification_evidence`; the person who asks only starts their
+    runs, which read through the funnel under the agents' own terms. Every agent
+    able to prepare is in the frozen population, so the first agent prepares
+    every pack but its own and the second prepares that one. (`3a`, #3674)
+20. **Narrowings and the decision sample are their own models.**
+    `AccessReviewAgentNarrowing` and `AccessReviewDecisionSampleAudit`, not
+    `AgentProposal`: a proposal kind would be another two-deploy enum, and the
+    queue's expiry and four-eyes rules are not a recertification's. The closing
+    evidence is filed against SOC 2 CC6.1 in place of CC6.3, which neither SOC 2
+    representation carries, as the legacy campaign substitutes CC6.1 for CC6.2.
+    Creation is `POST /access-reviews/agents` under `access_reviews.create`.
+    (`3a`, #3674)
 
 ### Permission keys
 

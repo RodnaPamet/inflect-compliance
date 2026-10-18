@@ -46,12 +46,15 @@ import { deriveSubkey } from '@/lib/security/encryption';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { logger } from '@/lib/observability/logger';
 import { sampleSizeFor, samplingEpochFor, selectSample } from '@/lib/agentic/proposal-sampling';
+import { resolveKillState } from '@/lib/agentic/kill-switch';
+import { readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
 import { mayReadAgentSubjects, type AgentSubjectSnapshot } from '@/lib/access-review/scope';
 import {
     AGENT_RECERTIFICATION_EVIDENCE_TOOL,
     AGENT_RECERTIFICATION_PACK_WORKFLOW,
     MAX_AGENT_SUBJECTS,
     PACK_PAGE_SIZE,
+    PACK_SUBJECT_ALL_BUT_SELF,
     PackPlanSchema,
     RECERT_SAMPLE_DISSENT_CODES,
     RecertificationEvidenceSchema,
@@ -91,7 +94,16 @@ export type AgentCampaignRefusal =
     | 'CAMPAIGN_CLOSED'
     | 'PACKS_ALREADY_PREPARED'
     | 'PACKS_NOT_PREPARED'
-    | 'PREPARER_IS_SUBJECT'
+    | 'PREPARER_REQUIRED'
+    | 'PREPARERS_MUST_DIFFER'
+    | 'PREPARER_NOT_FOUND'
+    | 'PREPARER_NOT_ACTIVE'
+    | 'PREPARER_UNSCORED'
+    | 'PREPARER_KILL_SWITCHED'
+    | 'PREPARER_BREAKER_LATCHED'
+    | 'PREPARER_LACKS_READ_GRANT'
+    | 'PREPARE_REQUIRES_PERSON'
+    | 'SELF_PACK_REFUSED'
     | 'PACK_RUN_FAILED'
     | 'PACK_PLAN_MISMATCH'
     | 'NARROWINGS_PENDING'
@@ -133,12 +145,64 @@ function holdsRegistry(ctx: RequestContext): boolean {
     return ctx.appPermissions?.admin?.agent_registry === true;
 }
 
+// ── The preparing agents ─────────────────────────────────────────────────
+//
+// A REGISTERED AGENT prepares every pack (roadmap rule 1, owner decision of
+// 2026-10-18): the pack workflow runs as that agent, through the funnel, with
+// its grants, card and autonomy terms; the admin who asks only starts it. And
+// no agent prepares the pack it is reviewed by (rule 8). Every agent able to
+// prepare is ACTIVE, so it is always in the frozen population — so a campaign
+// names TWO: the preparer prepares every pack but its own, and the
+// cross-preparer prepares exactly that one. A CHECK on `AccessReview` holds the
+// pairing and one on the pack refuses `preparedByAgentId = agentId`.
+
+/** One of the two agents a campaign names, and which role it plays. */
+type PreparerRole = 'preparer' | 'cross-preparer';
+
+/**
+ * Can `agentId` prepare packs right now? The terms the automation dispatcher
+ * asks before it starts an agent's run (`agent-invoke-dispatch`), each with its
+ * own name, plus the one grant the pack needs. Asked at creation AND again at
+ * preparation: an agent that stopped qualifying in between is refused, not run.
+ * The funnel asks all of them again on the call itself; this is the half that
+ * names the cause before a run row exists.
+ */
+async function assertPreparerEligible(
+    db: Parameters<Parameters<typeof runInTenantContext>[1]>[0],
+    ctx: RequestContext,
+    agentId: string,
+    role: PreparerRole,
+): Promise<void> {
+    const agent = await db.registeredAgent.findFirst({
+        where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
+        select: { id: true, status: true, riskTier: true, isLegacyPlaceholder: true },
+    });
+    if (!agent || agent.isLegacyPlaceholder) refuse('PREPARER_NOT_FOUND', `the ${role} is not a registered agent of this tenant`);
+    if (agent.status !== 'ACTIVE') refuse('PREPARER_NOT_ACTIVE', `the ${role} is ${agent.status}; only an ACTIVE agent prepares packs`);
+    if (agent.riskTier === null) refuse('PREPARER_UNSCORED', `the ${role} has no risk tier; an unscored agent is denied`);
+    const kill = await resolveKillState(ctx.tenantId, agentId);
+    if (kill) refuse('PREPARER_KILL_SWITCHED', `the ${role} is stopped by a ${kill.scope} kill switch`);
+    const latch = await readBreakerLatch(ctx.tenantId, agentId);
+    if (latch?.state === 'OPEN') refuse('PREPARER_BREAKER_LATCHED', `the ${role}'s circuit breaker is open`);
+    const grant = await db.registeredAgentTool.findFirst({
+        where: { tenantId: ctx.tenantId, agentId, toolName: AGENT_RECERTIFICATION_EVIDENCE_TOOL },
+        select: { id: true },
+    });
+    if (!grant) {
+        refuse('PREPARER_LACKS_READ_GRANT', `the ${role} is not granted ${AGENT_RECERTIFICATION_EVIDENCE_TOOL}`);
+    }
+}
+
 // ── Create ───────────────────────────────────────────────────────────────
 
 export const CreateAgentAccessReviewSchema = z.object({
     name: z.string().min(1).max(200),
     description: z.string().max(2000).optional(),
     reviewerUserId: z.string().min(1),
+    /** Prepares every pack but its own. Required — refused by name when absent. */
+    preparerAgentId: z.string().max(64).optional(),
+    /** Prepares the preparer's own pack. Required — refused by name when absent. */
+    crossPreparerAgentId: z.string().max(64).optional(),
     dueAt: z.coerce.date().optional(),
     periodStartAt: z.coerce.date().optional(),
     periodEndAt: z.coerce.date().optional(),
@@ -169,6 +233,18 @@ export async function createAgentAccessReview(
     assertCanAdmin(ctx);
     assertAgentCampaignsAvailable('create');
     const parsed = CreateAgentAccessReviewSchema.parse(input);
+    const preparerAgentId = parsed.preparerAgentId?.trim() || null;
+    const crossPreparerAgentId = parsed.crossPreparerAgentId?.trim() || null;
+    if (!preparerAgentId || !crossPreparerAgentId) {
+        refuse(
+            'PREPARER_REQUIRED',
+            'an agent campaign names the registered agent that prepares its packs and a second one that '
+            + 'prepares the first one’s own pack (an agent never prepares the pack it is reviewed by)',
+        );
+    }
+    if (preparerAgentId === crossPreparerAgentId) {
+        refuse('PREPARERS_MUST_DIFFER', 'the preparer and the cross-preparer must be two different agents');
+    }
 
     return runInTenantContext(ctx, async (db) => {
         const reviewer = await db.tenantMembership.findFirst({
@@ -206,6 +282,11 @@ export async function createAgentAccessReview(
         const snapshotTruncated = found.length > MAX_AGENT_SUBJECTS;
         const agents = snapshotTruncated ? found.slice(0, MAX_AGENT_SUBJECTS) : found;
 
+        // After the population, so an empty one is the refusal a caller meets
+        // first, whatever agents the request names.
+        await assertPreparerEligible(db, ctx, preparerAgentId, 'preparer');
+        await assertPreparerEligible(db, ctx, crossPreparerAgentId, 'cross-preparer');
+
         const review = await AccessReviewRepository.createAgentCampaign(db, ctx, {
             name: sanitizePlainText(parsed.name),
             description: parsed.description ? sanitizePlainText(parsed.description) : null,
@@ -215,6 +296,8 @@ export async function createAgentAccessReview(
             dueAt: parsed.dueAt ?? null,
             snapshotTruncated,
             createdAt: now,
+            preparerAgentId,
+            crossPreparerAgentId,
         });
 
         const created = await db.accessReviewConnectedDecision.createMany({
@@ -266,6 +349,8 @@ export async function createAgentAccessReview(
                     subjectCount: agents.length,
                     snapshotTruncated,
                     ownedByReviewer,
+                    preparerAgentId,
+                    crossPreparerAgentId,
                 },
             },
         });
@@ -301,17 +386,91 @@ function checkedPlan(evidence: RecertificationEvidence, recorded: unknown): Pack
     return derived;
 }
 
+/** One pack-preparation run, as the usecase reads it back. */
+interface PreparedRun {
+    readonly evidence: RecertificationEvidence;
+    readonly plan: PackPlan;
+    readonly runId: string;
+    readonly agentId: string;
+}
+
 /**
- * Prepare every subject's reviewer pack, through the pack workflow.
+ * Start one pack run AS `agentId` and read its recorded steps back.
  *
- * One static run per page of `PACK_PAGE_SIZE` agents; each run's READ step is
- * the evidence read and its SYNTHESIS step the plan. The packs and narrowings
- * are written only after every page succeeded, in one transaction, so a
- * campaign has all of its packs or none.
+ * The context is the requester's with the agent bound — the seam the automation
+ * dispatcher uses to start a run for a registered agent. `startWorkflowRun`
+ * resolves the agent through the register, pins its policy card and stamps
+ * `WorkflowRun.agentId`; the static driver builds the invocation from the
+ * register, so the READ step's tool call is the agent's: deny-by-default over
+ * ITS grants, its card, its autonomy ceiling, the kill and credential checks.
+ * The requester's permissions are one term of that intersection, never a way
+ * around it.
+ */
+async function runPackAs(
+    ctx: RequestContext,
+    agentId: string,
+    accessReviewId: string,
+    page: number,
+    subject: string,
+): Promise<PreparedRun> {
+    const run = await startWorkflowRun({ ...ctx, agentId }, AGENT_RECERTIFICATION_PACK_WORKFLOW, {
+        accessReviewId,
+        page: String(page),
+        subject,
+    });
+    if (run.status !== 'COMPLETED' || run.stepFailures > 0) {
+        refuse('PACK_RUN_FAILED', `run ${run.runId} (agent ${agentId}, page ${page}) ended ${run.status} with ${run.stepFailures} failed step(s)`);
+    }
+    const { steps, runAgentId } = await runInTenantContext(ctx, async (db) => ({
+        steps: await db.workflowStep.findMany({
+            where: { tenantId: ctx.tenantId, runId: run.runId },
+            select: { seq: true, kind: true, toolCalled: true, status: true, outputJson: true },
+            orderBy: { seq: 'asc' },
+            take: 10,
+        }),
+        runAgentId: (await db.workflowRun.findFirst({
+            where: { id: run.runId, tenantId: ctx.tenantId },
+            select: { agentId: true },
+        }))?.agentId ?? null,
+    }));
+    // The run row must say it was the agent's. A run stamped with anybody else
+    // — or nobody — did not prepare a pack under the terms this function exists
+    // to apply.
+    if (runAgentId !== agentId) {
+        refuse('PACK_RUN_FAILED', `run ${run.runId} is attributed to ${runAgentId ?? 'no agent'}, not ${agentId}`);
+    }
+    const read = steps.find((x) => x.seq === 0 && x.kind === 'READ' && x.toolCalled === AGENT_RECERTIFICATION_EVIDENCE_TOOL && x.status === 'DONE');
+    const syn = steps.find((x) => x.seq === 1 && x.kind === 'SYNTHESIS' && x.status === 'DONE');
+    if (!read?.outputJson || !syn?.outputJson) {
+        refuse('PACK_RUN_FAILED', `run ${run.runId} recorded no evidence read and plan`);
+    }
+    const evidence = RecertificationEvidenceSchema.parse(JSON.parse(read.outputJson));
+    if (evidence.accessReviewId !== accessReviewId || evidence.page !== page) {
+        refuse('PACK_RUN_FAILED', `run ${run.runId} read another page or campaign`);
+    }
+    // Rule 8 at the result, whatever the read did: an agent's run carries no
+    // evidence about the agent itself.
+    if (evidence.subjects.some((x) => x.agentId === agentId)) {
+        refuse('SELF_PACK_REFUSED', `run ${run.runId} returned the running agent's own subject`);
+    }
+    const recorded = (JSON.parse(syn.outputJson) as { data?: unknown } | null)?.data;
+    return { evidence, plan: checkedPlan(evidence, recorded), runId: run.runId, agentId };
+}
+
+/**
+ * Prepare every subject's reviewer pack, through the pack workflow, run by the
+ * campaign's registered agents.
  *
- * Rule 8 of the roadmap — the auditor is not the auditee — applied to the
- * preparer: a registered agent that is itself a subject may not prepare the
- * packs.
+ * The PREPARER runs one static workflow per page of `PACK_PAGE_SIZE` subjects
+ * over every subject but its own; the CROSS-PREPARER runs one over exactly the
+ * preparer's subject. Each run's READ step is the evidence read and its
+ * SYNTHESIS step the plan. The packs and narrowings are written only after
+ * every run succeeded, in one transaction, so a campaign has all of its packs
+ * or none — and every pack records the agent whose run prepared it.
+ *
+ * Started by a person (OWNER/ADMIN), never by a credential: the person only
+ * starts the agents' runs, and a key's own agent binding would otherwise decide
+ * whose run it is.
  */
 export async function prepareAgentReviewPacks(
     ctx: RequestContext,
@@ -319,92 +478,79 @@ export async function prepareAgentReviewPacks(
 ): Promise<PreparePacksResult> {
     assertCanAdmin(ctx);
     assertAgentCampaignsAvailable('prepare');
+    if (ctx.apiKeyId || ctx.agentId) {
+        refuse('PREPARE_REQUIRES_PERSON', 'packs are prepared by the campaign’s agents, started by a signed-in person');
+    }
 
     const head = await runInTenantContext(ctx, async (db) => {
         const review = await db.accessReview.findFirst({
             where: { id: accessReviewId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, scope: true, status: true, createdAt: true },
+            select: { id: true, scope: true, status: true, createdAt: true, preparerAgentId: true, crossPreparerAgentId: true },
         });
         if (!review) throw notFound('Access review not found');
         if (review.scope !== 'AGENT') refuse('NOT_AN_AGENT_CAMPAIGN', 'only an AGENT campaign has reviewer packs');
         if (review.status !== 'OPEN') refuse('CAMPAIGN_CLOSED', `packs are prepared before any decision; this campaign is ${review.status}`);
+        if (!review.preparerAgentId || !review.crossPreparerAgentId) {
+            refuse('PREPARER_REQUIRED', 'this campaign names no preparing agents');
+        }
         const existing = await db.accessReviewAgentPack.count({ where: { tenantId: ctx.tenantId, accessReviewId } });
         if (existing > 0) refuse('PACKS_ALREADY_PREPARED', 'a pack is written once; this campaign has its packs');
         const subjects = await db.accessReviewConnectedDecision.findMany({
             where: { tenantId: ctx.tenantId, accessReviewId },
-            select: { id: true, subjectAgentId: true },
+            select: { id: true, subjectAgentId: true, subjectOwnerUserId: true },
             take: MAX_AGENT_SUBJECTS + 1,
         });
         if (subjects.length === 0) refuse('NO_SUBJECTS', 'this campaign has no subjects to prepare packs for');
-        if (ctx.agentId && subjects.some((s) => s.subjectAgentId === ctx.agentId)) {
-            refuse('PREPARER_IS_SUBJECT', 'an agent under review may not prepare the packs it is reviewed by');
-        }
-        return { review, subjects };
+        // Asked again: the agents named at creation may have stopped
+        // qualifying since — suspended, killed, ungranted.
+        await assertPreparerEligible(db, ctx, review.preparerAgentId, 'preparer');
+        await assertPreparerEligible(db, ctx, review.crossPreparerAgentId, 'cross-preparer');
+        return {
+            review: { ...review, preparerAgentId: review.preparerAgentId, crossPreparerAgentId: review.crossPreparerAgentId },
+            subjects,
+        };
     });
 
-    const pages = Math.ceil(head.subjects.length / PACK_PAGE_SIZE);
-    const runIds: string[] = [];
-    const prepared: Array<{ evidence: RecertificationEvidence; plan: PackPlan; runId: string }> = [];
+    const { preparerAgentId, crossPreparerAgentId } = head.review;
+    const preparerSubjects = head.subjects.filter((x) => x.subjectAgentId !== preparerAgentId);
+    const preparersOwn = head.subjects.filter((x) => x.subjectAgentId === preparerAgentId);
 
+    const prepared: PreparedRun[] = [];
+    const pages = Math.ceil(preparerSubjects.length / PACK_PAGE_SIZE);
     for (let page = 0; page < pages; page++) { // guardrail-allow: n+1 — one workflow run and one bounded step read per page of PACK_PAGE_SIZE agents
-        const run = await startWorkflowRun(ctx, AGENT_RECERTIFICATION_PACK_WORKFLOW, {
-            accessReviewId,
-            page: String(page),
-        });
-        runIds.push(run.runId);
-        if (run.status !== 'COMPLETED' || run.stepFailures > 0) {
-            refuse('PACK_RUN_FAILED', `run ${run.runId} for page ${page} ended ${run.status} with ${run.stepFailures} failed step(s)`);
-        }
-        const steps = await runInTenantContext(ctx, (db) =>
-            db.workflowStep.findMany({
-                where: { tenantId: ctx.tenantId, runId: run.runId },
-                select: { seq: true, kind: true, toolCalled: true, status: true, outputJson: true },
-                orderBy: { seq: 'asc' },
-                take: 10,
-            }),
-        );
-        const read = steps.find((s) => s.seq === 0 && s.kind === 'READ' && s.toolCalled === AGENT_RECERTIFICATION_EVIDENCE_TOOL && s.status === 'DONE');
-        const syn = steps.find((s) => s.seq === 1 && s.kind === 'SYNTHESIS' && s.status === 'DONE');
-        if (!read?.outputJson || !syn?.outputJson) {
-            refuse('PACK_RUN_FAILED', `run ${run.runId} recorded no evidence read and plan`);
-        }
-        const evidence = RecertificationEvidenceSchema.parse(JSON.parse(read.outputJson));
-        if (evidence.accessReviewId !== accessReviewId || evidence.page !== page) {
-            refuse('PACK_RUN_FAILED', `run ${run.runId} read another page or campaign`);
-        }
-        const recorded = (JSON.parse(syn.outputJson) as { data?: unknown } | null)?.data;
-        prepared.push({ evidence, plan: checkedPlan(evidence, recorded), runId: run.runId });
+        prepared.push(await runPackAs(ctx, preparerAgentId, accessReviewId, page, PACK_SUBJECT_ALL_BUT_SELF));
     }
+    if (preparersOwn.length > 0) {
+        prepared.push(await runPackAs(ctx, crossPreparerAgentId, accessReviewId, 0, preparerAgentId));
+    }
+    const runIds = prepared.map((r) => r.runId);
 
     const window = observationWindow(head.review.createdAt);
-    const subjectById = new Map(head.subjects.map((s) => [s.id, s]));
-    const covered = new Set(prepared.flatMap((p) => p.evidence.subjects.map((s) => s.decisionId)));
-    if (covered.size !== head.subjects.length || [...covered].some((id) => !subjectById.has(id))) {
-        refuse('PACK_RUN_FAILED', `the runs covered ${covered.size} of ${head.subjects.length} subject(s)`);
+    const subjectById = new Map(head.subjects.map((x) => [x.id, x]));
+    const coveredBy = new Map<string, string>();
+    for (const r of prepared) for (const x of r.evidence.subjects) coveredBy.set(x.decisionId, r.agentId);
+    if (coveredBy.size !== head.subjects.length || [...coveredBy.keys()].some((id) => !subjectById.has(id))) {
+        refuse('PACK_RUN_FAILED', `the runs covered ${coveredBy.size} of ${head.subjects.length} subject(s)`);
     }
 
     return runInTenantContext(ctx, async (db) => {
-        const owners = await db.accessReviewConnectedDecision.findMany({
-            where: { tenantId: ctx.tenantId, accessReviewId },
-            select: { id: true, subjectOwnerUserId: true },
-            take: MAX_AGENT_SUBJECTS + 1,
-        });
-        const ownerByDecision = new Map(owners.map((o) => [o.id, o.subjectOwnerUserId]));
+        const ownerByDecision = new Map(head.subjects.map((x) => [x.id, x.subjectOwnerUserId]));
 
-        const packRows = prepared.flatMap(({ evidence, plan, runId }) =>
-            evidence.subjects.map((s) => {
-                const sections = sectionsOf(s);
+        const packRows = prepared.flatMap(({ evidence, plan, runId, agentId: preparedBy }) =>
+            evidence.subjects.map((x) => {
+                const sections = sectionsOf(x);
                 const contentHash = sha256Of(sections);
-                const planned = plan.packs.find((p) => p.decisionId === s.decisionId);
+                const planned = plan.packs.find((p) => p.decisionId === x.decisionId);
                 if (!planned || planned.contentHash !== contentHash) {
-                    refuse('PACK_PLAN_MISMATCH', `pack ${s.decisionId} does not hash to its plan`);
+                    refuse('PACK_PLAN_MISMATCH', `pack ${x.decisionId} does not hash to its plan`);
                 }
                 return {
                     tenantId: ctx.tenantId,
                     accessReviewId,
-                    decisionId: s.decisionId,
-                    agentId: s.agentId,
+                    decisionId: x.decisionId,
+                    agentId: x.agentId,
                     preparedByRunId: runId,
+                    preparedByAgentId: preparedBy,
                     preparedByUserId: ctx.userId,
                     windowStart: window.start,
                     windowEnd: window.end,
@@ -449,11 +595,13 @@ export async function prepareAgentReviewPacks(
                 category: 'entity_lifecycle',
                 entityName: 'AccessReviewAgentPack',
                 operation: 'create',
-                summary: `Prepared ${packs.length} reviewer pack(s) and ${narrowed.count} narrowing(s) in ${runIds.length} run(s)`,
+                summary: `Prepared ${packs.length} reviewer pack(s) and ${narrowed.count} narrowing(s) in ${runIds.length} agent run(s)`,
                 after: {
                     packs: packs.length,
                     narrowings: narrowed.count,
                     runIds,
+                    preparerAgentId,
+                    crossPreparerAgentId,
                     windowStart: window.start.toISOString(),
                     windowEnd: window.end.toISOString(),
                 },
@@ -486,7 +634,7 @@ export async function getAgentReviewPacks(ctx: RequestContext, accessReviewId: s
         const packs = await db.accessReviewAgentPack.findMany({
             where: { tenantId: ctx.tenantId, accessReviewId },
             select: {
-                id: true, decisionId: true, agentId: true, preparedByRunId: true, windowStart: true,
+                id: true, decisionId: true, agentId: true, preparedByRunId: true, preparedByAgentId: true, windowStart: true,
                 windowEnd: true, sectionsJson: true, contentHash: true, preparedAt: true,
             },
             orderBy: { decisionId: 'asc' },
@@ -833,7 +981,7 @@ async function evidenceRowsOf(
         select: {
             id: true, tenantId: true, name: true, scope: true, periodStartAt: true, periodEndAt: true,
             reviewerUserId: true, createdByUserId: true, createdAt: true, closedAt: true,
-            closedByUserId: true, snapshotTruncated: true,
+            closedByUserId: true, snapshotTruncated: true, preparerAgentId: true, crossPreparerAgentId: true,
         },
     });
     if (!campaign) throw notFound('Access review not found');
@@ -848,7 +996,7 @@ async function evidenceRowsOf(
     });
     const packs = await db.accessReviewAgentPack.findMany({
         where: { tenantId: ctx.tenantId, accessReviewId },
-        select: { decisionId: true, contentHash: true, preparedByRunId: true },
+        select: { decisionId: true, contentHash: true, preparedByRunId: true, preparedByAgentId: true },
         take: MAX_AGENT_SUBJECTS + 1,
     });
     const narrowings = await db.accessReviewAgentNarrowing.findMany({
