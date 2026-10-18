@@ -13,7 +13,9 @@
  *   grants     every `RegisteredAgentTool` row deleted
  *   proposals  every PENDING `AgentProposal` moved to EXPIRED
  *   card       frozen: no further `AgentPolicyCardVersion`, history readable
- *   evidence   NOTHING withdrawn — no artefact is attributable to one agent
+ *   evidence   its PER-AGENT artefacts of the open periods withdrawn (#3700);
+ *              every tenant-wide artefact left exactly as it was — the per-agent
+ *              half is proved in `agentic-evidence-per-agent.test.ts`
  *
  * Database triggers back the parts an in-flight writer could race: a PENDING
  * proposal, a card version, an unrevoked API key or scanner key and a tool
@@ -434,12 +436,14 @@ describe('retirement leaves the agent holding nothing', () => {
     });
 });
 
-describe('the evidence effect: nothing is attributable to one agent, so nothing is withdrawn', () => {
+describe('the evidence effect never reaches a tenant-wide artefact', () => {
     it('leaves every population-level artefact CURRENT, deletes no evidence, and records the basis', async () => {
-        // An `AgenticEvidenceArtefact` is a tenant-wide monthly aggregate over
+        // A tenant-wide `AgenticEvidenceArtefact` is a monthly aggregate over
         // EVERY agent's receipts or decisions. Withdrawing one at retirement
         // would retract true evidence about the other agents and about this
-        // agent's own past actions.
+        // agent's own past actions. Since #3700 retirement withdraws the
+        // agent's PER-AGENT artefacts of the open periods — and this agent has
+        // none, so it withdraws nothing at all.
         const agent = await makeAgent(T1);
         const control = await prisma.control.create({ data: { tenantId: T1, name: 'Agent action logging' } });
         const evidence = await prisma.evidence.create({
@@ -473,7 +477,7 @@ describe('the evidence effect: nothing is attributable to one agent, so nothing 
         const row = await auditRow(T1, agent.id, 'AGENT_RETIRED');
         const cascade = (row.detailsJson as { cascade: Record<string, unknown> }).cascade;
         expect(cascade.evidenceArtefactsWithdrawn).toBe(0);
-        expect(cascade.evidenceBasis).toBe('POPULATION_LEVEL_ONLY');
+        expect(cascade.evidenceBasis).toBe('PER_AGENT_OPEN_PERIODS');
     });
 });
 

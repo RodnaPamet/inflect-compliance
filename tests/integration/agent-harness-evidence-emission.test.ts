@@ -59,6 +59,7 @@ import {
     AGENTIC_ARTEFACT_KINDS,
     ARTEFACT_KIND_HARNESS_SCANS,
     ASI_LIBRARY_URN,
+    isPerAgentKind,
 } from '@/lib/agentic/evidence-artefact';
 import { isCoverageQualifyingEvidence } from '@/lib/compliance/coverage-evidence';
 import type { HarnessReportAgent, HarnessReportBody } from '@/lib/agentic/harness-contract';
@@ -809,6 +810,8 @@ describe('what a harness artefact must not contain (DPIA condition 8)', () => {
 });
 
 describe('every kind the code knows is one the migrated CHECK accepts', () => {
+    // A per-agent kind (#3700) must name its agent — `AgenticEvidenceArtefact_
+    // agent_scope` — so it is inserted with one; every other kind without.
     const insert = async (kind: string) => {
         const evidence = await prisma.evidence.create({
             data: { tenantId: T, type: 'TEXT', title: `check pin ${kind}`, content: 'x', status: 'DRAFT' },
@@ -816,12 +819,13 @@ describe('every kind the code knows is one the migrated CHECK accepts', () => {
         });
         return prisma.$executeRawUnsafe(
             `INSERT INTO "AgenticEvidenceArtefact"
-               ("id", "tenantId", "controlId", "kind", "periodStart", "periodEnd", "evidenceId", "sourceDigest", "updatedAt")
-             VALUES ($1, $2, $3, $4, '2020-01-01T00:00:00Z', '2020-02-01T00:00:00Z', $5, 'pin', now())`,
+               ("id", "tenantId", "controlId", "kind", "agentId", "periodStart", "periodEnd", "evidenceId", "sourceDigest", "updatedAt")
+             VALUES ($1, $2, $3, $4, $5, '2020-01-01T00:00:00Z', '2020-02-01T00:00:00Z', $6, 'pin', now())`,
             randomUUID(),
             T,
             seeded.controls.ASI10,
             kind,
+            isPerAgentKind(kind) ? seeded.targetAgentId : null,
             evidence.id,
         );
     };

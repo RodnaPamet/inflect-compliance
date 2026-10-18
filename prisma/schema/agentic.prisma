@@ -766,6 +766,9 @@ model RegisteredAgent {
   /// Two-step handovers of this agent's accountability (#3698). The current
   /// owner is `ownerUserId`; this is how it came to be that person.
   ownershipTransfers AgentOwnershipTransfer[]
+  /// The per-agent evidence artefacts about this agent (#3700) — the ones its
+  /// retirement withdraws for the periods still open.
+  evidenceArtefacts  AgenticEvidenceArtefact[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -1995,13 +1998,28 @@ model AgenticEvidenceArtefact {
   controlId String
 
   /// `AGENT_ACTION_RECEIPTS` | `AI_DECISION_RECORDS` | `AGENT_HARNESS_SCANS` |
-  /// `INTEGRATION_PASSPORTS` (`AGENTIC_ARTEFACT_KINDS`, which the DB CHECK
-  /// mirrors; the third added by migration 20261017235500, #3687, the fourth by
-  /// 20261018001000, #3672). TEXT + CHECK rather than a Postgres enum, for the
-  /// reason the `@@map("WorkItem*")` pins record: an `ALTER TYPE`
-  /// mid-rolling-deploy makes still-running old containers fail with SQLSTATE
-  /// 42704, so widening this vocabulary is a CHECK swap instead.
+  /// `INTEGRATION_PASSPORTS` | `AGENT_ACTION_RECEIPTS_PER_AGENT` |
+  /// `AI_DECISION_RECORDS_PER_AGENT` (`AGENTIC_ARTEFACT_KINDS`, which the DB
+  /// CHECK mirrors; the third added by migration 20261017235500, #3687, the
+  /// fourth by 20261018001000, #3672, the two per-agent kinds by 20261018140000,
+  /// #3700). TEXT + CHECK rather than a Postgres enum, for the reason the
+  /// `@@map("WorkItem*")` pins record: an `ALTER TYPE` mid-rolling-deploy makes
+  /// still-running old containers fail with SQLSTATE 42704, so widening this
+  /// vocabulary is a CHECK swap instead.
   kind String
+
+  /// The registered agent a PER-AGENT artefact is about (#3700), and NULL on
+  /// every tenant-wide kind. A CHECK pairs the two
+  /// (`AgenticEvidenceArtefact_agent_scope`): a per-agent kind without an agent,
+  /// or a tenant-wide kind with one, is unrepresentable — so retirement, which
+  /// withdraws by this column, can never reach a tenant-wide artefact. Part of
+  /// the identity.
+  ///
+  /// Per-agent KINDS rather than this column on the existing kinds, so that a
+  /// container built before it, whose lookup is the four-column identity, can
+  /// only ever find the tenant-wide row of a kind it knows — never a per-agent
+  /// row it would then overwrite with the whole tenant's counts.
+  agentId String?
 
   /// UTC period boundaries — `periodStart` inclusive, `periodEnd` exclusive. A
   /// UTC calendar month for receipts and decision records; an ISO 8601 week
@@ -2032,9 +2050,11 @@ model AgenticEvidenceArtefact {
   /// `CURRENT` | `WITHDRAWN`. See the model header for why nothing is deleted.
   status String @default("CURRENT")
 
-  /// `CONTROL_REMOVED` | `SOURCE_UNVERIFIABLE` | `OBLIGATION_UNMAPPED`. Both NULL iff `CURRENT`, and the
-  /// pairing is a CHECK rather than a convention: a withdrawn artefact that does
-  /// not say why is indistinguishable from an emitter that stopped running.
+  /// `CONTROL_REMOVED` | `SOURCE_UNVERIFIABLE` | `OBLIGATION_UNMAPPED` |
+  /// `AGENT_RETIRED` (#3700 — a per-agent kind only, by CHECK). Both NULL iff
+  /// `CURRENT`, and the pairing is a CHECK rather than a convention: a withdrawn
+  /// artefact that does not say why is indistinguishable from an emitter that
+  /// stopped running.
   withdrawnAt     DateTime?
   withdrawnReason String?
 
@@ -2057,16 +2077,30 @@ model AgenticEvidenceArtefact {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  control  Control  @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  evidence Evidence @relation(fields: [evidenceId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  control  Control          @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  evidence Evidence         @relation(fields: [evidenceId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  /// CASCADE, matching the artefact's other two parents. No usecase hard-deletes
+  /// a register row (retirement is a status, removal is `deletedAt`), so the
+  /// only path that reaches this is a tenant purge, which deletes the
+  /// `Evidence` these rows ARE in any case.
+  agent    RegisteredAgent? @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
-  /// THE IDENTITY. A unique index rather than a read-then-write in the usecase,
-  /// because two ticks that overlap (a retry racing a schedule) would otherwise
-  /// both read "absent" and both insert — the exact duplication the identity
-  /// exists to prevent. Tenant-leading, so it doubles as the tenant-scoped index
-  /// and as `controlId`'s foreign-key index.
-  @@unique([tenantId, controlId, kind, periodStart])
+  /// THE IDENTITY — `(tenant, control, kind, period, agent)`. A unique index
+  /// rather than a read-then-write in the usecase, because two ticks that
+  /// overlap (a retry racing a schedule) would otherwise both read "absent" and
+  /// both insert — the exact duplication the identity exists to prevent.
+  /// Tenant-leading, so it doubles as the tenant-scoped index and as
+  /// `controlId`'s foreign-key index.
+  ///
+  /// `NULLS NOT DISTINCT` in the migration (#3700), which Prisma cannot spell:
+  /// every tenant-wide row carries a NULL `agentId`, and under Postgres's
+  /// default two NULLs are distinct, so the index would admit a second
+  /// tenant-wide row for the same `(tenant, control, kind, period)`.
+  @@unique([tenantId, controlId, kind, periodStart, agentId], map: "AgenticEvidenceArtefact_identity_key")
+  /// `agentId`'s foreign-key index, and retirement's read: the agent's
+  /// artefacts of the periods still open.
+  @@index([tenantId, agentId])
   /// "The artefacts for this period" — the assessor-facing query.
   @@index([tenantId, periodStart])
   /// `evidenceId`'s foreign-key index, and the reverse lookup an evidence detail

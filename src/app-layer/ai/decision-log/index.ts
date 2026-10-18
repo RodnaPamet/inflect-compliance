@@ -149,6 +149,12 @@ export async function logAiDecision(
             // what an unreviewed-but-reviewable row is.
             ...(input.humanOutcome ? { humanOutcome: input.humanOutcome } : {}),
             userId: ctx.userId,
+            // The registered agent this request speaks for — the binding of
+            // the API key it authenticated with — or NULL, never a guess: the
+            // same `ctx.agentId ?? null` every agentic write seam records. It
+            // is what attributes the decision to ONE agent's evidence (#3700),
+            // and the append-only trigger keeps it from being re-attributed.
+            agentId: ctx.agentId ?? null,
         },
         select: { id: true },
     });

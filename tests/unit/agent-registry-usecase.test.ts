@@ -75,6 +75,8 @@ interface DbOverrides {
     failToolDelete?: boolean;
     /** The agent's open (PENDING) ownership transfer, if any; lapsed when `expiresAt` has passed. */
     openTransfer?: { id: string; toOwnerUserId: string; expiresAt: Date } | null;
+    /** The agent's per-agent evidence artefacts of the periods still open (#3700). */
+    openArtefacts?: number;
 }
 
 const ids = (prefix: string, n: number) =>
@@ -138,6 +140,19 @@ function makeDb(overrides: DbOverrides = {}) {
             findFirst: jest.fn(async () => overrides.openTransfer ?? null),
             updateMany: jest.fn(async () => ({ count: overrides.openTransfer ? 1 : 0 })),
         },
+        agenticEvidenceArtefact: {
+            findMany: jest.fn(async () =>
+                ids('artefact', overrides.openArtefacts ?? 0).map(({ id }) => ({
+                    id,
+                    evidenceId: `evidence-of-${id}`,
+                    kind: 'AGENT_ACTION_RECEIPTS_PER_AGENT',
+                    periodStart: new Date('2026-10-01T00:00:00.000Z'),
+                    sourceDigest: 'digest',
+                })),
+            ),
+            update: jest.fn(async () => ({})),
+        },
+        evidence: { update: jest.fn(async () => ({})) },
         registeredAgent: {
             create: jest.fn(async (args: any) => {
                 calls.agentCreates.push(args);
@@ -323,6 +338,7 @@ const FULL_AGENT: DbOverrides = {
     pendingProposals: 4,
     card: { id: 'card-1', currentVersion: 3 },
     openTransfer: { id: 'transfer-1', toOwnerUserId: 'owner-2', expiresAt: new Date(Date.now() + 86_400_000) },
+    openArtefacts: 2,
 };
 
 describe('retirement cascades, status first and audit last', () => {
@@ -344,6 +360,15 @@ describe('retirement cascades, status first and audit last', () => {
         ];
         for (const write of effectWrites) {
             expect(write).toHaveBeenCalledTimes(1);
+            expect(firstCall(write)).toBeGreaterThan(statusAt);
+        }
+        // The evidence withdrawal (#3700) writes one row per open artefact, and
+        // every one of them lands after the status — the lock an emitter write
+        // for this agent waits on.
+        expect(db.agenticEvidenceArtefact.update).toHaveBeenCalledTimes(2);
+        expect(firstCall(db.agenticEvidenceArtefact.update)).toBeGreaterThan(statusAt);
+        effectWrites.push(db.agenticEvidenceArtefact.update, db.evidence.update);
+        for (const write of effectWrites) {
             expect(firstCall(write)).toBeGreaterThan(statusAt);
         }
         const lastEffect = Math.max(...effectWrites.map(lastCall), lastCall(db.agentPolicyCard.findUnique));
@@ -375,6 +400,7 @@ describe('retirement cascades, status first and audit last', () => {
             'AGENT_RETIREMENT_PROPOSALS_EXPIRED',
             'AGENT_RETIREMENT_POLICY_CARD_FROZEN',
             'AGENT_RETIREMENT_OWNERSHIP_TRANSFER_CANCELLED',
+            'AGENT_RETIREMENT_EVIDENCE_WITHDRAWN',
         ]);
         const summary = mockLogEvent.mock.calls[0][2].detailsJson as Record<string, any>;
         expect(summary.fromStatus).toBe('ACTIVE');
@@ -387,8 +413,8 @@ describe('retirement cascades, status first and audit last', () => {
             proposalsExpired: 4,
             policyCardFrozenAtVersion: 3,
             ownershipTransferCancelled: 'transfer-1',
-            evidenceArtefactsWithdrawn: 0,
-            evidenceBasis: 'POPULATION_LEVEL_ONLY',
+            evidenceArtefactsWithdrawn: 2,
+            evidenceBasis: 'PER_AGENT_OPEN_PERIODS',
         });
         // The response carries the same summary the row does.
         expect(result).toEqual({ id: 'agent-1', status: 'RETIRED', cascade: summary.cascade });

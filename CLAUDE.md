@@ -1760,13 +1760,14 @@ careless edit from being undone:
   `AGENT_RETIRED:` prefix (default SQLSTATE, not `restrict_violation`, which
   Prisma renders as an FK error), and each writing usecase maps it back with
   `isAgentRetiredDbRefusal` to the error it gives when it sees the status itself.
-- **Population-level evidence is never withdrawn by retirement.** No
-  `AgenticEvidenceArtefact` is attributable to one agent; the summary row says
-  `evidenceBasis: 'POPULATION_LEVEL_ONLY'` instead of skipping the effect. Do not
-  "complete" the 0e row by withdrawing tenant-wide artefacts: that retracts true
-  evidence about every other agent, and the next emission re-issues the month.
-  Withdrawing none is the owner's decision (2026-10-18); per-agent evidence that
-  retirement can withdraw is its own follow-up roadmap step, not a gap here.
+- **Retirement withdraws per-agent evidence of OPEN periods, and nothing
+  tenant-wide** (#3700, under the owner's decision 13 of 2026-10-18). The
+  cascade's last effect is `withdrawRetiredAgentEvidenceInTx`, reason
+  `AGENT_RETIRED`, basis `PER_AGENT_OPEN_PERIODS`. Do not widen it to a
+  tenant-wide artefact — that retracts true evidence about every other agent, and
+  a CHECK refuses an `AGENT_RETIRED` withdrawal on a row with no agent — or to a
+  closed period, whose record of what the agent did stays true. Audit rows from
+  before #3700 say `POPULATION_LEVEL_ONLY`; they were true then.
 - **The owner moves only by the two-step transfer**
   (`usecases/agent-ownership-transfer.ts`). `UpdateRegisteredAgentSchema` refuses
   `ownerUserId` by NAME (a stripped field would answer 200 with nothing changed),
@@ -1807,6 +1808,46 @@ careless edit from being undone:
   transfer (CANCELLED if live, EXPIRED if lapsed). Step one used to stamp first
   and lock the agent second, and deadlocked with a retirement whenever the row's
   deadline fell between the two requests' clocks.
+
+**Per-agent evidence** (#3700, `AGENT_ACTION_RECEIPTS_PER_AGENT` and
+`AI_DECISION_RECORDS_PER_AGENT`) is the month's receipts and decision records cut
+by agent, on the tenant-wide kinds' own controls. Rules each one careless edit
+from being undone:
+
+- **Per-agent KINDS, not an `agentId` on the old kinds.** A container built
+  before the column looks an artefact up by `(tenant, control, kind, period)`;
+  on a shared kind that lookup could find a per-agent row and overwrite it with
+  the whole tenant's counts. The CHECK `AgenticEvidenceArtefact_agent_scope`
+  pairs a per-agent kind with an agent and a tenant-wide kind with none.
+- **The identity is five columns, `NULLS NOT DISTINCT`, and Prisma cannot spell
+  that.** Every tenant-wide row's agent is NULL, so the default semantics would
+  admit a second tenant-wide row per identity. Lookups are `findFirst` (a compound
+  unique input cannot name a NULL); do not regenerate the index from the schema.
+- **Attribution is our binding, never the record's claim.** A receipt is the
+  agent's whose SUBMITTING key is bound to it (`mcpKeyId` → `TenantApiKey.agentId`,
+  read at emission — so a verb that re-binds a key must first stamp receipts at
+  ingest), never pipelock's `agent_id` (its namespace, a run nonce at worst,
+  sender-chosen on an unverified receipt). A decision is `AiDecisionLog.agentId`,
+  stamped by `logAiDecision` from `ctx.agentId ?? null` and in the append-only
+  trigger's column set. It has no FK on purpose: the log survives a tenant purge.
+- **One read, cut in memory.** The per-agent facts are partitions of the
+  tenant-wide read; the attribution column is selected beside a fact and never
+  put into one, so the tenant-wide digest and body are byte-for-byte unchanged —
+  `tests/unit/agentic-evidence-per-agent.test.ts` pins them to pre-#3700 values.
+  The per-agent digest (`perAgentPopulationDigest`) binds the agent.
+- **Nothing is written CURRENT for a retired agent, held three times**, because
+  the plan and each write are separate transactions: the plan skips RETIRED; each
+  per-agent write takes `FOR SHARE` on the agent row FIRST — before any Evidence
+  row, the order retirement locks in — and refuses; and a trigger refuses the
+  same write from any writer (`AGENT_RETIRED:` prefix). A row withdrawn
+  `AGENT_RETIRED` is terminal: the update branch that revives a withdrawn row
+  whose basis holds again never revives it. The withdrawal sweep re-asks
+  `AGENT_RETIRED` for open periods, which covers a retirement run by a build
+  that did not know the kinds.
+- **The emitter's file stays the only writer.** `withdrawRetiredAgentEvidenceInTx`
+  lives there and carries no gate of its own: retirement is one act under
+  `admin.agent_registry`, and borrowing the emitter's `assertCanWrite` would add
+  a gate nobody decided.
 
 **The integration passport** (#3672, `docs/integration-passport.md` is the
 specification) is one record per `mcp-server` connection, built by the pure

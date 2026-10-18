@@ -14,7 +14,9 @@
  * a tenant that has registered a scanner key; see the usecase header. The
  * scheduled tick (no `asOf`) also re-asserts the closed harness months a late
  * scan reached (`reconcileClosedHarnessPeriods`); a backfill of one named month
- * does not.
+ * does not. Receipts and decision records are also cut per agent (#3700), onto
+ * the same controls, for every registered agent they are attributed to that is
+ * not retired — the artefacts a retirement withdraws.
  *
  * ── THE TENANT SET IS THE PRECISE ONE ──────────────────────────────────────
  *
@@ -125,6 +127,8 @@ export interface EmissionSweepResult {
     withdrawn: number;
     /** Approved harness months put back to NEEDS_REVIEW because their scans are not complete evidence. */
     demoted: number;
+    /** Per-agent artefacts refused because their agent was retired between the plan and the write. */
+    perAgentRefused: number;
     /** Tenants that could not be emitted for — reported, never silently dropped. */
     skipped: number;
 }
@@ -144,6 +148,7 @@ export async function runAgenticEvidenceEmission(
         unchanged: 0,
         withdrawn: 0,
         demoted: 0,
+        perAgentRefused: 0,
         skipped: 0,
     };
 
@@ -172,6 +177,7 @@ export async function runAgenticEvidenceEmission(
         try {
             const report = await emitAgenticEvidence(ctx, payload.asOf ? { asOf: new Date(payload.asOf) } : {});
             const emitted = [...report.artefacts];
+            result.perAgentRefused += report.perAgentRefused;
             // The scheduled tick, not a backfill of one named month: also
             // re-assert the harness months the tick has moved past, or the
             // scan sent after a month's last tick never reaches its artefact.
@@ -227,6 +233,7 @@ export async function runAgenticEvidenceEmissionJob(
                 unchanged: r.unchanged,
                 withdrawn: r.withdrawn,
                 demoted: r.demoted,
+                perAgentRefused: r.perAgentRefused,
             },
         };
     }, { tenantId: payload.tenantId });

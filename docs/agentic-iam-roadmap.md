@@ -224,9 +224,10 @@ and records what it took: every `TenantApiKey` bound to the agent is revoked,
 including keys already past their expiry, and so is every harness scanner
 signing key it holds; its `RegisteredAgentTool` grants are deleted; its `PENDING`
 proposals move to `EXPIRED`, unreviewed; its policy card is frozen, so no further
-`AgentPolicyCardVersion` can be written while its history stays readable; and an
+`AgentPolicyCardVersion` can be written while its history stays readable; an
 open ownership transfer is closed — cancelled while it is live, marked expired
-once it has lapsed. The status is written first and the audit
+once it has lapsed; and its per-agent evidence artefacts for the month still
+open are withdrawn. The status is written first and the audit
 rows last: an `AGENT_RETIRED` summary carrying every count, then one row per
 effect that changed something. `RETIRED` is terminal: the status write matches
 no retired row, and a trigger refuses any move out of it from any writer. More
@@ -238,14 +239,28 @@ waits for the retirement and is refused: nothing attaches to the agent after
 the retirement commits, whether the agent wrote it or a person did. The retire dialog previews
 the live keys, grants and pending proposals the cascade will change.
 
-No evidence artefact is withdrawn. Every `AgenticEvidenceArtefact` is a
-tenant-wide monthly aggregate over all agents' receipts or decisions, keyed
-`(tenant, control, kind, period)` with no agent column, so none is attributable
-to one agent; the summary row records `evidenceArtefactsWithdrawn: 0` and the
-basis `POPULATION_LEVEL_ONLY`. Withdrawing none is the owner's decision of
-2026-10-18 (decision 13 below), not a gap: per-agent evidence that a retirement
-could withdraw is its own step, #3700. Agents retired before this change
-keep whatever keys and grants they held then.
+Evidence is withdrawn per agent, and only per agent (#3700). Beside the
+tenant-wide monthly artefacts of receipts and decision records, the 06:30 UTC
+emitter writes each agent's own: `AGENT_ACTION_RECEIPTS_PER_AGENT` on ASI02 and
+ASI04 and `AI_DECISION_RECORDS_PER_AGENT` on ASI09 and EU AI Act Art. 12, the
+same controls, cut from the same read, for every registered agent that is not
+retired and has at least one attributed record of that kind in the month. A
+receipt is attributed to the agent its submitting API key is bound to, never to
+the agent the mediator's record names; a decision record to the agent stamped on
+it at insert from the writing request's key, which the append-only trigger keeps
+from changing. A record with neither is counted in the tenant-wide artefact
+only. Retirement withdraws the agent's per-agent artefacts whose month is still
+open, with reason `AGENT_RETIRED`, archiving their Evidence behind a dated
+notice and deleting nothing; the summary row records how many and the basis
+`PER_AGENT_OPEN_PERIODS`. Its artefacts for closed months stay as they are,
+and no tenant-wide artefact is touched: a database CHECK refuses an
+`AGENT_RETIRED` withdrawal on a row with no agent. Nothing is written current
+for a retired agent again: the emitter plans no artefact for it, each
+per-agent write locks the agent row before writing and refuses a retired agent,
+a trigger refuses the same write from any writer, and a row withdrawn for
+retirement is never revived. Retirements before #3700 recorded
+`POPULATION_LEVEL_ONLY` and withdrew nothing, which was true of the artefacts
+then. Agents retired before #3698 keep whatever keys and grants they held then.
 
 An agent's owner moves only by a two-step transfer
 (`…/admin/agents/[agentId]/ownership-transfer` and `…/ownership-transfer/complete`,
@@ -441,7 +456,7 @@ finding id.
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. The access-review scope has an `AGENT` value, added by the first of `3a`'s two deploys: every reader handles it, an agent campaign's subjects are shown only to its reviewer and to holders of `admin.agent_registry`, and every path that would create, decide or close one refuses `AGENT_CAMPAIGN_NOT_AVAILABLE`. | No agent recertification campaign: nothing creates one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
-| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). No tenant setting for a key rotation age (#3708). |
+| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). No tenant setting for a key rotation age (#3708). |
 
 ## Roadmap (future direction)
 
@@ -563,14 +578,19 @@ of decisions 1 to 6 above.
 
 The owner made these while reviewing the retirement cascade and ownership
 transfer of `2a` (#3698). They continue the numbering above, and none of them
-changed what #3698 built.
+changed what #3698 built; #3700 then built the step decision 13 called for.
 
-13. **Retirement withdraws no evidence artefact.** Every
-    `AgenticEvidenceArtefact` is a tenant-wide aggregate per period with no agent
-    column, so the cascade withdraws none and its summary audit row records the
-    basis `POPULATION_LEVEL_ONLY`. Per-agent evidence that a retirement can
-    withdraw — an agent-attributable artefact kind, per-agent emission and a
-    withdrawal reason for it — is its own roadmap step, #3700. (`2a`)
+13. **Retirement withdraws the agent's per-agent evidence for open periods, and
+    nothing tenant-wide.** As decided with #3698, every `AgenticEvidenceArtefact`
+    was a tenant-wide aggregate per period with no agent column, so the cascade
+    withdrew none and recorded the basis `POPULATION_LEVEL_ONLY`. The owner chose
+    the same day to add per-agent evidence that a retirement can withdraw, as its
+    own step, and #3700 built it under that decision: two per-agent kinds with an
+    agent column, per-agent emission against the same targets, and the reason
+    `AGENT_RETIRED`, which the cascade applies to the agent's open-period
+    per-agent artefacts. The basis it records is now `PER_AGENT_OPEN_PERIODS`.
+    Closed periods keep their evidence, and tenant-wide artefacts are never
+    withdrawn for a retirement. (`2a`, `2a-evidence`)
 14. **Transfer recipients stay narrow for now.** An agent passes only to an
     OWNER, or to an ADMIN whose custom role carries `admin.tenant_lifecycle`.
     This is the accepted interim state. A new built-in `AI_ADMIN` role widens who
@@ -753,7 +773,7 @@ holder of a narrower key keeps the standalone verb they hold today.
 | Freeze its policy card | No further `AgentPolicyCardVersion` | `admin.agent_policy_card`, at `/admin/agents/[agentId]/policy-card` |
 | Revoke its harness scanner signing keys | `AgentHarnessScannerKey.revokedAt` set where `agentId` is the agent (added by `2a`, #3698: an unrevoked key keeps verifying reports after its scanner is retired) | `admin.agent_registry`, at `/admin/agents/harness-scanner-keys/[keyId]` |
 | Cancel its open ownership transfer | `AgentOwnershipTransfer.status` moved from `PENDING` to `CANCELLED`, by the retiring actor; a lapsed one to `EXPIRED`, with no actor (added by `2a`, #3698: a retired agent can never be completed into) | `admin.agent_ownership` (`admin.tenant_lifecycle` until #3699), at `/admin/agents/[agentId]/ownership-transfer` |
-| Withdraw its evidence artefacts | None attributable, so none withdrawn (amended by `2a`, #3698, and settled by decision 13). Every `AgenticEvidenceArtefact` is a tenant-wide aggregate per period, and the agent's past actions stay correctly counted in `CURRENT` artefacts; the summary audit row records `evidenceArtefactsWithdrawn: 0` and the basis. Per-agent evidence a retirement can withdraw is #3700 | No key: only the emission usecase withdraws (`src/app-layer/usecases/agentic-evidence-emission.ts`) |
+| Withdraw its evidence artefacts | Its per-agent artefacts (`AGENT_ACTION_RECEIPTS_PER_AGENT`, `AI_DECISION_RECORDS_PER_AGENT`) whose period is still open move to `WITHDRAWN` with reason `AGENT_RETIRED`, their Evidence archived with a notice; closed periods and every tenant-wide artefact are untouched, and nothing is deleted (`2a-evidence`, #3700, following decision 13). The summary audit row records the count and the basis `PER_AGENT_OPEN_PERIODS`; #3698's retirements recorded `POPULATION_LEVEL_ONLY` | No key: only the emission usecase writes the table (`withdrawRetiredAgentEvidenceInTx` in `src/app-layer/usecases/agentic-evidence-emission.ts`), called by the cascade |
 
 `2a` shipped the cascade (#3698): `retireRegisteredAgent` no longer refuses while
 a proposal is `PENDING`, and its docstring records why the old refusal went.
@@ -913,7 +933,7 @@ What this means for Phase 1:
 |---|---|---|
 | 0 Mobilise (#3655) | Oct–Nov 2026 | `0a` ladder and contract (#3660) · `0b` skill standard (#3661) · `0c` passport spec and A2A threat model (#3662) · `0d` audit procedures (#3663) · `0e` DPIA, keys, retention, pilot (#3664) |
 | 1 See and teach (#3656) | Nov 2026–Jan 2027 | `1a` scanner and ingest (#3665) · `1b` skill evaluation gate and run pins (#3666) · `1c` skill text scan (#3667) · `1d` first IAM skills (#3668) |
-| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698, the intake under #3669 itself) · `2b` orphan pass and hygiene (#3670, shipped) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
+| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698, the intake under #3669 itself) · `2a-evidence` per-agent evidence that retirement withdraws (#3700) · `2b` orphan pass and hygiene (#3670, shipped) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
 | 3 Decide and assure (#3658) | Mar–Jun 2027 | `3a` agent recertification (#3674) · `3b` workpapers and independence (#3675) · `3c` auditor agent (#3676) · `3d` workpaper sampling (#3677) |
 | 4 Scale and certify (#3659) | Jul–Oct 2027 | `4a` more estates and sources (#3678) · `4b` A2A pilot (#3679) · `4c` tenant-authored skills (#3680) · `4d` external reliance (#3681) · `4e` methodology hand-over (#3682) |
 

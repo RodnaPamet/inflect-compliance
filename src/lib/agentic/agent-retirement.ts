@@ -4,32 +4,33 @@
  * Retiring an agent is one act under one key (`admin.agent_registry`, decided
  * in step 0e): it revokes every credential bound to the agent, drops its tool
  * grants, expires its open proposals, freezes its policy card and closes an
- * open ownership transfer, in ONE transaction. `retireRegisteredAgent` in
+ * open ownership transfer, and withdraws its per-agent evidence artefacts for
+ * the periods still open, in ONE transaction. `retireRegisteredAgent` in
  * `src/app-layer/usecases/agent-registry.ts` is the act;
  * `src/app-layer/usecases/agent-retirement-cascade.ts` holds the effects. This
  * module is the part both of them, the database refusals and the tests read,
  * and it carries no server import so a client component can hold it too.
  *
- * ## Why the evidence effect is a recorded basis rather than a write
+ * ## The evidence effect: per-agent artefacts, open periods only (#3700)
  *
- * The 0e cascade table lists "withdraw its evidence artefacts". There is no
- * artefact to withdraw. An `AgenticEvidenceArtefact` is keyed
- * `(tenant, control, kind, period)` with no agent column, and its body and
- * digest are computed over the WHOLE tenant's receipts or decisions for the
- * month (`loadReceiptFacts` / `loadDecisionFacts` in
- * `agentic-evidence-emission.ts`). Only a count and a digest are stored, so the
- * population cannot be split by agent afterwards. Withdrawing one would
- * retract true evidence about every other agent, and about the retired agent's
- * own past actions — and the current month would be re-emitted CURRENT by the
- * next 06:30 UTC run anyway. So the cascade withdraws nothing, and says so on
- * its audit row (`evidenceBasis`), rather than skipping the effect in silence.
+ * The 0e cascade table lists "withdraw its evidence artefacts". Until #3700
+ * there was none to withdraw — every `AgenticEvidenceArtefact` was a tenant-wide
+ * aggregate, and withdrawing one would have retracted true evidence about every
+ * other agent — so #3698 withdrew nothing and recorded the basis
+ * `POPULATION_LEVEL_ONLY` (the owner's decision of 2026-10-18, decision 13).
+ * The owner then chose, the same day, to add per-agent evidence that a
+ * retirement CAN withdraw, as its own step; this is that step.
  *
- * This is the owner's decision (2026-10-18), not a gap left open: retirement
- * withdraws NO evidence artefact. Per-agent evidence that a retirement could
- * withdraw is its OWN future roadmap step — #3700, which would add an
- * agent-attributable artefact kind, per-agent emission and a withdrawal reason
- * for it. Until that step exists there is nothing for this cascade to target,
- * and it must not be "completed" here by withdrawing tenant-wide artefacts.
+ * So the cascade now withdraws the agent's PER-AGENT artefacts
+ * (`AGENT_ACTION_RECEIPTS_PER_AGENT`, `AI_DECISION_RECORDS_PER_AGENT`) whose
+ * period is still OPEN, with reason `AGENT_RETIRED`, and deletes none. Two
+ * things it still never does, and each is held by the data, not by care:
+ *
+ *   • withdraw a TENANT-WIDE artefact — they describe every agent, the
+ *     retired one's past actions included, and a DB CHECK refuses an
+ *     `AGENT_RETIRED` withdrawal on any row without an agent;
+ *   • withdraw a CLOSED period's per-agent artefact — a true record of what
+ *     the agent did stays true.
  */
 
 /**
@@ -43,15 +44,20 @@ export const RETIREMENT_PROPOSAL_ID_CAP = 500;
 /** How many credential ids the audit row lists. Same contract as above. */
 export const RETIREMENT_KEY_ID_CAP = 200;
 
+/** How many withdrawn evidence-artefact ids the audit row lists. Same contract as above. */
+export const RETIREMENT_ARTEFACT_ID_CAP = 200;
+
 /**
- * What the cascade records about the evidence effect. One value today, and it
- * is a statement of fact about the artefact model rather than an option: every
- * artefact is a tenant-wide population, so none is attributable to one agent.
- * Withdrawing nothing is the owner's accepted outcome (2026-10-18); a per-agent
- * artefact that retirement could withdraw belongs to #3700, which
- * would add a second basis value here rather than change this one.
+ * What the cascade records about the evidence effect: the per-agent artefacts
+ * of the periods still open are withdrawn, and nothing else is (#3700).
+ *
+ * It replaced `POPULATION_LEVEL_ONLY` — "no artefact is attributable to one
+ * agent, so none is withdrawn" — which every retirement before #3700 recorded,
+ * and which those audit rows keep: the hash-chained trail says what was true
+ * when each was written. A statement of fact about the artefact model, not an
+ * option a caller picks.
  */
-export const RETIREMENT_EVIDENCE_BASIS = 'POPULATION_LEVEL_ONLY' as const;
+export const RETIREMENT_EVIDENCE_BASIS = 'PER_AGENT_OPEN_PERIODS' as const;
 
 /**
  * The prefix every database refusal in the retirement migration raises with.
@@ -126,6 +132,12 @@ export interface RetirementCascadeEffects {
      * the transfer impossible closes it rather than leaving it to lapse.
      */
     readonly ownershipTransfer: { readonly transferId: string; readonly toOwnerUserId: string } | null;
+    /**
+     * The agent's per-agent evidence artefacts of the periods still open,
+     * withdrawn `AGENT_RETIRED` (#3700). `deferredToSweep` when there were more
+     * than one retirement withdraws; the next emitter tick withdraws the rest.
+     */
+    readonly evidenceArtefacts: RetirementEffectRows & { readonly deferredToSweep: boolean };
 }
 
 /** The cascade as the response and the summary audit row report it. */
@@ -137,7 +149,7 @@ export interface RetirementCascadeSummary {
     readonly proposalsExpired: number;
     readonly policyCardFrozenAtVersion: number | null;
     readonly ownershipTransferCancelled: string | null;
-    readonly evidenceArtefactsWithdrawn: 0;
+    readonly evidenceArtefactsWithdrawn: number;
     readonly evidenceBasis: typeof RETIREMENT_EVIDENCE_BASIS;
 }
 
@@ -155,7 +167,7 @@ export function summariseRetirementCascade(
         ownershipTransferCancelled: effects.ownershipTransfer
             ? effects.ownershipTransfer.transferId
             : null,
-        evidenceArtefactsWithdrawn: 0,
+        evidenceArtefactsWithdrawn: effects.evidenceArtefacts.count,
         evidenceBasis: RETIREMENT_EVIDENCE_BASIS,
     };
 }
