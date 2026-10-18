@@ -41,7 +41,8 @@ import {
 } from '@/app-layer/services/agent-control-tests';
 import { getSampleAuditDisagreementRate } from '@/app-layer/usecases/agent-proposal-sample-audit';
 import type { PrismaTx } from '@/lib/db-context';
-import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
+import { badRequest, conflict, ConflictError, forbidden, notFound } from '@/lib/errors/types';
+import { isClassifiedTier } from '@/lib/eu-ai-act/classification';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import {
@@ -130,7 +131,7 @@ async function assertAgentOwner(db: PrismaTx, ctx: RequestContext, ownerUserId: 
  * resolve to a company the tenant has never heard of, and the read that would
  * expose it is hidden by the same RLS that failed to prevent it.
  */
-async function assertVendorInTenant(db: PrismaTx, ctx: RequestContext, vendorId: string) {
+export async function assertVendorInTenant(db: PrismaTx, ctx: RequestContext, vendorId: string) {
     const vendor = await db.vendor.findFirst({
         where: { id: vendorId, tenantId: ctx.tenantId },
         select: { id: true },
@@ -726,6 +727,53 @@ export async function getRegisteredAgent(ctx: RequestContext, id: string) {
     };
 }
 
+/**
+ * THE REGISTER ROW'S WRITE RECIPE, inside an open transaction — the one place
+ * a register row is assembled, shared by `createRegisteredAgent`,
+ * `registerAgent` and the registration intake (#3669,
+ * `agent-registration-intake.ts`).
+ *
+ * It sanitises the description, normalises the declared model and inserts the
+ * row DRAFT and UNSCORED (the column defaults). It does NOT check the owner or
+ * the vendor: each caller validates those BEFORE it writes anything, so a
+ * refused registration leaves no half-authored AI-system entry behind, and the
+ * intake names its own refusal for an owner who is not an active member.
+ */
+export async function insertRegisteredAgentInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    input: {
+        aiSystemId: string;
+        name: string;
+        description?: string | null;
+        autonomyLevel: number;
+        dataAccessScope: AgentDataAccessScope;
+        reversibility: 'REVERSIBLE' | 'COMPENSABLE' | 'TERMINAL';
+        provenance: 'FIRST_PARTY' | 'THIRD_PARTY';
+        modelRef?: string | null;
+        ownerUserId: string;
+        vendorId?: string | null;
+        /** The registration intake's claim; every other caller leaves it out. */
+        intakeDiscoveredAgentId?: string;
+    },
+) {
+    return RegisteredAgentRepository.create(db, ctx, {
+        aiSystemId: input.aiSystemId,
+        name: input.name,
+        description: input.description ? sanitizePlainText(input.description) : null,
+        autonomyLevel: input.autonomyLevel,
+        dataAccessScope: input.dataAccessScope,
+        reversibility: input.reversibility,
+        provenance: input.provenance,
+        modelRef: normalizeModelRef(input.modelRef) ?? null,
+        ownerUserId: input.ownerUserId,
+        vendorId: input.vendorId ?? null,
+        ...(input.intakeDiscoveredAgentId !== undefined
+            ? { intakeDiscoveredAgentId: input.intakeDiscoveredAgentId }
+            : {}),
+    });
+}
+
 export async function createRegisteredAgent(ctx: RequestContext, input: unknown) {
     assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = CreateRegisteredAgentSchema.parse(input);
@@ -734,17 +782,17 @@ export async function createRegisteredAgent(ctx: RequestContext, input: unknown)
         await assertAgentOwner(db, ctx, parsed.ownerUserId);
         if (parsed.vendorId) await assertVendorInTenant(db, ctx, parsed.vendorId);
 
-        const created = await RegisteredAgentRepository.create(db, ctx, {
+        const created = await insertRegisteredAgentInTx(db, ctx, {
             aiSystemId: parsed.aiSystemId,
             name: parsed.name,
-            description: parsed.description ? sanitizePlainText(parsed.description) : null,
+            description: parsed.description,
             autonomyLevel: parsed.autonomyLevel,
             dataAccessScope: parsed.dataAccessScope,
             reversibility: parsed.reversibility,
             provenance: parsed.provenance,
-            modelRef: normalizeModelRef(parsed.modelRef) ?? null,
+            modelRef: parsed.modelRef,
             ownerUserId: parsed.ownerUserId,
-            vendorId: parsed.vendorId ?? null,
+            vendorId: parsed.vendorId,
         });
 
         await logEvent(db, ctx, {
@@ -1137,11 +1185,17 @@ export async function suspendAgentForOwnerDeparture(
 }
 
 /**
- * Move an agent into service — and REFUSE while nobody has risk-assessed it.
+ * Move an agent into service — and REFUSE while its AI-system entry is
+ * unclassified or nobody has risk-assessed it.
  *
  * This is the moment the MCP gate begins letting its credentials through, so it
  * is a deliberate human act and never a side effect of registration —
- * `createRegisteredAgent` and `registerAgent` both land DRAFT.
+ * `createRegisteredAgent`, `registerAgent` and the registration intake all
+ * land DRAFT.
+ *
+ * The two refusals carry `details.reason`: `AI_SYSTEM_UNCLASSIFIED` for an agent
+ * registered through a provisional entry nobody has classified yet (#3669), and
+ * `UNSCORED`. They are asked in that order, by `assertActivatable`.
  *
  * ## Why the score is required HERE and not at registration
  *
@@ -1168,21 +1222,67 @@ export async function suspendAgentForOwnerDeparture(
 export async function activateRegisteredAgent(ctx: RequestContext, id: string) {
     assertAgentGovernanceWrite(ctx, 'agent_registry');
     return runInTenantContext(ctx, async (db) => {
-        // A retired agent is refused before its score is even read: retirement
-        // is permanent, and "complete its assessment" would be the wrong fix.
+        // A retired agent is refused before anything else is read: retirement
+        // is permanent, and "classify it" or "complete its assessment" would be
+        // the wrong fix. The two preconditions on going into service are the
+        // status writer's own (`assertActivatable`), so they hold for every
+        // path that asks it for ACTIVE, not just this one.
         await assertLifecycleMovable(db, ctx, id, 'ACTIVE');
-        const agent = await RegisteredAgentRepository.getScoringState(db, ctx, id);
-        if (!agent) throw notFound('Registered agent not found');
-        if (agent.riskTier === null) {
-            throw conflict(
-                'This agent has not been risk-assessed. Complete its agent risk ' +
-                    'assessment before activating it — an unassessed agent is refused ' +
-                    'every tool at the boundary anyway, so activating it would put a ' +
-                    'row in the register that cannot act.',
-            );
-        }
         return applyRegisteredAgentStatus(db, ctx, id, 'ACTIVE', 'AGENT_ACTIVATED');
     });
+}
+
+/**
+ * The named reasons an agent is refused activation, carried as
+ * `details.reason` beside a sentence written for the operator.
+ */
+export type AgentActivationRefusal = 'AI_SYSTEM_UNCLASSIFIED' | 'UNSCORED';
+
+/**
+ * What an agent must have before it goes into service, in the order it is
+ * asked. Called by `applyRegisteredAgentStatus` whenever the move is to ACTIVE,
+ * so a second caller of the status writer cannot reach ACTIVE around either.
+ *
+ *   1. A CLASSIFIED EU AI Act register entry (#3669). The registration intake
+ *      registers a shadow agent through a provisional entry at UNCLASSIFIED,
+ *      and decision 1 of the agentic IAM roadmap is that such an agent cannot
+ *      become ACTIVE until somebody classifies it. Asked FIRST: an intake agent
+ *      is also unscored, and the regulatory classification of the system is the
+ *      fact the register cannot otherwise state. It is read through
+ *      `isClassifiedTier`, so a tier this build does not know is not classified
+ *      either. No race reaches ACTIVE past it: the only write of UNCLASSIFIED is
+ *      an INSERT of a new entry, `aiSystemId` is not amendable, and the one move
+ *      an existing entry makes is OUT of the value.
+ *   2. A SCORED operational tier — see `activateRegisteredAgent`.
+ */
+async function assertActivatable(db: PrismaTx, ctx: RequestContext, id: string) {
+    const entry = await RegisteredAgentRepository.getAiActClassification(db, ctx, id);
+    if (!entry) throw notFound('Registered agent not found');
+    const tier = entry.aiSystem?.riskTier;
+    if (!tier || !isClassifiedTier(tier)) {
+        throw new ConflictError(
+            "This agent's EU AI Act register entry has not been classified. The agent was " +
+                'registered through a provisional AI-system entry, and an agent cannot go into ' +
+                'service until that entry is classified. Answer the EU AI Act questionnaire for ' +
+                'its AI system first, then activate it.',
+            {
+                reason: 'AI_SYSTEM_UNCLASSIFIED' satisfies AgentActivationRefusal,
+                aiSystemId: entry.aiSystem?.id ?? null,
+            },
+        );
+    }
+
+    const agent = await RegisteredAgentRepository.getScoringState(db, ctx, id);
+    if (!agent) throw notFound('Registered agent not found');
+    if (agent.riskTier === null) {
+        throw new ConflictError(
+            'This agent has not been risk-assessed. Complete its agent risk ' +
+                'assessment before activating it — an unassessed agent is refused ' +
+                'every tool at the boundary anyway, so activating it would put a ' +
+                'row in the register that cannot act.',
+            { reason: 'UNSCORED' satisfies AgentActivationRefusal },
+        );
+    }
 }
 
 /**
@@ -1222,17 +1322,17 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
                 classification: parsed.classification,
             });
 
-        const agent = await RegisteredAgentRepository.create(db, ctx, {
+        const agent = await insertRegisteredAgentInTx(db, ctx, {
             aiSystemId: aiSystem.id,
             name: parsed.name,
-            description: parsed.description ? sanitizePlainText(parsed.description) : null,
+            description: parsed.description,
             autonomyLevel: parsed.autonomyLevel,
             dataAccessScope: parsed.dataAccessScope,
             reversibility: parsed.reversibility,
             provenance: parsed.provenance,
-            modelRef: normalizeModelRef(parsed.modelRef) ?? null,
+            modelRef: parsed.modelRef,
             ownerUserId: parsed.ownerUserId,
-            vendorId: parsed.vendorId ?? null,
+            vendorId: parsed.vendorId,
         });
 
         await logEvent(db, ctx, {
@@ -1295,6 +1395,10 @@ async function applyRegisteredAgentStatus(
     status: AgentLifecycleMove,
     action: string,
 ) {
+    // Going INTO service has preconditions; taking an agent out of it never
+    // does. Checked here, at the status writer, rather than only in
+    // `activateRegisteredAgent`, so no caller reaches ACTIVE around them.
+    if (status === 'ACTIVE') await assertActivatable(db, ctx, id);
     const count = await RegisteredAgentRepository.setStatus(db, ctx, id, status);
     // The pre-read found a live, unretired row, so zero here means it was
     // retired or removed while this request was in flight.

@@ -14,13 +14,17 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
-import { notFound } from '@/lib/errors/types';
+import { conflict, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
-import { classifyAiSystem } from '@/lib/eu-ai-act/classification';
+import { classifyAiSystem, isClassifiedTier } from '@/lib/eu-ai-act/classification';
 import { TIER_OBLIGATIONS, type AiRiskTier } from '@/lib/eu-ai-act/obligations';
 import { AiSystemRepository } from '../repositories/AiSystemRepository';
-import { CreateAiSystemSchema, type CreateAiSystemInput } from '../schemas/ai-system.schemas';
+import {
+    ClassifyAiSystemSchema,
+    CreateAiSystemSchema,
+    type CreateAiSystemInput,
+} from '../schemas/ai-system.schemas';
 import type { RequestContext } from '../types';
 
 const AI_FRAMEWORK_KEYS = ['EU-AI-ACT', 'ISO42001'] as const;
@@ -165,6 +169,90 @@ export async function createAiSystem(ctx: RequestContext, input: unknown) {
 
         return {
             id: created.id,
+            riskTier: classification.tier,
+            clauseId: classification.clauseId,
+            rationale: classification.rationale,
+            obligationsLinked,
+        };
+    });
+}
+
+/**
+ * Classify a PROVISIONAL entry — the move out of UNCLASSIFIED (#3669).
+ *
+ * The registration intake registers a shadow agent through an entry nobody has
+ * classified, and `activateRegisteredAgent` refuses an agent whose entry is
+ * still UNCLASSIFIED. This is the act that clears that refusal: the same
+ * deterministic classifier `authorAiSystemEntry` runs, over a questionnaire
+ * that must now be ANSWERED in full (`ClassifyAiSystemSchema`), then the
+ * tier's obligations linked — the two halves an entry authored classified gets
+ * at creation, applied to one that was not.
+ *
+ * The same gate as authoring an entry (`assertCanWrite`): classifying is the
+ * act `createAiSystem` already performs at insert, and the answers decide the
+ * tier, not the caller. It does not activate anything — activation keeps its
+ * own key and its own risk-assessment precondition.
+ *
+ * One-way and once. An entry already classified is refused rather than
+ * re-classified: re-running the questionnaire over a classified entry would
+ * replace its stored answers and leave the obligations of its old tier
+ * linked, and that is a different act this step does not build. The
+ * repository's WHERE carries the same precondition, so two concurrent
+ * classifications of one entry produce one.
+ */
+export async function classifyAiSystemEntry(ctx: RequestContext, id: string, input: unknown) {
+    assertCanWrite(ctx);
+    const parsed = ClassifyAiSystemSchema.parse(input);
+
+    return runInTenantContext(ctx, async (db) => {
+        const system = await AiSystemRepository.getById(db, ctx, id);
+        if (!system) throw notFound('AI system not found');
+        if (isClassifiedTier(system.riskTier)) {
+            throw conflict(
+                `ai_system_classification_refused: ALREADY_CLASSIFIED: this AI system is already ` +
+                    `classified ${system.riskTier}. Only a provisional entry is classified here; ` +
+                    `re-classifying a classified entry is not supported.`,
+            );
+        }
+
+        const classification = classifyAiSystem(parsed.classification);
+        const moved = await AiSystemRepository.classifyProvisional(db, ctx, id, {
+            riskTier: classification.tier,
+            classificationClauseId: classification.clauseId,
+            classificationRationale: classification.rationale,
+            // Four present keys, every one answered — see the schema.
+            classificationAnswersJson: parsed.classification as Prisma.InputJsonValue,
+        });
+        if (moved === 0) {
+            throw conflict(
+                'ai_system_classification_refused: CLASSIFIED_MEANWHILE: this AI system was ' +
+                    'classified or removed while this request was in flight. Nothing was changed.',
+            );
+        }
+
+        const requirementIds = await resolveTierRequirementIds(db, classification.tier);
+        const obligationsLinked = await AiSystemRepository.linkRequirements(db, ctx, id, requirementIds);
+
+        await logEvent(db, ctx, {
+            action: 'AI_SYSTEM_CLASSIFIED',
+            entityType: 'AiSystem',
+            entityId: id,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'AiSystem',
+                operation: 'classify',
+                summary: `Classified AI system "${system.name}" — ${classification.tier} (${classification.clauseId})`,
+                before: { riskTier: system.riskTier },
+                after: {
+                    riskTier: classification.tier,
+                    clauseId: classification.clauseId,
+                    obligationsLinked,
+                },
+            },
+        });
+
+        return {
+            id,
             riskTier: classification.tier,
             clauseId: classification.clauseId,
             rationale: classification.rationale,

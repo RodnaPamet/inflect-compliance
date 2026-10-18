@@ -234,6 +234,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // until a page renders them, like the ownership transfer it hands its
     // orphans to; the pass itself runs on a schedule and needs no page to act.
     't/[tenantSlug]/admin/agents/owner-orphan-pass/route.ts',
+    // #3669 — the registration intake: a SHADOW_AGENT finding becomes a DRAFT
+    // register row through a provisional UNCLASSIFIED AI-system entry. API-only
+    // until its action on the harness tab's shadow list ships; the shadow rows
+    // carry no finding id today, and the modal needs the register's owner and
+    // vendor lists, which the reports page does not load.
+    't/[tenantSlug]/admin/agents/intake/route.ts',
     // #3665 — the harness ingest. `harness-scans` is MACHINE surface: a
     // scanner POSTs a signed report with an API key scoped to
     // `admin:harness_ingest` and nothing else, so no page calls it and none

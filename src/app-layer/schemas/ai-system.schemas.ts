@@ -37,6 +37,33 @@ export const CreateAiSystemSchema = z.object({
 });
 export type CreateAiSystemInput = z.infer<typeof CreateAiSystemSchema>;
 
+/**
+ * Classifying a PROVISIONAL entry (#3669) — the questionnaire, ANSWERED.
+ *
+ * Stricter than the create schema's `ClassificationAnswersSchema` on purpose.
+ * There an absent questionnaire is `{}` and classifies MINIMAL, which is how an
+ * entry authored before the questionnaire existed reads. Here the entry exists
+ * precisely BECAUSE nobody has classified it, and the act that moves it out of
+ * UNCLASSIFIED must be an answer to every question: each of the four keys is
+ * REQUIRED, and `null` (or `false`) is the answer "does not apply". So `{}` is
+ * a 400, never a quiet MINIMAL, and the stored answers always hold four keys —
+ * the column's "assessed, and nothing applies" reading. Strict, so a `riskTier`
+ * in the body is refused: the tier is the classifier's to derive.
+ */
+export const ClassifyAiSystemSchema = z
+    .object({
+        classification: z
+            .object({
+                prohibitedPractice: z.enum(art5Ids).nullable(),
+                isAnnexIProductSafetyComponent: z.boolean().nullable(),
+                annexIIIArea: z.enum(annexIIIIds).nullable(),
+                transparencyCase: z.enum(art50Ids).nullable(),
+            })
+            .strict(),
+    })
+    .strict();
+export type ClassifyAiSystemInput = z.infer<typeof ClassifyAiSystemSchema>;
+
 export const GenerateConformityDraftSchema = z.object({
     docType: z.enum(['ANNEX_IV_TECHNICAL_DOCUMENTATION', 'ART_9_RISK_MANAGEMENT', 'ANNEX_V_DECLARATION_OF_CONFORMITY']),
 });

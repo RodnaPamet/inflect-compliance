@@ -118,9 +118,10 @@ one read and one synthesis, no proposal and no checkpoint.
   reconcile engine's outcomes minus `LINKED` (`SUGGESTED`, `AMBIGUOUS` or
   `UNMATCHED`), so a confirmed or linked owner cannot be expressed, and the
   grade and the outcome are checked against the answer's own signals. The
-  workflow engine does not apply the contracts to a run, and nothing on `main`
-  calls them outside their tests: their consumer is the registration intake of
-  step `2a`.
+  workflow engine does not apply the contracts to a run. The attribution
+  contract has one consumer, the registration intake (below), which parses an
+  answer a request carries and records it as provenance; nothing on `main`
+  calls the assessment contract outside its tests.
 
 Two gaps keep a Flue run of the review from reading the agent it names. The
 Flue engine gives the model the workflow's description and step labels and not
@@ -353,6 +354,7 @@ Both jobs emit outcome metrics (`agentic.owner_orphan_pass.*`,
 `agentic.credential_hygiene.*`), and their execution rows are excluded from the
 tenant-wide control-check list.
 
+<<<<<<< HEAD
 ### The AI_ADMIN role
 
 `AI_ADMIN` (#3699) is a built-in tenant role that runs the agent register and
@@ -376,18 +378,76 @@ carries it. Deploy 1 is on `main`: the enum value exists, every reader of a role
 handles it, and nothing writes it — every membership-role writer reads
 `ASSIGNABLE_TENANT_ROLES` in `src/lib/roles.ts`, which excludes it. Nothing in
 the product can assign the role until deploy 2.
+=======
+### Registration intake from a shadow-agent finding
+
+A person holding `admin.agent_registry` takes a `SHADOW_AGENT` finding into the
+register with `POST /api/t/:slug/admin/agents/intake` (a literal
+`requirePermission('admin.agent_registry')`; `registerShadowAgent` in
+`src/app-layer/usecases/agent-registration-intake.ts`). One transaction creates
+a provisional `AiSystem` entry at `UNCLASSIFIED` and a `RegisteredAgent` in
+`DRAFT`, unscored, linked to it. This is deploy 2 of the `UNCLASSIFIED` tier:
+the intake is the value's only writer, through
+`AiSystemRepository.createProvisional`, which takes no tier parameter, and
+`tests/guards/ai-risk-tier-unclassified-writers.test.ts` holds both facts. The
+request declares the agent's name and its three exposure axes, because a scan
+does not observe them, and carries no classification and no tier. It is API
+surface only: no page calls it, because the harness tab's shadow rows carry no
+finding id.
+
+- **The owner is confirmed by a person.** The request names `ownerUserId`, who
+  must be an `ACTIVE` member of the tenant, and sets `confirmOwner: true`.
+  Without both it is refused, whatever else it carries. It may also carry the
+  `nhi-ownership-attribution` answer. The intake parses that answer through the
+  1d contract and records it in the agent's audit row as provenance: the signals
+  it rested on, by kind and evidence pointer, and whether the confirmed owner is
+  the person it suggested. The suggested person's reference is not recorded.
+  The suggestion never supplies the owner.
+- **One discovered agent, at most one register row.** The new row carries the
+  discovered agent's id in `RegisteredAgent.intakeDiscoveredAgentId`, under a
+  unique index on `(tenantId, intakeDiscoveredAgentId)`. A second intake is
+  refused, and so is the loser of two racing intakes; the loser's AI-system
+  entry rolls back with its transaction. An agent a scan has already linked to
+  a live register row is refused too.
+- **Each refusal is named** in `error.details.reason`: `FINDING_NOT_FOUND`,
+  `NOT_A_SHADOW_AGENT_FINDING`, `DISCOVERED_AGENT_NOT_FOUND`,
+  `ALREADY_REGISTERED`, `ALREADY_REGISTERED_BY_INTAKE`, `OWNER_NOT_CONFIRMED`,
+  `OWNER_NOT_ACTIVE_MEMBER`, `SUGGESTION_INVALID` and
+  `SUGGESTION_FOR_ANOTHER_AGENT`. Another tenant's finding is not found, and
+  another tenant's member is not an active member here.
+- **The finding and the discovered agent are not written.** The harness ingest
+  is the only writer of `DiscoveredAgent`, so the new row is linked to the
+  discovered agent by the next scan that reports its id as `registeredAgentId`.
+  That scan also closes the `SHADOW_AGENT` finding, on the positive evidence the
+  ingest requires. Until then the agent still appears on the shadow list. The
+  intake writes an audit row on the finding naming the register row it became.
+- **An intake agent cannot go into service until it is classified.**
+  `activateRegisteredAgent` refuses `AI_SYSTEM_UNCLASSIFIED` while the agent's
+  entry is `UNCLASSIFIED`, before it checks the score (`UNSCORED`). Both checks
+  sit in the status writer for every move to `ACTIVE`. The entry is classified
+  with `POST /api/t/:slug/ai-systems/:systemId/classification`
+  (`classifyAiSystemEntry`, `assertCanWrite`, the gate for authoring an entry).
+  It runs the same classifier over a questionnaire answered in full: each of the
+  four answers is required, and `null` means "does not apply". It then links the
+  tier's obligations. It moves an entry out of `UNCLASSIFIED` once and refuses
+  an entry that is already classified. No page calls this route either.
+>>>>>>> cd6609214 (feat(agentic): registration intake from a SHADOW_AGENT finding, the one UNCLASSIFIED writer (2a deploy 2))
 
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
+<<<<<<< HEAD
 | Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key; nothing assigns the role yet (deploy 1 of #3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`, and which nothing writes until `2a`'s intake (#3669). | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
+=======
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Five separate admin rights. The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in `DRAFT` through such an entry; activation refuses the agent until the entry is classified. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
+>>>>>>> cd6609214 (feat(agentic): registration intake from a SHADOW_AGENT finding, the one UNCLASSIFIED writer (2a deploy 2))
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
-| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No registration intake from a shadow-agent finding; no tenant setting for a key rotation age (#3708). |
+| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). No tenant setting for a key rotation age (#3708). |
 
 ## Roadmap (future direction)
 
@@ -645,7 +705,8 @@ the seventh, which #3699 shipped, and one new key:
 | Read scans, the harness matrix and the shadow list (`1a`) | `admin.agent_registry` | Shipped in #3688 for `GET …/admin/agents/harness-scans`; #3687 reads the matrix through `listHarnessScans` (above). |
 | Add, list or revoke a trusted scanner key (`1a`) | `admin.agent_registry` | Shipped in #3688 at `…/admin/agents/harness-scanner-keys` and `…/harness-scanner-keys/[keyId]`. It decides whose reports the tenant believes (above). |
 | Record, renew or list an `AgentHarnessAcceptance` (`1a`) | `admin.agent_registry`, held by the agent's owner | Shipped in #3688 at `…/admin/agents/harness-acceptances` (`GET`, `POST`). The route takes `admin.agent_registry`, and `acceptHarnessShortfall` in `src/app-layer/usecases/agent-harness-acceptance.ts` refuses anyone but the registered agent's owner, because accepting a risk is the act of the person accountable for it. A shadow agent has no owner, so it is registered before its shortfall can be accepted. There is no separate approval: a renewal is a new acceptance, of at most 365 days, that revokes the one in force. No API key carries `admin.agent_registry`, so no bearer token records an acceptance. |
-| Registration intake from a `SHADOW_AGENT` finding (`2a`) | `admin.agent_registry` | It creates a DRAFT register row and its AI-system entry. |
+| Registration intake from a `SHADOW_AGENT` finding (`2a`) | `admin.agent_registry` | Shipped at `POST …/admin/agents/intake` (#3669). It creates a DRAFT register row and its provisional AI-system entry. The usecase re-asserts the key, and the owner is the person the caller confirms. |
+| Classify a provisional AI-system entry (`2a`) | no admin key: the usecase's `assertCanWrite` | Shipped at `POST /api/t/:slug/ai-systems/:systemId/classification` (#3669). It is the act `createAiSystem` already performs when it authors an entry, under the same gate, and the answers decide the tier. It is not under `/admin/`, so it is not a layer-1 privileged route; layer 2 finds `assertCanWrite` through the call graph. |
 | Retire an agent, with its cascade (`2a`) | `admin.agent_registry` | The existing `DELETE /api/t/:slug/admin/agents/[agentId]`. See the cascade table below. |
 | Propose, and complete, an agent ownership transfer (`2a`) | `admin.agent_ownership` | Decided as `admin.tenant_lifecycle` in 0e, the key whose docstring lists "transfer ownership"; #3699 gave it its own key so the built-in `AI_ADMIN` role can hold it without holding tenant lifecycle. ADMIN holds neither. |
 | Set the orphan pass's mode (`2b`) | `admin.tenant_lifecycle` | The key `/admin/identity-write-policy` carries for the identity ladder: the mode decides whether a scheduled job stops agents unattended. Shipped by `2b` (#3670) at `…/admin/agents/owner-orphan-pass` (`GET`, `PUT`), with its rule above the register's catch-all. |
@@ -858,7 +919,7 @@ What this means for Phase 1:
 |---|---|---|
 | 0 Mobilise (#3655) | Oct–Nov 2026 | `0a` ladder and contract (#3660) · `0b` skill standard (#3661) · `0c` passport spec and A2A threat model (#3662) · `0d` audit procedures (#3663) · `0e` DPIA, keys, retention, pilot (#3664) |
 | 1 See and teach (#3656) | Nov 2026–Jan 2027 | `1a` scanner and ingest (#3665) · `1b` skill evaluation gate and run pins (#3666) · `1c` skill text scan (#3667) · `1d` first IAM skills (#3668) |
-| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698) · `2b` orphan pass and hygiene (#3670, shipped) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
+| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698, the intake under #3669 itself) · `2b` orphan pass and hygiene (#3670, shipped) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
 | 3 Decide and assure (#3658) | Mar–Jun 2027 | `3a` agent recertification (#3674) · `3b` workpapers and independence (#3675) · `3c` auditor agent (#3676) · `3d` workpaper sampling (#3677) |
 | 4 Scale and certify (#3659) | Jul–Oct 2027 | `4a` more estates and sources (#3678) · `4b` A2A pilot (#3679) · `4c` tenant-authored skills (#3680) · `4d` external reliance (#3681) · `4e` methodology hand-over (#3682) |
 

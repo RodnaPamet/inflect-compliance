@@ -81,6 +81,10 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/route.ts',
     'admin/agents/[agentId]/route.ts',
     'admin/agents/[agentId]/status/route.ts',
+    // The registration intake (#3669) — a SHADOW_AGENT finding becomes a DRAFT
+    // register row through a provisional UNCLASSIFIED AI-system entry. The
+    // register's key: it creates a register row.
+    'admin/agents/intake/route.ts',
     // The kill switch's two TENANT scopes (one agent / this tenant) — its own
     // key, `admin.agent_kill_switch`. Separate from the register's because
     // agent_registry bundles suspend with ACTIVATE, and stopping must be

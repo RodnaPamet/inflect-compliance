@@ -1566,16 +1566,76 @@ through their own routes. Rules that are easy to undo:
   pointer, credential reference, tool server or agent name (DPIA condition 8),
   and the level never decides the status: the ladder is report-only.
 
-**The `UNCLASSIFIED` AI-system tier** (#3691, deploy 1 of 2 for step 2a) marks
+**The `UNCLASSIFIED` AI-system tier** (#3691 deploy 1, #3669 deploy 2) marks
 a provisional `AiSystem` entry that nobody has classified. Every reader treats
 it as not classified, never as `MINIMAL`: not in a tone, a count, a filter or
-the conformity check. Nothing writes it until #3669's registration intake,
-which joins `WRITERS` in `tests/guards/ai-risk-tier-unclassified-writers.test.ts`
-in its own pull request. Until then that list is empty, and its emptiness is
-the property. `AiSystemRepository.create` takes the classifier's four-tier
-`AiRiskTier` from `src/lib/eu-ai-act/classification.ts`, not the column's type,
-so neither the classifier nor that writer can produce the value. Do not widen
-the parameter. Readers use `StoredAiRiskTier`.
+the conformity check. Readers use `StoredAiRiskTier`, and a reader that is not
+on the guard's `READERS` list (activation, the classify usecase) narrows with
+`isClassifiedTier` rather than naming the value. It has exactly ONE writer, and
+`tests/guards/ai-risk-tier-unclassified-writers.test.ts` holds every part of
+that:
+
+- **`AiSystemRepository.createProvisional` is the only method that stores it**,
+  with the value fixed in its insert's `data` and no tier parameter (a type
+  proof). `create` and `classifyProvisional` take the classifier's four-tier
+  `AiRiskTier` from `src/lib/eu-ai-act/classification.ts`, not the column's
+  type. Do not widen either parameter, and do not add a `riskTier` to the
+  store's input: a caller that can choose the tier is a second writer.
+- **`createProvisional` is referenced by one file outside the seam**, the
+  registration intake, which is the sole `WRITERS` entry. Any reference counts,
+  including a destructure. Calling it from anywhere else fails CI by design.
+  A second legitimate writer is a reviewed change to that list, not a
+  workaround.
+- **`classifyProvisional` names the value only in its `WHERE`.** It moves an
+  entry out of `UNCLASSIFIED`, once, and nothing moves one back in. That is why
+  activation's `AI_SYSTEM_UNCLASSIFIED` check needs no lock or trigger: the
+  only write of the value is an INSERT of a new entry, and an agent's
+  `aiSystemId` is not amendable. A verb that re-opens a classified entry
+  would make that check racy.
+- **No Zod schema is built from the generated `AiRiskTier`.** The intake and
+  classify request schemas are `.strict()`, so a `riskTier` in a body is a 400.
+
+**The registration intake** (`usecases/agent-registration-intake.ts`, since
+#3669) turns a `SHADOW_AGENT` finding into a `DRAFT` register row through a
+provisional entry, in one transaction, at `POST …/admin/agents/intake`. These
+rules are each one careless edit from being undone:
+
+- **The owner is the confirmed person, never the suggestion.** No owner named,
+  or `confirmOwner` not `true`, is `OWNER_NOT_CONFIRMED`, whatever the request
+  carries. The attribution answer is parsed through 1d's contract and kept as
+  provenance only. Do not add a "use the suggested owner" shortcut. The 1d
+  rule that a person confirms in the intake is enforced here.
+- **The provenance never records the suggested person's reference** or any
+  signal's `personRef`. Those are identifiers in the source's namespace, and an
+  audit row's `detailsJson` streams to the tenant's SIEM. A boolean
+  (`confirmedOwnerIsSuggested`) says whether they agree. `FALSE` means "not
+  shown to agree", not "a different person".
+- **One discovered agent, one register row, held by the database.**
+  `RegisteredAgent.intakeDiscoveredAgentId` has a unique index with
+  `tenantId`, and the claim read (`findIntakeClaim`) is deliberately not
+  filtered on `deletedAt` or status, so it is never narrower than the index. A
+  P2002 on the insert is mapped to `ALREADY_REGISTERED_BY_INTAKE`. The column
+  has no FK, on purpose: a second reference between `DiscoveredAgent` and
+  `RegisteredAgent` would make the pair a delete cycle.
+- **The intake writes no `DiscoveredAgent`, scan or `Finding` row.** The next
+  scan links the discovered agent and closes the finding, on positive
+  evidence. Until then the agent still reads SHADOW. Do not close the finding
+  at intake: that would close it on an assertion rather than an observation.
+- **Activation's preconditions live in the status writer.**
+  `applyRegisteredAgentStatus` calls `assertActivatable` for every move to
+  `ACTIVE`: `AI_SYSTEM_UNCLASSIFIED` first, then `UNSCORED`, each as
+  `details.reason`. A new path to `ACTIVE` that bypasses the status writer
+  bypasses both.
+- **Classification of a provisional entry** (`classifyAiSystemEntry`, `POST
+  /ai-systems/:id/classification`) takes the AI-system register's own gate,
+  `assertCanWrite`, and requires all four questionnaire answers: `{}` is a 400,
+  never a quiet `MINIMAL`.
+- **A rolled-back write leaves the audit extension's row.**
+  `src/lib/prisma.ts` audits each statement on its own connection as it runs,
+  so the loser of a racing intake leaves a `CREATE AiSystem` row behind. The
+  intake's own three audit rows are written last and only by the winner. Tests
+  that count "nothing written" across a rollback count the intake's actions,
+  not every audit row.
 
 **A2A peers** (`usecases/peer-agents.ts`, since #3673) are agents in another
 organisation, registered for identity and attribution and never for authority

@@ -179,6 +179,29 @@ export function shortfallRefOf(discoveredId: string): string {
     return `HARNESS_SHORTFALL:${discoveredId}`;
 }
 
+const SHADOW_REF_PREFIX = 'SHADOW_AGENT:';
+
+/** The `sourceRef` of a discovered agent's SHADOW_AGENT finding. */
+export function shadowRefOf(discoveredId: string): string {
+    return `${SHADOW_REF_PREFIX}${discoveredId}`;
+}
+
+/**
+ * The `discoveredId` a SHADOW_AGENT finding names, or null when the finding is
+ * not one — the inverse of `shadowRefOf`, read by the registration intake
+ * (#3669). A discovered id may itself contain colons (`entra:sp:<objectId>`),
+ * so everything after the prefix is the id.
+ */
+export function discoveredIdOfShadowFinding(finding: {
+    sourceKind: string | null;
+    sourceRef: string | null;
+}): string | null {
+    if (finding.sourceKind !== HARNESS_FINDING_SOURCE_KIND) return null;
+    if (!finding.sourceRef?.startsWith(SHADOW_REF_PREFIX)) return null;
+    const id = finding.sourceRef.slice(SHADOW_REF_PREFIX.length);
+    return id.length > 0 ? id : null;
+}
+
 /** Is this stored (level, reach) below the report-only bar? */
 export function isHarnessShortfall(level: HarnessLevel, reach: StoredReach): boolean {
     return isShortfall(level, LADDER_REACH[reach]);
@@ -240,7 +263,7 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
 
         // SHADOW. Resolved by the register, which is evidence whatever the
         // scan's completeness: the row exists or it does not.
-        const shadowRef = `SHADOW_AGENT:${id}`;
+        const shadowRef = shadowRefOf(id);
         if (registeredAgentId === null) {
             assert.push({
                 code: 'SHADOW_AGENT',
