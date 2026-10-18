@@ -1033,8 +1033,8 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'Reading and writing the tenant security configuration — session ' +
             'cap, audit-stream endpoint + HMAC secret, AI guard mode and AI ' +
-            'residency. Every field here was previously unreachable: the ' +
-            'consumers existed, the writer did not.',
+            'residency, whose consumers existed before any writer did — and ' +
+            'the API-key rotation age the credential-hygiene pass applies (#3708).',
     },
 
     // ── Vendor sub-processor register (4th-party graph) ─────────────

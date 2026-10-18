@@ -354,9 +354,15 @@ with no expiry, a key older than the rotation age, a key bound to no registered
 agent, and a connection with an app-only grant and no named owner. An agent
 credential is a key bound to an agent or one the `/api/mcp` capability gate
 admits; an integration key with resource scopes only is not one, and fires
-nothing. No tenant setting
-holds a rotation age, so the rule uses a 90-day product default and says so on
-the row and in each finding. A connection's accountable owner is
+nothing. The rotation age is
+the tenant's own `apiKeyRotationDays` on `TenantSecuritySettings` (#3708), 7 to
+730 days and held there by a database CHECK, set by an OWNER or ADMIN on the
+security settings page; a tenant that has set none gets the 90-day product
+default. The row and each finding name the days applied and whether they are
+the tenant's setting or the default, and a change of age moves findings through
+the ordinary reconcile on the next pass: a key that no longer exceeds the age
+has its finding resolved, a key that now does gets one, and a finding that keeps
+firing is restated to name the age now applied. A connection's accountable owner is
 `IntegrationConnection.ownerUserId` (passport field P11, step `2d`), counted only
 while that person holds an ACTIVE membership, so an app-only connection fires
 its rule until an owner who is still a member is named. Findings are
@@ -528,7 +534,7 @@ campaign's rows; the packs read shows whether it still does.
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
-| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). No tenant setting for a key rotation age (#3708). |
+| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). |
 
 ## Roadmap (future direction)
 
@@ -697,8 +703,8 @@ changed what #3698 built; #3700 then built the step decision 13 called for.
     agent is the conservative direction, and it is reversible by transfer, lift
     and reactivation. The identity leaver's breaker exists because a directory
     disable acts on a customer's people. The orphan pass acts only on agents.
-    The key rotation age stays the 90-day product default until #3708 adds a
-    per-tenant setting. (`2b`)
+    The key rotation age is a per-tenant setting since #3708, with the 90-day
+    product default for a tenant that sets none. (`2b`)
 18. **The agent inventory gets a view key.** `admin.agent_registry_view` is
     read-only and has an API-key scope, so an agent granted
     `get_discovered_agent` can read the discovered agent it reviews. It also
@@ -1033,7 +1039,7 @@ What this means for Phase 1:
 |---|---|---|
 | 0 Mobilise (#3655) | Oct–Nov 2026 | `0a` ladder and contract (#3660) · `0b` skill standard (#3661) · `0c` passport spec and A2A threat model (#3662) · `0d` audit procedures (#3663) · `0e` DPIA, keys, retention, pilot (#3664) |
 | 1 See and teach (#3656) | Nov 2026–Jan 2027 | `1a` scanner and ingest (#3665) · `1b` skill evaluation gate and run pins (#3666) · `1c` skill text scan (#3667) · `1d` first IAM skills (#3668) |
-| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698, the intake under #3669 itself) · `2a-evidence` per-agent evidence that retirement withdraws (#3700) · `2b` orphan pass and hygiene (#3670, shipped) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
+| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698, the intake under #3669 itself) · `2a-evidence` per-agent evidence that retirement withdraws (#3700) · `2b` orphan pass and hygiene (#3670, shipped; per-tenant key rotation age #3708) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
 | 3 Decide and assure (#3658) | Mar–Jun 2027 | `3a` agent recertification (#3674) · `3b` workpapers and independence (#3675) · `3c` auditor agent (#3676) · `3d` workpaper sampling (#3677) |
 | 4 Scale and certify (#3659) | Jul–Oct 2027 | `4a` more estates and sources (#3678) · `4b` A2A pilot (#3679) · `4c` tenant-authored skills (#3680) · `4d` external reliance (#3681) · `4e` methodology hand-over (#3682) |
 

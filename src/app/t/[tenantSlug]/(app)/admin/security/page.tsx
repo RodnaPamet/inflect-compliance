@@ -11,6 +11,7 @@ import { Card, cardVariants } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { AgentEnforcementCard } from './AgentEnforcementCard';
+import { ApiKeyRotationCard } from './ApiKeyRotationCard';
 import { ShieldCheck, Save, AlertTriangle, LogOut, Users, UserX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoTooltip } from '@/components/ui/tooltip';
@@ -311,6 +312,9 @@ export default function AdminSecurityPage() {
 
             {/* ──── Agent-registration enforcement (#2443) ──── */}
             <AgentEnforcementCard tenantSlug={tenantSlug} />
+
+            {/* ──── API-key rotation age for credential hygiene (#3708) ──── */}
+            <ApiKeyRotationCard />
 
             {/* ──── Session Management ──── */}
             <div className={cn(cardVariants(), 'space-y-default')}>

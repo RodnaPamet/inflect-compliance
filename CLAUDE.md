@@ -2025,8 +2025,14 @@ test compares every key and connection row byte for byte. It reads one secret
 per `mcp-server` connection to classify the grant through
 `resolveMcpCredentials` and keeps only the kind. A finding closes only on
 positive evidence from a complete read; a connection whose secret will not
-decrypt is HELD. The rotation age is `DEFAULT_KEY_ROTATION_DAYS` (90) because no
-tenant setting exists, and every row and finding says so. **Its key population is
+decrypt is HELD. The rotation age is the tenant's
+`TenantSecuritySettings.apiKeyRotationDays` (7..730, a DB CHECK; set through
+`PUT admin/security-settings`, `admin.manage`, #3708) and
+`DEFAULT_KEY_ROTATION_DAYS` (90) when that is NULL; `resolveRotationAge` decides,
+and every row and finding names the days applied and their source
+(`TENANT_SETTING` / `DEFAULT_NO_TENANT_SETTING`). A stored 90 is a tenant's
+CHOICE and reports as such, so "use the default" is written as NULL, never as 90.
+**Its key population is
 AGENT credentials** — a key bound to an agent, or one the `/api/mcp` gate admits
 (`admitsMcpEndpoint` in `lib/mcp/endpoint-scope.ts`, the gate's own predicate,
 which `mcp/auth.ts` calls at both its sites). An integration key is not hygiene's

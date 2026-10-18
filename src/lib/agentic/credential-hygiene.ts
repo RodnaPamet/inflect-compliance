@@ -35,16 +35,28 @@
  * read that shows the key is not an agent credential is evidence the rule no
  * longer applies.
  *
- * ## The rotation age: there is no tenant setting, and the rule says so
+ * ## The rotation age: the tenant's own, else the default — and the rule says which
  *
- * Nothing on `TenantSecuritySettings` holds a key rotation age. The rule uses
- * `DEFAULT_KEY_ROTATION_DAYS` (90) for every tenant and records
- * `rotationAgeSource: 'DEFAULT_NO_TENANT_SETTING'` on the pass row and in each
- * finding's text, so nobody reads the number as a tenant's own policy. 90 days
- * is the conservative choice of the two available: skipping the rule would make
- * a key that has never been rotated indistinguishable from a compliant one.
- * A per-tenant age is an open question for the owner, not something this pass
- * invents a column for.
+ * `TenantSecuritySettings.apiKeyRotationDays` (#3708) holds a tenant's own
+ * rotation age, 7 to 730 days, held to that range by a DB CHECK as well as the
+ * settings schema. NULL means the tenant chose none, and the rule then uses
+ * `DEFAULT_KEY_ROTATION_DAYS` (90). `resolveRotationAge` decides which, and the
+ * pass records the answer — `TENANT_SETTING` or `DEFAULT_NO_TENANT_SETTING`,
+ * with the days actually applied — on the pass row and in each finding's text,
+ * so nobody reads the product default as a tenant's own policy, or the other
+ * way round. 90 days is the conservative default: skipping the rule for a
+ * tenant with no setting would make a key that has never been rotated
+ * indistinguishable from a compliant one.
+ *
+ * A stored value outside the range cannot exist while the CHECK holds. If one
+ * is read anyway the pass refuses rather than judging every key by a number
+ * nobody may set, or by a default the row would then have to misdescribe.
+ *
+ * Changing the age moves findings through the ordinary reconcile: a key that
+ * no longer fires under a longer age resolves on the next complete read, and one
+ * that fires under a shorter age opens. The finding's title names the age and
+ * its source, so a still-open finding whose title no longer matches is
+ * restated rather than left quoting an age the pass no longer applies.
  *
  * ## The connection rule
  *
@@ -77,11 +89,51 @@ export const HYGIENE_AUTOMATION_KEY = 'agentic.credential_hygiene';
 /** Days without use before a live key is reported. */
 export const KEY_UNUSED_DAYS = 30;
 
-/** The rotation age applied while no tenant setting exists. See the header. */
+/** The rotation age applied while a tenant has no setting. See the header. */
 export const DEFAULT_KEY_ROTATION_DAYS = 90;
 
-/** Where the rotation age came from, recorded on every row. */
-export const ROTATION_AGE_SOURCE = 'DEFAULT_NO_TENANT_SETTING';
+/**
+ * The range a tenant's own rotation age may take, inclusive. The DB CHECK
+ * `TenantSecuritySettings_apiKeyRotationDays_range` and the settings schema
+ * both hold it; these constants are what the schema reads.
+ */
+export const MIN_KEY_ROTATION_DAYS = 7;
+export const MAX_KEY_ROTATION_DAYS = 730;
+
+/** Where the rotation age came from, recorded on every row and in each finding. */
+export type RotationAgeSource = 'TENANT_SETTING' | 'DEFAULT_NO_TENANT_SETTING';
+
+/** The rotation age a pass applies, and where it came from. */
+export interface RotationAge {
+    days: number;
+    source: RotationAgeSource;
+}
+
+/** Is this a rotation age a tenant may hold? An integer in the inclusive range. */
+export function isPermittedRotationDays(days: number): boolean {
+    return Number.isInteger(days) && days >= MIN_KEY_ROTATION_DAYS && days <= MAX_KEY_ROTATION_DAYS;
+}
+
+/**
+ * The rotation age for a tenant, from its stored `apiKeyRotationDays`.
+ *
+ * NULL or absent (no settings row) is the product default, and says so. A
+ * permitted value is the tenant's own. Anything else THROWS: it cannot be
+ * stored while the CHECK holds, and judging keys by it — or by a default the
+ * row would then call "no tenant setting" — would be a quiet lie either way.
+ */
+export function resolveRotationAge(stored: number | null | undefined): RotationAge {
+    if (stored === null || stored === undefined) {
+        return { days: DEFAULT_KEY_ROTATION_DAYS, source: 'DEFAULT_NO_TENANT_SETTING' };
+    }
+    if (!isPermittedRotationDays(stored)) {
+        throw new Error(
+            `apiKeyRotationDays ${String(stored)} is outside ${MIN_KEY_ROTATION_DAYS}..${MAX_KEY_ROTATION_DAYS}; ` +
+                'the rotation age cannot be applied',
+        );
+    }
+    return { days: stored, source: 'TENANT_SETTING' };
+}
 
 /** Reads past this many rows of one kind refuse the pass rather than trim it. */
 export const MAX_HYGIENE_READ = 5_000;
@@ -228,7 +280,7 @@ function keyLabel(key: KeyFacts): string {
     return `API key "${key.name}" (${key.keyPrefix}…)`;
 }
 
-function describeKeyRule(rule: HygieneRule, key: KeyFacts, rotationDays: number): { title: string; description: string } {
+function describeKeyRule(rule: HygieneRule, key: KeyFacts, rotationAge: RotationAge): { title: string; description: string } {
     const label = keyLabel(key);
     switch (rule) {
         case 'KEY_UNUSED_30_DAYS':
@@ -246,14 +298,28 @@ function describeKeyRule(rule: HygieneRule, key: KeyFacts, rotationDays: number)
                     `${label} carries no expiry, so it stays valid until somebody revokes it. ` +
                     'Issue a replacement with an expiry and revoke this one.',
             };
-        case 'KEY_OLDER_THAN_ROTATION_AGE':
-            return {
-                title: `${label} is older than the ${rotationDays}-day rotation age`,
-                description:
-                    `${label} was created more than ${rotationDays} days ago and has not been rotated. ` +
-                    `The rotation age is the product default (${rotationDays} days) because this ` +
-                    'workspace has no rotation-age setting of its own. Rotate the key.',
-            };
+        case 'KEY_OLDER_THAN_ROTATION_AGE': {
+            const days = rotationAge.days;
+            // The TITLE names the source as well as the days, and the default's
+            // title is the wording this rule shipped with: the pass restates an
+            // open finding whose title no longer matches, so the title is what
+            // carries "which age, from where", and an unchanged default title
+            // means a deploy restates nothing.
+            return rotationAge.source === 'TENANT_SETTING'
+                ? {
+                      title: `${label} is older than the ${days}-day rotation age set for this workspace`,
+                      description:
+                          `${label} was created more than ${days} days ago and has not been rotated. ` +
+                          `The rotation age is this workspace's own setting (${days} days). Rotate the key.`,
+                  }
+                : {
+                      title: `${label} is older than the ${days}-day rotation age`,
+                      description:
+                          `${label} was created more than ${days} days ago and has not been rotated. ` +
+                          `The rotation age is the product default (${days} days) because this ` +
+                          'workspace has no rotation-age setting of its own. Rotate the key.',
+                  };
+        }
         case 'KEY_NOT_BOUND_TO_AGENT':
             return {
                 title: `${label} is bound to no registered agent`,
@@ -280,7 +346,7 @@ export function planHygiene(input: {
     connections: readonly ConnectionFacts[];
     openRefs: readonly string[];
     now: Date;
-    rotationDays: number;
+    rotationAge: RotationAge;
 }): {
     assert: PlannedHygieneFinding[];
     resolve: string[];
@@ -289,8 +355,8 @@ export function planHygiene(input: {
 } {
     const assert: PlannedHygieneFinding[] = [];
     for (const key of input.keys) {
-        for (const rule of keyRuleHits(key, input.now, input.rotationDays)) {
-            const { title, description } = describeKeyRule(rule, key, input.rotationDays);
+        for (const rule of keyRuleHits(key, input.now, input.rotationAge.days)) {
+            const { title, description } = describeKeyRule(rule, key, input.rotationAge);
             assert.push({
                 sourceRef: hygieneSourceRef(rule, 'api_key', key.id),
                 rule,

@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+import { MAX_KEY_ROTATION_DAYS, MIN_KEY_ROTATION_DAYS } from '@/lib/agentic/credential-hygiene';
+
+const ROTATION_DAYS_MESSAGE =
+    `apiKeyRotationDays must be a whole number of days from ${MIN_KEY_ROTATION_DAYS} to ` +
+    `${MAX_KEY_ROTATION_DAYS}, or null to use the product default`;
+
 /**
  * Tenant security-settings patch.
  *
@@ -64,6 +70,20 @@ export const UpdateTenantSecuritySettingsInput = z
          * alone", per this schema's patch semantics.
          */
         requireRegisteredAgent: z.boolean().optional(),
+        /**
+         * The API-key rotation age the credential-hygiene pass applies, in
+         * whole days (#3708). Null clears it, and the pass then applies the
+         * product default and SAYS it is the default. The range is the DB
+         * CHECK's, read from the same constants the pass uses — this refusal
+         * is the readable one; the CHECK is the backstop for any other writer.
+         */
+        apiKeyRotationDays: z
+            .number()
+            .int(ROTATION_DAYS_MESSAGE)
+            .min(MIN_KEY_ROTATION_DAYS, ROTATION_DAYS_MESSAGE)
+            .max(MAX_KEY_ROTATION_DAYS, ROTATION_DAYS_MESSAGE)
+            .nullable()
+            .optional(),
     })
     .strict();
 
