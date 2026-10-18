@@ -491,6 +491,53 @@ export function checkTenantAccess(
     return 'allow';
 }
 
+// ── Admin-path gate ──────────────────────────────────────────────────
+
+/** The built-in roles the edge admits to an admin path. OWNER is strictly superior to ADMIN. */
+export const EDGE_ADMIN_ROLES: ReadonlySet<string> = new Set(['ADMIN', 'OWNER']);
+
+/**
+ * Pure gate function: may this session reach an admin path, judged by the
+ * role it holds IN THE TENANT THE PATH NAMES (#3701)?
+ *
+ * The gate used to read `token.role`, which is the role on the session's
+ * primary (oldest) membership. A user who was a READER in their first tenant
+ * and an OWNER in a second was refused every admin route in the second, and a
+ * user who was an OWNER in their first tenant passed this gate in any tenant
+ * they held at all. It failed closed in the first case and was caught by the
+ * handler's own `requirePermission` in the second, but the edge was answering
+ * a question about the wrong tenant.
+ *
+ * Returns:
+ *   'allow' — the role here is an admin role
+ *   'deny'  — the role here is not
+ *   'defer' — the URL's tenant is not in the claim. This gate does not own
+ *             that answer: the tenant-access gate does, and it refuses
+ *             `cross_tenant` when the claim is complete, or defers to the
+ *             DB-backed server gate when it was capped at sign-in. Refusing
+ *             here instead would deny a legitimate member whose membership did
+ *             not fit in the cookie.
+ *
+ * A flat admin path names no tenant, so it is judged by the primary role, as
+ * before. (`/api/admin` is a machine-caller prefix and never reaches this
+ * gate; the `/admin` page is what remains.)
+ */
+export type AdminGateResult = 'allow' | 'deny' | 'defer';
+
+export function checkAdminAccess(
+    pathname: string,
+    primaryRole: string | null | undefined,
+    memberships: ReadonlyArray<{ slug: string; role: string }> | null | undefined,
+): AdminGateResult {
+    const urlSlug = extractTenantSlugFromPath(pathname);
+    if (!urlSlug) {
+        return primaryRole && EDGE_ADMIN_ROLES.has(primaryRole) ? 'allow' : 'deny';
+    }
+    const here = memberships?.find((m) => m.slug === urlSlug);
+    if (!here) return 'defer';
+    return EDGE_ADMIN_ROLES.has(here.role) ? 'allow' : 'deny';
+}
+
 // ── Org-route gate (mirror of the tenant gate) ───────────────────────
 
 /**

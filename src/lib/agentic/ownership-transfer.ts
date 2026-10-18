@@ -60,13 +60,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * AUDITOR custodian by loosening the edge gate for these paths — would be a
  * security-middleware change this module must not make on its own.
  *
- * One edge case is NOT predicted, and it fails closed: the role the edge reads
- * is the session's PRIMARY membership (the oldest), not this tenant's. A user
- * who is OWNER here but whose oldest membership is a READER elsewhere is
- * refused at the edge on every admin route, this one included. That is the
- * edge's existing behaviour for all of `/admin/**`, not something this
- * predicate can see from inside one tenant. It stays documented rather than
- * fixed in this change (owner decision, 2026-10-18).
+ * The role the edge reads is the one in THIS tenant's membership, taken from
+ * the session's `memberships[]` entry for the URL's slug (#3701), so this
+ * predicate and the edge read the same row. Until #3701 the edge read the
+ * session's primary (oldest) membership instead, which refused an OWNER here
+ * whose oldest membership was a READER elsewhere.
  */
 export const TRANSFER_RECIPIENT_MEMBERSHIP_ROLES = ['OWNER', 'ADMIN'] as const;
 

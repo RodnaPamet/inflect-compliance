@@ -69,7 +69,13 @@ secret: env.AUTH_SECRET })` and applies five gates:
 
 1. Public-path allowlist (login, auth callbacks, static, etc.)
 2. Unauth → `401 JSON` for API routes, `redirect(/login?next=…)` for pages
-3. Admin-path role check (ADMIN ∪ OWNER) + Sec-Fetch-Site cross-site CSRF guard
+3. Admin-path role check (ADMIN ∪ OWNER) + Sec-Fetch-Site cross-site CSRF guard.
+   A tenant admin path (`/t/:slug/admin/**`, `/api/t/:slug/admin/**`) is judged
+   by the role in the `token.memberships` entry for `:slug`, never by the
+   primary membership's `token.role` (#3701). A slug missing from the claim is
+   left to gate 5, which refuses it, or defers to the server gate when the claim
+   was truncated. The flat `/admin` page names no tenant and uses `token.role`.
+   The pure check is `checkAdminAccess` in `src/lib/auth/guard.ts`.
 4. MFA enforcement when `token.mfaPending === true` and the path is not
    in the MFA-allowed list (challenge / enrollment / signout)
 5. Tenant-access gate — the URL slug must appear in `token.memberships`
