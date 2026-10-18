@@ -21,10 +21,14 @@
  *
  * The system prompt is the skill's instructions, exactly as activation delivers
  * them to a run; the user message is the case's input. One request per case, no
- * conversation, no tools. No sampling parameters and no thinking configuration
- * are sent: current models reject non-default sampling, and the record should
- * show how the model behaves as the runtime calls it, not under settings the
- * runtime never uses.
+ * conversation, no tools. No sampling parameters are sent: current models
+ * reject non-default sampling. Thinking is sent AS THE RUNTIME SENDS IT,
+ * because the record should show how the model behaves as the runtime calls
+ * it, not under settings the runtime never uses: for a model that takes
+ * adaptive thinking (`takesAdaptiveThinking`, the predicate the runtime's
+ * provider uses), `thinking: { type: "adaptive" }` at effort `medium`, Flue's
+ * default level. A model that takes a budget gets no thinking configuration:
+ * pi chooses its budget, and no record is made for one today.
  *
  * The model is the one the Flue runtime's external provider names —
  * `AGENT_FLUE_MODEL`, defaulting as `src/env.ts` does (`claude-sonnet-5-5`) —
@@ -67,6 +71,7 @@ import {
     readEvaluationSet,
 } from '../src/lib/agentic/flue/skills/evaluation-record';
 import { EVALUATION_RECORD_FILE } from '../src/lib/agentic/flue/skills/mount-gate';
+import { takesAdaptiveThinking } from '../src/lib/agentic/flue/thinking-shape';
 
 /** Where a run that did not pass leaves its answers for diagnosis. Gitignored. */
 const FAILURES_DIR = path.join(process.cwd(), 'skill-evaluation-failures');
@@ -75,8 +80,14 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 /** `src/env.ts`'s default for `AGENT_FLUE_MODEL`, the agent runtime's model. */
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
-const MAX_TOKENS = 4_096;
-const TIMEOUT_MS = 120_000;
+/**
+ * Room for adaptive thinking AND the answer: thinking tokens count against
+ * `max_tokens`, and a case cut off mid-answer would be graded as a wrong one.
+ */
+const MAX_TOKENS = 16_000;
+const TIMEOUT_MS = 300_000;
+/** Flue's default thinking level, which the runtime sends as the effort. */
+const RUNTIME_EFFORT = 'medium';
 const MAX_ATTEMPTS = 4;
 
 interface Args {
@@ -128,6 +139,9 @@ async function ask(auth: ApiAuth, model: string, system: string, input: string):
                 body: JSON.stringify({
                     model,
                     max_tokens: MAX_TOKENS,
+                    ...(takesAdaptiveThinking(model)
+                        ? { thinking: { type: 'adaptive' }, output_config: { effort: RUNTIME_EFFORT } }
+                        : {}),
                     system,
                     messages: [{ role: 'user', content: input }],
                 }),
@@ -143,6 +157,9 @@ async function ask(auth: ApiAuth, model: string, system: string, input: string):
                 content?: Array<{ type?: string; text?: string }>;
             };
             if (typeof data.model !== 'string' || !data.model) throw new Error('the API reported no model revision');
+            // A truncated answer is not an answer, and grading it would record
+            // a fault of this script's budget as the model's mistake.
+            if (data.stop_reason === 'max_tokens') throw new Error(`an answer was cut off at max_tokens (${MAX_TOKENS})`);
             // A refusal is an answer, and an empty one: it fails every case
             // that requires content, which is the honest grade for it.
             const answer = data.stop_reason === 'refusal'
