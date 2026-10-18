@@ -25,10 +25,16 @@ import {
 import { logEvent } from '../events/audit';
 import { appendAuditEntry } from '@/lib/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest, forbidden, gone, internal } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden, gone, internal, ConflictError } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
 import { hashForLookup } from '@/lib/security/encryption';
-import { isAssignableTenantRole, unassignableRoleMessage } from '@/lib/roles';
+import {
+    BUILT_IN_SCOPE_REFUSAL,
+    builtInScopeRoleMessage,
+    isAssignableTenantRole,
+    mayCarryCustomRole,
+    unassignableRoleMessage,
+} from '@/lib/roles';
 import { recordInviteSent, recordInviteRedeemed } from '@/lib/observability/business-metrics';
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -57,6 +63,11 @@ export interface CreateInviteResult {
  *   - Requires admin.members permission (assertCanManageMembers).
  *   - OWNER invites additionally require ctx.appPermissions.admin.owner_management.
  *   - Rejects if the email already has an ACTIVE membership.
+ *   - Rejects an OWNER invite (409, `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`)
+ *     when the email's existing, inactive membership carries a custom role:
+ *     redeeming would reactivate it as an OWNER with the custom role kept, and
+ *     an OWNER never carries one (#3720). Refused here, before anything is
+ *     sent, so the invitee is never handed an invite that cannot redeem.
  *   - Upserts on (tenantId, email) unique key, refreshing token + expiry.
  *
  * @returns invite row + relative URL (caller prepends origin for email).
@@ -98,10 +109,15 @@ export async function createInviteToken(
                         userId: existingUser.id,
                     },
                 },
-                select: { status: true },
+                select: { status: true, customRoleId: true },
             });
             if (existing?.status === 'ACTIVE') {
                 throw badRequest('User is already a member of this tenant');
+            }
+            if (existing?.customRoleId && !mayCarryCustomRole(input.role)) {
+                throw new ConflictError(builtInScopeRoleMessage(input.role, 'invite'), {
+                    reason: BUILT_IN_SCOPE_REFUSAL,
+                });
             }
         }
 
@@ -414,6 +430,25 @@ async function finalizeInviteRedemption(
     }
 
     const txResult = await prisma.$transaction(async (tx) => {
+        // The upsert's update arm keeps an existing membership's custom role,
+        // so an OWNER invite redeemed onto a membership carrying one would make
+        // an OWNER with a custom role — which never exists (#3720). Refused,
+        // not repaired: the custom role is a person's change. `createInviteToken`
+        // refuses this up front; this is the backstop for a custom role assigned
+        // after the invite went out, and for an invite row written around it.
+        // The claim is already committed, so the invite stays burnt.
+        if (!mayCarryCustomRole(invite.role)) {
+            const existing = await tx.tenantMembership.findUnique({
+                where: { tenantId_userId: { tenantId: invite.tenantId, userId } },
+                select: { customRoleId: true },
+            });
+            if (existing?.customRoleId) {
+                throw new ConflictError(builtInScopeRoleMessage(invite.role, 'invite'), {
+                    reason: BUILT_IN_SCOPE_REFUSAL,
+                });
+            }
+        }
+
         const membership = await tx.tenantMembership.upsert({
             where: {
                 tenantId_userId: {
@@ -540,12 +575,39 @@ export async function redeemPendingInvitesByEmail(input: {
         take: 50,
     });
 
+    // Tenants where this user's existing membership carries a custom role. An
+    // invite there into a role that carries none (OWNER, #3720) would refuse in
+    // `finalizeInviteRedemption` AFTER its claim — burning it and stopping the
+    // loop — so it is skipped before the claim instead. One read for the whole
+    // batch, not one per invite.
+    const builtInScopeTenantIds = pending
+        .filter((invite) => isAssignableTenantRole(invite.role) && !mayCarryCustomRole(invite.role))
+        .map((invite) => invite.tenantId);
+    const tenantsWithCustomRole = new Set(
+        builtInScopeTenantIds.length === 0
+            ? []
+            : (
+                  await prisma.tenantMembership.findMany({
+                      where: {
+                          userId: input.userId,
+                          tenantId: { in: builtInScopeTenantIds },
+                          customRoleId: { not: null },
+                      },
+                      select: { tenantId: true },
+                      take: 50,
+                  })
+              ).map((m) => m.tenantId),
+    );
+
     const redeemed: RedeemResult[] = [];
     for (const invite of pending) {
         // Skipped BEFORE the claim, so it neither burns the invite nor stops
         // the loop: a role no invite may write (AI_ADMIN, #3699) materialises
         // no membership, and the invite is left unclaimed.
         if (!isAssignableTenantRole(invite.role)) continue;
+        // Likewise an OWNER invite onto a membership carrying a custom role
+        // (#3720): left unclaimed, and redeemable once the custom role is gone.
+        if (!mayCarryCustomRole(invite.role) && tenantsWithCustomRole.has(invite.tenantId)) continue;
 
         // Atomic claim by id — the winner sets acceptedAt; a racing
         // token-URL redemption of the same invite makes this count=0.

@@ -21,16 +21,23 @@ import {
     parsePermissionsJson,
     permissionsExceeding,
 } from '@/lib/permissions';
-import { BUILT_IN_SCOPE_REFUSAL, builtInScopeRoleMessage, mayCarryCustomRole } from '@/lib/roles';
+import {
+    BUILT_IN_SCOPE_REFUSAL,
+    OWNER_TIER_CLEAR_REFUSAL,
+    builtInScopeRoleMessage,
+    clearingCustomRoleIsOwnerTier,
+    mayCarryCustomRole,
+    ownerTierClearMessage,
+} from '@/lib/roles';
 import type { Role } from '@prisma/client';
 
 /**
  * The roles a custom role may be built on. A custom role's base IS the role a
  * membership resolves to (`effectiveRole` in `resolveTenantContext`), so this is
- * a membership-role writer's list. AI_ADMIN (#3699) is absent, and stays absent
- * after deploy 2: its scope is always the reviewed built-in set, so no custom
- * role is built on it and none is assigned to a membership holding it
- * (`mayCarryCustomRole`, below). OWNER is absent as before.
+ * a membership-role writer's list. AI_ADMIN (#3699) and OWNER are absent: the
+ * scope of both is always the reviewed built-in set, so no custom role is built
+ * on either and none is assigned to a membership holding either
+ * (`mayCarryCustomRole`, below; OWNER joined that rule in #3720).
  */
 const VALID_BASE_ROLES: Role[] = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
 
@@ -330,6 +337,27 @@ function assertGrantWithinOwnAuthority(
 
 // ─── Assign Custom Role to Member ───
 
+/**
+ * Assign a custom role to an ACTIVE membership, or clear it (`null`).
+ *
+ * Two rules on the TARGET membership's role, ahead of the grant check:
+ *
+ *   - **Assigning** to a role whose scope is always the built-in one (OWNER,
+ *     AI_ADMIN — `mayCarryCustomRole`) is refused for every caller, OWNER
+ *     included: 409, `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`. On an OWNER
+ *     it was a demotion through a side door (#3720) — the custom role replaces
+ *     the OWNER's permissions while the enum role, and so every last-OWNER
+ *     check, still reads OWNER.
+ *   - **Clearing** on an OWNER is OWNER-tier (`clearingCustomRoleIsOwnerTier`):
+ *     it restores full OWNER authority, so it needs `admin.owner_management`;
+ *     an ADMIN gets 403, `CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`. Only a
+ *     legacy row can have one to clear. Clearing on any other role, AI_ADMIN
+ *     included, is unchanged.
+ *
+ * The database holds the first rule too (CHECK
+ * `TenantMembership_built_in_scope_role_no_custom_role`); the usecase is the
+ * front door with the named reason.
+ */
 export async function assignCustomRole(
     ctx: RequestContext,
     membershipId: string,
@@ -352,13 +380,24 @@ export async function assignCustomRole(
             throw notFound('Membership not found or not active.');
         }
 
-        // An AI_ADMIN membership's scope is always the built-in one (#3699):
-        // a custom role would replace it at resolution. Removing one (null) is
-        // always allowed.
+        // An OWNER's or an AI_ADMIN's scope is always the built-in one (#3720,
+        // #3699): a custom role would replace it at resolution. Refused for
+        // every caller — this is a rule about the membership, not the caller.
         if (customRoleId && !mayCarryCustomRole(membership.role)) {
             throw new ConflictError(builtInScopeRoleMessage(membership.role, 'assign-custom-role'), {
                 reason: BUILT_IN_SCOPE_REFUSAL,
             });
+        }
+        // Clearing one from an OWNER (legacy data only) restores full OWNER
+        // authority, so it is an OWNER's change (#3720). Refused whether or not
+        // there is anything to clear: an ADMIN does not modify an OWNER
+        // membership. Clearing on every other role stays open, AI_ADMIN included.
+        if (
+            customRoleId === null &&
+            clearingCustomRoleIsOwnerTier(membership.role) &&
+            !ctx.appPermissions.admin.owner_management
+        ) {
+            throw forbidden(ownerTierClearMessage(), { reason: OWNER_TIER_CLEAR_REFUSAL });
         }
 
         // If assigning, verify the custom role exists and belongs to this tenant

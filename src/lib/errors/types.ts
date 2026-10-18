@@ -64,8 +64,13 @@ export class NotFoundError extends AppError {
 }
 
 export class ForbiddenError extends AppError {
-    constructor(message: string = 'Forbidden') {
-        super(message, 'FORBIDDEN', 403, true);
+    /**
+     * `details` is optional and carries a named `reason` where a usecase rule,
+     * not a permission key, refused (e.g. `CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`).
+     * `requirePermission`'s generic 403 passes none, so no key is ever echoed.
+     */
+    constructor(message: string = 'Forbidden', details?: unknown) {
+        super(message, 'FORBIDDEN', 403, true, details);
         this.name = 'ForbiddenError';
     }
 }
@@ -173,8 +178,8 @@ export const badRequest = (message: string, details?: unknown) =>
 export const unauthorized = (message: string = 'Unauthorized') =>
     new UnauthorizedError(message);
 
-export const forbidden = (message: string = 'Forbidden') =>
-    new ForbiddenError(message);
+export const forbidden = (message: string = 'Forbidden', details?: unknown) =>
+    new ForbiddenError(message, details);
 
 export const notFound = (message: string = 'Not Found') =>
     new NotFoundError(message);

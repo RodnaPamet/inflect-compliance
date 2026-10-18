@@ -17,11 +17,18 @@ const UpdateMemberSchema = z
         // The members-page role change's list: the writers' list plus AI_ADMIN
         // (#3699 deploy 2), which the usecase lets an OWNER alone assign.
         role: z.enum(MEMBER_ROLE_CHANGE_ROLES).optional(),
-        customRoleId: z.string().nullable().optional(),
+        // `null` clears. An empty string is neither a role id nor a clear, so
+        // it is refused here rather than written.
+        customRoleId: z.string().min(1).nullable().optional(),
     })
     // The two halves below run as separate writes, role first. Asking for a
-    // role that carries no custom role AND a custom role in one body would
-    // commit the first and refuse the second; refuse the body instead.
+    // role that carries no custom role (OWNER, AI_ADMIN — `mayCarryCustomRole`)
+    // AND a custom role in one body would commit the first and refuse the
+    // second; refuse the body instead. The other order cannot slip through
+    // either: a role change into OWNER or AI_ADMIN is refused while the member
+    // still carries a custom role, so `{ role: 'OWNER', customRoleId: null }`
+    // for a member who carries one commits nothing — the custom role is removed
+    // on its own first (#3720).
     .superRefine((v, issue) => {
         if (v.role && !mayCarryCustomRole(v.role) && typeof v.customRoleId === 'string') {
             issue.addIssue({

@@ -160,7 +160,7 @@ async function seedUser(suffix: string): Promise<string> {
 async function member(
     tenantId: string,
     userId: string,
-    role: 'OWNER' | 'EDITOR' | 'READER',
+    role: 'OWNER' | 'ADMIN' | 'EDITOR' | 'READER',
     customRoleId?: string,
 ): Promise<void> {
     await prisma.tenantMembership.upsert({
@@ -259,16 +259,18 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
         await member(TENANT_A, readerId, 'READER');
         await member(TENANT_A, editorId, 'EDITOR');
 
-        // ── block 2: an OWNER narrowed by a custom role ──
+        // ── block 2: an ADMIN narrowed by a custom role ──
         // A real `TenantCustomRole`, not a hand-built permission blob: the
         // narrowing has to travel the path `resolveTenantContext` actually
-        // reads, or the test proves something about a fixture.
-        const riskBlindPermissions = getPermissionsForRole('OWNER');
+        // reads, or the test proves something about a fixture. ADMIN, not
+        // OWNER: an OWNER never carries a custom role (#3720), and the CHECK
+        // `TenantMembership_built_in_scope_role_no_custom_role` refuses the row.
+        const riskBlindPermissions = getPermissionsForRole('ADMIN');
         const blindRoleRow = await prisma.tenantCustomRole.create({
             data: {
                 tenantId: TENANT_A,
                 name: `risk-blind-${SUITE}`,
-                baseRole: 'OWNER',
+                baseRole: 'ADMIN',
                 // The OBJECT, not `JSON.stringify` of it: the column is a
                 // Prisma `Json` field, and a stringified value lands as a JSON
                 // string, which `parsePermissionsJson` rejects as non-object and
@@ -282,7 +284,7 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
             },
         });
         const blindId = await seedUser(`${SUITE}-blind`);
-        await member(TENANT_A, blindId, 'OWNER', blindRoleRow.id);
+        await member(TENANT_A, blindId, 'ADMIN', blindRoleRow.id);
 
         agentA = await seedAgent(TENANT_A, ownerA, 'Tenant A reconciler');
         agentB = await seedAgent(TENANT_B, ownerB, 'Tenant B reconciler');

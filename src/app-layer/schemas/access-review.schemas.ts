@@ -11,7 +11,12 @@
  *     parse time so the usecase never sees a malformed verdict.
  */
 import { z } from 'zod';
-import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
+import {
+    ASSIGNABLE_TENANT_ROLES,
+    BUILT_IN_SCOPE_REFUSAL,
+    builtInScopeRoleMessage,
+    mayCarryCustomRole,
+} from '@/lib/roles';
 import { MEMBER_ACCESS_REVIEW_SCOPES } from '@/lib/access-review/scope';
 
 const TextField = z
@@ -129,16 +134,29 @@ export const SubmitDecisionSchema = z.discriminatedUnion('decision', [
         /// Recommended for revocations — auditors will ask why.
         notes: OptionalText,
     }),
-    z.object({
-        decision: z.literal('MODIFY'),
-        /// The writers' list, NOT `z.nativeEnum(Role)`: closing the campaign
-        /// writes this value to the membership, and a campaign never promotes
-        /// anybody to AI_ADMIN (#3699), so it is refused here at submission.
-        modifiedToRole: z.enum(ASSIGNABLE_TENANT_ROLES),
-        /// Only meaningful when the target role uses a TenantCustomRole.
-        modifiedToCustomRoleId: z.string().min(1).optional().nullable(),
-        notes: OptionalText,
-    }),
+    z
+        .object({
+            decision: z.literal('MODIFY'),
+            /// The writers' list, NOT `z.nativeEnum(Role)`: closing the campaign
+            /// writes this value to the membership, and a campaign never promotes
+            /// anybody to AI_ADMIN (#3699), so it is refused here at submission.
+            modifiedToRole: z.enum(ASSIGNABLE_TENANT_ROLES),
+            /// Only meaningful when the target role uses a TenantCustomRole.
+            modifiedToCustomRoleId: z.string().min(1).optional().nullable(),
+            notes: OptionalText,
+        })
+        /// Closing writes BOTH columns, so a MODIFY naming OWNER and a custom
+        /// role would make an OWNER with a custom role, which never exists
+        /// (#3720). `closeAccessReview` refuses a stored one too.
+        .superRefine((v, issue) => {
+            if (!mayCarryCustomRole(v.modifiedToRole) && v.modifiedToCustomRoleId) {
+                issue.addIssue({
+                    code: 'custom',
+                    path: ['modifiedToCustomRoleId'],
+                    message: `${BUILT_IN_SCOPE_REFUSAL}: ${builtInScopeRoleMessage(v.modifiedToRole, 'assign-custom-role')}`,
+                });
+            }
+        }),
 ]);
 
 export type SubmitDecisionInput = z.infer<typeof SubmitDecisionSchema>;

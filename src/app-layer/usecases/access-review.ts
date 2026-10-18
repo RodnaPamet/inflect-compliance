@@ -38,8 +38,14 @@ import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, forbidden, notFound } from '@/lib/errors/types';
-import { isAssignableTenantRole, unassignableRoleMessage } from '@/lib/roles';
+import { badRequest, forbidden, notFound, ConflictError } from '@/lib/errors/types';
+import {
+    BUILT_IN_SCOPE_REFUSAL,
+    builtInScopeRoleMessage,
+    isAssignableTenantRole,
+    mayCarryCustomRole,
+    unassignableRoleMessage,
+} from '@/lib/roles';
 import {
     CreateAccessReviewSchema,
     SubmitDecisionSchema,
@@ -662,6 +668,34 @@ export async function closeAccessReview(
             throw badRequest(
                 `Cannot close: a MODIFY decision targets a role that cannot be written. ` +
                     unassignableRoleMessage(unassignable.modifiedToRole),
+            );
+        }
+
+        // A MODIFY into a role that carries no custom role (OWNER, #3720)
+        // refuses the whole close, before any row executes, in two shapes:
+        //   - the decision itself names a custom role (`SubmitDecisionSchema`
+        //     refuses that at submission; this is the read-side half);
+        //   - the LIVE membership still carries one. Closing writes the
+        //     decision's `modifiedToCustomRoleId` (null) over it, which would
+        //     clear it on the caller's behalf — and on an OWNER the clear is
+        //     OWNER-tier while the close takes `canAdmin`. Like the members
+        //     page, the custom role is removed first, as its own change.
+        const builtInScopeConflict = decisions.find(
+            (d) =>
+                d.decision === 'MODIFY' &&
+                d.modifiedToRole !== null &&
+                !mayCarryCustomRole(d.modifiedToRole) &&
+                (d.modifiedToCustomRoleId !== null || Boolean(d.membership?.customRoleId)),
+        );
+        if (builtInScopeConflict?.modifiedToRole) {
+            throw new ConflictError(
+                `Cannot close: MODIFY decision ${builtInScopeConflict.id} ` +
+                    `targets ${builtInScopeConflict.modifiedToRole} with a custom role. ` +
+                    builtInScopeRoleMessage(
+                        builtInScopeConflict.modifiedToRole,
+                        builtInScopeConflict.modifiedToCustomRoleId !== null ? 'assign-custom-role' : 'promote',
+                    ),
+                { reason: BUILT_IN_SCOPE_REFUSAL },
             );
         }
 

@@ -426,7 +426,8 @@ it, with nothing writing it. Deploy 2 gave it exactly two writers (decision 16):
 An `AI_ADMIN` membership never carries a custom role, whose base role would
 replace it at resolution: both orders are refused with the named reason
 `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`, on the members page and by the
-group sync. Every other membership-role writer still reads
+group sync. Since #3720 the same rule holds for OWNER, on every writer, and a
+database CHECK backs both roles. Every other membership-role writer still reads
 `ASSIGNABLE_TENANT_ROLES` in `src/lib/roles.ts`, which excludes the role:
 invites, the direct member add, an access review's MODIFY, the custom-role base,
 SCIM's `roles[]` attribute and SSO JIT. `tests/unit/ai-admin-role-writers.test.ts`

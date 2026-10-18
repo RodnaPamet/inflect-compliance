@@ -190,20 +190,23 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
             });
         }
 
+        // An ADMIN narrowed by a custom role. Not an OWNER: an OWNER never
+        // carries a custom role (#3720), and the CHECK
+        // `TenantMembership_built_in_scope_role_no_custom_role` refuses the row.
         const blindRole = await prisma.tenantCustomRole.create({
             data: {
                 tenantId: TENANT,
                 name: `blind-${SUITE}`,
-                baseRole: 'OWNER',
+                baseRole: 'ADMIN',
                 permissionsJson: { risks: { view: false, create: false, edit: false } },
             },
         });
         const blindId = await seedUser('blind');
         await prisma.tenantMembership.upsert({
             where: { tenantId_userId: { tenantId: TENANT, userId: blindId } },
-            update: { role: 'OWNER', status: 'ACTIVE', customRoleId: blindRole.id },
+            update: { role: 'ADMIN', status: 'ACTIVE', customRoleId: blindRole.id },
             create: {
-                tenantId: TENANT, userId: blindId, role: 'OWNER',
+                tenantId: TENANT, userId: blindId, role: 'ADMIN',
                 status: 'ACTIVE', customRoleId: blindRole.id,
             },
         });

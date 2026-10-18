@@ -783,7 +783,11 @@ model TenantMembership {
   tenantId              String
   userId                String
   role                  Role                   @default(READER)
-  customRoleId          String? /// Optional FK to TenantCustomRole for granular overrides
+  /// Optional FK to TenantCustomRole for granular overrides. Never set on an
+  /// OWNER or AI_ADMIN membership: CHECK
+  /// "TenantMembership_built_in_scope_role_no_custom_role" (#3720), which
+  /// Prisma does not model — see BUILT_IN_SCOPE_ROLES in src/lib/roles.ts.
+  customRoleId          String?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   deactivatedAt         DateTime?

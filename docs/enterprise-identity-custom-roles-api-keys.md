@@ -58,6 +58,17 @@ Else:
 for any missing or malformed fields in the stored JSON. This means a partially
 corrupted `permissionsJson` never produces a `null` or empty permission set.
 
+### Which memberships may carry one
+
+Because a custom role REPLACES the membership's permissions, an OWNER or
+`AI_ADMIN` membership never carries one (`BUILT_IN_SCOPE_ROLES` in
+`src/lib/roles.ts`; #3720 and #3699). Assigning one to such a membership is
+refused for every caller, and a member who carries one is not promoted into
+either role until it is removed: 409, `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`.
+Clearing a legacy one from an OWNER is an OWNER's change (403 for an ADMIN,
+`CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`). The database enforces the same rule
+with the CHECK `TenantMembership_built_in_scope_role_no_custom_role`.
+
 ### PermissionSet Shape
 
 `PermissionSet` and its companion `PERMISSION_SCHEMA` live in

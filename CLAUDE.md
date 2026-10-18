@@ -824,6 +824,19 @@ new tenant-membership creation path).
 - Built-in roles: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR` (Prisma enum `Role`)
 - Custom roles: `TenantCustomRole` model with `permissionsJson` overrides, referenced via `TenantMembership.customRoleId`
 - `appPermissions` on `RequestContext` is already custom-role–aware
+- **An OWNER or AI_ADMIN membership never carries a custom role** (#3720, #3699).
+  A custom role REPLACES the membership's permissions, so on an OWNER it was a
+  demotion an ADMIN could perform while the enum role — and so every last-OWNER
+  check — still read OWNER. `BUILT_IN_SCOPE_ROLES` / `mayCarryCustomRole` in
+  `src/lib/roles.ts` is read by every writer: assigning one is refused for every
+  caller, OWNER included, and promoting a member who carries one (members page,
+  ownership transfer, invite, access-review MODIFY) is refused until it is
+  removed — 409, `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`. Clearing a legacy
+  one from an OWNER needs `admin.owner_management` (403,
+  `CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`). The DB backstop is the CHECK
+  `TenantMembership_built_in_scope_role_no_custom_role`, added `NOT VALID` and
+  validated only on a clean table: while an offending row exists it stays NOT
+  VALID, and that row refuses EVERY update except the clear.
 
 ### Observability
 

@@ -19,6 +19,10 @@
  * SSO JIT keep refusing it. `tests/unit/ai-admin-role-writers.test.ts` holds
  * the census.
  *
+ * Which roles never sit under a custom role is a separate rule with its own
+ * list, `BUILT_IN_SCOPE_ROLES`: `AI_ADMIN` since #3699, and `OWNER` since
+ * #3720. Its census is `tests/unit/owner-custom-role.test.ts`.
+ *
  * Client-safe: the only Prisma dependency is an `import type`.
  */
 import type { Role } from '@prisma/client';
@@ -110,15 +114,32 @@ export function ownerManagedRoleMessage(role: string): string {
 
 /**
  * Roles whose scope is always the reviewed built-in set: a membership holding
- * one never carries a custom role (#3699 deploy 2, owner decision 2). A custom
- * role REPLACES the built-in role's permissions and coarse tier at resolution
- * (`resolveTenantContext` reads `customRole.baseRole ?? role`), so an
- * `AI_ADMIN` carrying one would not be an `AI_ADMIN` at all. Both orders are
- * refused rather than repaired: a custom role is not assigned to such a
- * membership, and a member carrying one is not moved into the role — the
- * custom role is removed first, by a person, as its own audited change.
+ * one never carries a custom role. A custom role REPLACES the built-in role's
+ * permissions and coarse tier at resolution (`resolveTenantContext` reads
+ * `customRole.baseRole ?? role`), so a membership holding one of these and a
+ * custom role would not hold the role at all.
+ *
+ *   - `AI_ADMIN` — #3699 deploy 2, owner decision 2 (2026-10-18).
+ *   - `OWNER` — #3720, owner decision 1 (2026-10-18). On an OWNER the custom
+ *     role was a side door: an ADMIN could assign a READER-based one and so
+ *     demote every OWNER in effect, with the enum role still reading `OWNER`,
+ *     so neither the last-OWNER checks nor `tenant_membership_last_owner_guard`
+ *     fired — the demotion `admin.owner_management` exists to reserve.
+ *
+ * Both orders are refused rather than repaired, for every caller, OWNER
+ * included: a custom role is not assigned to such a membership, and a member
+ * carrying one is not moved into the role — the custom role is removed first,
+ * by a person, as its own audited change. Every writer reads this list: the
+ * members-page role change and custom-role assignment, ownership transfer,
+ * invite creation and both redemptions, an access review's MODIFY (submission
+ * and close), and the Entra group sync.
+ *
+ * The database holds the same rule as a CHECK,
+ * `TenantMembership_built_in_scope_role_no_custom_role`
+ * (`prisma/migrations/20261018180000_built_in_scope_role_no_custom_role`). A
+ * role added here needs that CHECK widened in a migration in the same change.
  */
-export const BUILT_IN_SCOPE_ROLES = ['AI_ADMIN'] as const satisfies readonly Role[];
+export const BUILT_IN_SCOPE_ROLES = ['OWNER', 'AI_ADMIN'] as const satisfies readonly Role[];
 
 export function mayCarryCustomRole(role: string): boolean {
     return !(BUILT_IN_SCOPE_ROLES as readonly string[]).includes(role);
@@ -129,14 +150,46 @@ export const BUILT_IN_SCOPE_REFUSAL = 'BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROL
 
 /**
  * The refusal, worded for the change that was asked for: assigning a custom
- * role to a membership that holds `role`, or promoting a member who carries a
- * custom role into it.
+ * role to a membership that holds `role`, promoting a member who carries a
+ * custom role into it, or inviting into it a person whose existing (inactive)
+ * membership carries one.
  */
-export function builtInScopeRoleMessage(role: string, asked: 'assign-custom-role' | 'promote'): string {
+export function builtInScopeRoleMessage(
+    role: string,
+    asked: 'assign-custom-role' | 'promote' | 'invite',
+): string {
     const why = `A membership with the ${role} role cannot carry a custom role: its scope is always the built-in one.`;
-    return asked === 'promote'
-        ? `${why} Remove this member's custom role first, then change the role.`
-        : `${why} Change the member to another role first if they need a custom role.`;
+    if (asked === 'promote') return `${why} Remove this member's custom role first, then change the role.`;
+    if (asked === 'invite') {
+        return (
+            `${why} This person's existing membership carries a custom role. Invite them with another ` +
+            'role, remove the custom role once they have joined, then change their role.'
+        );
+    }
+    return `${why} Change the member to another role first if they need a custom role.`;
+}
+
+/**
+ * Whether CLEARING a custom role from a membership holding `role` is OWNER-tier
+ * work — allowed only to a holder of `admin.owner_management` (#3720).
+ *
+ * True for `OWNER` alone. No writer can put a custom role on an OWNER any more,
+ * so a clear there only ever repairs a legacy row; and it restores full OWNER
+ * authority, which an ADMIN may not hand out. `AI_ADMIN` keeps what deploy 2 of
+ * #3699 shipped — anybody holding `admin.members` may clear one — and no
+ * AI_ADMIN row can carry a custom role in the first place (deploy 1 had no
+ * writer, deploy 2's writers refuse it, and the CHECK refuses it).
+ */
+export function clearingCustomRoleIsOwnerTier(role: string): boolean {
+    return role === 'OWNER';
+}
+
+/** The named reason an ADMIN's clear of an OWNER's custom role is refused with (`ForbiddenError.details`). */
+export const OWNER_TIER_CLEAR_REFUSAL = 'CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER' as const;
+
+/** The refusal for clearing an OWNER membership's custom role without `admin.owner_management`. */
+export function ownerTierClearMessage(): string {
+    return 'Only an OWNER can remove a custom role from an OWNER membership: it restores full OWNER authority.';
 }
 
 /**
