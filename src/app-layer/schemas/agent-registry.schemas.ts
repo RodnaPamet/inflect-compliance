@@ -260,3 +260,60 @@ export const AgentToolGrantSchema = z.object({
         .trim(),
 });
 export type AgentToolGrantInput = z.infer<typeof AgentToolGrantSchema>;
+
+// ─── Registration intake: a SHADOW_AGENT finding → a DRAFT register row ─────
+
+/**
+ * The registration intake (#3669, step 2a) — register a shadow agent a harness
+ * scan found, through a PROVISIONAL AI-system entry at UNCLASSIFIED.
+ *
+ * The same agent fields as `RegisterAgentSchema`, and like it the three
+ * exposure axes are REQUIRED with no default: a scan says what an agent is
+ * called and where it was seen, never how far into tenant data it reaches, so a
+ * person declares those here. There is NO classification questionnaire and no
+ * `riskTier`: the entry is created unclassified on purpose, and classifying it
+ * is its own act (`POST /ai-systems/:id/classification`). `.strict()`, so a
+ * `riskTier` (or any other undeclared key) in the body is a 400 rather than
+ * silently stripped.
+ *
+ * THE OWNER IS A PERSON'S EXPLICIT CHOICE. `ownerUserId` names them and
+ * `confirmOwner: true` confirms it. Both are optional in the SHAPE only so the
+ * usecase can refuse their absence with its own named reason
+ * (`OWNER_NOT_CONFIRMED`) instead of a generic validation error. `attribution`
+ * is the attribution skill's answer, if one was produced; the usecase parses it
+ * through 1d's contract and keeps it as provenance. It never supplies the
+ * owner.
+ */
+export const RegistrationIntakeSchema = z
+    .object({
+        findingId: z.string().min(1, 'The SHADOW_AGENT finding to register from is required'),
+        ownerUserId: z.string().min(1).optional(),
+        confirmOwner: z.boolean().optional(),
+        name: z.string().min(2, 'Name is required').max(200).trim(),
+        description: z.string().max(4000).optional().nullable(),
+        autonomyLevel,
+        dataAccessScope: z.enum(AGENT_DATA_ACCESS_SCOPES),
+        reversibility: z.enum(AGENT_REVERSIBILITIES),
+        provenance: z.enum(AGENT_PROVENANCES),
+        modelRef,
+        vendorId: z.string().optional().nullable(),
+
+        // ── The provisional EU AI Act register entry ──
+        purpose: z.string().max(4000).optional().nullable(),
+        useContext: z.string().max(4000).optional().nullable(),
+        provider: z.string().max(200).optional().nullable(),
+        deploymentRole: z.enum(['PROVIDER', 'DEPLOYER']).default('DEPLOYER'),
+
+        /** The `nhi-ownership-attribution` answer — provenance, never the owner. */
+        attribution: z.unknown().optional(),
+    })
+    .strict()
+    .superRefine((value, ctx) => {
+        if (!isUnattributedThirdParty(value)) return;
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['vendorId'],
+            message: THIRD_PARTY_VENDOR_MESSAGE,
+        });
+    });
+export type RegistrationIntakeInput = z.infer<typeof RegistrationIntakeSchema>;

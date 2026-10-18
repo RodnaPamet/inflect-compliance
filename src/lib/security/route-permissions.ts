@@ -445,6 +445,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'is the key for an agent call leaving the tenant, and the ' +
             'authority that acts must not also configure whom it talks to.',
     },
+    // The registration intake (#3669). The same key as the catch-all below,
+    // stated on its own because step 0e's permission table names it: the
+    // intake creates a register row and its AI-system entry, which is the
+    // register's authority, and its owner is the person the caller confirms.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/intake$`),
+        methods: ['POST'],
+        permission: 'admin.agent_registry',
+        note:
+            'Register a shadow agent from its SHADOW_AGENT harness finding: a ' +
+            'DRAFT register row and a provisional AI-system entry at ' +
+            'UNCLASSIFIED, in one transaction, owned by the person the caller ' +
+            'confirms. The agent cannot be activated until the entry is classified.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),
         permission: 'admin.agent_registry',

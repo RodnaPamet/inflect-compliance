@@ -96,8 +96,9 @@ export class AiSystemRepository {
             /**
              * A CLASSIFIED tier only — the classifier's output type, not the
              * column's. UNCLASSIFIED is a different act (a provisional entry
-             * from the registration intake, #3669) and this method cannot
-             * store it. `tests/guards/ai-risk-tier-unclassified-writers.test.ts`.
+             * from the registration intake, #3669, through `createProvisional`
+             * below) and this method cannot store it.
+             * `tests/guards/ai-risk-tier-unclassified-writers.test.ts`.
              */
             riskTier: ClassifiedAiRiskTier;
             classificationClauseId: string;
@@ -121,6 +122,76 @@ export class AiSystemRepository {
             },
             select: { id: true, riskTier: true, classificationClauseId: true },
         });
+    }
+
+    /**
+     * A PROVISIONAL entry at UNCLASSIFIED — the only method that stores that
+     * value (#3669, deploy 2 of the tier), and it takes no tier at all.
+     *
+     * UNCLASSIFIED is not a tier the Act defines: it marks an entry nobody has
+     * classified yet. Its one caller is the registration intake
+     * (`usecases/agent-registration-intake.ts`), which registers a shadow agent
+     * in DRAFT before anybody has answered the classification questionnaire.
+     * The value is fixed HERE rather than passed in, so no caller can choose
+     * it and `create` above keeps its classifier-only type. The clause,
+     * rationale and answers are NULL, which is what "nobody assessed this"
+     * means on each of those columns. Obligations are linked when the entry is
+     * classified (`classifyProvisional`), not here: an unclassified entry
+     * carries none. `tests/guards/ai-risk-tier-unclassified-writers.test.ts`
+     * pins the single caller.
+     */
+    static async createProvisional(
+        db: PrismaTx,
+        ctx: RequestContext,
+        data: {
+            name: string;
+            purpose: string | null;
+            useContext: string | null;
+            provider: string | null;
+            deploymentRole: AiDeploymentRole;
+            ownerUserId: string | null;
+        },
+    ) {
+        return db.aiSystem.create({
+            data: {
+                tenantId: ctx.tenantId,
+                createdByUserId: ctx.userId,
+                ...data,
+                riskTier: 'UNCLASSIFIED',
+                classificationClauseId: null,
+                classificationRationale: null,
+                classificationAnswersJson: Prisma.DbNull,
+            },
+            select: { id: true, riskTier: true },
+        });
+    }
+
+    /**
+     * Classify a PROVISIONAL entry: the one move out of UNCLASSIFIED.
+     *
+     * Conditional on the stored tier still being UNCLASSIFIED, so the WHERE is
+     * the precondition and a concurrent classification of the same entry
+     * matches zero rows — the count is the caller's evidence. It moves an
+     * entry OUT of the value and never into it: `riskTier` is the classifier's
+     * four-tier type (proved in the writers guard), and an entry that is
+     * already classified is not reclassified here.
+     */
+    static async classifyProvisional(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        data: {
+            riskTier: ClassifiedAiRiskTier;
+            classificationClauseId: string;
+            classificationRationale: string;
+            classificationAnswersJson: Prisma.InputJsonValue;
+        },
+    ): Promise<number> {
+        const res = await db.aiSystem.updateMany({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null, riskTier: 'UNCLASSIFIED' },
+            data,
+        });
+        return res.count;
     }
 
     /**

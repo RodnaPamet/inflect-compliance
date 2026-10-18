@@ -1,35 +1,43 @@
 /**
- * Nothing writes the UNCLASSIFIED AI-system risk tier yet (#3691, deploy 1 of 2).
+ * ONE thing writes the UNCLASSIFIED AI-system risk tier: the registration
+ * intake (#3669, deploy 2 of 2).
  *
- * UNCLASSIFIED reaches `AiRiskTier` in two deploys so that no running container
- * reads a value its client does not know. In THIS deploy the value exists and
- * every reader handles it, and nothing may write it. The registration intake
- * (#3669) is deploy 2: it becomes the one writer, and it is added to `WRITERS`
- * below in the same pull request. Until then `WRITERS` is empty, and that
- * emptiness is the property.
+ * UNCLASSIFIED reached `AiRiskTier` in two deploys so that no running container
+ * reads a value its client does not know. Deploy 1 (#3691) added the value,
+ * taught every reader, and held `WRITERS` empty. This deploy adds the one
+ * writer: `registerShadowAgent` in `usecases/agent-registration-intake.ts`,
+ * which registers a shadow agent through a provisional entry nobody has
+ * classified. Exactly one, and every check below points at it.
  *
- * Three things hold it, and each is checked here:
+ * Five things hold it, and each is checked here:
  *
  *   1. AiSystem has ONE write seam, `AiSystemRepository`. No other file calls a
  *      write delegate on it, writes it through a relation (`aiSystem: { create }`
  *      on an agent, `aiSystems: { create }` on a tenant), or carries SQL text
  *      that inserts into or updates the table, however the query is composed.
- *   2. That seam's `create` takes the CLASSIFIER's tier type, which has no
- *      UNCLASSIFIED member. A type-level proof below fails `npm run typecheck`
- *      if the parameter is ever widened to the column's type, and the seam's
- *      methods are a closed census, so a second write method fails here until
- *      somebody says what tier type it takes.
- *   3. Every file whose CODE (comments stripped) names the value is a reader on
- *      `READERS`, with the reason it names it. A new file that names it fails
- *      until somebody says whether it reads or writes.
- *   4. No Zod schema is built from the generated `AiRiskTier`, which carries
+ *   2. Inside the seam the value is named in exactly two places: the `data` of
+ *      `createProvisional`, which STORES it and takes no tier parameter, and the
+ *      `where` of `classifyProvisional`, which moves an entry OUT of it. Every
+ *      other method takes the CLASSIFIER's tier type, which has no UNCLASSIFIED
+ *      member — type-level proofs below fail `npm run typecheck` if a parameter
+ *      is ever widened to the column's type — and the seam's methods are a
+ *      closed census, so a further write method fails here until somebody says
+ *      what tier type it takes.
+ *   3. `createProvisional` is referenced by exactly ONE file outside the seam:
+ *      the intake, the sole entry on `WRITERS`. Any reference counts — a call,
+ *      a destructure, a property read — so the store cannot be reached by an
+ *      alias either.
+ *   4. Every file whose CODE (comments stripped) names the value is a reader on
+ *      `READERS`, with the reason it names it, or the seam. A new file that
+ *      names it fails until somebody says whether it reads or writes.
+ *   5. No Zod schema is built from the generated `AiRiskTier`, which carries
  *      UNCLASSIFIED: a request body validated by one would hand a writer the
  *      value without any file naming it.
  */
 import { readFileSync } from 'fs';
 
 import { repoFiles, repoRelative } from '../helpers/repo-files';
-import { codeOf } from '../helpers/source-blocks';
+import { braceBlockAfter, callExpressionOf, codeOf } from '../helpers/source-blocks';
 import type { AiSystemRepository } from '@/app-layer/repositories/AiSystemRepository';
 
 /** Files that name UNCLASSIFIED to READ it, and why. */
@@ -44,8 +52,13 @@ const READERS: Readonly<Record<string, string>> = {
     'src/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentDetailClient.tsx': 'shows it as no classification, never as a tier',
 };
 
-/** Files that may WRITE UNCLASSIFIED. Empty in deploy 1; #3669 adds the intake. */
-const WRITERS: readonly string[] = [];
+/**
+ * Files that may WRITE UNCLASSIFIED — by referencing the seam's
+ * `createProvisional`, the only method that stores it. Exactly one: the
+ * registration intake (#3669), which registers a shadow agent through a
+ * provisional entry. Deploy 1 held this empty.
+ */
+const WRITERS: readonly string[] = ['src/app-layer/usecases/agent-registration-intake.ts'];
 
 const AI_SYSTEM_SEAM = 'src/app-layer/repositories/AiSystemRepository.ts';
 
@@ -74,6 +87,11 @@ export function writesAiSystem(code: string): string[] {
     return out;
 }
 
+/** Any reference to the provisional store, in any form: call, destructure or property read. */
+export function referencesProvisionalStore(code: string): boolean {
+    return /\bcreateProvisional\b/.test(code);
+}
+
 /** A Zod schema built from an enum object that carries every stored tier. */
 export function widensTierSchema(code: string): boolean {
     return /\bz\s*\.\s*(?:nativeEnum|enum)\s*\(\s*(?:Object\s*\.\s*values\s*\(\s*)?(?:\$Enums\s*\.\s*|Prisma\s*\.\s*)?AiRiskTier\b/.test(code);
@@ -84,6 +102,8 @@ const SEAM_METHODS: Readonly<Record<string, string>> = {
     list: 'reads; its riskTier filter is a query-string value parsed against the stored tiers',
     getById: 'reads',
     create: 'writes; takes the classifier’s tier type, proved below',
+    createProvisional: 'writes UNCLASSIFIED — the only method that stores it; takes no tier, proved below; one caller',
+    classifyProvisional: 'writes; takes the classifier’s tier type, proved below; matches only an UNCLASSIFIED entry',
     linkRequirements: 'writes requirement links only; takes no tier',
 };
 
@@ -91,34 +111,72 @@ export function staticMethodsOf(code: string): string[] {
     return [...code.matchAll(/^\s*static\s+(?:async\s+)?(\w+)\s*[(<]/gm)].map((m) => m[1]);
 }
 
-describe('nothing writes UNCLASSIFIED to an AI system in deploy 1', () => {
+describe('exactly one file writes UNCLASSIFIED to an AI system', () => {
     const files = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] });
     const scanned = files.map((abs) => {
         const code = codeOf(readFileSync(abs, 'utf8'));
-        return { rel: repoRelative(abs), names: namesUnclassified(code), writes: writesAiSystem(code) };
+        return {
+            rel: repoRelative(abs),
+            names: namesUnclassified(code),
+            writes: writesAiSystem(code),
+            store: referencesProvisionalStore(code),
+        };
     });
+    const seamAbs = files.find((abs) => repoRelative(abs) === AI_SYSTEM_SEAM);
+    const seamSrc = seamAbs ? readFileSync(seamAbs, 'utf8') : '';
+    const storeMethod = () => braceBlockAfter(seamSrc, '\\bstatic\\s+async\\s+createProvisional\\b');
+    const classifyMethod = () => braceBlockAfter(seamSrc, '\\bstatic\\s+async\\s+classifyProvisional\\b');
 
     it('scans the tree', () => {
         expect(files.length).toBeGreaterThan(500);
+        expect(seamAbs).toBeDefined();
     });
 
-    it('AiSystem has one write seam, and it does not name UNCLASSIFIED', () => {
+    it('AiSystem has one write seam', () => {
         expect(scanned.filter((s) => s.writes.length > 0).map((s) => s.rel)).toEqual([AI_SYSTEM_SEAM]);
-        expect(scanned.find((s) => s.rel === AI_SYSTEM_SEAM)?.names).toBe(false);
     });
 
-    it('every file that names the value is a listed reader or a listed writer, and every listing is live', () => {
+    it('the seam stores the value in the data of createProvisional’s insert', () => {
+        // The insert's own `data`, not the method's `data` parameter, whose
+        // type literal comes first in the method text.
+        const insert = callExpressionOf(storeMethod(), 'aiSystem\\s*\\.\\s*create');
+        const data = braceBlockAfter(insert, '\\bdata\\s*:');
+        expect(data).toMatch(/riskTier\s*:\s*'UNCLASSIFIED'/);
+    });
+
+    it('classifyProvisional names the value only in its WHERE — it moves an entry out, never in', () => {
+        const body = classifyMethod();
+        const where = braceBlockAfter(body, '\\bwhere\\s*:');
+        expect(namesUnclassified(where)).toBe(true);
+        expect(namesUnclassified(body.replace(where, ''))).toBe(false);
+    });
+
+    it('no other part of the seam names the value', () => {
+        const rest = codeOf(seamSrc).replace(codeOf(storeMethod()), '').replace(codeOf(classifyMethod()), '');
+        // Non-vacuous: the two methods really were cut out of the text.
+        expect(referencesProvisionalStore(rest)).toBe(false);
+        expect(namesUnclassified(rest)).toBe(false);
+    });
+
+    it('the provisional store is referenced by the seam and by exactly the one listed writer', () => {
+        expect(scanned.filter((s) => s.store).map((s) => s.rel).sort()).toEqual([AI_SYSTEM_SEAM, ...WRITERS].sort());
+    });
+
+    it('has exactly one writer, the registration intake', () => {
+        expect(WRITERS).toEqual(['src/app-layer/usecases/agent-registration-intake.ts']);
+    });
+
+    it('every file that names the value is a listed reader or the seam, and every listed reader is live', () => {
         const naming = scanned.filter((s) => s.names).map((s) => s.rel).sort();
-        expect(naming).toEqual([...Object.keys(READERS), ...WRITERS].sort());
+        expect(naming).toEqual([...Object.keys(READERS), AI_SYSTEM_SEAM].sort());
     });
 
-    it('no listed reader writes an AI system', () => {
-        const readerWrites = scanned.filter((s) => s.rel in READERS && s.writes.length > 0).map((s) => s.rel);
-        expect(readerWrites).toEqual([]);
-    });
-
-    it('has no writer in this deploy', () => {
-        expect(WRITERS).toEqual([]);
+    it('no listed reader, and not the writer, writes an AI system or reaches the store', () => {
+        const offenders = scanned
+            .filter((s) => s.rel in READERS && (s.writes.length > 0 || s.store))
+            .map((s) => s.rel);
+        expect(offenders).toEqual([]);
+        expect(scanned.find((s) => s.rel === WRITERS[0])?.writes).toEqual([]);
     });
 
     it('no Zod schema is built from the generated tier enum', () => {
@@ -129,21 +187,31 @@ describe('nothing writes UNCLASSIFIED to an AI system in deploy 1', () => {
     });
 
     it('the seam declares exactly the methods classified above', () => {
-        const seam = files.find((abs) => repoRelative(abs) === AI_SYSTEM_SEAM);
-        expect(seam).toBeDefined();
-        const declared = staticMethodsOf(codeOf(readFileSync(seam!, 'utf8')));
+        const declared = staticMethodsOf(codeOf(seamSrc));
         expect(declared.sort()).toEqual(Object.keys(SEAM_METHODS).sort());
     });
 });
 
-describe('the one writer cannot store it, by type', () => {
+describe('only the provisional store can hold it, by type', () => {
     // Enforced by `npm run typecheck`, which covers tests/: if `create`'s tier
     // parameter ever admits 'UNCLASSIFIED', `Proof` is `never` and the
-    // assignment below fails to compile. The runtime assertion only keeps the
-    // binding used.
+    // assignment below fails to compile. The runtime assertions only keep the
+    // bindings used.
     type CreateTier = Parameters<typeof AiSystemRepository.create>[2]['riskTier'];
     type Proof = 'UNCLASSIFIED' extends CreateTier ? never : true;
     const proof: Proof = true;
+
+    // The classify writes a tier, and it is the classifier's: it moves an entry
+    // OUT of UNCLASSIFIED and could not move one back.
+    type ClassifyTier = Parameters<typeof AiSystemRepository.classifyProvisional>[3]['riskTier'];
+    type ClassifyProof = 'UNCLASSIFIED' extends ClassifyTier ? never : true;
+    const classifyProof: ClassifyProof = true;
+
+    // The store takes NO tier: the value is fixed in its body, so no caller can
+    // choose one. Should its data gain a `riskTier`, this is `never`.
+    type StoreData = Parameters<typeof AiSystemRepository.createProvisional>[2];
+    type StoreTakesNoTier = Extract<StoreData, { riskTier?: unknown }> extends never ? true : never;
+    const storeTakesNoTier: StoreTakesNoTier = true;
 
     // `linkRequirements` writes, but not the tier: none of its parameters has a
     // `riskTier` member. Should one gain it, this is `never` and fails too.
@@ -153,6 +221,14 @@ describe('the one writer cannot store it, by type', () => {
 
     it('AiSystemRepository.create takes a classified tier only', () => {
         expect(proof).toBe(true);
+    });
+
+    it('AiSystemRepository.classifyProvisional takes a classified tier only', () => {
+        expect(classifyProof).toBe(true);
+    });
+
+    it('AiSystemRepository.createProvisional takes no tier at all', () => {
+        expect(storeTakesNoTier).toBe(true);
     });
 
     it('AiSystemRepository.linkRequirements takes no tier at all', () => {
@@ -202,6 +278,14 @@ describe('the detectors are not vacuous', () => {
         expect(widensTierSchema('z.nativeEnum($Enums.AiRiskTier)')).toBe(true);
         expect(widensTierSchema("z.enum(['HIGH', 'LIMITED'])")).toBe(false);
         expect(widensTierSchema('parseEnumListFilter<AiRiskTier>(v, Object.values(AiRiskTier))')).toBe(false);
+    });
+
+    it('store: any reference to the provisional create, not a longer identifier', () => {
+        expect(referencesProvisionalStore('await AiSystemRepository.createProvisional(db, ctx, data)')).toBe(true);
+        expect(referencesProvisionalStore('const { createProvisional: make } = AiSystemRepository;')).toBe(true);
+        expect(referencesProvisionalStore("AiSystemRepository['createProvisional']")).toBe(true);
+        expect(referencesProvisionalStore('createProvisionalDraft(x)')).toBe(false);
+        expect(referencesProvisionalStore('AiSystemRepository.create(db, ctx, data)')).toBe(false);
     });
 
     it('methods: the static methods a class body declares', () => {

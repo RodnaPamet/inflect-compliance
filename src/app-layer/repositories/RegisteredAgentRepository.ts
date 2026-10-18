@@ -335,10 +335,15 @@ export class RegisteredAgentRepository {
         });
     }
 
+    /**
+     * `intakeDiscoveredAgentId` is set by the registration intake alone (#3669)
+     * and is the unique claim that one discovered agent yields at most one
+     * register row through it. Every other caller leaves it out, i.e. NULL.
+     */
     static async create(
         db: PrismaTx,
         ctx: RequestContext,
-        data: RegisteredAgentWriteFields & { aiSystemId: string },
+        data: RegisteredAgentWriteFields & { aiSystemId: string; intakeDiscoveredAgentId?: string },
     ) {
         return db.registeredAgent.create({
             data: {
@@ -403,6 +408,34 @@ export class RegisteredAgentRepository {
                 riskTierScoredAt: true,
                 _count: { select: { tools: true } },
             },
+        });
+    }
+
+    /**
+     * The EU AI Act tier of the agent's required register entry — what
+     * activation reads to refuse an agent whose entry is still UNCLASSIFIED
+     * (#3669). Its own read rather than a column on `getScoringState`: the
+     * Act's classification of the SYSTEM is not a scorer input, and the
+     * scorer's selection must not move when activation's does.
+     */
+    static async getAiActClassification(db: PrismaTx, ctx: RequestContext, id: string) {
+        return db.registeredAgent.findFirst({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, aiSystem: { select: { id: true, riskTier: true } } },
+        });
+    }
+
+    /**
+     * The register row the registration intake already made from this
+     * discovered agent, if any (#3669). Deliberately NOT filtered on
+     * `deletedAt` or status: the unique index holding the claim covers every
+     * row, so a read narrower than the constraint would let the intake pass
+     * its own check and then fail on the insert.
+     */
+    static async findIntakeClaim(db: PrismaTx, ctx: RequestContext, discoveredAgentId: string) {
+        return db.registeredAgent.findFirst({
+            where: { tenantId: ctx.tenantId, intakeDiscoveredAgentId: discoveredAgentId },
+            select: { id: true, status: true, deletedAt: true },
         });
     }
 

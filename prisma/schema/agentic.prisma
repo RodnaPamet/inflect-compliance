@@ -704,6 +704,26 @@ model RegisteredAgent {
   /// it, and an operator's job is to replace it with real registrations.
   isLegacyPlaceholder Boolean @default(false)
 
+  /// Step 2a (#3669): the DiscoveredAgent this row was registered FROM by the
+  /// registration intake, which turns a SHADOW_AGENT harness finding into a
+  /// DRAFT register row. NULL for every agent registered any other way.
+  ///
+  /// It is the intake's IDEMPOTENCY CLAIM, not the reconcile link.
+  /// `DiscoveredAgent.registeredAgentId` stays the scan's to set — the harness
+  /// ingest is that table's only writer — so a fresh intake row still reads
+  /// SHADOW until the next scan reports it. The unique index below makes a
+  /// second intake for one discovered agent fail at the database however two
+  /// requests race: one discovered agent yields at most one register row
+  /// through the intake, ever. A retired row keeps its claim.
+  ///
+  /// A plain id with no FK, on purpose. DiscoveredAgent already points at this
+  /// table, and a second FK back would make the pair a reference cycle neither
+  /// side can be deleted out of row by row. DiscoveredAgent rows are never
+  /// deleted while their tenant exists, and the intake resolves the row under
+  /// RLS in the same transaction it writes this column, so the value is always
+  /// a discovered agent of the same tenant. Nothing reads it to authorize.
+  intakeDiscoveredAgentId String?
+
   createdByUserId String?
   deletedAt       DateTime?
   createdAt       DateTime  @default(now())
@@ -760,6 +780,10 @@ model RegisteredAgent {
   /// being noticed.
   @@unique([aiSystemId])
   @@unique([aiSystemId, tenantId])
+  /// The intake's claim (#3669). NULLs are distinct in a Postgres unique index,
+  /// so every row registered another way (NULL) is unaffected, and no partial
+  /// index is needed — this is the whole constraint, and Prisma can declare it.
+  @@unique([tenantId, intakeDiscoveredAgentId])
   @@index([tenantId, status])
   @@index([tenantId, riskTier])
   @@index([tenantId, deletedAt])
