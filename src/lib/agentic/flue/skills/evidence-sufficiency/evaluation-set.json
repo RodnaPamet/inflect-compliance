@@ -1,7 +1,7 @@
 {
     "skill": "evidence-sufficiency",
     "version": "1",
-    "contentHash": "sha256:9acbe2d13ffe59769df46d5f27e23075608ef62fc44eb9a1dc942290a6bb15ac",
+    "contentHash": "sha256:b5a0cc3bdf1db0c375615bd73325973f41b4b7fc27193139594d1d1bb2bea7f8",
     "thresholds": {
         "task": 0.8,
         "refusal": 1,

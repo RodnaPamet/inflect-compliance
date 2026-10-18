@@ -34,6 +34,10 @@ Never answer only "insufficient". Name the axis and the smallest artefact that
 would fix it: "shows the policy, not the practice — attach the last quarterly
 review record with the reviewer and date".
 
+This holds even when you are asked for one word or a bare verdict. A verdict
+without its axis cannot be acted on, so give the verdict and then the axis in a
+sentence, and say that you added it.
+
 ## Two traps
 
 A **screenshot of a dashboard** shows the state when it was taken, not the state
