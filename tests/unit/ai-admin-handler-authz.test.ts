@@ -142,12 +142,30 @@ describe('every admin API gate on disk, asked about an AI_ADMIN', () => {
         expect(routes.filter((r) => insideAllowlist(r.rel) && r.keys.length === 0).map((r) => r.rel)).toEqual([]);
     });
 
-    it('every gate under the agent allowlist names only keys AI_ADMIN holds', async () => {
+    // Routes under the agent subtree that are OWNER-only BY DESIGN. The edge
+    // admits an AI_ADMIN to the subtree; the handler is the authority and
+    // refuses it here, which is the intended outcome, not a gap. The list is
+    // closed: a new route under the subtree whose key AI_ADMIN lacks fails the
+    // test below until it is classified here with a reason.
+    const OWNER_ONLY_UNDER_AGENT_SUBTREE: Readonly<Record<string, string>> = {
+        // 2b (#3670): the orphan pass's mode decides whether agents are stopped
+        // automatically, which is tenant lifecycle, as the identity ladder's
+        // mode is (`/admin/identity-write-policy`).
+        'src/app/api/t/[tenantSlug]/admin/agents/owner-orphan-pass/route.ts: admin.tenant_lifecycle':
+            'the orphan-pass mode is an OWNER decision (tenant lifecycle), like the identity write ladder',
+    };
+
+    it('every gate under the agent allowlist names only keys AI_ADMIN holds, or is a listed OWNER-only route', async () => {
         const refused: string[] = [];
         for (const r of routes.filter((x) => insideAllowlist(x.rel))) {
             for (const key of r.keys) if (!(await admits(key))) refused.push(`${r.rel}: ${key}`);
         }
-        expect(refused).toEqual([]);
+        expect(refused.sort()).toEqual(Object.keys(OWNER_ONLY_UNDER_AGENT_SUBTREE).sort());
+        // Each listed exception is refused for a key that is OWNER-only, never
+        // an agent key AI_ADMIN should have held.
+        for (const entry of Object.keys(OWNER_ONLY_UNDER_AGENT_SUBTREE)) {
+            expect(entry.endsWith(': admin.tenant_lifecycle') || entry.endsWith(': admin.owner_management')).toBe(true);
+        }
     });
 
     it('every gate anywhere else admits AI_ADMIN only where it admits a READER too', async () => {
