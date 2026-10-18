@@ -1628,9 +1628,9 @@ careless edit from being undone:
   READER-based custom role resolves `canWrite: false` and is a valid recipient.
   This narrow set is the owner's accepted interim state (2026-10-18): a new
   built-in `AI_ADMIN` role widens it in its own PR — do not widen it by
-  loosening the edge gate here. The edge reads the session's PRIMARY (oldest)
-  membership role, not this tenant's; that limitation fails closed and stays
-  documented, not fixed, in this subsystem.
+  loosening the edge gate here. The edge reads the role in THIS tenant's
+  membership, from the session's `memberships[]` entry for the URL's slug
+  (`checkAdminAccess`, #3701), which is the row the step-one check reads.
 - **At most one `PENDING` transfer per agent is a PARTIAL unique index in the
   migration.** Do not add a `@@unique` for it. A row that has left `PENDING` is
   immutable (trigger) — 2b's `OWNER_DEPARTED` lift is to read `COMPLETED` rows —
