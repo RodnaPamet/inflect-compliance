@@ -11,8 +11,8 @@
  * `(tenantId, requirementId)`.
  *
  * So "the tenant has SOC 2 CC6.1" means exactly: some control of theirs is
- * linked to the requirement whose code is `CC6.1` under framework `soc2`. That
- * is the question this asks, in one query, against that index.
+ * linked to a requirement spelling `CC6.1` under a framework row of the SOC 2
+ * family. That is the question this asks, against that index.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * CC6.1, NOT CC6.2 AND CC6.3 — AND WHY THAT IS WRITTEN DOWN HERE
@@ -34,31 +34,75 @@
  * framework contains, and that is not a recertification change. See the filed
  * issue.
  *
- * ISO/IEC 27001 A.5.16 and A.5.18 and NIS2 Art. 21(2)(i) all exist and are used
- * as the brief names them.
+ * ISO/IEC 27001 A.5.16 and A.5.18 and NIS2 Art. 21(2)(i) all exist.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * RESOLVED BY FAMILY AND SPELLING, NOT BY KEY AND CODE (#3716)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This module used to ask for `framework.key = 'iso27001'` and
+ * `code = 'A.5.18'`. The catalogue every environment holds seeds
+ * `key = 'ISO27001'` and numbers Annex A `5.18`; NIS2 is `key = 'NIS2'` and
+ * `Art.21(2)(i)`, with no space. So the suggestion matched nothing in any real
+ * database, while its own test — which seeded fixture rows under the spellings
+ * the module asked for — agreed with it. A suggestion that can never resolve
+ * looks exactly like a tenant that mapped nothing.
+ *
+ * Resolution now follows `resolveEvidenceControls` in `access-review-agent.ts`
+ * and `planTargetRequirements` in `agentic-evidence-emission.ts`: the FAMILY
+ * (`frameworkFamilyId`, or a listed key) picks the framework rows, and
+ * `requirementCodeSpellings` picks the code within them, so a tenant is matched
+ * whichever representation of ISO 27001 its controls hang off.
+ *
+ * NIS2 is matched on its seeded representation only. The library imports the
+ * same obligation as `NIS2-HR`, a different code namespace that
+ * `domain/framework-representation.ts` does not reconcile, and reconciling it
+ * belongs there rather than in one consumer.
  *
  * @module app-layer/usecases/legacy-evidence-controls
  */
 
 import { runInTenantContext } from '@/lib/db-context';
+import {
+    ISO27001_FAMILY_URN,
+    SOC2_FAMILY_URN,
+    canonicalRequirementCode,
+    frameworkFamilyId,
+    requirementCodeSpellings,
+} from '@/app-layer/domain/framework-representation';
 import type { RequestContext } from '../types';
 import { assertCanRead } from '../policies/common';
 
+/** The framework catalogue is a small global table; read whole, as the emitter reads it. */
+const FRAMEWORK_CATALOGUE_CAP = 500;
+/** Requirement rows across every representation of the four obligations. */
+const REQUIREMENT_CAP = 100;
+/** Control links one tenant can hold to those requirements. */
+const LINK_CAP = 1_000;
+
+/** The library urn of NIS2; its seeded rows carry no `sourceUrn`, so they are matched by key. */
+const NIS2_LIBRARY_URN = 'urn:inflect:library:nis2-2022';
+
 /**
- * The requirements a legacy recertification evidences, by framework key.
+ * The requirements a legacy recertification evidences, by framework FAMILY.
  *
- * Each entry is a code as THIS REPO spells it, not as the brief does. Where
- * those differ the divergence is recorded beside the entry, because a reader
- * comparing this file with the brief will otherwise assume a typo.
+ * Each `requirementCode` is one spelling of the obligation within its family;
+ * `requirementCodeSpellings` supplies the others. `legacyKeys` are the
+ * `Framework.key` values of rows that carry no `sourceUrn` — the seeded
+ * spelling first. Where the brief and this repository differ the divergence is
+ * recorded beside the entry, because a reader comparing this file with the
+ * brief will otherwise assume a typo.
  */
 export const LEGACY_EVIDENCE_REQUIREMENTS: readonly {
-    readonly frameworkKey: string;
-    readonly code: string;
+    readonly familyUrn: string;
+    readonly legacyKeys: readonly string[];
+    readonly requirementCode: string;
     readonly note: string;
 }[] = [
     {
-        frameworkKey: 'soc2',
-        code: 'CC6.1',
+        familyUrn: SOC2_FAMILY_URN,
+        legacyKeys: ['SOC2', 'soc2'],
+        requirementCode: 'CC6.1',
         note:
             'The brief names CC6.2 and CC6.3. Neither exists in this catalogue — '
             + 'SOC 2 here carries one sub-code per criterion — so CC6.1, the '
@@ -66,19 +110,26 @@ export const LEGACY_EVIDENCE_REQUIREMENTS: readonly {
             + 'recertification actually evidences.',
     },
     {
-        frameworkKey: 'iso27001',
-        code: 'A.5.16',
-        note: 'Identity management. Named by the brief and present.',
+        familyUrn: ISO27001_FAMILY_URN,
+        legacyKeys: ['ISO27001', 'iso27001'],
+        requirementCode: 'A.5.16',
+        note: 'Identity management. Named by the brief and present (seeded as 5.16).',
     },
     {
-        frameworkKey: 'iso27001',
-        code: 'A.5.18',
-        note: 'Access rights — review, provisioning and revocation. Named by the brief and present.',
+        familyUrn: ISO27001_FAMILY_URN,
+        legacyKeys: ['ISO27001', 'iso27001'],
+        requirementCode: 'A.5.18',
+        note: 'Access rights — review, provisioning and revocation. Named by the brief and present (seeded as 5.18).',
     },
     {
-        frameworkKey: 'nis2',
-        code: 'Art. 21(2)(i)',
-        note: 'Access-control policies and asset management. Named by the brief and present.',
+        familyUrn: NIS2_LIBRARY_URN,
+        legacyKeys: ['NIS2', 'nis2'],
+        requirementCode: 'Art.21(2)(i)',
+        note:
+            'Access-control policies and asset management. Named by the brief as '
+            + '"Art. 21(2)(i)"; seeded without the space. The library spells it '
+            + 'NIS2-HR, which no shared rule reconciles, so only the seeded '
+            + 'representation is matched.',
     },
 ];
 
@@ -87,7 +138,9 @@ export interface SuggestedEvidenceControl {
     readonly controlName: string;
     /** The tenant's own control code, when they use one. */
     readonly controlCode: string | null;
+    /** The `Framework.key` of the row the link hangs off — `ISO27001` for the seeded one. */
     readonly frameworkKey: string;
+    /** The code as that row spells it — `5.18` for the seeded ISO 27001 row. */
     readonly requirementCode: string;
 }
 
@@ -107,37 +160,60 @@ export async function suggestLegacyEvidenceControls(
 ): Promise<readonly SuggestedEvidenceControl[]> {
     assertCanRead(ctx);
 
-    const wanted = LEGACY_EVIDENCE_REQUIREMENTS;
+    const links = await runInTenantContext(ctx, async (db) => {
+        // Global reference data, read whole and grouped in memory, as
+        // `resolveEvidenceControls` does for the agent campaign.
+        const catalogue = await db.framework.findMany({
+            select: { id: true, key: true, sourceUrn: true },
+            take: FRAMEWORK_CATALOGUE_CAP,
+        });
+        const clauses = LEGACY_EVIDENCE_REQUIREMENTS.flatMap((r) => {
+            const frameworkIds = catalogue
+                .filter((f) => frameworkFamilyId(f) === r.familyUrn || r.legacyKeys.includes(f.key))
+                .map((f) => f.id);
+            return frameworkIds.length > 0
+                ? [{ frameworkId: { in: frameworkIds }, code: { in: requirementCodeSpellings(r.familyUrn, r.requirementCode) } }]
+                : [];
+        });
+        if (clauses.length === 0) return [];
 
-    const links = await runInTenantContext(ctx, (db) =>
-        db.controlRequirementLink.findMany({
+        const requirements = await db.frameworkRequirement.findMany({
+            where: { OR: clauses, deprecatedAt: null },
+            select: { id: true },
+            take: REQUIREMENT_CAP,
+        });
+        if (requirements.length === 0) return [];
+
+        return db.controlRequirementLink.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                requirement: {
-                    OR: wanted.map((w) => ({
-                        code: w.code,
-                        framework: { key: w.frameworkKey },
-                    })),
-                },
+                requirementId: { in: requirements.map((r) => r.id) },
+                // A removed control must not keep attracting evidence — the
+                // reason `resolveTargetControls` gives on the same join.
+                control: { deletedAt: null },
             },
             select: {
                 controlId: true,
                 control: { select: { name: true, code: true } },
                 requirement: {
-                    select: { code: true, framework: { select: { key: true } } },
+                    select: { code: true, framework: { select: { key: true, sourceUrn: true } } },
                 },
             },
-        })
-    );
+            take: LINK_CAP,
+        });
+    });
 
-    // De-duplicated on (controlId, requirementCode). One control can be linked
-    // to several of these requirements — a well-mapped access-control is
-    // plausibly all four — and the caller wants each control once per
-    // requirement it satisfies, not once per row of a join.
+    // De-duplicated on (control, obligation). One control can be linked to
+    // several of these requirements — a well-mapped access control is plausibly
+    // all four — and the caller wants each control once per obligation it
+    // satisfies, not once per row of a join. The obligation is the FAMILY and
+    // CANONICAL code, so a control linked to both representations of A.5.18
+    // (`5.18` seeded, `A.5.18` imported) is still one suggestion.
     const seen = new Set<string>();
     const out: SuggestedEvidenceControl[] = [];
     for (const l of links) {
-        const key = `${l.controlId}|${l.requirement.code}`;
+        const family = frameworkFamilyId(l.requirement.framework);
+        const key = `${l.controlId}|${family}|${canonicalRequirementCode(family, l.requirement.code)}`;
         if (seen.has(key)) continue;
         seen.add(key);
         out.push({

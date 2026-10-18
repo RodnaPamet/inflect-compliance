@@ -31,6 +31,9 @@ let employeeId = '';
 
 async function clearOwnRows(): Promise<void> {
     const t = { tenantId: T };
+    await prisma.evidenceControlLink.deleteMany({ where: t });
+    await prisma.controlRequirementLink.deleteMany({ where: t });
+    await prisma.control.deleteMany({ where: t });
     await prisma.accessReviewConnectedDecision.deleteMany({ where: t });
     await prisma.accessReview.deleteMany({ where: t });
     await prisma.legacyIdentityAlias.deleteMany({ where: t });
@@ -335,6 +338,50 @@ describe('closing a LEGACY_APP campaign', () => {
         expect(task.description).not.toBeNull();
         expect(task.description).toMatch(/^v\d+:/);
         expect(task.title).toContain('jsmith');
+    });
+
+    it('#3716 — files the evidence against the control the tenant mapped in the SEEDED catalogue, once', async () => {
+        // The suggestion asked for `iso27001` / `A.5.18` and `soc2`, so against
+        // the catalogue every environment seeds (`ISO27001` numbers Annex A
+        // `5.18`) it matched nothing and the close filed its evidence against
+        // no control. One control satisfying TWO obligations is the case that
+        // also proves the close counts it once.
+        //
+        // Seed-shaped rows, as `prisma/fixtures/*-control-templates.json`
+        // writes them; `legacy-evidence-controls.test.ts` applies the real
+        // fixtures through the real applier.
+        const iso = await prisma.framework.upsert({
+            where: { key: 'ISO27001' }, update: {},
+            create: { key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022', sourceUrn: 'urn:inflect:library:iso27001-2022' },
+        });
+        const soc2 = await prisma.framework.upsert({
+            where: { key: 'SOC2' }, update: {},
+            create: { key: 'SOC2', name: 'SOC 2', version: '2017', sourceUrn: 'urn:inflect:library:soc2-2017' },
+        });
+        const reqs = await Promise.all([
+            [iso.id, '5.18'], [soc2.id, 'CC6.1'],
+        ].map(([frameworkId, code]) => prisma.frameworkRequirement.upsert({
+            where: { frameworkId_code: { frameworkId, code } }, update: {},
+            create: { frameworkId, code, title: `LAR ${code}` },
+        })));
+        const control = await prisma.control.create({ data: { tenantId: T, name: 'User access reviews', code: 'AC-2' } });
+        await prisma.controlRequirementLink.createMany({
+            data: reqs.map((r) => ({ tenantId: T, controlId: control.id, requirementId: r.id })),
+        });
+
+        await seedHappyPath();
+        const r = await create();
+        await decideAll(r.accessReviewId, 'CONFIRM');
+        await closeConnectedAccessReview(ctx(), r.accessReviewId);
+
+        const links = await prisma.evidenceControlLink.findMany({ where: { tenantId: T, controlId: control.id } });
+        expect(links).toHaveLength(1);
+        const filed = await prisma.auditLog.findFirstOrThrow({
+            where: { tenantId: T, action: 'ACCESS_REVIEW_EVIDENCE_FILED' },
+            orderBy: { createdAt: 'desc' },
+            select: { detailsJson: true },
+        });
+        expect(filed.detailsJson).toMatchObject({ requested: 1, linked: 1 });
     });
 
     it('the stored payload hash re-derives from the stored rows', async () => {

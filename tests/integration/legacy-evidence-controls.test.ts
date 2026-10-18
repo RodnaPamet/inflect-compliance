@@ -5,53 +5,86 @@
  * The suggestion is a question about the TENANT: "do you have a control mapped
  * to this requirement?" There is no framework-install table — `Framework` is
  * global — so the answer is `ControlRequirementLink`, which is tenant-scoped.
- * These tests therefore seed real framework requirements and real links, rather
- * than asserting against a hardcoded list that would agree with itself.
+ *
+ * ═══ AGAINST THE CATALOGUE EVERY ENVIRONMENT ACTUALLY HOLDS (#3716) ═══
+ *
+ * This suite used to seed its own `soc2` / `iso27001` framework rows with the
+ * codes the module asked for (`A.5.18`). The module and its test agreed with
+ * each other, and neither agreed with the catalogue: the deploy-time seeder
+ * writes `ISO27001` and numbers Annex A `5.18`, and NIS2 is `NIS2` /
+ * `Art.21(2)(i)`. So every real tenant got no suggestion, and the suite stayed
+ * green.
+ *
+ * The framework rows here are therefore applied from the SAME CatalogFile
+ * fixtures, through the SAME loader and applier, that
+ * `scripts/seed-framework-catalogs.ts` runs on every container start. The
+ * tenant's controls are linked to those seeded requirement rows, found by the
+ * seeded spellings — never by the spellings the module under test asks for.
  */
+import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { makeRequestContext } from '../helpers/make-context';
+import { REPO_ROOT } from '../helpers/repo-files';
+import { loadAndValidateCatalogFile } from '../../prisma/catalog-loader';
+import { applyCatalogFile } from '../../prisma/catalog-applier';
+import { ISO27001_FAMILY_URN } from '@/app-layer/domain/framework-representation';
 import {
     LEGACY_EVIDENCE_REQUIREMENTS,
     suggestLegacyEvidenceControls,
 } from '@/app-layer/usecases/legacy-evidence-controls';
 
 const prisma: PrismaClient = prismaTestClient();
+jest.setTimeout(120_000);
+
 const T1 = 'lec-tenant';
 const T2 = 'lec-other';
 const ctx = (tenantId = T1, role = 'ADMIN') => makeRequestContext(role, { tenantId });
 
-let soc2ReqId = '';
-let isoReqId = '';
+/** The deploy-time catalogue fixtures for the three frameworks the suggestion names. */
+const SEEDED = [
+    'prisma/fixtures/iso27001-control-templates.json',
+    'prisma/fixtures/soc2-control-templates.json',
+    'prisma/fixtures/nis2-control-templates.json',
+];
+
+/** A second representation of ISO 27001, shaped like the library import. Owned by this suite. */
+const LIBRARY_ISO_KEY = 'LEC-ISO27001-LIBRARY';
+
+/** The seeded requirement row for one `(framework key, code)`, as the seeder wrote it. */
+async function seededRequirement(frameworkKey: string, code: string): Promise<string> {
+    const r = await prisma.frameworkRequirement.findFirstOrThrow({
+        where: { code, framework: { key: frameworkKey } },
+        select: { id: true },
+    });
+    return r.id;
+}
+
 let ourControlId = '';
 let otherControlId = '';
 
 async function clearOwnRows(): Promise<void> {
     const t = { tenantId: { in: [T1, T2] } };
-    await prisma.evidenceControlLink.deleteMany({ where: t });
-    await prisma.evidence.deleteMany({ where: t });
     await prisma.controlRequirementLink.deleteMany({ where: t });
     await prisma.control.deleteMany({ where: t });
     await deleteAuditRowsForTenants(prisma, [T1, T2]);
-    // The REQUIREMENTS this fixture added, not the frameworks. The frameworks
-    // are global and may be the seeded catalogue — deleting them would remove
-    // rows this suite does not own.
-    await prisma.frameworkRequirement.deleteMany({
-        where: { title: { startsWith: 'LEC fixture — ' } },
-    });
+    // The library-shaped representation is this suite's own; the seeded
+    // catalogue is not, and stays.
+    await prisma.frameworkRequirement.deleteMany({ where: { framework: { key: LIBRARY_ISO_KEY } } });
+    await prisma.framework.deleteMany({ where: { key: LIBRARY_ISO_KEY } });
 }
 
 beforeAll(async () => {
     await resetDatabase(prisma);
+    for (const rel of SEEDED) {
+        const file = path.join(REPO_ROOT, rel);
+        await applyCatalogFile(prisma, loadAndValidateCatalogFile(file), file);
+    }
     await clearOwnRows();
     for (const [id, name] of [[T1, 'Ours'], [T2, 'Theirs']] as const) {
         await prisma.tenant.upsert({ where: { id }, update: {}, create: { id, name, slug: id } });
     }
-    await prisma.user.upsert({
-        where: { id: 'user-1' }, update: {},
-        create: { id: 'user-1', email: 'closer@lec.test', name: 'Closer' },
-    });
 });
 
 afterAll(async () => {
@@ -59,32 +92,28 @@ afterAll(async () => {
     await prisma.$disconnect();
 });
 
-describe('the requirement list is honest about the brief', () => {
+describe('the requirement list is honest about the brief and the catalogue', () => {
     it('names CC6.1 for SOC 2, and says why it is not CC6.2', () => {
         // The brief names CC6.2 and CC6.3; this catalogue has neither. A
         // suggestion keyed on them would return nothing for every tenant for
         // ever while looking like a working feature.
-        const soc2 = LEGACY_EVIDENCE_REQUIREMENTS.filter((r) => r.frameworkKey === 'soc2');
-        expect(soc2.map((r) => r.code)).toEqual(['CC6.1']);
+        const soc2 = LEGACY_EVIDENCE_REQUIREMENTS.filter((r) => r.legacyKeys.includes('SOC2'));
+        expect(soc2.map((r) => r.requirementCode)).toEqual(['CC6.1']);
         expect(soc2[0].note).toMatch(/CC6\.2/);
     });
 
-    it("the real SOC 2 catalogue genuinely lacks CC6.2 — asserted, not assumed", async () => {
-        // The premise of the substitution. If a later catalogue change ADDS
-        // CC6.2, this fails and whoever reads it should revisit the list above
-        // rather than leave the product understating its own coverage.
-        const found = await prisma.frameworkRequirement.findFirst({
-            where: { code: { in: ['CC6.2', 'CC6.3'] }, framework: { key: 'soc2' } },
+    it('the seeded SOC 2 catalogue genuinely lacks CC6.2 and CC6.3 — asserted, not assumed', async () => {
+        // The premise of the substitution, read from the SEEDED row. The old
+        // version of this asked about `key: 'soc2'`, a key nothing seeds, so it
+        // was null for the wrong reason and could never fail.
+        const soc2 = await prisma.framework.findUniqueOrThrow({ where: { key: 'SOC2' }, select: { id: true } });
+        const codes = (await prisma.frameworkRequirement.findMany({
+            where: { frameworkId: soc2.id },
             select: { code: true },
-        });
-        expect(found).toBeNull();
-    });
-
-    it('names the ISO and NIS2 codes the brief asks for', () => {
-        const codes = LEGACY_EVIDENCE_REQUIREMENTS.map((r) => r.code);
-        expect(codes).toContain('A.5.16');
-        expect(codes).toContain('A.5.18');
-        expect(codes).toContain('Art. 21(2)(i)');
+        })).map((r) => r.code);
+        expect(codes).toContain('CC6.1');
+        expect(codes).not.toContain('CC6.2');
+        expect(codes).not.toContain('CC6.3');
     });
 
     it('every entry carries a substantive note', () => {
@@ -94,32 +123,9 @@ describe('the requirement list is honest about the brief', () => {
     });
 });
 
-describe('the suggestion is a question about the tenant', () => {
+describe('the suggestion is a question about the tenant, against the seeded catalogue', () => {
     beforeEach(async () => {
         await clearOwnRows();
-        // The REAL framework keys, because the lookup keys on them. Using
-        // fixture-specific keys made every assertion below fail while the
-        // production query was correct — the test was not exercising it at all.
-        //
-        // Upsert, not create: `Framework.key` is globally unique and the seeded
-        // catalogue may already hold these.
-        const soc2 = await prisma.framework.upsert({
-            where: { key: 'soc2' },
-            update: {},
-            create: { key: 'soc2', name: 'SOC 2', version: '2017' },
-        });
-        const iso = await prisma.framework.upsert({
-            where: { key: 'iso27001' },
-            update: {},
-            create: { key: 'iso27001', name: 'ISO/IEC 27001', version: '2022' },
-        });
-        // Titled so teardown can find exactly the rows this suite added.
-        soc2ReqId = (await prisma.frameworkRequirement.create({
-            data: { frameworkId: soc2.id, code: 'CC6.1', title: 'LEC fixture — Logical access' },
-        })).id;
-        isoReqId = (await prisma.frameworkRequirement.create({
-            data: { frameworkId: iso.id, code: 'A.5.18', title: 'LEC fixture — Access rights' },
-        })).id;
         ourControlId = (await prisma.control.create({
             data: { tenantId: T1, name: 'Access reviews', code: 'AC-1' },
         })).id;
@@ -135,25 +141,62 @@ describe('the suggestion is a question about the tenant', () => {
         expect(await suggestLegacyEvidenceControls(ctx())).toEqual([]);
     });
 
-    it('returns the control once per requirement it satisfies', async () => {
+    it('REGRESSION — resolves a control linked to the SEEDED spellings: ISO27001 5.18, SOC2 CC6.1, NIS2 Art.21(2)(i)', async () => {
+        // Before the fix this returned [] for every one of these links: the
+        // module asked for `iso27001` / `A.5.18` and `nis2` / `Art. 21(2)(i)`.
         await prisma.controlRequirementLink.createMany({
             data: [
-                { tenantId: T1, controlId: ourControlId, requirementId: soc2ReqId },
-                { tenantId: T1, controlId: ourControlId, requirementId: isoReqId },
+                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('ISO27001', '5.18') },
+                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('ISO27001', '5.16') },
+                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
+                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('NIS2', 'Art.21(2)(i)') },
             ],
         });
         const s = await suggestLegacyEvidenceControls(ctx());
-        expect(s).toHaveLength(2);
-        expect(s.map((x) => x.requirementCode).sort()).toEqual(['A.5.18', 'CC6.1']);
+        expect(s.map((x) => [x.frameworkKey, x.requirementCode])).toEqual([
+            ['ISO27001', '5.16'],
+            ['ISO27001', '5.18'],
+            ['NIS2', 'Art.21(2)(i)'],
+            ['SOC2', 'CC6.1'],
+        ]);
         expect(new Set(s.map((x) => x.controlId))).toEqual(new Set([ourControlId]));
         expect(s[0].controlName).toBe('Access reviews');
     });
 
-    it('does NOT return another tenant’s control, even on the same requirement', async () => {
-        await prisma.controlRequirementLink.createMany({
-            data: [
-                { tenantId: T2, controlId: otherControlId, requirementId: soc2ReqId },
-            ],
+    it('does not suggest a control linked to a requirement outside the obligations', async () => {
+        // The positive results above must come from the obligation list, not
+        // from "any link the tenant has".
+        await prisma.controlRequirementLink.create({
+            data: { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('ISO27001', '5.15') },
+        });
+        expect(await suggestLegacyEvidenceControls(ctx())).toEqual([]);
+    });
+
+    it('matches either representation of ISO 27001, and counts one obligation once', async () => {
+        // A second representation, shaped as the library import writes it: its
+        // own key, the family urn, Annex A spelled `A.5.18`.
+        const lib = await prisma.framework.create({
+            data: { key: LIBRARY_ISO_KEY, name: 'ISO/IEC 27001 (library)', version: '2022', sourceUrn: ISO27001_FAMILY_URN },
+        });
+        const libReq = await prisma.frameworkRequirement.create({
+            data: { frameworkId: lib.id, code: 'A.5.18', title: 'Access rights' },
+        });
+        await prisma.controlRequirementLink.create({
+            data: { tenantId: T1, controlId: ourControlId, requirementId: libReq.id },
+        });
+        const viaLibrary = await suggestLegacyEvidenceControls(ctx());
+        expect(viaLibrary.map((x) => [x.frameworkKey, x.requirementCode])).toEqual([[LIBRARY_ISO_KEY, 'A.5.18']]);
+
+        // Linked to BOTH spellings of A.5.18 it is still one obligation.
+        await prisma.controlRequirementLink.create({
+            data: { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('ISO27001', '5.18') },
+        });
+        expect(await suggestLegacyEvidenceControls(ctx())).toHaveLength(1);
+    });
+
+    it('does NOT return another tenant’s control, even on the same seeded requirement', async () => {
+        await prisma.controlRequirementLink.create({
+            data: { tenantId: T2, controlId: otherControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
         });
         // Ours sees nothing...
         expect(await suggestLegacyEvidenceControls(ctx(T1))).toEqual([]);
@@ -163,23 +206,31 @@ describe('the suggestion is a question about the tenant', () => {
         expect(theirs.map((x) => x.controlId)).toEqual([otherControlId]);
     });
 
+    it('does not suggest a soft-deleted control', async () => {
+        await prisma.controlRequirementLink.create({
+            data: { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
+        });
+        expect(await suggestLegacyEvidenceControls(ctx())).toHaveLength(1);
+        await prisma.control.update({ where: { id: ourControlId }, data: { deletedAt: new Date() } });
+        expect(await suggestLegacyEvidenceControls(ctx())).toEqual([]);
+    });
+
     it('is ordered stably, so two calls agree', async () => {
         await prisma.controlRequirementLink.createMany({
             data: [
-                { tenantId: T1, controlId: ourControlId, requirementId: isoReqId },
-                { tenantId: T1, controlId: ourControlId, requirementId: soc2ReqId },
+                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
+                { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('ISO27001', '5.18') },
             ],
         });
         const a = await suggestLegacyEvidenceControls(ctx());
         const b = await suggestLegacyEvidenceControls(ctx());
         expect(a).toEqual(b);
-        // iso sorts before soc2 on framework key, which is the declared order.
-        expect(a[0].frameworkKey).toBe('iso27001');
+        expect(a[0].frameworkKey).toBe('ISO27001');
     });
 
     it('a READER may see it — the creator choosing where to file needs this read', async () => {
         await prisma.controlRequirementLink.create({
-            data: { tenantId: T1, controlId: ourControlId, requirementId: soc2ReqId },
+            data: { tenantId: T1, controlId: ourControlId, requirementId: await seededRequirement('SOC2', 'CC6.1') },
         });
         const s = await suggestLegacyEvidenceControls(ctx(T1, 'READER'));
         expect(s).toHaveLength(1);

@@ -442,3 +442,112 @@ describe('Step 5a — a CONNECTED_APP campaign renders and gates its own subject
         expect(screen.queryByTestId('connected-decision-select-cdec_1')).not.toBeInTheDocument();
     });
 });
+
+// ─── #3716 — a LEGACY_APP campaign reads the connected-decision table ────
+
+/** One LEGACY_APP subject, in the shape `createLegacyAccessReview` freezes. */
+function legacySubject(overrides: Record<string, unknown> = {}) {
+    return {
+        id: 'ldec_1',
+        // `connectionId:accountKey` — the legacy subject key.
+        subjectRef: 'conn-legacy:dpatel',
+        decision: null,
+        decidedAt: null,
+        decidedBy: null,
+        notes: null,
+        executedAt: null,
+        snapshotJson: {
+            accountKey: 'dpatel',
+            displayName: 'Dev Patel',
+            email: 'dev@example.test',
+            status: 'ACTIVE',
+            isPrivileged: true,
+            entitlements: ['ledger:approve'],
+            resolution: { outcome: 'LINKED', method: 'EMAIL_EXACT', employeeId: 'emp_9', executionId: 'exec_1' },
+            classification: null,
+            hr: {
+                employeeId: 'emp_9',
+                fullName: 'Dev Patel',
+                workEmail: 'dev@example.test',
+                employmentStatus: 'TERMINATED',
+                department: 'Treasury',
+                jobTitle: 'Clerk',
+                managerName: null,
+                managerEmail: null,
+            },
+        },
+        ...overrides,
+    };
+}
+
+describe('#3716 — a LEGACY_APP campaign renders its subjects', () => {
+    function renderLegacy(review: Record<string, unknown>, isAdmin = true) {
+        return render(
+            withClient(
+                <AccessReviewDetailClient
+                    tenantSlug="acme"
+                    initialReview={makeReview({ scope: 'LEGACY_APP', decisions: [], ...review }) as never}
+                    currentUserId="usr_admin"
+                    isAdmin={isAdmin}
+                />,
+            ),
+        );
+    }
+
+    it('renders the legacy subjects from the connected rows, not the empty member roster', () => {
+        // THE DEFECT. The page branched on `scope === 'CONNECTED_APP'`, so a
+        // legacy campaign fell through to `review.decisions` — the member
+        // table, which never holds a legacy subject — and showed none.
+        renderLegacy({ connectedDecisions: [legacySubject()] });
+        expect(screen.getByTestId('access-review-connected-table')).toBeInTheDocument();
+        expect(screen.getByTestId('connected-row-ldec_1')).toBeInTheDocument();
+        expect(screen.queryByTestId('access-review-roster-table')).not.toBeInTheDocument();
+        // HR context is read from the frozen snapshot, as for a directory row.
+        expect(screen.getByText(/TERMINATED/)).toBeInTheDocument();
+    });
+
+    it('every subject is a row — the population is the connected list, all of it', () => {
+        renderLegacy({
+            connectedDecisions: [
+                legacySubject({ id: 'ldec_1' }),
+                legacySubject({ id: 'ldec_2', subjectRef: 'conn-legacy:svc-batch' }),
+            ],
+        });
+        expect(screen.getByTestId('connected-row-ldec_1')).toBeInTheDocument();
+        expect(screen.getByTestId('connected-row-ldec_2')).toBeInTheDocument();
+    });
+
+    it('states the application privilege flag, and makes no MFA claim the snapshot never made', () => {
+        renderLegacy({
+            connectedDecisions: [
+                legacySubject({ id: 'ldec_1' }),
+                legacySubject({ id: 'ldec_2', snapshotJson: { ...legacySubject().snapshotJson, isPrivileged: false } }),
+            ],
+        });
+        // `useTranslations` is mocked to the identity, so the key is the text.
+        expect(screen.getByText('appPrivileged')).toBeInTheDocument();
+        expect(screen.getByText('appStandard')).toBeInTheDocument();
+        expect(screen.queryByText('mfaMissing')).not.toBeInTheDocument();
+        expect(screen.queryByText('directoryUser')).not.toBeInTheDocument();
+    });
+
+    it('offers the reviewer a verdict on each undecided subject', () => {
+        renderLegacy({ connectedDecisions: [legacySubject()] });
+        expect(screen.getByTestId('connected-decision-select-ldec_1')).toBeInTheDocument();
+    });
+
+    it('keeps Close disabled while a legacy subject is undecided, and enables it once all are', () => {
+        const { unmount } = renderLegacy({
+            connectedDecisions: [legacySubject({ id: 'ldec_1', decision: 'CONFIRM' }), legacySubject({ id: 'ldec_2' })],
+        });
+        expect(screen.getByTestId('access-review-close-button')).toBeDisabled();
+        unmount();
+        renderLegacy({
+            connectedDecisions: [
+                legacySubject({ id: 'ldec_1', decision: 'CONFIRM' }),
+                legacySubject({ id: 'ldec_2', decision: 'REVOKE' }),
+            ],
+        });
+        expect(screen.getByTestId('access-review-close-button')).not.toBeDisabled();
+    });
+});

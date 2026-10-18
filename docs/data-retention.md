@@ -45,8 +45,8 @@ a `userId` but stores no contact PII).
 
 | Entity | Category | PII? | Current retention mechanism | Policy gap |
 |--------|----------|------|------------------------------|------------|
-| `AccessReview` | Business record | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | Soft-deleted rows **not auto-purged** — gap |
-| `AccessReviewDecision` | Business record | maybe | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
+| `AccessReview` | Regulatory artefact | No | Soft-delete (`deletedAt`), never auto-purged. RETAINED by the tenant purge (`TENANT_PURGE_RETAINED`, owner decision 2026-10-18); its `FileRecord` evidence pointer is `SET NULL` when the purge removes the file row. No product path hard-deletes a campaign | The campaign root of every access review — scope, period, reviewer, creator, closer — and the parent every decision, pack, narrowing and sample row cascades from, so it is kept for as long as they are: retaining a child whose cascade parent is purged keeps nothing (#3716). Reviewer, creator and closer are global `User` rows the purge never deletes. Indefinite — review w/ compliance |
+| `AccessReviewDecision` | Regulatory artefact | maybe | RETAINED by the tenant purge with its campaign (owner decision 2026-10-18); cascade only on a direct campaign delete, which no product path performs; `membershipId` is `SET NULL` when the purge removes the membership, and the frozen `subjectUserId` + `snapshot*` columns stay. `notes` is reviewer free text | One person's access decision in a MEMBER campaign — the SOC 2 CC6 / ISO A.5.18 evidence an auditor asks for. References people by global `User` id (`subjectUserId`, `decidedByUserId`, `executedByUserId`), as `AuditLog` does. **DSAR-relevant.** Indefinite — review w/ compliance |
 | `Account` | Security ephemeral | No | None today — cascade on parent/tenant delete only | DEFINED — expiry-driven |
 | `AgentActionReceipt` | Regulatory artefact | No | None today — immutable-ish evidence; cascade on tenant delete only. `scannedSummary` is scrubbed/bounded (no raw payloads/PII) | Mediator-signed AI-agent action evidence; verified rows link to the hash-chained `AuditLog`. Retention tracks the audit trail — **needs legal/auditor input** |
 | `AiDecisionLog` | Regulatory artefact | No | Append-only (immutability trigger); digest + sanitised summary only; cascade on tenant delete | EU AI Act Art 12 record — retention **needs legal input** |
@@ -140,10 +140,10 @@ a `userId` but stores no contact PII).
 | `TrainingCourse` | Configuration | No | Cascade on tenant delete | Course catalogue; lives with tenant |
 | `TrainingAssignment` | Business record | No | Cascade on employee/tenant delete | Training-completion record — compliance evidence of annual security-awareness training; retained while tenant active |
 | `BackgroundCheck` | PII subject | Yes (`resultSummary`) | Cascade on employee/tenant delete; result encrypted | Pre-employment screening record — sensitive PII (adverse-action detail encrypted at rest). **DSAR-relevant; needs a retention commitment.** |
-| `AccessReviewConnectedDecision` | Regulatory artefact | No | Cascade on review/tenant delete; account SetNull | Frozen access-review evidence for a connected identity account (SOC 2 UAR); retained with the parent review |
-| `AccessReviewAgentPack` | Regulatory artefact | No | Cascade on review/decision/tenant delete; append-only (a trigger refuses every UPDATE, `app_user` has no DELETE); the agent is a plain id, not a foreign key, so nothing in the register's lifecycle deletes it (#3674) | The reviewer pack one AGENT campaign prepared for one registered agent: grants and observed use in the 90-day window, proposals, card history, time-bounded grants, incidents, harness level — each section read from stored rows by the read-only pack workflow, with a `sha256:` content hash, the run that read it and the registered agent whose run it was (never the agent the pack describes) — or, for the preparing agent's own pack when no second agent is named, `PERSON_STATIC_SELF_PACK` and no agent. It is what the reviewer decided on, so it is kept with the campaign it evidences. Indefinite while tenant active — review w/ compliance |
-| `AccessReviewAgentNarrowing` | Regulatory artefact | No | Cascade on review/decision/pack/tenant delete; one-way stamps (decision and execution) enforced by trigger, `app_user` has no DELETE; plain agent and grant ids (#3674) | One proposed narrowing of an agent's authority — delete a grant not used in the window — and the person's ACCEPT/REJECT on it. An accepted row records that the grant was deleted (`GRANT_DELETED`) or already gone. The record that a recertification changed an agent's authority, and who decided it; the grant itself is gone, so this row and the `AGENT_TOOL_REVOKED` audit entry are the history. Indefinite while tenant active — review w/ compliance |
-| `AccessReviewDecisionSampleAudit` | Regulatory artefact | No | Cascade on review/decision/tenant delete; one-way stamp enforced by trigger, `app_user` has no DELETE (#3674) | A decision of an AGENT campaign drawn at close by the keyed sampler for a second human, and that human's verdict with stable dissent CODES — no free text. The measure of whether the first reviewer's decisions hold up, kept for as long as the campaign it judges, for the reason `AgentProposalSampleAudit` gives. Indefinite while tenant active — review w/ compliance |
+| `AccessReviewConnectedDecision` | Regulatory artefact | No | RETAINED by the tenant purge with its campaign; cascade only on a direct campaign delete, which no product path performs; `connectedAccountId` is `SET NULL` when the purge removes the directory account, and the frozen `snapshotJson` stays | Frozen access-review evidence for a connected identity account, a legacy application account (`subjectRef` = `connectionId:accountKey`) or a registered agent (SOC 2 UAR); retained with the parent review |
+| `AccessReviewAgentPack` | Regulatory artefact | No | RETAINED by the tenant purge with its campaign and decision (both retained, so the cascade never fires in a purge); append-only (a trigger refuses every UPDATE, `app_user` has no DELETE); the agent is a plain id, not a foreign key, so nothing in the register's lifecycle deletes it (#3674) | The reviewer pack one AGENT campaign prepared for one registered agent: grants and observed use in the 90-day window, proposals, card history, time-bounded grants, incidents, harness level — each section read from stored rows by the read-only pack workflow, with a `sha256:` content hash, the run that read it and the registered agent whose run it was (never the agent the pack describes) — or, for the preparing agent's own pack when no second agent is named, `PERSON_STATIC_SELF_PACK` and no agent. It is what the reviewer decided on, so it is kept with the campaign it evidences. Indefinite while tenant active — review w/ compliance |
+| `AccessReviewAgentNarrowing` | Regulatory artefact | No | RETAINED by the tenant purge with its campaign, decision and pack (all retained); one-way stamps (decision and execution) enforced by trigger, `app_user` has no DELETE; plain agent and grant ids (#3674) | One proposed narrowing of an agent's authority — delete a grant not used in the window — and the person's ACCEPT/REJECT on it. An accepted row records that the grant was deleted (`GRANT_DELETED`) or already gone. The record that a recertification changed an agent's authority, and who decided it; the grant itself is gone, so this row and the `AGENT_TOOL_REVOKED` audit entry are the history. Indefinite while tenant active — review w/ compliance |
+| `AccessReviewDecisionSampleAudit` | Regulatory artefact | No | RETAINED by the tenant purge with its campaign and decision (both retained); one-way stamp enforced by trigger, `app_user` has no DELETE (#3674) | A decision of an AGENT campaign drawn at close by the keyed sampler for a second human, and that human's verdict with stable dissent CODES — no free text. The measure of whether the first reviewer's decisions hold up, kept for as long as the campaign it judges, for the reason `AgentProposalSampleAudit` gives. Indefinite while tenant active — review w/ compliance |
 | `TrustCenterDocument` | Configuration | No | Cascade on trust-center/tenant delete | Published document pointer (label + fileRecordId); lives with the trust center |
 | `TrustCenterAccessRequest` | Business record | No (token hashed) | Cascade on document/tenant delete; download token hashed + single-use + expiring | Gated-document access-request audit (who requested/downloaded); retained as access evidence |
 | `QuestionnaireAnswerLibrary` | Business record | No | Cascade on tenant delete | Reusable Q&A knowledge base; improves over time; retained while tenant active |
@@ -255,7 +255,7 @@ a `userId` but stores no contact PII).
 | `TaskKeySequence` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `TaskLink` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `TaskWatcher` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
-| `Tenant` | Configuration | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | RETAINED as a tombstone — the purge empties the tenant and keeps this row, because `AuditLog`/`Incident`/`ReadinessSnapshot` carry a NOT-NULL non-cascading FK to it (`TENANT_PURGE_RETAINED`) |
+| `Tenant` | Configuration | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | RETAINED as a tombstone — the purge empties the tenant and keeps this row, because `AuditLog`/`Incident`/`ReadinessSnapshot`/`AccessReview` carry a NOT-NULL non-cascading FK to it (`TENANT_PURGE_RETAINED`) |
 | `TenantApiKey` | Security ephemeral | No | `expiresAt` expiry (security); every key bound to an agent is revoked (`revokedAt`, row kept) when the agent is retired (#3698) | DEFINED — expiry-driven |
 | `TenantCustomRole` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `TenantEntraGroupMapping` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
@@ -328,7 +328,9 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
   but are **not** in `SOFT_DELETE_MODELS`, so their soft-deletes live forever:
   `AccessReview, AutomationRule, ControlException, LossEvent, ProcessMap,
   RiskTreatmentPlan, Tenant`. Either add them to the purge set or document why
-  they are excluded.
+  they are excluded. (`AccessReview` is a regulatory artefact since 2026-10-18,
+  so for it the answer is the exclusion: a soft-deleted campaign is still
+  evidence that a review happened.)
 - **Owner:** Compliance (retention period) + Engineering (mechanism).
 - **Customer override:** none today. A per-tenant / per-category retention knob is
   an open question (see below).
@@ -346,6 +348,10 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 - **Default / Floor / ceiling:** **deferred to legal.** The retention period under
   our SOC 2 commitments is a regulatory decision, not an engineering one.
 - **Mechanism:** append-only; never soft-deleted.
+- **On tenant deletion:** every tenant-scoped regulatory artefact is in
+  `TENANT_PURGE_RETAINED` and the purge skips it — including access-review
+  campaigns, whole, since 2026-10-18. Skipping is not sufficient where a
+  cascade reaches the row from a purged parent; see "Tenant purge" below.
 - **Owner:** Legal / Compliance (period) — Engineering only executes a signed-off
   procedure.
 - **Customer override:** none, and likely should remain none (tamper-evidence is
@@ -418,9 +424,9 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 
 - **Default:** lives with the tenant; **purged on tenant deletion** (cascade from
   `Tenant`). No independent TTL.
-- **Mechanism:** FK cascade on tenant deletion. Note `Tenant` itself soft-deletes
-  (`deletedAt`) and is **not** in the purge set — a deleted tenant's data is
-  retained for compliance/restore until a deliberate hard purge.
+- **Mechanism:** the tenant purge, 90 days after the tenant is soft-deleted
+  (`deletedAt`) — see "Tenant purge" under the cleanup-job inventory. `Tenant`
+  itself is retained as the tombstone the regulatory artefacts point at.
 - **Owner:** Engineering + Product (tenant-deletion grace period).
 - **Customer override:** n/a (this *is* the customer's configuration).
 
@@ -470,6 +476,54 @@ it on the shorter clock, inside its own dispute window. 730 against 90 leaves
 eight times the headroom; the invariant is asserted in
 `tests/integration/legacy-snapshot-retention.test.ts` rather than left as prose,
 because the failure is silent and the two numbers live in different files.
+
+### Tenant purge — what a deleted tenant keeps
+
+`data-lifecycle` runs `purgeSoftDeletedTenants` (`usecases/tenant-purge.ts`)
+last, over every tenant soft-deleted more than 90 days ago. In one transaction
+per tenant it issues `DELETE … WHERE "tenantId" = $1` against every
+tenant-scoped table, children first in an order derived from the live
+foreign-key graph, EXCEPT the tables in `TENANT_PURGE_RETAINED`: every
+tenant-scoped model this document classes as a **Regulatory artefact**, plus
+the `Tenant` row as the tombstone they point at.
+
+Skipping a table is not, on its own, keeping its rows: a retained child with
+an `ON DELETE CASCADE` foreign key to a purged parent is deleted by Postgres
+when the parent is. A retained model is therefore kept only when every
+cascade path into it starts at another retained model.
+
+**Access-review campaigns are retained whole** (owner decision, 2026-10-18,
+#3716 / #3724). `AccessReview`, `AccessReviewDecision`,
+`AccessReviewConnectedDecision`, `AccessReviewAgentPack`,
+`AccessReviewAgentNarrowing` and `AccessReviewDecisionSampleAudit` all
+survive, for every scope (member, connected, legacy, agent). Before that
+decision the four evidence tables were in the retained set while their
+campaign root was not, so the purge's `DELETE FROM "AccessReview"` removed
+them by cascade. What a campaign references that the purge DOES remove is
+detached by a column-scoped `SET NULL`, never cascaded: the membership
+(`AccessReviewDecision.membershipId`), the directory account
+(`AccessReviewConnectedDecision.connectedAccountId`) and the evidence PDF's
+`FileRecord` row (`AccessReview.evidenceFileRecordId`; the purge deletes rows,
+not stored objects). The frozen snapshot columns carry what those pointed at.
+The retained rows name people by global `User` id — reviewer, decider,
+subject — exactly as `AuditLog` does; the purge deletes no `User`, and erasing
+a person is the DSAR path's job (`docs/dsar.md`), not the purge's.
+
+**Five retained models are nonetheless removed by cascade today.** Each is in
+`TENANT_PURGE_RETAINED` and has an `ON DELETE CASCADE` foreign key to a
+business record the purge deletes:
+
+| Retained model | Removed with |
+| --- | --- |
+| `AgentPolicyCardVersion` | `AgentPolicyCard` |
+| `AgentProposalApproval` | `AgentProposal` |
+| `AgentProposalSampleAudit` | `AgentProposal` |
+| `AgenticEvidenceArtefact` | `Control`, `Evidence`, `RegisteredAgent` |
+| `IncidentEvidence` | `Evidence` |
+
+So a purged tenant keeps none of them, whatever the retained set says. Which
+way each is resolved — retain the parent, detach the foreign key, or stop
+classing it as retained — is open question 10.
 
 ### Identity write artefacts — 730 days
 
@@ -569,6 +623,20 @@ Each blocks a customer/compliance sign-off. Format: **decision owner** ·
    reasoning are one scroll up. One residual choice is recorded as the implementer's
    rather than the decision's: 30 for the unconsumed clock, where #3317 said only
    "probably shorter".
+
+10. **Retained models a tenant purge still removes by cascade.** Owner:
+    **Compliance + Engineering.** *Implication:* `AgentPolicyCardVersion`,
+    `AgentProposalApproval`, `AgentProposalSampleAudit`,
+    `AgenticEvidenceArtefact` and `IncidentEvidence` are classed here as
+    regulatory artefacts and listed in `TENANT_PURGE_RETAINED`, but each
+    cascades from a business record the purge deletes (see "Tenant purge"
+    above). Keeping one means retaining its parent (business data the purge
+    exists to remove), or detaching its foreign key to a nullable `SET NULL`
+    with a denormalised reference — a migration, and for the append-only
+    tables a trigger change, because a `SET NULL` is an UPDATE — or
+    reclassifying it as living and dying with its parent. Access-review
+    campaigns were decided the first way on 2026-10-18. **Default: removed
+    with their parent.**
 
 ## Cross-references
 
