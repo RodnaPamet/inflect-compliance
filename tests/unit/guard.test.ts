@@ -5,6 +5,7 @@ import {
     isPublicPath,
     isApiRoute,
     isAdminPath,
+    checkAdminAccess,
     isTenantPath,
     sanitizeRedirectPath,
     buildLoginRedirect,
@@ -95,6 +96,41 @@ describe('isAdminPath', () => {
         expect(isAdminPath('/api/clauses')).toBe(false);
         expect(isAdminPath('/t/acme/dashboard')).toBe(false);
         expect(isAdminPath('/api/t/acme/risks')).toBe(false);
+    });
+});
+
+// ─── checkAdminAccess (#3701) ───
+
+describe('checkAdminAccess', () => {
+    const memberships = [
+        { slug: 'alpha', role: 'READER' },
+        { slug: 'beta', role: 'OWNER' },
+        { slug: 'delta', role: 'ADMIN' },
+    ];
+
+    it('judges a tenant admin path by the role held in THAT tenant, not the primary role', () => {
+        expect(checkAdminAccess('/api/t/beta/admin/members', 'READER', memberships)).toBe('allow');
+        expect(checkAdminAccess('/t/delta/admin', 'READER', memberships)).toBe('allow');
+        expect(checkAdminAccess('/api/t/alpha/admin/members', 'OWNER', memberships)).toBe('deny');
+    });
+
+    it('denies every non-admin built-in role here', () => {
+        for (const role of ['EDITOR', 'READER', 'AUDITOR']) {
+            expect(checkAdminAccess('/api/t/x/admin', 'OWNER', [{ slug: 'x', role }])).toBe('deny');
+        }
+    });
+
+    it('defers a tenant missing from the claim to the tenant-access gate', () => {
+        expect(checkAdminAccess('/api/t/gamma/admin', 'OWNER', memberships)).toBe('defer');
+        expect(checkAdminAccess('/api/t/gamma/admin', 'OWNER', [])).toBe('defer');
+        expect(checkAdminAccess('/api/t/gamma/admin', 'OWNER', undefined)).toBe('defer');
+    });
+
+    it('judges a flat admin path, which names no tenant, by the primary role', () => {
+        expect(checkAdminAccess('/admin', 'OWNER', memberships)).toBe('allow');
+        expect(checkAdminAccess('/admin', 'ADMIN', [])).toBe('allow');
+        expect(checkAdminAccess('/admin', 'READER', memberships)).toBe('deny');
+        expect(checkAdminAccess('/admin', undefined, memberships)).toBe('deny');
     });
 });
 

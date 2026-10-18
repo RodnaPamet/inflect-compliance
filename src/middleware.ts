@@ -20,6 +20,7 @@ import {
     unauthorizedJson,
     forbiddenJson,
     checkTenantAccess,
+    checkAdminAccess,
     checkOrgAccess,
 } from '@/lib/auth/guard';
 import { generateNonce, buildCspHeader, CSP_NONCE_HEADER, CSP_REPORT_PATH, LEGACY_CSP_REPORT_PATH, CSP_REPORT_GROUP, getCspHeaderName, isCspReportOnly } from '@/lib/security/csp';
@@ -286,10 +287,10 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
 
     // ── 3. Admin-only paths ──
     if (isAdminPath(pathname)) {
-        const role = token.role;
-        // OWNER is strictly superior to ADMIN (see CLAUDE.md RBAC section).
-        const ADMIN_ROLES = new Set(['ADMIN', 'OWNER']);
-        if (!role || !ADMIN_ROLES.has(role)) {
+        // #3701 — judged by the role in the tenant the URL names, not the
+        // primary membership's. A tenant missing from the claim is 'defer':
+        // the tenant-access gate below owns that answer.
+        if (checkAdminAccess(pathname, token.role, token.memberships) === 'deny') {
             if (isApiRoute(pathname)) {
                 return forbiddenJson('Admin access required');
             }
@@ -302,7 +303,8 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             return NextResponse.next();
         }
 
-        // Admin role confirmed — enforce stricter session posture.
+        // Admin role confirmed here, or deferred to the tenant-access gate —
+        // either way, enforce the stricter session posture.
         // Block cross-site requests to admin API routes (Sec-Fetch-Site check).
         // This provides equivalent protection to SameSite=strict cookies
         // without breaking OAuth redirect flows that require SameSite=lax.
