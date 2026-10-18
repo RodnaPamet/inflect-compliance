@@ -12,6 +12,7 @@ import { frameworkOnboardingWorkflow } from './workflows/framework-onboarding';
 import { auditPrepWorkflow } from './workflows/audit-prep';
 import { postureReviewWorkflow } from './workflows/posture-review';
 import { accessPostureWorkflow } from './workflows/access-posture';
+import { discoveredAgentReviewWorkflow } from './workflows/discovered-agent-review';
 
 /**
  * "Diagnostic" — read the tenant's compliance posture, then synthesise a
@@ -59,6 +60,11 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
     // model's choice from what a human approved and granted, which is the only
     // route #2859 leaves open. See the header of `access-posture.ts`.
     [accessPostureWorkflow.key]: accessPostureWorkflow,
+    // The first definition that DECLARES SKILLS (#3668): the two IAM skills,
+    // mounted on the Flue engine through the mount gate, and a required input
+    // refused at admission when absent. See the header of
+    // `discovered-agent-review.ts`.
+    [discoveredAgentReviewWorkflow.key]: discoveredAgentReviewWorkflow,
 };
 
 /**

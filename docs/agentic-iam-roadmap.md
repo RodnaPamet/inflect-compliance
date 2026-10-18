@@ -88,6 +88,54 @@ issue or pull request owns each, and it records that the scanner introduces no
 sub-processor. The owner's merge of the pull request that carries it is its
 signature (decision 9).
 
+### The first IAM skills, on a declared workflow
+
+Step `1d` (#3668) declared the two IAM skills, `harness-level-assessment` and
+`nhi-ownership-attribution`, on the workflow `discovered-agent-review`
+(`src/lib/agentic/workflows/discovered-agent-review.ts`). It is the only
+workflow that declares a skill. It asks for the Flue engine and is read-only:
+one read and one synthesis, no proposal and no checkpoint.
+
+- **A run names one discovered agent.** `requiredInput` is
+  `discoveredAgentId`, so a run without it, or with a blank or non-string
+  value, is refused at admission before its row exists, on either engine.
+- **The run mounts exactly the two skills.** A Flue run is pinned to both, by
+  name, version and hash, through the mount gate and the committed evaluation
+  records. A static run mounts none and records `[]`.
+- **The agent's facts come from the scan.** The run's read step calls
+  `get_discovered_agent`, an MCP read tool over `getDiscoveredAgentFacts`
+  (`src/app-layer/usecases/agent-harness-facts.ts`). The tool returns where the
+  scans found the agent, whether the register holds it, the owner its source
+  records, the newest scan and whether that scan read every source in full, and
+  that scan's per-criterion observations and tools, as reported. It returns no
+  level. Like every harness read, it takes `admin.agent_registry`.
+- **Each answer has an output contract.**
+  `src/lib/agentic/iam-skill-outputs.ts` parses each skill's answer before
+  anything may use it. In an assessment, every criterion, named by the ladder's
+  own id, either cites an evidence reference or says it is not evidenced. A met
+  verdict with no reference is refused rather than read as not met, and an
+  answer that states a level is refused. An attribution's status is the
+  reconcile engine's outcomes minus `LINKED` (`SUGGESTED`, `AMBIGUOUS` or
+  `UNMATCHED`), so a confirmed or linked owner cannot be expressed, and the
+  grade and the outcome are checked against the answer's own signals. The
+  workflow engine does not apply the contracts to a run, and nothing on `main`
+  calls them outside their tests: their consumer is the registration intake of
+  step `2a`.
+
+Two gaps keep a Flue run of the review from reading the agent it names. The
+Flue engine gives the model the workflow's description and step labels and not
+the run input (`runMessage` in `src/lib/agentic/flue/execute.ts`), so the model
+never sees the `discoveredAgentId`. And a Flue run is started by an agent-bound
+API key, while no scope maps to `admin.agent_registry` and `*` subtracts it, so
+the run is never offered the read tool. A Flue run of the review therefore has
+no agent to assess, which is the case each skill's missing-input rule covers:
+it names the missing `discoveredAgent` input rather than guessing, as both
+evaluation records' `no-agent-given` cases show. Where a tenant's runs resolve
+to the static engine, a signed-in member holding `admin.agent_registry` (OWNER
+or ADMIN, by role) runs the read and the synthesis, and no skill is mounted; where they resolve to Flue, a signed-in person cannot start
+the review at all, because a Flue run must be started by an active registered
+agent.
+
 ### Integration passport and A2A threat model
 
 Two documents specify UC5's new parts.
@@ -198,7 +246,7 @@ below).
 |---|---|---|
 | Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Five separate admin rights. The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`, and which nothing writes until `2a`'s intake (#3669). | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. | No integration passport; no A2A peers. |
-| Skills | Eight original, licensed skills, two of them for IAM and declared by no workflow. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No committed evaluation records, so the gate refuses every skill; no workflow declares a skill. |
+| Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
@@ -367,7 +415,9 @@ and one new key:
   `/agents/reports` through `listHarnessScans`, and that page refuses anyone
   without `admin.agent_registry`
   (`src/app/t/[tenantSlug]/(app)/agents/reports/page.tsx`). `4a`'s scan health
-  reads the same scans under the same key. AUDITOR does not hold
+  reads the same scans under the same key. `1d`'s MCP read tool
+  `get_discovered_agent` (#3668) takes the same key as well, so no bearer
+  token reaches it, and an agent-bound key cannot be offered it. AUDITOR does not hold
   `admin.agent_registry`, so it reads none of them. A view key split from
   `admin.agent_registry` for an auditor's read of the inventory is the case the
   `agent_registry` docstring names and leaves undone; whether to add one is
