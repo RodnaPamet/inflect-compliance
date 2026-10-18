@@ -29,7 +29,9 @@ within one month of handling concluding.
    a third-party notification. Everything else is derived from it.
 2. Decide whether the incident is **significant**: severe operational disruption
    or financial loss, or material damage to others. If not significant, Article
-   23 does not bite and say so plainly rather than reporting defensively.
+   23 does not bite and say so plainly rather than reporting defensively. Then
+   stop: give no due date, not even a hypothetical one, because the clock runs
+   from awareness of a *significant* incident and none has started.
 3. Compute each deadline from awareness and state the hours remaining or elapsed.
 4. Where a deadline has passed, say so directly. A missed deadline is a finding,
    not something to soften.

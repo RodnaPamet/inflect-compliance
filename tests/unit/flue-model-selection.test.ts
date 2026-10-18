@@ -24,6 +24,10 @@ import { resolveFlueModel, FLUE_PROVIDER_IDS } from '@/lib/agentic/flue/model-se
 jest.mock('@/env', () => ({
     env: {
         ANTHROPIC_API_KEY: 'sk-test',
+        // Both pins, different values: the agent runtime names its own
+        // (owner decision, 2026-10-18), and ANTHROPIC_MODEL stays with the
+        // posture summary and the risk suggestions.
+        AGENT_FLUE_MODEL: 'claude-sonnet-5-5',
         ANTHROPIC_MODEL: 'claude-haiku-4-5',
         AI_LOCAL_BASE_URL: 'http://gateway.internal:11434/v1',
         AI_LOCAL_MODEL: 'llama-3.1-70b',
@@ -36,8 +40,17 @@ describe('which model a Flue run may ask for', () => {
         expect(out).toEqual({
             ok: true,
             residency: 'EXTERNAL',
-            specifier: `${FLUE_PROVIDER_IDS.external}/claude-haiku-4-5`,
+            specifier: `${FLUE_PROVIDER_IDS.external}/claude-sonnet-5-5`,
         });
+    });
+
+    it('names AGENT_FLUE_MODEL, never ANTHROPIC_MODEL, for the external route', () => {
+        // The two features that keep ANTHROPIC_MODEL are not the agent
+        // runtime. A resolver that fell back to the shared pin would run every
+        // agent on the posture summary's model without a diff saying so.
+        const out = resolveFlueModel({ residency: 'EXTERNAL' });
+        expect(out.ok && out.specifier).toBe(`${FLUE_PROVIDER_IDS.external}/claude-sonnet-5-5`);
+        expect(out.ok && out.specifier.includes('claude-haiku-4-5')).toBe(false);
     });
 
     it('routes a LOCAL_ONLY tenant to the LOCAL provider', () => {

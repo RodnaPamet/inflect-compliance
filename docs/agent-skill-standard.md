@@ -109,7 +109,8 @@ A set carries no answers, so nothing in the repository can show a pass that no
 model produced.
 
 `npm run skills:evaluate` makes a record. It sends each case to the model the
-Flue runtime is configured with (`ANTHROPIC_MODEL`), with the skill's
+Flue runtime is configured with (`AGENT_FLUE_MODEL`, default
+`claude-sonnet-5-5`; `--model` overrides it), with the skill's
 instructions as the system prompt and the case input as the user message,
 stores the revision the API reports, and writes `evaluation-record.json` beside
 the skill only when the record passes. The cases are synthetic; no tenant data

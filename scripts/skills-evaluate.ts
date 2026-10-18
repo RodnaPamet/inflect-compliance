@@ -27,8 +27,10 @@
  * runtime never uses.
  *
  * The model is the one the Flue runtime's external provider names —
- * `ANTHROPIC_MODEL`, defaulting as `src/env.ts` does — unless `--model` says
- * otherwise. The record stores the revision the API REPORTED, not the one
+ * `AGENT_FLUE_MODEL`, defaulting as `src/env.ts` does (`claude-sonnet-5-5`) —
+ * unless `--model` says otherwise. Not `ANTHROPIC_MODEL`: that is the
+ * compliance-posture summary's and the risk suggestions' model, and the agent
+ * runtime has its own (owner decision, 2026-10-18). The record stores the revision the API REPORTED, not the one
  * asked for, and a run in which two answers report different revisions writes
  * nothing.
  *
@@ -71,8 +73,8 @@ const FAILURES_DIR = path.join(process.cwd(), 'skill-evaluation-failures');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-/** `src/env.ts`'s default for `ANTHROPIC_MODEL`. */
-const DEFAULT_MODEL = 'claude-haiku-4-5';
+/** `src/env.ts`'s default for `AGENT_FLUE_MODEL`, the agent runtime's model. */
+const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const MAX_TOKENS = 4_096;
 const TIMEOUT_MS = 120_000;
 const MAX_ATTEMPTS = 4;
@@ -84,7 +86,7 @@ interface Args {
 
 function parseArgs(argv: readonly string[]): Args {
     let skill: string | null = null;
-    let model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+    let model = process.env.AGENT_FLUE_MODEL || DEFAULT_MODEL;
     for (let i = 0; i < argv.length; i++) {
         if (argv[i] === '--skill') skill = argv[++i] ?? null;
         else if (argv[i] === '--model') model = argv[++i] ?? model;

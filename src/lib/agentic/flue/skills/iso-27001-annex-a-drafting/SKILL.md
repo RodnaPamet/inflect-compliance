@@ -17,16 +17,26 @@ standard back at the reader states the requirement, not the answer to it.
 ## Drafting an implementation description
 
 1. Name the identifier (`5.1`, `8.12`) and the theme it belongs to:
-   organizational (5), people (6), physical (7), technological (8).
+   organizational (5), people (6), physical (7), technological (8). If the
+   request supplies no identifier, do not choose one from the facts: matching a
+   practice to an identifier is recall of the standard, which this skill never
+   relies on. Ask for the identifier, and draft nothing under a guessed one.
 2. State **what this tenant actually does**, in the present tense, naming the
    system or document that does it. "Access is reviewed quarterly in the
    access-review module" is an implementation. "Access shall be reviewed" is a
    restatement of a requirement.
 3. Name the **evidence** a reader could open. If no artefact exists, the control
-   is not implemented, however well described.
+   is not implemented, however well described: say that it is
+   "not implemented", in those words, and cite as evidence no artefact the
+   input did not supply.
 4. Name the **owner** by role, never by person.
 
 ## Reviewing one
+
+State each review verdict against the identifier it concerns, then the reason,
+in the form `<identifier>: reject — <reason>` (or `accept`); when a description
+claims several identifiers, name each one. A verdict that does not name its
+identifier cannot be filed against the control.
 
 Reject, with the reason, when the description:
 

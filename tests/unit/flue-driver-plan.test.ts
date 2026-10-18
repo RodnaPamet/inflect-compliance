@@ -17,6 +17,10 @@ import { ENGINE_CAPS, type WorkflowDefinition } from '@/lib/agentic/workflow-typ
 jest.mock('@/env', () => ({
     env: {
         ANTHROPIC_API_KEY: 'sk-test',
+        // The agent runtime's own pin. ANTHROPIC_MODEL (the posture summary's
+        // and risk suggestions' model) is set to something else, so a plan
+        // that read it would show here.
+        AGENT_FLUE_MODEL: 'claude-sonnet-5-5',
         ANTHROPIC_MODEL: 'claude-haiku-4-5',
         AI_LOCAL_BASE_URL: 'http://gw:11434/v1',
         AI_LOCAL_MODEL: 'llama-3.1-70b',
@@ -41,7 +45,7 @@ describe('a run that may start', () => {
         expect(planFlueRun(def(), 0, { residency: 'EXTERNAL' })).toEqual({
             ok: true,
             residency: 'EXTERNAL',
-            modelSpecifier: 'inflect-external/claude-haiku-4-5',
+            modelSpecifier: 'inflect-external/claude-sonnet-5-5',
         });
     });
 

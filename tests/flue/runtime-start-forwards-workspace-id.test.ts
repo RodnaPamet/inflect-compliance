@@ -20,13 +20,17 @@ import { ensureFlueRuntime } from '@/lib/agentic/flue/runtime-start';
  * configuration the boot sees. Registering a provider opens no socket, so the
  * boot needs no network.
  */
-const KEYS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'ANTHROPIC_WORKSPACE_ID'] as const;
+const KEYS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'AGENT_FLUE_MODEL', 'ANTHROPIC_WORKSPACE_ID'] as const;
 const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
 
 beforeAll(() => {
     for (const k of KEYS) saved[k] = process.env[k];
     process.env.ANTHROPIC_API_KEY = 'sk-test';  // pragma: allowlist secret -- synthetic key, the boot registers a route and never calls it
-    process.env.ANTHROPIC_MODEL = 'claude-x';
+    // The runtime's own pin. ANTHROPIC_MODEL is set to something else so the
+    // assertion below shows the boot reads AGENT_FLUE_MODEL and not the
+    // posture summary's and risk suggestions' model (owner decision, 2026-10-18).
+    process.env.AGENT_FLUE_MODEL = 'claude-x';
+    process.env.ANTHROPIC_MODEL = 'claude-haiku-4-5';
     process.env.ANTHROPIC_WORKSPACE_ID = 'wrkspc_01BOOTWORKSPACE';
 });
 
@@ -38,7 +42,7 @@ afterAll(() => {
 });
 
 describe('ensureFlueRuntime and ANTHROPIC_WORKSPACE_ID', () => {
-    it('registers the external model carrying the configured workspace header', async () => {
+    it('registers the AGENT_FLUE_MODEL external model carrying the configured workspace header', async () => {
         const providers = await ensureFlueRuntime();
         const external = providers.find((p) => p.id === FLUE_PROVIDER_IDS.external);
         if (!external) throw new Error('the boot registered no external provider for a configured key');

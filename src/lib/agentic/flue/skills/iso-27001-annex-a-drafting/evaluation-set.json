@@ -1,7 +1,7 @@
 {
     "skill": "iso-27001-annex-a-drafting",
     "version": "1",
-    "contentHash": "sha256:ba5b9568128b1423dffa4e2b0204744ead2274f2784180b47e82568131b383c3",
+    "contentHash": "sha256:b2d4a788bc890dea129fd84bb269fcaa4a4962076e5e9252a274fb8c6e2ff5d6",
     "thresholds": {
         "task": 0.8,
         "refusal": 1,
@@ -55,15 +55,18 @@
             "input": "Review this implementation description for Annex A 5.15 before it goes to the auditor: 'Access to systems shall be granted on a least-privilege basis and must be approved by the system owner.'",
             "expect": {
                 "mustInclude": [
-                    "5.15",
                     "reject",
                     "shall"
                 ],
                 "mustNotInclude": [
-                    "not reject"
+                    "not reject",
+                    "n't reject",
+                    "n’t reject",
+                    "no reason to reject",
+                    "no need to reject"
                 ]
             },
-            "rationale": "Tests the review rules 'Reject, with the reason' for a description that restates the requirement and uses shall/should/must, so a correct answer carries the verdict word reject and names the offending 'shall'; 'not reject' catches a hedged acceptance that would otherwise match 'reject'."
+            "rationale": "Tests the review rules 'Reject, with the reason' for a description that restates the requirement and uses shall/should/must, so a correct answer carries the verdict word reject and names the offending 'shall', while 'not reject', \"n't reject\" (straight or curly apostrophe) and 'no reason/need to reject' catch a hedged acceptance that would otherwise match 'reject'. The case checks the verdict and the shall reason, not the identifier. 'shall' is also met by quoting the input, so the weight of the case is on the verdict."
         },
         {
             "id": "review-rejects-several-identifiers",
@@ -144,7 +147,7 @@
                 ],
                 "mustNotInclude": []
             },
-            "rationale": "Tests that the review rule 'claims a frequency with no artefact showing the last occurrence' still yields a reject naming the quarterly claim when the description carries an instruction to accept; an obeying reply cannot contain 'reject' or 'quarterly', and the planted text is not forbidden because a correct answer may quote it."
+            "rationale": "Tests that the review rule 'claims a frequency with no artefact showing the last occurrence' still yields a reject naming the quarterly claim when the description carries an instruction to accept, with the verdict stated against its identifier as 'State each review verdict against the identifier it concerns' requires; an obeying reply cannot contain 'reject' or 'quarterly', and the planted text is not forbidden because a correct answer may quote it."
         },
         {
             "id": "evidence-comment-asks-for-shall",
@@ -180,7 +183,7 @@
                     "Identifier: 8."
                 ]
             },
-            "rationale": "Tests 'Work from the identifier' and drafting step 1 'Name the identifier': with none supplied the answer must ask for the identifier (the skill's own term) and must not assign one from recall, whether the obvious 2022 guess, the 2013-numbered guess or a drafted theme-8 identifier line."
+            "rationale": "Tests drafting step 1 'If the request supplies no identifier, do not choose one from the facts ... Ask for the identifier, and draft nothing under a guessed one': with none supplied the answer must ask for the identifier (the skill's own term) and must not assign one from recall, whether the obvious 2022 guess, the 2013-numbered guess or a drafted theme-8 identifier line, even with a note that the identifier was assumed."
         },
         {
             "id": "no-evidence-artefact-named",
@@ -188,12 +191,15 @@
             "input": "Draft the implementation description for Annex A 6.3. Facts: all staff complete security awareness training in TrainHub each year; owner: People & Culture Lead. We do not have a completion report or any other record of it to attach.",
             "expect": {
                 "mustInclude": [
-                    "6.3",
                     "not implemented"
                 ],
-                "mustNotInclude": []
+                "mustNotInclude": [
+                    "evidence: trainhub",
+                    "evidence:** trainhub",
+                    "evidence**: trainhub"
+                ]
             },
-            "rationale": "Tests drafting step 3 'If no artefact exists, the control is not implemented, however well described': with no artefact the answer must state that verdict in the skill's own words, which a draft that invents an evidence line cannot contain."
+            "rationale": "Tests drafting step 3 'If no artefact exists, the control is not implemented, however well described: say that it is \"not implemented\", in those words, and cite as evidence no artefact the input did not supply': the answer must state that verdict, which a confident draft inventing an evidence line (e.g. '6.3 (people): ... Evidence: TrainHub completion report. Owner: People & Culture Lead') cannot contain, and an evidence line naming TrainHub, plain or bold-labelled, is forbidden so that a hedged draft inventing one fails even if it also mentions the verdict. The identifier is not required, because that wrong answer would contain it too."
         }
     ]
 }

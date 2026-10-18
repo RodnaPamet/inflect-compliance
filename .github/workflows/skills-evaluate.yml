@@ -30,7 +30,7 @@ on:
         required: false
         default: ''
       model:
-        description: 'Model id (blank: the ANTHROPIC_MODEL repository variable, else the runtime default)'
+        description: 'Model id (blank: the AGENT_FLUE_MODEL repository variable, else the agent runtime default)'
         required: false
         default: ''
 
@@ -55,7 +55,10 @@ jobs:
       - name: Ask the model and write the records
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_MODEL: ${{ inputs.model || vars.ANTHROPIC_MODEL }}
+          # The agent runtime's model, not ANTHROPIC_MODEL (the posture
+          # summary's and risk suggestions'). Blank falls through to the
+          # script's default, which is src/env.ts's.
+          AGENT_FLUE_MODEL: ${{ inputs.model || vars.AGENT_FLUE_MODEL }}
           # An organisation-level key must name its workspace; a workspace key
           # leaves this unset. A workspace id is an identifier, not a secret.
           ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}

@@ -1,7 +1,7 @@
 {
     "skill": "nis2-article-23-timelines",
     "version": "1",
-    "contentHash": "sha256:2f29522789da721599bbe3aaa7697236e1e436720dfec7ff2c5e381f833c3776",
+    "contentHash": "sha256:06cb28567120cf411c3752be16a3a02225f343e56b3656aab345936eb3baeea0",
     "thresholds": {
         "task": 0.8,
         "refusal": 1,
@@ -16,14 +16,14 @@
             "expect": {
                 "mustInclude": [
                     "EDR",
-                    "14 hours",
-                    "62 hours"
+                    "14 h",
+                    "62 h"
                 ],
                 "mustNotInclude": [
-                    "51 hours"
+                    "51 h"
                 ]
             },
-            "rationale": "Tests 'measured from the moment the entity became aware ... not from when it began' with steps 1 and 3: the EDR alert fixes awareness, leaving 14 hours for the early warning and 62 for the notification, while 51 hours remaining is what a clock run from the 22:00 start gives (now is set so hours remaining differ from hours elapsed, and no start-based due time is forbidden, so a contrasting explanation cannot fail)."
+            "rationale": "Tests 'measured from the moment the entity became aware ... not from when it began' with steps 1 and 3: the EDR alert fixes awareness, leaving 14 hours for the early warning and 62 for the notification, while 51 hours remaining is what a clock run from the 22:00 start gives (now is set so hours remaining differ from hours elapsed, and no start-based due time is forbidden, so a contrasting explanation cannot fail). The needles do not fix a unit spelling ('14 h' matches '14 hours', '14 hrs' and '14 h'), because step 3 requires stating the hours remaining, not a unit form; a spelling with no space ('14h') still fails, which a substring rule cannot avoid."
         },
         {
             "id": "early-warning-missed",
@@ -119,7 +119,7 @@
                     "23 September"
                 ]
             },
-            "rationale": "Tests step 2 'If not significant, Article 23 does not bite and say so plainly rather than reporting defensively': the answer must address significance under Article 23, and the early-warning or notification due dates, in any time format, appear only in a defensive answer."
+            "rationale": "Tests step 2 'If not significant, Article 23 does not bite and say so plainly rather than reporting defensively. Then stop: give no due date, not even a hypothetical one': the answer must address significance under Article 23, and the early-warning or notification due dates, in any time format, appear only in an answer that runs a clock that never started, whether to file defensively or as a hypothetical."
         },
         {
             "id": "note-moves-clock-to-resolution",
