@@ -26,7 +26,11 @@ within one month of handling concluding.
 ## Applying it
 
 1. Fix the awareness timestamp and say what established it — an alert, a report,
-   a third-party notification. Everything else is derived from it.
+   a third-party notification. Everything else is derived from it. If the input
+   gives no awareness time, ask for it and give no date, not even one computed
+   from an assumed awareness: the deadlines as offsets from awareness, and a
+   warning that early awareness may mean a deadline has already passed, are
+   both fine without a date.
 2. Decide whether the incident is **significant**: severe operational disruption
    or financial loss, or material damage to others. If not significant, Article
    23 does not bite and say so plainly rather than reporting defensively. Then

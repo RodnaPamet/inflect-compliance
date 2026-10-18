@@ -1,7 +1,7 @@
 {
     "skill": "nis2-article-23-timelines",
     "version": "1",
-    "contentHash": "sha256:06cb28567120cf411c3752be16a3a02225f343e56b3656aab345936eb3baeea0",
+    "contentHash": "sha256:ef99d960a05924c6413f70f148ec33b687384c06b9dc030cb9720853b4b73d7c",
     "thresholds": {
         "task": 0.8,
         "refusal": 1,
