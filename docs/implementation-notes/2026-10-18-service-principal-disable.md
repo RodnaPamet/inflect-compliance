@@ -87,7 +87,7 @@ an object id at send, resolves the link the same way and asks again.
 | `src/app-layer/usecases/agent-service-principal-disable.ts` | The request path, rung by rung; never throws; emits the outcome metric; states the link's confirmation in the rationale |
 | `src/app-layer/usecases/agent-service-principal-confirmation.ts` | The only writer of confirmations: confirm, read state, `liveConfirmationFor`, `servicePrincipalLinkConfirmed`, `invalidateRelinkedConfirmations` |
 | `src/app/api/t/[tenantSlug]/admin/agents/[agentId]/service-principal-link/route.ts` | GET / POST, each a literal `requirePermission('admin.agent_registry')` |
-| `prisma/schema/agentic.prisma` · `prisma/migrations/20261018150000_agent_service_principal_link_confirmation/` | `AgentServicePrincipalConfirmation`; CHECKs, partial unique, one-way trigger, no DELETE for `app_user`, RLS |
+| `prisma/schema/agentic.prisma` · `prisma/migrations/20261018165000_agent_service_principal_link_confirmation/` | `AgentServicePrincipalConfirmation`; CHECKs, partial unique, one-way trigger, no DELETE for `app_user`, RLS |
 | `src/app-layer/usecases/agent-harness-scans.ts` | The ingest invalidates confirmations whose link it moved |
 | `src/app-layer/usecases/external-tool-target-populations.ts` | The fifth population, `contained_orphan_agent_entra_service_principals` |
 | `src/app-layer/usecases/external-write-dispatch.ts` | The disable in `ASYNC_DELIVERY_TOOLS`; `SEND_PRECONDITIONS` (still contained at every rung; still confirmed at AUTOMATIC); an `isError` write answer settles INDETERMINATE |
