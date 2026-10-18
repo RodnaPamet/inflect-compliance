@@ -531,6 +531,15 @@ changed what #3698 built.
     membership, not the role in the tenant being called. It fails closed, and
     #3701 tracks the fix. (`2a`) Fixed by #3701 on 2026-10-18: the edge now
     reads the role in the tenant the URL names.
+16. **`AI_ADMIN` holds all six agent keys and none of the tenant-wide admin
+    keys.** It holds `admin.agent_external_tools` too, which the issue's list
+    did not name. A call to an external tool still needs a pinned manifest a
+    person approved, a grant on the agent and `EXTERNAL_EGRESS` reach.
+    `admin.agent_ownership` is held by OWNER and `AI_ADMIN`; ADMIN does not
+    hold it. Reading agent runs, proposals and the governance pack moves to the
+    view key in #3710, which `AI_ADMIN` will hold. Approving a proposal still
+    needs write on the domain it changes, so `AI_ADMIN` does not approve. (`2a`,
+    #3699)
 17. **The owner-orphan pass has no blast-radius breaker.** At AUTOMATIC it
     contains every orphaned agent it finds, however many. Stopping an unowned
     agent is the conservative direction, and it is reversible by transfer, lift
