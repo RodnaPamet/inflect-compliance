@@ -18,9 +18,11 @@
  *      step 1 and is precisely about the rows opened without a human.)
  *   3. Is there still a prior-state pairing? No → FAILED.
  *   4. The DRIFT CHECK, which asks a different question per rung — below.
- *   5. Only then, send.
+ *   5. The tool's own SEND PRECONDITION, at every rung, where one is declared
+ *      (`SEND_PRECONDITIONS`; #3671's disable: the agent is still contained).
+ *   6. Only then, send.
  *
- * Steps 1-4 send nothing, and each records WHY on the row a human can read.
+ * Steps 1-5 send nothing, and each records WHY on the row a human can read.
  *
  * ## Why drift is a refusal and not a warning — AND WHY IT IS TWO CHECKS
  *
@@ -71,6 +73,11 @@ import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { runInTenantContext } from '@/lib/db-context';
+import {
+    CONTAINED_AGENT_SP_POPULATION,
+    SERVICE_PRINCIPAL_DISABLE_TOOL,
+    SERVICE_PRINCIPAL_TARGET_FIELD,
+} from '@/lib/agentic/service-principal-disable';
 
 import { settleWrite } from './external-write-journal';
 import { getPriorStateRead } from './external-prior-state-read';
@@ -78,6 +85,7 @@ import {
     automaticBoundRefusalAtSend,
     rowRungNarrowedRefusal,
 } from './external-write-automatic';
+import { checkTargetInPopulation } from './external-tool-target-populations';
 
 /**
  * Bound per pass, so one tenant's backlog cannot monopolise a worker.
@@ -141,6 +149,59 @@ export const ASYNC_DELIVERY_TOOLS: ReadonlySet<string> = new Set([
     // (#3374). Declaring it here is what stops it settling APPLIED on the
     // strength of a 200 that only means "request taken".
     'revoke_access_assignment',
+    // A contained agent's Entra service principal (#3671). Graph answers the
+    // PATCH 204, synchronously — so this is declared for a different reason
+    // than the two above, and the reason is the claim `APPLIED` makes. The
+    // answer `callTool` returns is OUR endpoint's MCP result, not Graph's, and
+    // Entra's directory is eventually consistent across replicas: a 204 says
+    // one replica took the change, not that the principal now reads disabled
+    // or has stopped being issued tokens. `APPLIED` is the positive claim "the
+    // principal is disabled", and the only evidence for that is the paired
+    // read reporting `accountEnabled: false` — which is what the reconcile's
+    // verifier for this tool asks, and nothing else promotes it.
+    SERVICE_PRINCIPAL_DISABLE_TOOL,
+]);
+
+/**
+ * A refusal a tool owes at send time, whatever rung the row was opened at
+ * (#3671). Returns the refusal sentence, or null when the write may leave.
+ */
+type SendPrecondition = (
+    ctx: ReturnType<typeof buildSystemContext>,
+    args: Record<string, unknown>,
+) => Promise<string | null>;
+
+/**
+ * Advertised tool name -> what must still be true when it is sent.
+ *
+ * Keyed on the ADVERTISED name, like `ASYNC_DELIVERY_TOOLS`, and for the same
+ * reason the false positive is harmless: a customer's server advertising a tool
+ * of the same name is refused MORE, never less.
+ *
+ * `disable_service_principal`: the principal must still be in the contained-
+ * agent population — its agent's `OWNER_DEPARTED` kill still in force, exactly
+ * one principal reconciled to it. A completed ownership transfer lifts the kill,
+ * and the disable a person approved before it must not leave after it. At
+ * AUTOMATIC the template's bound re-check already asks this; asking again costs
+ * one read and makes the rule independent of how the row was opened.
+ */
+export const SEND_PRECONDITIONS: ReadonlyMap<string, SendPrecondition> = new Map([
+    [
+        SERVICE_PRINCIPAL_DISABLE_TOOL,
+        async (ctx, args) => {
+            const member = await checkTargetInPopulation(
+                ctx,
+                CONTAINED_AGENT_SP_POPULATION,
+                args[SERVICE_PRINCIPAL_TARGET_FIELD],
+            );
+            if (member.ok) return null;
+            return (
+                'The service principal is no longer the principal of a contained agent '
+                + `(${member.kind}): its agent's OWNER_DEPARTED kill may have been lifted by a `
+                + 'completed ownership transfer. Nothing was sent.'
+            );
+        },
+    ],
 ]);
 
 export interface ExternalWriteDispatchResult {
@@ -179,6 +240,23 @@ function canonical(value: unknown): string {
         return Object.fromEntries(Object.keys(o).sort().map((k) => [k, walk(o[k])]));
     };
     return JSON.stringify(walk(value));
+}
+
+/** Did the far end answer with an MCP error result? Only an explicit `true` counts. */
+function isErrorResult(result: unknown): boolean {
+    return !!result && typeof result === 'object' && (result as { isError?: unknown }).isError === true;
+}
+
+/** The first text part of an error result, bounded. */
+function errorResultText(result: unknown): string {
+    const content = (result as { content?: unknown }).content;
+    if (Array.isArray(content)) {
+        for (const part of content) {
+            const text = (part as { text?: unknown } | null)?.text;
+            if (typeof text === 'string' && text.trim() !== '') return text.slice(0, 500);
+        }
+    }
+    return 'no reason was given';
 }
 
 export async function runExternalWriteDispatch(input: {
@@ -376,8 +454,26 @@ export async function runExternalWriteDispatch(input: {
             }
         }
 
+        // ── THE TOOL'S OWN PRECONDITION, AT EVERY RUNG (#3671) ──────────────
+        //
+        // The drift check above protects what a human READ; the bound check
+        // protects what a template ADMITS. Neither knows a fact that belongs to
+        // one tool. For the service-principal disable that fact is "the agent is
+        // still contained": a PROPOSE_ONLY disable approved after its agent's
+        // ownership transfer completed would otherwise still leave, because the
+        // principal's record did not move and no template is involved.
+        const precondition = SEND_PRECONDITIONS.get(row.advertisedToolName);
+        if (precondition) {
+            const refusal = await precondition(ctx, args);
+            if (refusal) {
+                await refuse(refusal);
+                continue;
+            }
+        }
+
+        let sent: unknown;
         try {
-            await callTool(transport, row.advertisedToolName, args);
+            sent = await callTool(transport, row.advertisedToolName, args);
         } catch (err) {
             // INDETERMINATE, not FAILED. The request may have arrived and been
             // applied before the connection broke, and FAILED is a positive claim
@@ -387,6 +483,34 @@ export async function runExternalWriteDispatch(input: {
                 row.id,
                 'INDETERMINATE',
                 `The write was sent and no answer came back: ${(err as Error).message}`,
+            );
+            result.indeterminate += 1;
+            continue;
+        }
+
+        // ── AN ERROR RESULT IS NOT A SUCCESS (#3671) ────────────────────────
+        //
+        // MCP reports a tool's own failure IN-BAND: the call returns normally
+        // with `isError: true`. This pass used to read only "did `callTool`
+        // throw", so a refused write settled `ACCEPTED` — or `APPLIED` — on the
+        // strength of a refusal. The disable endpoint refuses in-band by design
+        // (an already-disabled principal, the connection's own principal), and
+        // so does the grant (a subject who already holds longer access), so the
+        // case is reachable rather than theoretical.
+        //
+        // `INDETERMINATE`, not `FAILED`. Our own endpoints refuse before sending
+        // anything, but this pass cannot tell our endpoint from a customer's
+        // server by its answer, and `FAILED` is the positive claim that the far
+        // end changed nothing. The refusal's own words go on the row — sanitised
+        // and encrypted by `settleWrite` — because they are what tells the
+        // human it needs whether anything did.
+        if (isErrorResult(sent)) {
+            await settleWrite(
+                ctx,
+                row.id,
+                'INDETERMINATE',
+                `The far end answered the write with an error result, so it is not known whether `
+                    + `anything changed: ${errorResultText(sent)}`,
             );
             result.indeterminate += 1;
             continue;

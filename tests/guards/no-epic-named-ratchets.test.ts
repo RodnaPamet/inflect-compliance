@@ -408,7 +408,14 @@ describe('epic-named ratchets are not added back', () => {
         // `no-usecase-imports-in-client`, checks one DIRECT import per client
         // file; this one walks the transitive graph, which that guard's name
         // and allowlist do not describe, so it is not folded in there.
-        expect(guardFiles().length).toBeLessThan(790);
+        //
+        // RAISED 790 -> 791 on 2026-10-18, for ONE file, the same test applied:
+        // `service-principal-disable-graph-seam` is named for its invariant —
+        // nothing calls Microsoft Graph to disable a service principal except
+        // through the external write dispatch (#3671). It holds an import graph
+        // (one Graph client, one importer, one route) that no existing guard
+        // owns; `identity-log-identifier-scrub` is about log lines, not callers.
+        expect(guardFiles().length).toBeLessThan(791);
     });
 
     /**

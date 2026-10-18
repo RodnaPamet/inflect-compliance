@@ -13,6 +13,8 @@
  */
 import { metrics } from '@opentelemetry/api';
 
+import type { ServicePrincipalDisableStatus } from '@/lib/agentic/service-principal-disable';
+
 const METER_NAME = 'inflect-compliance-integrations';
 function getMeter() {
     return metrics.getMeter(METER_NAME);
@@ -1276,6 +1278,46 @@ export function recordAgentOwnerOrphanPass(attrs: {
         }
         _agentOrphanPassOrphans.add(attrs.orphans, { mode: attrs.mode });
     }
+}
+
+let _agentServicePrincipalDisable: Counter | null = null;
+
+/**
+ * One request to disable a contained agent's Entra service principal (#3671),
+ * by what it came to and the external-write rung of the connection it went
+ * through.
+ *
+ * `outcome` is the `ServicePrincipalDisableStatus` verbatim — a closed union of
+ * eighteen, so the cardinality is fixed by the type. `rung` is `none` when no
+ * connection was resolved (not linked, no paired endpoint).
+ *
+ * ALERT ON — `outcome="prior_state_unreadable"`, `"refused"` or `"failed"` at
+ * any rate: a disable was due and did not happen. A rate of `outcome="queued"`
+ * is the number of principals queued for unattended disable, the figure to
+ * watch the first week a connection is widened to AUTOMATIC. `not_linked` and
+ * `no_paired_endpoint` are the default for every tenant that has not set this
+ * up and are not alarms.
+ *
+ * No tenant label, and no identifier of any kind.
+ */
+export function recordAgentServicePrincipalDisable(attrs: {
+    outcome: ServicePrincipalDisableStatus;
+    rung: string;
+}): void {
+    if (!_agentServicePrincipalDisable) {
+        _agentServicePrincipalDisable = getMeter().createCounter(
+            'agentic.owner_orphan_pass.service_principal_disable',
+            {
+                description:
+                    'Requests to disable a contained agent\'s Entra service principal, by outcome and rung',
+                unit: '1',
+            },
+        );
+    }
+    _agentServicePrincipalDisable.add(1, {
+        outcome: attrs.outcome.toLowerCase(),
+        rung: attrs.rung,
+    });
 }
 
 /**

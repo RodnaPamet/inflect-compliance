@@ -16,6 +16,12 @@
  *              (`suspendAgentForOwnerDeparture`), opens an ownership-transfer
  *              task for the departed owner's manager when one is known, and
  *              rings the bell. Both audit rows have actor type JOB and no user.
+ *              Then, for an agent the harness reconciled to exactly one Entra
+ *              service principal, it REQUESTS that principal's disable through
+ *              the external write ladder (`requestServicePrincipalDisable`,
+ *              #3671): a recorded intent, a proposal or a queued journal row,
+ *              by the rung of the outbound connection — never a directory call
+ *              of its own.
  *
  * ## Every refusal records a row
  *
@@ -80,6 +86,12 @@ import { getAgentOrphanPassPolicy } from './agent-owner-orphan-policy';
 import { engageOwnerDepartedKill } from './agent-kill-switch';
 import { suspendAgentForOwnerDeparture } from './agent-registry';
 import { createTask } from './task';
+import { requestServicePrincipalDisable } from './agent-service-principal-disable';
+import {
+    ENTRA_SP_DISCOVERED_PREFIX,
+    servicePrincipalDisableNeedsAttention,
+    type ServicePrincipalDisableRecord,
+} from '@/lib/agentic/service-principal-disable';
 
 /** What the pass decided — and, at AUTOMATIC, did — about the transfer task. */
 export type TransferTaskOutcome =
@@ -101,6 +113,14 @@ export interface OrphanDecision {
     failedStep?: 'KILL' | 'SUSPEND';
     error?: string;
     transferTask: TransferTaskOutcome;
+    /**
+     * The agent's Entra service principal (#3671). At AUTOMATIC, what the
+     * request through the external write ladder came to; at DRY_RUN, whether
+     * one WOULD be requested. Never the principal's object id — the
+     * `DiscoveredAgent` row id names it, and the id itself stays in the
+     * encrypted journal.
+     */
+    servicePrincipal: ServicePrincipalDisableRecord;
     notified: number;
 }
 
@@ -135,6 +155,8 @@ interface Population {
     rosterSize: number;
     /** Manager's user id per departed-owner employee id, when exactly one is known. */
     managerUserByEmployee: ReadonlyMap<string, string>;
+    /** `DiscoveredAgent` ids of each agent's `entra:sp:` principals (#3671). */
+    servicePrincipalLinksByAgent: ReadonlyMap<string, readonly string[]>;
 }
 
 /**
@@ -165,7 +187,31 @@ async function readPopulation(ctx: RequestContext): Promise<Population> {
                 rosterRead: true,
                 rosterSize: 0,
                 managerUserByEmployee: new Map(),
+                servicePrincipalLinksByAgent: new Map(),
             };
+        }
+
+        // THE PRINCIPALS THE HARNESS RECONCILED TO THESE AGENTS (#3671). Read
+        // for every rung so a DRY_RUN pass can say which agents would have a
+        // disable requested; the AUTOMATIC request re-reads them itself, under
+        // the kill it has just engaged.
+        const spLinks = await db.discoveredAgent.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                registeredAgentId: { in: agents.map((a) => a.id) },
+                discoveredId: { startsWith: ENTRA_SP_DISCOVERED_PREFIX },
+            },
+            select: { id: true, registeredAgentId: true },
+            orderBy: { id: 'asc' },
+            take: agents.length * 4,
+        });
+        const servicePrincipalLinksByAgent = new Map<string, string[]>();
+        for (const l of spLinks) {
+            if (!l.registeredAgentId) continue;
+            servicePrincipalLinksByAgent.set(l.registeredAgentId, [
+                ...(servicePrincipalLinksByAgent.get(l.registeredAgentId) ?? []),
+                l.id,
+            ]);
         }
 
         const ownerIds = [...new Set(agents.map((a) => a.ownerUserId))];
@@ -269,8 +315,24 @@ async function readPopulation(ctx: RequestContext): Promise<Population> {
             rosterRead,
             rosterSize: Math.min(roster.length, MAX_ROSTER_READ),
             managerUserByEmployee,
+            servicePrincipalLinksByAgent,
         };
     });
+}
+
+/**
+ * At DRY_RUN: would a disable be requested for this agent's principal?
+ *
+ * Read from the population, with no network and no journal row — the DRY_RUN
+ * pass writes only its bell. Whether the outbound connection would then RECORD,
+ * PROPOSE or QUEUE is that connection's rung, which only the AUTOMATIC request
+ * consults.
+ */
+function dryRunServicePrincipal(population: Population, agentId: string): ServicePrincipalDisableRecord {
+    const links = population.servicePrincipalLinksByAgent.get(agentId) ?? [];
+    if (links.length === 0) return { status: 'NOT_LINKED' };
+    if (links.length > 1) return { status: 'AMBIGUOUS_LINK' };
+    return { status: 'WOULD_REQUEST_DISABLE', discoveredAgentId: links[0] };
 }
 
 function triggeredByOf(ctx: RequestContext): 'scheduled' | 'manual' {
@@ -471,7 +533,7 @@ async function containOrphan(
     agent: AgentRow,
     signals: DepartureSignal[],
     managerUserId: string | null,
-): Promise<Omit<OrphanDecision, 'notified'>> {
+): Promise<Omit<OrphanDecision, 'notified' | 'servicePrincipal'>> {
     const base = { agentId: agent.id, ownerUserId: agent.ownerUserId, signals };
 
     let killSwitchId: string;
@@ -635,13 +697,22 @@ export async function runAgentOwnerOrphanPass(input: {
             const managerUserId = managerFor(population, agent.ownerUserId);
             if (policy.mode === 'AUTOMATIC') {
                 const decided = await containOrphan(ctx, agent, verdict.signals, managerUserId);
+                // THE PRINCIPAL, only once the kill stands. The request reads
+                // "contained" from that kill, so an agent whose kill did not
+                // land is not one this pass may ask the directory about.
+                const servicePrincipal: ServicePrincipalDisableRecord = decided.killSwitchId
+                    ? await requestServicePrincipalDisable(ctx, { agentId: agent.id })
+                    : {
+                          status: 'NOT_CONTAINED',
+                          detail: 'Not requested: the kill switch was not engaged.',
+                      };
                 const notified = await notifyOrphan(
                     ctx,
                     agent,
                     bellDetail(decided.outcome, decided.failedStep),
                     owners,
                 );
-                decisions.push({ ...decided, notified });
+                decisions.push({ ...decided, servicePrincipal, notified });
             } else {
                 // DRY_RUN: nothing below this line writes a kill, a suspension,
                 // a task or a credential. The bell is the only write.
@@ -659,6 +730,7 @@ export async function runAgentOwnerOrphanPass(input: {
                     transferTask: managerUserId
                         ? { status: 'WOULD_OPEN', managerUserId }
                         : { status: 'NO_MANAGER_KNOWN' },
+                    servicePrincipal: dryRunServicePrincipal(population, agent.id),
                     notified,
                 });
             }
@@ -669,11 +741,24 @@ export async function runAgentOwnerOrphanPass(input: {
             (d) => d.outcome === 'SUSPENDED_AND_KILLED' || d.outcome === 'SUSPENDED_KILL_ALREADY_IN_FORCE',
         ).length;
         const taskFailures = decisions.filter((d) => d.transferTask.status === 'FAILED').length;
+        // A disable that was due and did not happen for a reason an operator
+        // must fix makes the pass PARTIAL — at AUTOMATIC only, where a request
+        // was made. `NOT_LINKED`, `NO_PAIRED_ENDPOINT` and `RUNG_DISABLED` are
+        // the default for a tenant that has not set this up and do not count.
+        const servicePrincipalAttention =
+            policy.mode === 'AUTOMATIC'
+                ? decisions.filter((d) => servicePrincipalDisableNeedsAttention(d.servicePrincipal)).length
+                : 0;
+        const servicePrincipalRequested = decisions.filter((d) =>
+            d.servicePrincipal.status === 'RECORDED_INTENT'
+            || d.servicePrincipal.status === 'PROPOSED'
+            || d.servicePrincipal.status === 'QUEUED',
+        ).length;
         const decisionsTruncated = decisions.length > MAX_REPORTED_ORPHANS;
         const status = orphanPassStatus({
             refusal: null,
             mode: policy.mode,
-            failed: failed + taskFailures,
+            failed: failed + taskFailures + servicePrincipalAttention,
             decisionsTruncated,
             rosterRead: population.rosterRead,
         });
@@ -700,6 +785,8 @@ export async function runAgentOwnerOrphanPass(input: {
                     failed,
                     transferTaskFailures: taskFailures,
                     wouldContain: policy.mode === 'AUTOMATIC' ? 0 : decisions.length,
+                    servicePrincipalDisablesRequested: servicePrincipalRequested,
+                    servicePrincipalDisablesNeedingAttention: servicePrincipalAttention,
                 },
                 decisions: decisions.slice(0, MAX_REPORTED_ORPHANS) as unknown as Prisma.InputJsonValue,
                 decisionsTruncated,
