@@ -106,7 +106,9 @@ returns assert / resolve / hold; the usecase creates, reopens and closes
   hygiene is not in that chain, and neither job reads what the other writes.
 - **No blast-radius breaker on automatic kills.** The leaver has one for
   directory disables. Here stopping is the security-conservative direction and
-  reversible by transfer; whether a mass-departure breaker is wanted is left to
-  the owner.
+  reversible by transfer. The owner decided on 2026-10-18 that no breaker is
+  wanted: a mass departure stops every orphaned agent at once, by design.
+- **The rotation age stays a product default for now** (owner, 2026-10-18); the
+  per-tenant setting the issue names is #3708.
 - **One task per kill engagement.** A kill already in force (a person's, or an
   earlier pass's) opens no second task.

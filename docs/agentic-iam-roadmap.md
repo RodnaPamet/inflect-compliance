@@ -497,6 +497,13 @@ changed what #3698 built.
     membership, not the role in the tenant being called. It fails closed, and
     #3701 tracks the fix. (`2a`) Fixed by #3701 on 2026-10-18: the edge now
     reads the role in the tenant the URL names.
+17. **The owner-orphan pass has no blast-radius breaker.** At AUTOMATIC it
+    contains every orphaned agent it finds, however many. Stopping an unowned
+    agent is the conservative direction, and it is reversible by transfer, lift
+    and reactivation. The identity leaver's breaker exists because a directory
+    disable acts on a customer's people. The orphan pass acts only on agents.
+    The key rotation age stays the 90-day product default until #3708 adds a
+    per-tenant setting. (`2b`)
 
 ### Permission keys
 
