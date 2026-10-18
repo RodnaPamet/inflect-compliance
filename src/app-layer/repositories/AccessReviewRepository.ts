@@ -18,7 +18,25 @@ import type {
     MembershipStatus,
 } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
+import { badRequest } from '@/lib/errors/types';
+import {
+    AGENT_CAMPAIGN_REFUSAL,
+    type MemberAccessReviewScope,
+    type StoredAccessReviewScope,
+} from '@/lib/access-review/scope';
 import { RequestContext } from '../types';
+
+/**
+ * The scopes `create` may write. Every stored scope EXCEPT AGENT.
+ *
+ * #3674, deploy 1 of 2: the AGENT value exists so that every reader learns it
+ * before any row holds it, and nothing may write it yet. Excluded by TYPE, so a
+ * caller passing it fails `npm run typecheck`, and refused again at run time
+ * for a caller that reached here through a widening cast. Deploy 2 adds the one
+ * AGENT writer and widens this deliberately, in its own reviewed diff —
+ * `tests/guards/access-review-agent-scope.test.ts` proves the exclusion.
+ */
+export type WritableAccessReviewScope = Exclude<StoredAccessReviewScope, 'AGENT'>;
 
 // Tight SELECT for list / table views — list pages don't need the
 // full decision graph.
@@ -35,7 +53,13 @@ const accessReviewListSelect = {
     createdAt: true,
     reviewerUserId: true,
     createdByUserId: true,
-    _count: { select: { decisions: true } },
+    /**
+     * Both subject tables. A campaign's subjects are in exactly one of them —
+     * member rows for the member scopes, connected rows for CONNECTED_APP,
+     * LEGACY_APP and AGENT — so the register's progress column reads their sum.
+     * Counting `decisions` alone showed 0/0 for every non-member campaign.
+     */
+    _count: { select: { decisions: true, connectedDecisions: true } },
 } as const;
 
 // SELECT shape for the reviewer page — includes the decision graph
@@ -156,7 +180,7 @@ export class AccessReviewRepository {
         data: {
             name: string;
             description?: string | null;
-            scope: Prisma.AccessReviewUncheckedCreateInput['scope'];
+            scope: WritableAccessReviewScope;
             periodStartAt?: Date | null;
             periodEndAt?: Date | null;
             reviewerUserId: string;
@@ -169,6 +193,15 @@ export class AccessReviewRepository {
             snapshotTruncated?: boolean;
         },
     ) {
+        // The run-time half of the type above. `as string` because the type
+        // already says this cannot happen — the check is for the caller that
+        // got here through a cast, which is exactly the caller a type cannot see.
+        if ((data.scope as string) === 'AGENT') {
+            throw badRequest(
+                `${AGENT_CAMPAIGN_REFUSAL}: AccessReviewRepository.create does not write the AGENT `
+                    + 'scope in this release.',
+            );
+        }
         return db.accessReview.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -420,7 +453,11 @@ export class AccessReviewRepository {
     static async resolveMembershipsForScope(
         db: PrismaTx,
         ctx: RequestContext,
-        scope: Prisma.AccessReviewUncheckedCreateInput['scope'],
+        // The MEMBER scopes only. A non-member scope used to fall through to
+        // the ALL_USERS branch below and snapshot every membership — so the
+        // parameter is the member type, and an AGENT or CONNECTED_APP value
+        // cannot reach this resolver without a cast.
+        scope: MemberAccessReviewScope,
         customMembershipIds?: readonly string[],
     ) {
         const where: Prisma.TenantMembershipWhereInput = {

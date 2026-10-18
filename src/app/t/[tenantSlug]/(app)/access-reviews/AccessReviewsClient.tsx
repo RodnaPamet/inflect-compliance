@@ -35,6 +35,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
+import { scopeLabelKey, type StoredAccessReviewScope } from '@/lib/access-review/scope';
 
 /// SSR returns Prisma rows with native Date instances; the SWR
 /// fetcher returns the same shape but the dates round-trip through
@@ -42,7 +43,8 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 interface AccessReviewSummary {
     id: string;
     name: string;
-    scope: 'ALL_USERS' | 'ADMIN_ONLY' | 'CUSTOM' | 'CONNECTED_APP' | 'LEGACY_APP';
+    /** Every stored scope, AGENT included (#3674). */
+    scope: StoredAccessReviewScope;
     status: 'OPEN' | 'IN_REVIEW' | 'CLOSED';
     periodStartAt: string | Date | null;
     periodEndAt: string | Date | null;
@@ -51,7 +53,12 @@ interface AccessReviewSummary {
     createdAt: string | Date;
     reviewerUserId: string;
     createdByUserId: string;
-    _count: { decisions: number };
+    /**
+     * Subjects live in ONE of two tables: member rows, or connected rows for
+     * CONNECTED_APP / LEGACY_APP / AGENT. `connectedDecisions` is optional
+     * because a row cached before the count carried it has none.
+     */
+    _count: { decisions: number; connectedDecisions?: number };
     /** Filled by the detail-page hydration; the list endpoint keeps
      *  the response small. */
     decidedCount?: number;
@@ -132,8 +139,8 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                     id: 'scope',
                     header: t('colScope'),
                     cell: ({ row }) => (
-                        <span className="text-sm text-content-muted">
-                            {row.original.scope.replace('_', ' ').toLowerCase()}
+                        <span className="text-sm text-content-muted" data-testid={`access-review-scope-cell-${row.original.id}`}>
+                            {t(`scopeLabels.${scopeLabelKey(row.original.scope)}`)}
                         </span>
                     ),
                 },
@@ -155,7 +162,8 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                     id: 'progress',
                     header: t('colProgress'),
                     cell: ({ row }) => {
-                        const total = row.original._count.decisions;
+                        const total =
+                            row.original._count.decisions + (row.original._count.connectedDecisions ?? 0);
                         const decided = row.original.decidedCount ?? 0;
                         const pct = total === 0 ? 0 : Math.round((decided / total) * 100);
                         const variant =

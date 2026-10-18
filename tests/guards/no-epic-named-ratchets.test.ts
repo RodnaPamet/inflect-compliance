@@ -383,7 +383,14 @@ describe('epic-named ratchets are not added back', () => {
         // only teaches readers the value (#3691). It holds the empty writer
         // allowlist the second deploy (#3669) amends, which no existing guard
         // owns.
-        expect(guardFiles().length).toBeLessThan(787);
+        //
+        // RAISED 787 -> 788 on 2026-10-18, for ONE file, the same test:
+        // `access-review-agent-scope` is named for its invariant — nothing
+        // writes the AGENT access-review scope in the deploy that only teaches
+        // readers the value (#3674). It holds the empty writer allowlist the
+        // second deploy amends, and the type-level proof that the one create
+        // seam cannot store the value; no existing guard owns either.
+        expect(guardFiles().length).toBeLessThan(788);
     });
 
     /**

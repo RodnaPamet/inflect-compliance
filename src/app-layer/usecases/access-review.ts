@@ -54,8 +54,51 @@ import { collectPdfBuffer } from '../reports/pdf/collect-buffer';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { Readable } from 'node:stream';
 import { logger } from '@/lib/observability/logger';
+import { isMemberScope, mayReadAgentSubjects } from '@/lib/access-review/scope';
+import { assertNotUnimplementedAgentCampaign } from './access-review-scope-gate';
 
 // ─── Read paths ───────────────────────────────────────────────────────
+
+/**
+ * An AGENT campaign's subjects, narrowed to the readers who may see them.
+ *
+ * Every role holds `access_reviews.view`; the agent register is read under
+ * `admin.agent_registry`, which READER, EDITOR and AUDITOR do not hold. An
+ * AGENT subject row is register data — the agent's name, its owner, what it is
+ * granted — so a caller who is neither the campaign's reviewer nor a register
+ * reader gets the rows with that data removed: the campaign, its status and its
+ * progress counts stay visible, and `subjectsRestricted` says why the rest is
+ * not. Every other scope passes through untouched.
+ *
+ * Applied in deploy 1 (#3674) although deploy 1 creates no AGENT campaign: a
+ * container running this build serves reads during deploy 2's rollout, which
+ * is when such rows first exist.
+ */
+export function narrowAgentSubjects<
+    R extends {
+        scope: string;
+        reviewerUserId: string;
+        connectedDecisions?: ReadonlyArray<{ snapshotJson: unknown; subjectRef: string; notes: string | null }>;
+    },
+>(ctx: RequestContext, review: R): R & { subjectsRestricted: boolean } {
+    if (review.scope !== 'AGENT') return { ...review, subjectsRestricted: false };
+    const allowed = mayReadAgentSubjects({
+        userId: ctx.userId,
+        reviewerUserId: review.reviewerUserId,
+        holdsAgentRegistry: ctx.appPermissions?.admin?.agent_registry === true,
+    });
+    if (allowed || !review.connectedDecisions) return { ...review, subjectsRestricted: false };
+    // Each row keeps its own type — every field this replaces is nullable or a
+    // string on the row — so the cast restores the generic the spread erased,
+    // and asserts nothing the values do not already satisfy.
+    const connectedDecisions = review.connectedDecisions.map((d) => ({
+        ...d,
+        snapshotJson: null,
+        subjectRef: 'agent',
+        notes: null,
+    })) as unknown as R['connectedDecisions'];
+    return { ...review, connectedDecisions, subjectsRestricted: true };
+}
 
 export async function listAccessReviews(
     ctx: RequestContext,
@@ -72,7 +115,7 @@ export async function getAccessReview(ctx: RequestContext, id: string) {
     return runInTenantContext(ctx, async (db) => {
         const review = await AccessReviewRepository.getById(db, ctx, id);
         if (!review) throw notFound('Access review not found');
-        return review;
+        return narrowAgentSubjects(ctx, review);
     });
 }
 
@@ -95,7 +138,7 @@ export async function getAccessReviewWithActivity(
             ctx,
             userIds,
         );
-        return { ...review, lastActivityByUser };
+        return { ...narrowAgentSubjects(ctx, review), lastActivityByUser };
     });
 }
 
@@ -574,6 +617,18 @@ export async function closeAccessReview(
         }
         if (review.status === 'CLOSED') {
             throw badRequest('Campaign is already closed.');
+        }
+        // The MEMBER close, and only the member close. It has no zero-subject
+        // guard of its own — the member creation refuses an empty scope instead
+        // — so a campaign whose subjects live in the OTHER table would close
+        // here over zero member rows and produce evidence that nobody was
+        // reviewed. AGENT is refused by name; the connected scopes close
+        // through `closeConnectedAccessReview`.
+        if (!isMemberScope(review.scope)) {
+            assertNotUnimplementedAgentCampaign(review.scope, 'close');
+            throw badRequest(
+                `A ${review.scope} campaign does not close through the member flow; its subjects are not tenant memberships.`,
+            );
         }
 
         const decisions = await AccessReviewRepository.getDecisionsForExecution(

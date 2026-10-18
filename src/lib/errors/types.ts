@@ -128,7 +128,17 @@ export type DomainErrorCode =
      * So this refuses at CREATE, and the code lets the UI say "connect and
      * sync a directory" rather than "bad request".
      */
-    | 'NO_SUBJECTS';
+    | 'NO_SUBJECTS'
+    /**
+     * Step 3a, deploy 1 of 2 (#3674) — an AGENT access review exists as a
+     * scope value but this build implements no AGENT campaign: nothing may
+     * create, decide or close one. Machine-readable so a deploy-1 container
+     * serving a request during deploy 2's rollout refuses by NAME rather than
+     * routing an agent campaign into a flow that lacks its rules — the member
+     * close has no zero-subject guard, and the connected decide has no
+     * owner-may-not-decide-their-own-agent check.
+     */
+    | 'AGENT_CAMPAIGN_NOT_AVAILABLE';
 
 export class DomainError extends AppError {
     public readonly domainCode: DomainErrorCode;

@@ -25,6 +25,8 @@ import { collectPdfBuffer } from '../reports/pdf/collect-buffer';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { Readable } from 'node:stream';
 import { logger } from '@/lib/observability/logger';
+import { mayReadAgentSubjects } from '@/lib/access-review/scope';
+import { assertNotUnimplementedAgentCampaign } from './access-review-scope-gate';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 const MAX_SUBJECTS = 5000;
@@ -195,14 +197,32 @@ export async function createConnectedAccessReview(ctx: RequestContext, input: un
 
 export async function listConnectedDecisions(ctx: RequestContext, accessReviewId: string) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) =>
-        db.accessReviewConnectedDecision.findMany({
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.accessReviewConnectedDecision.findMany({
             where: { tenantId: ctx.tenantId, accessReviewId },
             select: { id: true, subjectRef: true, snapshotJson: true, decision: true, decidedAt: true, notes: true, executedAt: true },
             orderBy: { subjectRef: 'asc' },
             take: MAX_SUBJECTS,
-        }),
-    );
+        });
+        // An AGENT campaign's subjects are register data (#3674). The same
+        // narrowing `getAccessReview` applies — the reviewer, or a holder of
+        // `admin.agent_registry` — because this endpoint returns the same rows.
+        const review = await db.accessReview.findFirst({
+            where: { id: accessReviewId, tenantId: ctx.tenantId },
+            select: { scope: true, reviewerUserId: true },
+        });
+        if (
+            review?.scope === 'AGENT'
+            && !mayReadAgentSubjects({
+                userId: ctx.userId,
+                reviewerUserId: review.reviewerUserId,
+                holdsAgentRegistry: ctx.appPermissions?.admin?.agent_registry === true,
+            })
+        ) {
+            return rows.map((r) => ({ ...r, subjectRef: 'agent', snapshotJson: null, notes: null }));
+        }
+        return rows;
+    });
 }
 
 export const SubmitConnectedDecisionSchema = z.object({
@@ -221,10 +241,15 @@ export async function submitConnectedDecision(ctx: RequestContext, decisionId: s
         // assertCanRead ONLY — any read-only member could record verdicts.
         const decision = await db.accessReviewConnectedDecision.findFirst({
             where: { id: decisionId, tenantId: ctx.tenantId },
-            select: { id: true, decision: true, accessReview: { select: { reviewerUserId: true, status: true, deletedAt: true } } },
+            select: { id: true, decision: true, accessReview: { select: { reviewerUserId: true, status: true, deletedAt: true, scope: true } } },
         });
         if (!decision || !decision.accessReview || decision.accessReview.deletedAt !== null) throw notFound('Decision not found.');
         if (decision.accessReview.status === 'CLOSED') throw badRequest('This campaign is closed; decisions are immutable.');
+        // An AGENT subject is decided under rules this path does not implement
+        // — chiefly that an agent's owner may not decide their own agent — so
+        // a build without the AGENT campaign refuses by name rather than
+        // accepting a verdict the owner rule would have refused (#3674).
+        assertNotUnimplementedAgentCampaign(decision.accessReview.scope, 'decide');
         const isAssignedReviewer = decision.accessReview.reviewerUserId === ctx.userId;
         if (!isAssignedReviewer && !ctx.permissions?.canAdmin) {
             throw forbidden('Only the assigned reviewer (or a tenant admin) may submit connected-app decisions.');
@@ -294,11 +319,19 @@ export function remediationDescription(input: {
     subjectRef: string;
 }): string {
     const head = `Access review "${input.reviewName}" decided ${input.decision} for ${input.subjectRef}.`;
-    return input.scope === 'LEGACY_APP'
-        ? `${head} Make this change IN THE LEGACY APPLICATION ITSELF and then close this task — `
-            + 'Inflect reads that application and never writes to it, so nothing here will '
-            + 'action it for you.'
-        : `${head} Remove or adjust this account in the identity provider, then close this task.`;
+    switch (input.scope) {
+        case 'LEGACY_APP':
+            return `${head} Make this change IN THE LEGACY APPLICATION ITSELF and then close this task — `
+                + 'Inflect reads that application and never writes to it, so nothing here will '
+                + 'action it for you.';
+        case 'AGENT':
+            // An agent is not an account in a directory: the change is made in
+            // the agent register, by whoever holds the register's keys.
+            return `${head} Make this change in the AGENT REGISTER — retire or suspend the agent, `
+                + 'or remove the grants it should no longer hold — and then close this task.';
+        default:
+            return `${head} Remove or adjust this account in the identity provider, then close this task.`;
+    }
 }
 
 /**
@@ -365,6 +398,9 @@ export async function closeConnectedAccessReview(
         const review = await db.accessReview.findFirst({ where: { id: accessReviewId, tenantId: ctx.tenantId }, select: { id: true, name: true, description: true, scope: true, periodStartAt: true, periodEndAt: true, status: true, deletedAt: true, snapshotTruncated: true, reviewer: { select: { email: true } }, createdBy: { select: { email: true } }, tenant: { select: { name: true } } } });
         if (!review || review.deletedAt !== null) throw notFound('Access review not found');
         if (review.status === 'CLOSED') throw badRequest('Campaign is already closed.');
+        // Before any write, and before the pending check: an AGENT campaign
+        // closes under rules this build does not implement (#3674).
+        assertNotUnimplementedAgentCampaign(review.scope, 'close');
 
         const decisions = await db.accessReviewConnectedDecision.findMany({ where: { tenantId: ctx.tenantId, accessReviewId }, select: { id: true, subjectRef: true, decision: true, decidedAt: true, executedAt: true, notes: true, snapshotJson: true }, orderBy: { subjectRef: 'asc' } });
 

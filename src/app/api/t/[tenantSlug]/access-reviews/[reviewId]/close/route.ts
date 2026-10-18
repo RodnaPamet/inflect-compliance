@@ -18,6 +18,7 @@ import {
     getAccessReview,
 } from '@/app-layer/usecases/access-review';
 import { closeConnectedAccessReview } from '@/app-layer/usecases/access-review-connected';
+import { subjectTableOf } from '@/lib/access-review/scope';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
@@ -37,9 +38,16 @@ export const POST = withApiErrorHandling(
             // writes to a legacy application) and the evidence provenance, and
             // both are handled inside it. A parallel implementation would have
             // been a second copy of the guards, which is where they rot.
+            //
+            // #3674 — the dispatch reads WHICH TABLE holds the subjects rather
+            // than naming two scopes. It used to name CONNECTED_APP and
+            // LEGACY_APP and send everything else to the member close, so the
+            // AGENT value would have reached the one close with no zero-subject
+            // guard. An unknown scope now goes to the connected close, which
+            // refuses zero subjects; both closes refuse AGENT by name in a
+            // build that implements no AGENT campaign.
             const review = await getAccessReview(ctx, params.reviewId);
-            const viaConnected =
-                review?.scope === 'CONNECTED_APP' || review?.scope === 'LEGACY_APP';
+            const viaConnected = subjectTableOf(review.scope) === 'CONNECTED';
             const result = viaConnected
                 ? await closeConnectedAccessReview(ctx, params.reviewId)
                 : await closeAccessReview(ctx, params.reviewId);

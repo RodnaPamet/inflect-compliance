@@ -37,6 +37,12 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { TENANT_ROLES, type AssignableTenantRole } from '@/lib/roles';
+import {
+    AGENT_CAMPAIGNS_IMPLEMENTED,
+    readAgentSubjectSnapshot,
+    scopeLabelKey,
+    type StoredAccessReviewScope,
+} from '@/lib/access-review/scope';
 
 /**
  * The roles a MODIFY decision may target — a writer's list, because closing the
@@ -147,7 +153,8 @@ interface ReviewDetail {
     id: string;
     name: string;
     description: string | null;
-    scope: 'ALL_USERS' | 'ADMIN_ONLY' | 'CUSTOM' | 'CONNECTED_APP' | 'LEGACY_APP';
+    /** Every stored scope, AGENT included (#3674). */
+    scope: StoredAccessReviewScope;
     status: Status;
     periodStartAt: string | Date | null;
     periodEndAt: string | Date | null;
@@ -163,6 +170,12 @@ interface ReviewDetail {
     connectedDecisions: ConnectedDecisionRow[];
     /** The subject snapshot was cut off at the cap; the campaign covers a prefix. */
     snapshotTruncated: boolean;
+    /**
+     * #3674 — an AGENT campaign's subjects were withheld from this viewer: they
+     * are register data, readable by the campaign's reviewer and by holders of
+     * `admin.agent_registry`. Optional because only an AGENT campaign sets it.
+     */
+    subjectsRestricted?: boolean;
     lastActivityByUser: Record<string, string | Date>;
 }
 
@@ -203,8 +216,15 @@ export function AccessReviewDetailClient({
     const review = reviewQuery.data!;
 
     const isReviewer = currentUserId === review.reviewerUserId;
-    const canDecide = (isReviewer || isAdmin) && review.status !== 'CLOSED';
-    const canClose = isAdmin && review.status !== 'CLOSED';
+    // #3674 — an AGENT campaign is decided and closed under rules (the owner
+    // may not decide their own agent; a narrowing only deletes) that ship with
+    // the release that creates such campaigns. Until then its page is
+    // read-only, matching the server, which refuses both by name — showing a
+    // control that always fails is worse than showing none.
+    const isAgent = review.scope === 'AGENT';
+    const agentActionsAvailable = !isAgent || AGENT_CAMPAIGNS_IMPLEMENTED;
+    const canDecide = (isReviewer || isAdmin) && review.status !== 'CLOSED' && agentActionsAvailable;
+    const canClose = isAdmin && review.status !== 'CLOSED' && agentActionsAvailable;
 
     // #107 READ side. The register publishes what it rendered; the fallback
     // to the list cache is left ENABLED here (a real `listKey`, not the
@@ -514,6 +534,74 @@ export function AccessReviewDetailClient({
         [canDecide, t],
     );
 
+    // ─── #3674 — the AGENT subject table ──────────────────────────────
+    //
+    // A SEPARATE column set, for the reason the connected table is separate:
+    // an agent shares no columns with a membership or a directory account.
+    // What a reviewer recertifies is who owns the agent and what it is
+    // granted. A row whose subject was withheld (`subjectsRestricted`) renders
+    // as restricted rather than as an agent with no name.
+    const agentColumns = useMemo(
+        () => createColumns<ConnectedDecisionRow>([
+            {
+                id: 'agent',
+                header: t('colAgent'),
+                cell: ({ row }) => {
+                    const snap = readAgentSubjectSnapshot(row.original.snapshotJson);
+                    return (
+                        <div data-testid={`agent-row-${row.original.id}`}>
+                            <div className="font-medium text-content-default">
+                                {snap ? (snap.agentName ?? snap.agentId) : t('agentRestricted')}
+                            </div>
+                            {snap?.agentStatus ? (
+                                <div className="text-xs text-content-muted">{snap.agentStatus}</div>
+                            ) : null}
+                        </div>
+                    );
+                },
+            },
+            {
+                id: 'owner',
+                header: t('colAgentOwner'),
+                cell: ({ row }) => {
+                    const snap = readAgentSubjectSnapshot(row.original.snapshotJson);
+                    return (
+                        <span className="text-sm">
+                            {snap?.ownerEmail ?? '—'}
+                        </span>
+                    );
+                },
+            },
+            {
+                id: 'grants',
+                header: t('colAgentGrants'),
+                cell: ({ row }) => {
+                    const snap = readAgentSubjectSnapshot(row.original.snapshotJson);
+                    return (
+                        <span className="text-sm">
+                            {snap?.grantCount ?? '—'}
+                        </span>
+                    );
+                },
+            },
+            {
+                id: 'decision',
+                header: t('colDecision'),
+                cell: ({ row }) => {
+                    const d = row.original;
+                    return d.decision ? (
+                        <StatusBadge variant={DECISION_VARIANT[d.decision]}>
+                            {d.decision}
+                        </StatusBadge>
+                    ) : (
+                        <span className="text-xs text-content-muted">{t('pending')}</span>
+                    );
+                },
+            },
+        ]),
+        [t],
+    );
+
     return (
         <EntityDetailLayout
             id="access-review-detail-page"
@@ -593,7 +681,7 @@ export function AccessReviewDetailClient({
                     </div>
                     <div>
                         <dt className="font-semibold uppercase">{t('dlScope')}</dt>
-                        <dd>{review.scope.replace('_', ' ').toLowerCase()}</dd>
+                        <dd data-testid="access-review-scope">{t(`scopeLabels.${scopeLabelKey(review.scope)}`)}</dd>
                     </div>
                     <div>
                         <dt className="font-semibold uppercase">{t('dlDue')}</dt>
@@ -635,7 +723,35 @@ export function AccessReviewDetailClient({
                 </div>
             ) : null}
 
-            {isConnected ? (
+            {isAgent && !AGENT_CAMPAIGNS_IMPLEMENTED ? (
+                <div
+                    role="status"
+                    data-testid="access-review-agent-read-only"
+                    className="rounded-md border border-border-subtle bg-bg-muted p-3 text-sm text-content-muted"
+                >
+                    {t('agentReadOnlyNotice')}
+                </div>
+            ) : null}
+            {isAgent && review.subjectsRestricted ? (
+                <div
+                    role="status"
+                    data-testid="access-review-agent-subjects-restricted"
+                    className="rounded-md border border-border-subtle bg-bg-muted p-3 text-sm text-content-muted"
+                >
+                    {t('agentSubjectsRestricted')}
+                </div>
+            ) : null}
+
+            {isAgent ? (
+                <DataTable
+                    data={connectedRows}
+                    columns={agentColumns}
+                    getRowId={(d) => d.id}
+                    emptyState={t('rosterEmpty')}
+                    resourceName={(p) => (p ? 'agents' : 'agent')}
+                    data-testid="access-review-agent-table"
+                />
+            ) : isConnected ? (
                 <DataTable
                     data={connectedRows}
                     columns={connectedColumns}
