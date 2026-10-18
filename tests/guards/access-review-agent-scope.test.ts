@@ -78,10 +78,9 @@ export function touchesAccessReviews(rel: string, code: string): boolean {
 export function createsAccessReview(code: string): string[] {
     const out: string[] = [];
     const delegate = /\baccessReview\s*\.\s*(create|createMany|createManyAndReturn|upsert)\s*\(/g;
-    let m: RegExpExecArray | null;
-    while ((m = delegate.exec(code)) !== null) out.push(`accessReview.${m[1]}(`);
+    for (const m of code.matchAll(delegate)) out.push(`accessReview.${m[1]}(`);
     const raw = /\bINSERT\s+INTO\s+(?:"public"\s*\.\s*)?"AccessReview"(?=[\s(]|$)/gi;
-    while ((m = raw.exec(code)) !== null) out.push('raw INSERT INTO "AccessReview"');
+    for (const _ of code.matchAll(raw)) out.push('raw INSERT INTO "AccessReview"');
     return out;
 }
 
