@@ -11,8 +11,11 @@
  *     parse time so the usecase never sees a malformed verdict.
  */
 import { z } from 'zod';
-import { AccessReviewScope } from '@prisma/client';
 import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
+import {
+    AGENT_CAMPAIGN_REFUSAL,
+    MEMBER_ACCESS_REVIEW_SCOPES,
+} from '@/lib/access-review/scope';
 
 const TextField = z
     .string()
@@ -34,11 +37,39 @@ const DateField = z.union([z.string().datetime(), z.date()]).transform((v) =>
 
 // ── createAccessReview ─────────────────────────────────────────────
 
+/**
+ * The scope a MEMBER campaign may be created with, and nothing else.
+ *
+ * This was `z.nativeEnum(AccessReviewScope)`, which admits every value the
+ * generated enum carries — so the day AGENT joined the enum, this route would
+ * have accepted it without any file naming it, and snapshotted tenant
+ * memberships into a campaign labelled AGENT. It already did that for
+ * CONNECTED_APP and LEGACY_APP: a member campaign stamped with either is one
+ * whose close and detail page read the OTHER decision table, so it could never
+ * be closed. Those scopes have their own routes; this one creates member
+ * campaigns only, and says which route to use rather than "invalid enum value".
+ */
+function memberScopeRefusal(input: unknown): string {
+    if (input === 'AGENT') {
+        return `${AGENT_CAMPAIGN_REFUSAL}: an AGENT campaign is not created through this route, `
+            + 'and this release creates none.';
+    }
+    if (input === 'CONNECTED_APP') {
+        return 'SCOPE_HAS_ITS_OWN_ROUTE: a CONNECTED_APP campaign is created at POST /access-reviews/connected.';
+    }
+    if (input === 'LEGACY_APP') {
+        return 'SCOPE_HAS_ITS_OWN_ROUTE: a LEGACY_APP campaign is created from a reconciled legacy snapshot, not here.';
+    }
+    return `scope must be one of ${MEMBER_ACCESS_REVIEW_SCOPES.join(', ')}.`;
+}
+
 export const CreateAccessReviewSchema = z
     .object({
         name: TextField,
         description: OptionalText,
-        scope: z.nativeEnum(AccessReviewScope).default('ALL_USERS'),
+        scope: z
+            .enum(MEMBER_ACCESS_REVIEW_SCOPES, { error: (issue) => memberScopeRefusal(issue.input) })
+            .default('ALL_USERS'),
         /** Window the campaign covers — surfaces verbatim in evidence. */
         periodStartAt: DateField.optional(),
         periodEndAt: DateField.optional(),

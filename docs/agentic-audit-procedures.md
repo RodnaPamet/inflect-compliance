@@ -416,8 +416,8 @@ whose decision rows reach the unit:
   - `ADMIN_ONLY` and `CUSTOM` campaigns as cover for the memberships unit.
     Neither covers the whole population. `ADMIN_ONLY` campaigns count towards
     procedure 4;
-  - registered agents. `AccessReviewScope` has no agent value; step `3a` adds
-    one.
+  - registered agents. Step `3a` (#3674) added the `AGENT` value to
+    `AccessReviewScope`; catalogue version 1 does not test agent campaigns.
 
 **Sample.** The whole population, drawn in keyed order with epoch
 `iam.recertification_completeness@YYYY-Qn`. The units are bounded by the number

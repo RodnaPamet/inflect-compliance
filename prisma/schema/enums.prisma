@@ -1430,6 +1430,18 @@ enum AccessReviewScope {
   /// reminders, closing and the evidence PDF working for this scope without a
   /// second implementation of each.
   LEGACY_APP
+  /// Step 3a of the agentic IAM roadmap — recertify registered agents.
+  ///
+  /// Subjects land in `AccessReviewConnectedDecision`, as LEGACY_APP's do, with
+  /// `subjectRef` as `agent:<registeredAgentId>` and `connectedAccountId` NULL.
+  ///
+  /// It reaches the type in TWO deploys (#3674), so that no running container
+  /// meets a value its Prisma client does not know. Deploy 1 adds the value and
+  /// teaches every reader; nothing creates an AGENT campaign, and every path
+  /// that would act on one refuses `AGENT_CAMPAIGN_NOT_AVAILABLE`
+  /// (`AGENT_CAMPAIGNS_IMPLEMENTED` in `src/lib/access-review/scope.ts`).
+  /// Deploy 2 adds the one writer.
+  AGENT
 }
 
 /// Lifecycle for an access review campaign.

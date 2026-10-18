@@ -1637,6 +1637,39 @@ rules are each one careless edit from being undone:
   that count "nothing written" across a rollback count the intake's actions,
   not every audit row.
 
+**The `AGENT` access-review scope** (#3674, deploy 1 of 2 for step 3a) exists
+so every reader knows it before any row holds it — a Prisma client meeting an
+enum value it was not generated with fails the whole read, which on the
+access-review register is every campaign the tenant has. Rules that are easy to
+undo:
+
+- **Readers key on `src/lib/access-review/scope.ts`, never on two scope
+  names.** `SUBJECT_TABLE` says which decision table holds a scope's subjects
+  (AGENT is `CONNECTED`, as LEGACY_APP is), keyed exhaustively on the stored
+  value. The close route used to name CONNECTED_APP and LEGACY_APP and send
+  everything else to the member close — the one close with no zero-subject
+  guard. An unknown scope now routes to the connected close.
+- **`POST /access-reviews` creates member campaigns only**
+  (`z.enum(MEMBER_ACCESS_REVIEW_SCOPES)`). It was `z.nativeEnum(AccessReviewScope)`,
+  which would have admitted AGENT without any file naming it, and already
+  snapshotted memberships into unclosable CONNECTED_APP/LEGACY_APP campaigns.
+  No Zod schema may be built from the generated enum.
+- **`AccessReviewRepository.create` is the one create seam and its scope type
+  excludes AGENT** (`WritableAccessReviewScope`, plus a run-time refusal). Every
+  path that would create, decide or close an AGENT campaign refuses
+  `AGENT_CAMPAIGN_NOT_AVAILABLE` while `AGENT_CAMPAIGNS_IMPLEMENTED` is false —
+  the member close, the connected close and the connected decide were written
+  for scopes whose rules are not an agent's. `WRITERS` in
+  `tests/guards/access-review-agent-scope.test.ts` is empty; deploy 2 adds the
+  campaign usecase there and flips the flag in the same pull request.
+- **An AGENT campaign's subjects are register data**, read under
+  `admin.agent_registry`, while every role holds `access_reviews.view`. So
+  `narrowAgentSubjects` (and the same rule in `listConnectedDecisions`) strips
+  `snapshotJson`, `subjectRef` and `notes` for anyone who is neither the
+  campaign's reviewer nor a register reader; the campaign and its counts stay
+  visible. Deploy 2's writer must keep register data inside rows these readers
+  narrow, or behind a read that narrows the same way.
+
 **A2A peers** (`usecases/peer-agents.ts`, since #3673) are agents in another
 organisation, registered for identity and attribution and never for authority
 (`docs/a2a-mapping.md`). Five rules in it are easy to undo:

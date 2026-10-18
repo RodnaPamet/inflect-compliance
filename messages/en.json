@@ -9483,7 +9483,22 @@
     "undoExplainer": "The recorded {verdict} will be cleared and this row returns to pending, so a new verdict can be recorded. The snapshot of what the access looked like is kept.",
     "undoReasonLabel": "Why are you discarding this verdict?",
     "undoReasonPlaceholder": "Recorded against the wrong person, wrong verdict chosen, …",
-    "undoConfirm": "Discard verdict"
+    "undoConfirm": "Discard verdict",
+    "scopeLabels": {
+      "ALL_USERS": "All users",
+      "ADMIN_ONLY": "Owners + admins only",
+      "CUSTOM": "Selected members",
+      "CONNECTED_APP": "Connected directory accounts",
+      "LEGACY_APP": "Legacy application accounts",
+      "AGENT": "Registered agents",
+      "UNKNOWN": "Unrecognised scope"
+    },
+    "colAgent": "Agent",
+    "colAgentOwner": "Owner",
+    "colAgentGrants": "Tool grants",
+    "agentRestricted": "Restricted",
+    "agentReadOnlyNotice": "This campaign reviews registered agents. Deciding and closing it are not available in this release, so it is read-only here.",
+    "agentSubjectsRestricted": "The agents in this campaign are visible to its reviewer and to members who can read the agent register."
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",

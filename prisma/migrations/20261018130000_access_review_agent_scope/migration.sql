@@ -1,0 +1,18 @@
+-- AGENT access-review scope (#3674, step 3a), deploy 1 of 2.
+--
+-- An access review can cover registered agents. This deploy only ADDS the
+-- value; nothing writes it until deploy 2 ships the campaign usecase, so no
+-- running container can read a value its Prisma client does not know. A Prisma
+-- client that meets an enum value it was not generated with fails the read
+-- outright, which here would 500 the access-review register for the whole
+-- tenant, not just the campaign.
+--
+-- ADD VALUE, never RENAME or DROP: an added value breaks no cast an old
+-- container emits. Appended, because nothing sorts on `scope` and the
+-- migration's position then matches the declaration order in enums.prisma.
+--
+-- `IF NOT EXISTS`, and nothing else in this file: Postgres commits an enum
+-- addition outside the surrounding transaction, so a re-run after a failure
+-- later in the same file would otherwise fail on the duplicate — the shape of
+-- outage #2745. `tests/guardrails/migration-enum-isolation.test.ts`.
+ALTER TYPE "AccessReviewScope" ADD VALUE IF NOT EXISTS 'AGENT';
