@@ -97,9 +97,16 @@ interface Props {
     assurance: AgenticAssurance | null;
     /** Badge count for the Proposals menu entry; `null` when unreadable. */
     proposalsAwaitingReview: number | null;
+    /**
+     * `admin.agent_registry` — register an agent, set the concurrency cap, and
+     * reach the assurance surfaces that key gates. FALSE for a reader holding
+     * only the inventory view key (#3710), who gets the register read-only.
+     */
     canWrite: boolean;
-    /** `admin.view` — the key the proposals and runs pages gate on. */
+    /** `mayReadAgentActivity` — the gate the proposals and runs pages ask. */
     canReviewProposals: boolean;
+    /** `admin.view` — the compose page's gate (#3710); defaults to `canReviewProposals`. */
+    canCompose?: boolean;
 }
 
 /** Where an agent sits in its lifecycle. Only ACTIVE reaches the agent surface. */
@@ -159,6 +166,7 @@ function AgentsInner({
     proposalsAwaitingReview,
     canWrite,
     canReviewProposals,
+    canCompose,
 }: Props) {
     const router = useRouter();
     const guardedPush = useGuardedPush();
@@ -482,6 +490,7 @@ function AgentsInner({
                             cap={governance.concurrency.cap}
                             inFlight={governance.concurrency.inFlight}
                             tenantSlug={tenantSlug}
+                            canEdit={canWrite}
                         />
                     </div>
                 }
@@ -558,10 +567,14 @@ function AgentsInner({
                                 current="register"
                                 tenantSlug={tenantSlug}
                                 canReviewProposals={canReviewProposals}
+                                canCompose={canCompose}
                                 // `canWrite` IS `admin.agent_registry` — the
                                 // same key the three assurance surfaces gate
                                 // themselves on. Named for what it gates here.
                                 canInvestigate={canWrite}
+                                // The governance pack asks the INVENTORY read
+                                // (#3710), which this page already required.
+                                canReadReports
                                 proposalsAwaitingReview={proposalsAwaitingReview}
                             />
                             {filtersDropdown}
@@ -757,10 +770,18 @@ export function ConcurrencyPanel({
     cap,
     inFlight,
     tenantSlug,
+    canEdit = true,
 }: {
     cap: number | null;
     inFlight: number;
     tenantSlug: string;
+    /**
+     * Whether this reader may SET the cap (`admin.agent_registry`, the route's
+     * key). FALSE renders the state sentence alone: a reader holding only the
+     * inventory view key (#3710) sees the cap and is offered no control whose
+     * every press would be refused.
+     */
+    canEdit?: boolean;
 }) {
     const t = useTranslations('agents');
     const router = useRouter();
@@ -830,32 +851,35 @@ export function ConcurrencyPanel({
                     ? t('register.concurrency.uncapped')
                     : t('register.concurrency.capped', { cap, inFlight })}
             </p>
-            <div className="flex items-center gap-tight">
-                <label className="sr-only" htmlFor="agent-concurrency-cap">
-                    {t('register.concurrency.inputLabel')}
-                </label>
-                <input
-                    id="agent-concurrency-cap"
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    placeholder={t('register.concurrency.placeholder')}
-                    className="w-24 rounded border border-border bg-surface px-2 py-1"
-                    data-testid="agents-concurrency-input"
-                />
-                <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={save}
-                    disabled={saving}
-                    data-testid="agents-concurrency-save"
-                >
-                    {t('register.concurrency.save')}
-                </Button>
-            </div>
-            <p className="text-xs text-content-muted">{t('register.concurrency.hint')}</p>
+            {canEdit && (
+                <div className="flex items-center gap-tight">
+                    <label className="sr-only" htmlFor="agent-concurrency-cap">
+                        {t('register.concurrency.inputLabel')}
+                    </label>
+                    <input
+                        id="agent-concurrency-cap"
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder={t('register.concurrency.placeholder')}
+                        className="w-24 rounded border border-border bg-surface px-2 py-1"
+                        data-testid="agents-concurrency-input"
+                    />
+                    <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={save}
+                        disabled={saving}
+                        data-testid="agents-concurrency-save"
+                    >
+                        {t('register.concurrency.save')}
+                    </Button>
+                </div>
+            )}
+            {/* The hint tells an editor what to type, so it goes with the input. */}
+            {canEdit && <p className="text-xs text-content-muted">{t('register.concurrency.hint')}</p>}
             {error && (
                 <InlineNotice variant="warning" data-testid="agents-concurrency-error">
                     {error}

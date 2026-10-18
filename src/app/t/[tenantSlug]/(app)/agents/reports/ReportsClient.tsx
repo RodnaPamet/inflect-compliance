@@ -130,9 +130,15 @@ function Truncated({ envelope }: { envelope: EnvelopeView<unknown> }) {
 
 interface ReportsCommonProps {
     tenantSlug: string;
-    /** `admin.view` — the proposals and runs entries' own gate. */
+    /** `mayReadAgentActivity` — the proposals and runs entries' own gate. */
     canReviewProposals: boolean;
-    /** `admin.agent_registry` — this page's gate, so it is true by construction here. */
+    /** `admin.view` — the compose entry's gate; defaults to `canReviewProposals`. */
+    canCompose?: boolean;
+    /**
+     * `admin.agent_registry` — the receipts / quarantine / review-quality
+     * entries' gate. NOT true by construction since #3710: this page needs only
+     * the inventory read, which a view-key reader holds without this key.
+     */
     canInvestigate: boolean;
     /**
      * `evidence.edit`. NOT true by construction: the register key and the
@@ -150,11 +156,12 @@ export type PackTabProps = ReportsCommonProps & { tab?: 'pack'; pack: PackView; 
 export type HarnessTabProps = ReportsCommonProps & {
     tab: 'harness';
     harness: HarnessMatrixView;
-    scannerKeys: HarnessScannerKeysView;
+    /** `null` for a reader without `admin.agent_registry` (#3710): no key card. */
+    scannerKeys: HarnessScannerKeysView | null;
 };
 
 export function ReportsClient(props: PackTabProps | HarnessTabProps) {
-    const { tenantSlug, canReviewProposals, canInvestigate, canExport } = props;
+    const { tenantSlug, canReviewProposals, canCompose, canInvestigate, canExport } = props;
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
     const tab = props.tab === 'harness' ? 'harness' : 'pack';
@@ -181,7 +188,10 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps) {
                             tenantSlug={tenantSlug}
                             current="reports"
                             canReviewProposals={canReviewProposals}
+                            canCompose={canCompose}
                             canInvestigate={canInvestigate}
+                            // This page's own gate, so true by construction.
+                            canReadReports
                         />
                     </div>
                 ),

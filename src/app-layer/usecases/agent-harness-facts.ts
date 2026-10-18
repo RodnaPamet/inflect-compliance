@@ -20,11 +20,12 @@
  * three scan tables are written by `agent-harness-scans.ts` alone
  * (`tests/guards/agent-harness-single-write-seam.test.ts`).
  *
- * GATED ON `admin.agent_registry`, the key every harness read takes
- * (`listHarnessScans`, `getHarnessMatrix`). No API-key scope maps to it, so no
- * bearer token reaches this read today — see the roadmap's Permission keys
- * section and the step-1d implementation note for what that means for a Flue
- * run.
+ * GATED ON THE INVENTORY READ (#3710): `admin.agent_registry_view`, or the
+ * register key whose holders always could (`mayReadAgentInventory`) — the gate
+ * every harness read takes (`listHarnessScans`, `getHarnessMatrix`). A bearer
+ * token reaches it only through the named scope `admin:agent_registry_view`,
+ * which no wildcard carries; the MCP tool over it is offered to an agent only
+ * when that agent is also granted the tool.
  *
  * FAIL CLOSED, as the matrix does: stored sources that do not re-validate make
  * the scan INCOMPLETE; stored observations or tools that do not re-validate
@@ -34,6 +35,7 @@
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { forbidden, notFound } from '@/lib/errors/types';
+import { mayReadAgentInventory } from '@/lib/permissions';
 import {
     parseStoredHarnessSources,
     parseStoredHarnessTools,
@@ -75,8 +77,8 @@ export interface DiscoveredAgentFacts {
 }
 
 function assertMayRead(ctx: RequestContext): void {
-    if (!ctx.appPermissions.admin.agent_registry) {
-        throw forbidden('Reading a discovered agent requires admin.agent_registry');
+    if (!mayReadAgentInventory(ctx.appPermissions.admin)) {
+        throw forbidden('Reading a discovered agent requires admin.agent_registry_view');
     }
 }
 

@@ -77,6 +77,7 @@ export function DecisionsClient({
     decisions,
     digest,
     canReviewProposals,
+    canCompose,
     canInvestigate,
 }: {
     tenantSlug: string;
@@ -84,6 +85,8 @@ export function DecisionsClient({
     digest: string | null;
     /** `admin.view` — the proposals and runs pages' own gate. */
     canReviewProposals: boolean;
+    /** `admin.view` — the compose entry's gate (#3710); defaults to `canReviewProposals`. */
+    canCompose?: boolean;
     /** `admin.agent_registry` — this page's own gate, and its siblings'. */
     canInvestigate: boolean;
 }) {
@@ -106,6 +109,7 @@ export function DecisionsClient({
                         tenantSlug={tenantSlug}
                         current="decisions"
                         canReviewProposals={canReviewProposals}
+                        canCompose={canCompose}
                         canInvestigate={canInvestigate}
                     />
                 }

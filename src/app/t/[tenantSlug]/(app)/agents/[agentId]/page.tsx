@@ -6,6 +6,7 @@ import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
 import { NotFoundError } from '@/lib/errors/types';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentInventory } from '@/lib/permissions';
 import { AgentDetailClient } from './AgentDetailClient';
 
 /**
@@ -27,17 +28,14 @@ export default async function AgentDetailPage({
     const { tenantSlug, agentId } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
 
-    // The /admin layout gates this subtree on `admin.view`, and that is ALL it
-    // gates: nothing between it and here checks any of the four agent keys,
-    // and `getRegisteredAgent` asserts only the generic read, which every role
-    // passes. Without this, a custom role built as
-    // `{ admin: { view: true, agent_registry: false } }` — spellable today,
-    // since the schema lists all four keys separately — reached a fully
-    // rendered MetaStrip carrying the autonomy rung, the data scope, the
-    // reversibility and both risk tiers, while every tab underneath refused
-    // it. The header is the sensitive part. Refusing after rendering it is
-    // not refusing.
-    if (!ctx.appPermissions.admin.agent_registry) {
+    // The INVENTORY read (#3710): the view key, or the register key whose
+    // holders always could (`mayReadAgentInventory`). Refused here, before the
+    // MetaStrip renders, because the header is the sensitive part — it carries
+    // the autonomy rung, the data scope, the reversibility and both risk tiers
+    // — and refusing after rendering it is not refusing. `getRegisteredAgent`
+    // asserts the same read, so this is the friendly half of a gate the usecase
+    // also holds.
+    if (!mayReadAgentInventory(ctx.appPermissions.admin)) {
         const tf = await getTranslations('admin');
         return (
             <ForbiddenPage
@@ -126,6 +124,12 @@ export default async function AgentDetailPage({
             // the route, and be refused by the usecase. Gated on the route key
             // alone, the button renders for someone who cannot use it.
             perms={{
+                // The register key itself (#3710). The page needs only the
+                // inventory read; the risk, skills, coverage and breaker tabs
+                // and the tool-manifest pins read under this key, so a reader
+                // holding only the view key (AUDITOR) gets them disabled rather
+                // than opened and refused.
+                canReadRegistry: ctx.appPermissions.admin.agent_registry,
                 // ANDed with `canWrite`, not the route key alone. Every
                 // mutating risk-assessment and register usecase opens with
                 // `assertCanWrite(ctx)` (agent-risk-assessment.ts:197,:256,:608),

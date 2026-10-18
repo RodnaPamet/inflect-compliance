@@ -88,7 +88,9 @@ const adminWithoutRegisterCtx = (tenantId: string) => {
         userId: seeded[tenantId].ownerUserId,
         appPermissions: {
             ...admin,
-            admin: { ...admin.admin, view: true, agent_registry: false },
+            // NEITHER inventory key (#3710): the register key or the view key
+            // alone reads the register now.
+            admin: { ...admin.admin, view: true, agent_registry: false, agent_registry_view: false },
         },
     });
 };
@@ -203,6 +205,21 @@ describe('an admin.view holder WITHOUT the agent permission cannot read the regi
         });
         const rows = await listRegisteredAgents(withKey, {});
         expect(rows.map((r) => r.name)).toEqual([seeded[T1].agentName]);
+    });
+
+    it('a principal holding ONLY the inventory view key reads the register (#3710)', async () => {
+        // The view key on its own, without `admin.view` or the register key —
+        // the AUDITOR's shape. Reads, and the same tenant's rows only.
+        const reader = getPermissionsForRole('READER');
+        const viewOnly = makeRequestContext('READER', {
+            tenantId: T1,
+            tenantSlug: T1,
+            userId: seeded[T1].ownerUserId,
+            appPermissions: { ...reader, admin: { ...reader.admin, agent_registry_view: true } },
+        });
+        const rows = await listRegisteredAgents(viewOnly, {});
+        expect(rows.map((r) => r.name)).toEqual([seeded[T1].agentName]);
+        await expect(getAgentGovernanceStatus(viewOnly)).resolves.toMatchObject({ enforcing: expect.any(Boolean) });
     });
 
     it('a READER is refused too, and for the register key rather than for canRead', async () => {

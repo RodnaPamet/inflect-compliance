@@ -108,7 +108,9 @@ one read and one synthesis, no proposal and no checkpoint.
   scans found the agent, whether the register holds it, the owner its source
   records, the newest scan and whether that scan read every source in full, and
   that scan's per-criterion observations and tools, as reported. It returns no
-  level. Like every harness read, it takes `admin.agent_registry`.
+  level. Like every read of the agent inventory, it takes the read-only
+  `admin.agent_registry_view` (#3710), which a key reaches only through the
+  named scope `admin:agent_registry_view`.
 - **Each answer has an output contract.**
   `src/lib/agentic/iam-skill-outputs.ts` parses each skill's answer before
   anything may use it. In an assessment, every criterion, named by the ladder's
@@ -123,19 +125,27 @@ one read and one synthesis, no proposal and no checkpoint.
   answer a request carries and records it as provenance; nothing on `main`
   calls the assessment contract outside its tests.
 
-Two gaps keep a Flue run of the review from reading the agent it names. The
-Flue engine gives the model the workflow's description and step labels and not
-the run input (`runMessage` in `src/lib/agentic/flue/execute.ts`), so the model
-never sees the `discoveredAgentId`. And a Flue run is started by an agent-bound
-API key, while no scope maps to `admin.agent_registry` and `*` subtracts it, so
-the run is never offered the read tool. A Flue run of the review therefore has
-no agent to assess, which is the case each skill's missing-input rule covers:
-it names the missing `discoveredAgent` input rather than guessing, as both
-evaluation records' `no-agent-given` cases show. Where a tenant's runs resolve
-to the static engine, a signed-in member holding `admin.agent_registry` (OWNER
-or ADMIN, by role) runs the read and the synthesis, and no skill is mounted; where they resolve to Flue, a signed-in person cannot start
-the review at all, because a Flue run must be started by an active registered
-agent.
+#3710 closed the two gaps that kept a Flue run of the review from reading the
+agent it names:
+
+- **The model is given the run's input.** `runMessage`
+  (`src/lib/agentic/flue/run-message.ts`) carries the definition's declared
+  `requiredInput` values, read out of the sealed run context under verification,
+  and nothing else from it. Each value is cleaned and neutralised, fenced as
+  untrusted data, labelled with its provenance (`agent.run-input`,
+  `THIRD_PARTY_INGESTED`) and followed by the data-only handling rule that tool
+  results carry. The decision digest is taken over that message, input
+  included. A context that does not verify, or a declared value that cannot be
+  carried whole, refuses the run before anything is dispatched.
+- **An agent's key can be offered the read tool.** The tool takes the inventory
+  view key, and a key carrying `admin:agent_registry_view` and `mcp:read`, held
+  by an agent granted `get_discovered_agent`, is offered it; neither `*` nor
+  `admin:*` carries the scope.
+
+Where a tenant's runs resolve to the static engine, a signed-in member holding
+the inventory read runs the read and the synthesis, and no skill is mounted;
+where they resolve to Flue, a signed-in person cannot start the review at all,
+because a Flue run must be started by an active registered agent.
 
 ### Integration passport and A2A threat model
 
@@ -378,14 +388,18 @@ tenant-wide control-check list.
 ### The AI_ADMIN role
 
 `AI_ADMIN` (#3699) is a built-in tenant role that runs the agent register and
-can own and receive agents. It holds the seven agent keys
-(`admin.agent_registry`, `agent_tool_exposure`, `agent_policy_card`,
-`agent_kill_switch`, `agent_external_tools`, `agent_harness_ingest` and
-`agent_ownership`) on top of READER's read access, and none of the tenant-wide
-admin keys: no members, SSO, SCIM, billing or security settings, tenant
-lifecycle, owner management, DSAR register or admin console. Its coarse tier is
-READER's, and the agent usecases accept the agent key as their floor, so it
-writes nothing outside the agent register. The edge admits it to
+can own and receive agents. It holds the eight agent keys
+(`admin.agent_registry`, `agent_registry_view`, `agent_tool_exposure`,
+`agent_policy_card`, `agent_kill_switch`, `agent_external_tools`,
+`agent_harness_ingest` and `agent_ownership`) on top of READER's read access,
+and none of the tenant-wide admin keys: no members, SSO, SCIM, billing or
+security settings, tenant lifecycle, owner management, DSAR register or admin
+console. Its coarse tier is READER's, and the agent usecases accept the agent
+key as their floor, so it writes nothing outside the agent register. The view
+key (#3710) opens `/agents/runs`, `/agents/proposals` and the governance pack
+to it read-only: approving a proposal, starting or stopping a run and filing
+the pack each ask the role-tier write or `evidence.edit`, which it does not
+hold. The edge admits it to
 `/api/t/:slug/admin/agents/**`, `/api/t/:slug/admin/mcp/quarantine` and the
 agent redirect pages under `/t/:slug/admin` (`AI_ADMIN_ADMIN_PATH_PREFIXES` in
 `src/lib/auth/guard.ts`) and refuses it on every other admin path.
@@ -761,8 +775,8 @@ changed what #3698 built; #3700 then built the step decision 13 called for.
     did not name. A call to an external tool still needs a pinned manifest a
     person approved, a grant on the agent and `EXTERNAL_EGRESS` reach.
     `admin.agent_ownership` is held by OWNER and `AI_ADMIN`; ADMIN does not
-    hold it. Reading agent runs, proposals and the governance pack moves to the
-    view key in #3710, which `AI_ADMIN` will hold. Approving a proposal still
+    hold it. Reading agent runs, proposals and the governance pack moved to the
+    view key in #3710, which `AI_ADMIN` holds. Approving a proposal still
     needs write on the domain it changes, so `AI_ADMIN` does not approve. (`2a`,
     #3699) **Assignment (deploy 2, decided 2026-10-18):** an OWNER assigns the
     role to an existing member on the members page, and removes it; an ADMIN
@@ -788,7 +802,13 @@ changed what #3698 built; #3700 then built the step decision 13 called for.
     `get_discovered_agent` can read the discovered agent it reviews. It also
     gates reading agent runs, proposals and the governance pack. `AI_ADMIN` and
     AUDITOR hold it, and the DPIA names the model as a reader of the source
-    owner reference. (`1d`, #3710)
+    owner reference. (`1d`, #3710) Shipped by #3710. Neither `*` nor `admin:*`
+    carries the scope, so no key issued before it changes. Filing the pack into
+    the evidence library is a write and stays on `admin.agent_registry` and
+    `evidence.edit`, so `AI_ADMIN` and AUDITOR read the pack and do not file it.
+    The DPIA's condition 12 is closed by the owner's decision of 2026-10-18: the
+    external model provider's sub-processor row names this data, with no code
+    gate.
 19. **A registered agent prepares each reviewer pack, and never its own; a
     person may prepare the preparer's own.** An agent campaign names an ACTIVE,
     scored agent granted `get_agent_recertification_evidence`; the person who
@@ -820,31 +840,32 @@ a rule in `src/lib/security/route-permissions.ts`, except the two endpoints
 under [Token-gated endpoints](#token-gated-endpoints), which say why. Key names
 follow `PERMISSION_SCHEMA` in `src/lib/permissions.ts`.
 
-**Three keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
-the seventh, which #3699 shipped, and one new key:
+**Four keys of the `admin` domain**: the sixth agent key, which `1a` shipped,
+the seventh, which #3699 shipped, the inventory view key, which #3710 shipped,
+and one new key:
 
 | Key | Gates | Granted by role | Bearer tokens |
 |---|---|---|---|
 | `admin.agent_harness_ingest` | Submitting a signed report, `POST /api/t/:slug/admin/agents/harness-scans` (`1a`, shipped in #3688), and the scanner's read of the register (`1a`, below) | OWNER, ADMIN | The `admin:harness_ingest` scope grants it and nothing else (`SCOPE_ACTION_MAP` in `src/lib/auth/api-key-auth.ts`). `*` carries it too: `*` is ADMIN's set minus the four agent-governance flags, and ADMIN holds it |
 | `admin.agent_ownership` | Proposing, reading, cancelling and completing an agent ownership transfer, `…/admin/agents/[agentId]/ownership-transfer` and `…/complete` (`2a`, shipped in #3699; `admin.tenant_lifecycle` until then) | OWNER, AI_ADMIN. Not ADMIN, which holds `admin.agent_registry`: an agent's accountable owner must not be movable by the role that owner is accountable to. An OWNER can grant it to an ADMIN through a custom role | Not carried by `*` (ADMIN's set, which lacks it), and no scope maps to it |
+| `admin.agent_registry_view` | READING the agent inventory (#3710): the register list and one agent's row (`GET …/admin/agents`, `GET …/admin/agents/[agentId]`), the harness scans and the matrix (`GET …/admin/agents/harness-scans`, `/agents/reports?tab=harness`), one discovered agent's facts (`get_discovered_agent`), and the governance pack (`GET …/admin/agents/reports`, `/agents/reports`). Also agent runs and proposals (`/agents/runs`, `/agents/proposals`, and the run routes `…/agent-runs/[id]/stream` and `…/checkpoint`), with `admin.view` as the other key that opens them. Every inventory read also admits `admin.agent_registry`, so nobody who read the inventory before the split lost it. Read-only: filing the pack, every register write, scanner keys, peers, intake and acceptances stay on `admin.agent_registry` | OWNER, ADMIN, AI_ADMIN, AUDITOR. A custom role may carry it | The `admin:agent_registry_view` scope grants it and nothing else. Neither `*` nor `admin:*` carries it (`WILDCARD_EXCLUDED_ACTIONS` in `src/lib/auth/api-key-auth.ts`), so every key issued before it resolves as it did, and an agent reads the inventory only through a key minted for that read |
 | `admin.agent_skill_review` | Authoring, approving and retiring a tenant skill (`4c`) | OWNER, ADMIN | Not carried by `*`, and no scope maps to it |
 
-- **Reading scans takes the register key.** `GET …/admin/agents/harness-scans`
-  lists scans under `admin.agent_registry`, and `listHarnessScans` in
-  `src/app-layer/usecases/agent-harness-scans.ts` refuses a caller without it.
+- **Reading scans takes the inventory view key.** `GET …/admin/agents/harness-scans`
+  lists scans under `admin.agent_registry_view` or `admin.agent_registry`, and
+  `listHarnessScans` in `src/app-layer/usecases/agent-harness-scans.ts` refuses
+  a caller with neither (`mayReadAgentInventory` in `src/lib/permissions.ts`).
   #3687 builds the harness matrix and the shadow list as a tab on
-  `/agents/reports` through `listHarnessScans`, and that page refuses anyone
-  without `admin.agent_registry`
-  (`src/app/t/[tenantSlug]/(app)/agents/reports/page.tsx`). `4a`'s scan health
+  `/agents/reports` through `listHarnessScans`, behind the same read; the
+  scanner-key register on that tab stays on `admin.agent_registry`, and a
+  reader without that key is offered no shortfall action. `4a`'s scan health
   reads the same scans under the same key. `1d`'s MCP read tool
-  `get_discovered_agent` (#3668) takes the same key as well, so no bearer
-  token reaches it, and an agent-bound key cannot be offered it. AUDITOR does not hold
-  `admin.agent_registry`, so it reads none of them. A view key split from
-  `admin.agent_registry` for an auditor's read of the inventory is the case the
-  `agent_registry` docstring names and leaves undone. The owner decided on
-  2026-10-18 to add one (#3710): `admin.agent_registry_view`, with an API-key
-  scope, so an agent can be offered `get_discovered_agent`. It also gates
-  reading agent runs, proposals and the governance pack.
+  `get_discovered_agent` (#3668) takes the view key as well, through the named
+  scope. The view-key question this section used to leave open — an auditor's
+  read of the inventory, which the `agent_registry` docstring named and left
+  undone — was closed by the owner on 2026-10-18 (#3710): AUDITOR holds the key,
+  and the edge admits an AUDITOR to a GET of exactly the four inventory routes
+  (`AUDITOR_ADMIN_READ_PATHS` in `src/lib/auth/guard.ts`).
 - **Submitting is a key of its own.** The other five agent keys are held by the
   people who govern agents; the ingest key is held by the scanner, through its
   API key, and nothing else that key carries should let it do more (the
@@ -862,11 +883,11 @@ the seventh, which #3699 shipped, and one new key:
   bound to an agent (`TenantApiKey.agentId`), a key bound to any other agent
   (`SUBMITTER_MISMATCH`). A credential bound to no agent, such as a person
   uploading a report by hand, is held to the signature alone.
-- **The scanner reads the register by its ingest key.** No API-key scope maps
-  to `admin.agent_registry`, the key behind the human register read, so an MCP
-  read tool that mirrored that key could be reached by no key at all. The
-  scanner reads the register only to reconcile what it ingests, so `1a`'s read
-  tool is authorized on `admin.agent_harness_ingest` and is served by
+- **The scanner reads the register by its ingest key.** The human register
+  read takes the inventory view key, which a key reaches only through
+  `admin:agent_registry_view` (#3710), and that read returns the whole
+  inventory. The scanner reads the register only to reconcile what it ingests,
+  so `1a`'s read tool is authorized on `admin.agent_harness_ingest` and is served by
   `/api/mcp` only to an agent granted it under `admin.agent_tool_exposure`. It
   returns only what the report's `inflect-register` source carries. No MCP tool
   returns `RegisteredAgent` rows today (see [Pilot](#pilot)). Two points about
@@ -897,7 +918,7 @@ the seventh, which #3699 shipped, and one new key:
 
 | Route (step) | Key | Why this key |
 |---|---|---|
-| Read scans, the harness matrix and the shadow list (`1a`) | `admin.agent_registry` | Shipped in #3688 for `GET …/admin/agents/harness-scans`; #3687 reads the matrix through `listHarnessScans` (above). |
+| Read scans, the harness matrix and the shadow list (`1a`) | `admin.agent_registry_view`, or `admin.agent_registry` | Shipped in #3688 for `GET …/admin/agents/harness-scans` under the register key; #3687 reads the matrix through `listHarnessScans` (above); #3710 moved both to the inventory read. |
 | Add, list or revoke a trusted scanner key (`1a`) | `admin.agent_registry` | Shipped in #3688 at `…/admin/agents/harness-scanner-keys` and `…/harness-scanner-keys/[keyId]`. It decides whose reports the tenant believes (above). |
 | Record, renew or list an `AgentHarnessAcceptance` (`1a`) | `admin.agent_registry`, held by the agent's owner | Shipped in #3688 at `…/admin/agents/harness-acceptances` (`GET`, `POST`). The route takes `admin.agent_registry`, and `acceptHarnessShortfall` in `src/app-layer/usecases/agent-harness-acceptance.ts` refuses anyone but the registered agent's owner, because accepting a risk is the act of the person accountable for it. A shadow agent has no owner, so it is registered before its shortfall can be accepted. There is no separate approval: a renewal is a new acceptance, of at most 365 days, that revokes the one in force. No API key carries `admin.agent_registry`, so no bearer token records an acceptance. |
 | Registration intake from a `SHADOW_AGENT` finding (`2a`) | `admin.agent_registry` | Shipped at `POST …/admin/agents/intake` (#3669). It creates a DRAFT register row and its provisional AI-system entry. The usecase re-asserts the key, and the owner is the person the caller confirms. |
@@ -915,7 +936,7 @@ the seventh, which #3699 shipped, and one new key:
 | Register or activate an auditor agent (`3b`) | `admin.agent_registry` | The existing routes. The independence check is a refusal inside `registerAgent` and `activateRegisteredAgent`. |
 | Read workpapers (`3b`, `3c`) | `audits.manage` | A workpaper on leaver timeliness or privileged access lists exceptions about named people's access, and `audits.view` is held by every role, READER included (`src/lib/permissions.ts`). OWNER and ADMIN hold `audits.manage`. A THIRD-line reviewer reads the workpapers assigned to them through `3d`'s review route, and the external auditor reads them in a pack (`4d`). An internal-audit member who needs every workpaper gets a custom role carrying `audits.manage`. `3b` places `AuditWorkpaper` in `prisma/schema/audit-workflow.prisma`, beside `Audit`. |
 | Read and record the outcome of a sampled workpaper (`3d`) | `audits.view` | Every role holds it, so the usecase admits only the workpaper's assigned reviewer, who must be THIRD-line and must not own the auditor agent, as `decide` narrows to the assigned reviewer. Requiring `audits.manage` would shut out an internal auditor on the AUDITOR role, which does not hold it. The draw and the assignment are a scheduled sweep, with no route. |
-| Show the scan health per estate and per source (`4a`) | `admin.agent_registry` | It reads scans, under the key their list takes. |
+| Show the scan health per estate and per source (`4a`) | `admin.agent_registry_view`, or `admin.agent_registry` | It reads scans, under the key their list takes. |
 | Kill an A2A peer, and lift the kill (`4b`) | `admin.agent_kill_switch` | The key that stops an agent stops a peer: there is no second authority model (decision 4). `*` does not carry it. |
 | Author, approve or retire a tenant skill (`4c`) | `admin.agent_skill_review` | New; see above. |
 | Assemble a reliance pack, give the external auditor access, record the auditor's conclusion (`4d`) | The existing gates, and `audits.manage` for workpapers | No new route. Packs go through the pack usecases behind `assertCanManageAuditPacks`, which admits EDITOR; putting workpapers into a pack reads them, so that part also requires `audits.manage`, which EDITOR does not hold. Auditor accounts and pack access go through `/audits/auditors/*`, where account creation sits behind `assertCanManageAuditors` (OWNER and ADMIN) and the grant and revoke behind `admin.manage`. The conclusion is recorded as `Evidence` through the existing evidence routes. |

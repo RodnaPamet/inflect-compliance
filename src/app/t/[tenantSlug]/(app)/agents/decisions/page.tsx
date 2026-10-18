@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { listAiDecisions } from '@/app-layer/usecases/ai-decision-log';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity } from '@/lib/permissions';
 
 import { DecisionsClient } from './DecisionsClient';
 
@@ -79,7 +80,8 @@ export default async function AgentDecisionsPage({
             // Without it a digest that matches nothing renders as "no
             // decisions yet", which is a different and wrong claim.
             digest={digest ?? null}
-            canReviewProposals={Boolean(ctx.appPermissions?.admin?.view)}
+            canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
+            canCompose={Boolean(ctx.appPermissions?.admin?.view)}
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
         />
     );

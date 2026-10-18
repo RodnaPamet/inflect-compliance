@@ -98,11 +98,14 @@ export function ExternalToolsClient({
     tenantSlug,
     connections,
     canReviewProposals,
+    canCompose,
     canInvestigate,
 }: {
     tenantSlug: string;
     connections: readonly ConnectionRow[];
     canReviewProposals: boolean;
+    /** `admin.view` — the compose entry's gate (#3710); defaults to `canReviewProposals`. */
+    canCompose?: boolean;
     canInvestigate: boolean;
 }) {
     const t = useTranslations('agents');
@@ -267,6 +270,7 @@ export function ExternalToolsClient({
                         tenantSlug={tenantSlug}
                         current="external-tools"
                         canReviewProposals={canReviewProposals}
+                        canCompose={canCompose}
                         canInvestigate={canInvestigate}
                     />
                 }

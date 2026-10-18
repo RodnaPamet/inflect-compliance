@@ -187,8 +187,11 @@ describe('RBAC Guardrail Scans', () => {
             // Every nav entry's `visible` must be computed from `perms`,
             // so COUNT them rather than finding one (#3364). A new entry
             // hard-coding `visible: true` is the regression this now catches
-            // and a single match never could.
-            expect(content.match(/visible:\s*perms\./g)).toHaveLength(2);
+            // and a single match never could. `perms` may be read directly or
+            // handed to a shared permission predicate (#3710 —
+            // `mayReadAgentInventory(perms.admin)`); either way it is the
+            // source.
+            expect(content.match(/visible:\s*(?:\w+\()?perms\./g)).toHaveLength(2);
             expect(content).toMatch(/\.filter\(/);
         });
     });

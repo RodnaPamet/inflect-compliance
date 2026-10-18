@@ -161,13 +161,41 @@ export type PermissionSet = {
          * into the general admin flag would have made that decision a side
          * effect of holding any admin authority.
          *
-         * NOT split view/manage the way the DSAR pair is. There is a real case
-         * for an AUDITOR reading the register — it is the inventory an audit
-         * asks for — and the split is the obvious next move; it is left undone
-         * rather than guessed at, because a `_view` flag nobody grants is
-         * indistinguishable from one nobody needed.
+         * Split view/manage since #3710, the way the DSAR pair is: READING the
+         * agent inventory is `agent_registry_view`, below. This key keeps every
+         * write — register, amend, activate, suspend, retire, scanner keys,
+         * peers, the registration intake, the service-principal link confirm —
+         * and the reads that are not the inventory (the governance surfaces each
+         * detail tab reads, receipts, quarantine, review quality). A read moved
+         * to the view key admits a holder of THIS key too, so nobody who could
+         * read the inventory before the split lost it.
          */
         agent_registry: boolean;
+        /**
+         * READING THE AGENT INVENTORY (#3710): the register list and one
+         * agent's register row, the harness scans and the harness matrix, one
+         * discovered agent's facts (`get_discovered_agent`), the governance pack
+         * — and agent runs and agent proposals, which `admin.view` alone used to
+         * gate.
+         *
+         * Read-only, and that is the whole of its definition: no usecase writes
+         * under it, and `tests/unit/agent-registry-view-key.test.ts` enumerates
+         * every `admin.agent_registry` write path and refuses a holder of this
+         * key alone. Approving a proposal in particular still needs write on the
+         * domain the proposal changes (`approveAgentProposal`'s `assertCanWrite`).
+         *
+         * Held by OWNER, ADMIN, AI_ADMIN and AUDITOR — the last because the
+         * inventory is what an audit asks for, the case `agent_registry`'s own
+         * docstring named and left undone. A custom role may express it.
+         *
+         * Carried by a bearer token only through its own NAMED scope,
+         * `admin:agent_registry_view`. Neither `*` nor `admin:*` carries it (see
+         * `scopesToPermissions`): every key already issued resolves to exactly
+         * what it did before this key existed, and a model reads the inventory
+         * — `DiscoveredAgent.ownerRef` among it — only through a key somebody
+         * minted for that purpose, held by an agent granted the tool.
+         */
+        agent_registry_view: boolean;
         /**
          * TOOL EXPOSURE: grant or revoke an individual MCP tool for a
          * registered agent.
@@ -394,7 +422,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'view', 'manage', 'members', 'sso', 'scim',
         'tenant_lifecycle', 'owner_management',
         'compliance_dsar_view', 'compliance_dsar_manage',
-        'agent_registry', 'agent_tool_exposure', 'agent_policy_card',
+        'agent_registry', 'agent_registry_view', 'agent_tool_exposure', 'agent_policy_card',
         'agent_kill_switch', 'agent_external_tools', 'agent_harness_ingest',
         'agent_ownership',
     ],
@@ -415,6 +443,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
  */
 export const AGENT_ADMIN_KEYS = [
     'agent_registry',
+    'agent_registry_view',
     'agent_tool_exposure',
     'agent_policy_card',
     'agent_kill_switch',
@@ -422,6 +451,40 @@ export const AGENT_ADMIN_KEYS = [
     'agent_harness_ingest',
     'agent_ownership',
 ] as const satisfies readonly (keyof PermissionSet['admin'])[];
+
+/**
+ * May this permission set READ THE AGENT INVENTORY (#3710)?
+ *
+ * The view key, OR the register key. The second term is not redundant: every
+ * built-in role that holds `agent_registry` also holds the view key, but a
+ * custom role saved before the view key existed carries `agent_registry` and
+ * takes the view key from its BASE role — and on a READER or EDITOR base that
+ * default is false. Reading the view key alone would take the inventory away
+ * from exactly the people an OWNER delegated the register to.
+ *
+ * One definition, so the usecases, the pages, the sidebar and the views menu
+ * cannot disagree about who may read the inventory. Client-safe, like the rest
+ * of this module.
+ */
+export function mayReadAgentInventory(
+    admin: Pick<PermissionSet['admin'], 'agent_registry' | 'agent_registry_view'> | null | undefined,
+): boolean {
+    return admin?.agent_registry_view === true || admin?.agent_registry === true;
+}
+
+/**
+ * May this permission set READ AGENT RUNS AND AGENT PROPOSALS (#3710)?
+ *
+ * `admin.view`, which gated both pages and their two run routes before the view
+ * key existed, OR the view key. Reading, and nothing else: approving or
+ * rejecting a proposal and starting, resuming or aborting a run each assert the
+ * role-tier write themselves, which the view key does not confer.
+ */
+export function mayReadAgentActivity(
+    admin: Pick<PermissionSet['admin'], 'view' | 'agent_registry_view'> | null | undefined,
+): boolean {
+    return admin?.view === true || admin?.agent_registry_view === true;
+}
 
 /**
  * Returns a static, granular UI PermissionSet for a given Role.
@@ -461,7 +524,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     tenant_lifecycle: true, owner_management: true,
                     compliance_dsar_view: true, compliance_dsar_manage: true,
-                    agent_registry: true, agent_tool_exposure: true,
+                    agent_registry: true, agent_registry_view: true, agent_tool_exposure: true,
                     agent_policy_card: true,
                     agent_kill_switch: true, agent_external_tools: true,
                     agent_harness_ingest: true,
@@ -499,6 +562,9 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // existence and its owners, and an agent register is
                     // neither.
                     agent_registry: true,
+                    // Reading the inventory (#3710): the register key's holders
+                    // always could, and the view key is that read on its own.
+                    agent_registry_view: true,
                     // Same reasoning, one notch narrower: deciding which tools
                     // an approved agent may reach is operational administration.
                     agent_tool_exposure: true,
@@ -536,7 +602,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
             };
         case 'AUDITOR':
             return {
@@ -560,7 +626,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: true, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
             };
         case 'READER':
             return readerPermissions();
@@ -584,6 +650,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 admin: {
                     ...reader.admin,
                     agent_registry: true,
+                    agent_registry_view: true,
                     agent_tool_exposure: true,
                     agent_policy_card: true,
                     agent_kill_switch: true,
@@ -624,7 +691,7 @@ function readerPermissions(): PermissionSet {
         frameworks: { view: true, install: false },
         audits: { view: true, manage: false, freeze: false, share: false },
         reports: { view: true, export: false, schedule_external: false },
-        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
+        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_registry_view: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
     };
 }
 

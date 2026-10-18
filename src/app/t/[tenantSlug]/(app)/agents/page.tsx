@@ -12,6 +12,7 @@ import { countAgentProposalsAwaitingReview } from '@/app-layer/usecases/agent-pr
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 import { AgentsClient, type AgentRow } from './AgentsClient';
 import type { OwnerOption, VendorOption } from './NewAgentModal';
 
@@ -44,11 +45,16 @@ export const dynamic = 'force-dynamic';
  *
  * ── THE GATE IS HERE AS WELL AS IN THE USECASE ──────────────────────────────
  *
- * `listRegisteredAgents` now asserts `admin.agent_registry` itself (#2433), and
- * that is the real boundary. This page ALSO refuses, ahead of it, so a caller
- * without the key gets the ForbiddenPage every other gated surface shows rather
- * than an error boundary — and so no data fetch is started for a caller who is
- * not entitled to any of it.
+ * `listRegisteredAgents` asserts the inventory read itself (#2433, and since
+ * #3710 that read is `admin.agent_registry_view` OR `admin.agent_registry` —
+ * `mayReadAgentInventory`), and that is the real boundary. This page ALSO
+ * refuses, ahead of it, so a caller without either key gets the ForbiddenPage
+ * every other gated surface shows rather than an error boundary — and so no
+ * data fetch is started for a caller who is not entitled to any of it.
+ *
+ * A reader holding only the view key (AUDITOR) gets the same page with every
+ * write withheld: no "Agent" button, a read-only concurrency cap, and no link
+ * to the assurance surfaces the register key gates.
  *
  * The owner picker is fed from ACTIVE memberships only, because the usecase
  * refuses anything else — offering a name the server will reject is a form that
@@ -64,7 +70,7 @@ export default async function AgentRegisterPage({
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
 
-    if (!ctx.appPermissions?.admin?.agent_registry) {
+    if (!mayReadAgentInventory(ctx.appPermissions?.admin)) {
         const t = await getTranslations('agents');
         return (
             <ForbiddenPage
@@ -120,11 +126,13 @@ export default async function AgentRegisterPage({
             assurance={assurance}
             proposalsAwaitingReview={proposalsAwaitingReview}
             canWrite={Boolean(ctx.appPermissions?.admin?.agent_registry)}
-            // The proposal queue is gated `admin.view` at its own page, NOT on
-            // the register key — see the note there. The menu entry has to ask
-            // the same question the destination asks, or it offers a link that
-            // renders a ForbiddenPage.
-            canReviewProposals={Boolean(ctx.appPermissions?.admin?.view)}
+            // The proposal queue is gated at its own page on `admin.view` OR the
+            // view key (`mayReadAgentActivity`, #3710), NOT on the register key
+            // — see the note there. The menu entry has to ask the same question
+            // the destination asks, or it offers a link that renders a
+            // ForbiddenPage.
+            canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
+            canCompose={Boolean(ctx.appPermissions?.admin?.view)}
         />
     );
 }

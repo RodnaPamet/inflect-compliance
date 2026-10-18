@@ -192,6 +192,7 @@ function renderDetail(aiActRiskTier: string | null) {
             tenantSlug="acme"
             agent={agent(aiActRiskTier)}
             perms={{
+                canReadRegistry: true,
                 canManageRegistry: true,
                 canEditPolicyCard: true,
                 canGrantTools: true,

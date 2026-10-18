@@ -30,6 +30,7 @@
  */
 
 import type { PermissionKey, PermissionMode } from './permission-middleware';
+import { AGENT_ADMIN_API_STATIC_SEGMENTS } from '@/lib/auth/guard';
 
 // ─── Rule shape ─────────────────────────────────────────────────────
 
@@ -312,7 +313,10 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // would gate the LIVE view of data the page hands out on a page load.
     {
         path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/stream$`),
-        permission: 'admin.view',
+        // #3710 — `admin.view` OR the inventory view key, because the run
+        // detail page this drives admits either (`mayReadAgentActivity`).
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
         note:
             "Live tail of one agentic run's append-only step ledger (SSE). The " +
             'same authority as the run detail page it drives; the stream adds ' +
@@ -334,7 +338,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // be a permissions change wearing a UI feature's clothes.
     {
         path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/checkpoint$`),
-        permission: 'admin.view',
+        // #3710 — the proposals page's gate, both keys (`mayReadAgentActivity`).
+        // The canvas that consumes it still offers the review on `admin.view`
+        // alone; the route admitting more than one consumer offers is the safe
+        // direction.
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
         note:
             "One run's open human checkpoint: its status plus every PENDING " +
             'proposal it queued, each with a server-computed diff. The same ' +
@@ -420,10 +429,11 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     //
     // SUBMITTING a scan is the scanner's authority, not the register's: the
     // key a scanner's API key carries is `agent_harness_ingest` and nothing
-    // wider. Above the catch-all so a POST resolves here. Reading scans,
-    // registering a scanner's signing key and recording a shortfall acceptance
-    // fall to the catch-all's `agent_registry`, because each decides whose
-    // reports count or which risk the tenant carries.
+    // wider. Above the catch-all so a POST resolves here. Reading scans is the
+    // inventory read (its own rule, below, #3710). Registering a scanner's
+    // signing key and recording a shortfall acceptance fall to the catch-all's
+    // `agent_registry`, because each decides whose reports count or which risk
+    // the tenant carries.
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/harness-scans$`),
         methods: ['POST'],
@@ -471,6 +481,55 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Confirm that a discovered Entra service principal is a registered ' +
             "agent's own — the condition for an UNATTENDED disable of that " +
             'principal when the owner-orphan pass contains the agent.',
+    },
+
+    // ── The agent INVENTORY reads (#3710) ─────────────────────────────
+    //
+    // Read-only `admin.agent_registry_view` OR the register key, whose holders
+    // always could read these. Above the catch-all so a GET resolves here and
+    // every write on the same paths still falls through to the register key.
+    // The detail rule's segment excludes the static siblings by name
+    // (`AGENT_ADMIN_API_STATIC_SEGMENTS`, pinned against the filesystem), so a
+    // GET of `…/agents/skills` is not mistaken for one agent's row.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'List the agent register. The inventory an audit asks for, so the ' +
+            'read-only view key (AUDITOR holds it) or the register key; ' +
+            'registering an agent stays on the register key below.',
+    },
+    {
+        path: new RegExp(
+            `^${T}\\/admin\\/agents\\/(?!(?:${AGENT_ADMIN_API_STATIC_SEGMENTS.join('|')})$)[^/]+$`,
+        ),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            "Read one agent's register row. The view key or the register key; " +
+            'amending and retiring the agent stay on the register key below.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/harness-scans$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'List harness scans. Reading the inventory, so the view key or the ' +
+            'register key; submitting one is the ingest key, above.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/reports$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'Read the agent governance pack. The view key or the register key. ' +
+            'FILING it (POST …/reports/export) writes an Evidence row, so it ' +
+            'falls to the register key below and the usecase adds evidence.edit.',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),

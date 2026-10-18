@@ -266,15 +266,18 @@ afterAll(async () => {
 });
 
 describe('the gate', () => {
-    it('refuses a principal without admin.agent_registry before reading anything', async () => {
+    it('refuses a principal holding neither inventory key before reading anything', async () => {
         const admin = getPermissionsForRole('ADMIN');
         const ctx = makeRequestContext('ADMIN', {
             tenantId: T1,
             tenantSlug: T1,
             userId: seeded[T1].ownerUserId,
-            appPermissions: { ...admin, admin: { ...admin.admin, agent_registry: false } },
+            appPermissions: {
+                ...admin,
+                admin: { ...admin.admin, agent_registry: false, agent_registry_view: false },
+            },
         });
-        await expect(getHarnessMatrix(ctx)).rejects.toThrow(/admin\.agent_registry/);
+        await expect(getHarnessMatrix(ctx)).rejects.toThrow(/admin\.agent_registry_view/);
     });
 });
 
@@ -555,6 +558,23 @@ describe('the accept affordance is the owner\'s, and the acceptances card is the
         expect(theirView.acceptances.rows.map((a) => [a.id, a.inForce, a.acceptAffordance])).toEqual([
             [accepted.id, true, 'OWNER_ONLY'],
         ]);
+    });
+
+    it('the owner of the agent, holding only the view key, reads the matrix and is offered nothing', async () => {
+        const accepted = await ensureAcceptance();
+        const owner = getPermissionsForRole('OWNER');
+        const viewOnly = makeRequestContext('OWNER', {
+            tenantId: T3,
+            tenantSlug: T3,
+            userId: seeded[T3].ownerUserId,
+            appPermissions: { ...owner, admin: { ...owner.admin, agent_registry: false } },
+        });
+        const view = await getHarnessMatrix(viewOnly);
+        // The same rows the owner is offered ACCEPT / RENEW / REGISTER_FIRST on.
+        const section = sectionOf(view, A);
+        expect(rowOf(section, 'entra:sp:target').acceptance?.id).toBe(accepted.id);
+        expect(section.rows.map((r) => r.acceptAffordance).filter((a) => a !== 'NONE')).toEqual([]);
+        expect(view.acceptances.rows.map((a) => [a.id, a.acceptAffordance])).toEqual([[accepted.id, 'NONE']]);
     });
 
     /** The acceptance still on the clock, recorded here if no earlier test did, so each test runs alone. */

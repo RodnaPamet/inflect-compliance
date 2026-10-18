@@ -127,9 +127,9 @@ interface Section {
  * exists for, and a helper that defaulted it to `false` would make the third
  * arm of the test below unwritable.
  */
-function permsWith(agentRegistry: boolean | undefined) {
+function permsWith(agentRegistry: boolean | undefined, agentRegistryView?: boolean) {
     return {
-        admin: { view: true, manage: true, agent_registry: agentRegistry },
+        admin: { view: true, manage: true, agent_registry: agentRegistry, agent_registry_view: agentRegistryView },
         reports: { view: true },
         controls: { view: true, create: true, edit: true },
         tasks: { view: true, edit: true },
@@ -137,8 +137,8 @@ function permsWith(agentRegistry: boolean | undefined) {
 }
 
 /** Run `useNavSections` inside a host component and hand back its output. */
-function sections(agentRegistry: boolean | undefined): Section[] {
-    mockPerms.mockReturnValue(permsWith(agentRegistry));
+function sections(agentRegistry: boolean | undefined, agentRegistryView?: boolean): Section[] {
+    mockPerms.mockReturnValue(permsWith(agentRegistry, agentRegistryView));
     let captured: Section[] = [];
     function Host() {
         captured = useNavSections() as unknown as Section[];
@@ -205,6 +205,18 @@ describe('the label is the SINGULAR noun, from the PLURAL key', () => {
     });
 });
 
+describe('the inventory view key alone shows the entry (#3710)', () => {
+    it('is present for a reader holding only admin.agent_registry_view — the AUDITOR case', () => {
+        const hrefs = manage(sections(false, true)).items.map((i) => i.href);
+        expect(hrefs).toContain('/t/acme/agents');
+    });
+
+    it('and absent when neither inventory key is held', () => {
+        const hrefs = manage(sections(false, false)).items.map((i) => i.href);
+        expect(hrefs).not.toContain('/t/acme/agents');
+    });
+});
+
 describe('without the agent permission the entry is ABSENT', () => {
     it('is dropped when admin.agent_registry is false', () => {
         const hrefs = manage(sections(false)).items.map((i) => i.href);
@@ -216,7 +228,7 @@ describe('without the agent permission the entry is ABSENT', () => {
 
     it('is dropped when the key is ABSENT from the permission bag entirely', () => {
         // The fail-closed filter's real case. `visible` is computed as
-        // `perms.admin.agent_registry === true`, so an undefined key yields
+        // `mayReadAgentInventory(perms.admin)`, a strict boolean, so an undefined key yields
         // `false` rather than `undefined` — and an item whose `visible` were
         // `undefined` would be treated as UNGATED and shown to everybody,
         // which is the direction that leaks.

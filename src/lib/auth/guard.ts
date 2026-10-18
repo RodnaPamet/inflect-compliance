@@ -550,18 +550,108 @@ export const AI_ADMIN_ADMIN_PATH_PREFIXES: readonly string[] = [
  * `/admin/agents`.
  */
 export function isAiAdminAdminPath(pathname: string): boolean {
-    if (/[%\\]/.test(pathname)) return false;
+    const template = tenantPathTemplate(pathname);
+    if (template === null) return false;
+    return AI_ADMIN_ADMIN_PATH_PREFIXES.some(
+        (prefix) => template === prefix || template.startsWith(`${prefix}/`),
+    );
+}
+
+/**
+ * `pathname` as a tenant TEMPLATE — `/api/t/acme/admin/agents` →
+ * `/api/t/[slug]/admin/agents` — or `null` when it is not a tenant path in
+ * canonical form (see `isAiAdminAdminPath` for what canonical means and why
+ * anything else fails closed). A single trailing slash is the path itself and
+ * is dropped.
+ */
+function tenantPathTemplate(pathname: string): string | null {
+    if (/[%\\]/.test(pathname)) return null;
     const match = pathname.match(/^(\/api)?\/t\/([^/]+)(\/.*)?$/);
-    if (!match) return false;
+    if (!match) return null;
     const rest = match[3] ?? '';
     const segments = rest.split('/').slice(1);
     // A single trailing slash is the path itself; any other empty segment is not canonical.
     const inner = segments.length > 0 && segments[segments.length - 1] === '' ? segments.slice(0, -1) : segments;
-    if ([match[2], ...inner].some((s) => s === '' || s === '.' || s === '..')) return false;
-    const template = `${match[1] ?? ''}/t/[slug]${rest}`;
-    return AI_ADMIN_ADMIN_PATH_PREFIXES.some(
-        (prefix) => template === prefix || template.startsWith(`${prefix}/`),
-    );
+    if ([match[2], ...inner].some((s) => s === '' || s === '.' || s === '..')) return null;
+    return `${match[1] ?? ''}/t/[slug]${rest}`;
+}
+
+/**
+ * The static directories beside `[agentId]` under
+ * `src/app/api/t/[tenantSlug]/admin/agents/`. A single segment after
+ * `/admin/agents/` is an AGENT ID only when it is none of these.
+ *
+ * A name this list does not know is read as an agent id, so the edge would
+ * admit an AUDITOR's GET of it and leave the refusal to that route's handler.
+ * That is safe — the handler is the authority and audits the denial — but it is
+ * a pre-filter wider than the view key, so the list is pinned against the
+ * filesystem by `tests/unit/agent-registry-view-key.test.ts` and a new static
+ * route under the agent subtree fails CI until it is listed here.
+ */
+export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
+    'concurrency',
+    'external-tools',
+    'harness-acceptances',
+    'harness-scanner-keys',
+    'harness-scans',
+    'intake',
+    'kill-switch',
+    'owner-orphan-pass',
+    'parameter-sets',
+    'peers',
+    'reports',
+    'review-quality',
+    'skills',
+    'tool-manifests',
+];
+
+/**
+ * The admin API READS the edge admits an AUDITOR to (#3710) — the agent
+ * inventory, which the read-only `admin.agent_registry_view` gates and AUDITOR
+ * holds. Exact templates, `[agentId]` standing for one segment that is not in
+ * `AGENT_ADMIN_API_STATIC_SEGMENTS`, and GET or HEAD only:
+ *
+ *   - `/api/t/[slug]/admin/agents`                the register list
+ *   - `/api/t/[slug]/admin/agents/[agentId]`      one agent's register row —
+ *     the detail page's Overview tab reads it from the browser, which is why the
+ *     edge must admit it at all
+ *   - `/api/t/[slug]/admin/agents/harness-scans`  the scan list
+ *   - `/api/t/[slug]/admin/agents/reports`        the governance pack
+ *
+ * Nothing under those paths, no other method, and no other admin path: AUDITOR
+ * holds no key that writes, and the only other admin key it holds
+ * (`compliance_dsar_view`) is not widened here. The handler's literal
+ * `requirePermission` stays the authority, as for every role.
+ */
+export const AUDITOR_ADMIN_READ_PATHS: readonly string[] = [
+    '/api/t/[slug]/admin/agents',
+    '/api/t/[slug]/admin/agents/[agentId]',
+    '/api/t/[slug]/admin/agents/harness-scans',
+    '/api/t/[slug]/admin/agents/reports',
+];
+
+const AGENT_DETAIL_TEMPLATE = '/api/t/[slug]/admin/agents/[agentId]';
+const AGENT_SUBTREE = '/api/t/[slug]/admin/agents/';
+
+/** Whether an AUDITOR's request is one of `AUDITOR_ADMIN_READ_PATHS`. */
+export function isAuditorAdminReadPath(pathname: string, method: string | null | undefined): boolean {
+    const verb = (method ?? '').toUpperCase();
+    if (verb !== 'GET' && verb !== 'HEAD') return false;
+    const raw = tenantPathTemplate(pathname);
+    if (raw === null) return false;
+    const template = raw.endsWith('/') ? raw.slice(0, -1) : raw;
+    for (const allowed of AUDITOR_ADMIN_READ_PATHS) {
+        if (allowed === AGENT_DETAIL_TEMPLATE) {
+            if (!template.startsWith(AGENT_SUBTREE)) continue;
+            const segment = template.slice(AGENT_SUBTREE.length);
+            if (segment !== '' && !segment.includes('/') && !AGENT_ADMIN_API_STATIC_SEGMENTS.includes(segment)) {
+                return true;
+            }
+        } else if (template === allowed) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -579,7 +669,8 @@ export function isAiAdminAdminPath(pathname: string): boolean {
  * Returns:
  *   'allow' — the role here is an admin role, or is AI_ADMIN and the path is
  *             one of the agent admin paths (`AI_ADMIN_ADMIN_PATH_PREFIXES`,
- *             #3699)
+ *             #3699), or is AUDITOR and the request is a GET of the agent
+ *             inventory (`AUDITOR_ADMIN_READ_PATHS`, #3710)
  *   'deny'  — the role here is not
  *   'defer' — the URL's tenant is not in the claim. This gate does not own
  *             that answer: the tenant-access gate does, and it refuses
@@ -598,6 +689,11 @@ export function checkAdminAccess(
     pathname: string,
     primaryRole: string | null | undefined,
     memberships: ReadonlyArray<{ slug: string; role: string }> | null | undefined,
+    /**
+     * The request method — read only for the AUDITOR branch (#3710), which is
+     * GET/HEAD-only. Absent, that branch admits nothing.
+     */
+    method?: string | null,
 ): AdminGateResult {
     const urlSlug = extractTenantSlugFromPath(pathname);
     if (!urlSlug) {
@@ -609,6 +705,8 @@ export function checkAdminAccess(
     // #3699 — AI_ADMIN in THIS tenant, on an agent admin path only. A flat
     // path (above) never admits it: it names no tenant, so no agent register.
     if (here.role === 'AI_ADMIN' && isAiAdminAdminPath(pathname)) return 'allow';
+    // #3710 — AUDITOR in THIS tenant, reading the agent inventory only.
+    if (here.role === 'AUDITOR' && isAuditorAdminReadPath(pathname, method)) return 'allow';
     return 'deny';
 }
 

@@ -6,7 +6,8 @@
  * (docs/agent-harness-contract.md). The gate is `admin.agent_harness_ingest`,
  * the one key a scanner's API key carries; the usecase then refuses any report
  * not signed by a scanner key this tenant registered. GET lists the scans,
- * under `admin.agent_registry` like the rest of the register.
+ * under the inventory read like the rest of the register (#3710): the
+ * read-only `admin.agent_registry_view`, or the register key.
  *
  * The body is read through a byte-capped stream that ABORTS at the contract's
  * size bound, rather than read whole and measured: a length check after
@@ -55,7 +56,7 @@ export const POST = withApiErrorHandling(
 
 export const GET = withApiErrorHandling(
     requirePermission<Params>(
-        'admin.agent_registry',
+        { keys: ['admin.agent_registry_view', 'admin.agent_registry'], mode: 'any' },
         async (req: NextRequest, _routeArgs, ctx) => {
             const take = Number(req.nextUrl.searchParams.get('take') ?? '50');
             return jsonResponse(await listHarnessScans(ctx, { take: Number.isFinite(take) ? take : 50 }));

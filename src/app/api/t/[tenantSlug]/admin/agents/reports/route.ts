@@ -18,13 +18,13 @@
  *
  * ## Permission
  *
- * `admin.agent_registry`, and it needs no new rule: the existing
- * `^…/admin/agents(/.*)?$` entry in `route-permissions.ts` matches the whole
- * subtree, exactly as it does for `…/agents/review-quality` and
- * `…/agents/:agentId/coverage`. The key is right on its own terms too — the
- * pack names people (who approved what, who owns which agent), so it does not
- * belong behind the narrower tool-exposure key an operations team routinely
- * holds.
+ * The INVENTORY READ (#3710): the read-only `admin.agent_registry_view`, or the
+ * register key whose holders always could. Stated by its own rule in
+ * `route-permissions.ts`, above the register's catch-all. The pack names people
+ * (who approved what, who owns which agent), so it does not belong behind the
+ * narrower tool-exposure key an operations team routinely holds; the view key
+ * is the read of exactly the inventory the pack reports on, and AUDITOR holds
+ * it because this pack is what an assessor asks for.
  *
  * `requirePermission` at the ROUTE rather than `assertCanRead` alone in the
  * usecase, so a refusal writes the hash-chained `AUTHZ_DENIED` row. The
@@ -68,27 +68,30 @@ function parseSection(raw: string | null): ReportId | null {
 }
 
 export const GET = withApiErrorHandling(
-    requirePermission<Params>('admin.agent_registry', async (req: NextRequest, _routeArgs, ctx) => {
-        const rawDays = req.nextUrl.searchParams.get('days');
-        // `undefined` when absent so the usecase's own default applies; `NaN`
-        // when present and unparseable so the usecase refuses it, rather than a
-        // silent fallback that answers a different question.
-        const windowDays = rawDays === null ? undefined : Number(rawDays);
-        const section = parseSection(req.nextUrl.searchParams.get('section'));
+    requirePermission<Params>(
+        { keys: ['admin.agent_registry_view', 'admin.agent_registry'], mode: 'any' },
+        async (req: NextRequest, _routeArgs, ctx) => {
+            const rawDays = req.nextUrl.searchParams.get('days');
+            // `undefined` when absent so the usecase's own default applies; `NaN`
+            // when present and unparseable so the usecase refuses it, rather than a
+            // silent fallback that answers a different question.
+            const windowDays = rawDays === null ? undefined : Number(rawDays);
+            const section = parseSection(req.nextUrl.searchParams.get('section'));
 
-        switch (section) {
-            case 'agent-inventory':
-                return jsonResponse(await buildAgentInventoryReport(ctx));
-            case 'asi-coverage':
-                return jsonResponse(await buildAsiCoverageReport(ctx));
-            case 'approval-statistics':
-                return jsonResponse(await buildApprovalStatisticsReport(ctx, { windowDays }));
-            case 'incident-history':
-                return jsonResponse(await buildIncidentHistoryReport(ctx, { windowDays }));
-            case 'third-party-assessments':
-                return jsonResponse(await buildThirdPartyAssessmentReport(ctx));
-            default:
-                return jsonResponse(await buildAgentGovernancePack(ctx, { windowDays }));
-        }
-    }),
+            switch (section) {
+                case 'agent-inventory':
+                    return jsonResponse(await buildAgentInventoryReport(ctx));
+                case 'asi-coverage':
+                    return jsonResponse(await buildAsiCoverageReport(ctx));
+                case 'approval-statistics':
+                    return jsonResponse(await buildApprovalStatisticsReport(ctx, { windowDays }));
+                case 'incident-history':
+                    return jsonResponse(await buildIncidentHistoryReport(ctx, { windowDays }));
+                case 'third-party-assessments':
+                    return jsonResponse(await buildThirdPartyAssessmentReport(ctx));
+                default:
+                    return jsonResponse(await buildAgentGovernancePack(ctx, { windowDays }));
+            }
+        },
+    ),
 );

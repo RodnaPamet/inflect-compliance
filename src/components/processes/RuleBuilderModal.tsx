@@ -569,8 +569,8 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
         .map((r) => ({ value: r.id, label: r.name }));
     // #3471 — the INVOKE_AGENT picker. ACTIVE only: the dispatcher refuses a
     // suspended agent by name, and offering one here would mean authoring a
-    // rule whose every fire is a refusal. The route is gated on
-    // `admin.agent_registry`, so an author who cannot read the register sees no
+    // rule whose every fire is a refusal. The route is gated on the inventory
+    // read (#3710), so an author who cannot read the register sees no
     // options and `step3Valid` keeps the rule unsaveable — deliberately, rather
     // than falling back to a text box that accepts a typo'd id.
     const { data: agentList } = useTenantSWR<{ agents: Array<{ id: string; name: string }> }>(
@@ -657,7 +657,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                 // Both halves required, and the agent id comes from the picker
                 // rather than a text box — an id nobody can see in the register
                 // is an id nobody should be able to type. An author without
-                // `admin.agent_registry` gets no options, so this stays false
+                // the inventory read gets no options, so this stays false
                 // and the rule cannot be saved half-configured.
                 return (
                     form.agent.agentId.trim().length > 0 &&

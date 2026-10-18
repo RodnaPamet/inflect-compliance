@@ -183,8 +183,12 @@ describe('VR-6 — execution overlay', () => {
         // rewrite could put the word in a string. An export is unambiguous.
         const handlers = route.match(/export const (GET|POST|PUT|PATCH|DELETE) =/g) ?? [];
         expect(handlers).toEqual(['export const GET =']);
-        // The gate is the review surface's own, spelled as the middleware.
-        expect(route).toMatch(/requirePermission<\{ tenantSlug: string; id: string \}>\(\s*'admin\.view'/);
+        // The gate is the review surface's own, spelled as the middleware —
+        // `admin.view` OR, since #3710, the inventory view key, as the
+        // proposals page admits (`mayReadAgentActivity`).
+        expect(route).toMatch(
+            /requirePermission<\{ tenantSlug: string; id: string \}>\(\s*\{ keys: \['admin\.view', 'admin\.agent_registry_view'\], mode: 'any' \}/,
+        );
     });
 
     it('the node offers the affordance only to a viewer who may review', () => {

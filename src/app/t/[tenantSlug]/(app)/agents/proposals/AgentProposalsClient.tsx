@@ -159,16 +159,29 @@ export function AgentProposalsClient({
     tenantSlug,
     initialProposals,
     canOperate,
+    canCompose = false,
+    canInvestigate = false,
+    canReadReports = false,
 }: {
     tenantSlug: string;
     initialProposals: ProposalRow[];
     /**
-     * The role-tier `canWrite` (#2456). This page is gated on `admin.view`;
+     * The role-tier `canWrite` (#2456). This page is gated on `admin.view` or
+     * the inventory view key (#3710);
      * `approveAgentProposal` and `rejectAgentProposal` both open with
      * `assertCanWrite(ctx)`. Approve and Reject rendered enabled for readers
      * and returned 403 on press.
      */
     canOperate: boolean;
+    /**
+     * The views menu's other gates (#3710). This page's own gate — `admin.view`
+     * OR the inventory view key — no longer implies any of them, so the page
+     * passes each. ABSENT reads as `false`: a menu that drops an entry is a
+     * missing shortcut, one that offers a refused page is a defect.
+     */
+    canCompose?: boolean;
+    canInvestigate?: boolean;
+    canReadReports?: boolean;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
@@ -364,18 +377,19 @@ export function AgentProposalsClient({
                 ]}
                 title={t('proposals.title')}
                 description={t('proposals.description')}
-                // One click to any of the other four agentic surfaces, and the
-                // menu marks this one. Both gates are true by construction:
-                // the PAGE refused anyone without `admin.view`, and every
-                // holder of the register key is an admin holder — a custom
-                // role that grants agent_registry alone reaches this page not
-                // at all, so it can never see this menu.
+                // One click to any of the other agentic surfaces, and the menu
+                // marks this one. Only this page's own gate is true by
+                // construction: since #3710 a reader holding the view key alone
+                // (AUDITOR, AI_ADMIN) reaches here, so the page passes the
+                // other gates rather than the menu assuming them.
                 actions={
                     <AgentsViewsMenu
                         current="proposals"
                         tenantSlug={tenantSlug}
                         canReviewProposals
-                        canInvestigate
+                        canCompose={canCompose}
+                        canInvestigate={canInvestigate}
+                        canReadReports={canReadReports}
                     />
                 }
             />

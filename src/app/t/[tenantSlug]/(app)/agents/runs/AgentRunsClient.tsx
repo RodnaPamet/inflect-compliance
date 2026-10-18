@@ -76,6 +76,9 @@ export function AgentRunsClient({
     initialRuns,
     workflows,
     canOperate,
+    canCompose = false,
+    canInvestigate = false,
+    canReadReports = false,
 }: {
     tenantSlug: string;
     initialRuns: RunRow[];
@@ -83,7 +86,8 @@ export function AgentRunsClient({
     /**
      * The role-tier `canWrite` (#2456), NOT a permissions-blob key.
      *
-     * This page is gated on `admin.view`, but `startWorkflowRun`,
+     * This page is gated on `admin.view` or the inventory view key (#3710),
+     * but `startWorkflowRun`,
      * `resumeWorkflowRun` and `abortWorkflowRun` all open with
      * `assertCanWrite(ctx)` — so a READER or AUDITOR holding `admin.view`
      * reaches this page and is refused on press. Start, Resume and Abort
@@ -95,6 +99,15 @@ export function AgentRunsClient({
      * tell you the product does not have it."
      */
     canOperate: boolean;
+    /**
+     * The views menu's other gates (#3710). This page's own gate — `admin.view`
+     * OR the inventory view key — no longer implies any of them, so the page
+     * passes each. ABSENT reads as `false`: a menu that drops an entry is a
+     * missing shortcut, one that offers a refused page is a defect.
+     */
+    canCompose?: boolean;
+    canInvestigate?: boolean;
+    canReadReports?: boolean;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
@@ -178,8 +191,11 @@ export function AgentRunsClient({
                     <AgentsViewsMenu
                         current="runs"
                         tenantSlug={tenantSlug}
+                        // This page's own gate, so true by construction.
                         canReviewProposals
-                        canInvestigate
+                        canCompose={canCompose}
+                        canInvestigate={canInvestigate}
+                        canReadReports={canReadReports}
                     />
                 }
             />

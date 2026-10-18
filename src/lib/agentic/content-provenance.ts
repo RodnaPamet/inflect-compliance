@@ -128,6 +128,13 @@ export const CONTENT_SOURCE_PROVENANCE = {
     'webhook.inbound': 'THIRD_PARTY_INGESTED',
     'agent.proposal': 'THIRD_PARTY_INGESTED',
     'agent.tool-result': 'THIRD_PARTY_INGESTED',
+    // A run's DECLARED input, as its caller supplied it (#3710) — on the Flue
+    // engine that caller is always an agent-bound API key. The Flue driver puts
+    // it in the model's prompt (`flue/run-message.ts`), fenced and labelled with
+    // this source's provenance, so the model reads an id to look up and never an
+    // instruction. Named rather than left to the default for the reason the
+    // legacy row above gives: it reaches a model as the SUBJECT of the run.
+    'agent.run-input': 'THIRD_PARTY_INGESTED',
 } as const satisfies Readonly<Record<string, ContentProvenance>>;
 
 /**
@@ -400,6 +407,17 @@ const SYSTEM_HANDLING =
     'third-party sources.';
 
 /**
+ * The handling rule a model is given for content carrying `provenance` — the
+ * DATA-ONLY rule for every label that may not instruct, the platform note for
+ * the one that may. One spelling, read by the tool-result envelope below and
+ * by the Flue driver's run-input block (`flue/run-message.ts`, #3710), so a
+ * model is told the same thing about untrusted content wherever it meets it.
+ */
+export function handlingFor(provenance: ContentProvenance): string {
+    return mayCarryInstruction(provenance) ? SYSTEM_HANDLING : DATA_ONLY_HANDLING;
+}
+
+/**
  * Build the envelope for a tool result. Returned as a SEPARATE MCP content
  * block rather than wrapped around the data, so `content[0]` stays the exact
  * JSON payload every existing agent and test parses.
@@ -416,13 +434,12 @@ const SYSTEM_HANDLING =
  */
 export function buildProvenanceEnvelope(toolName: string): ProvenanceEnvelope {
     const provenance = provenanceOfTool(toolName);
-    const instruction = mayCarryInstruction(provenance);
     return {
         kind: PROVENANCE_ENVELOPE_KIND,
         tool: toolName,
         provenance,
-        mayCarryInstruction: instruction,
-        handling: instruction ? SYSTEM_HANDLING : DATA_ONLY_HANDLING,
+        mayCarryInstruction: mayCarryInstruction(provenance),
+        handling: handlingFor(provenance),
     };
 }
 

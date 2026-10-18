@@ -30,6 +30,7 @@ import {
     Xmark,
 } from '@inflect/ui/components/ui/icons/nucleo';
 import { cn } from '@inflect/ui/lib/cn';
+import { mayReadAgentInventory } from '@/lib/permissions';
 import { useCalendarBadge } from './use-calendar-badge';
 import { NavItem } from './nav-item';
 // A SEPARATE type-only import on purpose. `nav-item-import-discipline` pins the
@@ -164,7 +165,10 @@ export function useNavSections(): NavSectionDef[] {
                     href: tenantHref('/agents'),
                     label: t('agents'),
                     icon: Robot,
-                    visible: perms.admin.agent_registry === true,
+                    // The INVENTORY read (#3710): the view key or the
+                    // register key, the gate the page asserts. Returns a
+                    // strict boolean, as the filter requires.
+                    visible: mayReadAgentInventory(perms.admin),
                 },
                 // R25-PR-A — Processes canvas. Visual mapping of
                 // business + IT processes with controls placed on

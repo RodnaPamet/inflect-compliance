@@ -60,6 +60,8 @@ const EXPECTED: Array<[string, ContentProvenance]> = [
     // Another agent's output — untrusted by construction.
     ['agent.proposal', 'THIRD_PARTY_INGESTED'],
     ['agent.tool-result', 'THIRD_PARTY_INGESTED'],
+    // A run's declared input, as its caller supplied it — data, never instruction.
+    ['agent.run-input', 'THIRD_PARTY_INGESTED'],
     // A signed-in human typing into IC's own surfaces.
     ['ui.authenticated-form', 'TENANT_AUTHORED'],
     ['ui.review-decision', 'TENANT_AUTHORED'],

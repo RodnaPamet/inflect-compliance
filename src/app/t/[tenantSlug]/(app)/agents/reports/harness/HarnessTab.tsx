@@ -41,7 +41,12 @@ export function HarnessTab({
     scannerKeys,
 }: {
     view: HarnessMatrixView;
-    scannerKeys: HarnessScannerKeysView;
+    /**
+     * `null` for a reader without `admin.agent_registry` (#3710): the key
+     * register is that key's to read and to change, so a view-key reader gets
+     * no card rather than a list of controls that would be refused.
+     */
+    scannerKeys: HarnessScannerKeysView | null;
 }) {
     const t = useTranslations('agents');
     const hasScans = view.scans.rows.length > 0;
@@ -117,7 +122,7 @@ export function HarnessTab({
             {hasScans && <ScanHistory scans={view.scans} scanWindow={view.scanWindow} />}
             {/* Rendered with or without scans: a key is what lets the FIRST
                 report be accepted, so it cannot wait for one. */}
-            <ScannerKeysCard view={scannerKeys} />
+            {scannerKeys && <ScannerKeysCard view={scannerKeys} />}
 
             {accepting && <AcceptShortfallModal target={accepting} onClose={() => setAccepting(null)} />}
         </>

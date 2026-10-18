@@ -114,12 +114,14 @@ describe('API Key Scopes — scopesToPermissions', () => {
         const { admin: starAdmin, ...starRest } = perms;
         const { admin: adminAdmin, ...adminRest } = adminPerms;
         expect(starRest).toEqual(adminRest);
-        // And `admin` differs in exactly four places — asserted as a whole
-        // object, so a FIFTH divergence appearing later fails here rather than
-        // slipping past the named checks below.
+        // And `admin` differs in exactly five places — asserted as a whole
+        // object, so a SIXTH divergence appearing later fails here rather than
+        // slipping past the named checks below. The fifth is the inventory
+        // view key (#3710), which only its own named scope grants.
         expect(starAdmin).toEqual({
             ...adminAdmin,
             agent_registry: false,
+            agent_registry_view: false,
             agent_tool_exposure: false,
             agent_policy_card: false,
             agent_kill_switch: false,

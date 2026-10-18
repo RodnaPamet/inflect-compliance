@@ -248,9 +248,20 @@ describe('the role that counts is the one in the URL tenant', () => {
 });
 
 describe('the other roles are unchanged', () => {
-    it.each(['READER', 'EDITOR', 'AUDITOR'])('%s is still refused on the agent APIs', async (role) => {
+    it.each(['READER', 'EDITOR'])('%s is still refused on the agent APIs', async (role) => {
         expect(await refusedAtEdge(role, '/api/t/acme/admin/agents')).toBe(true);
         expect(await refusedAtEdge(role, '/api/t/acme/admin/mcp/quarantine')).toBe(true);
+    });
+
+    // #3710 changed AUDITOR, deliberately and narrowly: it holds the inventory
+    // view key, so the edge admits a GET of the agent inventory and nothing else
+    // under `/admin` (`AUDITOR_ADMIN_READ_PATHS`, pinned in
+    // `tests/unit/agent-registry-view-key.test.ts`).
+    it('AUDITOR reads the agent inventory and is refused every other agent API', async () => {
+        expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/agents')).toBe(false);
+        expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/agents', 'POST')).toBe(true);
+        expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/mcp/quarantine')).toBe(true);
+        expect(await refusedAtEdge('AUDITOR', '/api/t/acme/admin/agents/kill-switch')).toBe(true);
     });
 
     it.each(['ADMIN', 'OWNER'])('%s still reaches every admin root', async (role) => {

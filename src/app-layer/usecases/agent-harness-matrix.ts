@@ -41,11 +41,21 @@
  *     the sources another reads, and a scanner holding a key with no scan in
  *     the window has read nothing anybody can see.
  *
- * Gated on `admin.agent_registry`, the page's own key.
+ * The matrix is gated on the INVENTORY READ (#3710): `admin.agent_registry_view`,
+ * or the register key whose holders always could (`mayReadAgentInventory`). The
+ * scanner-key view below stays on `admin.agent_registry`: it is the register of
+ * whose reports the tenant believes, which that key decides, and the tab shows
+ * it only to a holder.
+ *
+ * A reader WITHOUT the register key is offered no shortfall action: every
+ * `acceptAffordance` reads `NONE` for them, because `acceptHarnessShortfall`
+ * refuses a caller without that key before it asks whose agent it is — a
+ * button computed for them would be shown and then refused.
  */
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { forbidden } from '@/lib/errors/types';
+import { mayReadAgentInventory } from '@/lib/permissions';
 import { listHarnessScans } from './agent-harness-scans';
 import { MAX_AGENTS, parseStoredHarnessSources, parseStoredHarnessVerdicts } from '@/lib/agentic/harness-contract';
 import { harnessBarFor, isHarnessShortfall } from '@/lib/agentic/harness-findings';
@@ -55,6 +65,7 @@ import {
     compareMatrixRows,
     computeHarnessDrift,
     harnessScanCompleteness,
+    type AcceptAffordance,
     type AcceptanceRow,
     type HarnessMatrixView,
     type HarnessScanRow,
@@ -85,9 +96,29 @@ export const KEY_CAP = 200;
 export const CANDIDATE_CAP = 200;
 
 function assertMayRead(ctx: RequestContext): void {
-    if (!ctx.appPermissions.admin.agent_registry) {
-        throw forbidden('Reading the harness matrix requires admin.agent_registry');
+    if (!mayReadAgentInventory(ctx.appPermissions.admin)) {
+        throw forbidden('Reading the harness matrix requires admin.agent_registry_view');
     }
+}
+
+function assertMayReadScannerKeys(ctx: RequestContext): void {
+    if (!ctx.appPermissions.admin.agent_registry) {
+        throw forbidden('Reading harness scanner keys requires admin.agent_registry');
+    }
+}
+
+/**
+ * The accept affordance for THIS reader: the shared rule, or `NONE` for a
+ * reader who cannot accept at all (no `admin.agent_registry` — the check
+ * `acceptHarnessShortfall` makes first).
+ */
+function affordanceFor(
+    ctx: RequestContext,
+    agent: Parameters<typeof acceptAffordanceFor>[0],
+    acceptanceInForce: boolean,
+): AcceptAffordance {
+    if (!ctx.appPermissions.admin.agent_registry) return 'NONE';
+    return acceptAffordanceFor(agent, ctx.userId, acceptanceInForce);
 }
 
 const pairKey = (scanId: string, discoveredAgentId: string) => `${scanId}\u0000${discoveredAgentId}`;
@@ -351,7 +382,7 @@ export async function getHarnessMatrix(
                     acceptedLevel: a.acceptedLevel,
                     expiresAt: a.expiresAt.toISOString(),
                     inForce,
-                    acceptAffordance: acceptAffordanceFor(a.discoveredAgent, ctx.userId, inForce),
+                    acceptAffordance: affordanceFor(ctx, a.discoveredAgent, inForce),
                 };
             });
 
@@ -416,7 +447,7 @@ export async function getHarnessMatrix(
                             renewal: accepted.renewedFromId !== null,
                         }
                         : null,
-                    acceptAffordance: acceptAffordanceFor(da, ctx.userId, accepted !== undefined),
+                    acceptAffordance: affordanceFor(ctx, da, accepted !== undefined),
                 });
             }
             return {
@@ -477,7 +508,7 @@ export async function getHarnessMatrix(
  * refuses.
  */
 export async function getHarnessScannerKeysView(ctx: RequestContext): Promise<HarnessScannerKeysView> {
-    assertMayRead(ctx);
+    assertMayReadScannerKeys(ctx);
     return runInTenantContext(ctx, async (db) => {
         const keys = await db.agentHarnessScannerKey.findMany({
             where: { tenantId: ctx.tenantId },

@@ -104,6 +104,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: true,
             compliance_dsar_manage: true,
             agent_registry: true,
+            agent_registry_view: true,
             agent_tool_exposure: true,
             agent_policy_card: true,
             agent_kill_switch: true,
@@ -126,6 +127,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: true,
             compliance_dsar_manage: true,
             agent_registry: true,
+            agent_registry_view: true,
             agent_tool_exposure: true,
             agent_policy_card: true,
             agent_kill_switch: true,
@@ -149,6 +151,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: false,
             compliance_dsar_manage: false,
             agent_registry: false,
+            agent_registry_view: false,
             agent_tool_exposure: false,
             agent_policy_card: false,
             agent_kill_switch: false,
@@ -158,7 +161,7 @@ describe('PermissionSet admin capabilities', () => {
         });
     });
 
-    it('AUDITOR can READ the DSAR register but holds no other admin permission', () => {
+    it('AUDITOR can READ the DSAR register and the agent inventory, and holds no other admin permission', () => {
         const perms = getPermissionsForRole('AUDITOR');
         expect(perms.admin).toEqual({
             view: false,
@@ -171,6 +174,8 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: true,
             compliance_dsar_manage: false,
             agent_registry: false,
+            // #3710 — reading the agent inventory is the audit's case.
+            agent_registry_view: true,
             agent_tool_exposure: false,
             agent_policy_card: false,
             agent_kill_switch: false,
@@ -193,6 +198,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: false,
             compliance_dsar_manage: false,
             agent_registry: false,
+            agent_registry_view: false,
             agent_tool_exposure: false,
             agent_policy_card: false,
             agent_kill_switch: false,

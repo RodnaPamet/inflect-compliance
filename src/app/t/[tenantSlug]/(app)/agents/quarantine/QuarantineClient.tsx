@@ -155,6 +155,14 @@ export function formatPayload(payloadJson: string): string {
 export interface QuarantineClientProps {
     /** Used only to build absolute breadcrumb hrefs. */
     tenantSlug: string;
+    /**
+     * The views menu's Operate gates (#3710): `mayReadAgentActivity` and
+     * `admin.view`. Not implied by this page's register-key gate — a custom
+     * role can hold the register key without either. ABSENT reads as `true`,
+     * the construction this page assumed before the view key split them.
+     */
+    canReviewProposals?: boolean;
+    canCompose?: boolean;
 }
 
 export function QuarantineClient(props: QuarantineClientProps) {
@@ -170,7 +178,11 @@ export function QuarantineClient(props: QuarantineClientProps) {
     );
 }
 
-function QuarantineInner({ tenantSlug }: QuarantineClientProps) {
+function QuarantineInner({
+    tenantSlug,
+    canReviewProposals = true,
+    canCompose = canReviewProposals,
+}: QuarantineClientProps) {
     const t = useTranslations('agents');
     const { search } = useFilters();
     const [openId, setOpenId] = useState<string | null>(null);
@@ -319,14 +331,16 @@ function QuarantineInner({ tenantSlug }: QuarantineClientProps) {
                     searchPlaceholder: t('quarantine.searchPlaceholder'),
                     // The same menu the register carries, with `current` set —
                     // so the five agentic surfaces are one click from each
-                    // other and the menu says which one you are on. Both gates
-                    // are true here by construction: the PAGE already refused
-                    // anyone without `admin.agent_registry`.
+                    // other and the menu says which one you are on. The
+                    // register-key gate is true here by construction — the
+                    // PAGE already refused anyone without it — and the Operate
+                    // gates come from the page (#3710).
                     toolbarActions: (
                         <AgentsViewsMenu
                             current="quarantine"
                             tenantSlug={tenantSlug}
-                            canReviewProposals
+                            canReviewProposals={canReviewProposals}
+                            canCompose={canCompose}
                             canInvestigate
                         />
                     ),
