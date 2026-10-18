@@ -555,7 +555,24 @@ nominated prior-state read, and acts on that connection's rung:
   to approve. No agent is attributed to it.
 - AUTOMATIC: a `PENDING` journal row carrying the prior state, under the one
   approved template whose only open field is `servicePrincipalId`, bounded to the
-  `contained_orphan_agent_entra_service_principals` population.
+  `contained_orphan_agent_entra_service_principals` population — and only for a
+  link a person has confirmed.
+
+A person confirms the link before any unattended disable (owner decision,
+2026-10-18). Someone holding `admin.agent_registry` confirms, through
+`POST /api/t/:slug/admin/agents/:agentId/service-principal-link`, that a
+discovered principal is the agent's own; `GET` on the same route lists the
+agent's links and whether each is confirmed. The confirm refuses unless the
+harness currently links that principal to that agent and to no other principal,
+so it confirms the scanner's link and never makes one. The confirmation is an
+`AgentServicePrincipalConfirmation` row recording who confirmed which discovered
+agent and when. A database trigger refuses any rewrite of it. When a later scan
+links the principal to another agent, or the agent to another principal, the
+harness ingest invalidates the confirmation; a scan that moves the link back
+does not revive it. At AUTOMATIC an unconfirmed link is refused
+`LINK_UNCONFIRMED`, at the request and again at send, and the pass reports
+PARTIAL. DRY_RUN and PROPOSE_ONLY act on the scanner's link, and the proposal
+states whether the link is confirmed, so the approving person sees it.
 
 A completed ownership transfer lifts the kill, and at every rung the dispatch
 checks at send that the principal still belongs to a contained agent, so a
@@ -570,8 +587,15 @@ The pass records each outcome on its decision by the `DiscoveredAgent` id, never
 the principal's object id. An outcome that needs an operator makes the pass
 PARTIAL; an agent with no principal, a tenant with no paired endpoint and a
 connection at DISABLED do not. Each request emits
-`agentic.owner_orphan_pass.service_principal_disable`. Which Graph application
-permission the Inflect app holds for this is an owner decision recorded on #3671.
+`agentic.owner_orphan_pass.service_principal_disable`.
+
+The connection's Entra application holds `Application.Read.All` for the read and
+`Application.ReadWrite.OwnedBy` for the disable (owner decision, 2026-10-18), not
+`Application.ReadWrite.All`. `OwnedBy` writes only principals whose application
+Inflect's application owns, so the Inflect application is added as an owner of
+each agent's application. A principal it does not own is read, then the disable
+is refused by Graph with `Authorization_RequestDenied`, and the journal row
+settles `INDETERMINATE` for a person to finish in the customer's directory.
 
 ### What the six use cases stand on
 
@@ -754,6 +778,11 @@ changed what #3698 built; #3700 then built the step decision 13 called for.
     disable acts on a customer's people. The orphan pass acts only on agents.
     The key rotation age is a per-tenant setting since #3708, with the 90-day
     product default for a tenant that sets none. (`2b`)
+    *Note (2026-10-18):* with `2c` the pass can also open unattended directory
+    writes, the disable of a contained agent's service principal. The owner
+    re-confirmed this decision for those writes: no breaker; the existing
+    AUTOMATIC cap of 50 writes per connection per hour bounds a mass departure,
+    and each write needs a person-confirmed link. (`2c`, #3671)
 18. **The agent inventory gets a view key.** `admin.agent_registry_view` is
     read-only and has an API-key scope, so an agent granted
     `get_discovered_agent` can read the discovered agent it reviews. It also
@@ -991,6 +1020,7 @@ a legal decision, as that document records.
 | `AgentHarnessAcceptance` (`1a`) | Business record | A time-limited risk acceptance with an expiry and renewal lineage, classed with `ControlException`, whose shape it has (decision 7). It names people by user id, and its row says so ([DPIA](agentic-harness-scanner-dpia.md), condition 7). |
 | `AgentHarnessScannerKey` (`1a`) | Configuration | One public key the tenant trusts to sign harness reports, bound to one registered scanner agent; public material only. Kept as long as the scans it verified, because a scan's signature is checkable only against the key that verified it. Shipped in #3688 with this class in `docs/data-retention.md`. |
 | `AgentOwnershipTransfer` (`2a`) | Business record | Who handed an agent's accountability to whom, and when. Kept as long as `RegisteredAgent`, which is long-lived for the same incident-review question. |
+| `AgentServicePrincipalConfirmation` (`2c`) | Business record | A person's one-way confirmation that a discovered Entra service principal is a registered agent's own, invalidated when a scan re-links either side. Kept as long as `RegisteredAgent`, for the same incident-review question. Added by #3671 under the owner's 2026-10-18 decision that an unattended disable needs a confirmed link. Everything else `2c` writes goes to existing tables: `ExternalWriteJournal` rows, `EXTERNAL_WRITE` proposals, and an OWNER-nominated `ExternalToolPriorStateRead` pairing. |
 | `PeerAgent` (`2e`) | Business record | An A2A peer registered as a principal: an owner, an endpoint, a signing-key reference, and a pinned card hash with who approved it and when. The class `RegisteredAgent` has, for the same reason: an incident review months later asks which peers agents could reach and who was accountable. |
 | `AuditWorkpaper` (`3b`) | Regulatory artefact | The auditor agent's re-performance of one procedure for one period, with a one-way review stamp. An audit relies on it, so it is not pruned by age. |
 | The sampled-workpaper review (`3d`) | Regulatory artefact | One row per sampled workpaper: the reviewer's outcome and stable dissent codes, with no free text. `AgentProposalSampleAudit` is the pattern and has this class; it cannot be reused, because every row of it requires a proposal. Kept as long as the workpaper it judges, because a disagreement rate whose history can be pruned cannot be trended. |
@@ -1008,9 +1038,6 @@ Planned changes that add no model:
   tables. Its mode is a column on an existing model and takes that model's
   class, and so does the kill's reason code, a column on `AgentKillSwitch`
   (shipped in #3670).
-- Step `2c` writes `ExternalWriteJournal` rows and `EXTERNAL_WRITE` proposals to
-  the existing tables (#3671, shipped); its pairing is an
-  `ExternalToolPriorStateRead` row an OWNER nominates.
 - Step `2d` stores no passport: passports are derived and emitted as `Evidence`
   (#3672).
 - Step `3a` reuses `AccessReview` and `AccessReviewConnectedDecision`, as the

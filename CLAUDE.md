@@ -2053,6 +2053,35 @@ each one careless edit from being undone:
   completed transfer lifts the kill, and `SEND_PRECONDITIONS` in the dispatch
   refuses the disable at send at EVERY rung — a PROPOSE_ONLY approval made before
   the transfer must not leave after it.
+- **At AUTOMATIC a PERSON must have confirmed the link** (owner decision,
+  2026-10-18). `AgentServicePrincipalConfirmation`, written ONLY by
+  `usecases/agent-service-principal-confirmation.ts` behind
+  `POST /api/t/:slug/admin/agents/:agentId/service-principal-link` — a literal
+  `requirePermission('admin.agent_registry')`, usecase floor
+  `assertAgentGovernanceWrite(ctx, 'agent_registry')`; no API-key scope, `*`
+  included, reaches that key. An unconfirmed link refuses `LINK_UNCONFIRMED` at
+  request (the pass reports PARTIAL) and again at send for an AUTOMATIC row
+  (`SEND_PRECONDITIONS`). DRY_RUN and PROPOSE_ONLY may act on the scanner's link,
+  but the proposal's rationale must say THE LINK IS UNCONFIRMED — do not drop that
+  sentence, it is the only place the approving human learns it. The confirm
+  CONFIRMS the scanner's link and never makes one: it refuses unless the harness
+  currently links that principal to that agent and the agent to it alone.
+- **A confirmation is one-way and is invalidated, never re-pointed or revived.**
+  A trigger (`agent_sp_confirmation_one_way`) refuses any rewrite of the triple,
+  the confirmer or the times, and any change to an invalidation; `app_user` has no
+  DELETE. The harness ingest, in its own transaction, stamps `PRINCIPAL_RELINKED`
+  / `AGENT_RELINKED` when a scan moves the link, and a scan moving it BACK revives
+  nothing. Readers also match the triple against the link as it stands
+  (`liveConfirmationFor`), so a stale row still cannot vouch for another link.
+- **The Graph permission is `Application.ReadWrite.OwnedBy` +
+  `Application.Read.All`** (owner decision, 2026-10-18), never
+  `Application.ReadWrite.All`. A principal Inflect's app does not own reads fine
+  and then fails the PATCH 403 `Authorization_RequestDenied`; that throws, and the
+  row settles INDETERMINATE for a human. Do not catch the 403 into a refusal —
+  the dispatch cannot tell it from a request that reached the directory.
+- **No blast-radius breaker** — decision 17 stands, re-confirmed by the owner for
+  this write on 2026-10-18: `AUTOMATIC_WRITES_PER_CONNECTION_PER_WINDOW` (50 per
+  connection per hour) bounds a mass departure.
 - **ACCEPTED, never APPLIED on a 2xx.** The disable is in `ASYNC_DELIVERY_TOOLS`,
   and only the reconcile's verifier promotes it: the prior state read enabled, the
   current read says `accountEnabled: false`, same principal. An absent
