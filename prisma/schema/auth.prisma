@@ -1560,6 +1560,23 @@ model TenantSecuritySettings {
   /// CURRENT observation window rather than the first one ever started.
   identityLeaverDryRunSince    DateTime?
   identityJoinerDryRunSince    DateTime?
+  /// THE AGENT OWNER-ORPHAN PASS'S MODE (#3670, step 2b of the agentic IAM
+  /// roadmap). The pass finds ACTIVE agents whose accountable owner has left
+  /// and, at AUTOMATIC, suspends each and engages its kill switch with the
+  /// reason code OWNER_DEPARTED as the system actor.
+  ///
+  /// THE IDENTITY LADDER'S SHAPE AND TYPE, deliberately. DISABLED → DRY_RUN →
+  /// AUTOMATIC, one rung per widen, seven days at DRY_RUN before leaving it —
+  /// the same enum, read through the same `coerceStoredMode` in
+  /// `src/lib/identity/write-ladder.ts`, so a stored PROPOSE (which the enum
+  /// still carries) reads as DRY_RUN here exactly as it does for the leaver.
+  /// Absence of a settings row is DISABLED. Written only by
+  /// `usecases/agent-owner-orphan-policy.ts`, behind `admin.tenant_lifecycle`.
+  agentOrphanPassMode          IdentityWriteMode @default(DISABLED)
+  /// When the current DRY_RUN window of the orphan pass began. Set on entering
+  /// DRY_RUN, nulled on every move out of it — the leaver's rule, so the dwell
+  /// measures the CURRENT window and never a stale one.
+  agentOrphanPassDryRunSince   DateTime?
   aiGuardMode                  AiGuardMode       @default(BALANCED)
   /// AI sovereignty (DS-1). EXTERNAL (default) allows the configured external
   /// provider; LOCAL_ONLY forces inference onto the tenant's own local gateway

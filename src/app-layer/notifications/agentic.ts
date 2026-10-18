@@ -99,7 +99,8 @@ export type AgenticNotificationKind =
     | 'AGENT_PROPOSAL_QUARANTINED'
     | 'AGENT_CIRCUIT_BREAKER_TRIPPED'
     | 'AGENT_TOOL_MANIFEST_PIN_CHANGED'
-    | 'AGENT_RISK_ASSESSMENT_STALE';
+    | 'AGENT_RISK_ASSESSMENT_STALE'
+    | 'AGENT_OWNER_DEPARTED';
 
 interface AgenticCopy {
     title: string;
@@ -199,6 +200,21 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         // The AGENT's page, like the breaker bell and for the same reason: the
         // stale notice, the triggers and the "Re-assess" action all live on
         // that page's Risk tab, and the register carries no staleness column.
+        linkPath: (slug, agentId) => `/t/${slug}/agents/${agentId}`,
+    },
+    AGENT_OWNER_DEPARTED: {
+        title: "An agent's owner has left the workspace",
+        // `detail` carries the rung's sentence: at DRY_RUN what the pass WOULD
+        // do, at AUTOMATIC what it did. Signal codes only — never the departed
+        // person's name or address, which the subject does not need either: the
+        // agent is what the bell is about.
+        body: (subject, detail) =>
+            `The accountable owner of ${subject} is no longer an active member of this ` +
+            `workspace, or their HR record is terminated` +
+            `${detail === null ? '.' : ` — ${detail}`} ` +
+            'Its ownership moves only by a two-step transfer: an OWNER proposes the new ' +
+            'owner and the new owner accepts.',
+        // The AGENT's page: it names the owner, and the transfer is about it.
         linkPath: (slug, agentId) => `/t/${slug}/agents/${agentId}`,
     },
 };

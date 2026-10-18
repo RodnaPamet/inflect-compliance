@@ -29,6 +29,7 @@ jest.mock('@/lib/db-context', () => ({
 import { listAllControlChecks } from '@/app-layer/usecases/integrations';
 import { LEAVER_PASS_AUTOMATION_SUFFIX, listLeaverPasses } from '@/app-layer/usecases/identity-leaver-pass';
 import { JOINER_PASS_AUTOMATION_SUFFIX } from '@/app-layer/usecases/identity-joiner-run';
+import { AGENTIC_PASS_PROVIDER } from '@/lib/agentic/owner-orphan';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 't1' });
@@ -66,7 +67,21 @@ describe('listAllControlChecks', () => {
         });
     });
 
-    it('carries EXACTLY those two exclusions, and they name different suffixes', async () => {
+    it('excludes the AGENTIC passes at the QUERY too, by provider (#3670)', async () => {
+        // The owner-orphan pass and the credential-hygiene pass write their rows
+        // into this same table under provider `agentic`. Neither is a control
+        // check, and their rows name agents, owners and credentials behind
+        // `admin.tenant_lifecycle`. By PROVIDER rather than by key, so the next
+        // agentic pass inherits the exclusion instead of being the third pass
+        // this file's header warns about.
+        await listAllControlChecks(ctx);
+
+        const where = mockDb.integrationExecution.findMany.mock.calls[0][0].where;
+        expect(where.AND).toContainEqual({ provider: { not: AGENTIC_PASS_PROVIDER } });
+        expect(AGENTIC_PASS_PROVIDER).toBe('agentic');
+    });
+
+    it('carries EXACTLY those three exclusions, and the two suffixes differ', async () => {
         // What this adds to the pair above is not what it first looks like, so
         // both halves were mutation-checked rather than argued.
         //
@@ -90,7 +105,7 @@ describe('listAllControlChecks', () => {
         await listAllControlChecks(ctx);
 
         const where = mockDb.integrationExecution.findMany.mock.calls[0][0].where;
-        expect(where.AND).toHaveLength(2);
+        expect(where.AND).toHaveLength(3);
         expect(JOINER_PASS_AUTOMATION_SUFFIX).not.toBe(LEAVER_PASS_AUTOMATION_SUFFIX);
     });
 

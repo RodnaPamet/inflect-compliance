@@ -695,6 +695,22 @@ enum NotificationType {
   // would be a bell per edit. Routed to the agent's accountable owner and
   // deduped per (agent, recipient, day) like the breaker bell.
   AGENT_RISK_ASSESSMENT_STALE
+  // Agentic IAM 2b (#3670) — the owner-orphan pass found an ACTIVE agent whose
+  // accountable owner has left: their membership is DEACTIVATED, REMOVED or
+  // gone, or the HR record matched to them by exact normalised email is
+  // TERMINATED.
+  //
+  // One type for both rungs, with the rung named in the body. At DRY_RUN
+  // nothing was stopped and the bell is the only place an operator learns the
+  // pass found something; at AUTOMATIC the agent was suspended and its kill
+  // switch engaged with OWNER_DEPARTED, and the bell says so. The kill
+  // switch's own AGENT_KILL_SWITCH_ENGAGED bell is NOT sent for these kills:
+  // it routes to the agent's owner, who is the person who left.
+  //
+  // Routed to the workspace's ACTIVE OWNERs — the holders of the key that
+  // moves ownership — minus the departed owner, and deduped per (agent,
+  // recipient, day).
+  AGENT_OWNER_DEPARTED
   GENERAL
 }
 

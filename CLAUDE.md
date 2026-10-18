@@ -1764,6 +1764,52 @@ change the rung and pairings, not a confidentiality boundary: the same passport
 is the week's Evidence, which every evidence reader can open. Do not cite the
 gate as the reason a field is safe to put in a passport.
 
+**The owner-orphan pass** (`usecases/agent-owner-orphan-pass.ts`, step 2b,
+#3670) stops the ACTIVE agents whose owner has left, at 05:15 UTC. Five rules in
+it are easy to undo:
+
+- **An OWNER_DEPARTED kill is identified by `AgentKillSwitch.reasonCode`, never
+  by the `reason` text.** A person types the text at the engage route; the code
+  is written only by `engageOwnerDepartedKill`, which refuses any context but
+  the system principal at actor type JOB, and a CHECK pins the code to
+  `engagedByUserId = system:agent-owner-orphan-pass` on an AGENT-scope row.
+  Reports and the lift rule read `isOwnerDepartedKill`, which reads the code. Do
+  not add a second way to set it.
+- **The lift needs a COMPLETED transfer after the kill, and the new owner.**
+  `liftKillSwitch` refuses first; the `agent_kill_switch_reason_code_guard`
+  trigger refuses the same lift for any writer, and refuses changing the code. A
+  PENDING transfer is not a completed one, and the kill-switch key alone is not
+  enough.
+- **The mode is on the identity ladder**, read through `coerceStoredMode` at the
+  boundary (`getAgentOrphanPassPolicy`), with the identity policy's
+  `DRY_RUN_MIN_DAYS` / `DRY_RUN_MIN_PASSES`. The pass is not a third
+  `IdentityDirection` — that union is closed on purpose — so its refusal
+  sentences are its own and its rules are the ladder's.
+- **Every refusal writes a row, unlike the leaver.** `MODE_DISABLED`,
+  `MODE_ABOVE_CLAMP` and `NO_ACTIVE_AGENTS` are NOT_APPLICABLE rows naming the
+  reason, and a throw is an ERROR row. `ORPHAN_PASS_MAX_MODE` sits at AUTOMATIC
+  as the brake, so `MODE_ABOVE_CLAMP` is reachable only by narrowing it.
+- **The HR signal is exact `emailKey` equality with exactly ONE employee.** Two
+  employees on one key is `HR_MATCH_AMBIGUOUS`, never a pick, and a name never
+  matches. An ABSENT membership row is a departure, because `removeTenantMember`
+  deletes the row rather than writing REMOVED.
+
+**Credential hygiene** (`usecases/agent-credential-hygiene.ts`, #3670, 06:00
+UTC) writes FINDINGS ONLY — no credential row is touched, and its integration
+test compares every key and connection row byte for byte. It reads one secret
+per `mcp-server` connection to classify the grant through
+`resolveMcpCredentials` and keeps only the kind. A finding closes only on
+positive evidence from a complete read; a connection whose secret will not
+decrypt is HELD. The rotation age is `DEFAULT_KEY_ROTATION_DAYS` (90) because no
+tenant setting exists, and every row and finding says so. **Its key population is
+AGENT credentials** — a key bound to an agent, or one the `/api/mcp` gate admits
+(`admitsMcpEndpoint` in `lib/mcp/endpoint-scope.ts`, the gate's own predicate,
+which `mcp/auth.ts` calls at both its sites). An integration key is not hygiene's
+subject: the schema says binding every key to an agent "would make the register
+a lie", so "bound to no agent" on a CI key is a finding nobody can act on. Do not
+give the hygiene pass a scope list of its own; a scope added to the gate must
+widen the population in the same diff.
+
 
 
 

@@ -1,0 +1,21 @@
+-- Agentic IAM 2b (#3670) — the notification type the owner-orphan pass rings
+-- when it finds an ACTIVE agent whose accountable owner has left. The
+-- reasoning lives beside the member in prisma/schema/enums.prisma.
+--
+-- ITS OWN MIGRATION, ahead of the DDL that uses it (20261018090100). Postgres
+-- commits an enum addition outside the surrounding transaction, so a migration
+-- that mixed it with other DDL and failed half way would leave the value in
+-- place and the rest rolled back; on its own, a partial failure lands on a
+-- boundary where `migrate resolve` means what it says. `IF NOT EXISTS` keeps a
+-- re-run a no-op all the same (tests/guardrails/migration-enum-isolation).
+--
+-- ROLLING-DEPLOY SAFETY. `ADD VALUE` only — nothing renamed, nothing dropped,
+-- so a running container that has never heard of this value keeps reading and
+-- writing every value it knows.
+--
+-- ORDINAL. `BEFORE 'GENERAL'` places the member where prisma/schema/enums.prisma
+-- declares it, so this change adds no schema/migration order divergence; the
+-- signed-off NotificationType entry in
+-- tests/guardrails/enum-member-order-matches-migrations.test.ts is extended in
+-- both pinned sequences, in the slot this statement gives it.
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'AGENT_OWNER_DEPARTED' BEFORE 'GENERAL';

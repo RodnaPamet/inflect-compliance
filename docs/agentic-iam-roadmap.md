@@ -271,6 +271,84 @@ that tenant (#3701), so the recipient set is exactly what step two meets. Until
 #3701 it read the primary — oldest — membership's role instead (decision 15
 below).
 
+### The owner-orphan pass and credential hygiene
+
+When a person leaves, the agents they own are stopped (`2b`, #3670). The
+`agent-owner-orphan-pass` job runs at 05:15 UTC, after the HRIS sync (04:00) and
+the leaver (05:00), and finds the ACTIVE, non-placeholder agents whose
+accountable owner has left. An owner has left when they hold no ACTIVE
+membership in the tenant — DEACTIVATED, REMOVED, INVITED, or no row at all,
+which is what the product's own Remove action leaves — or when the one
+`Employee` whose `workEmail` matches their address by exact normalised email
+(`emailKey`) is TERMINATED. Two employees sharing that key is recorded as
+`HR_MATCH_AMBIGUOUS` and matches nobody; a name never matches. The rules are pure,
+in `src/lib/agentic/owner-orphan.ts`.
+
+What the pass does is the tenant's own mode, `TenantSecuritySettings.agentOrphanPassMode`,
+on the identity ladder's shape and enum: DISABLED (the default), DRY_RUN,
+AUTOMATIC, one rung per widen, seven days and one recorded pass at DRY_RUN before
+leaving it, narrowing always allowed. It reuses `LADDER`, `isAboveClamp` and
+`coerceStoredMode` from `src/lib/identity/write-ladder.ts` and the identity
+policy's dwell constants. An OWNER sets it at
+`PUT /api/t/:slug/admin/agents/owner-orphan-pass`, behind a literal
+`requirePermission('admin.tenant_lifecycle')`; the same route's `GET` returns the
+mode, the dwell state and the recorded passes. `ORPHAN_PASS_MAX_MODE` is a source
+constant at AUTOMATIC, kept as the brake.
+
+- At DRY_RUN the pass records each orphan, with its signals, on an
+  `IntegrationExecution` row (`agentic.owner_orphan_pass`, status
+  NOT_APPLICABLE) and rings `AGENT_OWNER_DEPARTED` to the workspace's ACTIVE
+  OWNERs, never to the departed owner. It writes no kill, no suspension, no
+  task and no credential change.
+- At AUTOMATIC it engages each orphan's kill switch first and suspends it
+  second, both as the system: `engageOwnerDepartedKill` writes the kill with
+  `reasonCode = OWNER_DEPARTED` and `engagedByUserId = system:agent-owner-orphan-pass`,
+  and `suspendAgentForOwnerDeparture` moves the agent from ACTIVE to SUSPENDED.
+  Both refuse any context but the system principal at actor type JOB, so both
+  audit rows carry no user and name no person. Where the departed owner's
+  manager is known — their `Employee.managerEmployeeId`, matched to an ACTIVE
+  member by the same email rule — the pass opens one ownership-transfer task
+  for them per kill engagement.
+- Every refusal writes a row naming its reason: `MODE_DISABLED`,
+  `MODE_ABOVE_CLAMP`, `NO_ACTIVE_AGENTS`. A pass that threw writes an ERROR row.
+  This differs from the identity leaver on purpose, whose two ladder refusals
+  write no row.
+
+An `OWNER_DEPARTED` kill is lifted only by the agent's new owner, with a reason,
+after a two-step ownership transfer of the agent has COMPLETED after the kill.
+`liftKillSwitch` refuses before that, and refuses a holder of the kill key who is
+not the new owner. The database holds the same rule: a CHECK pins the code to
+the system actor on an AGENT-scope row, so a person typing "OWNER_DEPARTED" as a
+reason makes an ordinary kill, and a trigger makes the code immutable and
+refuses the lift for any writer without the completed transfer. The incident
+report counts these kills apart from incidents, under
+`incidents.owner_departed_engagements` and `incidents.owner_departed_in_force_now`,
+as it counts the drill canary's. Lifting the kill does not reactivate the agent:
+reactivation is the register's ordinary act.
+
+The `agent-credential-hygiene` job runs at 06:00 UTC and raises findings, and
+writes nothing else: no credential is revoked, rotated, expired or rebound. Its
+five rules, in `src/lib/agentic/credential-hygiene.ts`, read every live agent
+credential and every `mcp-server` connection: a key unused for 30 days, a key
+with no expiry, a key older than the rotation age, a key bound to no registered
+agent, and a connection with an app-only grant and no named owner. An agent
+credential is a key bound to an agent or one the `/api/mcp` capability gate
+admits; an integration key with resource scopes only is not one, and fires
+nothing. No tenant setting
+holds a rotation age, so the rule uses a 90-day product default and says so on
+the row and in each finding. A connection's accountable owner is
+`IntegrationConnection.ownerUserId` (passport field P11, step `2d`), counted only
+while that person holds an ACTIVE membership, so an app-only connection fires
+its rule until an owner who is still a member is named. Findings are
+`OBSERVATION`s with `sourceKind = AGENT_CREDENTIAL_HYGIENE`, written through
+`FindingRepository` and audited as a JOB; one closes only when a complete read
+shows its rule no longer fires, and a connection whose secret will not decrypt
+is held, neither raised nor resolved.
+
+Both jobs emit outcome metrics (`agentic.owner_orphan_pass.*`,
+`agentic.credential_hygiene.*`), and their execution rows are excluded from the
+tenant-wide control-check list.
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
@@ -281,7 +359,7 @@ below).
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
-| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. | Offboarding a person does nothing to the agents they own; no registration intake from a shadow-agent finding. |
+| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials. | No registration intake from a shadow-agent finding; no tenant setting for a key rotation age (#3708). |
 
 ## Roadmap (future direction)
 
@@ -421,6 +499,19 @@ changed what #3698 built.
     membership, not the role in the tenant being called. It fails closed, and
     #3701 tracks the fix. (`2a`) Fixed by #3701 on 2026-10-18: the edge now
     reads the role in the tenant the URL names.
+17. **The owner-orphan pass has no blast-radius breaker.** At AUTOMATIC it
+    contains every orphaned agent it finds, however many. Stopping an unowned
+    agent is the conservative direction, and it is reversible by transfer, lift
+    and reactivation. The identity leaver's breaker exists because a directory
+    disable acts on a customer's people. The orphan pass acts only on agents.
+    The key rotation age stays the 90-day product default until #3708 adds a
+    per-tenant setting. (`2b`)
+18. **The agent inventory gets a view key.** `admin.agent_registry_view` is
+    read-only and has an API-key scope, so an agent granted
+    `get_discovered_agent` can read the discovered agent it reviews. It also
+    gates reading agent runs, proposals and the governance pack. `AI_ADMIN` and
+    AUDITOR hold it, and the DPIA names the model as a reader of the source
+    owner reference. (`1d`, #3710)
 
 ### Permission keys
 
@@ -453,8 +544,10 @@ and one new key:
   token reaches it, and an agent-bound key cannot be offered it. AUDITOR does not hold
   `admin.agent_registry`, so it reads none of them. A view key split from
   `admin.agent_registry` for an auditor's read of the inventory is the case the
-  `agent_registry` docstring names and leaves undone; whether to add one is
-  open.
+  `agent_registry` docstring names and leaves undone. The owner decided on
+  2026-10-18 to add one (#3710): `admin.agent_registry_view`, with an API-key
+  scope, so an agent can be offered `get_discovered_agent`. It also gates
+  reading agent runs, proposals and the governance pack.
 - **Submitting is a key of its own.** The other five agent keys are held by the
   people who govern agents; the ingest key is held by the scanner, through its
   API key, and nothing else that key carries should let it do more (the
@@ -513,8 +606,8 @@ and one new key:
 | Registration intake from a `SHADOW_AGENT` finding (`2a`) | `admin.agent_registry` | It creates a DRAFT register row and its AI-system entry. |
 | Retire an agent, with its cascade (`2a`) | `admin.agent_registry` | The existing `DELETE /api/t/:slug/admin/agents/[agentId]`. See the cascade table below. |
 | Propose, and complete, an agent ownership transfer (`2a`) | `admin.tenant_lifecycle` | Ownership transfer sits under tenant lifecycle, the key whose docstring already lists "transfer ownership". |
-| Set the orphan pass's mode (`2b`) | `admin.tenant_lifecycle` | The key `/admin/identity-write-policy` carries for the identity ladder: the mode decides whether a scheduled job stops agents unattended. |
-| Lift an `OWNER_DEPARTED` kill (`2b`) | `admin.agent_kill_switch` | The existing kill-switch route. The completed transfer is a precondition in the usecase, not a second key. |
+| Set the orphan pass's mode (`2b`) | `admin.tenant_lifecycle` | The key `/admin/identity-write-policy` carries for the identity ladder: the mode decides whether a scheduled job stops agents unattended. Shipped by `2b` (#3670) at `…/admin/agents/owner-orphan-pass` (`GET`, `PUT`), with its rule above the register's catch-all. |
+| Lift an `OWNER_DEPARTED` kill (`2b`) | `admin.agent_kill_switch` | The existing kill-switch route. The completed transfer is a precondition in the usecase, not a second key. Shipped by `2b` (#3670): the usecase also requires the lifter to be the agent's new owner, and a trigger holds both rules below it. |
 | Show a connection's passport (`2d`) | `admin.manage` | The view sits on the integrations admin page, and `/admin/integrations(/.*)?` resolves to `admin.manage`, the key of the integration settings beside it. Passports are derived (#3672), so the view writes nothing. |
 | Register an A2A peer, approve its card pin, re-approve a changed card (`2e`) | `admin.agent_registry` (owner decision, 2026-10-18; decision 12) | Registering and pinning decide which other organisation's agent the tenant talks to, which is configuration, and the register already approves tenant-wide external tool definitions. #3673 had proposed `admin.agent_external_tools`; that key stays the one for the call itself (`4b`), so the authority that acts never configures whom it talks to. Decision 4 has a person approve each pin, so the approval also refuses a caller whose context carries an `apiKeyId`. |
 | Create, decide, close and read an `AGENT` campaign (`3a`) | `access_reviews.create`, `.decide`, `.close`, `.view` | The existing access-review routes and keys. |
@@ -641,7 +734,8 @@ Planned changes that add no model:
   Configuration.
 - Step `2b` writes execution rows, findings, notifications and tasks to existing
   tables. Its mode is a column on an existing model and takes that model's
-  class.
+  class, and so does the kill's reason code, a column on `AgentKillSwitch`
+  (shipped in #3670).
 - Step `2c` writes `ExternalWriteJournal` and prior-state rows to the existing
   external-write tables.
 - Step `2d` stores no passport: passports are derived and emitted as `Evidence`
@@ -719,7 +813,7 @@ What this means for Phase 1:
 |---|---|---|
 | 0 Mobilise (#3655) | Oct–Nov 2026 | `0a` ladder and contract (#3660) · `0b` skill standard (#3661) · `0c` passport spec and A2A threat model (#3662) · `0d` audit procedures (#3663) · `0e` DPIA, keys, retention, pilot (#3664) |
 | 1 See and teach (#3656) | Nov 2026–Jan 2027 | `1a` scanner and ingest (#3665) · `1b` skill evaluation gate and run pins (#3666) · `1c` skill text scan (#3667) · `1d` first IAM skills (#3668) |
-| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698) · `2b` orphan pass and hygiene (#3670) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
+| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698) · `2b` orphan pass and hygiene (#3670, shipped) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
 | 3 Decide and assure (#3658) | Mar–Jun 2027 | `3a` agent recertification (#3674) · `3b` workpapers and independence (#3675) · `3c` auditor agent (#3676) · `3d` workpaper sampling (#3677) |
 | 4 Scale and certify (#3659) | Jul–Oct 2027 | `4a` more estates and sources (#3678) · `4b` A2A pilot (#3679) · `4c` tenant-authored skills (#3680) · `4d` external reliance (#3681) · `4e` methodology hand-over (#3682) |
 

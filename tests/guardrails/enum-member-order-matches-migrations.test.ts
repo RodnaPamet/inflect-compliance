@@ -265,6 +265,7 @@ const SIGNED_OFF: ReadonlyArray<{
             'AGENT_CIRCUIT_BREAKER_TRIPPED',
             'AGENT_TOOL_MANIFEST_PIN_CHANGED',
             'AGENT_RISK_ASSESSMENT_STALE',
+            'AGENT_OWNER_DEPARTED',
             'GENERAL',
         ],
         migrationOrder: [
@@ -280,6 +281,7 @@ const SIGNED_OFF: ReadonlyArray<{
             'AGENT_CIRCUIT_BREAKER_TRIPPED',
             'AGENT_TOOL_MANIFEST_PIN_CHANGED',
             'AGENT_RISK_ASSESSMENT_STALE',
+            'AGENT_OWNER_DEPARTED',
             'GENERAL',
             'TASK_DUE',
             'VENDOR_REVIEW_DUE',

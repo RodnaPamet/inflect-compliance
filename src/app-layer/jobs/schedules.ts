@@ -192,6 +192,51 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'agent-owner-orphan-pass',
+        pattern: '15 5 * * *',    // daily at 05:15 UTC
+        // NO tenantId: absent means "discover the tenants holding an agent or a
+        // non-DISABLED orphan-pass mode, and run each". See
+        // `AgentOwnerOrphanPassPayload`. Each part of the time is load-bearing:
+        //   - AFTER hris-sync-dispatch (04:00), because the HR signal reads
+        //     `Employee.status`, which only the HRIS sync writes. Before it, a
+        //     termination recorded yesterday would wait a further day.
+        //   - AFTER identity-leaver-dispatch (05:00) and NOT in its minute. The
+        //     issue fixes the order — a person's own accounts first, then the
+        //     agents they owned — and the two must not share a minute for the
+        //     reason the joiner and leaver do not: an incident in one must not
+        //     arrive inside the other's window and be triaged as part of it.
+        //     05:00 also carries compliance-snapshot and the onboarding sweep;
+        //     05:30 carries compliance-posture-summary-dispatch.
+        //   - BEFORE agent-kill-switch-drill (06:00). The drill engages and lifts
+        //     only its canary, so the two cannot interfere, but a kill this pass
+        //     engages is then in the incident report the drill's evidence sits
+        //     beside — under its own metric, not the incident count.
+        // Declaration order in this array is NOT execution order; only the cron
+        // pattern is. NO SAFETY CLAIM in the description, for the joiner's
+        // reason: what a tenant's pass may do is its own agentOrphanPassMode
+        // under ORPHAN_PASS_MAX_MODE in src/lib/agentic/owner-orphan.ts.
+        description: 'Per tenant, find the ACTIVE agents whose accountable owner has left (membership not ACTIVE, or the HR record matched by exact normalised email is TERMINATED) and record a decision per agent. What a given tenant\'s pass may do is that tenant\'s own agentOrphanPassMode, held under ORPHAN_PASS_MAX_MODE in src/lib/agentic/owner-orphan.ts — read those two, not this field.',
+        defaultPayload: {},
+    },
+    {
+        name: 'agent-credential-hygiene',
+        pattern: '0 6 * * *',     // daily at 06:00 UTC
+        // The time the issue states, and a SHARED minute on purpose. 06:00 also
+        // carries agent-kill-switch-drill, risk-appetite-monitor, report-delivery
+        // and daily-evidence-expiry. The drill's own entry fixes 06:00 to keep
+        // its Finding OUT of the 03:00-05:00 identity chain's minutes, and this
+        // pass is not part of that chain. Neither job reads what the other
+        // writes: this one reads key and connection metadata and writes
+        // OBSERVATION findings under its own sourceKind; the drill writes kill
+        // and drill rows and a CRITICAL NONCONFORMITY only on FAILED. And it
+        // writes no Evidence, so agentic-evidence-emission (06:30), which counts
+        // the month's records, is unaffected by which finishes first.
+        // AFTER the orphan pass (05:15), so a key bound to an agent the pass
+        // just suspended is judged on the same morning's register.
+        description: 'Per tenant, raise findings for weak agent credentials: live API keys unused for 30 days, with no expiry, older than the rotation age (the 90-day product default — no tenant setting exists), or bound to no registered agent; and external MCP server connections with an app-only grant and no named owner. Findings only — no credential is written. A finding closes only when a complete read shows its rule no longer fires.',
+        defaultPayload: {},
+    },
+    {
         name: 'agent-kill-switch-drill',
         pattern: '0 6 * * *',     // daily at 06:00 UTC
         // NO tenantId in the payload: absent means "discover the tenants that

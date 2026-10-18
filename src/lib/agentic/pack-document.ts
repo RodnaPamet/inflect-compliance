@@ -566,6 +566,7 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
             stillInForce: boolean;
         }[];
         drillCanaryKills: unknown[];
+        ownerDepartedKills?: unknown[];
         drills: { startedAt: Date; outcome: string; toolCallsAfterKill: number }[];
         breakers: { agentName: string | null; state: string; trippedAt: Date | null }[];
     };
@@ -586,6 +587,11 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
     incLines.push(
         `Drill-canary kills, counted separately because an exercise is not an ` +
             `incident: ${inc.drillCanaryKills.length}`,
+    );
+    incLines.push(
+        `Kills engaged because an agent's owner left (OWNER_DEPARTED), counted ` +
+            `separately because a containment is not an incident: ` +
+            `${(inc.ownerDepartedKills ?? []).length}`,
     );
     incLines.push('');
     incLines.push(`Kill-switch drills: ${inc.drills.length}`);

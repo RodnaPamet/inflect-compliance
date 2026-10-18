@@ -39,6 +39,7 @@ import {
 import { HRIS_PROVIDERS, isHrisProviderId } from '../integrations/providers/hris';
 import { LEAVER_PASS_AUTOMATION_SUFFIX } from './identity-leaver-pass';
 import { JOINER_PASS_AUTOMATION_SUFFIX } from './identity-joiner-run';
+import { AGENTIC_PASS_PROVIDER } from '@/lib/agentic/owner-orphan';
 import { logger } from '@/lib/observability/logger';
 import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-freshness';
 import { runIdentitySync } from './identity-sync';
@@ -1015,9 +1016,17 @@ export async function listAllControlChecks(
                 // the joiner a runtime: until then no `.joiner_pass` row existed,
                 // so this query was right by accident rather than by
                 // construction.
+                //
+                // The AGENTIC passes (#3670) are excluded for the same two
+                // reasons, by provider rather than by key so the next agentic
+                // pass inherits the exclusion: the owner-orphan pass and the
+                // credential-hygiene pass are lifecycle actions, not control
+                // checks, and their rows name agents, owners and credentials
+                // behind `admin.tenant_lifecycle`, not `controls.view`.
                 AND: [
                     { automationKey: { not: { endsWith: LEAVER_PASS_AUTOMATION_SUFFIX } } },
                     { automationKey: { not: { endsWith: JOINER_PASS_AUTOMATION_SUFFIX } } },
+                    { provider: { not: AGENTIC_PASS_PROVIDER } },
                 ],
             },
             select: {

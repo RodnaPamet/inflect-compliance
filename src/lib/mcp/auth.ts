@@ -85,6 +85,7 @@ import {
     systemClock,
 } from './token-exchange';
 import { isKnownMcpTool, MCP_TOOL_NAMES } from './tool-catalogue';
+import { admitsMcpEndpoint } from './endpoint-scope';
 import { pinFromCard } from '@/lib/agentic/policy-card-pin';
 import { resolveExternalReadTools } from './tools/external-tools';
 import {
@@ -233,8 +234,7 @@ export async function authenticateMcpRequest(
     // (read tools) or `mcp:propose` (propose tools), or `mcp:*` / `*`. Individual
     // read tools still require `mcp:read`; propose tools require `mcp:propose`.
     const scopes = result.ctx.apiKeyScopes ?? [];
-    const hasMcp = scopes.includes('*') || scopes.includes('mcp:*') || scopes.includes('mcp:read') || scopes.includes('mcp:propose');
-    if (!hasMcp) {
+    if (!admitsMcpEndpoint(scopes)) {
         throw forbidden('API key does not have an MCP capability scope (mcp:read / mcp:propose).');
     }
 
@@ -553,12 +553,7 @@ export async function exchangeMcpToken(
     // The same endpoint gate `authenticateMcpRequest` applies: a key with no MCP
     // capability has nothing to exchange FOR.
     const scopes = result.ctx.apiKeyScopes ?? [];
-    const hasMcp =
-        scopes.includes('*') ||
-        scopes.includes('mcp:*') ||
-        scopes.includes('mcp:read') ||
-        scopes.includes('mcp:propose');
-    if (!hasMcp) {
+    if (!admitsMcpEndpoint(scopes)) {
         throw forbidden('API key does not have an MCP capability scope (mcp:read / mcp:propose).');
     }
 
