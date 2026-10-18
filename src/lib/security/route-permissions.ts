@@ -682,6 +682,26 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'than by a second rule that could drift.',
     },
 
+    // ── Integration passport, per MCP connection (#3672) ────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/integration-passport(\\/.*)?$`),
+        methods: ['GET'],
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'One external agent connection\'s integration passport, built live ' +
+            'from stored rows. Same OWNER-only key as the two rules above, as a ' +
+            'PLACEMENT rather than a confidentiality boundary: the rung and the ' +
+            'pairings are changed only under that key, and the OWNER role holds ' +
+            'every finding on an unowned connection. The passport itself is the ' +
+            'week\'s Evidence, readable by every evidence reader, so it carries ' +
+            'nothing that relies on this gate. A SIBLING path rather than nested under ' +
+            'admin/integrations/<id> — matching is first-match-wins and that ' +
+            'rule resolves to admin.manage, which would document a weaker gate ' +
+            'than the handler enforces. GET only, declared rather than left ' +
+            'open, so a future write under this subtree fails the coverage ' +
+            'guard instead of inheriting a read gate.',
+    },
+
     // ── Entra entitlement discovery (#3329) ─────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/entra-entitlement(\\/.*)?$`),

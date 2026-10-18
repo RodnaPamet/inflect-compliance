@@ -1111,6 +1111,9 @@ model User {
   registeredAgentsOwned         RegisteredAgent[]               @relation("RegisteredAgentOwner")
   peerAgentsOwned               PeerAgent[]                     @relation("PeerAgentOwner")
   agentCircuitBreakersClosed    AgentCircuitBreaker[]           @relation("AgentCircuitBreakerClosedBy")
+  /// #3672 — external agent connections this user is the accountable owner of
+  /// (integration passport P11). `SET NULL` on the connection side.
+  integrationConnectionsOwned   IntegrationConnection[]         @relation("IntegrationConnectionOwner")
 }
 
 model Account {

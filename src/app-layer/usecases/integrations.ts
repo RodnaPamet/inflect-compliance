@@ -141,6 +141,8 @@ export async function listIntegrationConnections(ctx: RequestContext) {
                 // Distinct from lastTest*, which is the operator's Test button.
                 authFailedAt: true,
                 authFailureReason: true,
+                // #3672 — integration passport P11, the accountable owner.
+                ownerUserId: true,
                 createdAt: true,
                 updatedAt: true,
                 _count: { select: { executions: true } },

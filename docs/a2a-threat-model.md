@@ -14,9 +14,10 @@ threats and the control. Each control is in one of two states:
 
 - **On `main`**, cited by file and symbol. It holds today and A2A traffic must
   pass through it.
-- **Required**, with the step that builds it: **2d** (integration passport,
-  #3672), **2e** (peer records and card pinning, #3673) or **4b** (the A2A
-  pilot, #3679). This document is what those steps read first.
+- **Required**, with the step that builds it: **2e** (peer records and card
+  pinning, #3673) or **4b** (the A2A pilot, #3679). This document is what those
+  steps read first. The controls this model assigned to **2d** (the integration
+  passport, #3672) are on `main` and are cited as such.
 
 The residual risks, each with the step that closes it, are at the end.
 
@@ -283,8 +284,8 @@ Boundary: TB7.
 |---|---|---|
 | E | A peer becomes reachable without review. | On `main`, for every external tool: it is offered only when granted to the agent (`RegisteredAgentTool`, under `admin.agent_tool_exposure`), pinned by a named person (`approveExternalToolManifest`, under `admin.agent_registry`), on an enabled connection above `DISABLED` (`resolveGrantedExternalTools`). It can be granted only to an agent whose declared data axis reaches `EXTERNAL_EGRESS` (`assertGrantWithinDeclaredDataScope` in `src/app-layer/usecases/agent-tool-exposure.ts`) and called only under a policy card that permits that rung, the one `dataScopeForToolCall` assigns every external tool (`src/lib/mcp/tool-data-scope.ts`). Required, 4b: the send to a peer is an external tool on that path, offered only while the peer's card pin is current. |
 | E | The write rung is raised quickly. | On `main`: one rung per widening, seven days at each rung above `DISABLED`, and evidence before leaving `DRY_RUN` or `PROPOSE_ONLY` (`refusalForMove`, `MODE_MIN_DAYS`, `MODE_MIN_EVIDENCE` in `src/lib/integrations/external-write-ladder.ts`). Moves are OWNER-only (`admin.tenant_lifecycle` on `src/app/api/t/[tenantSlug]/admin/external-write-policy/[connectionId]/route.ts`). |
-| T | The endpoint is repointed while the stored credential is kept. | On `main`: `redirectsStoredCredential` (`src/app-layer/integrations/config-schema.ts`) refuses that update for an `mcp-server` connection's `url`. On `main` (2e): a peer's card URL and signing key cannot be updated at all (`UpdatePeerAgentSchema` in `src/app-layer/usecases/peer-agents.ts` has neither field), so a move is a new registration that starts unpinned, and the card's own endpoint sits inside the pin's endpoint hash. Required, 2d: an endpoint change is a HIGH passport finding (`docs/integration-passport.md`, P1). |
-| R | A configuration change goes unnoticed. | On `main`: each change is audited: `AGENT_TOOL_GRANTED` (`src/app-layer/usecases/agent-tool-exposure.ts`), `MCP_TOOL_MANIFEST_APPROVED` (`src/app-layer/usecases/mcp-tool-manifest.ts`), `EXTERNAL_WRITE_MODE_CHANGED` (`src/app-layer/usecases/external-write-policy.ts`) and `EXTERNAL_PRIOR_STATE_READ_SET` (`src/app-layer/usecases/external-prior-state-read.ts`). Required, 2d: the weekly passport raises a finding for each change, with an owner. |
+| T | The endpoint is repointed while the stored credential is kept. | On `main`: `redirectsStoredCredential` (`src/app-layer/integrations/config-schema.ts`) refuses that update for an `mcp-server` connection's `url`. On `main` (2e): a peer's card URL and signing key cannot be updated at all (`UpdatePeerAgentSchema` in `src/app-layer/usecases/peer-agents.ts` has neither field), so a move is a new registration that starts unpinned, and the card's own endpoint sits inside the pin's endpoint hash. On `main` (2d): an endpoint change is a HIGH `ENDPOINT_CHANGED` finding raised by the weekly `integration-passport-sweep` (`planPassportFindings` in `src/lib/agentic/integration-passport-drift.ts`; `docs/integration-passport.md`, P1). |
+| R | A configuration change goes unnoticed. | On `main`: each change is audited: `AGENT_TOOL_GRANTED` (`src/app-layer/usecases/agent-tool-exposure.ts`), `MCP_TOOL_MANIFEST_APPROVED` (`src/app-layer/usecases/mcp-tool-manifest.ts`), `EXTERNAL_WRITE_MODE_CHANGED` (`src/app-layer/usecases/external-write-policy.ts`), `EXTERNAL_PRIOR_STATE_READ_SET` and `EXTERNAL_PRIOR_STATE_READ_CLEARED` (`src/app-layer/usecases/external-prior-state-read.ts`), and `INTEGRATION_CONNECTION_OWNER_SET` (`src/app-layer/usecases/integration-passport.ts`). On `main`: the weekly `integration-passport-sweep` compares each `mcp-server` connection's passport with the last one emitted and raises a `Finding` for each change, assigned to the connection's accountable owner or, while it has none, owned by the tenant's OWNER role (`docs/integration-passport.md`). |
 
 ### O1 — Assembling the run's tools
 
@@ -391,9 +392,12 @@ write ladder, the row says so and names what bounds the top rung.
 
 ## Residual risks
 
-This table is the worklist for steps 2d, 2e and 4b. Every Required control in the
+This table is the worklist for steps 2e and 4b. Every Required control in the
 hop tables, the pinning rules, the receipts table and "Stopping a peer" appears
-in at least one row below. The controls in R13 (the tenant caps), R17 and R18
+in at least one row below. R15 (a connection change raising no finding with an
+owner) and R16 (a connection with no accountable owner) were closed by step 2d,
+which shipped the weekly integration passport and the connection owner; their
+numbers are not reused. The controls in R13 (the tenant caps), R17 and R18
 are required on 4b by owner decision (2026-10-17). R1 and R3 are closed, and
 R2 is closed in part, by step 2e (#3673).
 
@@ -413,8 +417,6 @@ R2 is closed in part, by step 2e (#3673).
 | R12 | Signed receipts across organisations, and attribution of a run to a peer. | Only mediator receipts are verified today, and a run records the key and agent that started it, not a peer. | 4b: sign and verify every task, answer and result, and keep both sides' signatures (I5 R, O5 S, "Receipts on both sides"); record the peer and the verified inbound message against the run (I2 R). |
 | R13 | A quota per peer, and tenant caps that default to none. | The rate limit is keyed by IP, and `agentMonthlyTokenBudget` and `agentMaxConcurrentRuns` are NULL, meaning no cap, until a tenant sets them. | 4b: a message quota per peer at the inbound endpoint (I1 D, I2 D). 4b, by owner decision (2026-10-17): inbound A2A refused for a tenant that has not set both caps (I2 D). |
 | R14 | Chaining: a peer uses Inflect's agent to reach a second peer. | No A2A traffic exists. | 4b: no outbound A2A send from a run an inbound task started, and attribution on every journal row (I4 E). |
-| R15 | A change to a connection's grant kind, pins, rung or pairings raises no finding with an owner. | Changes are audited; nothing compares them week on week. | 2d: the weekly passport and its drift findings (O0 T, R). |
-| R16 | A connection has no accountable owner. | No owner column exists. | 2d: the owner source, and `CONNECTION_OWNER_MISSING` until it is set. |
 | R17 | A run an inbound task started causes an unattended write to another system. | At `AUTOMATIC` an external write is sent by the dispatch pass with no person, and nothing tells a run a peer started from any other run. The parameter set, the value constraints, the target population and the per-connection window still bound it. | 4b, by owner decision (2026-10-17): a run started by an inbound A2A task cannot dispatch an external write above `PROPOSE_ONLY`; on an `AUTOMATIC` connection its write becomes an `EXTERNAL_WRITE` proposal a person approves (I4 E). |
 | R18 | Between a peer changing its card and the next comparison, its messages are still admitted and sent. | No card is compared today. Comparing a freshly fetched card on every message would fetch the card on every message, so pinning rule 6 compares a copy at most 15 minutes old. | 4b, by owner decision (2026-10-17): the card is re-checked before every message against a copy at most 15 minutes old, which bounds the window to 15 minutes, and a message is refused when no copy that fresh can be fetched. A change made inside the window is still admitted and sent until the next comparison; the 15-minute bound is the owner's decision. |
 | R19 | Inflect's own published card discloses what a tenant runs. | Inflect publishes no card. | 4b: a card only for an agent a tenant enables for A2A, carrying no tenant data and no tool names (I1 I). |

@@ -58,6 +58,9 @@ const ADMIN_ONLY_ROUTES = [
     'admin/integrations/[connectionId]/sync/route.ts',
     'admin/integrations/[connectionId]/executions/route.ts',
     'admin/integrations/identity-accounts/route.ts',
+    // #3672 — the accountable owner of an external agent connection
+    // (integration passport P11). admin.manage, the connection-write key.
+    'admin/integrations/[connectionId]/owner/route.ts',
     // SP-1 — SharePoint connection management (delegated-consent OAuth)
     'admin/integrations/sharepoint/route.ts',
     'admin/integrations/sharepoint/connect/route.ts',
@@ -221,6 +224,10 @@ const ADMIN_ONLY_ROUTES = [
     // the ladder above it, and a sibling path for the same first-match-wins
     // reason.
     'admin/external-prior-state-read/[connectionId]/route.ts',
+    // #3672 — one connection's integration passport. OWNER-only because it
+    // shows the rung and the pairings the two routes above guard, and a
+    // sibling path for the same first-match-wins reason.
+    'admin/integration-passport/[connectionId]/route.ts',
     // #3329 — discovery for the grant compose form. READ-ONLY, so admin.manage
     // rather than the OWNER-only key its external-write-policy sibling carries:
     // that one sets how far an agent may go when CHANGING a customer system,

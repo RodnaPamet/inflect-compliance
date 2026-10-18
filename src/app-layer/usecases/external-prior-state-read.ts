@@ -189,9 +189,33 @@ export async function setPriorStateRead(
  * must not be told to wait or to prove something first.
  */
 export async function clearPriorStateRead(ctx: RequestContext, writeToolName: string): Promise<void> {
-    const res = await runInTenantContext(ctx, (db) =>
-        db.externalToolPriorStateRead.deleteMany({ where: { tenantId: ctx.tenantId, writeToolName } }),
-    );
+    const res = await runInTenantContext(ctx, async (db) => {
+        const removed = await db.externalToolPriorStateRead.deleteMany({
+            where: { tenantId: ctx.tenantId, writeToolName },
+        });
+        // AUDITED, like the set (#3672). This wrote no row, so a removed pairing
+        // had no entry to cite: the integration passport's PAIRING_REMOVED
+        // finding could say only that nothing recorded the change, and "each
+        // change is audited" was true of half of them. Only when a row went —
+        // a clear that removed nothing changed nothing.
+        if (removed.count > 0) {
+            await logEvent(db, ctx, {
+                action: 'EXTERNAL_PRIOR_STATE_READ_CLEARED',
+                entityType: 'IntegrationConnection',
+                // The connection, as the set records it, so one entity's
+                // history holds both halves.
+                entityId: parseExternalToolName(writeToolName)?.connectionId ?? writeToolName,
+                details: `Prior-state read cleared for "${writeToolName}"`,
+                detailsJson: {
+                    category: 'access',
+                    operation: 'revoke',
+                    summary: `Prior-state read cleared for ${writeToolName}`,
+                },
+                metadata: { writeToolName },
+            });
+        }
+        return removed;
+    });
     if (res.count === 0) {
         // Counted, not assumed: an RLS-filtered delete removes zero rows and
         // SUCCEEDS, so a caller that trusted the call would believe it had

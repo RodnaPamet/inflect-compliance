@@ -59,6 +59,8 @@ const EXEMPTIONS: Record<string, string> = {
         "entry is removed rather than forgotten.",
     "src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/LegacyAccessMappingCard.tsx":
         "a column-mapping editor on a connection detail page: a fixed, short list of columns the far end declares, not a filterable or user-configurable dataset",
+    "src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/IntegrationPassportCard.tsx":
+        "the integration passport of ONE connection on its detail page: four sub-tables that are fields of one record (pinned tools, granted agents, pairings, parameter sets), each short and read whole, not a filterable dataset",
 
     "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/VendorAssessmentReviewsQueueClient.tsx":
         "Cross-vendor review queue — an admin aggregation of submitted/reviewed/closed assessments across all vendors, ordered by review priority; inline status is the only facet and the set is bounded, so it uses sort + row click-through rather than the faceted FilterToolbar.",

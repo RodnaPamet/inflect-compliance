@@ -360,6 +360,36 @@ export function hashForLookup(value: string): string {
 }
 
 /**
+ * A keyed digest that says whether a value CHANGED without storing the value.
+ *
+ * For a value that may carry a credential and must still be compared week on
+ * week from a record people other than its owner read — the integration
+ * passport's endpoint URL, whose path or query can hold a key. HMAC-SHA256
+ * under the same deployment key as `hashForLookup`, so nobody without that key
+ * can test a guess against it, which an unkeyed hash of a low-entropy secret
+ * would allow.
+ *
+ * Unlike `hashForLookup` the value is used EXACTLY — no lowercasing, no trim —
+ * because a URL path is case-sensitive and a change in case is a change. The
+ * `domain` separates uses: the same value digested for two purposes yields two
+ * unrelated digests, and neither equals its lookup hash. Rotating the master
+ * key re-keys every digest.
+ *
+ * @returns Hex-encoded HMAC-SHA256 (64 characters)
+ */
+export function keyedChangeDigest(domain: string, value: string): string {
+    if (typeof domain !== 'string' || domain.length === 0 || domain.includes('\u0000')) {
+        throw new Error('keyedChangeDigest: domain must be a non-empty string without NUL');
+    }
+    if (typeof value !== 'string') {
+        throw new Error('keyedChangeDigest: value must be a string');
+    }
+    return crypto.createHmac('sha256', getHmacKey())
+        .update(`${domain}\u0000${value}`, 'utf8')
+        .digest('hex');
+}
+
+/**
  * Checks whether a string looks like an encrypted field (has a
  * recognised version prefix — v1 or v2).
  *

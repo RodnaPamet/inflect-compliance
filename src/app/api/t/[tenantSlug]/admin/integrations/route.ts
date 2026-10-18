@@ -58,6 +58,9 @@ const CONNECTION_RESPONSE_FIELDS = [
     'lastTestStatus',
     'authFailedAt',
     'authFailureReason',
+    // #3672 — the accountable owner (integration passport P11), so the page an
+    // ADMIN sets it on shows who it is. An id, never a person's details.
+    'ownerUserId',
     'createdAt',
     'updatedAt',
     '_count',

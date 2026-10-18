@@ -141,21 +141,31 @@ agent.
 Two documents specify UC5's new parts.
 
 - `docs/integration-passport.md` specifies the passport of every `mcp-server`
-  connection: twelve fields, the table and column each is read from on `main`,
-  and the drift rule step 2d applies to each, with who owns the resulting
-  finding. Two facts have no source today and are listed as gaps: the
-  connection's accountable owner, and whether each pinned tool declares a write.
-  No passport is built on `main`.
+  connection: twelve fields, the table and column each is read from, and the
+  drift rule applied to each, with who owns the resulting finding. Step 2d
+  (#3672) built it. The weekly `integration-passport-sweep` (Sunday 05:45 UTC)
+  assembles each passport from stored rows, compares it with the newest one
+  emitted before this week after verifying that one against its digest, and
+  raises a `Finding` for each change, assigned to the connection's accountable
+  owner or, while it has none, owned by the tenant's OWNER role. The week's
+  passports are emitted as Evidence on ASI04, ASI03, ISO/IEC 27001 A.5.19 and
+  A.5.15, and SOC 2 CC9.1 and CC6.1, and that artefact is where next week's
+  comparison reads its prior; a tenant with none of those controls is told so by
+  a finding rather than left quiet. Both facts the specification listed as gaps
+  now have a source: `IntegrationConnection.ownerUserId`, named under
+  `admin.manage`, and `McpToolManifestPin.declaresWrite`, stored when a person
+  accepts an external definition. An OWNER reads one connection's passport,
+  live, on that connection's page under the integrations admin page.
 - `docs/a2a-threat-model.md` models A2A traffic in both directions, hop by hop,
   naming for each hop the trust boundary, the STRIDE threats and the control.
   No A2A traffic exists on `main`. The model requires that A2A traffic pass
   through the existing funnel with no second authority model, and that a peer's
   agent card be pinned by hash so that a changed card refuses traffic until a
   person re-approves it; steps `2e` and `4b` build both. Each control is either
-  on `main`, cited by file and symbol, or assigned to step `2d`, `2e` or `4b`,
-  and the residual risks list every assigned control with the step that closes
-  it. On 2026-10-17 the owner accepted three of those controls as requirements
-  on step `4b`: inbound A2A is refused for a tenant that has not set both
+  on `main`, cited by file and symbol, or assigned to step `2e` or `4b`, and
+  the residual risks list every assigned control with the step that closes it;
+  the controls it assigned to `2d` are on `main`. On 2026-10-17 the owner
+  accepted three of those controls as requirements on step `4b`: inbound A2A is refused for a tenant that has not set both
   `agentMonthlyTokenBudget` and `agentMaxConcurrentRuns` (R13); a run started
   by an inbound A2A task never dispatches an external write above
   `PROPOSE_ONLY` (R17); and a peer's agent card is re-checked before every
@@ -266,7 +276,7 @@ below).
 | Area | Shipped on `main` | Not built |
 |---|---|---|
 | Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Five separate admin rights. The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`, and which nothing writes until `2a`'s intake (#3669). | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
-| Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. | No integration passport; no A2A peers. |
+| Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |

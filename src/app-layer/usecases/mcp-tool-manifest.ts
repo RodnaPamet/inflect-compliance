@@ -264,10 +264,24 @@ export async function writeToolManifestPin(
     toolName: string,
     live: ToolManifestHashes,
     approvedByUserId: string,
+    /**
+     * Whether the accepted definition declares a write (#3672). Supplied by the
+     * EXTERNAL approval, from the same catalogue read the hashes came from;
+     * omitted by the built-in approval, whose write class is code rather than
+     * attested data, and which therefore leaves the column NULL.
+     */
+    declaresWrite?: boolean,
 ): Promise<ApproveToolManifestResult> {
     const existing = await db.mcpToolManifestPin.findUnique({
         where: { tenantId_toolName: { tenantId: ctx.tenantId, toolName } },
-        select: { id: true, manifestHash: true, annotationsHash: true, revision: true },
+        select: {
+            id: true,
+            manifestHash: true,
+            annotationsHash: true,
+            revision: true,
+            approvalSource: true,
+            declaresWrite: true,
+        },
     });
 
     // ── THE NO-OP GUARD HAS TO KNOW ABOUT BOTH AXES ─────────────────────────
@@ -280,10 +294,27 @@ export async function writeToolManifestPin(
     //
     // A null `annotationsHash` on the existing row is a pin from before the
     // column, so writing one is a real change and must not short-circuit.
+    //
+    // ── …AND ABOUT WHO ACCEPTED IT, AND WHAT IT DECLARES (#3672) ───────────
+    //
+    // Equal hashes on a `BASELINE` row are NOT nothing to record. A baseline
+    // is a definition the boundary observed on first use and nobody accepted;
+    // a person approving that same definition now is the acceptance the row
+    // has never held. Short-circuiting here left the pin `BASELINE` for ever
+    // unless the server happened to change the tool — so the integration
+    // passport's HIGH "BASELINE pin" finding could not be cleared through the
+    // product. The same argument the null-`annotationsHash` case makes above:
+    // a pin that lacks something the approval supplies has changed when the
+    // approval supplies it.
+    //
+    // A write declaration the approval supplies and the row lacks (NULL, from
+    // before the column) is recorded the same way, once per tool.
     if (
         existing &&
+        existing.approvalSource === 'APPROVED' &&
         existing.manifestHash === live.manifestHash &&
-        existing.annotationsHash === live.annotationsHash
+        existing.annotationsHash === live.annotationsHash &&
+        (declaresWrite === undefined || existing.declaresWrite === declaresWrite)
     ) {
         return {
             toolName,
@@ -311,6 +342,9 @@ export async function writeToolManifestPin(
                 approvedAt: new Date(),
                 revision,
                 previousManifestHash,
+                // Undefined leaves the column as it is; a built-in pin never
+                // gains a declaration, and an external one gets the approval's.
+                ...(declaresWrite === undefined ? {} : { declaresWrite }),
             },
         });
     } else {
@@ -327,6 +361,7 @@ export async function writeToolManifestPin(
                 approvedAt: new Date(),
                 revision,
                 previousManifestHash,
+                declaresWrite: declaresWrite ?? null,
             },
         });
     }
@@ -347,6 +382,9 @@ export async function writeToolManifestPin(
             schemaHash: live.schemaHash,
             revision,
             approvedByUserId,
+            // Recorded so the passport can cite the move that redeclared a
+            // tool read-only (#3672). Absent for a built-in.
+            ...(declaresWrite === undefined ? {} : { declaresWrite }),
         },
     });
 

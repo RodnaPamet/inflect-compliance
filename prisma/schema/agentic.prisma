@@ -1240,6 +1240,20 @@ model McpToolManifestPin {
   /// reconstructing it from the audit trail.
   previousManifestHash String?
 
+  /// #3672 — whether the definition a person ACCEPTED declares a write
+  /// (`declaresWrite` in `src/lib/mcp/tool-write-classification.ts`), stored
+  /// beside the `annotationsHash` it is derived from so a passport built from
+  /// stored rows can list the pinned tools that declare a write and the write
+  /// tools with no prior-state pairing. Written by `writeToolManifestPin` on an
+  /// EXTERNAL approval, from the same catalogue read that produced the hash, so
+  /// it cannot disagree with it.
+  ///
+  /// NULL on a `BASELINE` row (a definition nobody accepted), on a built-in
+  /// tool's pin (its write class is code, not attested data), and on an
+  /// external pin approved before 2026-10-18 — "not recorded", which is not
+  /// "read-only". Re-approving the tool records it.
+  declaresWrite Boolean?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1934,19 +1948,24 @@ model AgenticEvidenceArtefact {
   id       String @id @default(cuid())
   tenantId String
 
-  /// The agentic control this artefact discharges. Resolved from the control's
-  /// `ControlRequirementLink` to an OWASP-ASI (or EU AI Act) requirement — see
+  /// The control this artefact discharges. Resolved from the control's
+  /// `ControlRequirementLink` to a target requirement (OWASP-ASI, EU AI Act, and
+  /// for integration passports ISO 27001 and SOC 2 as well) — see
   /// `EVIDENCE_TARGETS` in `src/lib/agentic/evidence-artefact.ts`.
   controlId String
 
-  /// `AGENT_ACTION_RECEIPTS` | `AI_DECISION_RECORDS` | `AGENT_HARNESS_SCANS`
-  /// (the third added by migration 20261017235500, #3687). TEXT + CHECK rather
-  /// than a Postgres enum, for the reason the `@@map("WorkItem*")` pins record:
-  /// an `ALTER TYPE` mid-rolling-deploy makes still-running old containers fail
-  /// with SQLSTATE 42704, so widening this vocabulary is a CHECK swap instead.
+  /// `AGENT_ACTION_RECEIPTS` | `AI_DECISION_RECORDS` | `AGENT_HARNESS_SCANS` |
+  /// `INTEGRATION_PASSPORTS` (`AGENTIC_ARTEFACT_KINDS`, which the DB CHECK
+  /// mirrors; the third added by migration 20261017235500, #3687, the fourth by
+  /// 20261018001000, #3672). TEXT + CHECK rather than a Postgres enum, for the
+  /// reason the `@@map("WorkItem*")` pins record: an `ALTER TYPE`
+  /// mid-rolling-deploy makes still-running old containers fail with SQLSTATE
+  /// 42704, so widening this vocabulary is a CHECK swap instead.
   kind String
 
-  /// UTC month boundaries — `periodStart` inclusive, `periodEnd` exclusive.
+  /// UTC period boundaries — `periodStart` inclusive, `periodEnd` exclusive. A
+  /// UTC calendar month for receipts and decision records; an ISO 8601 week
+  /// (Monday 00:00 UTC) for integration passports (`periodForKind`).
   /// Part of the identity; `periodEnd` is derived from it and stored so a reader
   /// never has to know the period arithmetic to interpret a row.
   periodStart DateTime
@@ -1956,9 +1975,12 @@ model AgenticEvidenceArtefact {
   /// tenantId)` so RLS chains through the parent, matching `EvidenceControlLink`.
   evidenceId String
 
-  /// SHA-256 over the sorted ids of the records this artefact counted. NOT part
-  /// of the identity — it is how a re-run knows whether anything moved, and how a
-  /// reader knows two renderings of "August" describe the same population.
+  /// SHA-256 over what this artefact rendered (the records it counted; for a
+  /// passport, the embedded canonical bundle). NOT part of the identity — it is
+  /// how a re-run knows whether anything moved, and how a reader knows two
+  /// renderings of "August" describe the same population. No route writes it,
+  /// which is what lets the passport sweep verify last week's `Evidence.content`
+  /// against it before comparing.
   sourceDigest String
 
   /// How many source records the artefact counted. Zero is a real value and is
@@ -1970,7 +1992,7 @@ model AgenticEvidenceArtefact {
   /// `CURRENT` | `WITHDRAWN`. See the model header for why nothing is deleted.
   status String @default("CURRENT")
 
-  /// `CONTROL_REMOVED` | `SOURCE_UNVERIFIABLE`. Both NULL iff `CURRENT`, and the
+  /// `CONTROL_REMOVED` | `SOURCE_UNVERIFIABLE` | `OBLIGATION_UNMAPPED`. Both NULL iff `CURRENT`, and the
   /// pairing is a CHECK rather than a convention: a withdrawn artefact that does
   /// not say why is indistinguishable from an emitter that stopped running.
   withdrawnAt     DateTime?

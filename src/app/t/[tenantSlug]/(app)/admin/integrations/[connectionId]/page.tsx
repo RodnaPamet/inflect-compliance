@@ -21,7 +21,10 @@ import { BackAffordance } from '@/components/nav/BackAffordance';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@inflect/ui/lib/cn';
+import { RequirePermission } from '@/components/require-permission';
 import { LegacyAccessMappingCard } from './LegacyAccessMappingCard';
+import { IntegrationOwnerCard } from './IntegrationOwnerCard';
+import { IntegrationPassportCard } from './IntegrationPassportCard';
 
 interface ExecutionRow {
     id: string;
@@ -140,6 +143,22 @@ export default function ConnectionOutcomePage() {
               * to carry an endpoint, so every other provider's page is unchanged.
               */}
             <LegacyAccessMappingCard connectionId={connectionId} />
+
+            {/*
+              * #3672 — the integration passport. Both cards render only for an
+              * `mcp-server` connection, and each is gated at the mount on the
+              * key its route holds: naming the owner is the connection-write
+              * key (admin.manage); reading the passport is OWNER-only, because
+              * it shows the write rung and the prior-state pairings. Gating the
+              * mount means an ADMIN is never shown a card whose request would
+              * be refused — and never writes an AUTHZ_DENIED row by visiting.
+              */}
+            <RequirePermission resource="admin" action="manage">
+                <IntegrationOwnerCard connectionId={connectionId} />
+            </RequirePermission>
+            <RequirePermission resource="admin" action="tenant_lifecycle">
+                <IntegrationPassportCard connectionId={connectionId} />
+            </RequirePermission>
         </div>
     );
 }

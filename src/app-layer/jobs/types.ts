@@ -851,6 +851,34 @@ export interface JobPayloadMap {
     'external-write-dispatch': ExternalWriteDispatchPayload;
     'agent-proposal-sample-audit': AgentProposalSampleAuditPayload;
     'agentic-evidence-emission': AgenticEvidenceEmissionPayload;
+    'integration-passport-sweep': IntegrationPassportSweepPayload;
+}
+
+/**
+ * integration-passport-sweep — build every external agent connection's passport
+ * from stored rows, compare it with the last one emitted, raise a Finding per
+ * drift the specification defines, and emit the week's passports as Evidence
+ * (#3672, `docs/integration-passport.md`).
+ *
+ * `tenantId` absent is the scheduled sweep, which DISCOVERS the tenants holding
+ * an `mcp-server` connection or a recent passport artefact (the second is what
+ * lets a tenant whose last connection vanished be told so). Present sweeps that
+ * tenant only.
+ *
+ * `asOf` names the ISO week rather than reading the clock, ISO-8601 for the
+ * reason `AgenticEvidenceEmissionPayload` gives. It names the week only: the
+ * passports are built from the rows as they are when the pass runs. So the job
+ * refuses a week that has not begun, and a tenant that already holds passports
+ * for a later week refuses the pass (`conflict`) — rebuilt from today's rows,
+ * an earlier week's evidence would state what was not true that week, and its
+ * comparison would raise later weeks' changes again under its key. A re-run of
+ * the newest week is a no-op by construction; a late run of a week that no later
+ * week has superseded (a retry of a tenant that failed) evidences that week
+ * with the rows as stored when it runs. See `runIntegrationPassportSweep`.
+ */
+export interface IntegrationPassportSweepPayload {
+    tenantId?: string;
+    asOf?: string;
 }
 
 /**
@@ -1181,6 +1209,18 @@ export const JOB_DEFAULTS: Record<JobName, {
         // identical population and rewrite the same rows, which is work that
         // proves nothing. The sweep is daily and every failure it logs is
         // retried by tomorrow's tick, on a population that has actually moved.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'integration-passport-sweep': {
+        // ONE attempt. Not for safety — the pass is idempotent per ISO week, so a
+        // retry would find its own findings and artefacts and write nothing — but
+        // because a systematic failure (a key that no longer decrypts, a lock
+        // timeout on a large tenant) would fail the same way three times in
+        // ~35 seconds, and should surface once. Each tenant's failure is caught
+        // inside the sweep and counted; next Sunday is the retry.
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,

@@ -42,6 +42,8 @@ const SCAN_DIR = 'src/app/t/[tenantSlug]/(app)';
 const EXEMPTIONS: Record<string, string> = {
     'admin/integrations/[connectionId]/LegacyAccessMappingCard.tsx':
         '(a) sub-component — the connection detail page owns the surface; this is a column-mapping editor over a fixed, short list of columns the far end declares, so per-column hide/show is not meaningful.',
+    'admin/integrations/[connectionId]/IntegrationPassportCard.tsx':
+        '(a) sub-component — the connection detail page owns the surface; the four tables are the integration passport\'s P6/P7/P9/P10 fields, each a fixed set of columns the specification defines, so hiding one would hide part of a record an OWNER reads whole.',
 
     'admin/vendor-assessment-reviews/VendorAssessmentReviewsQueueClient.tsx':
         '(b) results view — cross-vendor review queue with a fixed derived column set (vendor, status, score, risk, submitted); per-column hide/show not meaningful.',
