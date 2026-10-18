@@ -2,8 +2,9 @@
  * The tenant purge (#2747): ordering, and the retained set.
  *
  * The purge itself is exercised against a real database in
- * `tests/integration/tenant-purge-live.test.ts`; this file covers the pure
- * parts, where a wrong answer is cheapest to find.
+ * `tests/integration/tenant-purge-retains-access-reviews.test.ts` (a path this
+ * line named, as `tenant-purge-live.test.ts`, before any such file existed);
+ * this file covers the pure parts, where a wrong answer is cheapest to find.
  */
 import {
     deletionOrder,
@@ -75,6 +76,23 @@ describe('the retained set is a compliance decision, not a convenience', () => {
             'ReadinessSnapshot',
             'AgentActionReceipt',
             'AiDecisionLog',
+        ]) {
+            expect(TENANT_PURGE_RETAINED.has(t)).toBe(true);
+        }
+    });
+
+    it('retains an access-review campaign whole — the root its evidence cascades from, too (#3716)', () => {
+        // The four evidence tables were retained while `AccessReview` was not,
+        // and each cascades from it, so the purge's DELETE of the campaign
+        // took them anyway. The behaviour is proved against a real database in
+        // `tests/integration/tenant-purge-retains-access-reviews.test.ts`.
+        for (const t of [
+            'AccessReview',
+            'AccessReviewDecision',
+            'AccessReviewConnectedDecision',
+            'AccessReviewAgentPack',
+            'AccessReviewAgentNarrowing',
+            'AccessReviewDecisionSampleAudit',
         ]) {
             expect(TENANT_PURGE_RETAINED.has(t)).toBe(true);
         }

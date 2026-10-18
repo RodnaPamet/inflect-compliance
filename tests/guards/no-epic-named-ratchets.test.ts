@@ -415,7 +415,18 @@ describe('epic-named ratchets are not added back', () => {
         // through the external write dispatch (#3671). It holds an import graph
         // (one Graph client, one importer, one route) that no existing guard
         // owns; `identity-log-identifier-scrub` is about log lines, not callers.
-        expect(guardFiles().length).toBeLessThan(791);
+        //
+        // RAISED 791 -> 792 on 2026-10-18, for ONE file, the same test:
+        // `tenant-purge-retained-never-cascades` is named for its invariant —
+        // a model the tenant purge retains is never reached by an
+        // `ON DELETE CASCADE` from a model it deletes (#3724). It is not folded
+        // into `tenant-purge-retains-regulatory` or
+        // `tenant-purge-doc-claim-is-backed`: both compare the retained set
+        // with `docs/data-retention.md`, a list against a document, and
+        // neither reads a foreign key — which is exactly how four "retained"
+        // access-review tables were cascaded away by the purge of their
+        // campaign while both stayed green (#3716).
+        expect(guardFiles().length).toBeLessThan(792);
     });
 
     /**

@@ -35,8 +35,9 @@
  *     ignored — only the side that actually carries the scalar FK
  *     columns is reported.
  *
- * Consumers: `tests/guardrails/schema-index-coverage.test.ts` and
- * `tests/guardrails/query-shape-guardrails.test.ts`.
+ * Consumers include `tests/guardrails/schema-index-coverage.test.ts`,
+ * `tests/guardrails/query-shape-guardrails.test.ts` and, for `relations`
+ * and `tableName`, the tenant-purge retention guard.
  */
 import { readPrismaSchema } from './prisma-schema';
 
@@ -52,10 +53,36 @@ export interface SchemaField {
     isOptional: boolean;
 }
 
+/**
+ * The foreign-key-carrying side of one `@relation(... fields: [...] ...)`.
+ *
+ * `onDelete` is the action AS WRITTEN, or null when the attribute names none.
+ * Prisma's implicit default is then `Restrict` for a required relation and
+ * `SetNull` for an optional one — neither of which is `Cascade`, which is the
+ * only action a caller asking "what does deleting the parent take with it"
+ * needs to see.
+ */
+export interface SchemaRelation {
+    /** The relation field's name, e.g. `accessReview`. */
+    field: string;
+    /** The model the FK points at, e.g. `AccessReview`. */
+    target: string;
+    /** The scalar FK columns, e.g. `['accessReviewId', 'tenantId']`. */
+    fields: string[];
+    /** `Cascade`, `Restrict`, `SetNull`, `NoAction`, `SetDefault`, or null when unwritten. */
+    onDelete: string | null;
+}
+
 /** A parsed `model X { ... }` block. */
 export interface SchemaModel {
     /** PascalCase model name. */
     name: string;
+    /**
+     * The physical table name: the model-level `@@map("…")` when present,
+     * otherwise the model name. Code that compares against the database's own
+     * catalogue (`information_schema`, `pg_constraint`) must use this.
+     */
+    tableName: string;
     /** Every scalar + relation field line (no `@@` lines, no `}`). */
     fields: SchemaField[];
     /** Names of every field (scalar + relation). */
@@ -76,6 +103,8 @@ export interface SchemaModel {
      * `fields:` arg) is NOT represented here.
      */
     relationFkFieldGroups: string[][];
+    /** Every FK-carrying relation, with its target model and delete action. */
+    relations: SchemaRelation[];
     /** True if a field with the given name exists on the model. */
     hasField(name: string): boolean;
 }
@@ -206,6 +235,8 @@ function parseModelBody(name: string, body: string): SchemaModel {
     let fieldIdName: string | null = null;
     const fieldUniqueNames: string[] = [];
     const relationFkFieldGroups: string[][] = [];
+    const relations: SchemaRelation[] = [];
+    let tableName = name;
 
     const rawLines = body.split('\n');
     for (const raw of rawLines) {
@@ -229,7 +260,12 @@ function parseModelBody(name: string, body: string): SchemaModel {
             if (list && list.length > 0) blockId = list;
             continue;
         }
-        // Any other `@@`-attribute (`@@map`, `@@schema`, …) — ignore.
+        if (line.startsWith('@@map')) {
+            const mapped = /^@@map\(\s*"([^"]+)"\s*\)/.exec(line);
+            if (mapped) tableName = mapped[1];
+            continue;
+        }
+        // Any other `@@`-attribute (`@@schema`, …) — ignore.
         if (line.startsWith('@@')) continue;
 
         // ── Field line ────────────────────────────────────────────
@@ -265,6 +301,13 @@ function parseModelBody(name: string, body: string): SchemaModel {
         const fkList = extractRelationFkList(line);
         if (fkList && fkList.length > 0) {
             relationFkFieldGroups.push(fkList);
+            const action = /\bonDelete:\s*([A-Za-z]+)/.exec(line);
+            relations.push({
+                field: fieldName,
+                target: typeToken,
+                fields: fkList,
+                onDelete: action ? action[1] : null,
+            });
         }
     }
 
@@ -273,6 +316,7 @@ function parseModelBody(name: string, body: string): SchemaModel {
 
     return {
         name,
+        tableName,
         fields,
         scalarFieldNames,
         blockIndexes,
@@ -281,6 +325,7 @@ function parseModelBody(name: string, body: string): SchemaModel {
         fieldIdName,
         fieldUniqueNames,
         relationFkFieldGroups,
+        relations,
         hasField(fieldName: string): boolean {
             return fieldNameSet.has(fieldName);
         },

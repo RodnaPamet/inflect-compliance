@@ -9497,6 +9497,8 @@
     "directoryUser": "Directory user",
     "mfaEnrolled": "MFA enrolled",
     "mfaMissing": "MFA not enrolled",
+    "appPrivileged": "Privileged application account",
+    "appStandard": "Standard application account",
     "hrUnlinked": "No linked worker",
     "hrManager": "Manager: {name}",
     "hrContradicted": "HR link contradicted by a later sync",

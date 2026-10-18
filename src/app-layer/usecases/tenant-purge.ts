@@ -77,23 +77,46 @@ export const TENANT_PURGE_RETAINED: ReadonlySet<string> = new Set([
     // "deleting an employee for privacy must not erase the record that their
     // access was revoked, which is frequently the artefact an auditor asks
     // for". That is the class of mistake this list exists to prevent.
+    //
+    // ACCESS-REVIEW CAMPAIGNS, ROOT AND ALL (#3716, #3724; owner decision
+    // 2026-10-18). The decision, pack, narrowing and sample tables were here
+    // from the start, but each has an `onDelete: Cascade` FK to
+    // `AccessReview`, which was NOT — so the DELETE of the campaign took every
+    // "retained" row with it. Retaining a child is meaningless while its
+    // cascade parent goes, so the parent is retained too, with the member
+    // decision table that was the last child left to cascade. Nothing else had
+    // to stay for a campaign to be readable: its reviewer, creator and closer
+    // are global `User` rows the purge never touches, and its scope and period
+    // are its own columns. What it points at that IS purged goes by a
+    // column-scoped SET NULL — the membership, the directory account, the
+    // evidence-PDF `FileRecord` — and the frozen snapshots carry what those
+    // pointed at. `tests/integration/tenant-purge-retains-access-reviews.test.ts`
+    // runs the real purge and asserts exactly which rows survive, and
+    // `tests/guardrails/tenant-purge-retained-never-cascades.test.ts` fails if
+    // any retained table can be reached by a cascade from a purged one.
+    //
+    // FIVE CAME OUT, for the same reason seen from the other side (owner
+    // decision 2026-10-18, open question 10 of `data-retention.md`).
+    // `AgentPolicyCardVersion`, `AgentProposalApproval`,
+    // `AgentProposalSampleAudit`, `AgenticEvidenceArtefact` and
+    // `IncidentEvidence` were listed here while each cascades from a table
+    // this purge deletes (the policy card, the proposal, the control or the
+    // evidence), so the database removed them anyway. They are reclassified
+    // as living and dying with that parent, rather than kept by retaining it.
+    'AccessReview',
     'AccessReviewAgentNarrowing',
     'AccessReviewAgentPack',
     'AccessReviewConnectedDecision',
+    'AccessReviewDecision',
     'AccessReviewDecisionSampleAudit',
     'AgentActionReceipt',
     'AgentKillSwitch',
     'AgentKillSwitchDrill',
-    'AgentPolicyCardVersion',
-    'AgentProposalApproval',
-    'AgentProposalSampleAudit',
-    'AgenticEvidenceArtefact',
     'AiDecisionLog',
     'AuditLog',
     'ExternalWriteJournal',
     'IdentityWriteJournal',
     'Incident',
-    'IncidentEvidence',
     'IncidentNotification',
     'IncidentTimelineEntry',
     'ReadinessSnapshot',

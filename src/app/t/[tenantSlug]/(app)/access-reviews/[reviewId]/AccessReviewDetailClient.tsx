@@ -43,6 +43,7 @@ import {
     AGENT_CAMPAIGNS_IMPLEMENTED,
     readAgentSubjectSnapshot,
     scopeLabelKey,
+    subjectTableOf,
     type StoredAccessReviewScope,
 } from '@/lib/access-review/scope';
 
@@ -101,6 +102,12 @@ interface ConnectedSnapshot {
     displayName?: string | null;
     isAdmin?: boolean;
     mfaEnrolled?: boolean;
+    /**
+     * A LEGACY_APP subject's snapshot (`access-review-legacy.ts`) carries the
+     * application's own privilege flag instead of `isAdmin`, and no MFA state:
+     * a legacy access table does not report one.
+     */
+    isPrivileged?: boolean | null;
     groups?: unknown;
     connectionId?: string;
     externalUserId?: string;
@@ -369,7 +376,15 @@ export function AccessReviewDetailClient({
     // bar and the Close gate all describe the same population, whichever scope
     // the campaign is — rather than describing member rows and silently
     // reporting 0/0 for a connected one.
-    const isConnected = review.scope === 'CONNECTED_APP';
+    //
+    // Which table holds the subjects is `SUBJECT_TABLE`'s answer, not a
+    // comparison against one scope. It was `scope === 'CONNECTED_APP'`, so a
+    // LEGACY_APP campaign — whose subjects are connected-decision rows keyed
+    // `connectionId:accountKey` — fell through to the member roster, which is
+    // always empty for it, and its detail page showed no subjects (#3716). An
+    // AGENT campaign is CONNECTED too and is branched on first, below.
+    const isConnected = subjectTableOf(review.scope) === 'CONNECTED';
+    const isLegacy = review.scope === 'LEGACY_APP';
     const connectedRows = useMemo(() => review.connectedDecisions ?? [], [review.connectedDecisions]);
     const subjectCount = review.decisions.length + connectedRows.length;
     const decided =
@@ -618,12 +633,32 @@ export function AccessReviewDetailClient({
                 header: t('colSnapshotRole'),
                 cell: ({ row }) => {
                     const snap = readSnapshot(row.original.snapshotJson);
+                    // A legacy subject is an APPLICATION account: it has a
+                    // privilege flag and no directory role, and its source
+                    // reports no MFA. Rendering it through the directory
+                    // branch would print "MFA not enrolled" on every row — a
+                    // finding the snapshot never made. A privilege flag the
+                    // application did not report renders as unknown, not as
+                    // "standard": absence is not evidence of either.
+                    if (isLegacy) {
+                        return (
+                            <div className="text-sm">
+                                {snap.isPrivileged === true
+                                    ? t('appPrivileged')
+                                    : snap.isPrivileged === false
+                                      ? t('appStandard')
+                                      : <span className="text-content-muted">—</span>}
+                            </div>
+                        );
+                    }
                     return (
                         <div className="text-sm">
                             <div>{snap.isAdmin ? t('directoryAdmin') : t('directoryUser')}</div>
-                            <div className="text-xs text-content-muted">
-                                {snap.mfaEnrolled ? t('mfaEnrolled') : t('mfaMissing')}
-                            </div>
+                            {typeof snap.mfaEnrolled === 'boolean' ? (
+                                <div className="text-xs text-content-muted">
+                                    {snap.mfaEnrolled ? t('mfaEnrolled') : t('mfaMissing')}
+                                </div>
+                            ) : null}
                         </div>
                     );
                 },
@@ -703,7 +738,7 @@ export function AccessReviewDetailClient({
             },
         ]),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [canDecide, t],
+        [canDecide, isLegacy, t],
     );
 
     // ─── #3674 — the AGENT subject table ──────────────────────────────

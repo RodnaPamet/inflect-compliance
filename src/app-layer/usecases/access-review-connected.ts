@@ -618,8 +618,14 @@ export async function closeConnectedAccessReview(
         // same try: a failed link leaves a CLOSED campaign with its PDF and no
         // control link, which is recoverable. Rolling the close back because a
         // control mapping was missing would not be.
+        //
+        // The suggestion lists a control once per OBLIGATION it satisfies, so
+        // one well-mapped control appears up to four times; de-duplicated here
+        // so `requested` below counts controls, as `linked` does (#3716 made
+        // the suggestion resolve for the first time, which is what made this
+        // reachable).
         const chosen = evidenceControlIds
-            ?? (await suggestLegacyEvidenceControls(ctx)).map((c) => c.controlId);
+            ?? [...new Set((await suggestLegacyEvidenceControls(ctx)).map((c) => c.controlId))];
 
         if (chosen.length > 0) {
             await runInTenantContext(ctx, async (db) => {
