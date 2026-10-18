@@ -2019,6 +2019,80 @@ it are easy to undo:
   matches. An ABSENT membership row is a departure, because `removeTenantMember`
   deletes the row rather than writing REMOVED.
 
+**The service-principal disable** (step 2c, #3671). When the orphan pass
+contains an agent at AUTOMATIC, it REQUESTS that the agent's Entra service
+principal be disabled (`usecases/agent-service-principal-disable.ts`), and the
+request goes through the external write ladder and nowhere else. Rules that are
+each one careless edit from being undone:
+
+- **The disable lives on the OUTBOUND endpoint `/api/mcp/entra-service-principal`,
+  a sibling of the grant endpoint, never in `src/lib/mcp/`.** One file speaks
+  Graph's `servicePrincipals/` resource (`providers/entra-id/service-principal.ts`),
+  one module imports it (`entra-service-principal-dispatch.ts`), and only the
+  route imports that. `tests/guards/service-principal-disable-graph-seam.test.ts`
+  holds that import graph, and also holds that `external-write-dispatch.ts` is the
+  only module that calls `callTool` with a row's advertised write tool. Do not
+  give a job a direct call "to save a hop": the hop is where the rung, the
+  pairing and the journal are.
+- **It has its own connection, so it has its own rung.** Do not move the two tools
+  onto the grant endpoint: the rung is per connection, and a tenant at AUTOMATIC
+  for grants would be at AUTOMATIC for disables. `endpointBindingRefusal` refuses
+  a token whose connection is configured for a different endpoint.
+- **The request opens rows and sends nothing.** DISABLED reads nothing; DRY_RUN
+  `recordIntent`; PROPOSE_ONLY `createAgentProposal` (EXTERNAL_WRITE, prior state
+  in the payload, `agentId` null); AUTOMATIC `openAutomaticExternalWrite` under
+  the one approved template whose only open field is `servicePrincipalId`, bounded
+  to `contained_orphan_agent_entra_service_principals`. No pairing, an unreadable
+  prior state, or a read answering about another principal REFUSES. It never
+  throws at the pass.
+- **"Contained" is an `OWNER_DEPARTED` kill in force, and the link is the harness
+  reconciliation.** `DiscoveredAgent.discoveredId = entra:sp:<GUID>` with
+  `registeredAgentId` = the agent, exactly one per agent; two is `AMBIGUOUS_LINK`
+  and is excluded from the population. The request and the population read both
+  through `readContainedAgentServicePrincipalLinks`, so they cannot disagree. A
+  completed transfer lifts the kill, and `SEND_PRECONDITIONS` in the dispatch
+  refuses the disable at send at EVERY rung — a PROPOSE_ONLY approval made before
+  the transfer must not leave after it.
+- **At AUTOMATIC a PERSON must have confirmed the link** (owner decision,
+  2026-10-18). `AgentServicePrincipalConfirmation`, written ONLY by
+  `usecases/agent-service-principal-confirmation.ts` behind
+  `POST /api/t/:slug/admin/agents/:agentId/service-principal-link` — a literal
+  `requirePermission('admin.agent_registry')`, usecase floor
+  `assertAgentGovernanceWrite(ctx, 'agent_registry')`; no API-key scope, `*`
+  included, reaches that key. An unconfirmed link refuses `LINK_UNCONFIRMED` at
+  request (the pass reports PARTIAL) and again at send for an AUTOMATIC row
+  (`SEND_PRECONDITIONS`). DRY_RUN and PROPOSE_ONLY may act on the scanner's link,
+  but the proposal's rationale must say THE LINK IS UNCONFIRMED — do not drop that
+  sentence, it is the only place the approving human learns it. The confirm
+  CONFIRMS the scanner's link and never makes one: it refuses unless the harness
+  currently links that principal to that agent and the agent to it alone.
+- **A confirmation is one-way and is invalidated, never re-pointed or revived.**
+  A trigger (`agent_sp_confirmation_one_way`) refuses any rewrite of the triple,
+  the confirmer or the times, and any change to an invalidation; `app_user` has no
+  DELETE. The harness ingest, in its own transaction, stamps `PRINCIPAL_RELINKED`
+  / `AGENT_RELINKED` when a scan moves the link, and a scan moving it BACK revives
+  nothing. Readers also match the triple against the link as it stands
+  (`liveConfirmationFor`), so a stale row still cannot vouch for another link.
+- **The Graph permission is `Application.ReadWrite.OwnedBy` +
+  `Application.Read.All`** (owner decision, 2026-10-18), never
+  `Application.ReadWrite.All`. A principal Inflect's app does not own reads fine
+  and then fails the PATCH 403 `Authorization_RequestDenied`; that throws, and the
+  row settles INDETERMINATE for a human. Do not catch the 403 into a refusal —
+  the dispatch cannot tell it from a request that reached the directory.
+- **No blast-radius breaker** — decision 17 stands, re-confirmed by the owner for
+  this write on 2026-10-18: `AUTOMATIC_WRITES_PER_CONNECTION_PER_WINDOW` (50 per
+  connection per hour) bounds a mass departure.
+- **ACCEPTED, never APPLIED on a 2xx.** The disable is in `ASYNC_DELIVERY_TOOLS`,
+  and only the reconcile's verifier promotes it: the prior state read enabled, the
+  current read says `accountEnabled: false`, same principal. An absent
+  `accountEnabled` is unreadable, never false. An `isError` answer to any write
+  settles INDETERMINATE, not ACCEPTED or FAILED.
+- **The endpoint refuses the connection's own principal and Microsoft first-party
+  principals**, and reads no JML direction flag: `writesEnabled` is consent to
+  disable people's accounts, not an agent's principal.
+- **The execution row names the `DiscoveredAgent` id, never the object id.**
+  `resultJson` is not encrypted; the object id stays in the encrypted journal.
+
 **Credential hygiene** (`usecases/agent-credential-hygiene.ts`, #3670, 06:00
 UTC) writes FINDINGS ONLY — no credential row is touched, and its integration
 test compares every key and connection row byte for byte. It reads one secret

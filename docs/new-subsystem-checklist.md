@@ -42,6 +42,13 @@ they certify the policy *exists*, not that the usecase path *honours* it.
       (rls-coverage is the interim structural proof).
 - [ ] Give the model a `tenantId`-leading `@@index` and RLS policy triple
       (enforced separately by `schema-index-coverage` + `rls-coverage`).
+- [ ] If the model records a PERSON's decision about rows a machine writes
+      (a confirmation of a scanner's link), keep it in its own table rather than
+      columns on the machine-written one, whose single write seam would then own
+      a human decision. Make it one-way at the database (a `BEFORE UPDATE`
+      trigger, no `DELETE` for `app_user`) and invalidate it, never re-point it,
+      when the machine's rows move — `AgentServicePrincipalConfirmation` is the
+      worked example, and its integration test proves the trigger.
 - **Ratchet:** a new tenant-scoped model in neither set fails CI.
 
 ## 3. Runtime wiring (new provider or background job)
@@ -78,6 +85,17 @@ alertable signal.
 - [ ] For a new admin route, add it to the relevant coverage lists
       (`admin-route-coverage`, and the DataTable/shell coverage guards if it
       renders a table).
+- [ ] A token-gated endpoint has no session behind its caller, so it cannot take
+      `requirePermission`. The outbound MCP endpoints whose only client is our own
+      external-write dispatch (`/api/mcp/entra-grant`,
+      `/api/mcp/entra-service-principal`) are this kind. Triage it into
+      `PROTOCOL_CREDENTIAL` in
+      `tests/guardrails/api-route-has-some-authorization.test.ts`, naming the
+      mechanism its handler calls, and write the `AUTHZ_DENIED` row explicitly for
+      every refusal that can be attributed to a tenant. If it writes to a
+      directory, list its Graph client and usecase in `IDENTITY_WRITE_PATH` in
+      `tests/guards/identity-log-identifier-scrub.test.ts`.
+- **Ratchet:** an untriaged route fails `api-route-has-some-authorization`.
 
 ---
 

@@ -89,6 +89,12 @@ const IDENTITY_WRITE_PATH: readonly string[] = [
     // the one unwrapped field carried a decrypt/parse message. It was one edit
     // from doing so, with the guard green.
     'src/app-layer/integrations/identity-writer-factory.ts',
+    // #3671. The SERVICE-PRINCIPAL disable: the Graph client and the usecase
+    // behind the outbound endpoint both hold a principal's object id on every
+    // path, and the client's Graph errors are the transport prose this rule is
+    // about. Listed on the day they landed.
+    'src/app-layer/integrations/providers/entra-id/service-principal.ts',
+    'src/app-layer/usecases/entra-service-principal-dispatch.ts',
 ];
 
 /** The wrappers that satisfy the rule. `scrubbed` is the helper under an alias. */

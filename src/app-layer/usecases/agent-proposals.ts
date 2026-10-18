@@ -732,7 +732,10 @@ export async function createAgentProposal(
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
-        actorType: 'API_KEY',
+        // JOB when a scheduled pass proposed it (#3671: the owner-orphan pass
+        // proposing a service-principal disable), so the trail does not claim an
+        // API key that never existed. Every other caller keeps the label it had.
+        actorType: ctx.actorType === 'JOB' ? 'JOB' : 'API_KEY',
         entity: 'AgentProposal',
         entityId: proposal.id,
         action: guard.quarantined ? 'AGENT_PROPOSAL_QUARANTINED' : 'AGENT_PROPOSAL_CREATED',

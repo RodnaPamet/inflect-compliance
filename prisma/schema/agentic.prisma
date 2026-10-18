@@ -769,6 +769,9 @@ model RegisteredAgent {
   /// The per-agent evidence artefacts about this agent (#3700) — the ones its
   /// retirement withdraws for the periods still open.
   evidenceArtefacts  AgenticEvidenceArtefact[]
+  /// People's confirmations that a discovered Entra service principal is this
+  /// agent's own (#3671). Required before an unattended disable.
+  servicePrincipalConfirmations AgentServicePrincipalConfirmation[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -2439,6 +2442,7 @@ model DiscoveredAgent {
   registeredAgent RegisteredAgent?         @relation(fields: [registeredAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
   items           AgentHarnessScanItem[]
   acceptances     AgentHarnessAcceptance[]
+  servicePrincipalConfirmations AgentServicePrincipalConfirmation[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, discoveredId])
@@ -2505,6 +2509,59 @@ model AgentHarnessAcceptance {
   @@unique([id, tenantId])
   @@index([tenantId, discoveredAgentId])
   @@index([tenantId, expiresAt])
+}
+
+/// Step 2c (#3671): a PERSON's confirmation that one discovered Entra service
+/// principal (`DiscoveredAgent.discoveredId = entra:sp:<GUID>`) is a registered
+/// agent's own — the condition for an UNATTENDED disable of that principal.
+///
+/// The link the disable acts on is the harness scanner's reconciliation, which
+/// the ingest checks only for the register row existing. That is enough for a
+/// person to review a proposal against (DRY_RUN, PROPOSE_ONLY), and not enough
+/// for a write with nobody in it (owner decision, 2026-10-18): at AUTOMATIC the
+/// request refuses an unconfirmed link, and the dispatch refuses one at send.
+///
+/// ONE-WAY. A trigger refuses any UPDATE of the confirmed triple, the confirmer
+/// or the time, and allows exactly one move: `invalidatedAt` NULL -> a value,
+/// with its reason. A confirmation is never re-pointed at a different
+/// principal or agent; a new link needs a new confirmation by a person. The
+/// harness ingest invalidates it when a scan links the principal to a different
+/// agent (or to none), or links the agent to a different principal — and every
+/// reader ALSO compares the triple against the current link, so a row nobody
+/// invalidated still cannot vouch for a link it does not describe.
+///
+/// At most ONE live (not invalidated) confirmation per (tenant, discovered
+/// agent, registered agent): a PARTIAL unique index in the migration
+/// ("AgentServicePrincipalConfirmation_one_live_per_link" … WHERE
+/// "invalidatedAt" IS NULL). Prisma cannot declare a partial index — do NOT add
+/// a @@unique for it, or a re-confirmation after an invalidation is refused.
+///
+/// The user id is a plain id with no FK, the agentic precedent
+/// (AgentHarnessAcceptance, AgentOwnershipTransfer): this row is history.
+/// `app_user` holds no DELETE. Business record, kept as long as RegisteredAgent.
+model AgentServicePrincipalConfirmation {
+  id                String    @id @default(cuid())
+  tenantId          String
+  discoveredAgentId String
+  registeredAgentId String
+  /// The harness id confirmed, `entra:sp:<GUID>`, as it read at confirmation.
+  discoveredId      String
+  confirmedByUserId String
+  confirmedAt       DateTime  @default(now())
+  /// Set once and never cleared: the harness re-linked the principal or the
+  /// agent after this was confirmed.
+  invalidatedAt     DateTime?
+  /// A fixed code, never free text: `PRINCIPAL_RELINKED` or `AGENT_RELINKED`.
+  invalidatedReason String?
+  createdAt         DateTime  @default(now())
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  discoveredAgent DiscoveredAgent @relation(fields: [discoveredAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  registeredAgent RegisteredAgent @relation(fields: [registeredAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, registeredAgentId])
+  @@index([tenantId, discoveredAgentId])
 }
 
 /// Step 2a (#3698): a TWO-STEP handover of one agent's accountability. Step one

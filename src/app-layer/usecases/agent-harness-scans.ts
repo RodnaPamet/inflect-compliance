@@ -39,6 +39,7 @@ import { logger } from '@/lib/observability';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { recordHarnessScanOutcome } from '@/lib/observability/integration-metrics';
 import { FindingRepository } from '../repositories/FindingRepository';
+import { invalidateRelinkedConfirmations } from './agent-service-principal-confirmation';
 import {
     harnessKeyFingerprint,
     harnessSignedMessage,
@@ -157,7 +158,7 @@ async function record(
     // What the tenant already knows, read once each.
     const known = await db.discoveredAgent.findMany({
         where: { tenantId: ctx.tenantId, discoveredId: { in: ids } },
-        select: { id: true, discoveredId: true, lastLevel: true },
+        select: { id: true, discoveredId: true, lastLevel: true, registeredAgentId: true },
         take: ids.length,
     });
     const claimed = [...new Set(body.agents.map((a) => a.registeredAgentId).filter((v): v is string => v !== null))];
@@ -257,6 +258,30 @@ async function record(
             take: ids.length,
         });
     const rowId = new Map(rows.map((r) => [r.discoveredId, r.id]));
+
+    // A CONFIRMED SERVICE-PRINCIPAL LINK THIS SCAN MOVED STOPS COUNTING (#3671).
+    // A person confirmed "this principal is that agent's"; a scan that now says
+    // otherwise — of the principal, or of the agent — invalidates it, in this
+    // transaction, and a person confirms the new link afresh. Never re-pointed.
+    await invalidateRelinkedConfirmations(
+        db,
+        ctx,
+        scan,
+        plan.agents.flatMap((a) => {
+            const id = rowId.get(a.discoveredId);
+            if (!id) return [];
+            return [
+                {
+                    discoveredAgentId: id,
+                    discoveredId: a.discoveredId,
+                    previousAgentId: knownByDiscoveredId.get(a.discoveredId)?.registeredAgentId ?? null,
+                    nextAgentId: a.registeredAgentId,
+                },
+            ];
+        }),
+        now,
+    );
+
     if (plan.agents.length > 0) {
         await db.agentHarnessScanItem.createMany({
             data: plan.agents.map((a) => ({

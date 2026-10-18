@@ -73,6 +73,10 @@ import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { runInTenantContext } from '@/lib/db-context';
+import {
+    SERVICE_PRINCIPAL_DISABLE_TOOL,
+    servicePrincipalFactsOf,
+} from '@/lib/agentic/service-principal-disable';
 
 import { promoteAcceptedWrite } from './external-write-journal';
 import { getPriorStateRead } from './external-prior-state-read';
@@ -241,6 +245,38 @@ const entraAssignmentDisappeared: DeliveryVerifier = (prior, current) => {
 };
 
 /**
+ * The service principal the write targeted now reads DISABLED (#3671).
+ *
+ * The only positive evidence the disable has. Four things must all be true,
+ * and every other combination is `unreadable` or `not_yet` — never `delivered`:
+ *
+ *   · the PRIOR state is readable and reported the principal ENABLED. A prior
+ *     state that already said disabled means the write had nothing to change;
+ *     the request path refuses that case before sending, so reaching here means
+ *     the row predates that guard or the read answers about something else, and
+ *     promoting it would credit our write with a state that was already true;
+ *   · the CURRENT state is readable — a far end we could not ask has told us
+ *     nothing, and an absent `accountEnabled` must never read as `false`;
+ *   · both describe the SAME principal, by id;
+ *   · and the current state says `accountEnabled: false`.
+ *
+ * `not_yet` when the principal still reads enabled: replication, or a write
+ * the directory has not applied. The row stays `ACCEPTED`, and this pass never
+ * demotes it.
+ *
+ * The parser is `servicePrincipalFactsOf`, the same one the request path uses
+ * to decide there is something to disable, so the two cannot disagree about
+ * what the read said.
+ */
+const entraServicePrincipalDisabled: DeliveryVerifier = (prior, current) => {
+    const before = servicePrincipalFactsOf(prior);
+    if (before === null || before.accountEnabled !== true) return 'unreadable';
+    const now = servicePrincipalFactsOf(current);
+    if (now === null || now.id !== before.id) return 'unreadable';
+    return now.accountEnabled ? 'not_yet' : 'delivered';
+};
+
+/**
  * Advertised tool name -> how to recognise its delivery.
  *
  * Keyed on the ADVERTISED name, matching `ASYNC_DELIVERY_TOOLS`, so the two
@@ -249,7 +285,35 @@ const entraAssignmentDisappeared: DeliveryVerifier = (prior, current) => {
 export const DELIVERY_VERIFIERS: ReadonlyMap<string, DeliveryVerifier> = new Map([
     ['grant_time_bounded_access', entraAssignmentAppeared],
     ['revoke_access_assignment', entraAssignmentDisappeared],
+    [SERVICE_PRINCIPAL_DISABLE_TOOL, entraServicePrincipalDisabled],
 ]);
+
+/**
+ * What a promotion SAYS it saw, per tool (#3671).
+ *
+ * The detail on an `APPLIED` row is the evidence an operator reads, and it was
+ * one sentence for every tool — "a record that did not exist when the write was
+ * accepted" — which is true of a grant and false of a withdrawal or a disable.
+ * A row whose stated evidence is not the evidence that promoted it is a record
+ * nobody can audit. A tool absent here gets the grant's sentence, which is the
+ * one every row before this map carried.
+ */
+export const DELIVERY_EVIDENCE: ReadonlyMap<string, string> = new Map([
+    [
+        'revoke_access_assignment',
+        'The far end has since delivered this request: the paired prior-state read no longer '
+            + 'reports the assignment the write withdrew.',
+    ],
+    [
+        SERVICE_PRINCIPAL_DISABLE_TOOL,
+        'The far end has since applied this request: the paired prior-state read now reports '
+            + 'the service principal disabled, where it reported it enabled before the write.',
+    ],
+]);
+
+const DEFAULT_DELIVERY_EVIDENCE =
+    'The far end has since delivered this request: the paired prior-state read now '
+    + 'reports a record that did not exist when the write was accepted.';
 
 export interface ExternalWriteReconcileResult {
     /** `ACCEPTED` rows this pass looked at. */
@@ -469,8 +533,7 @@ export async function reconcileAcceptedExternalWrites(input: {
             await promoteAcceptedWrite(
                 ctx,
                 row.id,
-                'The far end has since delivered this request: the paired prior-state read now '
-                    + 'reports a record that did not exist when the write was accepted.',
+                DELIVERY_EVIDENCE.get(row.advertisedToolName) ?? DEFAULT_DELIVERY_EVIDENCE,
             );
             result.promoted += 1;
             continue;

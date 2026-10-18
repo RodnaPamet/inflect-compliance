@@ -64,6 +64,10 @@
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { OBSERVATION_FRESHNESS_MS } from '@/app-layer/usecases/identity-write-target';
+import {
+    admissibleServicePrincipalIds,
+    readContainedAgentServicePrincipalLinks,
+} from '@/app-layer/usecases/agent-service-principal-links';
 
 /**
  * The most rows any population may contain and still be usable as a bound.
@@ -147,7 +151,9 @@ export interface TargetPopulationEntry {
  * pass's `TERMINATED` roster onto the three identifiers this product treats as
  * addressable. The fourth projects the JOINER pass's `ONBOARDING` roster, and it
  * exists because a GRANT acts on a subject who is arriving, not leaving (#3299).
- * A fifth is a deploy away and should state its bound the same way.
+ * The fifth projects the OWNER-ORPHAN pass's containments onto the Entra service
+ * principals of the agents it stopped (#3671). A sixth is a deploy away and
+ * should state its bound the same way.
  */
 /**
  * Label Entra object ids with the worker they belong to.
@@ -394,6 +400,52 @@ export const TARGET_POPULATIONS: Readonly<Record<string, TargetPopulationEntry>>
             );
         },
         label: labelEntraAccountIds,
+    },
+
+    /**
+     * THE CONTAINED-AGENT POPULATION (#3671, agentic IAM 2c) — the Entra service
+     * principals of the agents the owner-orphan pass has stopped.
+     *
+     * The first population that is not about a WORKER. Like the four above it is
+     * lifted from a pass that already acts on it rather than invented: the
+     * orphan pass engages an `OWNER_DEPARTED` kill on exactly these agents, and
+     * this entry admits a principal only while that kill stands. A completed
+     * ownership transfer lifts the kill, and the principal leaves the population
+     * at that moment — so an unattended disable opened before the transfer is
+     * refused at send (`automaticBoundRefusalAtSend` re-resolves this set), which
+     * is the "population is data and data moves" argument applied to an agent.
+     *
+     * Narrow for the same reason `TERMINATED` and `ONBOARDING` are: a containment
+     * is an event, not a standing state, so the set is the handful of agents
+     * stopped since their owners left, not the register.
+     *
+     * The clauses are `readContainedAgentServicePrincipalLinks`'s, shared with
+     * the request path so the bound and the request cannot disagree:
+     *
+     *   · an AGENT-scope `AgentKillSwitch` with `reasonCode = 'OWNER_DEPARTED'`
+     *     and no `liftedAt` — a code only the system actor can write and only a
+     *     completed transfer can lift;
+     *   · a `DiscoveredAgent` whose `discoveredId` is `entra:sp:<GUID>`,
+     *     reconciled to that agent by the harness ingest, the agent not deleted;
+     *   · exactly ONE such principal for the agent — an agent with two
+     *     contributes neither, because the request path refuses it as ambiguous.
+     */
+    contained_orphan_agent_entra_service_principals: {
+        key: 'contained_orphan_agent_entra_service_principals',
+        description:
+            'The Entra service principal object id of every registered agent the owner-orphan ' +
+            'pass has contained — an OWNER_DEPARTED kill in force — that names exactly one ' +
+            'principal through the harness reconciliation.',
+        bound:
+            'Tenant-scoped through runInTenantContext (RLS); an AGENT-scope kill with reasonCode ' +
+            'OWNER_DEPARTED and liftedAt IS NULL, which only the system actor can write and only ' +
+            'a completed ownership transfer can lift; a DiscoveredAgent whose discoveredId is ' +
+            'entra:sp:<GUID> reconciled to that non-deleted agent; exactly one principal per ' +
+            'agent; at most MAX_POPULATION_ROWS rows, refusing at the cap.',
+        async resolve(ctx, limit) {
+            const read = await readContainedAgentServicePrincipalLinks(ctx, { limit });
+            return admissibleServicePrincipalIds(read.links);
+        },
     },
 };
 

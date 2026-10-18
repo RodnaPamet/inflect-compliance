@@ -190,6 +190,16 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // and the tenant is authenticated from the path rather than asserted in an
     // argument.
     'mcp/entra-grant/route.ts',
+    // #3671, agentic IAM 2c — the grant endpoint's SIBLING for disabling a
+    // contained agent's Entra service principal: `disable_service_principal`
+    // and its paired prior-state read. Outbound for the same reason the grant
+    // is: its only intended client is the external-write dispatch, which holds
+    // the rung, the pairing and the journal row. A sibling rather than two more
+    // tools on the grant endpoint because the rung is per CONNECTION, and the
+    // disable must climb its own ladder; the route refuses a token whose
+    // connection is configured for a different endpoint. No page: the orphan
+    // pass is its only requester, through the ladder.
+    'mcp/entra-service-principal/route.ts',
     // PHASE 1, point 01's third bullet — the per-tenant driver toggle. The
     // column shipped with a reader, a default and no writer; a gate whose
     // customer half cannot be moved through the product is a constant wearing
@@ -229,6 +239,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // registration: the register's PATCH refuses `ownerUserId`.
     't/[tenantSlug]/admin/agents/[agentId]/ownership-transfer/complete/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/ownership-transfer/route.ts',
+    // #3671 (2c) — a person confirms which discovered Entra service principal
+    // is the agent's own, the condition for an UNATTENDED disable of it (owner
+    // decision, 2026-10-18). API-only like the transfer: the confirmation is
+    // read and made by an operator holding admin.agent_registry, and no page
+    // drives it yet.
+    't/[tenantSlug]/admin/agents/[agentId]/service-principal-link/route.ts',
     't/[tenantSlug]/admin/agents/kill-switch/route.ts',
     // #3670 — the owner-orphan pass's mode and its recorded passes. API-only
     // until a page renders them, like the ownership transfer it hands its

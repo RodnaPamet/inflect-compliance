@@ -675,6 +675,16 @@ jobs:
       - name: "Run tests: unit + integration (shard)"
         env:
           JEST_SKIP_RATCHETS: '1'
+          # 10240 for THIS step only; every other job keeps the workflow's
+          # 8192. On 2026-10-18 `Test (shard 4/4)` OOM'd on #3721 ("Ineffective
+          # mark-compacts near heap limit", exit 134, old space at 8047 of
+          # 8192 MB) while #3717 passed the same shard on the same base: the
+          # path-hash reshuffle the workflow-level note describes, a second
+          # time. In-band is one heap for the whole shard, and the box carries
+          # only Postgres beside it: ~10 GB of old space plus Jest's native
+          # memory stays well under the 16 GB runner, so an overrun still
+          # fails as a legible V8 OOM rather than a kernel kill.
+          NODE_OPTIONS: "--max-old-space-size=10240"
         run: |
           # `--selectProjects node jsdom` EXCLUDES the `flue` project, which
           # has its own job. Without it `--shard` spreads all three projects

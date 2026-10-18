@@ -113,6 +113,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'AgentKillSwitch.reason / liftReason.',
     'AgentKillSwitch.reasonCode': "A closed vocabulary pinned by a CHECK to one literal ('OWNER_DEPARTED'), written only by the owner-orphan pass's system actor (#3670). Plaintext because reports and the lift trigger filter on it; it carries no tenant content — the free-text reason beside it is the encrypted column.",
     'AgentKillSwitchDrill.detail': 'Machine-generated from source constants — scope names, counts and a fixed explanation of which arm proved what. It carries no tenant content by construction. Deliberately plaintext: it is the drill\'s own evidence, and a KEK failure is one of the things a drill would have to report from behind the key that failed.',
+    'AgentServicePrincipalConfirmation.invalidatedReason':
+        "One of two fixed codes ('PRINCIPAL_RELINKED' | 'AGENT_RELINKED'), CHECK-constrained in the migration and written only by our own harness ingest (#3671) — never user text.",
     'AgentKillSwitchDrill.boundaryRefusalReason': "One of three fixed literals ('agent_killed' | 'refused_for_another_reason' | 'not_refused') written by the drill, never by a user.",
     'AgentKillSwitchDrill.findingId': 'A cuid pointing at the Finding this drill raised. An identifier, not content.',
 
