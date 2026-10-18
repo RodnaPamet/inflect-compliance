@@ -7,6 +7,7 @@ import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { projectRunSteps } from '@/lib/agentic/run-step-projection';
 import { parseMountedSkillPins } from '@/lib/agentic/flue/skills/mount-gate';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity } from '@/lib/permissions';
 
 import { AgentRunDetailClient, type RunStepRow } from './AgentRunDetailClient';
 
@@ -54,10 +55,10 @@ export default async function AgentRunDetailPage({
     const ctx = await getTenantCtx({ tenantSlug });
     const t = await getTranslations('agents');
 
-    // The sibling list page's gate, verbatim. `admin.view` — the orchestrator
-    // is an admin surface, and a run's steps are strictly less than the list
-    // already shows about the same runs.
-    if (!ctx.appPermissions.admin.view) {
+    // The sibling list page's gate, verbatim: `admin.view` OR the inventory
+    // view key (`mayReadAgentActivity`, #3710). A run's steps are strictly less
+    // than the list already shows about the same runs.
+    if (!mayReadAgentActivity(ctx.appPermissions.admin)) {
         return (
             <ForbiddenPage
                 title={t('runs.accessTitle')}

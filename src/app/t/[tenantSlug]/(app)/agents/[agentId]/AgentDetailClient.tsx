@@ -58,7 +58,14 @@ export interface VendorChoice {
  * flag that is a conjunction.
  */
 export interface AgentDetailPermissions {
-    /** `admin.agent_registry` — status moves, risk assessment, coverage, breaker reads. */
+    /**
+     * `admin.agent_registry` — the key the risk, skills, coverage and breaker
+     * tabs and the tool-manifest pins READ under (#3710). The page itself needs
+     * only the inventory read, so a reader holding the view key alone opens the
+     * page and finds those tabs disabled.
+     */
+    canReadRegistry: boolean;
+    /** `admin.agent_registry` AND the role-tier write — status moves and amendment. */
     canManageRegistry: boolean;
     /** `admin.agent_policy_card` — gates the policy-card GET, not only its writes. */
     canEditPolicyCard: boolean;
@@ -193,7 +200,10 @@ export function AgentDetailClient({
             }
             tabs={[
                 { key: 'overview', label: t('agentDetail.tabOverview') },
-                { key: 'risk', label: t('agentDetail.tabRisk') },
+                // Disabled without the register key (#3710), like the policy
+                // card without its own: the tab's GET is gated on that key, so a
+                // view-key reader would open it and be refused on the read.
+                { key: 'risk', label: t('agentDetail.tabRisk'), disabled: !perms.canReadRegistry },
                 // Disabled, not hidden. The two narrow keys gate the GET as
                 // well as the write, so a holder of the register key alone
                 // opens either tab and is refused on the read. A greyed tab
@@ -212,12 +222,21 @@ export function AgentDetailClient({
                 // already required. Disabling the tab on the narrower key hid
                 // the supply-chain pins — the ASI04 tool-poisoning surface —
                 // from an operator entitled to read them. The tab gates the
-                // grants section internally instead.
-                { key: 'tools', label: t('agentDetail.tabTools') },
-                { key: 'skills', label: t('agentDetail.tabSkills') },
-                { key: 'coverage', label: t('agentDetail.tabCoverage') },
+                // grants section internally instead. Disabled only when the
+                // reader holds NEITHER key (#3710): a view-key reader can read
+                // neither the pins nor the grants.
+                {
+                    key: 'tools',
+                    label: t('agentDetail.tabTools'),
+                    disabled: !perms.canReadRegistry && !perms.canGrantTools,
+                },
+                { key: 'skills', label: t('agentDetail.tabSkills'), disabled: !perms.canReadRegistry },
+                { key: 'coverage', label: t('agentDetail.tabCoverage'), disabled: !perms.canReadRegistry },
+                // NOT disabled: the runs read is `/agent-runs`, which the view
+                // key reads (#3710) — this agent's runs are part of what an
+                // auditor reads about it.
                 { key: 'runs', label: t('agentDetail.tabRuns') },
-                { key: 'breaker', label: t('agentDetail.tabBreaker') },
+                { key: 'breaker', label: t('agentDetail.tabBreaker'), disabled: !perms.canReadRegistry },
             ]}
             activeTab={tab}
             onTabChange={setTab}

@@ -27,10 +27,16 @@
 import type { ZodType } from 'zod';
 
 import type { PermissionKey } from '@/lib/security/permission-key';
+import type { ScopeCheckAction } from '@/lib/auth/api-key-auth';
 import type { RequestContext } from '@/app-layer/types';
 
-/** The scope actions the api-key layer understands for a resource. */
-export type ScopeAction = 'read' | 'write' | 'admin';
+/**
+ * The scope actions the api-key layer understands for a resource: the three
+ * verbs, plus a NAMED read group (`agent_registry_view`, #3710) that a read
+ * tool may require instead of its resource's `read` when that `read` would
+ * demand more than the tool reads. One definition, the api-key layer's.
+ */
+export type ScopeAction = ScopeCheckAction;
 
 /**
  * Which permission set a tool's keys are evaluated against.
@@ -158,8 +164,9 @@ export interface McpReadTool<TArgs = unknown> {
     argsSchema: ZodType<TArgs>;
     /**
      * The resource scope the caller's API key must hold (checked via
-     * `enforceApiKeyScope`) IN ADDITION to `mcp:read`. Read tools always use
-     * the `read` action.
+     * `enforceApiKeyScope`) IN ADDITION to `mcp:read`. Read tools use the
+     * `read` action, or a NAMED read group whose every flag is a `_view`
+     * (`get_discovered_agent` takes `admin:agent_registry_view`, #3710).
      */
     resourceScope: { resource: string; action: ScopeAction };
     /** The human route's own authorization, reused rather than re-stated. */

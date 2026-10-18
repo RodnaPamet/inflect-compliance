@@ -29,10 +29,10 @@ afterEach(() => {
     jest.restoreAllMocks();
 });
 
-function renderPanel(cap: number | null, inFlight = 0) {
+function renderPanel(cap: number | null, inFlight = 0, canEdit?: boolean) {
     return render(
         <NextIntlClientProvider locale="en" messages={EN}>
-            <ConcurrencyPanel cap={cap} inFlight={inFlight} tenantSlug="acme" />
+            <ConcurrencyPanel cap={cap} inFlight={inFlight} tenantSlug="acme" canEdit={canEdit} />
         </NextIntlClientProvider>,
     );
 }
@@ -143,5 +143,19 @@ describe('the concurrent-run cap panel', () => {
         // to tell which one stopped them.
         renderPanel(null);
         expect(screen.getByTestId('agents-concurrency')).toHaveTextContent(/budget/i);
+    });
+
+    it('shows a reader holding only the view key the cap, and no control to change it (#3710)', () => {
+        // Setting the cap is a register-key write. A view-only reader (AUDITOR,
+        // or AI_ADMIN) is told the state and offered nothing the PATCH route
+        // would refuse.
+        const fetchMock = mockFetch();
+        renderPanel(4, 1, false);
+        const state = screen.getByTestId('agents-concurrency-state');
+        expect(state).toHaveTextContent('4');
+        expect(state).toHaveTextContent('1');
+        expect(screen.queryByTestId('agents-concurrency-input')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('agents-concurrency-save')).not.toBeInTheDocument();
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });

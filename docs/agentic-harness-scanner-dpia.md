@@ -25,9 +25,12 @@ that owns it, and the assessment holds only while every condition does.
 The assessment is signed by the owner's merge of the pull request that carries
 it (see [Sign-off](#sign-off)).
 
-Out of scope: any later step that hands scan data to a model, such as the IAM
-skills of step `1d` or the owner-attribution skill used at intake in step `2a`.
-Each is assessed with its own step.
+Out of scope: any later step that hands scan data to a model, such as the
+owner-attribution skill used at intake in step `2a`. Each is assessed with its
+own step. One such reader is assessed here, because it reads a column this
+assessment covers: a model reading the owner reference through the MCP tool
+`get_discovered_agent`, which #3710 made reachable. See
+[A model as a reader of the owner reference](#a-model-as-a-reader-of-the-owner-reference).
 
 ## Roles
 
@@ -108,11 +111,90 @@ controls.
 
 The owner reference serves two checks only: whether an agent has an
 accountable owner (criterion `H1.owner`), and reconciliation against the owner
-the register records. The acceptance's user ids record who accepted a risk and
+the register records. The model that reads it (below) serves the same two and no
+third: the assessment skill judges `H1.owner`, and the attribution skill
+suggests the accountable owner for a person to confirm. The acceptance's user ids record who accepted a risk and
 who revoked the acceptance; the scanner key's record who decided the tenant
 trusts a signer and who withdrew that trust. None of it is used to evaluate or
 profile the people named, and Inflect uses none of it for a purpose of its own
 (DPA §2).
+
+## A model as a reader of the owner reference
+
+Added by #3710, the reach half of step `1d`. Before it, no model could read
+`DiscoveredAgent.ownerRef`: the facts read behind `get_discovered_agent` took
+`admin.agent_registry`, which no bearer token carries, and every agentic run on
+the Flue engine is started by an agent-bound key. Since #3710 the read takes the
+read-only inventory key `admin.agent_registry_view`, which a key carries through
+the named scope `admin:agent_registry_view`. So a model can now read the owner
+reference, and this section names it as a reader.
+
+**Who reads it.** The owner reference is read, through `getDiscoveredAgentFacts`
+(`src/app-layer/usecases/agent-harness-facts.ts`), by:
+
+| Reader | Through | Since |
+|---|---|---|
+| The tenant's own staff holding the inventory view key — OWNER, ADMIN, AI_ADMIN, AUDITOR, or a custom role carrying it — or the register key | The agent register, `/agents/reports` and the `admin/agents` read routes | #3688, #3710 |
+| A model, in a run of the `discovered-agent-review` workflow | The MCP read tool `get_discovered_agent`, which returns the owner as its source records it (`sourceOwner`) | #3710 |
+
+**Only under all of these.** A model reads it only when every one holds; each is
+enforced in code, and each refusal writes a hash-chained `AUTHZ_DENIED` row:
+
+- the run's API key carries `mcp:read` and the named scope
+  `admin:agent_registry_view`. Neither `*` nor `admin:*` carries the scope
+  (`WILDCARD_EXCLUDED_ACTIONS` in `src/lib/auth/api-key-auth.ts`), so no key
+  issued before #3710 reads it;
+- the person the key speaks for holds the view key themselves — the key's
+  permissions are that person's intersected with its scopes;
+- the run's registered agent is granted `get_discovered_agent` under
+  `admin.agent_tool_exposure`, on a deny-by-default list, and its policy card
+  and autonomy ceiling allow the call;
+- the read is of the key's own tenant: row-level security and the tenant
+  predicate scope it, and another tenant's agent is not found.
+
+**What the model is told about it.** The payload is labelled
+`THIRD_PARTY_INGESTED` and carries the rule that it is data, never instruction
+(`MCP_TOOL_CORPUS` and `buildProvenanceEnvelope` in
+`src/lib/agentic/content-provenance.ts`). The run's own input, the discovered
+agent's id, reaches the prompt the same way: fenced, neutralised and labelled
+(`src/lib/agentic/flue/run-message.ts`).
+
+**What it may do with it.** Nothing but answer. The workflow is read-only — one
+read and one synthesis, no proposal and no checkpoint
+(`src/lib/agentic/workflows/discovered-agent-review.ts`). An attribution answer
+parses through `parseOwnershipAttribution`
+(`src/lib/agentic/iam-skill-outputs.ts`), whose status cannot be `LINKED`, so
+the model can only suggest an owner, and a person confirms one at registration
+intake (step `2a`) before it becomes the register's owner.
+
+**Where it goes.** The model is the deployment's Flue model, chosen by the
+tenant's `aiResidency`:
+
+| Residency | Model | The owner reference |
+|---|---|---|
+| `LOCAL_ONLY` | The local model (`AI_LOCAL_MODEL`) | Stays in the deployment |
+| `EXTERNAL`, the default | The external provider, `inflect-external` (Anthropic by default, `AGENT_FLUE_MODEL`) | Leaves the deployment to that provider, in the model call |
+
+A run of the workflow on the static engine calls no model. There the owner
+reference lands only in the encrypted run context and step output
+(`WorkflowRun.contextJson`, `WorkflowStep.outputJson`).
+
+**What is stored of the model's answer.** The Art 12 record of each model call,
+`AiDecisionLog`, stores a digest of the prompt, never its content, and a bounded,
+sanitised summary of the final answer (`outputSummary`). An attribution answer
+names the owner it suggests, so for `agentic-run:discovered-agent-review` that
+summary can carry an owner reference. `AiDecisionLog` is append-only and a
+Regulatory artefact in [`docs/data-retention.md`](data-retention.md), whose row
+names it DSAR-relevant for that feature (condition 7), and it has no erasure path
+for one person.
+
+### Conditions on #3710
+
+| Condition | Status |
+|---|---|
+| 12. Before a tenant's Flue runs of `discovered-agent-review` send the owner reference to an external model provider, [`docs/sub-processors.md`](sub-processors.md) names that data in the provider's row and the notice [`docs/sub-processor-change-policy.md`](sub-processor-change-policy.md) requires is given, or the repository owner records why it is not required. | **Met** — the Anthropic row and its section (c) in `docs/sub-processors.md` name an agent run's payload, the owner reference included. The repository owner recorded on 2026-10-18 that the note on the existing row is enough and that no separate notice window or code gate is required before these runs ship. |
+| 13. A model reads the owner reference only through `get_discovered_agent`, under the named scope and a tool grant, and labelled untrusted. | Met by #3710 (`tests/integration/agent-registry-view-key.test.ts`) |
+| 14. Every stored column the model's answer can reach that names a person is named DSAR-relevant, as condition 7 requires of the ingest's. | Met by #3710 for `AiDecisionLog.outputSummary` |
 
 ## Lawful basis
 
@@ -248,7 +330,11 @@ path; the tenant purge is the only automated deletion.
 
 ## Transfers
 
-None. Under condition 4 the scanner sends a report only over HTTPS to the
+None from the scanner or the ingest. The one transfer this assessment now
+covers is the model call above: on a tenant whose `aiResidency` is `EXTERNAL`,
+a Flue run of `discovered-agent-review` sends the owner reference to the
+external model provider (US or global, per `docs/sub-processors.md`), whose row
+names that data (condition 12, met). Under condition 4 the scanner sends a report only over HTTPS to the
 ingest route of the client's own tenant. The ingest runs in the existing `app`
 service, so what it keeps of a report is written to the same database as the
 rest of that tenant's data: on Inflect's production deployment, Google Cloud
@@ -262,7 +348,10 @@ mechanism.
 
 ## Sub-processors
 
-**The scanner and the ingest introduce no sub-processor.**
+**The scanner and the ingest introduce no sub-processor.** A model reading the
+owner reference can: on a tenant whose `aiResidency` is `EXTERNAL`, a Flue run of
+`discovered-agent-review` sends it to the external model provider. That provider
+is listed, and its row names this data category (condition 12, met; see [A model as a reader of the owner reference](#a-model-as-a-reader-of-the-owner-reference)).
 
 - The scanner is to run on the client's infrastructure, under the client's
   control, and read the client's own systems. The identity provider, vault, MCP
@@ -295,7 +384,10 @@ including its 30-day notice window, before that data moves.
 | R6 | An owner reference reaches readers outside the tenant's members through emitted evidence. | Emitted evidence renders no owner reference. | Condition 8 |
 | R7 | Owner references and user ids are kept longer than needed. | Every model is a Business record, kept while the tenant is active and purged with it. Residual: no automated erasure path for one person's reference. | Retention classes; `docs/data-retention.md` |
 | R8 | An identifier field carries free text about a person. | Length bounds; no free text in the three scan tables; rendered as text only. Residual: an identifier can still contain a name. Accepted, because the naming is the client's own. | `MAX_ID_CHARS`, `MAX_EVIDENCE_CHARS`, `REFERENCE`; condition 5 |
-| R9 | A later step sends scan data to a model or a third party. | Outside this assessment; that step is assessed with it and goes through the sub-processor notice window first. | `docs/sub-processor-change-policy.md` |
+| R9 | A later step sends scan data to a model or a third party. | Each such step is assessed with it and goes through the sub-processor notice window first. The one assessed here, a model reading the owner reference (#3710), is named with its conditions above. | `docs/sub-processor-change-policy.md`; conditions 12–14 |
+| R12 | A model reads a person's directory identifier and decides something about them. | The workflow is read-only. The attribution answer can only suggest an owner (`parseOwnershipAttribution` cannot express `LINKED`), and a person confirms one at intake. | `discovered-agent-review`; step `2a` |
+| R13 | A credential or a model reads owner references it was not meant to. | Only the named scope reaches the read, no wildcard does, the principal must hold the view key, the agent must hold the tool grant, and each refusal writes an `AUTHZ_DENIED` row. | Condition 13 |
+| R14 | An owner reference is kept in an append-only record. | `AiDecisionLog.outputSummary` is bounded and sanitised and named DSAR-relevant. Residual: no erasure path for one person, as for the other append-only records. Accepted pending the retention answer `docs/data-retention.md` records as open. | Condition 14 |
 | R10 | A shortfall finding names the owner of an agent below the bar, and colleagues read it. | Findings carry identifiers only and stay in the controller's own tenant, read by its own staff. Residual: accepted. | Step `1a` findings |
 | R11 | An acceptance's justification names or describes a person, and is read beyond its purpose. | Encrypted at rest, sanitised at the write seam, and kept in the controller's own tenant. Residual: free text can still mention a person. Accepted, as it is for `ControlException`. | Condition 11 |
 
@@ -330,4 +422,6 @@ them; their answers are recorded on #3664 when given.
 The assessment is reopened, and signed again the same way, when any of these
 changes: the contract id (`inflect-agent-harness/2`), the source kinds in
 `SOURCE_KINDS`, a stored column that holds a person's identifier, a condition
-on step `1a`, or where scan data goes.
+on step `1a`, or where scan data goes. #3710 reopened it on the last of those —
+a model became a reader of the owner reference — and the merge of the pull
+request that carries the amendment signs it again, with condition 12 met.

@@ -5,6 +5,7 @@ import { buildAgentGovernancePack } from '@/app-layer/usecases/agent-governance-
 import { getAgentGovernanceStatus } from '@/app-layer/usecases/agent-registry';
 import { getHarnessMatrix, getHarnessScannerKeysView } from '@/app-layer/usecases/agent-harness-matrix';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
 import { ReportsClient } from './ReportsClient';
 
@@ -37,13 +38,20 @@ import { ReportsClient } from './ReportsClient';
  * this is a server read per visit. No cache, no snapshot row, no "last
  * generated" — if it is slow, the query is the thing to fix.
  *
- * The permission is the register key, matching the route's: the pack names
- * people — who approved what, who owns which agent.
+ * The permission is the INVENTORY read, matching the route's (#3710): the
+ * read-only `admin.agent_registry_view`, or the register key whose holders
+ * always could (`mayReadAgentInventory`). The pack names people — who approved
+ * what, who owns which agent — and the view key is held by OWNER, ADMIN,
+ * AI_ADMIN and AUDITOR, the last because this is what an assessor asks for.
  *
  * ── THE HARNESS TAB (#3687) ─────────────────────────────────────────
  *
- * A second view behind the SAME `admin.agent_registry` gate, chosen by
- * `?tab=harness`; anything else (or nothing) is the pack. The server reads ONLY
+ * A second view behind the SAME inventory gate, chosen by `?tab=harness`;
+ * anything else (or nothing) is the pack. The scanner-key register on it stays
+ * behind `admin.agent_registry` — it decides whose reports the tenant believes
+ * — so a view-key reader gets the matrix and the shadow list without it, and no
+ * shortfall action (`getHarnessMatrix` reports `NONE` for a reader who cannot
+ * accept). The server reads ONLY
  * the selected tab: the harness tab never builds the pack and the pack tab never
  * reads a scan, so neither tab pays for the other and a refused caller starts
  * neither read.
@@ -73,7 +81,7 @@ export default async function AgentReportsPage({
     const resolved = await params;
     const ctx = await getTenantCtx(resolved);
 
-    if (!ctx.appPermissions?.admin?.agent_registry) {
+    if (!mayReadAgentInventory(ctx.appPermissions?.admin)) {
         const t = await getTranslations('agents');
         return (
             <ForbiddenPage
@@ -85,21 +93,28 @@ export default async function AgentReportsPage({
 
     // The menu entry must ask the same question its DESTINATION asks, or it
     // offers a link that renders a ForbiddenPage.
-    const canReviewProposals = Boolean(ctx.appPermissions?.admin?.view);
+    const canReviewProposals = mayReadAgentActivity(ctx.appPermissions?.admin);
+    const canCompose = Boolean(ctx.appPermissions?.admin?.view);
     const canInvestigate = Boolean(ctx.appPermissions?.admin?.agent_registry);
     // The SAME question the export usecase asks. Filing the pack writes into the
     // evidence library, which is the library's grant to give and not the
     // register's — so holding this page is not holding this button, and the two
     // keys are read separately here rather than one being inferred from the
     // other.
-    const canExport = Boolean(ctx.appPermissions?.evidence?.edit);
+    //
+    // And the register key (#3710): filing is a write, which the export route
+    // keeps on that key, so a reader who holds this page through the view key
+    // alone is not offered a button its route would refuse.
+    const canExport = Boolean(ctx.appPermissions?.evidence?.edit) && canInvestigate;
 
     // AFTER the gate, and only for the tab asked for.
     const requested = ((await searchParams) ?? {}).tab;
     if ((Array.isArray(requested) ? requested[0] : requested) === 'harness') {
         const [harness, scannerKeys] = await Promise.all([
             getHarnessMatrix(ctx),
-            getHarnessScannerKeysView(ctx),
+            // Only for a holder of the register key (#3710): the key register
+            // is that key's to read, and `null` renders no card at all.
+            canInvestigate ? getHarnessScannerKeysView(ctx) : Promise.resolve(null),
         ]);
         return (
             <ReportsClient
@@ -110,6 +125,7 @@ export default async function AgentReportsPage({
                 harness={JSON.parse(JSON.stringify(harness))}
                 scannerKeys={JSON.parse(JSON.stringify(scannerKeys))}
                 canReviewProposals={canReviewProposals}
+                canCompose={canCompose}
                 canInvestigate={canInvestigate}
                 canExport={canExport}
             />
@@ -134,6 +150,7 @@ export default async function AgentReportsPage({
             pack={JSON.parse(JSON.stringify(pack))}
             enforcing={governance.enforcing}
             canReviewProposals={canReviewProposals}
+            canCompose={canCompose}
             canInvestigate={canInvestigate}
             canExport={canExport}
         />

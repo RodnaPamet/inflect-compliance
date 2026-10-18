@@ -1764,6 +1764,30 @@ Card text is hashed through `JSON.stringify`, not straight to SHA-256: UTF-8
 encoding turns every lone surrogate into U+FFFD, so two different texts would
 hash alike.
 
+**The inventory view key** (`admin.agent_registry_view`, #3710) is read-only:
+the register list and row, scans and the matrix, `get_discovered_agent`, the
+governance pack, and — beside `admin.view` — runs and proposals. OWNER, ADMIN,
+AI_ADMIN and AUDITOR hold it. Three rules in it are easy to undo:
+
+- **Every inventory read also admits `admin.agent_registry`**
+  (`mayReadAgentInventory`): a custom role saved before the split takes the view
+  key from its base role, and reading the view key alone takes the inventory
+  away from it.
+- **Only its own name grants it.** `admin:agent_registry_view` is the one
+  scope; `*` and `admin:*` do not carry it (`WILDCARD_EXCLUDED_ACTIONS`). Folding
+  it into a wildcard would have every key already issued read owner references.
+- **It grants no write.** Filing the pack, every register write, scanner keys,
+  peers, intake and acceptances stay on the register key;
+  `tests/unit/agent-registry-view-key.test.ts` reads every write handler off the
+  filesystem and refuses a view-only caller. The edge admits an AUDITOR to a GET
+  of the four inventory routes only (`AUDITOR_ADMIN_READ_PATHS`).
+
+**A Flue run's declared input reaches the model as data**
+(`src/lib/agentic/flue/run-message.ts`): the definition's `requiredInput` keys
+and nothing else, read from the sealed context under verification, neutralised,
+fenced and labelled `agent.run-input`. The decision digest is over that message,
+so keep the one `runMessage(...)` binding both readers share.
+
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
 `resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):

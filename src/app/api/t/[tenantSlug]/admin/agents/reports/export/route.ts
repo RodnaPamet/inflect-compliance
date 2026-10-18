@@ -9,12 +9,17 @@
  *
  * ## Permission
  *
- * `admin.agent_registry`, matched by the existing
- * `^…/admin\/agents(\/.*)?$` catch-all in `route-permissions.ts` — the rules are
- * path-only, so they gate POST exactly as they gate GET, and this route needs no
- * new entry. The usecase additionally requires `evidence.edit`, which is the
- * evidence library's own rule; see its header for why both are asserted there
- * rather than one here and one deep inside `createEvidence`.
+ * `admin.agent_registry`, matched by the register's `^…/admin\/agents(\/.*)?$`
+ * catch-all in `route-permissions.ts`. The usecase additionally requires
+ * `evidence.edit`, which is the evidence library's own rule; see its header for
+ * why both are asserted there rather than one here and one deep inside
+ * `createEvidence`.
+ *
+ * NOT the inventory view key (#3710), unlike the GET beside it. Reading the
+ * pack is reading the inventory; FILING it writes a permanent Evidence row, and
+ * the view key grants no write — so this stays on the register key, which keeps
+ * every write, and AUDITOR and AI_ADMIN, which hold the view key, read the pack
+ * and do not file it.
  *
  * ## Why not reuse `createEvidence`
  *

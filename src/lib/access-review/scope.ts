@@ -110,9 +110,10 @@ export const AGENT_CAMPAIGN_OWN_FLOW = 'AGENT_CAMPAIGN_OWN_FLOW';
 /**
  * May this caller read an AGENT campaign's SUBJECTS?
  *
- * A subject is a registered agent, and the register is read under
- * `admin.agent_registry` (`listRegisteredAgents`), which READER, EDITOR and
- * AUDITOR do not hold. `access_reviews.view` is held by every role, so an AGENT
+ * A subject is a registered agent. The register itself is read under the
+ * inventory view key or `admin.agent_registry` (`listRegisteredAgents`, #3710),
+ * and this narrowing stays on the register key, as 0e decided — admitting the
+ * view key here is its own decision. `access_reviews.view` is held by every role, so an AGENT
  * campaign's subject rows would otherwise publish register data — names,
  * owners, grants — to every member. The roadmap narrows the pack read to the
  * assigned reviewer or a holder of `admin.agent_registry`, as `decide` narrows

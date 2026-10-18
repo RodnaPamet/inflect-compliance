@@ -34,6 +34,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, conflict, forbidden } from '@/lib/errors/types';
+import { mayReadAgentInventory } from '@/lib/permissions';
 import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -73,9 +74,13 @@ function assertMayIngest(ctx: RequestContext): void {
     }
 }
 
+/**
+ * Reading scans is reading the agent inventory (#3710): the view key, or the
+ * register key whose holders always could (`mayReadAgentInventory`).
+ */
 function assertMayRead(ctx: RequestContext): void {
-    if (!ctx.appPermissions.admin.agent_registry) {
-        throw forbidden('Reading harness scans requires admin.agent_registry');
+    if (!mayReadAgentInventory(ctx.appPermissions.admin)) {
+        throw forbidden('Reading harness scans requires admin.agent_registry_view');
     }
 }
 

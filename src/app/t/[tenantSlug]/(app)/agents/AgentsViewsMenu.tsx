@@ -31,9 +31,12 @@
  * click has nowhere to go. A group left with no items disappears, heading and
  * all; a menu with nothing left renders nothing.
  *
- * The two gates are NOT the same key, and that is not an oversight. The
- * proposals and runs pages gate themselves on `admin.view`; receipts,
- * quarantine and review quality gate themselves on `admin.agent_registry`.
+ * The gates are NOT the same key, and that is not an oversight. The proposals
+ * and runs pages gate themselves on `admin.view` OR the inventory view key
+ * (`mayReadAgentActivity`, #3710), and compose on `admin.view` alone; receipts,
+ * quarantine, decisions, review quality and external tools gate themselves on
+ * `admin.agent_registry`; the governance pack (`/agents/reports`) on the
+ * INVENTORY read, the view key or the register key (`mayReadAgentInventory`).
  * A menu entry has to ask the question its destination asks, or it offers a
  * link that renders a ForbiddenPage.
  *
@@ -70,10 +73,22 @@ export type AgentsViewRoute =
 export interface AgentsViewsMenuProps {
     current: AgentsViewRoute;
     tenantSlug: string;
-    /** `admin.view` — the proposals and runs pages' own gate. */
+    /** `mayReadAgentActivity` — the proposals and runs pages' own gate. */
     canReviewProposals: boolean;
+    /**
+     * `admin.view` — the compose page's gate. Defaults to `canReviewProposals`,
+     * which it equalled until the view key split the two (#3710); a page that
+     * can tell them apart passes it.
+     */
+    canCompose?: boolean;
     /** `admin.agent_registry` — the receipts / quarantine / review-quality gate. */
     canInvestigate: boolean;
+    /**
+     * `mayReadAgentInventory` — the governance pack's gate (#3710). Defaults to
+     * `canInvestigate`, the gate the pack had before the view key existed; a
+     * page that holds a view-key reader passes it.
+     */
+    canReadReports?: boolean;
     /**
      * Proposals awaiting review. `null` means the count could not be read,
      * which renders no badge — the honest rendering of "this page cannot tell
@@ -86,7 +101,9 @@ export function AgentsViewsMenu({
     current,
     tenantSlug,
     canReviewProposals,
+    canCompose = canReviewProposals,
     canInvestigate,
+    canReadReports = canInvestigate,
     proposalsAwaitingReview = null,
 }: AgentsViewsMenuProps) {
     const t = useTranslations('agents');
@@ -99,13 +116,14 @@ export function AgentsViewsMenu({
                     id: 'operate',
                     label: t('views.groupOperate'),
                     items: [
-                        canReviewProposals && {
+                        canCompose && {
                             // #3301 — the only item here that ACCEPTS an intent; the other
                             // two review what one produced, which is why it sits first.
-                            // Gated on `canReviewProposals` (= `admin.view`), which is
-                            // exactly what its destination asks, so this group stays
-                            // gate-homogeneous. Submitting additionally needs write, and
-                            // the page says so rather than hiding the form.
+                            // Gated on `canCompose` (= `admin.view`), which is exactly
+                            // what its destination asks — the view key opens proposals
+                            // and runs but not compose (#3710). Submitting additionally
+                            // needs write, and the page says so rather than hiding the
+                            // form.
                             id: 'agents-view-compose',
                             label: t('views.compose'),
                             icon: <PenWriting className="size-4" />,
@@ -166,7 +184,7 @@ export function AgentsViewsMenu({
                             href: href('/agents/decisions'),
                             selected: current === 'decisions',
                         },
-                        canInvestigate && {
+                        canReadReports && {
                             id: 'agents-view-reports',
                             label: t('views.reports'),
                             icon: <Gauge6 className="size-4" />,
@@ -186,10 +204,9 @@ export function AgentsViewsMenu({
                             // model, and accepting it. ASSURANCE rather than
                             // OPERATE — this group is "whether the approvals
                             // mean anything", and an approval is exactly what
-                            // this surface records. It also keeps each group
-                            // gate-homogeneous: everything here asks
-                            // `admin.agent_registry`, which is what its
-                            // destination asks.
+                            // this surface records. Like every entry here but
+                            // the pack, it asks `admin.agent_registry`, which is
+                            // what its destination asks.
                             id: 'agents-view-external-tools',
                             label: t('views.externalTools'),
                             icon: <Workflow className="size-4" />,

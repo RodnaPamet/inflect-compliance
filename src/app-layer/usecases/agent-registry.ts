@@ -33,6 +33,7 @@ import { AgentDataAccessScope, AgentStatus, SuggestionItemStatus } from '@prisma
 
 import { assertCanRead } from '../policies/common';
 import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
+import { mayReadAgentInventory } from '@/lib/permissions';
 import { runInTenantContext } from '@/lib/db-context';
 import {
     AGENTIC_CHECK_IDS,
@@ -142,7 +143,16 @@ export async function assertVendorInTenant(db: PrismaTx, ctx: RequestContext, ve
 }
 
 /**
- * The register's READ GATE — `admin.agent_registry`, not `assertCanRead`.
+ * The register's READ GATE — the inventory view key (or the register key), not
+ * `assertCanRead`.
+ *
+ * ## The view key (#3710)
+ *
+ * Since #3710 the read is `admin.agent_registry_view` OR `admin.agent_registry`
+ * (`mayReadAgentInventory`). The view key is read-only and AUDITOR holds it,
+ * because the register is the inventory an audit asks for; the register key's
+ * holders keep the read they always had. Every write below still asserts the
+ * register key itself.
  *
  * ## Why the read is gated on the register key
  *
@@ -175,7 +185,7 @@ export async function assertVendorInTenant(db: PrismaTx, ctx: RequestContext, ve
  */
 function assertCanReadAgentRegister(ctx: RequestContext) {
     assertCanRead(ctx);
-    if (!ctx.appPermissions?.admin?.agent_registry) {
+    if (!mayReadAgentInventory(ctx.appPermissions?.admin)) {
         throw forbidden(
             'You do not have permission to view the agent register. It records which ' +
                 'autonomous agents may act in this workspace.',
@@ -689,9 +699,9 @@ function hasMcpCapability(scopes: unknown): boolean {
  * …" on every claim — and a hedge is what an operator reads during an incident.
  *
  * It cannot be fetched by the client instead: `GET /admin/security-settings` is
- * gated on `admin.manage`, while this page only guarantees
- * `admin.agent_registry`, so the fetch would 403 for exactly the operators who
- * live on this tab.
+ * gated on `admin.manage`, while this page only guarantees the inventory read
+ * (`mayReadAgentInventory`), so the fetch would 403 for exactly the operators
+ * who live on this tab.
  *
  * Read through the module-level `prisma` rather than the tenant-bound `db`, and
  * OUTSIDE the tenant transaction — the same way `agent-coverage` reads it for
@@ -700,7 +710,11 @@ function hasMcpCapability(scopes: unknown): boolean {
  * not, so joining the same fan-out is what it costs.
  */
 export async function getRegisteredAgent(ctx: RequestContext, id: string) {
-    assertCanRead(ctx);
+    // The register's own read gate (#3710), not `assertCanRead` alone. Both
+    // callers — the detail route and the detail page — already gate on the
+    // inventory read, so this admits nobody new; it makes the usecase the
+    // boundary for one agent's row as it already was for the list.
+    assertCanReadAgentRegister(ctx);
     const [agent, registrationEnforced, driverDecision] = await Promise.all([
         runInTenantContext(ctx, (db) => RegisteredAgentRepository.getById(db, ctx, id)),
         isAgentRegistrationEnforced(ctx.tenantId),

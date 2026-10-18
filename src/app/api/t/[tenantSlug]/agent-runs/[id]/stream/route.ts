@@ -52,8 +52,8 @@ import { logger } from '@/lib/observability/logger';
  *
  * ## Authorization
  *
- * `requirePermission('admin.view')` — the gate the run detail PAGE applies
- * (`ctx.appPermissions.admin.view`), spelled as the middleware so a denial
+ * `admin.view` OR `admin.agent_registry_view` (#3710) — the gate the run detail
+ * PAGE applies (`mayReadAgentActivity`), spelled as the middleware so a denial
  * writes the hash-chained `AUTHZ_DENIED` row that a usecase-level
  * `assertCanRead` would not. Tenant scope is the usecase's: every read runs
  * through `runInTenantContext` with `tenantId` in the predicate, so a run in
@@ -75,7 +75,7 @@ function sse(event: string, data: unknown): string {
 }
 
 export const GET = requirePermission<{ tenantSlug: string; id: string }>(
-    'admin.view',
+    { keys: ['admin.view', 'admin.agent_registry_view'], mode: 'any' },
     async (req: NextRequest, routeArgs, ctx) => {
         const params = await routeArgs.params;
         const runId = params.id;

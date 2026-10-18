@@ -16,7 +16,7 @@ import { jsonResponse } from '@/lib/api-response';
  * no POST here, and `tests/guards/vr6-execution-overlay.test.ts` asserts that
  * this file declares none.
  *
- * ## Why `requirePermission('admin.view')` and not the usecase's assertCanRead
+ * ## Why `requirePermission` on `admin.view` and not the usecase's assertCanRead
  *
  * Its sibling `GET /agent-runs/:id/steps` takes the lighter route — the
  * usecase's `assertCanRead` reached through `getTenantCtx` — and that is right
@@ -26,12 +26,13 @@ import { jsonResponse } from '@/lib/api-response';
  * This route is different in what it reaches. A proposal diff carries the
  * CURRENT VALUES of a risk, control, policy or finding beside what an agent
  * proposes to change them to, and the only surface that has ever shown those
- * is `/agents/proposals`, whose page gates on `ctx.appPermissions.admin.view`
- * before it loads anything. The canvas is not an admin surface. Serving the
- * review queue from it under a weaker gate would be a permissions change
- * disguised as a UI feature — so the gate is the one the review surface
- * already applies, spelled as the middleware so a denial writes the
- * hash-chained `AUTHZ_DENIED` row that a usecase-level assert would not.
+ * is `/agents/proposals`, whose page gates on `admin.view` OR, since #3710,
+ * `admin.agent_registry_view` (`mayReadAgentActivity`) before it loads
+ * anything. The canvas is not an admin surface. Serving the review queue from
+ * it under a weaker gate would be a permissions change disguised as a UI
+ * feature — so the gate is the one the review surface already applies, both
+ * keys, spelled as the middleware so a denial writes the hash-chained
+ * `AUTHZ_DENIED` row that a usecase-level assert would not.
  *
  * Tenant scope stays the usecase's predicate, so a run in another tenant is
  * `notFound` rather than `forbidden` — the anti-enumeration posture the rest
@@ -50,7 +51,7 @@ import { jsonResponse } from '@/lib/api-response';
 */
 export const GET = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; id: string }>(
-        'admin.view',
+        { keys: ['admin.view', 'admin.agent_registry_view'], mode: 'any' },
         async (_req: NextRequest, routeArgs, ctx) => {
             const params = await routeArgs.params;
             return jsonResponse(await getRunCheckpointReview(ctx, params.id));

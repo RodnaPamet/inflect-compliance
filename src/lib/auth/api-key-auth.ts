@@ -117,6 +117,10 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  * the remaining two, and `*` DOES reach them — they are privileged
  * operations on data, not authority over which principals may act.
  *
+ * `admin.agent_registry_view` (#3710) is the opposite case: a NAMED scope
+ * reaches it (`admin:agent_registry_view`) and NO wildcard does, `*` and
+ * `admin:*` alike (`WILDCARD_EXCLUDED_ACTIONS`). See that constant for why.
+ *
  * Pinned by the `*` cases in `tests/unit/api-key-management.test.ts`,
  * which assert the denials rather than only that `*` equals ADMIN — a
  * shape assertion that stayed green all the while this comment said
@@ -184,7 +188,14 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // also edit tenant settings would be a scanner nobody should run. It only
     // lets a key submit a report; a report counts only when signed by a key the
     // tenant registered for that scanner, which takes `agent_registry`.
-    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'], harness_ingest: ['agent_harness_ingest'] },
+    //
+    // `agent_registry_view` (#3710) is its own action too, and the only one
+    // here a WILDCARD does not reach (`WILDCARD_EXCLUDED_ACTIONS` below): it is
+    // how an agent's key reads the agent inventory — the register and the
+    // harness scans, `DiscoveredAgent.ownerRef` among them — and a key reads
+    // that only when somebody minted it for that purpose. It maps to the view
+    // key alone, never to `agent_registry`.
+    admin:      { read: ['view'], write: ['manage', 'members', 'sso', 'scim'], external_tools: ['agent_external_tools'], harness_ingest: ['agent_harness_ingest'], agent_registry_view: ['agent_registry_view'] },
     // MCP capability gate (Epic MCP). These are CAPABILITY scopes, not
     // resource permissions — they deliberately map to NO PermissionSet flags
     // (empty action arrays). `mcp:read` gates access to the read-only MCP tool
@@ -196,6 +207,35 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     // "may talk to MCP at all" gate, resource scopes gate individual tools.
     mcp:        { read: [], propose: [], orchestrate: [] },
 };
+
+/**
+ * Action groups that only their OWN NAME grants — neither `*` nor
+ * `<resource>:*` reaches them (#3710).
+ *
+ * `admin:agent_registry_view` is the one member. A wildcard grants every action
+ * on a resource "including ones added later", and that is acceptable for an
+ * ordinary action because the operator who minted the wildcard chose breadth.
+ * This one is not ordinary breadth: it lets a credential read the agent
+ * inventory, owner references included, and the data protection impact
+ * assessment names its reader as a model holding a key minted for that read.
+ * Letting every `*` and `admin:*` key already issued pick it up on deploy would
+ * widen credentials nobody re-examined, so the change is additive for every key
+ * that exists: each resolves to exactly the permissions it resolved to before.
+ *
+ * Read-only by construction: `tests/unit/agent-registry-view-key.test.ts`
+ * asserts every action this list names maps only to a `_view` flag.
+ */
+export const WILDCARD_EXCLUDED_ACTIONS: Readonly<Record<string, readonly string[]>> = {
+    admin: ['agent_registry_view'],
+};
+
+/**
+ * The resource-scope ACTIONS a credential check may name. The three verbs, plus
+ * the named groups an MCP read tool may require instead of `read` — today only
+ * `agent_registry_view`, whose resource's `read` group is `admin.view`, the
+ * admin console, which `get_discovered_agent` has no business demanding.
+ */
+export type ScopeCheckAction = 'read' | 'write' | 'admin' | 'agent_registry_view';
 
 /**
  * All valid scope strings that can be assigned to an API key.
@@ -276,6 +316,14 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
             admin: {
                 ...adminPermissions.admin,
                 agent_registry: false,
+                // NOT self-modification, unlike its neighbours: the view key
+                // writes nothing. It is subtracted because every `*` key already
+                // issued would otherwise start reading the agent inventory —
+                // owner references included — on the deploy that added it, and
+                // nobody minting those keys decided that. A key reads the
+                // inventory through `admin:agent_registry_view`, by name
+                // (`WILDCARD_EXCLUDED_ACTIONS`).
+                agent_registry_view: false,
                 agent_tool_exposure: false,
                 agent_policy_card: false,
                 // And the STOP switch, for the sharpest version of the same
@@ -295,8 +343,11 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
         if (!(resource in SCOPE_ACTION_MAP)) continue;
 
         if (action === '*') {
-            // All actions on this resource
-            for (const [, permActions] of Object.entries(SCOPE_ACTION_MAP[resource])) {
+            // All actions on this resource — except the ones only their own
+            // name grants (`WILDCARD_EXCLUDED_ACTIONS`).
+            const excluded = WILDCARD_EXCLUDED_ACTIONS[resource] ?? [];
+            for (const [group, permActions] of Object.entries(SCOPE_ACTION_MAP[resource])) {
+                if (excluded.includes(group)) continue;
                 for (const permAction of permActions) {
                     if (permAction in result[resource]) {
                         result[resource][permAction] = true;
@@ -333,18 +384,22 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
 export function enforceApiKeyScope(
     ctx: RequestContext,
     resource: string,
-    action: 'read' | 'write' | 'admin',
+    action: ScopeCheckAction,
 ): void {
     // Not an API key request — skip scope enforcement (user auth handles permissions)
     if (!ctx.apiKeyId || !ctx.apiKeyScopes) return;
 
     const scopes = ctx.apiKeyScopes;
 
+    // An action only its own name grants: no wildcard satisfies it, so the
+    // credential check agrees with `scopesToPermissions` about the same key.
+    const namedOnly = (WILDCARD_EXCLUDED_ACTIONS[resource] ?? []).includes(action);
+
     // Full access
-    if (scopes.includes('*')) return;
+    if (!namedOnly && scopes.includes('*')) return;
 
     // Resource wildcard
-    if (scopes.includes(`${resource}:*`)) return;
+    if (!namedOnly && scopes.includes(`${resource}:*`)) return;
 
     // Specific scope
     if (scopes.includes(`${resource}:${action}`)) return;

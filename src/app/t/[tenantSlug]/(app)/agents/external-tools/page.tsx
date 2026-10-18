@@ -4,6 +4,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listIntegrationConnections } from '@/app-layer/usecases/integrations';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity } from '@/lib/permissions';
 
 import { ExternalToolsClient } from './ExternalToolsClient';
 
@@ -86,7 +87,8 @@ export default async function ExternalToolsPage({
         <ExternalToolsClient
             tenantSlug={resolved.tenantSlug}
             connections={mcpConnections}
-            canReviewProposals={Boolean(ctx.appPermissions?.admin?.view)}
+            canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
+            canCompose={Boolean(ctx.appPermissions?.admin?.view)}
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
         />
     );

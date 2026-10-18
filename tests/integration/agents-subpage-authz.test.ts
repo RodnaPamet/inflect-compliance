@@ -208,22 +208,30 @@ const fullCtx = (tenantId: string): RequestContext =>
         userId: seeded[tenantId].ownerUserId,
     });
 
-/** The same principal with ONE key turned off, built from the real ADMIN set. */
-const withoutKey = (
-    tenantId: string,
-    key: 'agent_registry' | 'view',
-): RequestContext => {
+type AdminKey = 'agent_registry' | 'agent_registry_view' | 'view';
+
+/**
+ * The same principal with the named keys turned off, built from the real ADMIN
+ * set. A page whose gate admits EITHER of two keys (#3710) is refused only with
+ * both off, so each page lists every key its gate reads.
+ */
+const withoutKeys = (tenantId: string, keys: readonly AdminKey[]): RequestContext => {
     const admin = getPermissionsForRole('ADMIN');
+    const off = Object.fromEntries(keys.map((k) => [k, false]));
     return makeRequestContext('ADMIN', {
         tenantId,
         tenantSlug: tenantId,
         userId: seeded[tenantId].ownerUserId,
         appPermissions: {
             ...admin,
-            admin: { ...admin.admin, view: true, agent_registry: true, [key]: false },
+            admin: { ...admin.admin, view: true, agent_registry: true, agent_registry_view: true, ...off },
         },
     });
 };
+
+/** A built-in role, as `getTenantCtx` would resolve it. */
+const asRole = (tenantId: string, role: 'AUDITOR' | 'AI_ADMIN'): RequestContext =>
+    makeRequestContext(role, { tenantId, tenantSlug: tenantId, userId: seeded[tenantId].ownerUserId });
 
 /** Call a page the way Next does, and hand back the element it returned. */
 type PageFn = (args: {
@@ -347,28 +355,29 @@ const PAGES = [
     {
         name: 'receipts',
         page: ReceiptsPage,
-        key: 'agent_registry' as const,
+        keys: ['agent_registry'] as const,
         spy: listReceiptsSpy,
     },
     {
         name: 'quarantine',
         page: QuarantinePage,
-        key: 'agent_registry' as const,
+        keys: ['agent_registry'] as const,
         spy: null,
     },
     {
         name: 'review-quality',
         page: ReviewQualityPage,
-        key: 'agent_registry' as const,
+        keys: ['agent_registry'] as const,
         spy: reviewQualitySpy,
     },
     {
         name: 'proposals',
         page: ProposalsPage,
-        key: 'view' as const,
+        // `admin.view` OR the inventory view key (#3710).
+        keys: ['view', 'agent_registry_view'] as const,
         spy: listProposalsSpy,
     },
-    { name: 'runs', page: RunsPage, key: 'view' as const, spy: listRunsSpy },
+    { name: 'runs', page: RunsPage, keys: ['view', 'agent_registry_view'] as const, spy: listRunsSpy },
     {
         // AGENTIC UI 4/4. The pack NAMES PEOPLE — who approved what, who owns
         // which agent — so it sits on the register key rather than the narrower
@@ -379,7 +388,8 @@ const PAGES = [
         // behalf of somebody it then refused.
         name: 'reports',
         page: ReportsPage,
-        key: 'agent_registry' as const,
+        // The inventory read (#3710): the view key OR the register key.
+        keys: ['agent_registry_view', 'agent_registry'] as const,
         spy: packSpy,
     },
 ];
@@ -388,7 +398,7 @@ describe('each moved page refuses at the PAGE, before its own data load', () => 
     it.each(PAGES.map((p) => [p.name, p] as const))(
         '%s renders a refusal and never starts the fetch',
         async (_name, entry) => {
-            getTenantCtxMock.mockResolvedValue(withoutKey(T1, entry.key));
+            getTenantCtxMock.mockResolvedValue(withoutKeys(T1, entry.keys));
             const el = await renderPage(entry.page, T1);
             // The refusal COMPONENT, by identity. A text assertion would pass
             // for a page that rendered its content and happened to mention the
@@ -414,13 +424,13 @@ describe('each moved page refuses at the PAGE, before its own data load', () => 
         // Pinned as an exact mapping, so a page silently re-keyed to the
         // broader `admin.view` (or the queue narrowed to the register key)
         // fails here rather than passing both arms above.
-        expect(PAGES.map((p) => `${p.name}:${p.key}`)).toEqual([
+        expect(PAGES.map((p) => `${p.name}:${p.keys.join('|')}`)).toEqual([
             'receipts:agent_registry',
             'quarantine:agent_registry',
             'review-quality:agent_registry',
-            'proposals:view',
-            'runs:view',
-            'reports:agent_registry',
+            'proposals:view|agent_registry_view',
+            'runs:view|agent_registry_view',
+            'reports:agent_registry_view|agent_registry',
         ]);
     });
 });
@@ -470,7 +480,7 @@ describe('the reports page’s export offer is a SEPARATE grant (#2467)', () => 
 
 describe('the reports page’s harness tab sits behind the SAME gate, and reads only itself (#3687)', () => {
     it('a refused caller asking for the harness tab gets the refusal, and neither read starts', async () => {
-        getTenantCtxMock.mockResolvedValue(withoutKey(T1, 'agent_registry'));
+        getTenantCtxMock.mockResolvedValue(withoutKeys(T1, ['agent_registry', 'agent_registry_view']));
         const el = await renderPageWithQuery(ReportsPage, T1, { tab: 'harness' });
         expect(el.type).toBe(ForbiddenPage);
         expect(harnessSpy).not.toHaveBeenCalled();
@@ -508,23 +518,76 @@ describe('the reports page’s harness tab sits behind the SAME gate, and reads 
     });
 });
 
+/** Whether a page's key list names `key` (the lists are const tuples of different members). */
+const names = (keys: readonly string[], key: string): boolean => keys.includes(key);
+
 describe('the two key families are genuinely different gates', () => {
-    it('an admin.view holder WITHOUT the register key still reaches proposals and runs', async () => {
+    it('an admin.view holder WITHOUT either inventory key still reaches proposals and runs', async () => {
         // The move must not have re-keyed the approval queue. Same principal
         // that the receipts page refuses.
-        for (const entry of PAGES.filter((p) => p.key === 'view')) {
-            getTenantCtxMock.mockResolvedValue(withoutKey(T1, 'agent_registry'));
+        for (const entry of PAGES.filter((p) => names(p.keys, 'view'))) {
+            getTenantCtxMock.mockResolvedValue(withoutKeys(T1, ['agent_registry', 'agent_registry_view']));
             const el = await renderPage(entry.page, T1);
             expect(el.type).not.toBe(ForbiddenPage);
         }
     });
 
-    it('a register-key holder WITHOUT admin.view still reaches receipts and review quality', async () => {
-        for (const entry of PAGES.filter((p) => p.key === 'agent_registry')) {
-            getTenantCtxMock.mockResolvedValue(withoutKey(T1, 'view'));
+    it('a register-key holder WITHOUT admin.view still reaches receipts, review quality and the pack', async () => {
+        for (const entry of PAGES.filter((p) => names(p.keys, 'agent_registry'))) {
+            getTenantCtxMock.mockResolvedValue(withoutKeys(T1, ['view', 'agent_registry_view']));
             const el = await renderPage(entry.page, T1);
             expect(el.type).not.toBe(ForbiddenPage);
         }
+    });
+});
+
+describe('the inventory view key opens runs, proposals and the pack, read-only (#3710)', () => {
+    const OPENS = ['proposals', 'runs', 'reports'];
+
+    it.each(['AUDITOR', 'AI_ADMIN'] as const)('%s reaches proposals, runs and the pack', async (role) => {
+        for (const entry of PAGES.filter((p) => OPENS.includes(p.name))) {
+            getTenantCtxMock.mockResolvedValue(asRole(T1, role));
+            const el = await renderPage(entry.page, T1);
+            expect({ page: entry.name, refused: el.type === ForbiddenPage }).toEqual({ page: entry.name, refused: false });
+        }
+    });
+
+    it('AUDITOR is refused the register-key surfaces it does not hold', async () => {
+        for (const entry of PAGES.filter((p) => !OPENS.includes(p.name))) {
+            getTenantCtxMock.mockResolvedValue(asRole(T1, 'AUDITOR'));
+            const el = await renderPage(entry.page, T1);
+            expect({ page: entry.name, refused: el.type === ForbiddenPage }).toEqual({ page: entry.name, refused: true });
+        }
+    });
+
+    it.each(['AUDITOR', 'AI_ADMIN'] as const)('%s is offered no write on any of them', async (role) => {
+        for (const page of [ProposalsPage, RunsPage]) {
+            getTenantCtxMock.mockResolvedValue(asRole(T1, role));
+            const el = (await renderPage(page, T1)) as unknown as { props: Record<string, unknown> };
+            // Approve, reject, start, resume and abort all ask this.
+            expect(el.props.canOperate).toBe(false);
+            // The compose link asks `admin.view`, which neither holds.
+            expect(el.props.canCompose).toBe(false);
+        }
+        getTenantCtxMock.mockResolvedValue(asRole(T1, role));
+        const pack = (await renderPage(ReportsPage, T1)) as unknown as { props: Record<string, unknown> };
+        expect(pack.props.canExport).toBe(false);
+    });
+
+    it('the menus a view-key reader sees do not link it to a page that would refuse it', async () => {
+        getTenantCtxMock.mockResolvedValue(asRole(T1, 'AUDITOR'));
+        const el = (await renderPage(ProposalsPage, T1)) as unknown as { props: Record<string, unknown> };
+        expect(el.props.canInvestigate).toBe(false);
+        expect(el.props.canReadReports).toBe(true);
+    });
+
+    it('an AUDITOR on the harness tab gets the matrix and not the scanner-key register', async () => {
+        getTenantCtxMock.mockResolvedValue(asRole(T1, 'AUDITOR'));
+        const el = await renderPageWithQuery(ReportsPage, T1, { tab: 'harness' });
+        expect(el.type).not.toBe(ForbiddenPage);
+        expect(harnessSpy).toHaveBeenCalledTimes(1);
+        expect(keysSpy).not.toHaveBeenCalled();
+        expect(el.props.scannerKeys).toBeNull();
     });
 });
 

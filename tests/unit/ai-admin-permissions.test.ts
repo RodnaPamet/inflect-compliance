@@ -62,6 +62,7 @@ const EXPECTED_AI_ADMIN: { [D in keyof PermissionSet]: PermissionSet[D] } = {
         compliance_dsar_manage: false,
         // ── agent keys: ALL ──
         agent_registry: true,
+        agent_registry_view: true,
         agent_tool_exposure: true,
         agent_policy_card: true,
         agent_kill_switch: true,

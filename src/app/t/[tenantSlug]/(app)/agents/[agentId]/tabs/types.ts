@@ -59,18 +59,21 @@ export interface AgentTabProps {
  * wrong one, and a lane reading its own props knows without asking which
  * authority it is holding.
  *
- * `admin.agent_registry` is deliberately NOT among them: the page refuses to
- * render without it, so every tab that mounts may assume it. A flag every tab
- * would receive as `true` is not a flag, it is noise in six signatures.
+ * `admin.agent_registry` is deliberately NOT among them, and since #3710 that
+ * needs saying more carefully. The page renders for the INVENTORY read — the
+ * read-only view key, or the register key — so a tab may no longer assume the
+ * register key. The SHELL decides instead: it disables every tab whose read is
+ * gated on that key (`AgentDetailPermissions.canReadRegistry`) for a reader who
+ * lacks it, so a tab that mounts may still assume it, and no tab's signature
+ * carries it.
  */
 
 /** Overview (status moves) and Risk assessment. */
 export interface RegistryWritableTabProps extends AgentTabProps {
     /**
-     * Whether this principal may CHANGE the register, not merely read it.
-     * Identical to the page-level gate today, and named separately anyway:
-     * splitting read from write is the expected next move on that key, and
-     * this is the prop that absorbs it when it lands.
+     * Whether this principal may CHANGE the register, not merely read it. The
+     * read/write split this prop was named to absorb landed in #3710: a reader
+     * holding only the view key opens the page with this false.
      */
     canManageRegistry: boolean;
 }

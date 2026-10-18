@@ -32,7 +32,7 @@
  * nothing about the entries.
  */
 import * as React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 jest.setTimeout(120_000);
@@ -96,7 +96,9 @@ async function openMenu(
     opts: {
         current?: AgentsViewRoute;
         canReviewProposals?: boolean;
+        canCompose?: boolean;
         canInvestigate?: boolean;
+        canReadReports?: boolean;
         proposalsAwaitingReview?: number | null;
     } = {},
 ) {
@@ -106,7 +108,9 @@ async function openMenu(
             current={opts.current ?? 'register'}
             tenantSlug="acme"
             canReviewProposals={opts.canReviewProposals ?? true}
+            canCompose={opts.canCompose}
             canInvestigate={opts.canInvestigate ?? true}
+            canReadReports={opts.canReadReports}
             proposalsAwaitingReview={opts.proposalsAwaitingReview ?? null}
         />,
     );
@@ -239,6 +243,27 @@ describe('a permission-absent entry is NOT RENDERED', () => {
         expect(document.getElementById('agents-views-menu')).toBeNull();
         expect(items()).toEqual([]);
         expect(screen.queryByText(VIEWS.groupOperate)).toBeNull();
+    });
+});
+
+describe('a view-key reader (#3710) gets exactly the entries whose pages admit it', () => {
+    // AUDITOR: the inventory view key opens proposals, runs and the pack, and
+    // neither `admin.view` (compose) nor the register key (the rest).
+    it('proposals, runs and reports — and not compose, nor the register-key surfaces', async () => {
+        await openMenu({ canReviewProposals: true, canCompose: false, canInvestigate: false, canReadReports: true });
+        expect(items().map((el) => el.id)).toEqual([
+            'agents-view-proposals',
+            'agents-view-runs',
+            'agents-view-reports',
+        ]);
+    });
+
+    it('the two new gates default to the ones they split from, so an unchanged page renders as before', async () => {
+        await openMenu({ canReviewProposals: true, canInvestigate: true });
+        expect(items().map((el) => el.id)).toEqual([...ENTRY_IDS]);
+        cleanup();
+        await openMenu({ canReviewProposals: false, canInvestigate: false });
+        expect(items()).toEqual([]);
     });
 });
 

@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity } from '@/lib/permissions';
 import { QuarantineClient } from './QuarantineClient';
 
 export const dynamic = 'force-dynamic';
@@ -62,5 +63,11 @@ export default async function AgentQuarantinePage({
         );
     }
 
-    return <QuarantineClient tenantSlug={tenantSlug} />;
+    return (
+        <QuarantineClient
+            tenantSlug={tenantSlug}
+            canReviewProposals={mayReadAgentActivity(ctx.appPermissions.admin)}
+            canCompose={ctx.appPermissions.admin.view}
+        />
+    );
 }

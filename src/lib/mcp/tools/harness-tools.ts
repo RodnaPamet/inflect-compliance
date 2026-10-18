@@ -7,19 +7,30 @@
  * and the permission check live in the usecase; the funnel adds the
  * resource-scope gate, the policy card and the audit row.
  *
- * ── THE KEY IS THE HARNESS READ KEY, AND NO BEARER TOKEN HOLDS IT ───────────
+ * ── THE KEY IS THE INVENTORY VIEW KEY, BY A NAMED SCOPE (#3710) ────────────
  *
- * `admin.agent_registry` is what every human read of harness data takes —
- * `GET …/admin/agents/harness-scans` and the harness tab on `/agents/reports`.
- * This tool takes the same key rather than a new one (no permission was invented
- * for it). `scopesToPermissions` maps no scope to that key and subtracts it from
- * `*`, so with `basis: 'effective'` an API key — and therefore a Flue run, which
- * is always started by an agent-bound key — is never offered this tool. Only a
- * signed-in member holding the key (OWNER and ADMIN, by role) reaches it,
- * through a static run of the workflow. Widening that is a
- * decision about who may read the agent inventory, recorded as open in the
- * roadmap (a view key split from `admin.agent_registry`), and it is not made
- * here by choosing a weaker key.
+ * `admin.agent_registry_view` is the key every read of the agent inventory
+ * takes — the register, `GET …/admin/agents/harness-scans`, the harness tab on
+ * `/agents/reports`, and this tool. The usecase admits `admin.agent_registry`
+ * too, so a person who could read harness data before the split still can; the
+ * TOOL names only the view key, because a bearer token never carries the
+ * register key (`*` subtracts it and no scope maps to it), so with
+ * `basis: 'effective'` the second key could never be satisfied here anyway.
+ *
+ * A credential reaches it by holding `admin:agent_registry_view` — by NAME:
+ * neither `*` nor `admin:*` carries it (`WILDCARD_EXCLUDED_ACTIONS`), which is
+ * why `resourceScope` names that group rather than `admin:read`. `admin:read`
+ * is `admin.view`, the admin console, which this tool has no reason to demand.
+ * The usual funnel applies on top: `mcp:read` at the endpoint, the agent's
+ * deny-by-default grant list (`admin.agent_tool_exposure`), its policy card and
+ * autonomy ceiling, and the payload labelled `THIRD_PARTY_INGESTED`
+ * (`MCP_TOOL_CORPUS`). A Flue run — always started by an agent-bound key — is
+ * offered the tool only when its key carries the scope AND its agent holds the
+ * grant.
+ *
+ * What it returns includes `DiscoveredAgent.ownerRef`, a directory identifier
+ * of a person, and the harness scanner DPIA names a model, through this tool,
+ * as a reader of it (`docs/agentic-harness-scanner-dpia.md`).
  *
  * This file may not import the harness ladder (`eslint.config.mjs`): the ladder
  * is report-only and the funnel's files are kept away from it.
@@ -59,14 +70,14 @@ export const getDiscoveredAgentTool: McpReadTool<z.infer<typeof getDiscoveredAge
         additionalProperties: false,
     },
     argsSchema: getDiscoveredAgentArgs,
-    resourceScope: { resource: 'admin', action: 'read' },
+    // The NAMED group, not `admin:read` — see the header.
+    resourceScope: { resource: 'admin', action: 'agent_registry_view' },
     // The human reads of the same rows — the harness-scan list and the harness
-    // tab — both refuse without `admin.agent_registry`. Same key, same
-    // `assertPermission`.
+    // tab — admit the view key. Same key, same `assertPermission`.
     authorize: {
-        keys: ['admin.agent_registry'],
+        keys: ['admin.agent_registry_view'],
         basis: 'effective',
-        mirrors: 'GET /api/t/:slug/admin/agents/harness-scans (listHarnessScans: admin.agent_registry)',
+        mirrors: 'GET /api/t/:slug/admin/agents/harness-scans (listHarnessScans: admin.agent_registry_view)',
     },
     run: async (ctx: RequestContext, args) => getDiscoveredAgentFacts(ctx, args.discoveredAgentId),
 };

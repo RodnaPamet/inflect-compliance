@@ -3,6 +3,7 @@ import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { ReceiptVerificationBadge } from './ReceiptVerificationBadge';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity } from '@/lib/permissions';
 import { getTenantCtx } from '@/app-layer/context';
 import { listReceipts } from '@/app-layer/usecases/agent-action-receipt';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
@@ -73,7 +74,8 @@ export default async function AgentReceiptsPage({
                     <AgentsViewsMenu
                         current="receipts"
                         tenantSlug={tenantSlug}
-                        canReviewProposals={ctx.appPermissions.admin.view}
+                        canReviewProposals={mayReadAgentActivity(ctx.appPermissions.admin)}
+                        canCompose={ctx.appPermissions.admin.view}
                         canInvestigate
                     />
                 }

@@ -32,6 +32,8 @@ import { releaseDelegationCounts, DELEGATION_TOOL_NAME } from './delegation-gate
 import { resolveKillState, killRefusalMessage, KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { ensureFlueRuntime } from './runtime-start';
+import { openDeclaredRunInput, runMessage } from './run-message';
+import { recordWorkflowContextIntegrityHalt } from '@/lib/observability/metrics';
 import {
     flueToolsFor,
     type FlueToolDefinition,
@@ -103,15 +105,6 @@ interface CapLatch {
 }
 
 /**
- * The message a run's agent is given.
- *
- * The definition's description plus the steps it still has to cover. A Flue
- * run does not WALK the declared steps — that is the static engine's contract
- * — but the steps are the specification of the work, and handing the model the
- * description alone would ask it to infer a plan the definition already
- * states.
- */
-/**
  * What a run says when it could reach no tools at all.
  *
  * One sentence naming the cause and the remedy, in the vocabulary
@@ -124,17 +117,6 @@ export const EMPTY_TOOLSET_MESSAGE =
     'flue_no_tools_granted: this agent holds no MCP tool grants, so the run had ' +
     'nothing to read and its conclusion is based on no data. Grant the tools the ' +
     'workflow declares on the agent\'s Tools tab, then run it again.';
-
-function runMessage(def: WorkflowDefinition, fromSeq: number): string {
-    const remaining = def.steps.slice(fromSeq);
-    const lines = remaining.map((step, i) => `${fromSeq + i + 1}. [${step.kind}] ${step.label}`);
-    return [
-        def.description,
-        '',
-        'Cover the following, in order. Use the tools you have been given; do not assume.',
-        ...lines,
-    ].join('\n');
-}
 
 
 /**
@@ -217,11 +199,31 @@ export async function executeFlueRun(
 
     const initial = await getRunRow(ctx, runId);
     let costTokens = initial.costTokens ?? 0;
+
+    // THE RUN'S DECLARED INPUT (#3710), read out of the sealed context under
+    // verification — the keys the definition lists in `requiredInput` and
+    // nothing else, cleaned, neutralised, fenced and labelled as data by
+    // `./run-message`. Refused BEFORE anything is sent: a run whose context will
+    // not verify, or whose declared input cannot be read, is a run the model
+    // would be asked to do without knowing what it is about.
+    const declared = openDeclaredRunInput({
+        tenantId: ctx.tenantId,
+        runId,
+        def,
+        storedJson: initial.contextJson ?? null,
+        storedHash: initial.contextHash ?? null,
+    });
+    if (!declared.ok) {
+        if (declared.integrityCode) recordWorkflowContextIntegrityHalt({ code: declared.integrityCode });
+        const status = await failRun(ctx, runId, declared.message);
+        return { status, stepFailures: 0 };
+    }
+
     // The message is computed ONCE and reused: it is dispatched, and it is also
-    // what every decision row's `sanitizedInput` digest is taken over. Two
-    // calls to `runMessage` are two chances for the digest to stop naming the
-    // prompt the model actually saw.
-    const message = runMessage(def, fromSeq);
+    // what every decision row's `sanitizedInput` digest is taken over — the run
+    // input inside it included. Two calls to `runMessage` are two chances for
+    // the digest to stop naming the prompt the model actually saw.
+    const message = runMessage(def, fromSeq, declared.input);
 
     // The SETTLED terms — membership, key scopes, policy card, autonomy
     // ceiling — resolved once, here, exactly as the static driver does.

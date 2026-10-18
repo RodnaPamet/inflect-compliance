@@ -4,6 +4,7 @@ import { Heading } from '@/components/ui/typography';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity } from '@/lib/permissions';
 import { getTenantCtx } from '@/app-layer/context';
 import { computeAgentReviewQuality } from '@/app-layer/usecases/agent-review-quality';
 import { getTranslations } from 'next-intl/server';
@@ -95,7 +96,8 @@ export default async function AgentReviewQualityPage({
                     <AgentsViewsMenu
                         current="review-quality"
                         tenantSlug={tenantSlug}
-                        canReviewProposals={ctx.appPermissions.admin.view}
+                        canReviewProposals={mayReadAgentActivity(ctx.appPermissions.admin)}
+                        canCompose={ctx.appPermissions.admin.view}
                         canInvestigate
                     />
                 }

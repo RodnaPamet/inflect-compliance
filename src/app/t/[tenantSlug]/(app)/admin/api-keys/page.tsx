@@ -120,7 +120,10 @@ const SCOPE_GROUPS: Record<string, { labelKey: string; scopes: string[] }> = {
     // not something to fold into "can edit tenant settings".
     // `admin:harness_ingest` likewise: the one scope a harness scanner's key
     // needs, offered on its own so the key can be minted with nothing else.
-    admin:      { labelKey: 'scopeGroup.admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools', 'admin:harness_ingest'] },
+    // `admin:agent_registry_view` (#3710) too: reading the agent inventory,
+    // owner references included, is what an agent reviewing discovered agents
+    // needs, and no wildcard carries it — ticking it is the only way to grant it.
+    admin:      { labelKey: 'scopeGroup.admin',      scopes: ['admin:read', 'admin:write', 'admin:external_tools', 'admin:harness_ingest', 'admin:agent_registry_view'] },
     // The MCP capability markers. They map to NO permissions in
     // SCOPE_ACTION_MAP — each one is an empty action list — because they are
     // checked as capabilities by the MCP boundary rather than granting anything

@@ -291,9 +291,10 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         // primary membership's. A tenant missing from the claim is 'defer':
         // the tenant-access gate below owns that answer. #3699 — an AI_ADMIN
         // there is admitted to the agent admin paths only
-        // (`AI_ADMIN_ADMIN_PATH_PREFIXES`); the handler's `requirePermission`
-        // stays the authority either way.
-        if (checkAdminAccess(pathname, token.role, token.memberships) === 'deny') {
+        // (`AI_ADMIN_ADMIN_PATH_PREFIXES`), and #3710 an AUDITOR to a GET of
+        // the agent inventory (`AUDITOR_ADMIN_READ_PATHS`); the handler's
+        // `requirePermission` stays the authority either way.
+        if (checkAdminAccess(pathname, token.role, token.memberships, req.method) === 'deny') {
             if (isApiRoute(pathname)) {
                 return forbiddenJson('Admin access required');
             }

@@ -4,6 +4,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
 import { AgentRunsClient, type RunRow } from './AgentRunsClient';
 
@@ -20,12 +21,13 @@ export default async function AgentRunsPage({
 }) {
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
-    // Admin-gated — reached from the agents ViewsMenu; only workspace admins
-    // operate the orchestrator. Server-side gate (before the data load) so a
-    // non-admin never triggers the fetch. `admin.view`, unchanged by the move
-    // to /agents/runs (#2437) — see the note on the sibling proposals page for
-    // why the move does not re-key it.
-    if (!ctx.appPermissions.admin.view) {
+    // Reached from the agents ViewsMenu. Server-side gate (before the data
+    // load) so a refused reader never triggers the fetch. `admin.view`, which
+    // the move to /agents/runs (#2437) did not re-key, OR — since #3710 — the
+    // read-only inventory view key (`mayReadAgentActivity`), which AI_ADMIN and
+    // AUDITOR hold. Reading only: every run action below asks the role-tier
+    // write (`canOperate`), which neither of those roles holds.
+    if (!mayReadAgentActivity(ctx.appPermissions.admin)) {
         const t = await getTranslations('agents');
         return (
             <ForbiddenPage
@@ -75,6 +77,12 @@ export default async function AgentRunsPage({
             // this rather than the permissions blob — so the page's own
             // `admin.view` gate is not the question the buttons must ask.
             canOperate={ctx.permissions.canWrite}
+            // The views menu's other gates, which this page's own no longer
+            // implies (#3710): a view-key reader reaches here without the
+            // register key or `admin.view`.
+            canCompose={ctx.appPermissions.admin.view}
+            canInvestigate={ctx.appPermissions.admin.agent_registry}
+            canReadReports={mayReadAgentInventory(ctx.appPermissions.admin)}
         />
     );
 }

@@ -31,9 +31,14 @@
  *
  * ── TWO GATES, BOTH ASSERTED HERE ──────────────────────────────────────────
  *
- * Reading the pack needs `admin.agent_registry`. Writing into the evidence
+ * Filing the pack needs `admin.agent_registry`. Writing into the evidence
  * library needs `evidence.edit`, which is the evidence subsystem's own rule and
- * is not mine to route around. Both are asserted UP FRONT rather than left to
+ * is not mine to route around.
+ *
+ * Not the inventory view key (#3710), although READING the pack takes it:
+ * filing creates a permanent Evidence row, a write, and the view key grants
+ * none. AUDITOR and AI_ADMIN hold the view key and read the pack on
+ * `/agents/reports`; neither files it. Both are asserted UP FRONT rather than left to
  * fire from inside `createEvidence`, so a user with one and not the other is
  * refused before a five-report read runs, with a message naming which
  * permission is missing.

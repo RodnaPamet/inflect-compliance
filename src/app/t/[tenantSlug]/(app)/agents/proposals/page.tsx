@@ -4,6 +4,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listAgentProposals } from '@/app-layer/usecases/agent-proposals';
 import { buildProposalDiffs } from '@/app-layer/usecases/agent-proposal-diff';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
+import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 
 import { AgentProposalsClient, type ProposalRow } from './AgentProposalsClient';
 
@@ -20,18 +21,18 @@ export default async function AgentProposalsPage({
 }) {
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
-    // Admin-gated — reached from the agents ViewsMenu; only workspace admins
-    // review the propose-not-commit queue. Server-side gate (before the data
-    // load) so a non-admin never triggers the fetch.
+    // Reached from the agents ViewsMenu. Server-side gate (before the data
+    // load) so a refused reader never triggers the fetch.
     //
-    // Still `admin.view` after the move to /agents/proposals (#2437), NOT the
-    // narrower `admin.agent_registry` the register and the two investigation
-    // surfaces use. The API behind this page is gated only by the usecase's
-    // `assertCanRead`, so THIS check is the whole narrowing — and narrowing it
-    // further would take the approval queue away from reviewers who have it
-    // today, which is a permissions change, not a routing one. The move is a
-    // routing change.
-    if (!ctx.appPermissions.admin.view) {
+    // `admin.view`, which the move to /agents/proposals (#2437) kept, OR —
+    // since #3710 — the read-only inventory view key (`mayReadAgentActivity`),
+    // which AI_ADMIN and AUDITOR hold. The API behind this page is gated only by
+    // the usecase's `assertCanRead`, so THIS check is the whole narrowing; the
+    // view key widens it to read the queue and to nothing else. Approving or
+    // rejecting still asserts the role-tier write (`canOperate` below, and
+    // `approveAgentProposal`'s own `assertCanWrite`), which neither role holds:
+    // approval commits a write to the domain the proposal changes.
+    if (!mayReadAgentActivity(ctx.appPermissions.admin)) {
         const t = await getTranslations('agents');
         return (
             <ForbiddenPage
@@ -104,6 +105,10 @@ export default async function AgentProposalsPage({
             // ROLE-TIER write: both approve and reject assert it, and this
             // page's `admin.view` gate does not imply it.
             canOperate={ctx.permissions.canWrite}
+            // The views menu's other gates (#3710) — see the runs page.
+            canCompose={ctx.appPermissions.admin.view}
+            canInvestigate={ctx.appPermissions.admin.agent_registry}
+            canReadReports={mayReadAgentInventory(ctx.appPermissions.admin)}
         />
     );
 }

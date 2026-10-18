@@ -120,6 +120,8 @@ function neighbourKeyCtx(tenantId: string): RequestContext {
             admin: {
                 ...base.admin,
                 agent_registry: false,
+                // Neither inventory key (#3710): the view key reads the pack too.
+                agent_registry_view: false,
                 agent_tool_exposure: true,
                 agent_policy_card: true,
                 agent_kill_switch: true,
@@ -147,6 +149,32 @@ function registryOnlyCtx(tenantId: string): RequestContext {
             admin: {
                 ...base.admin,
                 agent_registry: true,
+                agent_registry_view: false,
+                agent_tool_exposure: false,
+                agent_policy_card: false,
+                agent_kill_switch: false,
+            },
+        },
+    });
+}
+
+/**
+ * Holds ONLY the inventory view key (#3710) — the AUDITOR's agent key, on an
+ * OWNER base so that nothing else is what refuses. Reads the pack; may not file
+ * it, because filing is a write and stays on the register key.
+ */
+function viewOnlyCtx(tenantId: string): RequestContext {
+    const base = getPermissionsForRole('OWNER');
+    return makeRequestContext('OWNER', {
+        tenantId,
+        tenantSlug: tenantId,
+        userId: users[tenantId],
+        appPermissions: {
+            ...base,
+            admin: {
+                ...base.admin,
+                agent_registry: false,
+                agent_registry_view: true,
                 agent_tool_exposure: false,
                 agent_policy_card: false,
                 agent_kill_switch: false,
@@ -270,10 +298,12 @@ describeFn('the agent-governance reports API refuses at the route, and says so o
 
     // ── The declarative map ─────────────────────────────────────────
 
-    it('the map resolves BOTH report paths to the register key, and a neighbour path to its own', () => {
-        expect(
-            resolveRoutePermission(`/api/t/${TENANT_A}/admin/agents/reports`, 'GET')?.permission,
-        ).toBe('admin.agent_registry');
+    it('the map resolves the READ to the inventory keys, the FILING to the register key, and a neighbour to its own', () => {
+        // #3710: reading the pack is the inventory read — the view key OR the
+        // register key. Filing it is a write and stays on the register key.
+        const read = resolveRoutePermission(`/api/t/${TENANT_A}/admin/agents/reports`, 'GET');
+        expect(read?.permission).toEqual(['admin.agent_registry_view', 'admin.agent_registry']);
+        expect(read?.mode).toBe('any');
         expect(
             resolveRoutePermission(`/api/t/${TENANT_A}/admin/agents/reports/export`, 'POST')
                 ?.permission,
@@ -311,7 +341,8 @@ describeFn('the agent-governance reports API refuses at the route, and says so o
             orderBy: { createdAt: 'desc' },
         });
         expect(row.entity).toBe('Permission');
-        expect(row.entityId).toBe('admin.agent_registry');
+        // Both keys the any-of gate asked, named in the order the route lists them.
+        expect(row.entityId).toBe('admin.agent_registry_view,admin.agent_registry');
         expect(row.entryHash).not.toBeNull();
     });
 
@@ -359,6 +390,29 @@ describeFn('the agent-governance reports API refuses at the route, and says so o
         // declared one, since this principal holds no other agent key.
         expect(await countDenials(TENANT_A)).toBe(before);
         expect(await countEvidence(TENANT_A)).toBe(evidenceBefore + 1);
+    });
+
+    // ── The view key reads the pack and files nothing (#3710) ───────
+
+    it('a principal holding ONLY the view key reads the pack, and is refused the filing at the route', async () => {
+        getTenantCtxMock.mockResolvedValue(viewOnlyCtx(TENANT_A));
+        const before = await countDenials(TENANT_A);
+        const evidenceBefore = await countEvidence(TENANT_A);
+
+        const read = await REPORTS_GET(reportsReq(TENANT_A), routeArgs(TENANT_A));
+        expect(read.status).toBe(200);
+        expect(JSON.stringify(await read.json())).toContain(AGENT_NAME[TENANT_A]);
+
+        const filed = await EXPORT_POST(exportReq(TENANT_A), routeArgs(TENANT_A));
+        expect(filed.status).toBe(403);
+        // Refused at the ROUTE, on the register key — one row, naming it.
+        expect(await countDenials(TENANT_A)).toBe(before + 1);
+        const row = await prisma.auditLog.findFirstOrThrow({
+            where: { tenantId: TENANT_A, action: 'AUTHZ_DENIED' },
+            orderBy: { createdAt: 'desc' },
+        });
+        expect(row.entityId).toBe('admin.agent_registry');
+        expect(await countEvidence(TENANT_A)).toBe(evidenceBefore);
     });
 
     // ── The export's second gate, which is NOT audited ───────────────

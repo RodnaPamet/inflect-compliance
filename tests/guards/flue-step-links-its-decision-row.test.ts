@@ -75,14 +75,15 @@ describe('the two sides compute the same key', () => {
     });
 
     it('the step and the decision row are computed over the SAME value', () => {
-        // Both must be `runMessage(def, fromSeq)`. This is the assertion that
+        // Both must be the one `runMessage(...)` binding — which, since #3710,
+        // carries the run's declared input as well. This is the assertion that
         // catches a link pointing at the wrong row: if one side ever switches
         // to the workflow key, the reply, or a slice, the digests diverge,
         // every link still renders, and every one of them opens somebody
         // else's decision.
         const body = functionBodyOf(read(EXECUTE), 'executeFlueRun');
         expect(body).toContain('decisionDigest: computeInputDigest(message)');
-        // ONE BINDING, TWO READERS. `const message = runMessage(def, fromSeq)`
+        // ONE BINDING, TWO READERS. `const message = runMessage(…)`
         // is the single value; the step digests it and `settleTurns` passes it
         // as `sanitizedInput`. Asserting both read THE SAME LOCAL is stronger
         // than asserting both spell `runMessage(def, fromSeq)` — two identical
@@ -92,7 +93,7 @@ describe('the two sides compute the same key', () => {
         // This went red on the merge that made the write per-turn, which is
         // the point: a change to how the row is written must re-prove the
         // link, not inherit it.
-        expect(body).toContain('const message = runMessage(def, fromSeq);');
+        expect(body).toContain('const message = runMessage(def, fromSeq, declared.input);');
         expect(body).toContain('decisionDigest: computeInputDigest(message),');
         expect(declarationOf(body, 'settleTurns')).toContain('message,');
     });

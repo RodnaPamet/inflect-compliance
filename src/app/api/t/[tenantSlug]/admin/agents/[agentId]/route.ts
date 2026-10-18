@@ -11,6 +11,10 @@
  * operator who needs an agent stopped NOW but not closed reaches for the
  * reversible `POST ./status { "status": "SUSPENDED" }`. See
  * `retireRegisteredAgent` for the order and why it is load-bearing.
+ *
+ * GET is the INVENTORY READ (#3710): `admin.agent_registry_view`, or the
+ * register key whose holders always could. PATCH and DELETE keep the register
+ * key alone.
  */
 import { NextRequest } from 'next/server';
 
@@ -33,7 +37,7 @@ type Params = { tenantSlug: string; agentId: string };
 
 export const GET = withApiErrorHandling(
     requirePermission<Params>(
-        'admin.agent_registry',
+        { keys: ['admin.agent_registry_view', 'admin.agent_registry'], mode: 'any' },
         async (_req: NextRequest, { params }, ctx) => {
             const { agentId } = await params;
             return jsonResponse(await getRegisteredAgent(ctx, agentId));

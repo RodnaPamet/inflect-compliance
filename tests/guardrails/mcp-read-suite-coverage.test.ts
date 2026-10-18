@@ -17,6 +17,7 @@ import * as path from 'node:path';
 
 import { READ_TOOLS } from '@/lib/mcp/tools/registry';
 import { PERMISSION_SCHEMA } from '@/lib/permissions';
+import { scopesToPermissions } from '@/lib/auth/api-key-auth';
 
 const ROOT = path.resolve(__dirname, '../..');
 const TOOLS_DIR = path.join(ROOT, 'src/lib/mcp/tools');
@@ -58,6 +59,14 @@ const EXPECTED_TOOLS = [
 // containment check, which a stale-but-superset list passes forever.
 const KNOWN_RESOURCES = new Set(Object.keys(PERMISSION_SCHEMA));
 
+/** Every `domain.action` flag one scope string grants, through the real mapping. */
+function grantsOf(resource: string, action: string): string[] {
+    const perms = scopesToPermissions([`${resource}:${action}`]) as unknown as Record<string, Record<string, boolean>>;
+    return Object.entries(perms).flatMap(([domain, actions]) =>
+        Object.entries(actions).filter(([, on]) => on).map(([a]) => `${domain}.${a}`),
+    );
+}
+
 describe('MCP read suite — registration', () => {
     it('registers the full tenant-inspection tool set', () => {
         const names = READ_TOOLS.map((t) => t.name);
@@ -70,7 +79,7 @@ describe('MCP read suite — registration', () => {
 });
 
 describe('MCP read suite — every tool is scope-gated, validated, bounded', () => {
-    it('each tool declares a known resource:read scope + a Zod arg schema', () => {
+    it('each tool declares a known read scope + a Zod arg schema', () => {
         for (const t of READ_TOOLS) {
             expect(typeof t.name).toBe('string');
             expect(t.description.length).toBeGreaterThan(10);
@@ -78,7 +87,16 @@ describe('MCP read suite — every tool is scope-gated, validated, bounded', () 
             expect(t.argsSchema).toBeDefined();
             expect(typeof (t.argsSchema as { safeParse?: unknown }).safeParse).toBe('function');
             expect(KNOWN_RESOURCES.has(t.resourceScope.resource)).toBe(true);
-            expect(t.resourceScope.action).toBe('read');
+            // `read`, or a NAMED read group (#3710 — `get_discovered_agent`
+            // takes `admin:agent_registry_view`, because `admin:read` is the
+            // admin console). Admitted only when everything the group grants is
+            // a `_view` flag, which is read off the real mapping below rather
+            // than taken from a list in this file.
+            if (t.resourceScope.action !== 'read') {
+                expect({ tool: t.name, grants: grantsOf(t.resourceScope.resource, t.resourceScope.action) })
+                    .toEqual({ tool: t.name, grants: expect.arrayContaining([expect.stringMatching(/_view$/)]) });
+                expect(grantsOf(t.resourceScope.resource, t.resourceScope.action).filter((g) => !g.endsWith('_view'))).toEqual([]);
+            }
             expect(typeof t.run).toBe('function');
         }
     });
