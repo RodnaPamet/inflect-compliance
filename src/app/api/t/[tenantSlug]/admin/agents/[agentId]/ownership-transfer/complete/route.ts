@@ -9,16 +9,17 @@
  * recipient unrepresentable. The completer names the transfer they read, so a
  * cancel and a fresh proposal cannot swap what they accept underneath them.
  *
- * Same key as step one, `admin.tenant_lifecycle` (step 0e): the recipient must
- * hold it too, so with the built-in roles an agent passes only to an OWNER. That
- * narrowing was accepted by the owner in 0e, and on 2026-10-18 as the interim
- * state until a built-in `AI_ADMIN` role widens it in its own pull request.
- * And this path is under `/admin/`,
- * so the edge middleware refuses any session whose BUILT-IN role is not ADMIN
- * or OWNER before this handler runs: a custom role carrying the key admits an
- * ADMIN membership here and no other (`TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`,
- * which step one checks). Its `ROUTE_PERMISSIONS` rule sits above the
- * `admin/agents(/.*)?` catch-all. Human-only: no API key carries the key.
+ * Same key as step one, `admin.agent_ownership` (#3699; `admin.tenant_lifecycle`
+ * until then): the recipient must hold it too, so with the built-in roles an
+ * agent passes to an OWNER or an AI_ADMIN, and to an ADMIN only through a
+ * custom role an OWNER gave them. And this path is under `/admin/`, so the edge
+ * middleware refuses any session whose BUILT-IN role here is not ADMIN or
+ * OWNER — or AI_ADMIN, which it admits to `/admin/agents/**` only — before this
+ * handler runs: a custom role carrying the key is enough on an ADMIN
+ * membership and on no READER, EDITOR or AUDITOR one
+ * (`TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`, which step one checks).
+ * Its `ROUTE_PERMISSIONS` rule sits above the `admin/agents(/.*)?` catch-all.
+ * Human-only: no API key carries the key.
  */
 import { NextRequest } from 'next/server';
 
@@ -31,7 +32,7 @@ type Params = { tenantSlug: string; agentId: string };
 
 export const POST = withApiErrorHandling(
     requirePermission<Params>(
-        'admin.tenant_lifecycle',
+        'admin.agent_ownership',
         async (req: NextRequest, { params }, ctx) => {
             const { agentId } = await params;
             return jsonResponse(await completeAgentOwnershipTransfer(ctx, agentId, await req.json()));

@@ -39,9 +39,12 @@ jest.mock('@/app-layer/integrations/mcp/token', () => ({
     authorizationFor: (...a: unknown[]) => authorizationForMock(...a),
 }));
 
-jest.mock('@/app-layer/policies/common', () => ({
-    ...jest.requireActual('@/app-layer/policies/common'),
-    assertCanAdmin: jest.fn(),
+// The usecase's coarse floor (#3699: `assertAgentGovernanceAdmin`, which
+// replaced `assertCanAdmin`) is not what these tests are about; the context
+// below carries no permissions at all.
+jest.mock('@/app-layer/policies/agent-governance.policies', () => ({
+    ...jest.requireActual('@/app-layer/policies/agent-governance.policies'),
+    assertAgentGovernanceAdmin: jest.fn(),
 }));
 
 // PARTIAL: `manifestStateOf` stays real — it computes the verdict these tests

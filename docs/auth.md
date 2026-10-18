@@ -75,7 +75,14 @@ secret: env.AUTH_SECRET })` and applies five gates:
    primary membership's `token.role` (#3701). A slug missing from the claim is
    left to gate 5, which refuses it, or defers to the server gate when the claim
    was truncated. The flat `/admin` page names no tenant and uses `token.role`.
-   The pure check is `checkAdminAccess` in `src/lib/auth/guard.ts`.
+   The pure check is `checkAdminAccess` in `src/lib/auth/guard.ts`. The
+   built-in `AI_ADMIN` role (#3699) is admitted on the agent admin paths only
+   — the subtrees in `AI_ADMIN_ADMIN_PATH_PREFIXES` (`/api/t/:slug/admin/agents`,
+   `/api/t/:slug/admin/mcp/quarantine`, and the agent redirect pages under
+   `/t/:slug/admin`), matched on segment boundaries and refused in any
+   non-canonical form — and refused on every other admin path, the flat
+   `/admin` page included. The handler's `requirePermission` stays the
+   authority.
 4. MFA enforcement when `token.mfaPending === true` and the path is not
    in the MFA-allowed list (challenge / enrollment / signout)
 5. Tenant-access gate — the URL slug must appear in `token.memberships`

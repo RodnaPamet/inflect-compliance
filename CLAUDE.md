@@ -722,18 +722,38 @@ tenant membership are now orthogonal — sign-in alone authenticates
 the user; tenant access requires an explicit grant via one of the
 allowlisted paths.
 
-**Role model.** The `Role` enum now has five values:
-`OWNER | ADMIN | EDITOR | READER | AUDITOR`. OWNER is strictly
+**Role model.** The `Role` enum has six values:
+`OWNER | ADMIN | EDITOR | READER | AUDITOR | AI_ADMIN`. OWNER is strictly
 superior to ADMIN — it gains `admin.tenant_lifecycle` (delete
-tenant, rotate DEK, transfer ownership) and `admin.owner_management`
-(invite/remove OWNERs, assign OWNER role). ADMIN has every other
-admin flag but explicitly denies those two. The `PermissionSet`
+tenant, rotate DEK, transfer ownership), `admin.owner_management`
+(invite/remove OWNERs, assign OWNER role) and `admin.agent_ownership`
+(own and receive an agent by transfer). ADMIN has every other
+admin flag but explicitly denies those three. The `PermissionSet`
 resolution in `src/lib/permissions.ts` hard-codes the distinction: the
 `ADMIN` branch of `getPermissionsForRole` returns
-`tenant_lifecycle: false, owner_management: false` explicitly. That is a
-value guarantee, not a type-level one (the declared field type is
-`boolean`), so the custom-role path — which CAN express those flags — is
-re-checked at runtime by `permissionsExceeding`.
+`tenant_lifecycle: false, owner_management: false, agent_ownership: false`
+explicitly. That is a value guarantee, not a type-level one (the declared
+field type is `boolean`), so the custom-role path — which CAN express those
+flags — is re-checked at runtime by `permissionsExceeding`.
+
+`AI_ADMIN` (#3699) runs the agent register and can own and receive agents: the
+seven agent keys (`AGENT_ADMIN_KEYS` — register, tool exposure, policy card,
+kill switch, external tools, harness ingest, agent ownership) on top of
+READER's set, and NONE of the tenant-wide admin keys (no `view`, `manage`,
+members, SSO, SCIM, lifecycle, owner management or DSAR). It sits on READER's
+rung of the coarse ladder (`ROLE_ORDER`), so `canWrite`/`canAdmin` are false
+and no usecase gated on the coarse tier alone admits it; the agent usecases'
+floor is `assertAgentGovernanceWrite` / `…Admin`
+(`src/app-layer/policies/agent-governance.policies.ts`) — the coarse tier OR
+the agent key the route requires, a strict superset of the floor it replaced.
+It is declared LAST in the enum because three job actor pickers sort
+`TenantMembership.role` ascending to find the most senior member, and it must
+never sort ahead of ADMIN. **Deploy 1 of 2 is shipped: every reader handles the
+value and nothing writes it** — every membership-role writer reads
+`ASSIGNABLE_TENANT_ROLES` (`src/lib/roles.ts`), which excludes it, and
+`tests/unit/ai-admin-role-writers.test.ts` holds the census. Deploy 2 lets an
+OWNER assign it on the members page; SCIM, Entra group mappings
+(`NEVER_GROUP_MAPPED_ROLES`) and SSO JIT never produce it.
 
 **Membership creation is explicit.** Eight allowlisted paths can write a
 `TenantMembership` row today:
@@ -1663,23 +1683,26 @@ careless edit from being undone:
   never can.** The usecase asks that first, from the stored row; the claim's
   WHERE names the recipient; and CHECKs make any other completion
   unrepresentable. Both routes carry a literal
-  `requirePermission('admin.tenant_lifecycle')`, ruled above the
-  `/admin/agents(/.*)?` catch-all, so the recipient must hold the key too.
+  `requirePermission('admin.agent_ownership')` (#3699; `admin.tenant_lifecycle`
+  until then), ruled above the `/admin/agents(/.*)?` catch-all, so the
+  recipient must hold the key too. OWNER and AI_ADMIN hold it; ADMIN does not —
+  ADMIN holds the register key, and an agent's accountable owner must not be
+  movable by the role that owner is accountable to.
 - **A recipient must be able to reach step two, and step two has TWO gates.**
   The routes sit under `/api/t/:slug/admin/`, where the edge middleware refuses
-  any session whose BUILT-IN role is not ADMIN or OWNER before the route runs;
-  a custom role never enters that check. So step one accepts an OWNER, or an
-  ADMIN whose custom role carries the key — never a READER/EDITOR/AUDITOR
-  membership, whatever custom role it holds (`TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`).
+  any session whose BUILT-IN role in that tenant is not ADMIN or OWNER — or
+  AI_ADMIN, which it admits to the agent paths only — before the route runs; a
+  custom role never enters that check. So step one accepts an OWNER, an
+  AI_ADMIN, or an ADMIN whose custom role carries the key — never a
+  READER/EDITOR/AUDITOR membership, whatever custom role it holds
+  (`TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`).
   `tests/unit/agent-ownership-transfer-edge-gate.test.ts` runs the real
   middleware and fails if the set and the edge disagree. The usecase gates on
-  `assertCanRead` + the key, not `assertCanWrite`: an ADMIN membership with a
-  READER-based custom role resolves `canWrite: false` and is a valid recipient.
-  This narrow set is the owner's accepted interim state (2026-10-18): a new
-  built-in `AI_ADMIN` role widens it in its own PR — do not widen it by
-  loosening the edge gate here. The edge reads the role in THIS tenant's
-  membership, from the session's `memberships[]` entry for the URL's slug
-  (`checkAdminAccess`, #3701), which is the row the step-one check reads.
+  `assertCanRead` + the key, not `assertCanWrite`: AI_ADMIN, and an ADMIN
+  membership with a READER-based custom role, resolve `canWrite: false` and are
+  valid recipients. The edge reads the role in THIS tenant's membership, from
+  the session's `memberships[]` entry for the URL's slug (`checkAdminAccess`,
+  #3701), which is the row the step-one check reads.
 - **At most one `PENDING` transfer per agent is a PARTIAL unique index in the
   migration.** Do not add a `@@unique` for it. A row that has left `PENDING` is
   immutable (trigger) — 2b's `OWNER_DEPARTED` lift is to read `COMPLETED` rows —
@@ -1809,6 +1832,45 @@ subject: the schema says binding every key to an agent "would make the register
 a lie", so "bound to no agent" on a CI key is a finding nobody can act on. Do not
 give the hygiene pass a scope list of its own; a scope added to the gate must
 widen the population in the same diff.
+
+**The built-in `AI_ADMIN` role, since 2a (#3699, deploy 1 of 2).** It runs the
+agent register and can own and receive agents, holding the agent keys and no
+tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
+`PermissionSet`). Rules that are each one careless edit from being undone:
+
+- **The edge admits it to `AI_ADMIN_ADMIN_PATH_PREFIXES` and nowhere else
+  under `/admin`** (`src/lib/auth/guard.ts`): `/api/t/:slug/admin/agents`,
+  `/api/t/:slug/admin/mcp/quarantine` (the one agent-key API outside it) and
+  the three agent redirect pages still under `/t/:slug/admin`. Matching is on
+  segment boundaries, never a bare `startsWith`, and a non-canonical path (a
+  `%`, a backslash, an empty or dot segment) is refused rather than reasoned
+  about. `tests/unit/ai-admin-edge-allowlist.test.ts` pins the list by exact
+  set equality and runs the real middleware for an AI_ADMIN over every admin
+  API route on disk; `tests/unit/ai-admin-handler-authz.test.ts` proves the
+  handler refuses it everywhere else too. Widening the list is a
+  security-middleware change: name the key the new path's handler takes and
+  show the role holds it.
+- **Nothing writes it in deploy 1.** A running container whose Prisma client
+  predates the value fails every read of a row carrying it ("Value 'AI_ADMIN'
+  not found in enum 'Role'"), so the value is read-only until every container
+  knows it. Every membership-role writer reads `ASSIGNABLE_TENANT_ROLES`
+  (`src/lib/roles.ts`), never `Role`; readers use `TENANT_ROLES`, which is
+  compile-time exhaustive. `tests/unit/ai-admin-role-writers.test.ts` holds the
+  census of every file whose code names the value, an empty `WRITERS` list, and
+  one refusal test per writer. Deploy 2 adds the value to
+  `ASSIGNABLE_TENANT_ROLES` for the members page only; SCIM's ceiling, Entra's
+  `ENTRA_MAPPABLE_ROLES` and `NEVER_GROUP_MAPPED_ROLES`, and SSO JIT keep it out
+  for good.
+- **Its coarse tier is READER's, on purpose.** `ROLE_ORDER.AI_ADMIN` is 1, so it
+  passes no usecase gated on `canWrite`/`canAdmin` alone. The agent usecases
+  take `assertAgentGovernanceWrite` / `assertAgentGovernanceAdmin` instead of
+  `assertCanWrite` / `assertCanAdmin`: the coarse tier OR the agent key the
+  route requires. Do not "simplify" that back, and do not raise the rung to make
+  a refusal go away — a higher rung would admit it to most of the product's
+  writes.
+- **It is the enum's LAST value.** Three job actor pickers order
+  `TenantMembership.role` ascending to find the most senior member; an AI_ADMIN
+  must never sort ahead of ADMIN. The migration is a plain `ADD VALUE`.
 
 
 

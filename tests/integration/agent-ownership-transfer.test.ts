@@ -2,7 +2,8 @@
  * AGENT OWNERSHIP TRANSFER (#3698) — the two-step handover, proved on real rows.
  *
  * An agent's accountable owner moves only when TWO people act: one holder of
- * `admin.tenant_lifecycle` proposes it, and the person it names accepts it. The
+ * `admin.agent_ownership` (#3699; `admin.tenant_lifecycle` until then) proposes
+ * it, and the person it names accepts it. The
  * person who started it can never complete it. This suite owns the rows: every
  * refusal step 0e and the issue name, the step-two re-checks, expiry and
  * cancellation, the retirement cascade's cancel, the database backstops (CHECKs,
@@ -10,12 +11,22 @@
  * and two-tenant isolation under `app_user` + RLS.
  *
  * Fixtures: in each of two tenants, three OWNERs (A owns the agents, B and C
- * receive or propose), an ADMIN (holds the register key, NOT tenant lifecycle),
- * a DEACTIVATED owner, and two members holding the same CUSTOM role — built on
- * READER, carrying the key. One is an ADMIN membership, the other a READER one,
- * and only the first is a legitimate recipient: the transfer routes sit under
- * `/api/t/:slug/admin/`, where the edge refuses a non-ADMIN/OWNER built-in role
- * before the route's `requirePermission` ever runs.
+ * receive or propose), an ADMIN (holds the register key, NOT the ownership
+ * key), a DEACTIVATED owner, two members holding the same CUSTOM role — built
+ * on READER, carrying the key — and an AI_ADMIN (#3699), which holds the key by
+ * default. The two custom-role members are an ADMIN membership and a READER
+ * one, and only the first is a legitimate recipient: the transfer routes sit
+ * under `/api/t/:slug/admin/`, where the edge refuses a READER, EDITOR or
+ * AUDITOR built-in role before the route's `requirePermission` ever runs, and
+ * admits an AI_ADMIN to `/admin/agents/**` only.
+ *
+ * The AI_ADMIN membership is written DIRECTLY by the test client: deploy 1 of
+ * #3699 gives the product no way to assign the role, which is the point of
+ * deploy 1. Its role is spelled as the literal rather than `Role.AI_ADMIN`.
+ * Against a Prisma client generated before the value existed, the create and
+ * every later read of the row fail with "Value 'AI_ADMIN' not found in enum
+ * 'Role'" — the rolling-deploy hazard that is the reason deploy 1 writes
+ * nothing.
  *
  * Every context is resolved by the real `resolveTenantContext` from the
  * membership rows, so a custom role reaches the usecase exactly as production
@@ -54,7 +65,8 @@ type Person =
     | 'admin'
     | 'deactivated'
     | 'adminCustodian'
-    | 'readerCustodian';
+    | 'readerCustodian'
+    | 'aiAdmin';
 const PEOPLE: Person[] = [
     'ownerA',
     'ownerB',
@@ -63,6 +75,7 @@ const PEOPLE: Person[] = [
     'deactivated',
     'adminCustodian',
     'readerCustodian',
+    'aiAdmin',
 ];
 /** The built-in membership role each person holds. */
 const MEMBERSHIP_ROLE: Record<Person, Role> = {
@@ -73,6 +86,7 @@ const MEMBERSHIP_ROLE: Record<Person, Role> = {
     deactivated: Role.OWNER,
     adminCustodian: Role.ADMIN,
     readerCustodian: Role.READER,
+    aiAdmin: 'AI_ADMIN' as Role,
 };
 const CUSTODIANS: Person[] = ['adminCustodian', 'readerCustodian'];
 const users: Record<string, Record<Person, string>> = {};
@@ -166,7 +180,7 @@ beforeAll(async () => {
                 tenantId,
                 name: 'Agent custodian',
                 baseRole: Role.READER,
-                permissionsJson: { admin: { tenant_lifecycle: true } },
+                permissionsJson: { admin: { agent_ownership: true } },
             },
         });
         users[tenantId] = {} as Record<Person, string>;
@@ -237,7 +251,7 @@ describe('step one records the proposed owner, and nothing else moves', () => {
         expect((audit.detailsJson as Record<string, unknown>).targetUserId).toBe(users[T1].ownerB);
     });
 
-    it('an ADMIN whose custom role carries tenant lifecycle receives an agent and completes the transfer', async () => {
+    it('an ADMIN whose custom role carries the ownership key receives an agent and completes the transfer', async () => {
         // The positive half of the narrowing, end to end. The edge admits the
         // ADMIN membership; the route admits the key; and the usecase admits a
         // context whose coarse tier is the custom role's READER base
@@ -245,7 +259,7 @@ describe('step one records the proposed owner, and nothing else moves', () => {
         // `assertCanRead` rather than `assertCanWrite`.
         const custodian = ctxAs(T1, 'adminCustodian');
         expect(custodian.permissions.canWrite).toBe(false);
-        expect(custodian.appPermissions.admin.tenant_lifecycle).toBe(true);
+        expect(custodian.appPermissions.admin.agent_ownership).toBe(true);
 
         const agent = await makeAgent(T1);
         const proposed = await proposeAgentOwnershipTransfer(ctxAs(T1, 'ownerB'), agent.id, {
@@ -268,8 +282,67 @@ describe('step one records the proposed owner, and nothing else moves', () => {
             toOwnerUserId: users[T1].readerCustodian,
         }).catch((e: unknown) => e);
         expect(err).toBeInstanceOf(ValidationError);
-        expect((err as Error).message).toMatch(/an OWNER, or an ADMIN whose custom role carries/);
+        expect((err as Error).message).toMatch(/an OWNER, an AI admin, or an ADMIN whose custom role carries/);
         expect(await prisma.agentOwnershipTransfer.count({ where: { agentId: agent.id } })).toBe(0);
+    });
+
+    it('an AI_ADMIN receives an agent and completes the transfer (#3699)', async () => {
+        // The role the transfer key was split for. Its membership was written
+        // directly (deploy 1 cannot assign it); its context is the real
+        // resolver's — READER's coarse tier, the agent keys, no tenant-wide key.
+        const aiAdmin = ctxAs(T1, 'aiAdmin');
+        expect(aiAdmin.role).toBe('AI_ADMIN');
+        expect(aiAdmin.permissions.canWrite).toBe(false);
+        expect(aiAdmin.appPermissions.admin.agent_ownership).toBe(true);
+        expect(aiAdmin.appPermissions.admin.tenant_lifecycle).toBe(false);
+        expect(aiAdmin.appPermissions.admin.members).toBe(false);
+
+        const agent = await makeAgent(T1);
+        const proposed = await proposeAgentOwnershipTransfer(ctxAs(T1, 'ownerA'), agent.id, {
+            toOwnerUserId: users[T1].aiAdmin,
+        });
+        expect(proposed.status).toBe('PENDING');
+        await expect(
+            completeAgentOwnershipTransfer(aiAdmin, agent.id, { transferId: proposed.id }),
+        ).resolves.toMatchObject({
+            ownerUserId: users[T1].aiAdmin,
+            previousOwnerUserId: users[T1].ownerA,
+        });
+        expect(await ownerOf(agent.id)).toBe(users[T1].aiAdmin);
+        expect((await transferRow(proposed.id)).completedByUserId).toBe(users[T1].aiAdmin);
+    });
+
+    it('an AI_ADMIN can propose a transfer of an agent it owns, and the OWNER named completes it', async () => {
+        const agent = await makeAgent(T1);
+        const toAi = await proposeAgentOwnershipTransfer(ctxAs(T1, 'ownerA'), agent.id, {
+            toOwnerUserId: users[T1].aiAdmin,
+        });
+        await completeAgentOwnershipTransfer(ctxAs(T1, 'aiAdmin'), agent.id, { transferId: toAi.id });
+
+        const back = await proposeAgentOwnershipTransfer(ctxAs(T1, 'aiAdmin'), agent.id, {
+            toOwnerUserId: users[T1].ownerB,
+        });
+        // The two-person rule binds the AI_ADMIN like anyone: it started this one.
+        await expect(
+            completeAgentOwnershipTransfer(ctxAs(T1, 'aiAdmin'), agent.id, { transferId: back.id }),
+        ).rejects.toBeInstanceOf(ForbiddenError);
+        await completeAgentOwnershipTransfer(ctxAs(T1, 'ownerB'), agent.id, { transferId: back.id });
+        expect(await ownerOf(agent.id)).toBe(users[T1].ownerB);
+    });
+
+    it('a plain ADMIN — the register key, not the ownership key — can neither propose nor receive', async () => {
+        const admin = ctxAs(T1, 'admin');
+        expect(admin.appPermissions.admin.agent_registry).toBe(true);
+        expect(admin.appPermissions.admin.agent_ownership).toBe(false);
+        const agent = await makeAgent(T1);
+        await expect(
+            proposeAgentOwnershipTransfer(admin, agent.id, { toOwnerUserId: users[T1].ownerB }),
+        ).rejects.toBeInstanceOf(ForbiddenError);
+        const err = await proposeAgentOwnershipTransfer(ctxAs(T1, 'ownerA'), agent.id, {
+            toOwnerUserId: users[T1].admin,
+        }).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(ValidationError);
+        expect((err as Error).message).toMatch(/agent ownership permission/);
     });
 
     it('a SUSPENDED or DRAFT agent can be transferred — the departed-owner remedy needs it', async () => {
@@ -287,7 +360,7 @@ describe('step one records the proposed owner, and nothing else moves', () => {
         ['the current owner', 'ownerA', /already owns/],
         ['the proposer themselves', 'ownerC', /cannot propose yourself/],
         ['a DEACTIVATED member', 'deactivated', /active member/],
-        ['an ADMIN, who lacks the tenant lifecycle key', 'admin', /tenant lifecycle permission/],
+        ['an ADMIN, who lacks the ownership key', 'admin', /agent ownership permission/],
     ] as const)('refuses proposing %s', async (_label, who, message) => {
         const agent = await makeAgent(T1);
         const err = await proposeAgentOwnershipTransfer(ctxAs(T1, 'ownerC'), agent.id, {
@@ -464,7 +537,7 @@ describe('step two is completed by the person it names, and never by the person 
         try {
             await expect(
                 completeAgentOwnershipTransfer(ctxAs(T1, 'ownerC'), agent.id, { transferId: proposed.id }),
-            ).rejects.toThrow(/tenant lifecycle permission/);
+            ).rejects.toThrow(/agent ownership permission/);
             expect(await ownerOf(agent.id)).toBe(users[T1].ownerA);
         } finally {
             await prisma.tenantMembership.update({

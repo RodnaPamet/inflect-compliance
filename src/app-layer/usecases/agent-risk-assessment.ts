@@ -44,7 +44,8 @@
  * ladder while a fresh score of the same agent came out CRITICAL. Re-scoring on
  * the spot is what makes the claim true rather than hopeful.
  */
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { notFound } from '@/lib/errors/types';
@@ -199,7 +200,7 @@ export async function saveAgentAssessmentAnswer(
     agentId: string,
     input: unknown,
 ) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     const parsed = SaveAgentAssessmentAnswerSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
@@ -258,7 +259,7 @@ export async function saveAgentAssessmentAnswer(
  * the audit row commit together or not at all.
  */
 export async function completeAgentRiskAssessment(ctx: RequestContext, agentId: string) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
 
     return runInTenantContext(ctx, async (db) => {
         const agent = await loadAgentScoringState(db, ctx, agentId);
@@ -610,7 +611,7 @@ async function rescoreAgainstStandingAnswers(
  * which is a different and much less useful question.
  */
 export async function reassessAgentAfterChange(ctx: RequestContext, agentId: string) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     return runInTenantContext(ctx, (db) => reassessAgentAfterChangeInTx(db, ctx, agentId));
 }
 

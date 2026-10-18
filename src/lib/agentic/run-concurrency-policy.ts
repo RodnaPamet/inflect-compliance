@@ -41,7 +41,7 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { runInTenantContext, type PrismaTx } from '@/lib/db/rls-middleware';
 import { forbidden } from '@/lib/errors/types';
-import { assertCanAdmin } from '@/app-layer/policies/common';
+import { assertAgentGovernanceAdmin } from '@/app-layer/policies/agent-governance.policies';
 import { appendAuditEntry } from '@/lib/audit';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -212,7 +212,7 @@ export async function setConcurrencyCap(
     ctx: RequestContext,
     cap: number | null,
 ): Promise<{ cap: number | null }> {
-    assertCanAdmin(ctx);
+    assertAgentGovernanceAdmin(ctx, 'agent_registry');
     const next = normaliseCap(cap);
     const previous = await readCap(ctx);
 

@@ -17,6 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { codeOf } from '../helpers/source-blocks';
+import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -45,14 +46,26 @@ function readFile(rel: string): string {
 }
 
 describe('Role Zod enums include OWNER where member-management relevant', () => {
+    /**
+     * Since #3699 the member-management routes validate `role` against the
+     * shared writers' list, `ASSIGNABLE_TENANT_ROLES` (`src/lib/roles.ts`),
+     * rather than a literal of their own: `Role` gained AI_ADMIN, which no
+     * writer may write until deploy 2. So "includes OWNER" is asked of that
+     * list, and the routes are asked to use it and to carry no literal role
+     * enum beside it — a second list is how the two would drift.
+     */
+    it('the writers’ list the routes validate against includes OWNER', () => {
+        expect(ASSIGNABLE_TENANT_ROLES).toContain('OWNER');
+    });
+
     it.each(MEMBER_MGMT_FILES)(
-        '%s includes OWNER in its role enum',
+        '%s validates role against the writers’ list, and no literal role enum',
         (file) => {
             const content = readFile(file);
-            expect(content).toMatch(ROLE_ENUM_PATTERN);
-            const match = content.match(ROLE_ENUM_PATTERN);
-            expect(match).not.toBeNull();
-            expect(match![0]).toMatch(/['"]OWNER['"]/);
+            expect({
+                fromWritersList: /role:\s*z\.enum\(ASSIGNABLE_TENANT_ROLES\)/.test(content),
+                literalRoleEnum: ROLE_ENUM_PATTERN.test(content),
+            }).toEqual({ fromWritersList: true, literalRoleEnum: false });
         },
     );
 

@@ -75,7 +75,8 @@ import {
 } from '@/lib/agentic/policy-card-evaluation';
 import type { PrismaTx } from '@/lib/db-context';
 
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { logEvent } from '../events/audit';
 import {
     AgentPolicyCardRepository,
@@ -330,7 +331,7 @@ async function withActorNames<T extends { createdByUserId: string | null }>(
  * (`defaultPolicyCardForRiskTier`), so only a seeder bug can trip it.
  */
 export async function createAgentPolicyCard(ctx: RequestContext, agentId: string) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_policy_card');
     return runInTenantContext(ctx, async (db) => {
         const agent = await assertAgentCardable(db, ctx, agentId);
         assertCardNotFrozen(agent);
@@ -433,7 +434,7 @@ export async function updateAgentPolicyCard(
     agentId: string,
     input: unknown,
 ) {
-    assertCanWrite(ctx);
+    assertAgentGovernanceWrite(ctx, 'agent_policy_card');
     const { expectedVersion, card: next } = PolicyCardUpdateSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {

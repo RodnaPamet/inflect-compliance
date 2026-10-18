@@ -110,6 +110,9 @@ export class PrincipalUnresolvedError extends Error {
 
 /** Role ladder, lowest first. Mirrors `ROLE_ORDER` in tenant-context. */
 const ROLE_RANK: Record<Role, number> = {
+    // #3699 — READER's rung, as in `ROLE_ORDER`. A label only: the intersected
+    // permission sets below are what decide.
+    AI_ADMIN: 1,
     READER: 1,
     AUDITOR: 2,
     EDITOR: 3,

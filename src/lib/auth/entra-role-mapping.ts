@@ -20,7 +20,9 @@ export interface ResolvedGroupRole {
     matchedGroupIds: string[];
     /**
      * The matched groups dropped from candidacy because their role sits above
-     * `assignableRoles`. Empty whenever no ceiling was supplied.
+     * `assignableRoles`, or is one no mapping may yield
+     * (`NEVER_GROUP_MAPPED_ROLES`). Empty when no ceiling was supplied and no
+     * matched mapping names such a role.
      */
     clampedGroupIds: string[];
 }
@@ -56,7 +58,23 @@ const ROLE_SENIORITY: Record<Role, number> = {
     EDITOR: 2,
     READER: 1,
     AUDITOR: 0,
+    // Never ranked in practice: `NEVER_GROUP_MAPPED_ROLES` drops it first.
+    AI_ADMIN: -1,
 };
+
+/**
+ * Roles a group mapping can NEVER yield, whatever row is stored and whatever
+ * ceiling the caller passes (#3699).
+ *
+ * `AI_ADMIN` holds the agent keys, including the one that lets its holder
+ * receive an agent's accountability, so it is granted by an OWNER on the
+ * members page and by nothing an identity provider controls. The Zod schema
+ * for a mapping already refuses it (`ENTRA_MAPPABLE_ROLES`); this is the
+ * read-side half, so a row written around the schema still cannot promote
+ * anybody at sign-in or through a SCIM Groups push. Dropped mappings are
+ * reported in `clampedGroupIds`, like a ceiling's.
+ */
+export const NEVER_GROUP_MAPPED_ROLES: readonly Role[] = ['AI_ADMIN'];
 
 /**
  * Resolve the IC role a user earns from their AAD security-group membership.
@@ -84,10 +102,10 @@ export function resolveRoleFromGroups(
     const matchedGroupIds = matched.map((m) => m.aadGroupId);
 
     const ceiling = options.assignableRoles;
-    const eligible = ceiling ? matched.filter((m) => ceiling.includes(m.role)) : matched;
-    const clampedGroupIds = ceiling
-        ? matched.filter((m) => !ceiling.includes(m.role)).map((m) => m.aadGroupId)
-        : [];
+    const mayWin = (role: Role) =>
+        !NEVER_GROUP_MAPPED_ROLES.includes(role) && (!ceiling || ceiling.includes(role));
+    const eligible = matched.filter((m) => mayWin(m.role));
+    const clampedGroupIds = matched.filter((m) => !mayWin(m.role)).map((m) => m.aadGroupId);
 
     if (eligible.length === 0) return { role: null, matchedGroupIds, clampedGroupIds };
 

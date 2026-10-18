@@ -39,6 +39,12 @@ const ROLE_ORDER: Record<Role, number> = {
     EDITOR: 3,
     AUDITOR: 2,
     READER: 1,
+    // #3699 — READER's coarse tier, so `canWrite`, `canAdmin`, `canAudit` and
+    // `canExport` are all false. AI_ADMIN's authority is the agent keys in its
+    // `PermissionSet`, never this ladder: a level above 1 would admit it to
+    // every usecase that gates on the coarse tier alone, which is most of the
+    // product's writes.
+    AI_ADMIN: 1,
 };
 
 export function computePermissions(role: Role): Permissions {

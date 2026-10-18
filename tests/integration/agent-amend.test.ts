@@ -5,7 +5,7 @@
  * `PATCH /admin/agents/:id` and `updateRegisteredAgent` have existed since the
  * register shipped, validating the agent's fields and enforcing the risk-tier
  * autonomy ceiling. The accountable OWNER was the ninth field until #3698: it now
- * moves only by a two-step transfer under `admin.tenant_lifecycle`, and the PATCH
+ * moves only by a two-step transfer under `admin.agent_ownership`, and the PATCH
  * refuses it by name rather than stripping it. NO .tsx FILE CALLED IT. So autonomy — the central authority
  * dial — was set at creation and frozen: an agent granted too much could not be
  * turned DOWN without somebody issuing an API call by hand. That is a governance

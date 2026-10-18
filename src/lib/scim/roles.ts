@@ -27,7 +27,10 @@ import type { Role } from '@prisma/client';
  * The complete set of roles SCIM may assign, in no significant order.
  *
  * ADMIN and OWNER are deliberately absent: promotion to either requires a
- * deliberate in-product admin action with a real session behind it.
+ * deliberate in-product admin action with a real session behind it. So is
+ * AI_ADMIN (#3699), for the same reason and one more: it holds the agent keys,
+ * including the one that makes its holder a possible owner of an agent, and an
+ * identity provider's token must never be able to confer that. Never add it.
  */
 export const SCIM_ASSIGNABLE_ROLES = ['READER', 'EDITOR', 'AUDITOR'] as const satisfies readonly Role[];
 
@@ -46,7 +49,8 @@ export function isScimAssignableRole(role: string): role is ScimAssignableRole {
  *
  * Defined as the complement of the ceiling rather than as a second list, so a
  * role added to `Role` is protected by default and a role added to the ceiling
- * is unprotected in exactly one place. Today that is ADMIN and OWNER.
+ * is unprotected in exactly one place. Today that is ADMIN, OWNER and AI_ADMIN —
+ * the last by this default, with no edit here when #3699 added it.
  *
  * Note this is the *enum* role only. A membership carrying a permissive
  * `customRoleId` on top of an assignable base role is still SCIM-writable;

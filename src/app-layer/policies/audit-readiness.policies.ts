@@ -36,7 +36,8 @@ export function assertCanSharePack(ctx: RequestContext) {
 }
 
 export function assertCanViewPack(ctx: RequestContext) {
-    if (!['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR'].includes(ctx.role)) {
+    // AI_ADMIN (#3699) reads like a READER, so it views packs like one.
+    if (!['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN'].includes(ctx.role)) {
         throw forbidden('Cannot view audit packs');
     }
 }

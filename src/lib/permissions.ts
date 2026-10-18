@@ -307,6 +307,33 @@ export type PermissionSet = {
          * `admin:harness_ingest` scope.
          */
         agent_harness_ingest: boolean;
+        /**
+         * OWNING AN AGENT BY TRANSFER (#3699): propose, read, cancel and
+         * complete a two-step agent ownership transfer
+         * (`…/admin/agents/[agentId]/ownership-transfer` and `…/complete`).
+         * The person completing step two must hold it too, so it is also the
+         * key that decides who can RECEIVE an agent.
+         *
+         * Until #3699 both steps took `admin.tenant_lifecycle`, whose docstring
+         * lists "transfer ownership" — so an agent could pass only to an
+         * OWNER, and the built-in `AI_ADMIN` role, which runs the agent
+         * register without any tenant-wide admin key, could never hold the
+         * accountability for one. This key separates the two: accountability
+         * for an agent from authority over the tenant's existence.
+         *
+         * OWNER and AI_ADMIN hold it. ADMIN does NOT, deliberately (owner
+         * default, 2026-10-18): ADMIN holds `agent_registry`, and an agent's
+         * accountable owner must not be movable by the role that owner is
+         * accountable to — the reason 0e put the transfer on tenant lifecycle
+         * in the first place. An OWNER can still give an ADMIN a custom role
+         * carrying it (`permissionsExceeding` lets a holder grant what they
+         * hold).
+         *
+         * Never carried by a bearer token: `scopesToPermissions` builds `*`
+         * from ADMIN's set, and no scope maps to it, so a transfer is a human
+         * act at both ends.
+         */
+        agent_ownership: boolean;
     };
 };
 
@@ -369,8 +396,32 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'compliance_dsar_view', 'compliance_dsar_manage',
         'agent_registry', 'agent_tool_exposure', 'agent_policy_card',
         'agent_kill_switch', 'agent_external_tools', 'agent_harness_ingest',
+        'agent_ownership',
     ],
 };
+
+/**
+ * The `admin` keys that are about AGENTS — the ones the built-in `AI_ADMIN`
+ * role holds (#3699). Every other `admin` key is tenant-wide (members, SSO,
+ * SCIM, billing and security settings behind `manage`, the tenant's lifecycle,
+ * its owners, the DSAR register, the admin console's `view`) and `AI_ADMIN`
+ * holds none of them.
+ *
+ * There is no skill key yet: the Skills tab reads under `agent_registry`, and
+ * the planned `agent_skill_review` (step 4c) does not exist. When it lands it
+ * must be classified here or as tenant-wide —
+ * `tests/unit/ai-admin-permissions.test.ts` enumerates `PERMISSION_SCHEMA` and
+ * fails on a key nobody classified.
+ */
+export const AGENT_ADMIN_KEYS = [
+    'agent_registry',
+    'agent_tool_exposure',
+    'agent_policy_card',
+    'agent_kill_switch',
+    'agent_external_tools',
+    'agent_harness_ingest',
+    'agent_ownership',
+] as const satisfies readonly (keyof PermissionSet['admin'])[];
 
 /**
  * Returns a static, granular UI PermissionSet for a given Role.
@@ -383,9 +434,11 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
 export function getPermissionsForRole(role: Role): PermissionSet {
     switch (role) {
         case 'OWNER':
-            // OWNER = ADMIN + tenant_lifecycle + owner_management.
-            // Only role that can delete the tenant, rotate DEK, transfer
-            // ownership, invite/remove other OWNERs, or assign OWNER role.
+            // OWNER = ADMIN + tenant_lifecycle + owner_management +
+            // agent_ownership. Only role that can delete the tenant, rotate
+            // DEK, transfer ownership, invite/remove other OWNERs, or assign
+            // OWNER role; and, with AI_ADMIN, the only built-in role that can
+            // own an agent by transfer (#3699).
             return {
                 controls: { view: true, create: true, edit: true },
                 evidence: { view: true, upload: true, edit: true, download: true },
@@ -412,6 +465,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_policy_card: true,
                     agent_kill_switch: true, agent_external_tools: true,
                     agent_harness_ingest: true,
+                    agent_ownership: true,
                 },
             };
         case 'ADMIN':
@@ -454,6 +508,11 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     agent_policy_card: true,
                     agent_kill_switch: true, agent_external_tools: true,
                     agent_harness_ingest: true,
+                    // Explicit false (#3699, owner default): ADMIN holds the
+                    // register key, and an agent's accountable owner must not
+                    // be movable by the role that owner is accountable to. An
+                    // OWNER can grant it through a custom role.
+                    agent_ownership: false,
                 },
             };
         case 'EDITOR':
@@ -477,7 +536,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
             };
         case 'AUDITOR':
             return {
@@ -501,31 +560,72 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
             };
         case 'READER':
-        default:
+            return readerPermissions();
+        case 'AI_ADMIN': {
+            // #3699 — runs the agent register and can own and receive agents,
+            // and is a READER everywhere else. READER's set exactly, with the
+            // agent keys (`AGENT_ADMIN_KEYS`) switched on and nothing else:
+            // no members, SSO, SCIM, billing or security settings
+            // (`admin.manage`), no tenant lifecycle, no owner management, no
+            // DSAR register and no admin console (`admin.view`). Reads, because
+            // an administrator of agents has to see what the agents touch.
+            //
+            // The coarse tier matches: `ROLE_ORDER.AI_ADMIN` is READER's level,
+            // so `canWrite` / `canAdmin` are false and no usecase that gates on
+            // the coarse tier alone admits this role. The agent usecases' own
+            // floor admits a holder of the agent key the route requires
+            // (`assertAgentGovernanceFloor`).
+            const reader = readerPermissions();
             return {
-                controls: { view: true, create: false, edit: false },
-                evidence: { view: true, upload: false, edit: false, download: true },
-                policies: { view: true, create: false, edit: false, approve: false },
-                tasks: { view: true, create: false, edit: false, assign: false },
-                risks: { view: true, create: false, edit: false },
-                assets: { view: true, create: false, edit: false },
-                vendors: { view: true, create: false, edit: false },
-                tests: { view: true, create: false, execute: false },
-                incidents: { view: true, manage: false },
-                personnel: { view: true, manage: false },
-                access_reviews: { view: true, create: false, decide: true, close: false },
-                identity_reconciliation: { view: true, confirm: false },
-                continuity: { edit: false },
-                processes: { edit: false },
-                frameworks: { view: true, install: false },
-                audits: { view: true, manage: false, freeze: false, share: false },
-                reports: { view: true, export: false, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false },
+                ...reader,
+                admin: {
+                    ...reader.admin,
+                    agent_registry: true,
+                    agent_tool_exposure: true,
+                    agent_policy_card: true,
+                    agent_kill_switch: true,
+                    agent_external_tools: true,
+                    agent_harness_ingest: true,
+                    agent_ownership: true,
+                },
             };
+        }
+        default: {
+            // Exhaustive: a seventh `Role` is a type error here rather than a
+            // silent READER. At runtime an unrecognised value (a stale claim,
+            // a hand-written row) still fails CLOSED to READER.
+            const unhandled: never = role;
+            void unhandled;
+            return readerPermissions();
+        }
     }
+}
+
+/** READER's set — every domain readable, nothing writable, no admin key. */
+function readerPermissions(): PermissionSet {
+    return {
+        controls: { view: true, create: false, edit: false },
+        evidence: { view: true, upload: false, edit: false, download: true },
+        policies: { view: true, create: false, edit: false, approve: false },
+        tasks: { view: true, create: false, edit: false, assign: false },
+        risks: { view: true, create: false, edit: false },
+        assets: { view: true, create: false, edit: false },
+        vendors: { view: true, create: false, edit: false },
+        tests: { view: true, create: false, execute: false },
+        incidents: { view: true, manage: false },
+        personnel: { view: true, manage: false },
+        access_reviews: { view: true, create: false, decide: true, close: false },
+        identity_reconciliation: { view: true, confirm: false },
+        continuity: { edit: false },
+        processes: { edit: false },
+        frameworks: { view: true, install: false },
+        audits: { view: true, manage: false, freeze: false, share: false },
+        reports: { view: true, export: false, schedule_external: false },
+        admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false, agent_external_tools: false, agent_harness_ingest: false, agent_ownership: false },
+    };
 }
 
 // ─── Hub-and-spoke organization permissions (Epic O-2) ────────────────────

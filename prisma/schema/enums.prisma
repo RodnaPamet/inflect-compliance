@@ -30,6 +30,19 @@ enum Role {
   EDITOR
   READER
   AUDITOR
+  /// AI_ADMIN — runs the agent register and can own and receive agents
+  /// (#3699): the agent admin keys plus `admin.agent_ownership`, READER-level
+  /// reads, and NONE of the tenant-wide admin keys. The edge admits it to the
+  /// agent admin paths only (`AI_ADMIN_ADMIN_PATH_PREFIXES`).
+  ///
+  /// LAST on purpose. `TenantMembership.role` is sorted by ordinal (three job
+  /// actor pickers order by `role asc` to find the most senior member), and
+  /// this role holds less tenant authority than every role above it — so it
+  /// must never sort ahead of ADMIN, or EDITOR. Appended by plain `ADD VALUE`.
+  ///
+  /// Deploy 1 of 2: readers handle the value, and nothing writes it until
+  /// deploy 2 lets an OWNER assign it on the members page.
+  AI_ADMIN
 }
 
 /// Hub-and-spoke organization roles (Epic O-1).

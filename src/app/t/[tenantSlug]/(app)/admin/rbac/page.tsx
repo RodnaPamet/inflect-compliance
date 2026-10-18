@@ -57,13 +57,17 @@ export default async function RbacPage({
         createdAtIso: m.createdAt.toISOString(),
     }));
 
-    const roles: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
+    // A READER of roles, so every built-in role has a column — AI_ADMIN
+    // (#3699) included, though nothing assigns it until deploy 2: the matrix
+    // documents what a role grants, and the role exists.
+    const roles: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'AI_ADMIN'];
     const permissionMatrix: Record<Role, PermissionSet> = {
         OWNER: getPermissionsForRole('OWNER'),
         ADMIN: getPermissionsForRole('ADMIN'),
         EDITOR: getPermissionsForRole('EDITOR'),
         AUDITOR: getPermissionsForRole('AUDITOR'),
         READER: getPermissionsForRole('READER'),
+        AI_ADMIN: getPermissionsForRole('AI_ADMIN'),
     };
 
     // Flatten permission keys for the matrix table

@@ -44,7 +44,8 @@ import {
 } from '@/lib/mcp/tool-manifest';
 import { logger } from '@/lib/observability/logger';
 
-import { assertCanAdmin, assertCanRead } from '../policies/common';
+import { assertCanRead } from '../policies/common';
+import { assertAgentGovernanceAdmin } from '../policies/agent-governance.policies';
 import { logEvent } from '../events/audit';
 import {
     createAgenticNotification,
@@ -206,7 +207,7 @@ export async function approveToolManifest(
     ctx: RequestContext,
     input: unknown,
 ): Promise<ApproveToolManifestResult> {
-    assertCanAdmin(ctx);
+    assertAgentGovernanceAdmin(ctx, 'agent_registry');
 
     const parsed = ApproveToolManifestSchema.safeParse(input);
     if (!parsed.success) {

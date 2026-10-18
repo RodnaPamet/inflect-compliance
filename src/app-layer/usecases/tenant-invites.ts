@@ -28,6 +28,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest, forbidden, gone, internal } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
 import { hashForLookup } from '@/lib/security/encryption';
+import { isAssignableTenantRole, unassignableRoleMessage } from '@/lib/roles';
 import { recordInviteSent, recordInviteRedeemed } from '@/lib/observability/business-metrics';
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -65,6 +66,12 @@ export async function createInviteToken(
     input: { email: string; role: Role },
 ): Promise<CreateInviteResult> {
     assertCanManageMembers(ctx);
+
+    // An invite is a deferred membership write, so it takes the writers' list:
+    // AI_ADMIN is refused until deploy 2 of #3699.
+    if (!isAssignableTenantRole(input.role)) {
+        throw badRequest(unassignableRoleMessage(input.role));
+    }
 
     if (input.role === 'OWNER') {
         if (!ctx.appPermissions.admin.owner_management) {
@@ -397,6 +404,15 @@ async function finalizeInviteRedemption(
     },
     userId: string,
 ): Promise<RedeemResult> {
+    // The read-side half of `createInviteToken`'s refusal: an invite row
+    // carrying a role no writer may write yet (#3699 deploy 1 — one written
+    // around the usecase, or left by a newer release that was rolled back)
+    // materialises no membership. The caller has already claimed it, so it
+    // stays burnt — the safe failure mode this tail already documents.
+    if (!isAssignableTenantRole(invite.role)) {
+        throw badRequest(unassignableRoleMessage(invite.role));
+    }
+
     const txResult = await prisma.$transaction(async (tx) => {
         const membership = await tx.tenantMembership.upsert({
             where: {
@@ -526,6 +542,11 @@ export async function redeemPendingInvitesByEmail(input: {
 
     const redeemed: RedeemResult[] = [];
     for (const invite of pending) {
+        // Skipped BEFORE the claim, so it neither burns the invite nor stops
+        // the loop: a role no writer may write yet (#3699) materialises no
+        // membership, and the invite is left for a release that can.
+        if (!isAssignableTenantRole(invite.role)) continue;
+
         // Atomic claim by id — the winner sets acceptedAt; a racing
         // token-URL redemption of the same invite makes this count=0.
         const claim = await prisma.tenantInvite.updateMany({

@@ -48,10 +48,10 @@ export function assertCanResolveIssue(ctx: RequestContext) {
 
 /**
  * ADMIN, EDITOR, and AUDITOR can add comments (broader for collaboration).
- * READER cannot comment.
+ * READER cannot comment, and nor can AI_ADMIN (#3699), which reads like one.
  */
 export function assertCanComment(ctx: RequestContext) {
-    if (ctx.role === 'READER') {
+    if (ctx.role === 'READER' || ctx.role === 'AI_ADMIN') {
         throw forbidden('You do not have permission to comment on issues.');
     }
 }

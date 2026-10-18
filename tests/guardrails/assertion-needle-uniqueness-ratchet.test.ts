@@ -1069,6 +1069,11 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
 //   blind spots. The same change that raised the two ceilings above
 //   lowered this one, and that is the trade it makes.
 /**
+ * LOWERED 1402 -> 1401 on 2026-10-18 (#3699): `role-zod-enums` stopped
+ * asserting `toMatch` on a whole-file read built through `path.join` (it now
+ * computes booleans over the file and compares them with `toEqual`), so one
+ * un-analysable read left the population.
+ *
  * RAISED 1401 -> 1402 on 2026-10-17 (#3650), by exactly one.
  *
  * Four guards landed, three of which are repo-wide scans: they walk
@@ -1088,7 +1093,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 165;
  * Raised rather than suppressed, and by the measured amount rather than a round
  * number, so the next raise is as visible as this one.
  */
-const UNANALYSABLE_READ_BASELINE = 1402;
+const UNANALYSABLE_READ_BASELINE = 1401;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

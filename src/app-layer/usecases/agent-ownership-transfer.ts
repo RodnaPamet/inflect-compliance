@@ -17,31 +17,32 @@
  * without their knowledge. So it moves only when TWO people act: one proposes,
  * and the one named accepts. The register's PATCH refuses the field.
  *
- * ## The key, and the narrowing the owner accepted
+ * ## The key, and who can receive an agent
  *
- * Both steps carry a literal `requirePermission('admin.tenant_lifecycle')` at the
- * route (0e): the key whose own docstring lists "transfer ownership", which ADMIN
- * does not hold. The person completing step two must hold it too, so with the
- * built-in roles an agent passes only to an OWNER. Registration accepts any
- * active member as the first owner; this narrows who can RECEIVE an agent later,
- * and the owner accepted that narrowing when signing 0e — and again, on
- * 2026-10-18, as the INTERIM state: a new built-in `AI_ADMIN` role is to widen
- * the recipient set in its own pull request, not here.
+ * Both steps carry a literal `requirePermission('admin.agent_ownership')` at the
+ * route (#3699). Until then they carried `admin.tenant_lifecycle` (0e), which
+ * ADMIN does not hold, so with the built-in roles an agent passed only to an
+ * OWNER — the narrowing the owner accepted in 0e and again, on 2026-10-18, as
+ * the INTERIM state. `admin.agent_ownership` separates accountability for an
+ * agent from authority over the tenant's existence: OWNER and the built-in
+ * AI_ADMIN hold it, ADMIN does not (owner default), and an OWNER can grant it
+ * through a custom role. The person completing step two must hold it too.
  *
  * Step one refuses a recipient who could never pass step two, rather than
  * letting the offer sit until it expired and hold the agent's one open slot.
  * Step two meets TWO gates, so step one asks both: the route's key, and before
  * it the edge middleware's admin-path gate, which reads the BUILT-IN membership
- * role and admits only ADMIN and OWNER. A custom role carrying the key is
- * therefore enough only on an ADMIN membership; on a READER, EDITOR or AUDITOR
- * membership the edge refuses the request before the route runs. See
+ * role and admits ADMIN and OWNER everywhere under `/admin/`, and AI_ADMIN on
+ * the agent paths only. A custom role carrying the key is therefore enough
+ * only on an ADMIN membership; on a READER, EDITOR or AUDITOR membership the
+ * edge refuses the request before the route runs. See
  * `TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`: the edge reads the role in THIS
  * tenant's membership (#3701), which is the role the step-one check reads.
  *
  * The usecase re-asserts the key (`assertCanTransferAgentOwnership`) as defence in
  * depth — a second caller of these functions cannot reach them with less — but
  * the route's literal is THE gate: only its denial writes the hash-chained
- * `AUTHZ_DENIED` row. No API key carries `admin.tenant_lifecycle`, so both steps
+ * `AUTHZ_DENIED` row. No API key carries `admin.agent_ownership`, so both steps
  * are human-only by construction.
  *
  * ## The two-person rule lives in three places
@@ -95,7 +96,7 @@ import type { RequestContext } from '../types';
 type TransferRow = NonNullable<Awaited<ReturnType<typeof AgentOwnershipTransferRepository.findById>>>;
 
 /**
- * Both steps, the cancel and the read take `admin.tenant_lifecycle` — see the
+ * Both steps, the cancel and the read take `admin.agent_ownership` — see the
  * module docstring. `assertCanRead` and not `assertCanWrite`: the key is the
  * authority, and the coarse tier comes from a custom role's BASE role. An ADMIN
  * membership carrying a custom role built on a READER base and given this key
@@ -105,19 +106,19 @@ type TransferRow = NonNullable<Awaited<ReturnType<typeof AgentOwnershipTransferR
  */
 function assertCanTransferAgentOwnership(ctx: RequestContext) {
     assertCanRead(ctx);
-    if (!ctx.appPermissions?.admin?.tenant_lifecycle) {
+    if (!ctx.appPermissions?.admin?.agent_ownership) {
         throw forbidden(
-            "Transferring an agent's ownership requires the tenant lifecycle permission, " +
-                'which among the built-in roles only an OWNER holds.',
+            "Transferring an agent's ownership requires the agent ownership permission, " +
+                'which among the built-in roles an OWNER and an AI admin hold.',
         );
     }
 }
 
 /**
  * The recipient must be an ACTIVE member who can reach step two: a built-in
- * membership role the edge's admin-path gate admits
+ * membership role the edge's admin-path gate admits to these paths
  * (`TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`), AND effective permissions — custom
- * role over its base, or the built-in role — carrying `admin.tenant_lifecycle`,
+ * role over its base, or the built-in role — carrying `admin.agent_ownership`,
  * which the route requires. Read from the membership row, never from the
  * caller's claim. Used at step one about the person named, and again at step two
  * about the person completing, so a recipient deactivated or demoted in between
@@ -136,17 +137,18 @@ async function assertCanReceiveAgent(db: PrismaTx, ctx: RequestContext, userId: 
     }
     if (!isTransferRecipientMembershipRole(membership.role)) {
         throw badRequest(
-            'The new owner must be an OWNER, or an ADMIN whose custom role carries the tenant ' +
-                'lifecycle permission. Accepting a transfer is an admin request, and admin ' +
-                'requests are open only to OWNER and ADMIN members — a custom role carrying the ' +
-                'permission on any other membership role cannot reach it.',
+            'The new owner must be an OWNER, an AI admin, or an ADMIN whose custom role ' +
+                'carries the agent ownership permission. Accepting a transfer is an admin ' +
+                'request, and agent admin requests are open only to OWNER, ADMIN and AI admin ' +
+                'members — a custom role carrying the permission on any other membership role ' +
+                'cannot reach it.',
         );
     }
-    if (!permissionsForMembership(membership).admin.tenant_lifecycle) {
+    if (!permissionsForMembership(membership).admin.agent_ownership) {
         throw badRequest(
-            'The new owner must hold the tenant lifecycle permission, because completing a ' +
-                'transfer requires it. Among the built-in roles only an OWNER holds it; an ' +
-                'OWNER can give an ADMIN a custom role that carries it.',
+            'The new owner must hold the agent ownership permission, because completing a ' +
+                'transfer requires it. Among the built-in roles an OWNER and an AI admin hold ' +
+                'it; an OWNER can give an ADMIN a custom role that carries it.',
         );
     }
 }
@@ -203,7 +205,7 @@ export async function proposeAgentOwnershipTransfer(
             throw badRequest(
                 'You cannot propose yourself as the new owner. The person who starts a transfer ' +
                     'can never complete it, so it would only wait until it expired — ask another ' +
-                    'holder of the tenant lifecycle permission to propose it to you.',
+                    'holder of the agent ownership permission to propose it to you.',
             );
         }
         await assertCanReceiveAgent(db, ctx, parsed.toOwnerUserId);
@@ -281,7 +283,8 @@ export async function proposeAgentOwnershipTransfer(
  *   6. the agent is gone, RETIRED, or no longer owned by the person it was
  *      proposed away from → conflict, nothing changed;
  *   7. the completer is no longer a recipient step one would accept (an active
- *      OWNER, or an active ADMIN whose custom role carries the key) → refused.
+ *      OWNER or AI_ADMIN holding the key, or an active ADMIN whose custom role
+ *      carries it) → refused.
  *
  * Then the writes, AGENT ROW FIRST: `moveOwner` takes the agent row's lock
  * before `claimCompletion` takes the transfer's. Retirement and step one lock in
