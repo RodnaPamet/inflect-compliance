@@ -1835,6 +1835,38 @@ and nothing else, read from the sealed context under verification, neutralised,
 fenced and labelled `agent.run-input`. The decision digest is over that message,
 so keep the one `runMessage(...)` binding both readers share.
 
+**Auditor independence and workpapers** (step 3b, #3675) carry rule 8, "the
+auditor is not the auditee". Five rules, each held by a test:
+
+- **NULL is "not declared" and never satisfies a check.**
+  `TenantMembership.lineOfDefence` has ONE writer, `setMembershipLineOfDefence`:
+  a literal `requirePermission('admin.owner_management')`, AND a built-in role
+  of OWNER (a custom role carrying the key does not make an ADMIN one), a person
+  rather than a credential, and never one's own membership. Every change is
+  audited.
+- **The independence check REFUSES only while an agent's standing as an auditor
+  is being granted**: registration, an amend that sets `isAuditor`, and every
+  move to ACTIVE (`assertActivatable`). The insert recipe asks it too, so no
+  caller inserts around it; the trigger `registered_agent_auditor_independence`
+  backs all three. DRAFT and SUSPENDED agents are audited agents. Every LATER
+  break — transfer completion, an agent registered to the owner, an auditor
+  unmarked, the owner's line moved — raises one HIGH finding per auditor
+  (`sourceKind = AUDITOR_INDEPENDENCE`) and never suspends or refuses. Do not
+  turn the finding into a refusal: it would block an accountability handover two
+  people agreed.
+- **Take `lockAuditorIndependence` FIRST** in any new path that can make or break
+  independence — before any row lock, or two such paths can deadlock — and the
+  trigger takes the same key.
+- **A workpaper is one-way and the auditor's.** Only a job or a context whose
+  `agentId` is the ACTIVE, independent auditor writes one; every column is
+  frozen at insert apart from a review stamp set once by a THIRD-line member who
+  does not own the auditor (trigger, every role; no `app_user` DELETE); the first
+  sample per (procedure, period) is binding (trigger). No free-text column: a
+  new one is a decision in `encrypted-fields.ts`, not an addition.
+- **A workpaper links findings and never closes one.** `AuditWorkpaperFinding` is
+  insert-only, and the workpaper usecase and repository write no `Finding` —
+  `tests/integration/audit-workpaper.test.ts` reads both files for it.
+
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
 `resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):

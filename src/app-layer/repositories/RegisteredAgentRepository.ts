@@ -339,11 +339,18 @@ export class RegisteredAgentRepository {
      * `intakeDiscoveredAgentId` is set by the registration intake alone (#3669)
      * and is the unique claim that one discovered agent yields at most one
      * register row through it. Every other caller leaves it out, i.e. NULL.
+     *
+     * `isAuditor` (#3675) is passed by `registerAgent` alone, through the write
+     * recipe, which checks auditor independence before it calls this.
      */
     static async create(
         db: PrismaTx,
         ctx: RequestContext,
-        data: RegisteredAgentWriteFields & { aiSystemId: string; intakeDiscoveredAgentId?: string },
+        data: RegisteredAgentWriteFields & {
+            aiSystemId: string;
+            intakeDiscoveredAgentId?: string;
+            isAuditor?: boolean;
+        },
     ) {
         return db.registeredAgent.create({
             data: {
@@ -471,7 +478,16 @@ export class RegisteredAgentRepository {
     static async getLifecycleState(db: PrismaTx, ctx: RequestContext, id: string) {
         return db.registeredAgent.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, status: true, name: true, ownerUserId: true, aiSystemId: true },
+            select: {
+                id: true,
+                status: true,
+                name: true,
+                ownerUserId: true,
+                aiSystemId: true,
+                // Whether going ACTIVE also has to pass the auditor
+                // independence check (#3675).
+                isAuditor: true,
+            },
         });
     }
 
@@ -548,6 +564,26 @@ export class RegisteredAgentRepository {
         const res = await db.registeredAgent.updateMany({
             where: { id, tenantId: ctx.tenantId, deletedAt: null, status: 'ACTIVE' },
             data: { status: 'SUSPENDED' },
+        });
+        return res.count;
+    }
+
+    /**
+     * Mark or unmark an agent as an AUDITOR (#3675) — the only write of
+     * `isAuditor` after registration. `update` above excludes it by type, so an
+     * amend reaches it only through `updateRegisteredAgent`, which checks
+     * independence when the mark is being SET and reconciles when it is
+     * removed. RETIRED rows match nothing: retirement is terminal.
+     */
+    static async setAuditorMark(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        isAuditor: boolean,
+    ): Promise<number> {
+        const res = await db.registeredAgent.updateMany({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null, status: { not: 'RETIRED' } },
+            data: { isAuditor },
         });
         return res.count;
     }

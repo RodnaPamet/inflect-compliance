@@ -685,6 +685,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // Harness ingest (#3665) — both read per tenant with a bounded take.
     AgentHarnessScannerKey:
         'listHarnessScannerKeys, the harness tab\'s key card (getHarnessScannerKeysView, ordered by createdAt desc) and the scan ingest filter by tenantId (+ revokedAt IS NULL) only — a tenant trusts a handful of scanner keys, covered by the tenantId-leading @@unique([tenantId, keyFingerprint]) and @@index([tenantId, agentId]); bounded take ≤201.',
+    // Audit workpapers (#3675) — listAuditWorkpapers filters by tenantId plus
+    // an optional procedure/period/auditor equality and orders by createdAt desc.
+    AuditWorkpaper:
+        'listAuditWorkpapers filters by tenantId (+ optional procedureId/periodLabel or auditorAgentId equality) and orders by createdAt desc — covered by @@index([tenantId, procedureId, periodLabel]), @@index([tenantId, auditorAgentId]) and @@index([tenantId, createdAt]); the binding-sample read is (tenantId, procedureId, periodLabel) ordered by createdAt, the first composite\'s exact prefix; bounded take ≤200.',
     // A2A peers (#3673) — listPeerAgents filters by tenantId alone and orders
     // by createdAt; a tenant registers a handful of partners.
     PeerAgent:

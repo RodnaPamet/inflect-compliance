@@ -302,6 +302,19 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
         'departments',
     ],
     AuditChecklistItem: ['prompt', 'notes', 'evidenceRef'],
+    // `AuditWorkpaper` (#3675) is deliberately NOT here, and that is its
+    // encryption decision. The procedure catalogue binds every fact on a
+    // workpaper to a code, an identifier or a count — no names, no e-mail
+    // addresses, no tool arguments — so there is no conclusion TEXT: the
+    // conclusion is a `TestResult` plus a basis code that a CHECK pins to
+    // `^[A-Z][A-Z0-9_]{0,63}$`, and the unit ids the record contract admits
+    // carry no space, `@` or `.`. The one text column, `populationDefinition`,
+    // is the catalogue's own published definition, sanitised at the write seam.
+    // Encrypting codes would defeat the equality reads a sampler and an
+    // external auditor make (conclusion, procedure, period) and protect nothing
+    // that is tenant prose. A future free-text column on this model is added
+    // HERE, sanitised at `recordAuditWorkpaper`, and classified in
+    // `tests/guardrails/sanitize-rich-text-coverage.test.ts`.
 
     // ─── Control test runs ─────────────────────────────
     ControlTestRun: ['notes', 'findingSummary'],

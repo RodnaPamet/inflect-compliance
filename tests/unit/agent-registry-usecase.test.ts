@@ -94,6 +94,8 @@ function makeDb(overrides: DbOverrides = {}) {
         statusUpdates: [] as any[],
     };
     const db: any = {
+        // `lockAuditorIndependence` (#3675) — the tenant's advisory lock.
+        $executeRawUnsafe: jest.fn(async () => 0),
         tenantMembership: {
             findFirst: jest.fn(async ({ where }: any) =>
                 where.tenantId === 'tenant-1' &&
@@ -172,6 +174,8 @@ function makeDb(overrides: DbOverrides = {}) {
                     riskTierScoredAt: new Date(),
                 };
             }),
+            // The independence reconcile (#3675): no ACTIVE auditor here.
+            findMany: jest.fn(async () => []),
             // Emulates the repository's terminal predicate: a RETIRED row
             // matches nothing, whatever status is asked for.
             updateMany: jest.fn(async (args: any) => {

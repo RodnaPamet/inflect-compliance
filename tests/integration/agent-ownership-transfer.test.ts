@@ -463,6 +463,9 @@ describe('step two is completed by the person it names, and never by the person 
             agentId: agent.id,
             ownerUserId: users[T1].ownerB,
             previousOwnerUserId: users[T1].ownerA,
+            // No auditor agent here, so the independence reconcile (#3675)
+            // raised nothing.
+            independenceFindingIds: [],
         });
         expect(await ownerOf(agent.id)).toBe(users[T1].ownerB);
         const row = await transferRow(proposed.id);

@@ -49,6 +49,8 @@ const ADMIN_ONLY_ROUTES = [
     'admin/members/route.ts',
     'admin/members/[membershipId]/route.ts',
     'admin/members/[membershipId]/deactivate/route.ts',
+    // #3675 — a member's line of defence. `admin.owner_management`, OWNER-only.
+    'admin/members/[membershipId]/line-of-defence/route.ts',
     'admin/settings/route.ts',
     'admin/scim/route.ts',
     'admin/integrations/route.ts',

@@ -24,9 +24,11 @@ depends on are listed at the end, each with the step that builds it.
 ## Ownership and approval
 
 This catalogue binds whoever operates it to the rule below, which is decision 3
-of [`docs/agentic-iam-roadmap.md`](agentic-iam-roadmap.md). The rule describes
-things `main` does not have: no auditor agent, no workpaper, no line-of-defence
-value and no workpaper sampling. Each one is a row in [Gaps](#gaps).
+of [`docs/agentic-iam-roadmap.md`](agentic-iam-roadmap.md). Step `3b` (#3675)
+put three parts of it on `main`: the line-of-defence value on a membership, the
+auditor independence check, and the workpaper record. Two parts are not on
+`main`: no handler runs the auditor agent, and no sampling of workpapers exists.
+Each is a row in [Gaps](#gaps).
 
 - **The second line of defence is to own and operate the auditor agent.** It
   registers the agent, decides its grants and its policy card, holds its kill
@@ -34,12 +36,19 @@ value and no workpaper sampling. Each one is a row in [Gaps](#gaps).
   agent is step `3c`.
 - **Internal audit is to approve this catalogue and to sample the auditor's
   workpapers.** A sampled workpaper must be re-checked by a person in internal
-  audit, never by the auditor agent's owner. Workpapers are step `3b`; sampling
-  them is step `3d`.
+  audit, never by the auditor agent's owner. On `main` a workpaper's review
+  stamp is set once, by an active member whose line of defence is THIRD and who
+  does not own the auditor agent (`stampAuditWorkpaperReview`). Choosing which
+  workpapers are sampled is step `3d`.
 - **The auditor is not the auditee.** The auditor agent's owner must be second
-  line and must own none of the agents the procedures examine. The
-  line-of-defence value and the independence check that enforces this are step
-  `3b`.
+  line and must own none of the agents the procedures examine. On `main` an
+  OWNER declares each member's line of defence (FIRST, SECOND, THIRD or not
+  declared), and an undeclared line never satisfies the check. An agent is
+  refused as an auditor, at registration, at an amend that makes it one, and at
+  every move to ACTIVE, unless its owner is an ACTIVE SECOND-line member who
+  owns no other non-auditor agent that is not RETIRED. A later change that
+  breaks the rule raises a finding against the auditor and does not suspend it,
+  and an auditor that is not independent can record no workpaper.
 - **The repository owner's merge is the sign-off.** The repository owner's
   merge of the pull request that adds or changes this file adopts that version
   for this repository, and auto-merge on green is the repository owner's
@@ -259,6 +268,16 @@ names, no e-mail addresses, no tool arguments and no proposal payloads. This is
 the digest discipline `src/app-layer/services/agent-control-tests.ts` states for
 the agentic control tests, and for the same reason: a workpaper is evidence, and
 evidence is kept long after the rows it describes.
+
+The record is `AuditWorkpaper` (`prisma/schema/audit-workflow.prisma`), written
+through `recordAuditWorkpaper` and checked against the contract in
+`src/lib/agentic/audit-workpaper.ts`. Each run of a procedure for a period
+writes one. The database holds the rules above: a PASS needs a non-empty
+population, a drawn sample and no exception; the first workpaper that drew a
+sample for a procedure and period fixes it, and a different sample is refused;
+every column is fixed at insert apart from a review stamp set once. Findings are
+linked through `AuditWorkpaperFinding`, which is insert-only, and nothing on the
+workpaper's path writes a finding.
 
 ### Two facts about the runner a handler must respect
 
@@ -941,8 +960,6 @@ names the step that builds it, or says that no step does.
 |---|---|---|
 | No handler runs any procedure | 1 to 5 | step `3c` (#3676) |
 | No handler runs any procedure | 6 to 8 | no step; adding one is a change to this catalogue and a new step issue |
-| No workpaper record (`AuditWorkpaper`) | all | step `3b` (#3675) |
-| No line-of-defence value on `TenantMembership`, and no auditor independence check | ownership rule | step `3b` (#3675) |
 | No sampling of workpapers by internal audit | ownership rule | step `3d` (#3677) |
 | No agent subjects in access reviews: `AccessReviewScope` has no agent value | procedure 2 | step `3a` (#3674) |
 | Internal audit's approval and PwC's agreement of version 1 are open; the repository owner's merge adopts the version and supplies neither | all | internal audit and PwC, each recorded on issue #3663 when given |
@@ -952,5 +969,4 @@ names the step that builds it, or says that no step does.
 | An account disabled outside Inflect carries no disable time, so L2 is UNTESTABLE for it | procedure 1 | no step; step `3c` names it in its pull request |
 | `src/app-layer/usecases/identity-sync.ts` stores an undetermined `isAdmin` or `mfaEnrolled` as `false`, including every Okta account past the enrichment cap | procedure 4 | no step; step `3c` names it in its pull request |
 | No procedure tests a legacy account's `expiresAt` | none in this version | no step; adding one is a change to this catalogue |
-| The first-sample rule and the seed fingerprint need somewhere to store a sample and read it back | all | step `3b` (#3675), with the workpaper record |
 | Privilege granted by a custom role is not classified | procedure 4 | no step |

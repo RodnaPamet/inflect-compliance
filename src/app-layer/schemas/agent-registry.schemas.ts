@@ -149,6 +149,14 @@ export const UpdateRegisteredAgentSchema = z
         modelRef,
         ownerUserId: z.unknown().optional(),
         vendorId: z.string().optional().nullable(),
+        /**
+         * Mark or unmark the agent as an AUDITOR (#3675). Setting it asks the
+         * auditor independence check of the agent's CURRENT owner, and is
+         * refused unless they are an ACTIVE second-line member who owns none of
+         * the agents it audits; removing it is never refused, and leaves every
+         * workpaper the agent wrote attributed to it.
+         */
+        isAuditor: z.boolean().optional(),
     })
     .superRefine((value, ctx) => {
         if (value.ownerUserId !== undefined) {
@@ -218,6 +226,13 @@ export const RegisterAgentSchema = z
         modelRef,
         ownerUserId: z.string().min(1, 'An accountable owner is required'),
         vendorId: z.string().optional().nullable(),
+        /**
+         * Register the agent as an AUDITOR (#3675): it will re-perform audit
+         * procedures and write workpapers. Refused unless `ownerUserId` is an
+         * ACTIVE member whose line of defence an OWNER has declared SECOND, and
+         * who owns none of the agents it would audit. Absent means false.
+         */
+        isAuditor: z.boolean().optional(),
 
         // ── The EU AI Act register entry authored alongside the agent ──
         purpose: z.string().max(4000).optional().nullable(),

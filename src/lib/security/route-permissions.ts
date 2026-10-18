@@ -156,6 +156,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'legal consequence, so AUDITOR observes but never transitions.',
     },
     // ── Member management ───────────────────────────────────────────
+    // A member's line of defence (#3675). ABOVE the members catch-all, which
+    // matches first-wins and would record `admin.members` — a key ADMIN holds —
+    // for a route whose handler requires `admin.owner_management`.
+    {
+        path: new RegExp(`^${T}\\/admin\\/members\\/[^/]+\\/line-of-defence$`),
+        methods: ['PUT'],
+        permission: 'admin.owner_management',
+        note:
+            "Declare a member's line of defence (FIRST, SECOND, THIRD or not " +
+            'declared). OWNER-only: it decides who may own the auditor agent ' +
+            'and who may review its workpapers. The usecase also requires the ' +
+            "caller's built-in role to be OWNER and refuses their own membership.",
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/members(\\/.*)?$`),
         permission: 'admin.members',
