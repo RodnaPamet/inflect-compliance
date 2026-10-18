@@ -8644,6 +8644,10 @@
         "stepTokens": "{count} tokens",
         "decisionLink": "Art 12 decision",
         "causedBy": "Caused by automation execution {executionId} — this run was started by a rule, not by a person. The name above is the rule owner, whose permissions it ran under.",
+        "skillsTitle": "Skills this run was taught",
+        "skillsNotRecorded": "Not recorded. This run started before runs pinned their skills, so what it was taught cannot be shown.",
+        "skillsNone": "This run mounted no skill.",
+        "skillVersion": "v{version}",
         "scrubber": {
           "label": "Step through the run",
           "prev": "Previous step",

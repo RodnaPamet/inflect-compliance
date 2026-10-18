@@ -22,6 +22,9 @@ const mutableEnv: Record<string, string | undefined> = {
     OPENROUTER_MODEL: undefined,
     ANTHROPIC_API_KEY: 'anthropic-test',
     ANTHROPIC_MODEL: undefined,
+    // The Flue agent runtime's own pin. Never read by this factory: the risk
+    // suggestions keep ANTHROPIC_MODEL (owner decision, 2026-10-18).
+    AGENT_FLUE_MODEL: undefined,
     ANTHROPIC_WORKSPACE_ID: undefined,
     AI_LOCAL_BASE_URL: 'http://local-gateway:8080',
     AI_LOCAL_MODEL: 'llama3.1',
@@ -71,6 +74,7 @@ beforeEach(() => {
     mutableEnv.OPENROUTER_API_KEY = 'test-key';
     mutableEnv.ANTHROPIC_API_KEY = 'anthropic-test';
     mutableEnv.ANTHROPIC_MODEL = undefined;
+    mutableEnv.AGENT_FLUE_MODEL = undefined;
     mutableEnv.ANTHROPIC_WORKSPACE_ID = undefined;
     mutableEnv.AI_LOCAL_BASE_URL = 'http://local-gateway:8080';
     mutableEnv.AI_LOCAL_MODEL = 'llama3.1';
@@ -150,6 +154,9 @@ describe('EXTERNAL residency (default) — unchanged', () => {
         // id belongs to the key, so it is shared the same way.
         mutableEnv.AI_RISK_PROVIDER = 'anthropic';
         mutableEnv.ANTHROPIC_MODEL = 'claude-haiku-4-5';
+        // Set to something else: the agent runtime's model is not this
+        // feature's, and the shared pin is the one it must receive.
+        mutableEnv.AGENT_FLUE_MODEL = 'claude-sonnet-5-5';
         mutableEnv.ANTHROPIC_WORKSPACE_ID = 'wrkspc_01TESTWORKSPACE';
         getProvider();
         expect(anthropicCtor).toHaveBeenCalledWith(

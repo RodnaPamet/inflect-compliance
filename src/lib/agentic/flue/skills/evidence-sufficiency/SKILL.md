@@ -5,6 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original guidance
   version: '1'
+  evaluation: evaluation-set.json
 ---
 
 Evidence is sufficient when a reader who distrusts the claim could verify it
@@ -32,6 +33,10 @@ naming the axis is more useful than a verdict.
 Never answer only "insufficient". Name the axis and the smallest artefact that
 would fix it: "shows the policy, not the practice — attach the last quarterly
 review record with the reviewer and date".
+
+This holds even when you are asked for one word or a bare verdict. A verdict
+without its axis cannot be acted on, so give the verdict and then the axis in a
+sentence, and say that you added it.
 
 ## Two traps
 

@@ -321,6 +321,15 @@ export const env = createEnv({
         // outage. The strictness belongs at the read, where the answer is
         // "off", not at boot, where the answer is "nothing starts".
         AGENT_DRIVER_FLUE: z.string().optional(),
+        // The model the Flue agent runtime's EXTERNAL provider names, and the
+        // default `npm run skills:evaluate` records skills against (owner
+        // decision, 2026-10-18). Its own variable on purpose: the agent
+        // runtime runs on Sonnet while the compliance-posture summary and the
+        // AI risk suggestions keep ANTHROPIC_MODEL below. The credential and
+        // workspace stay shared (ANTHROPIC_API_KEY / ANTHROPIC_WORKSPACE_ID):
+        // one key to rotate, two model pins. A LOCAL_ONLY tenant's run never
+        // reads it — that route is AI_LOCAL_MODEL.
+        AGENT_FLUE_MODEL: z.string().default('claude-sonnet-5-5'),
 
         // AI Compliance-Posture Summary (dashboard hero, daily cron).
         // 'stub' (default) is fully functional with zero config; 'anthropic'
@@ -329,8 +338,10 @@ export const env = createEnv({
         // Direct Claude API. SHARED by two features — used when
         // AI_POSTURE_PROVIDER=anthropic (aggregate posture metrics) and/or
         // AI_RISK_PROVIDER=anthropic (risk-suggestion prompt text). One key to
-        // rotate, one spend line, one model pin. The two payloads differ in
-        // sensitivity — see docs/sub-processors.md before enabling either.
+        // rotate, one spend line, one model pin for the two of them. The Flue
+        // agent runtime uses the same key with its own pin, AGENT_FLUE_MODEL
+        // above. The payloads differ in sensitivity — see
+        // docs/sub-processors.md before enabling any of them.
         ANTHROPIC_API_KEY: z.string().optional(),
         ANTHROPIC_MODEL: z.string().default('claude-haiku-4-5'),
         // The workspace an ORGANISATION-level ANTHROPIC_API_KEY's requests
@@ -573,6 +584,7 @@ export const env = createEnv({
         AI_RISK_SUGGESTIONS_ENABLED: process.env.AI_RISK_SUGGESTIONS_ENABLED,
         AI_ASSISTANT_ENABLED: process.env.AI_ASSISTANT_ENABLED,
         AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
+        AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,
         AI_POSTURE_PROVIDER: process.env.AI_POSTURE_PROVIDER,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,

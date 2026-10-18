@@ -1,6 +1,6 @@
 import type { Provider } from '@earendil-works/pi-ai';
 
-import { buildFlueProviders, flueModelIsRegistered } from '@/lib/agentic/flue/providers';
+import { buildFlueProviders, flueModelIsRegistered, takesAdaptiveThinking } from '@/lib/agentic/flue/providers';
 import { FLUE_PROVIDER_IDS } from '@/lib/agentic/flue/model-selection';
 import { flueProviderIdsFor } from '@/lib/agentic/flue/runtime-bootstrap';
 
@@ -102,13 +102,42 @@ describe('buildFlueProviders — which routes a deployment has', () => {
         // key and no id they disagree on MEMBERSHIP, not just order.
         //
         // Unreachable in production today: the sole caller passes
-        // `env.ANTHROPIC_MODEL`, which carries a schema default of
-        // `claude-haiku-4-5` and so is never absent. This pins the divergence so
+        // `env.AGENT_FLUE_MODEL`, which carries a schema default of
+        // `claude-sonnet-5-5` and so is never absent. This pins the divergence so
         // that if a second caller ever sources the id from somewhere defaultless,
         // the disagreement is already written down.
         const terms = { externalApiKey: 'sk-test' };
         expect([...flueProviderIdsFor(terms)]).toEqual([FLUE_PROVIDER_IDS.external]);
         expect(buildFlueProviders(terms, {}).map((p) => p.id)).toEqual([]);
+    });
+
+    it('declares adaptive thinking for every model but the closed pre-4.6 list (Sonnet 5.5 refuses a budget)', () => {
+        // pi 0.83 sends a thinking BUDGET unless `compat.forceAdaptiveThinking`
+        // says otherwise, and Sonnet 5.5 answers a budget with HTTP 400. The
+        // wire half of this is external-provider-thinking-shape.test.ts.
+        const compatOf = (id: string) => {
+            const [external] = buildFlueProviders({ externalApiKey: 'sk-test' }, { externalModel: id });
+            const [model] = external.getModels();
+            return 'compat' in model ? model.compat : undefined;
+        };
+        for (const id of ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-sonnet-4-6', 'claude-fable-5-1']) {
+            expect([id, compatOf(id)]).toEqual([id, { forceAdaptiveThinking: true }]);
+            expect([id, takesAdaptiveThinking(id)]).toEqual([id, true]);
+        }
+        for (const id of [
+            'claude-haiku-4-5',
+            'claude-haiku-4-5-20251001',
+            'claude-sonnet-4-5',
+            'claude-opus-4-1',
+            'claude-sonnet-4-0',
+            'claude-sonnet-4-20250514',
+            'claude-3-7-sonnet-20250219',
+        ]) {
+            // No `compat` at all: the model a budget-thinking deployment
+            // registers is the one it registered before.
+            expect([id, compatOf(id)]).toEqual([id, undefined]);
+            expect([id, takesAdaptiveThinking(id)]).toEqual([id, false]);
+        }
     });
 
     it('declares the external model with the deployment bounds and zero cost', () => {

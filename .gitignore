@@ -175,3 +175,6 @@ infra/terraform/modules/*/lambdas/.dist/
 # deploy/apply.sh DRY_RUN scratch project dir (auto-removed; see the snap-docker
 # private-/tmp note in that script for why it is not under /tmp).
 deploy/.apply-dryrun-*/
+
+# Answers from a skill evaluation that did not pass (scripts/skills-evaluate.ts) — diagnosis only, never a record.
+/skill-evaluation-failures/

@@ -199,13 +199,16 @@ export function resolveFlueModel(sel?: FlueModelSelection): FlueModelChoice {
 
     // EXTERNAL. The credential is the same one the posture summary and the
     // risk assessor already use — a second key for the same vendor would be a
-    // second thing to rotate.
+    // second thing to rotate. The MODEL is not: the agent runtime names
+    // AGENT_FLUE_MODEL, and ANTHROPIC_MODEL stays with those two features
+    // (owner decision, 2026-10-18). `runtime-start.ts` registers the external
+    // route under the same variable, so the specifier resolves.
     if (!env.ANTHROPIC_API_KEY) {
         return { ok: false, reason: 'EXTERNAL_CREDENTIAL_NOT_CONFIGURED' };
     }
     return {
         ok: true,
         residency: 'EXTERNAL',
-        specifier: `${FLUE_PROVIDER_IDS.external}/${env.ANTHROPIC_MODEL}`,
+        specifier: `${FLUE_PROVIDER_IDS.external}/${env.AGENT_FLUE_MODEL}`,
     };
 }

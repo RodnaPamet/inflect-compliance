@@ -67,6 +67,12 @@ const CaseSchema = z
         kind: z.enum(CASE_KINDS),
         input: z.string().min(1).max(MAX_TEXT),
         expect: Expectation,
+        /**
+         * Which line of the skill the case tests and why its expectation
+         * separates a right answer from the likely wrong one. Never scored; it
+         * is what lets a reviewer judge whether the case proves anything.
+         */
+        rationale: z.string().min(1).max(2_048).optional(),
     })
     .strict();
 
@@ -210,10 +216,9 @@ export function checkEvaluationRecord(
  * when the skill names none — an ordinary answer, which the mount gate (1b)
  * treats as "not evaluated", never as "passed".
  */
-export function readEvaluationSet(skill: LoadedSkill): unknown | null {
+export function readEvaluationSet(skill: LoadedSkill, dir: string = skillDirectory(skill.name)): unknown | null {
     const file = skill.metadata.evaluation;
     if (file === undefined) return null;
-    const dir = skillDirectory(skill.name);
     const full = path.join(dir, file);
     if (path.dirname(full) !== dir) return null;
     return JSON.parse(fs.readFileSync(full, 'utf-8')) as unknown;

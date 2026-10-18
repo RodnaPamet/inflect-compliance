@@ -6,8 +6,8 @@ let settingsRow: {
 } | null = null;
 
 /** Set per test: the deployment credentials the plan may see. */
-const envValues: { ANTHROPIC_API_KEY?: string; ANTHROPIC_MODEL: string; AI_LOCAL_BASE_URL?: string; AI_LOCAL_MODEL?: string } = {
-    ANTHROPIC_MODEL: 'claude-haiku-4-5',
+const envValues: { ANTHROPIC_API_KEY?: string; AGENT_FLUE_MODEL: string; AI_LOCAL_BASE_URL?: string; AI_LOCAL_MODEL?: string } = {
+    AGENT_FLUE_MODEL: 'claude-sonnet-5-5',
 };
 
 jest.mock('@/env', () => ({ env: envValues }));

@@ -50,7 +50,10 @@ function deploymentProviders(): readonly Provider[] {
             localApiKey: env.AI_LOCAL_API_KEY,
         },
         {
-            externalModel: env.ANTHROPIC_MODEL,
+            // The agent runtime's own pin, not ANTHROPIC_MODEL: the posture
+            // summary and the risk suggestions keep that one (owner decision,
+            // 2026-10-18). Same key, different model.
+            externalModel: env.AGENT_FLUE_MODEL,
             // Deployment-wide only. A per-tenant `localModel` override is not
             // served — see `FlueProviderModels.localModels` for why, and for
             // the upgrade path.

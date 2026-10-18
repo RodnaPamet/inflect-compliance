@@ -11,12 +11,25 @@ jest.mock('@/lib/agentic/flue/skills', () => {
     return {
         ...actual,
         loadSkillCorpus: () => ({
-            skills: [actual.parseSkillDocument(
-                'good-skill',
-                "---\nname: good-skill\ndescription: Prepare an access review pack.\nlicense: proprietary\nmetadata:\n  version: '1'\n---\nCite every artefact you rely on.\n",
-            )],
+            skills: ['good-skill', 'unrecorded-skill'].map((n) => actual.parseSkillDocument(
+                n,
+                `---\nname: ${n}\ndescription: Prepare an access review pack.\nlicense: proprietary\nmetadata:\n  version: '1'\n---\nCite every artefact you rely on.\n`,
+            )),
             refused: [{ name: 'bad-skill', rules: ['skill.reveal_context'], guardRules: [] }],
         }),
+    };
+});
+// The gate treats `good-skill` as evaluated and refuses `unrecorded-skill`, so
+// the resolver's handling of a gate refusal is visible beside its handling of a
+// text-scan refusal.
+jest.mock('@/lib/agentic/flue/skills/mount-gate', () => {
+    const actual = jest.requireActual('@/lib/agentic/flue/skills/mount-gate');
+    return {
+        ...actual,
+        checkSkillMountable: (skill: { name: string }) =>
+            skill.name === 'good-skill'
+                ? { ok: true, pin: { name: 'good-skill', version: '1', contentHash: 'sha256:aa' } }
+                : { ok: false, reason: 'NO_RECORD', detail: 'no evaluation-record.json' },
     };
 });
 jest.mock('@/lib/agentic/workflow-registry', () => ({
@@ -27,9 +40,12 @@ jest.mock('@/lib/agentic/workflow-registry', () => ({
 }));
 
 import { SkillLoadError, SkillTextRefusedError } from '@/lib/agentic/flue/skills';
+import { SkillNotMountableError } from '@/lib/agentic/flue/skills/mount-gate';
 import {
     assertWorkflowCatalogsWithinBudget,
+    assertWorkflowSkillsMountable,
     resetSkillCache,
+    resolveSkillPins,
     resolveSkillsFor,
     workflowCatalogs,
 } from '@/lib/agentic/flue/skills/resolve';
@@ -60,6 +76,25 @@ describe('a run that declares a refused skill fails closed', () => {
     });
 });
 
+describe('a run that declares an unevaluated skill fails closed (#3666)', () => {
+    it('refuses with the gate’s reason', () => {
+        expect(() => resolveSkillsFor(['unrecorded-skill'])).toThrow(SkillNotMountableError);
+        expect(() => resolveSkillsFor(['unrecorded-skill'])).toThrow(/cannot be mounted: NO_RECORD/);
+        expect(() => resolveSkillPins(['good-skill', 'unrecorded-skill'])).toThrow(SkillNotMountableError);
+    });
+
+    it('pins the evaluated skill in declaration order', () => {
+        expect(resolveSkillPins(['good-skill'])).toEqual([{ name: 'good-skill', version: '1', contentHash: 'sha256:aa' }]);
+        expect(resolveSkillPins(undefined)).toEqual([]);
+    });
+
+    it('fails CI for a workflow that declares an unevaluated or refused skill', () => {
+        expect(() => assertWorkflowSkillsMountable([{ key: 'w', skills: ['good-skill'] }])).not.toThrow();
+        expect(() => assertWorkflowSkillsMountable([{ key: 'w', skills: ['unrecorded-skill'] }])).toThrow(SkillNotMountableError);
+        expect(() => assertWorkflowSkillsMountable([{ key: 'w', skills: ['bad-skill'] }])).toThrow(SkillTextRefusedError);
+    });
+});
+
 describe('the workflow checks', () => {
     it('reports a declared refused skill instead of throwing, so the tab can be drawn', () => {
         const byKey = Object.fromEntries(workflowCatalogs([
@@ -77,7 +112,7 @@ describe('the workflow checks', () => {
 describe('the Skills tab payload', () => {
     it('lists the refused skill by name, rule ids and the runs it stops', () => {
         const payload = listAgentSkills(makeRequestContext('ADMIN'));
-        expect(payload.skills.map((s) => s.name)).toEqual(['good-skill']);
+        expect(payload.skills.map((s) => s.name)).toEqual(['good-skill', 'unrecorded-skill']);
         expect(payload.refused).toEqual([
             { name: 'bad-skill', rules: ['skill.reveal_context'], guardRules: [], declaredBy: ['review-prep'] },
         ]);

@@ -5,6 +5,7 @@ license: proprietary
 metadata:
   sourceRef: original guidance; cites Directive (EU) 2022/2555 Article 23 by article and paragraph
   version: '1'
+  evaluation: evaluation-set.json
 ---
 
 Article 23 sets three deadlines, each measured **from the moment the entity
@@ -25,10 +26,16 @@ within one month of handling concluding.
 ## Applying it
 
 1. Fix the awareness timestamp and say what established it — an alert, a report,
-   a third-party notification. Everything else is derived from it.
+   a third-party notification. Everything else is derived from it. If the input
+   gives no awareness time, ask for it and give no date, not even one computed
+   from an assumed awareness: the deadlines as offsets from awareness, and a
+   warning that early awareness may mean a deadline has already passed, are
+   both fine without a date.
 2. Decide whether the incident is **significant**: severe operational disruption
    or financial loss, or material damage to others. If not significant, Article
-   23 does not bite and say so plainly rather than reporting defensively.
+   23 does not bite and say so plainly rather than reporting defensively. Then
+   stop: give no due date, not even a hypothetical one, because the clock runs
+   from awareness of a *significant* incident and none has started.
 3. Compute each deadline from awareness and state the hours remaining or elapsed.
 4. Where a deadline has passed, say so directly. A missed deadline is a finding,
    not something to soften.

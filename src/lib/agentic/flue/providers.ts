@@ -5,6 +5,7 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { anthropicWorkspaceHeaders } from '@/lib/ai/anthropic-workspace';
 
 import { FLUE_PROVIDER_IDS } from './model-selection';
+import { takesAdaptiveThinking } from './thinking-shape';
 import type { FlueProviderTerms } from './runtime-bootstrap';
 
 /**
@@ -48,11 +49,16 @@ import type { FlueProviderTerms } from './runtime-bootstrap';
  * measures.
  *
  * `contextWindow` / `maxTokens` DO matter — the runtime compacts against them
- * — so they are the real values for the external model and conservative
+ * — so they are the published floor for the external models and conservative
  * floors for a local gateway whose model we cannot introspect.
  */
 
-/** Anthropic's published limits for the models this product pins. */
+/**
+ * The smaller of Anthropic's published limits for the models this product
+ * pins: `claude-haiku-4-5`, 200K context and 64K output. `claude-sonnet-5-5`,
+ * the agent runtime's default, allows 1M and 128K; reporting less is the cheap
+ * failure described below, not the expensive one.
+ */
 const EXTERNAL_CONTEXT_WINDOW = 200_000;
 const EXTERNAL_MAX_TOKENS = 64_000;
 
@@ -71,7 +77,7 @@ const NO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 
 /** The model ids a deployment offers, alongside the credentials to reach them. */
 export interface FlueProviderModels {
-    /** `ANTHROPIC_MODEL` — the id an EXTERNAL run may name. */
+    /** `AGENT_FLUE_MODEL` — the id an EXTERNAL run may name. */
     externalModel?: string | null;
     /**
      * Every local model id this runtime may serve.
@@ -91,6 +97,8 @@ export interface FlueProviderModels {
      */
     localModels?: readonly string[];
 }
+
+export { takesAdaptiveThinking } from './thinking-shape';
 
 function externalProvider(
     apiKey: string,
@@ -120,6 +128,9 @@ function externalProvider(
         contextWindow: EXTERNAL_CONTEXT_WINDOW,
         maxTokens: EXTERNAL_MAX_TOKENS,
         ...(Object.keys(workspaceHeaders).length > 0 ? { headers: workspaceHeaders } : {}),
+        // Adaptive thinking plus an effort level, rather than a budget, for
+        // every model that is not on the closed pre-4.6 list above.
+        ...(takesAdaptiveThinking(modelId) ? { compat: { forceAdaptiveThinking: true } } : {}),
     };
     return createProvider<'anthropic-messages'>({
         id: FLUE_PROVIDER_IDS.external,

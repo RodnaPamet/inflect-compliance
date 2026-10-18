@@ -32,6 +32,7 @@
     "db:seed-control-tasks": "tsx scripts/seed-control-template-tasks.ts",
     "db:seed-catalogs": "tsx scripts/seed-framework-catalogs.ts",
     "catalog:check": "tsx scripts/catalog-check.ts",
+    "skills:evaluate": "tsx scripts/skills-evaluate.ts",
     "db:seed-vendor-questionnaires": "tsx scripts/seed-vendor-questionnaires.ts",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force && tsx prisma/seed.ts",

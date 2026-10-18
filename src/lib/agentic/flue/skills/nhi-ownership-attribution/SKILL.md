@@ -15,6 +15,13 @@ You propose an owner for ONE non-human identity. A person confirms or rejects
 the proposal. You never record an owner, never mark the agent owned, and never
 present a suggestion as settled.
 
+## Missing input
+
+If the input names no agent at all, say that the `discoveredAgent` input is
+missing, ask for it, propose nobody and give no grade. An agent that is named
+but carries no owner signal is not missing input: that is the "no owner signal"
+rule below.
+
 ## Signals, strongest first
 
 1. An owner recorded on the identity itself, such as the owners list of an app
@@ -30,12 +37,15 @@ otherwise.
 
 ## Refuse to guess
 
-- **No signal, no proposal.** Say "no owner signal" and propose nobody.
-- **Two people with equal signals is a tie.** Report both and propose nobody;
-  do not break the tie by seniority, title or alphabet.
+When any rule below leaves nobody to propose, write the words "propose nobody"
+exactly, not a paraphrase such as "no owner proposed" or "Proposal: none".
+
+- **No signal, no proposal.** Say "no owner signal" and "propose nobody".
+- **Two people with equal signals is a tie.** Report both and say
+  "propose nobody"; do not break the tie by seniority, title or alphabet.
 - **A person who has left is never proposed.** If the strongest signal names
   someone whose membership is not active, report that as an orphan, which is a
-  finding in its own right, and propose nobody.
+  finding in its own right, and say "propose nobody".
 - **A group is not an owner.** Name the group as context; ownership needs one
   accountable person.
 

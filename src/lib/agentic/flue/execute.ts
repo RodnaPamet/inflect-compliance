@@ -25,7 +25,7 @@ import { FLUE_USAGE_KEY, InflectAgent, type FlueUsageReport } from './agent';
 import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
-import { resolveSkillsFor } from './skills/resolve';
+import { resolveSkillPins, resolveSkillsFor, skillPinDrift } from './skills/resolve';
 import { bindRun, releaseRun } from './run-binding';
 import { readFanOutCap } from '@/lib/agentic/subagent-fanout-policy';
 import { releaseDelegationCounts, DELEGATION_TOOL_NAME } from './delegation-gate';
@@ -477,6 +477,17 @@ export async function executeFlueRun(
     // and reviewed — the same shape as the tool set: the agent receives
     // documents, never the ability to go and find documents.
     const skills = resolveSkillsFor(def.skills);
+
+    // …AND THEY ARE THE ONES THIS RUN WAS PINNED TO (#3666). The row recorded
+    // each skill's hash when the run was admitted; a deploy between segments
+    // can change a skill's text, and a run that carried on would then be
+    // taught something its own row does not describe. Refused before dispatch,
+    // like the kill switch, so nothing reaches the model under the wrong text.
+    const drift = skillPinDrift(initial.mountedSkills, resolveSkillPins(def.skills));
+    if (drift) {
+        const status = await failRun(ctx, runId, `skill_pin_drift: ${drift}`);
+        return { status, stepFailures: 0 };
+    }
 
     // THE FAN-OUT CAP (#3473), resolved HERE for the reason the tools and the
     // skills are: the only place it can be enforced is the execution
