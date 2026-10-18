@@ -43,7 +43,7 @@ change reads its own list, and the census pins that list's consumers by name.
 | `src/lib/auth/entra-group-sync.ts`, `src/lib/observability/metrics.ts` | The custom-role hold and the ambiguous tie, each a no-write outcome with its own metric value |
 | `src/app-layer/schemas/entra-group-mapping.schemas.ts` | `ENTRA_MAPPABLE_ROLES` gains AI_ADMIN |
 | `src/app-layer/usecases/entra-group-mappings.ts` | Create/update/delete of an AI_ADMIN mapping is OWNER-only |
-| `src/lib/scim/roles.ts`, `src/app-layer/usecases/scim-groups.ts` | `SCIM_GROUP_ASSIGNABLE_ROLES` for the Groups push; the Users ceiling unchanged |
+| `src/lib/scim/roles.ts`, `src/app-layer/usecases/scim-groups.ts`, `src/app-layer/usecases/scim-users.ts` | `SCIM_GROUP_ASSIGNABLE_ROLES` for the Groups push; the Users ceiling unchanged; `isScimStatusProtectedRole` lets a deprovision remove an AI_ADMIN membership |
 | `admin/members/page.tsx`, `admin/entra/GroupMappingsSection.tsx`, `messages/*.json` | AI admin offered to an OWNER only; labels; locked rows for an ADMIN; the custom-role and tie notices |
 
 ## Decisions
@@ -85,10 +85,17 @@ change reads its own list, and the census pins that list's consumers by name.
 - **The SCIM Groups ceiling is the Users ceiling plus AI_ADMIN, derived.** The
   owner asked for the role on both group paths. The Groups push's ceiling also
   bounds which memberships it may touch, so the push that moves a member in can
-  move them out. The Users path is unchanged: `roles[]` never confers it, and
-  `isScimProtectedRole` still treats an AI_ADMIN membership as untouchable from
-  `/Users`. The #2200 exposure applies: a holder of the SCIM bearer token can
-  push a group carrying the AI_ADMIN-mapped group's id.
+  move them out. On the Users path `roles[]` never confers it and never
+  rewrites an AI_ADMIN membership's role, and its profile is never renamed
+  (`isScimProtectedRole`). The #2200 exposure applies: a holder of the SCIM
+  bearer token can push a group carrying the AI_ADMIN-mapped group's id.
+- **A SCIM deprovision removes an AI_ADMIN membership** (owner decision,
+  2026-10-18). `DELETE /Users`, `active: false` and reactivation read
+  `isScimStatusProtectedRole`, the complement of the Groups ceiling, so they
+  treat AI_ADMIN like EDITOR while ADMIN and OWNER stay refused. Keeping it
+  protected would have let a Groups push create a membership that the IdP's
+  leaver could not take away. The cost is the mirror of the #2200 exposure: a
+  SCIM token holder can switch an AI_ADMIN off, as it can an EDITOR.
 - **The members page locks an AI_ADMIN row for a non-OWNER** rather than
   opening an editor in which every save is refused. OWNER rows keep their
   existing behaviour.

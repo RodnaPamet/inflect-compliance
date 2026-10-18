@@ -86,6 +86,7 @@ import {
     SCIM_GROUP_ASSIGNABLE_ROLES,
     isScimAssignableRole,
     isScimProtectedRole,
+    isScimStatusProtectedRole,
 } from '@/lib/scim/roles';
 import { resolveScimRole } from '@/app-layer/usecases/scim-users';
 import {
@@ -448,12 +449,21 @@ describe('BEHAVIOUR — every other membership-role writer refuses it', () => {
         expect(db.tenantCustomRole.update).not.toHaveBeenCalled();
     });
 
-    it('SCIM Users: an IdP asking for it gets the default role, flagged blocked; an AI_ADMIN membership is protected', () => {
+    it('SCIM Users: an IdP asking for it gets the default role, flagged blocked; an AI_ADMIN role is never rewritten', () => {
         for (const v of ['AI_ADMIN', 'ai_admin', 'Ai_Admin']) {
             expect(resolveScimRole(v)).toEqual({ role: 'READER', blocked: true, requestedRole: v });
         }
         expect(isScimAssignableRole('AI_ADMIN')).toBe(false);
         expect(isScimProtectedRole('AI_ADMIN')).toBe(true);
+    });
+
+    it('SCIM Users: a deprovision may switch an AI_ADMIN membership off, and never an ADMIN or OWNER one (owner decision, 2026-10-18)', () => {
+        expect(isScimStatusProtectedRole('AI_ADMIN')).toBe(false);
+        for (const role of SCIM_ASSIGNABLE_ROLES) expect(isScimStatusProtectedRole(role)).toBe(false);
+        expect(isScimStatusProtectedRole('ADMIN')).toBe(true);
+        expect(isScimStatusProtectedRole('OWNER')).toBe(true);
+        // A role nobody has classified yet is protected by default.
+        expect(isScimStatusProtectedRole('SOME_FUTURE_ROLE')).toBe(true);
     });
 
     it('Entra group mappings: the schema now accepts it, and still refuses OWNER', () => {

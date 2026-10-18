@@ -773,4 +773,58 @@ describe('SCIM protected-membership status writes', () => {
             expect.objectContaining({ data: expect.objectContaining({ status: 'DEACTIVATED' }) }),
         );
     });
+
+    // #3699 deploy 2 (owner decision, 2026-10-18): a Groups push can now make an
+    // AI_ADMIN membership, so the IdP's deprovision can take it away. Its ROLE is
+    // still never rewritten from `/Users`, and ADMIN/OWNER stay refused above.
+    test('DELETE on an AI_ADMIN membership deactivates it', async () => {
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'AI_ADMIN',
+            user: { email: 'ai-admin@acme.com' },
+        });
+        mockPrisma.tenantMembership.update.mockResolvedValue({});
+
+        expect(await scimDeleteUser(ctx, 'u1')).toBe(true);
+        expect(mockPrisma.tenantMembership.update).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.tenantMembership.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 'm1' },
+                data: expect.objectContaining({ status: 'DEACTIVATED' }),
+            }),
+        );
+    });
+
+    test('PATCH active=false on an AI_ADMIN deactivates it, and writes no role', async () => {
+        const user = { id: 'u1', email: 'ai-admin@acme.com', name: 'A', createdAt: now, updatedAt: now };
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'AI_ADMIN', user,
+        });
+        mockPrisma.tenantMembership.update.mockResolvedValue({});
+
+        await scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'active', value: false }], BASE_URL);
+        const writes = mockPrisma.tenantMembership.update.mock.calls.map(
+            ([arg]: [{ data: Record<string, unknown> }]) => arg.data,
+        );
+        expect(writes).toEqual([expect.objectContaining({ status: 'DEACTIVATED' })]);
+        expect(writes.some((d: Record<string, unknown>) => 'role' in d)).toBe(false);
+    });
+
+    test('PUT with roles[] on an AI_ADMIN membership does not rewrite its role', async () => {
+        const user = { id: 'u1', email: 'ai-admin@acme.com', name: 'A', createdAt: now, updatedAt: now };
+        mockPrisma.tenantMembership.findFirst.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'AI_ADMIN', user,
+        });
+        mockPrisma.tenantMembership.count.mockResolvedValue(1); // AI_ADMIN here counts as protected for the profile
+
+        await scimPutUser(
+            ctx, 'u1',
+            { userName: 'ai-admin@acme.com', active: true, roles: [{ value: 'editor' }] },
+            BASE_URL,
+        );
+        const roleWrites = mockPrisma.tenantMembership.update.mock.calls.filter(
+            ([arg]: [{ data: Record<string, unknown> }]) => 'role' in arg.data,
+        );
+        expect(roleWrites).toEqual([]);
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
 });

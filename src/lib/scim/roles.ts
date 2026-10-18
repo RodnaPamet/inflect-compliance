@@ -49,9 +49,10 @@ export type ScimAssignableRole = (typeof SCIM_ASSIGNABLE_ROLES)[number];
  * into `AI_ADMIN` can move them out again when the group changes; ADMIN and
  * OWNER memberships stay untouchable from SCIM. Two things keep this narrower
  * than it looks: a mapping that yields `AI_ADMIN` is made by an OWNER only, and
- * the Users path's protection (`isScimProtectedRole`) still reads
- * `SCIM_ASSIGNABLE_ROLES`, so an `AI_ADMIN` membership is not reachable through
- * `/Users` at all.
+ * the Users path's role and profile protection (`isScimProtectedRole`) still
+ * reads `SCIM_ASSIGNABLE_ROLES`, so `/Users` never assigns or rewrites an
+ * `AI_ADMIN` role. Its STATUS protection reads this list
+ * (`isScimStatusProtectedRole`), so a deprovision does remove one.
  *
  * What it does NOT stop, and #2200 documents for ADMIN: a holder of the tenant's
  * SCIM bearer token can push a group whose `externalId` is the AI_ADMIN-mapped
@@ -78,8 +79,9 @@ export function isScimAssignableRole(role: string): role is ScimAssignableRole {
  * role added to `Role` is protected by default and a role added to the ceiling
  * is unprotected in exactly one place. Today that is ADMIN, OWNER and AI_ADMIN —
  * the last by this default, with no edit here when #3699 added it. Deploy 2
- * left it protected here although a Groups push may now write it: the Users
- * path neither assigns nor alters an AI_ADMIN membership.
+ * leaves it protected HERE — the Users path never assigns an AI_ADMIN role nor
+ * rewrites one, and its profile is never renamed — but not against a status
+ * write: see `isScimStatusProtectedRole`.
  *
  * Note this is the *enum* role only. A membership carrying a permissive
  * `customRoleId` on top of an assignable base role is still SCIM-writable;
@@ -87,4 +89,22 @@ export function isScimAssignableRole(role: string): role is ScimAssignableRole {
  */
 export function isScimProtectedRole(role: string): boolean {
     return !isScimAssignableRole(role);
+}
+
+/**
+ * True for a membership SCIM must not switch on or off — the STATUS writes
+ * (`DELETE /Users`, `active: false`, and the reactivation `POST /Users` and
+ * `active: true` perform).
+ *
+ * The complement of the Groups ceiling, not of the Users ceiling, so it differs
+ * from `isScimProtectedRole` by exactly `AI_ADMIN` (owner decision, 2026-10-18,
+ * #3699): an identity provider's deprovision removes an AI_ADMIN membership as it
+ * removes an EDITOR's. The asymmetry it closes was that a Groups push could
+ * create one while a deprovision could not take it away, so a leaver kept the
+ * agent keys until a person noticed. Reactivation is allowed with it, because a
+ * Groups push could grant the role anyway. ADMIN and OWNER stay protected,
+ * and a role added to `Role` is protected here by default too.
+ */
+export function isScimStatusProtectedRole(role: string): boolean {
+    return !(SCIM_GROUP_ASSIGNABLE_ROLES as readonly string[]).includes(role);
 }
