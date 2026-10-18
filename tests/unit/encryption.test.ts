@@ -15,6 +15,7 @@ import {
     encryptField,
     decryptField,
     hashForLookup,
+    keyedChangeDigest,
     isEncryptedValue,
     _resetKeyCache,
 } from '../../src/lib/security/encryption';
@@ -213,6 +214,42 @@ describe('hashForLookup', () => {
         const hash2 = hashForLookup('user@example.com');
 
         expect(hash1).not.toBe(hash2);
+    });
+});
+
+describe('keyedChangeDigest', () => {
+    const URL_A = 'https://mcp.vendor.test/s/sk_live_canary/mcp';
+
+    it('is a deterministic 64-character hex digest that does not contain the value', () => {
+        const a = keyedChangeDigest('test-domain', URL_A);
+        expect(a).toMatch(/^[0-9a-f]{64}$/);
+        expect(keyedChangeDigest('test-domain', URL_A)).toBe(a);
+        expect(a).not.toContain('sk_live_canary');
+    });
+
+    it('uses the value exactly: case and surrounding space are changes', () => {
+        // hashForLookup folds both, which would hide a moved URL path.
+        const a = keyedChangeDigest('test-domain', URL_A);
+        expect(keyedChangeDigest('test-domain', URL_A.replace('canary', 'CANARY'))).not.toBe(a);
+        expect(keyedChangeDigest('test-domain', ` ${URL_A}`)).not.toBe(a);
+    });
+
+    it('is separated by domain, and is never the lookup hash of the same value', () => {
+        const lower = URL_A.toLowerCase();
+        expect(keyedChangeDigest('one', lower)).not.toBe(keyedChangeDigest('two', lower));
+        expect(keyedChangeDigest('one', lower)).not.toBe(hashForLookup(lower));
+    });
+
+    it('is keyed: another master key gives another digest', () => {
+        const a = keyedChangeDigest('test-domain', URL_A);
+        _resetKeyCache();
+        process.env.DATA_ENCRYPTION_KEY = 'a-completely-different-key-for-hash-testing-min32!!!';
+        expect(keyedChangeDigest('test-domain', URL_A)).not.toBe(a);
+    });
+
+    it('refuses an empty domain or one carrying NUL, the separator', () => {
+        expect(() => keyedChangeDigest('', URL_A)).toThrow();
+        expect(() => keyedChangeDigest('a\u0000b', URL_A)).toThrow();
     });
 });
 

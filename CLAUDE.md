@@ -1692,6 +1692,78 @@ careless edit from being undone:
   and lock the agent second, and deadlocked with a retirement whenever the row's
   deadline fell between the two requests' clocks.
 
+**The integration passport** (#3672, `docs/integration-passport.md` is the
+specification) is one record per `mcp-server` connection, built by the pure
+`src/lib/agentic/integration-passport.ts`, compared by the pure planner
+`integration-passport-drift.ts`, and written by the weekly
+`integration-passport-sweep` (Sunday 05:45 UTC). Nine rules, each one careless
+edit from being undone:
+
+- **Stored rows only, one decrypt, kind only.** The builder never calls the
+  server. Each connection's secret is decrypted once, handed to
+  `resolveMcpCredentials`, and only the grant KIND leaves; one that does not
+  decrypt is `invalid`. Every row type declares the complete set of fields the
+  builder may read, and the load `select`s name nothing else — a parameter
+  set's values and a pin's text are excluded by not being selected. Timestamps
+  are ISO strings before the digest (`canonicalJson` writes a `Date` as `{}`).
+- **There is no passport table, and the prior is the EMITTED artefact.** Last
+  week's passports are the newest `INTEGRATION_PASSPORTS` artefact strictly
+  before this ISO week, read out of `Evidence.content` and verified against
+  `AgenticEvidenceArtefact.sourceDigest`, which has no route writer. A prior
+  that fails is `PASSPORT_PRIOR_UNVERIFIABLE` (HIGH), never a silent baseline.
+  "Strictly before" is what makes a re-run in the same week idempotent; do not
+  compare against "latest, this week included".
+- **Events only in the transaction that emits.** Event findings carry the ISO
+  week in their `sourceRef` (`…@2026-W42`) and are written only by a pass that
+  also emits the passport they were found against, in the same transaction. A
+  pass that raised events without emitting would leave the same prior and raise
+  them again next week under next week's key. State findings carry no week,
+  reopen when the condition returns, and close only on positive evidence.
+- **No accountable owner means the OWNER role, with no assignee — and the
+  assignee follows the owner while a finding is open.** P11 is
+  `IntegrationConnection.ownerUserId`, set only by `setIntegrationConnectionOwner`
+  (its own `admin.manage` route — never the connection upsert, whose
+  `isEnabled ?? true` would re-enable a disabled connection). An owner without an
+  ACTIVE membership is no owner. Every sweep moves each open finding about a
+  connection to its current accountable owner (`intendedAssignee`), rewriting
+  only the description's ownership TAIL (`reassignedDescription`) — so a
+  connection finding's description must END with its ownership sentence. A
+  create-only reconcile left the first Sunday's findings, all raised while the
+  new column was empty, unassigned for good.
+- **Never silent.** A tenant whose passports were not emitted gets
+  `PASSPORT_NOT_EVIDENCED` with its reason; a truncated read (any source at its
+  cap) compares, emits and closes nothing but still raises the state findings
+  of the rows it read — each is a condition observed on a row, true whatever
+  lies past the cap; every tenant ends in a counted outcome on
+  `agentic.integration_passport.sweep`.
+- **A passport is read by every evidence reader, so P1 is never the URL.** The
+  emitted Evidence is `assertCanRead` and can travel in an audit pack's share
+  link. A
+  URL's path or query can carry a credential, so the endpoint is its origin plus
+  `keyedChangeDigest` of the whole URL (HMAC under the deployment key, computed
+  in the usecase because the builder is pure). Never put `configJson.url`, or
+  anything else that is a secret in other hands, into the bundle or a finding.
+- **`asOf` names a week; the rows are read now.** The job refuses a week that
+  has not begun, and the pass refuses (`409`, under the lock) a week earlier
+  than one the tenant already holds passports for — rebuilt from today's rows
+  it would rewrite that week's evidence and raise later changes again under its
+  key.
+- **The shared emitter resolves ISO codes through `requirementCodeSpellings`,
+  and judges withdrawal per KIND (`installedKinds`).** One flag across all kinds
+  would let a tenant with only ISO targets withdraw every receipt artefact on a
+  capped catalogue read that missed its ASI rows.
+- **Audit after commit, under a namespaced lock.** `logEvent` appends in a
+  transaction of its own under `hashtext(tenantId)`; the sweep's write
+  transaction holds `integration-passport:<tenantId>` and queues its audit rows
+  until it commits.
+
+The view (`GET admin/integration-passport/{id}`) is `admin.tenant_lifecycle` and
+a SIBLING of `admin/integrations/` — first-match-wins resolves that prefix to
+`admin.manage`. The gate is a PLACEMENT beside the OWNER-only surfaces that
+change the rung and pairings, not a confidentiality boundary: the same passport
+is the week's Evidence, which every evidence reader can open. Do not cite the
+gate as the reason a field is safe to put in a passport.
+
 
 
 

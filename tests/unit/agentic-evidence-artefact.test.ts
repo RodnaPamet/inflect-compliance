@@ -7,10 +7,14 @@
  * which means the period arithmetic cannot consult a clock and the digest cannot
  * depend on the order a database happened to return rows in.
  */
+import * as fs from 'fs';
+
+import { LEGACY_KEY_FAMILY_URNS } from '@/app-layer/domain/framework-representation';
 import {
     AGENTIC_ARTEFACT_KINDS,
     ARTEFACT_KIND_DECISIONS,
     ARTEFACT_KIND_HARNESS_SCANS,
+    ARTEFACT_KIND_PASSPORTS,
     ARTEFACT_KIND_RECEIPTS,
     ASI_LIBRARY_URN,
     EVIDENCE_TARGETS,
@@ -25,6 +29,7 @@ import {
     harnessIncompleteReasons,
     harnessStatusCorrection,
     monthlyPeriod,
+    periodForKind,
     sourcePopulationDigest,
     targetsForKind,
     type HarnessBoundsFact,
@@ -32,8 +37,10 @@ import {
     type HarnessSilentScannersFact,
     type HarnessScanFact,
     type HarnessTallies,
+    weeklyPeriod,
     type ReceiptFact,
 } from '@/lib/agentic/evidence-artefact';
+import { repoFiles } from '../helpers/repo-files';
 
 describe('the period is the UTC month containing the instant', () => {
     it('is half-open — the first instant of the next month is not in it', () => {
@@ -61,6 +68,55 @@ describe('the period is the UTC month containing the instant', () => {
     it('pads the month to two digits', () => {
         expect(monthlyPeriod(new Date('2026-01-15T00:00:00.000Z')).label).toBe('2026-01');
         expect(monthlyPeriod(new Date('2026-10-15T00:00:00.000Z')).label).toBe('2026-10');
+    });
+});
+
+describe('the weekly period is the ISO 8601 week containing the instant, in UTC', () => {
+    const at = (iso: string) => weeklyPeriod(new Date(iso));
+
+    it('runs Monday 00:00 UTC to the next Monday, end exclusive', () => {
+        // The sweep's own slot: Sunday 05:45 lands on the last day of the week
+        // it evidences.
+        const w = at('2026-10-18T05:45:00.000Z');
+        expect(w.label).toBe('2026-W42');
+        expect(w.start.toISOString()).toBe('2026-10-12T00:00:00.000Z');
+        expect(w.end.toISOString()).toBe('2026-10-19T00:00:00.000Z');
+    });
+
+    it('puts the Monday boundary instant in the week it starts', () => {
+        expect(at('2026-10-19T00:00:00.000Z').label).toBe('2026-W43');
+        expect(at('2026-10-19T00:00:00.000Z').start.toISOString()).toBe('2026-10-19T00:00:00.000Z');
+        expect(at('2026-10-18T23:59:59.999Z').label).toBe('2026-W42');
+    });
+
+    it('names the ISO week-year, which is the year of the week\'s Thursday', () => {
+        // 2026 starts on a Thursday, so it has 53 ISO weeks and its last one
+        // runs into January 2027.
+        expect(at('2026-12-31T12:00:00.000Z').label).toBe('2026-W53');
+        expect(at('2027-01-03T23:59:59.999Z').label).toBe('2026-W53');
+        expect(at('2027-01-04T00:00:00.000Z').label).toBe('2027-W01');
+        // …and the other direction: the last days of December in week 1.
+        expect(at('2024-12-30T00:00:00.000Z').label).toBe('2025-W01');
+        expect(at('2026-01-01T00:00:00.000Z').label).toBe('2026-W01');
+        expect(at('2025-12-29T00:00:00.000Z').start.toISOString()).toBe('2025-12-29T00:00:00.000Z');
+    });
+
+    it('pads the week to two digits', () => {
+        expect(at('2026-01-07T00:00:00.000Z').label).toBe('2026-W02');
+    });
+});
+
+describe('an artefact\'s period follows its kind', () => {
+    const start = new Date('2026-10-12T00:00:00.000Z');
+
+    it('is the ISO week for integration passports', () => {
+        expect(periodForKind('INTEGRATION_PASSPORTS', start).label).toBe('2026-W42');
+    });
+
+    it('is the month for every other kind, including one this build does not know', () => {
+        expect(periodForKind(ARTEFACT_KIND_RECEIPTS, start).label).toBe('2026-10');
+        expect(periodForKind(ARTEFACT_KIND_DECISIONS, start).label).toBe('2026-10');
+        expect(periodForKind('A_KIND_FROM_A_LATER_BUILD', start).label).toBe('2026-10');
     });
 });
 
@@ -129,6 +185,50 @@ describe('the kind → obligation map', () => {
             (t) => `${t.kind}::${t.familyUrn}::${t.requirementCode}`,
         );
         expect(new Set(seen).size).toBe(seen.length);
+    });
+
+    it('evidences the integration passport on supplier and access obligations in three families (#3672)', () => {
+        // ASI-only would leave every ISO 27001 and SOC 2 tenant with nothing
+        // emitted, and so with no prior week for its drift to be compared with.
+        expect(
+            targetsForKind(ARTEFACT_KIND_PASSPORTS)
+                .map((t) => `${t.familyUrn}#${t.requirementCode}`)
+                .sort(),
+        ).toEqual([
+            'urn:inflect:library:iso27001-2022#A.5.15',
+            'urn:inflect:library:iso27001-2022#A.5.19',
+            'urn:inflect:library:owasp-agentic-top10#ASI03',
+            'urn:inflect:library:owasp-agentic-top10#ASI04',
+            'urn:inflect:library:soc2-2017#CC6.1',
+            'urn:inflect:library:soc2-2017#CC9.1',
+        ]);
+    });
+
+    it("names, for ISO 27001 and SOC 2, the seeded key the representation module maps to that family", () => {
+        // A legacy key the representation module does not know reaches no row
+        // a pre-urn database holds, silently.
+        for (const t of targetsForKind(ARTEFACT_KIND_PASSPORTS)) {
+            const known = Object.entries(LEGACY_KEY_FAMILY_URNS)
+                .filter(([, urn]) => urn === t.familyUrn)
+                .map(([key]) => key);
+            if (known.length === 0) continue; // ASI: its legacy keys are the target's own
+            expect(t.legacyKeys).toEqual(known);
+        }
+    });
+
+    it('lists exactly the kinds the newest migration CHECK allows', () => {
+        // The DB CHECK on `kind` is DROP + ADD in each migration that widens
+        // it, so the one that sorts LAST is the one in force. Two branches
+        // widening it in parallel must re-list each other's kind; this fails
+        // the branch that merges second until it does.
+        const migrations = repoFiles({ under: 'prisma/migrations', extensions: ['.sql'] })
+            .filter((f) => fs.readFileSync(f, 'utf8').includes('"AgenticEvidenceArtefact_kind_known"'))
+            .sort();
+        const newest = fs.readFileSync(migrations[migrations.length - 1], 'utf8');
+        const check = /ADD CONSTRAINT "AgenticEvidenceArtefact_kind_known"\s+CHECK \("kind" IN \(([^)]*)\)\)/.exec(newest);
+        expect(check).not.toBeNull();
+        const allowed = check![1].split(',').map((k) => k.trim().replace(/^'|'$/g, '')).sort();
+        expect(allowed).toEqual([...AGENTIC_ARTEFACT_KINDS].sort());
     });
 
     it('carries a written reason on every entry', () => {

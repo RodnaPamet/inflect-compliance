@@ -332,6 +332,10 @@ export async function approveExternalToolManifest(
                 annotationsHash: tool.liveAnnotationsHash,
             },
             ctx.userId as string,
+            // From the same read as `liveAnnotationsHash`, which it is derived
+            // from — so the stored declaration cannot disagree with the hash it
+            // sits beside (#3672).
+            tool.declaresWrite,
         ),
     );
 }

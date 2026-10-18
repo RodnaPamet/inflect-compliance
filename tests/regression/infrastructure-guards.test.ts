@@ -127,6 +127,7 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'identity-leaver-dispatch',
     'identity-sync-dispatch',
     'incident-notification-deadlines',
+    'integration-passport-sweep',
     'notification-dispatch',
     'notification-outbox-flush',
     'nvd-cve-sync',

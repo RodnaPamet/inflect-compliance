@@ -85,6 +85,7 @@ import {
     AGENTIC_ARTEFACT_KINDS,
     ARTEFACT_KIND_DECISIONS,
     ARTEFACT_KIND_HARNESS_SCANS,
+    ARTEFACT_KIND_PASSPORTS,
     ARTEFACT_KIND_RECEIPTS,
     EVIDENCE_TARGETS,
     HARNESS_SCANNER_CAP,
@@ -96,11 +97,14 @@ import {
     harnessDigestFacts,
     harnessStatusCorrection,
     monthlyPeriod,
+    periodForKind,
     sourcePopulationDigest,
     type AgenticArtefactKind,
+    type ArtefactBody,
     type ArtefactPeriod,
     type ArtefactWithdrawalReason,
     type DecisionFact,
+    type EvidenceTarget,
     type HarnessPeriodFacts,
     type HarnessPlannedStatus,
     type HarnessScanFact,
@@ -111,7 +115,12 @@ import { parseStoredHarnessSources } from '@/lib/agentic/harness-contract';
 import { isHarnessShortfall } from '@/lib/agentic/harness-findings';
 import { HARNESS_LEVELS, type HarnessLevel } from '@/lib/agentic/harness-ladder';
 import { harnessScanCompleteness, type HarnessStoredReach } from '@/lib/agentic/harness-read-model';
-import { frameworkFamilyId } from '@/app-layer/domain/framework-representation';
+import {
+    canonicalRequirementCode,
+    frameworkFamilyId,
+    requirementCodeSpellings,
+    type FrameworkIdentity,
+} from '@/app-layer/domain/framework-representation';
 import type { RequestContext } from '@/app-layer/types';
 
 /** The framework catalogue is a small global table; loaded whole, grouped in memory. */
@@ -154,6 +163,10 @@ export interface EmissionReport {
      * Distinguished from "installed and nothing emitted" deliberately: an
      * absence is ambiguous, and "you have no agentic controls" is a different
      * instruction to an operator than "your agents did nothing".
+     *
+     * About the kinds THIS pass emits (receipts and decision records). A
+     * catalogue holding only a passport target framework (ISO 27001, SOC 2)
+     * reports false here, because nothing this pass writes can land on it.
      */
     readonly anyTargetInstalled: boolean;
     readonly artefacts: readonly EmittedArtefact[];
@@ -161,7 +174,7 @@ export interface EmissionReport {
 
 // ── Target resolution ───────────────────────────────────────────────────────
 
-interface TargetControl {
+export interface TargetControl {
     readonly id: string;
     /**
      * `Control.code` is OPTIONAL in the schema, so this is nullable and stays
@@ -175,6 +188,122 @@ interface TargetControl {
     readonly requirementCode: string;
 }
 
+/** One row of the framework catalogue, as target resolution reads it. */
+export interface CatalogueFramework extends FrameworkIdentity {
+    readonly id: string;
+}
+
+/**
+ * One target requirement, resolved against the catalogue: the framework rows
+ * of its family, every spelling of its code within that family, and the kinds
+ * that target it.
+ */
+export interface WantedRequirement {
+    readonly familyUrn: string;
+    /** `canonicalRequirementCode(familyUrn, requirementCode)` — the join key. */
+    readonly canonicalCode: string;
+    readonly frameworkIds: readonly string[];
+    readonly spellings: readonly string[];
+    readonly kinds: ReadonlySet<AgenticArtefactKind>;
+}
+
+/** `(family, canonical code)` — the key one obligation is known by across representations. */
+function requirementKey(familyUrn: string, code: string): string {
+    return `${familyUrn}::${canonicalRequirementCode(familyUrn, code)}`;
+}
+
+/**
+ * Resolve `EVIDENCE_TARGETS` against a framework catalogue — pure, so the
+ * usecase and the job's tenant discovery ask the database the SAME question.
+ *
+ * Two axes, for the two reasons `framework-representation.ts` gives: the
+ * FAMILY (`sourceUrn`, or a legacy key) picks the framework rows, and the
+ * SPELLINGS pick the code within them. ISO 27001 is the family where the second
+ * matters — the seed numbers Annex A `5.19`, the library `A.5.19`, and an exact
+ * code match reaches only whichever one a tenant's database happened to get.
+ * Every other family's spelling list is the code alone, so ASI and EU AI Act
+ * resolution is unchanged.
+ *
+ * `installedKinds` is PER KIND: a kind is installed when at least one of its
+ * target families has a framework row in the catalogue. It replaced a single
+ * `anyInstalled` flag, which was correct only while every kind targeted the
+ * same two families — see `withdrawalReasonFor` for what a shared flag would
+ * now get wrong.
+ */
+export function planTargetRequirements(catalogue: readonly CatalogueFramework[]): {
+    wanted: Map<string, WantedRequirement>;
+    installedKinds: Set<AgenticArtefactKind>;
+} {
+    const installedKinds = new Set<AgenticArtefactKind>();
+    const wanted = new Map<
+        string,
+        { familyUrn: string; canonicalCode: string; frameworkIds: string[]; spellings: string[]; kinds: Set<AgenticArtefactKind> }
+    >();
+    for (const target of EVIDENCE_TARGETS) {
+        const frameworkIds = frameworkIdsFor(catalogue, target);
+        if (frameworkIds.length === 0) continue;
+        installedKinds.add(target.kind);
+
+        // Collapsed first so one requirement serving two kinds (ASI04: receipts
+        // and passports) costs one query clause, not two.
+        const key = requirementKey(target.familyUrn, target.requirementCode);
+        const entry = wanted.get(key);
+        if (entry) {
+            entry.kinds.add(target.kind);
+        } else {
+            wanted.set(key, {
+                familyUrn: target.familyUrn,
+                canonicalCode: canonicalRequirementCode(target.familyUrn, target.requirementCode),
+                frameworkIds,
+                spellings: requirementCodeSpellings(target.familyUrn, target.requirementCode),
+                kinds: new Set([target.kind]),
+            });
+        }
+    }
+    return { wanted, installedKinds };
+}
+
+function frameworkIdsFor(catalogue: readonly CatalogueFramework[], target: EvidenceTarget): string[] {
+    return catalogue
+        .filter((f) => frameworkFamilyId(f) === target.familyUrn || target.legacyKeys.includes(f.key))
+        .map((f) => f.id);
+}
+
+/** The `frameworkRequirement.findMany` OR-clauses for a resolved target set. */
+export function targetRequirementClauses(
+    wanted: ReadonlyMap<string, WantedRequirement>,
+): { frameworkId: { in: string[] }; code: { in: string[] } }[] {
+    return [...wanted.values()].map((w) => ({
+        frameworkId: { in: [...w.frameworkIds] },
+        code: { in: [...w.spellings] },
+    }));
+}
+
+/**
+ * Which wanted requirement a returned row is, keyed by family and canonical
+ * code. A row is matched only through a family whose framework rows include
+ * its `frameworkId`, so a code that happens to exist in two families cannot
+ * cross between them.
+ */
+function wantedForRow(
+    wanted: ReadonlyMap<string, WantedRequirement>,
+    row: { frameworkId: string; code: string },
+): WantedRequirement[] {
+    const out: WantedRequirement[] = [];
+    for (const w of wanted.values()) {
+        if (!w.frameworkIds.includes(row.frameworkId)) continue;
+        if (canonicalRequirementCode(w.familyUrn, row.code) !== w.canonicalCode) continue;
+        out.push(w);
+    }
+    return out;
+}
+
+export interface ResolvedTargetControls {
+    readonly byKind: Map<AgenticArtefactKind, TargetControl[]>;
+    /** The kinds at least one of whose target families the catalogue holds. */
+    readonly installedKinds: ReadonlySet<AgenticArtefactKind>;
+}
+
 /**
  * The tenant's controls that discharge each artefact kind's obligations.
  *
@@ -183,14 +312,20 @@ interface TargetControl {
  * `sourceUrn`, and a tenant's controls hang off whichever its database happened
  * to get; a single-key lookup would emit nothing for half the estate and the
  * failure would be indistinguishable from a tenant with no agentic controls.
+ * And through every SPELLING of the code within the family, for the same
+ * reason one level down (`planTargetRequirements`).
  *
  * `deletedAt: null` for the reason `usecases/framework/coverage.ts` gives on the
  * same join: without it, a removed control keeps attracting fresh evidence.
+ *
+ * Exported because the integration-passport sweep resolves its own targets
+ * with it: one resolution, so the emitter, the withdrawal sweep and the
+ * passport cannot disagree about what a control currently discharges.
  */
-async function resolveTargetControls(
+export async function resolveTargetControls(
     db: PrismaTx,
     ctx: RequestContext,
-): Promise<{ byKind: Map<AgenticArtefactKind, TargetControl[]>; anyInstalled: boolean }> {
+): Promise<ResolvedTargetControls> {
     const catalogue = await db.framework.findMany({
         select: { id: true, key: true, sourceUrn: true },
         take: FRAMEWORK_CATALOGUE_CAP,
@@ -199,53 +334,26 @@ async function resolveTargetControls(
     const byKind = new Map<AgenticArtefactKind, TargetControl[]>();
     for (const kind of AGENTIC_ARTEFACT_KINDS) byKind.set(kind, []);
 
-    // (familyUrn, requirementCode) → the kinds that target it. Collapsed first so
-    // one requirement serving two kinds costs one query, not two.
-    const wanted = new Map<string, { frameworkIds: string[]; code: string; kinds: Set<AgenticArtefactKind> }>();
-    for (const target of EVIDENCE_TARGETS) {
-        const frameworkIds = catalogue
-            .filter(
-                (f) =>
-                    frameworkFamilyId(f) === target.familyUrn ||
-                    target.legacyKeys.includes(f.key),
-            )
-            .map((f) => f.id);
-        if (frameworkIds.length === 0) continue;
-
-        const key = `${target.familyUrn}::${target.requirementCode}`;
-        const entry = wanted.get(key);
-        if (entry) {
-            entry.kinds.add(target.kind);
-        } else {
-            wanted.set(key, { frameworkIds, code: target.requirementCode, kinds: new Set([target.kind]) });
-        }
-    }
-
-    if (wanted.size === 0) return { byKind, anyInstalled: false };
+    const { wanted, installedKinds } = planTargetRequirements(catalogue);
+    if (wanted.size === 0) return { byKind, installedKinds };
 
     const requirements = await db.frameworkRequirement.findMany({
-        where: {
-            OR: [...wanted.values()].map((w) => ({
-                frameworkId: { in: w.frameworkIds },
-                code: w.code,
-            })),
-            deprecatedAt: null,
-        },
-        select: { id: true, code: true },
+        where: { OR: targetRequirementClauses(wanted), deprecatedAt: null },
+        select: { id: true, code: true, frameworkId: true },
     });
-    if (requirements.length === 0) return { byKind, anyInstalled: true };
+    if (requirements.length === 0) return { byKind, installedKinds };
 
-    const kindsByRequirementCode = new Map<string, Set<AgenticArtefactKind>>();
-    for (const w of wanted.values()) {
-        const existing = kindsByRequirementCode.get(w.code);
-        if (existing) for (const k of w.kinds) existing.add(k);
-        else kindsByRequirementCode.set(w.code, new Set(w.kinds));
+    const kindsByRequirementId = new Map<string, Set<AgenticArtefactKind>>();
+    for (const r of requirements) {
+        const kinds = new Set<AgenticArtefactKind>();
+        for (const w of wantedForRow(wanted, r)) for (const k of w.kinds) kinds.add(k);
+        if (kinds.size > 0) kindsByRequirementId.set(r.id, kinds);
     }
 
     const links = await db.controlRequirementLink.findMany({
         where: {
             tenantId: ctx.tenantId,
-            requirementId: { in: requirements.map((r) => r.id) },
+            requirementId: { in: [...kindsByRequirementId.keys()] },
             control: { deletedAt: null },
         },
         select: {
@@ -261,7 +369,7 @@ async function resolveTargetControls(
     for (const link of links) {
         const requirementCode = codeByRequirementId.get(link.requirementId);
         if (!requirementCode) continue;
-        for (const kind of kindsByRequirementCode.get(requirementCode) ?? []) {
+        for (const kind of kindsByRequirementId.get(link.requirementId) ?? []) {
             // One control may discharge two obligations of the same kind (ASI02
             // and ASI04). The artefact identity is on the CONTROL, so that is one
             // artefact, not two — dedupe here rather than colliding on the index.
@@ -275,7 +383,7 @@ async function resolveTargetControls(
         }
     }
 
-    return { byKind, anyInstalled: true };
+    return { byKind, installedKinds };
 }
 
 // ── Populations ─────────────────────────────────────────────────────────────
@@ -605,6 +713,183 @@ async function logEmitterStatusChange(
 }
 
 /**
+ * Write one artefact inside the caller's transaction, creating or updating in
+ * place. THE write path for `AgenticEvidenceArtefact` — `writeArtefact` wraps it
+ * for receipts and decision records, and the integration-passport sweep calls it
+ * inside the transaction that also reconciles that week's findings, so a week's
+ * passport and the findings raised against it land together or not at all.
+ *
+ * `allowCreate: false` is the retry after a lost insert race: the row must now
+ * exist, and a second vanishing is a bug rather than a race.
+ */
+export async function writeArtefactInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    plan: ArtefactPlan,
+    actorUserId: string | null,
+    { allowCreate = true }: { allowCreate?: boolean } = {},
+): Promise<EmittedArtefact> {
+    const existing = await db.agenticEvidenceArtefact.findUnique({
+        where: {
+            tenantId_controlId_kind_periodStart: {
+                tenantId: ctx.tenantId,
+                controlId: plan.control.id,
+                kind: plan.kind,
+                periodStart: plan.period.start,
+            },
+        },
+        select: {
+            id: true,
+            evidenceId: true,
+            sourceDigest: true,
+            status: true,
+            plannedEvidenceStatus: true,
+            // Through the relation, not a second Evidence read: the
+            // status is the artefact's own row's, in the same query.
+            evidence: { select: { status: true } },
+        },
+    });
+
+    if (existing) {
+        // ONE-DIRECTIONAL: an incomplete month found APPROVED is put
+        // back; a NEEDS_REVIEW is raised only when it was the emitter's
+        // own verdict; a review decision otherwise stands.
+        const previousPlanned = asPlannedStatus(existing.plannedEvidenceStatus);
+        const correction = plan.evidenceStatus === null
+            ? null
+            : harnessStatusCorrection({
+                  planned: plan.evidenceStatus,
+                  current: existing.evidence.status,
+                  previousPlanned,
+              });
+        const planMoved = plan.evidenceStatus !== previousPlanned;
+        const unchanged =
+            existing.status === 'CURRENT' &&
+            existing.sourceDigest === plan.digest &&
+            correction === null &&
+            !planMoved;
+        if (unchanged) {
+            // The population has not moved. Only the liveness stamp does —
+            // `updatedAt` deliberately stays put, so "the emitter is alive"
+            // and "the evidence changed" remain separable facts.
+            await db.agenticEvidenceArtefact.update({
+                where: { id: existing.id },
+                data: { lastEmittedAt: new Date() },
+            });
+            return {
+                artefactId: existing.id,
+                evidenceId: existing.evidenceId,
+                controlId: plan.control.id,
+                controlCode: plan.control.code,
+                kind: plan.kind,
+                periodLabel: plan.period.label,
+                recordCount: plan.recordCount,
+                outcome: 'unchanged' as const,
+            };
+        }
+
+        // The population moved, or the artefact was withdrawn and its
+        // basis holds again. Either way the SAME evidence row is rewritten
+        // — a second row for the same period is the duplication the
+        // identity exists to prevent.
+        await db.evidence.update({
+            where: { id: existing.evidenceId },
+            data: {
+                title: plan.title,
+                content: plan.content,
+                isArchived: false,
+                ...(correction !== null ? { status: correction } : {}),
+            },
+        });
+        await db.agenticEvidenceArtefact.update({
+            where: { id: existing.id },
+            data: {
+                sourceDigest: plan.digest,
+                recordCount: plan.recordCount,
+                periodEnd: plan.period.end,
+                status: 'CURRENT',
+                withdrawnAt: null,
+                withdrawnReason: null,
+                lastEmittedAt: new Date(),
+                plannedEvidenceStatus: plan.evidenceStatus,
+            },
+        });
+        if (correction !== null) {
+            await logEmitterStatusChange(db, ctx, {
+                evidenceId: existing.evidenceId,
+                from: existing.evidence.status,
+                to: correction,
+                period: plan.period,
+            });
+        }
+        return {
+            artefactId: existing.id,
+            evidenceId: existing.evidenceId,
+            controlId: plan.control.id,
+            controlCode: plan.control.code,
+            kind: plan.kind,
+            periodLabel: plan.period.label,
+            recordCount: plan.recordCount,
+            outcome: 'updated' as const,
+        };
+    }
+
+    if (!allowCreate) {
+        // A concurrent tick inserted between our read and our insert, and
+        // then vanished. Refusing to loop is deliberate: one retry is a
+        // race, two is a bug we would rather see.
+        throw internal('agentic evidence artefact vanished between attempts');
+    }
+
+    const evidence = await db.evidence.create({
+        data: {
+            tenantId: ctx.tenantId,
+            type: 'TEXT',
+            title: plan.title,
+            content: plan.content,
+            // `control-test-runner`'s convention, so generated artefacts
+            // filter alongside every other automated one.
+            category: 'integration',
+            status: plan.evidenceStatus ?? 'APPROVED',
+            ownerUserId: actorUserId,
+        },
+        select: { id: true },
+    });
+    await db.evidenceControlLink.create({
+        data: {
+            tenantId: ctx.tenantId,
+            evidenceId: evidence.id,
+            controlId: plan.control.id,
+            createdByUserId: actorUserId,
+        },
+    });
+    const artefact = await db.agenticEvidenceArtefact.create({
+        data: {
+            tenantId: ctx.tenantId,
+            controlId: plan.control.id,
+            kind: plan.kind,
+            periodStart: plan.period.start,
+            periodEnd: plan.period.end,
+            evidenceId: evidence.id,
+            sourceDigest: plan.digest,
+            recordCount: plan.recordCount,
+            plannedEvidenceStatus: plan.evidenceStatus,
+        },
+        select: { id: true },
+    });
+    return {
+        artefactId: artefact.id,
+        evidenceId: evidence.id,
+        controlId: plan.control.id,
+        controlCode: plan.control.code,
+        kind: plan.kind,
+        periodLabel: plan.period.label,
+        recordCount: plan.recordCount,
+        outcome: 'created' as const,
+    };
+}
+
+/**
  * Write one artefact, creating or updating in place.
  *
  * Its own transaction, one per artefact, so a unique-index collision with a
@@ -618,166 +903,7 @@ async function writeArtefact(
     actorUserId: string | null,
 ): Promise<EmittedArtefact> {
     const attempt = async (allowCreate: boolean): Promise<EmittedArtefact> =>
-        runInTenantContext(ctx, async (db) => {
-            const existing = await db.agenticEvidenceArtefact.findUnique({
-                where: {
-                    tenantId_controlId_kind_periodStart: {
-                        tenantId: ctx.tenantId,
-                        controlId: plan.control.id,
-                        kind: plan.kind,
-                        periodStart: plan.period.start,
-                    },
-                },
-                select: {
-                    id: true,
-                    evidenceId: true,
-                    sourceDigest: true,
-                    status: true,
-                    plannedEvidenceStatus: true,
-                    // Through the relation, not a second Evidence read: the
-                    // status is the artefact's own row's, in the same query.
-                    evidence: { select: { status: true } },
-                },
-            });
-
-            if (existing) {
-                // ONE-DIRECTIONAL: an incomplete month found APPROVED is put
-                // back; a NEEDS_REVIEW is raised only when it was the emitter's
-                // own verdict; a review decision otherwise stands.
-                const previousPlanned = asPlannedStatus(existing.plannedEvidenceStatus);
-                const correction = plan.evidenceStatus === null
-                    ? null
-                    : harnessStatusCorrection({
-                          planned: plan.evidenceStatus,
-                          current: existing.evidence.status,
-                          previousPlanned,
-                      });
-                const planMoved = plan.evidenceStatus !== previousPlanned;
-                const unchanged =
-                    existing.status === 'CURRENT' &&
-                    existing.sourceDigest === plan.digest &&
-                    correction === null &&
-                    !planMoved;
-                if (unchanged) {
-                    // The population has not moved. Only the liveness stamp does —
-                    // `updatedAt` deliberately stays put, so "the emitter is alive"
-                    // and "the evidence changed" remain separable facts.
-                    await db.agenticEvidenceArtefact.update({
-                        where: { id: existing.id },
-                        data: { lastEmittedAt: new Date() },
-                    });
-                    return {
-                        artefactId: existing.id,
-                        evidenceId: existing.evidenceId,
-                        controlId: plan.control.id,
-                        controlCode: plan.control.code,
-                        kind: plan.kind,
-                        periodLabel: plan.period.label,
-                        recordCount: plan.recordCount,
-                        outcome: 'unchanged' as const,
-                    };
-                }
-
-                // The population moved, or the artefact was withdrawn and its
-                // basis holds again. Either way the SAME evidence row is rewritten
-                // — a second row for the same period is the duplication the
-                // identity exists to prevent.
-                await db.evidence.update({
-                    where: { id: existing.evidenceId },
-                    data: {
-                        title: plan.title,
-                        content: plan.content,
-                        isArchived: false,
-                        ...(correction !== null ? { status: correction } : {}),
-                    },
-                });
-                await db.agenticEvidenceArtefact.update({
-                    where: { id: existing.id },
-                    data: {
-                        sourceDigest: plan.digest,
-                        recordCount: plan.recordCount,
-                        periodEnd: plan.period.end,
-                        status: 'CURRENT',
-                        withdrawnAt: null,
-                        withdrawnReason: null,
-                        lastEmittedAt: new Date(),
-                        plannedEvidenceStatus: plan.evidenceStatus,
-                    },
-                });
-                if (correction !== null) {
-                    await logEmitterStatusChange(db, ctx, {
-                        evidenceId: existing.evidenceId,
-                        from: existing.evidence.status,
-                        to: correction,
-                        period: plan.period,
-                    });
-                }
-                return {
-                    artefactId: existing.id,
-                    evidenceId: existing.evidenceId,
-                    controlId: plan.control.id,
-                    controlCode: plan.control.code,
-                    kind: plan.kind,
-                    periodLabel: plan.period.label,
-                    recordCount: plan.recordCount,
-                    outcome: 'updated' as const,
-                };
-            }
-
-            if (!allowCreate) {
-                // A concurrent tick inserted between our read and our insert, and
-                // then vanished. Refusing to loop is deliberate: one retry is a
-                // race, two is a bug we would rather see.
-                throw internal('agentic evidence artefact vanished between attempts');
-            }
-
-            const evidence = await db.evidence.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    type: 'TEXT',
-                    title: plan.title,
-                    content: plan.content,
-                    // `control-test-runner`'s convention, so generated artefacts
-                    // filter alongside every other automated one.
-                    category: 'integration',
-                    status: plan.evidenceStatus ?? 'APPROVED',
-                    ownerUserId: actorUserId,
-                },
-                select: { id: true },
-            });
-            await db.evidenceControlLink.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    evidenceId: evidence.id,
-                    controlId: plan.control.id,
-                    createdByUserId: actorUserId,
-                },
-            });
-            const artefact = await db.agenticEvidenceArtefact.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    controlId: plan.control.id,
-                    kind: plan.kind,
-                    periodStart: plan.period.start,
-                    periodEnd: plan.period.end,
-                    evidenceId: evidence.id,
-                    sourceDigest: plan.digest,
-                    recordCount: plan.recordCount,
-                    plannedEvidenceStatus: plan.evidenceStatus,
-                },
-                select: { id: true },
-            });
-            return {
-                artefactId: artefact.id,
-                evidenceId: evidence.id,
-                controlId: plan.control.id,
-                controlCode: plan.control.code,
-                kind: plan.kind,
-                periodLabel: plan.period.label,
-                recordCount: plan.recordCount,
-                outcome: 'created' as const,
-            };
-        });
+        runInTenantContext(ctx, (db) => writeArtefactInTx(db, ctx, plan, actorUserId, { allowCreate }));
 
     try {
         return await attempt(true);
@@ -790,6 +916,64 @@ async function writeArtefact(
         }
         throw err;
     }
+}
+
+/** The `Control:` line every artefact body starts with, and the title suffix. */
+function planFor(
+    kind: AgenticArtefactKind,
+    control: TargetControl,
+    period: ArtefactPeriod,
+    digest: string,
+    recordCount: number,
+    body: ArtefactBody,
+    evidenceStatus: HarnessPlannedStatus | null = null,
+): ArtefactPlan {
+    return {
+        kind,
+        control,
+        period,
+        digest,
+        recordCount,
+        title: `${body.title} — ${control.code}`,
+        content: `Control: ${control.code} (${control.requirementCode})\n${body.content}`,
+        evidenceStatus,
+    };
+}
+
+/**
+ * Emit one week's integration passports onto every target control, inside the
+ * caller's transaction (#3672).
+ *
+ * The caller is `usecases/integration-passport.ts`, which holds the tenant's
+ * passport lock for the whole transaction, so two passport passes for one
+ * tenant cannot race the identity index and there is no P2002 retry here.
+ * `writeArtefactInTx` is the same code receipts and decisions are written by,
+ * so this file stays the only writer of `AgenticEvidenceArtefact`.
+ */
+export async function emitPassportArtefactsInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    input: {
+        readonly period: ArtefactPeriod;
+        readonly digest: string;
+        readonly recordCount: number;
+        readonly body: ArtefactBody;
+        readonly targets: readonly TargetControl[];
+        readonly actorUserId: string | null;
+    },
+): Promise<EmittedArtefact[]> {
+    const out: EmittedArtefact[] = [];
+    for (const control of input.targets) {
+        out.push(
+            await writeArtefactInTx(
+                db,
+                ctx,
+                planFor(ARTEFACT_KIND_PASSPORTS, control, input.period, input.digest, input.recordCount, input.body),
+                input.actorUserId,
+            ),
+        );
+    }
+    return out;
 }
 
 /**
@@ -811,7 +995,13 @@ export async function emitAgenticEvidence(
     const wants = (kind: AgenticArtefactKind) => !options.kinds || options.kinds.includes(kind);
 
     const prepared = await runInTenantContext(ctx, async (db) => {
-        const { byKind, anyInstalled } = await resolveTargetControls(db, ctx);
+        const { byKind, installedKinds } = await resolveTargetControls(db, ctx);
+        // About THIS pass's kinds only: a passport-only catalogue installs
+        // nothing this pass can write.
+        const anyInstalled =
+            installedKinds.has(ARTEFACT_KIND_RECEIPTS) ||
+            installedKinds.has(ARTEFACT_KIND_DECISIONS) ||
+            installedKinds.has(ARTEFACT_KIND_HARNESS_SCANS);
         if (!anyInstalled) {
             return { anyInstalled: false, plans: [] as ArtefactPlan[], actorUserId: null };
         }
@@ -846,28 +1036,10 @@ export async function emitAgenticEvidence(
 
         const plans: ArtefactPlan[] = [];
         for (const control of receiptTargets) {
-            plans.push({
-                kind: ARTEFACT_KIND_RECEIPTS,
-                control,
-                period,
-                digest: receiptDigest,
-                recordCount: receipts.length,
-                title: `${receiptBody.title} — ${control.code}`,
-                content: `Control: ${control.code} (${control.requirementCode})\n${receiptBody.content}`,
-                evidenceStatus: null,
-            });
+            plans.push(planFor(ARTEFACT_KIND_RECEIPTS, control, period, receiptDigest, receipts.length, receiptBody));
         }
         for (const control of decisionTargets) {
-            plans.push({
-                kind: ARTEFACT_KIND_DECISIONS,
-                control,
-                period,
-                digest: decisionDigest,
-                recordCount: decisions.length,
-                title: `${decisionBody.title} — ${control.code}`,
-                content: `Control: ${control.code} (${control.requirementCode})\n${decisionBody.content}`,
-                evidenceStatus: null,
-            });
+            plans.push(planFor(ARTEFACT_KIND_DECISIONS, control, period, decisionDigest, decisions.length, decisionBody));
         }
 
         if (needHarness) {
@@ -1131,14 +1303,19 @@ export interface WithdrawnArtefact {
  *      and not the other (a control mapped to ASI02 collects receipts; the same
  *      control unmapped from ASI09 must lose only its decision artefact). A
  *      controlId-only membership test would withdraw both or neither.
- *   2. `anyInstalled === false` withdraws NOTHING for this reason. That flag
- *      means no `Framework` row in the whole catalogue carries a target family
- *      urn — a statement about the deployment, not about the tenant, and it is
- *      indistinguishable from a catalogue the read did not see (the read is
- *      capped and unordered). Acting on it would archive every tenant's entire
- *      history on one pass of a job that runs unattended. `CONTROL_REMOVED`
- *      still applies, because a soft-delete is a per-row fact this pass
- *      observed directly.
+ *   2. A kind that is not INSTALLED withdraws NOTHING for this reason. A kind
+ *      is installed when some `Framework` row in the catalogue carries one of
+ *      ITS target family urns — a statement about the deployment, not about
+ *      the tenant, and its absence is indistinguishable from a catalogue the
+ *      read did not see (the read is capped and unordered). Acting on it would
+ *      archive every tenant's entire history on one pass of a job that runs
+ *      unattended. PER KIND, not one flag across all of them: the passport
+ *      targets ISO 27001 and SOC 2 as well as ASI, so a single "anything
+ *      installed" flag would be true on a deployment whose capped read saw
+ *      only an ISO row — and would then withdraw every receipt artefact as
+ *      unmapped, which is exactly the hazard this point exists to prevent.
+ *      `CONTROL_REMOVED` still applies, because a soft-delete is a per-row
+ *      fact this pass observed directly.
  *   3. A `kind` this build does not know is skipped. "Absent from the target
  *      set" carries no information about a kind that has no `EVIDENCE_TARGETS`
  *      entry here, and the schema comment on `kind` says the vocabulary is one
@@ -1161,7 +1338,7 @@ export async function withdrawStaleAgenticEvidence(
 
     const withdrawn: WithdrawnArtefact[] = [];
 
-    const { candidates, targetKeys, anyInstalled } = await runInTenantContext(ctx, async (db) => {
+    const { candidates, targetKeys, installedKinds } = await runInTenantContext(ctx, async (db) => {
         // The same resolution the emitter runs, in the same pass, so the two
         // cannot disagree about what a control currently discharges.
         const resolved = await resolveTargetControls(db, ctx);
@@ -1188,26 +1365,31 @@ export async function withdrawStaleAgenticEvidence(
             take: POPULATION_CAP,
         });
 
-        return { candidates: rows, targetKeys: keys, anyInstalled: resolved.anyInstalled };
+        return { candidates: rows, targetKeys: keys, installedKinds: resolved.installedKinds };
     });
 
-    if (!anyInstalled && candidates.length > 0) {
+    const frozen = candidates.filter(
+        (row) => isKnownKind(row.kind) && !installedKinds.has(row.kind),
+    ).length;
+    if (frozen > 0) {
         // Loud, because the artefacts are now frozen: nothing recomputes them
         // and nothing withdraws them either. That is the safe answer to an
         // ambiguous catalogue, but it is not a healthy steady state.
         log(
             'warn',
-            'Agentic evidence withdrawal skipped the unmapped sweep — no target framework installed',
-            { tenantId: ctx.tenantId, currentArtefacts: candidates.length },
+            'Agentic evidence withdrawal skipped the unmapped sweep — no target framework installed for their kind',
+            { tenantId: ctx.tenantId, currentArtefacts: frozen },
         );
     }
 
     for (const row of candidates) {
-        const reason = withdrawalReasonFor(row, targetKeys, anyInstalled);
+        const reason = withdrawalReasonFor(row, targetKeys, installedKinds);
         if (reason === null) continue;
 
         const at = new Date();
-        const period = monthlyPeriod(row.periodStart);
+        // The period the artefact COVERS, by its kind: a passport's notice
+        // names its ISO week (`2026-W42`), not the month the week starts in.
+        const period = periodForKind(row.kind, row.periodStart);
         const notice = buildWithdrawalNotice(period, reason, at, row.sourceDigest);
         await runInTenantContext(ctx, async (db) => {
             await db.evidence.update({
@@ -1252,12 +1434,18 @@ function targetKey(controlId: string, kind: string): string {
 function withdrawalReasonFor(
     row: { controlId: string; kind: string; control: { deletedAt: Date | null } },
     targetKeys: ReadonlySet<string>,
-    anyInstalled: boolean,
+    installedKinds: ReadonlySet<AgenticArtefactKind>,
 ): ArtefactWithdrawalReason | null {
     if (row.control.deletedAt !== null) return 'CONTROL_REMOVED';
-    if (!anyInstalled) return null;
     // A kind with no target declaration in THIS build cannot be judged absent —
     // see point 3 in the function docstring above.
-    if (!AGENTIC_ARTEFACT_KINDS.some((k) => k === row.kind)) return null;
+    if (!isKnownKind(row.kind)) return null;
+    // Nor can a kind none of whose target families the catalogue read saw —
+    // point 2, per kind.
+    if (!installedKinds.has(row.kind)) return null;
     return targetKeys.has(targetKey(row.controlId, row.kind)) ? null : 'OBLIGATION_UNMAPPED';
+}
+
+function isKnownKind(kind: string): kind is AgenticArtefactKind {
+    return AGENTIC_ARTEFACT_KINDS.some((k) => k === kind);
 }

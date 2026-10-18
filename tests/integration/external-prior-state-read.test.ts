@@ -208,6 +208,24 @@ describe('clearing a pairing', () => {
         await expect(getPriorStateRead(ctx, WRITE)).resolves.toBeNull();
     });
 
+    it('is audited against the connection — and a clear that removed nothing is not (#3672)', async () => {
+        // The set was audited and the clear was not, so a removed pairing had
+        // no entry for the integration passport's PAIRING_REMOVED to cite.
+        await setPriorStateRead(ctx, { writeToolName: WRITE, readToolName: READ });
+        await clearPriorStateRead(ctx, WRITE);
+        const cleared = await prisma.auditLog.findMany({
+            where: { tenantId: T, action: 'EXTERNAL_PRIOR_STATE_READ_CLEARED' },
+            select: { entity: true, entityId: true, metadataJson: true, detailsJson: true },
+        });
+        expect(cleared).toHaveLength(1);
+        expect(cleared[0]).toMatchObject({ entity: 'IntegrationConnection', entityId: CONN });
+        expect(cleared[0].metadataJson).toMatchObject({ writeToolName: WRITE });
+        expect((cleared[0].detailsJson as Record<string, unknown>).category).toBe('access');
+
+        await clearPriorStateRead(ctx, WRITE);
+        expect(await prisma.auditLog.count({ where: { tenantId: T, action: 'EXTERNAL_PRIOR_STATE_READ_CLEARED' } })).toBe(1);
+    });
+
     it('is never gated — a narrowing does not have to prove anything', async () => {
         // Clearing removes an authority, so it takes no catalogue call and no
         // validation. An operator withdrawing something must not be told to wait.

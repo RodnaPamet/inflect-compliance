@@ -45,11 +45,11 @@ import { prisma } from '@/lib/prisma';
 import { buildDelegatedJobContext } from '../context-system';
 import {
     emitAgenticEvidence,
+    planTargetRequirements,
     reconcileClosedHarnessPeriods,
+    targetRequirementClauses,
     withdrawStaleAgenticEvidence,
 } from '../usecases/agentic-evidence-emission';
-import { EVIDENCE_TARGETS } from '@/lib/agentic/evidence-artefact';
-import { frameworkFamilyId } from '../domain/framework-representation';
 import type { AgenticEvidenceEmissionPayload, JobRunResult } from './types';
 
 /** The framework catalogue is a small global table. */
@@ -61,9 +61,19 @@ const TENANT_CAP = 5_000;
  * The tenants that can receive an artefact: those holding a live control linked
  * to one of the target requirements.
  *
- * Resolved through the framework FAMILY for the reason the usecase gives — both
- * representations of a framework carry the same `sourceUrn`, and a single-key
- * lookup would skip every tenant whose controls hang off the other one.
+ * Resolved through the framework FAMILY and every SPELLING of the code, with
+ * the clause builder the usecase itself uses (`planTargetRequirements`), for the
+ * reasons the usecase gives — both representations of a framework carry the
+ * same `sourceUrn`, ISO 27001's two representations spell Annex A differently,
+ * and a lookup that differed from the usecase's would skip every tenant whose
+ * controls hang off the other one.
+ *
+ * Every kind's targets, the passport's included: a tenant whose only target
+ * controls are passport targets (ISO 27001 A.5.19, SOC 2 CC9.1, …) still needs
+ * this pass, because its withdrawal sweep is what withdraws a passport
+ * artefact whose control stopped discharging the obligation. No receipt or
+ * decision artefact is planned for it, because those kinds have no target
+ * control there.
  */
 async function tenantsWithAgenticControls(): Promise<string[]> {
     const catalogue = await prisma.framework.findMany({
@@ -71,18 +81,7 @@ async function tenantsWithAgenticControls(): Promise<string[]> {
         take: FRAMEWORK_CATALOGUE_CAP,
     });
 
-    const clauses = EVIDENCE_TARGETS.flatMap((target) => {
-        const frameworkIds = catalogue
-            .filter(
-                (f) =>
-                    frameworkFamilyId(f) === target.familyUrn ||
-                    target.legacyKeys.includes(f.key),
-            )
-            .map((f) => f.id);
-        return frameworkIds.length === 0
-            ? []
-            : [{ frameworkId: { in: frameworkIds }, code: target.requirementCode }];
-    });
+    const clauses = targetRequirementClauses(planTargetRequirements(catalogue).wanted);
     if (clauses.length === 0) return [];
 
     const requirements = await prisma.frameworkRequirement.findMany({
@@ -106,9 +105,10 @@ async function tenantsWithAgenticControls(): Promise<string[]> {
 /**
  * A real `User.id` to own the emitted `Evidence` — its foreign key requires one.
  * The most senior longest-standing active member, matching the kill-switch
- * drill's `resolveDrillActor`.
+ * drill's `resolveDrillActor`. Exported for the integration-passport sweep,
+ * which emits through the same path and needs the same attribution.
  */
-async function resolveEmissionActor(tenantId: string): Promise<string | null> {
+export async function resolveEmissionActor(tenantId: string): Promise<string | null> {
     const member = await prisma.tenantMembership.findFirst({
         where: { tenantId, status: 'ACTIVE' },
         orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],

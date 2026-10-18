@@ -177,9 +177,24 @@ model IntegrationConnection {
   /// measured from here, and any move — including NARROWING — restarts it, so a
   /// rung cannot be re-entered to inherit an old window's elapsed days.
   externalWriteModeSince DateTime?
+  /// #3672 — P11 of the integration passport: the person ACCOUNTABLE for what
+  /// this connection lets an agent do. Not the creator (the audit trail records
+  /// who created a connection, and creating one is not accepting accountability
+  /// for it), and set only through `setIntegrationConnectionOwner` under
+  /// `admin.manage`, the connection-write permission — never through the
+  /// connection upsert, whose `isEnabled ?? true` would re-enable a disabled row.
+  ///
+  /// NULL means nobody is accountable, and the weekly passport sweep raises
+  /// `CONNECTION_OWNER_MISSING` (HIGH) rather than skipping it. `SET NULL` on the
+  /// user's deletion for the same reason: a deleted owner reads as no owner,
+  /// which is the fail-closed direction (`RESTRICT` would block erasure,
+  /// `CASCADE` would delete the connection). Not backfilled: every connection
+  /// started unowned, which is what the passport reports.
+  ownerUserId       String?
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
   tenant            Tenant                   @relation(fields: [tenantId], references: [id])
+  owner             User?                    @relation("IntegrationConnectionOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   executions        IntegrationExecution[]
   syncMappings      IntegrationSyncMapping[]
   identityAccounts  ConnectedIdentityAccount[]
@@ -188,6 +203,8 @@ model IntegrationConnection {
   @@unique([tenantId, provider, name])
   @@index([tenantId])
   @@index([tenantId, provider])
+  /// `ownerUserId`'s foreign-key index, tenant-leading (schema-index Layer B).
+  @@index([tenantId, ownerUserId])
 
   /// #2356 batch 3 — the composite an FK from a tenant-scoped child
   /// references. `id` alone is already unique; this exists so Postgres

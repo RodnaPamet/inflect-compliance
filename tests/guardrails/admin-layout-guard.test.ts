@@ -88,6 +88,11 @@ describe('No duplicate admin guards on pages', () => {
             'OWNER-only (admin.tenant_lifecycle) — the page decides whether this product may disable accounts in the customer’s own directory, which is authority of the same class as tenant deletion; the layout’s admin.view would let a non-OWNER admin reach it and read the API 403 as a broken backend',
         'integrations/page.tsx':
             'gates ONE link (admin.tenant_lifecycle) to the OWNER-only leaver-pass report; the page itself stays admin.view, so an ADMIN is never offered a door that closes on them',
+        // #3672 — the page stays admin.view; two CARDS on it carry the keys
+        // their routes hold, so neither renders for somebody whose request
+        // would be refused (and writes an AUTHZ_DENIED row by visiting).
+        'integrations/[connectionId]/page.tsx':
+            'gates two cards, not the page: the connection-owner card (admin.manage, the connection-write key its PUT route holds) and the integration passport (admin.tenant_lifecycle, OWNER-only, because it shows the external write rung and the prior-state pairings); the page itself stays admin.view, so an ADMIN who is not an OWNER sees the execution history without being offered a passport that would 403',
         // The agent detail page's entry is GONE because the page is: AGENTIC
         // UI 1/4 moved it to `/agents/[agentId]`, outside this registry's
         // population (`/admin/**`) and outside the `/admin` layout whose

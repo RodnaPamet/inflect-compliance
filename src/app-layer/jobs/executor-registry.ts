@@ -1509,6 +1509,17 @@ executorRegistry.register('agentic-evidence-emission', async (payload) => {
     return runAgenticEvidenceEmissionJob({ tenantId: payload.tenantId, asOf: payload.asOf });
 });
 
+// integration-passport-sweep (#3672): build each external agent connection's
+// passport, compare with the last one emitted, raise drift findings, emit the
+// week's passports as Evidence. Both fields NAMED, for the reason the emission
+// registration above gives: an absent tenantId is the scheduled sweep and an
+// absent asOf is the current ISO week, and a payload forwarded opaquely is how a
+// targeted re-run silently becomes an all-tenant pass over the wrong week.
+executorRegistry.register('integration-passport-sweep', async (payload) => {
+    const { runIntegrationPassportSweepJob } = await import('./integration-passport-sweep');
+    return runIntegrationPassportSweepJob({ tenantId: payload.tenantId, asOf: payload.asOf });
+});
+
 // identity-joiner-pass: one joiner pass for one (tenant, provider).
 //
 // The mode is the tenant's own identityJoinerMode, and what it may reach is

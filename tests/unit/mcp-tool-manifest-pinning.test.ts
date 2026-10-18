@@ -53,6 +53,8 @@ interface PinRow {
     approvedAt: Date;
     revision: number;
     previousManifestHash: string | null;
+    /** #3672 — the accepted definition's write declaration; never set on a built-in. */
+    declaresWrite?: boolean | null;
 }
 
 const pins: PinRow[] = [];
@@ -243,7 +245,7 @@ import { authorizeToolCall, type McpInvocation } from '@/lib/mcp/authorize';
 import { hashToolManifest, type ToolDefinition } from '@/lib/mcp/tool-manifest';
 import { approvedToolDescriptors } from '@/lib/agentic/tool-manifest-store';
 import { toolDefinitionByName } from '@/lib/mcp/tool-definitions';
-import { approveToolManifest } from '@/app-layer/usecases/mcp-tool-manifest';
+import { approveToolManifest, writeToolManifestPin } from '@/app-layer/usecases/mcp-tool-manifest';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -712,6 +714,30 @@ describe('approving a manifest pin tells the workspace', () => {
         expect(notifications).toHaveLength(0);
     });
 
+    it('a person accepting a BASELINE definition IS a change: APPROVED, named, revision 2 (#3672)', async () => {
+        // The no-op guard compared hashes and never asked WHO accepted them. A
+        // BASELINE is the definition the boundary saw on first use, which nobody
+        // accepted; a person approving that same definition is the acceptance the
+        // row has never held. Short-circuiting left it BASELINE for ever, so the
+        // integration passport's HIGH "BASELINE pin" finding could not be cleared
+        // through the product while the server kept the tool unchanged.
+        pin(live, { approvalSource: 'BASELINE', approvedByUserId: null });
+
+        const result = (await approve()) as { changed: boolean; revision: number };
+
+        expect(result).toMatchObject({ changed: true, revision: 2 });
+        const row = pins.find((p) => p.toolName === live.name)!;
+        expect(row).toMatchObject({ approvalSource: 'APPROVED', approvedByUserId: APPROVER, revision: 2 });
+        expect(notifications).toHaveLength(1);
+    });
+
+    it('a built-in approval records no write declaration — its write class is code, not attested data', async () => {
+        await approve();
+        const row = pins.find((p) => p.toolName === live.name)!;
+        expect(row.approvalSource).toBe('APPROVED');
+        expect(row.declaresWrite ?? null).toBeNull();
+    });
+
     it('a pin from BEFORE the annotations axis gains the attestation, and that IS a change', async () => {
         // The no-op guard compared `manifestHash` alone. Annotations are
         // deliberately not part of it, so without widening the guard an
@@ -892,5 +918,44 @@ describe('the manifest step runs BEFORE the per-agent gates', () => {
         const reasons = denialRows().map((r) => r.detailsJson?.reason);
         expect(reasons).toContain('tool_manifest_unapproved');
         expect(reasons).not.toContain('tool_not_granted');
+    });
+});
+
+describe('the write declaration an external approval supplies (#3672)', () => {
+    const live = toolDefinitionByName('list_evidence_expiring') as ToolDefinition;
+    const hashes = hashToolManifest(live);
+    const ctx = () => makeRequestContext('OWNER', { tenantId: TENANT, userId: APPROVER });
+    const db = () =>
+        ({
+            mcpToolManifestPin: pinTable,
+            notification: notificationTable,
+            tenantMembership: tenantMembershipTable,
+            registeredAgent: registeredAgentTable,
+            tenantNotificationSettings: tenantNotificationSettingsTable,
+        }) as any;
+
+    it('is stored on a new pin, beside the hash it is derived from', async () => {
+        const result = await writeToolManifestPin(db(), ctx(), live.name, hashes, APPROVER, true);
+        expect(result.changed).toBe(true);
+        expect(pins.find((p) => p.toolName === live.name)!.declaresWrite).toBe(true);
+    });
+
+    it('a declaration the row lacks is recorded on re-approval, once — equal hashes notwithstanding', async () => {
+        // A pin approved before the column holds NULL: "not recorded", which is
+        // not "read-only". The approval supplies it, so it is a change.
+        pin(live, { declaresWrite: null });
+        const first = await writeToolManifestPin(db(), ctx(), live.name, hashes, APPROVER, false);
+        expect(first).toMatchObject({ changed: true, revision: 2 });
+        expect(pins.find((p) => p.toolName === live.name)!.declaresWrite).toBe(false);
+
+        const second = await writeToolManifestPin(db(), ctx(), live.name, hashes, APPROVER, false);
+        expect(second.changed).toBe(false);
+    });
+
+    it('omitted (a built-in), it never disturbs an equal APPROVED pin', async () => {
+        pin(live, { declaresWrite: true });
+        const result = await writeToolManifestPin(db(), ctx(), live.name, hashes, APPROVER);
+        expect(result.changed).toBe(false);
+        expect(pins.find((p) => p.toolName === live.name)!.declaresWrite).toBe(true);
     });
 });

@@ -225,6 +225,35 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'integration-passport-sweep',
+        pattern: '45 5 * * 0',    // weekly, Sunday 05:45 UTC
+        // NO tenantId and NO asOf: absent means "every tenant with an external
+        // agent connection or a recent passport, for the ISO week containing
+        // this tick". See `IntegrationPassportSweepPayload`.
+        //
+        // The slot, checked against every other entry here:
+        //   • No other named job fires on Sunday or at 05:45. At :45 only the
+        //     every-5-minute ticks (sla-monitor, dau-mau-aggregator,
+        //     audit-outbox-flush, control-test-scheduler) and the every-15
+        //     automation-runner fire, and none reads or writes a passport's
+        //     tables.
+        //   • AFTER identity sync (03:00), HRIS (04:00), the joiner and leaver
+        //     passes (04:30, 05:00) and compliance-posture (05:30), so an
+        //     incident in one does not arrive inside another's minute.
+        //   • 45 minutes BEFORE the daily 06:30 agentic-evidence-emission, whose
+        //     withdrawal sweep judges every CURRENT artefact, passports included:
+        //     this week's passport exists before that morning's withdrawal pass
+        //     and is judged by it, rather than racing it.
+        //   • Not at 06:00 beside the kill-switch drill, which also writes
+        //     Evidence and Findings.
+        //   • SUNDAY because the ISO week ends on Sunday, so the run lands on the
+        //     last day of the week it evidences; off the hour, like 04:30.
+        // Declaration order in this array is NOT execution order; only the cron
+        // pattern is.
+        description: 'Build every external agent connection\'s integration passport from stored rows, compare it with the last one emitted, raise a Finding for each change the passport specification defines as drift (owned by the connection\'s accountable owner, or the tenant\'s OWNER role when it has none), and emit the week\'s passports as Evidence on the supplier and access controls. Idempotent per ISO week.',
+        defaultPayload: {},
+    },
+    {
         name: 'calendar-push-dispatch',
         pattern: '0 3 * * *',     // daily at 03:00 UTC
         // NO `tz`. The bucket guard's parser reads only `pattern` and ignores

@@ -71,6 +71,10 @@
 import { createHash } from 'crypto';
 
 import { canonicalJson } from '@/lib/canonical-json';
+import {
+    ISO27001_FAMILY_URN,
+    SOC2_FAMILY_URN,
+} from '@/app-layer/domain/framework-representation';
 import { HARNESS_LEVELS, type HarnessLevel } from './harness-ladder';
 import type { HarnessScanCompleteness, HarnessStoredReach } from './harness-read-model';
 
@@ -79,22 +83,33 @@ import type { HarnessScanCompleteness, HarnessStoredReach } from './harness-read
 export const ARTEFACT_KIND_RECEIPTS = 'AGENT_ACTION_RECEIPTS';
 export const ARTEFACT_KIND_DECISIONS = 'AI_DECISION_RECORDS';
 export const ARTEFACT_KIND_HARNESS_SCANS = 'AGENT_HARNESS_SCANS';
+/**
+ * One ISO week's integration passports (#3672) — every external agent
+ * connection of the tenant, bundled. Built by `integration-passport.ts` and
+ * emitted by the weekly `integration-passport-sweep`, never by the daily
+ * receipts/decisions pass.
+ */
+export const ARTEFACT_KIND_PASSPORTS = 'INTEGRATION_PASSPORTS';
 
 export type AgenticArtefactKind =
     | typeof ARTEFACT_KIND_RECEIPTS
     | typeof ARTEFACT_KIND_DECISIONS
-    | typeof ARTEFACT_KIND_HARNESS_SCANS;
+    | typeof ARTEFACT_KIND_HARNESS_SCANS
+    | typeof ARTEFACT_KIND_PASSPORTS;
 
 /**
- * Every kind, in emission order. Mirrors the DB CHECK on `kind`, which
- * migration 20261017235500 widened to the third; a kind added here without
- * widening the CHECK fails on its first write, and the integration suite pins
- * that every kind listed here is one the CHECK accepts.
+ * Every kind, in emission order. Mirrors the DB CHECK on `kind`
+ * (`AgenticEvidenceArtefact_kind_known`), which migration 20261018001000 widened
+ * to the fourth: a kind added here and not there is refused at insert, and the
+ * integration suite pins that every kind listed here is one the CHECK accepts;
+ * a kind removed here while rows of it exist is one the withdrawal sweep stops
+ * judging.
  */
 export const AGENTIC_ARTEFACT_KINDS: readonly AgenticArtefactKind[] = [
     ARTEFACT_KIND_RECEIPTS,
     ARTEFACT_KIND_DECISIONS,
     ARTEFACT_KIND_HARNESS_SCANS,
+    ARTEFACT_KIND_PASSPORTS,
 ];
 
 export type ArtefactWithdrawalReason =
@@ -216,6 +231,78 @@ export const EVIDENCE_TARGETS: readonly EvidenceTarget[] = [
             'artefact reports the level and reach tallies and how many agents sit ' +
             'below the report-only bar.',
     },
+    // ── Integration passports (#3672) ──────────────────────────────────────
+    //
+    // Six obligations across three families, and the width is the point: the
+    // passport's previous week is read back from the artefact itself, so a
+    // tenant with no target control has nothing stored to be compared with and
+    // its drift goes unreported. ASI-only would leave every ISO 27001 and SOC 2
+    // tenant in exactly that state. ISO is resolved through both spellings of
+    // its Annex A codes (`requirementCodeSpellings`), SOC 2 has one sub-code per
+    // criterion in this catalogue (no CC9.2), and the legacy keys are the
+    // seeded rows `LEGACY_KEY_FAMILY_URNS` already names.
+    {
+        kind: ARTEFACT_KIND_PASSPORTS,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI04',
+        reason:
+            'Agentic Supply Chain Vulnerabilities. The passport records, per external ' +
+            'connection, which third-party tool definitions a named person accepted, by ' +
+            'hash and revision, and the week-on-week comparison raises a finding whenever ' +
+            'one of them moves.',
+    },
+    {
+        kind: ARTEFACT_KIND_PASSPORTS,
+        familyUrn: ASI_LIBRARY_URN,
+        legacyKeys: ['OWASP-ASI', 'OWASP-ASI-TOP10'],
+        requirementCode: 'ASI03',
+        reason:
+            'Identity and Privilege Abuse. The passport states how each external ' +
+            'connection authenticates (delegated, app-only, static header), the audience ' +
+            'its tokens are minted for, which agents hold its tools, how far a write may ' +
+            'go, and who is accountable for it.',
+    },
+    {
+        kind: ARTEFACT_KIND_PASSPORTS,
+        familyUrn: ISO27001_FAMILY_URN,
+        legacyKeys: ['ISO27001'],
+        requirementCode: 'A.5.19',
+        reason:
+            'Supplier relationships. Each external agent connection is a supplier an agent ' +
+            'reaches directly; the passport is the weekly record of what that relationship ' +
+            'permits, with an accountable owner, and of every change to it.',
+    },
+    {
+        kind: ARTEFACT_KIND_PASSPORTS,
+        familyUrn: ISO27001_FAMILY_URN,
+        legacyKeys: ['ISO27001'],
+        requirementCode: 'A.5.15',
+        reason:
+            'Access control. The passport is the rule set an agent\'s access to a third ' +
+            'party runs under — grant kind, granted agents, accepted definitions, write ' +
+            'rung, prior-state pairings — reviewed week on week with drift raised as findings.',
+    },
+    {
+        kind: ARTEFACT_KIND_PASSPORTS,
+        familyUrn: SOC2_FAMILY_URN,
+        legacyKeys: ['SOC2'],
+        requirementCode: 'CC9.1',
+        reason:
+            'Vendor risk. The passport identifies each third-party system agents reach, who ' +
+            'answers for the connection, and the changes to its endpoint, grant and accepted ' +
+            'definitions between weeks.',
+    },
+    {
+        kind: ARTEFACT_KIND_PASSPORTS,
+        familyUrn: SOC2_FAMILY_URN,
+        legacyKeys: ['SOC2'],
+        requirementCode: 'CC6.1',
+        reason:
+            'Logical access security. The passport records the credentials class, token ' +
+            'audience, agent grants and write authority of every external agent connection, ' +
+            'and raises a finding with a named owner for each change.',
+    },
 ];
 
 /** The obligations one kind attaches to. */
@@ -254,6 +341,39 @@ export function monthlyPeriod(asOf: Date): ArtefactPeriod {
     const start = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
     const end = new Date(Date.UTC(y, m + 1, 1, 0, 0, 0, 0));
     return { start, end, label: `${y}-${String(m + 1).padStart(2, '0')}` };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The ISO 8601 week containing `asOf`: Monday 00:00 UTC inclusive to the next
+ * Monday exclusive, labelled `<ISO week-year>-W<ww>` (`2026-W42`).
+ *
+ * The week CONTAINING the run, for the reason `monthlyPeriod` gives, and in UTC
+ * for the same reason. The ISO week-year is the year of the week's Thursday,
+ * so 2027-01-03 is in `2026-W53` and 2024-12-30 is in `2025-W01`.
+ */
+export function weeklyPeriod(asOf: Date): ArtefactPeriod {
+    const midnight = Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate());
+    const sinceMonday = (new Date(midnight).getUTCDay() + 6) % 7;
+    const start = new Date(midnight - sinceMonday * DAY_MS);
+    const end = new Date(start.getTime() + 7 * DAY_MS);
+    const thursday = new Date(start.getTime() + 3 * DAY_MS);
+    const weekYear = thursday.getUTCFullYear();
+    const week = 1 + Math.floor((thursday.getTime() - Date.UTC(weekYear, 0, 1)) / (7 * DAY_MS));
+    return { start, end, label: `${weekYear}-W${String(week).padStart(2, '0')}` };
+}
+
+/**
+ * The kinds evidenced per ISO week. Every other kind is monthly — including a
+ * kind this build does not know, which is the answer the withdrawal sweep has
+ * always given and the one an old row of an unknown kind should keep getting.
+ */
+const WEEKLY_ARTEFACT_KINDS: ReadonlySet<string> = new Set([ARTEFACT_KIND_PASSPORTS]);
+
+/** The period an artefact of `kind` starting at `periodStart` covers. */
+export function periodForKind(kind: string, periodStart: Date): ArtefactPeriod {
+    return WEEKLY_ARTEFACT_KINDS.has(kind) ? weeklyPeriod(periodStart) : monthlyPeriod(periodStart);
 }
 
 // ── Population digest ───────────────────────────────────────────────────────

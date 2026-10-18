@@ -276,14 +276,18 @@ export function verifyToolManifest(
                 live,
                 approved: approvedHashes,
                 approvedRevision: approved.revision,
-                // NOT refused, and that is a decision rather than an oversight.
-                // Nothing in this build reads `readOnlyHint` yet, so refusing
-                // here would stop a tool whose name, description and schema are
-                // all unchanged, to enforce a field no code consumes — a rung
-                // that costs without protecting, which is exactly what #2241
-                // removed from the identity ladder. When the external WRITE
-                // path lands (#2861) and something acts on the hint, this is
-                // the line that becomes `true`.
+                // Not refused BY THE BOUNDARY, which only logs this verdict.
+                // The external tools are refused one step earlier, and for
+                // every status that is not APPROVED: `resolveGrantedExternalTools`
+                // (`usecases/external-mcp-tools.ts`) drops a tool whose live
+                // definition does not verify, so an annotations-only move never
+                // reaches the boundary at all. That matters because the hint IS
+                // read now — `declaresWrite` (`tool-write-classification.ts`)
+                // decides whether a call takes the external write path — and a
+                // server that redeclared a write tool as read-only would
+                // otherwise take it off the ladder. For a built-in tool, whose
+                // annotations ship as code with this build, the boundary records
+                // this verdict as a security event and lets the call proceed.
                 mustRefuse: false,
                 // It IS an alert. A server redeclaring a read tool as a write
                 // one is a supply-chain event whether or not we act on it.

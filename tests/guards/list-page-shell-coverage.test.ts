@@ -57,6 +57,11 @@ const EXEMPTIONS: Record<string, string> = {
     // which must stay reachable while the column list scrolls naturally.
     'admin/integrations/[connectionId]/LegacyAccessMappingCard.tsx':
         'detail-page sub-table — column mapping sits between a drift notice, a value-map editor and a save action',
+    // #3672 — the same detail page, a second card. Four short sub-tables (the
+    // passport's pinned tools, granted agents, pairings and parameter sets)
+    // between its field grid and its findings list; none is a list page.
+    'admin/integrations/[connectionId]/IntegrationPassportCard.tsx':
+        'detail-page sub-tables — four passport fields between a field grid and an open-findings list',
 
     // #3687 — the harness tab of the multi-section /agents/reports dashboard.
     // Each table sits between sibling cards (scanner sections, acceptances,

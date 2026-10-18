@@ -206,6 +206,28 @@ describe('approving an external definition', () => {
         expect(approver).toBe('usr_9');
     });
 
+    it('passes the write declaration of the definition it approved, from the same read (#3672)', async () => {
+        // No annotations → declaresWrite is TRUE (an undeclared tool is treated
+        // as a write). A read-only hint on the same read → FALSE. Both come from
+        // the catalogue read that produced the pinned annotationsHash, so the
+        // stored declaration cannot disagree with the hash beside it.
+        await approveExternalToolManifest(adminCtx, {
+            connectionId: CONN,
+            toolName: 'list_alerts',
+            expectedManifestHash: liveHashes().manifestHash,
+        });
+        expect(writePinMock.mock.calls[0][5]).toBe(true);
+
+        writePinMock.mockClear();
+        listToolsMock.mockResolvedValue([{ ...ALERTS, annotations: { readOnlyHint: true } }]);
+        await approveExternalToolManifest(adminCtx, {
+            connectionId: CONN,
+            toolName: 'list_alerts',
+            expectedManifestHash: liveHashes().manifestHash,
+        });
+        expect(writePinMock.mock.calls[0][5]).toBe(false);
+    });
+
     /**
      * The window this argument is about is not a deploy. An external server can
      * change its text between the call that rendered the review and the call

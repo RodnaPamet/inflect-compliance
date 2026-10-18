@@ -1367,3 +1367,34 @@ export function recordAgentBreakerClose(attrs: {
     }
     _breakerClose.add(1, { agent: attrs.agentId, reason: attrs.reason });
 }
+
+// ── Integration passport sweep (#3672) ─────────────────────────────────────
+
+let _passportSweep: Counter | null = null;
+
+/**
+ * One tenant's weekly integration-passport pass, by outcome — and once per
+ * sweep that discovered no tenant at all (`SWEPT_NOBODY`).
+ *
+ * The outcomes are the pass's own (`COMPARED`, `BASELINE`,
+ * `PRIOR_UNVERIFIABLE`, `NOT_EVIDENCED`, `TRUNCATED`, `NO_CONNECTIONS`) plus the
+ * job's (`NO_ACTOR`, `FAILED`). They are kept apart because the quiet failures
+ * look alike from a findings queue: a tenant whose drift was compared and found
+ * nothing, one whose drift was never compared because no control receives the
+ * passport, and a job that stopped running all produce no new finding.
+ *
+ * ALERT ON — any `FAILED` or `TRUNCATED`; `PRIOR_UNVERIFIABLE` (somebody edited
+ * an emitted passport, or its control was unmapped); and the ABSENCE of any
+ * outcome for longer than two Sundays. `NOT_EVIDENCED` that persists is a
+ * tenant whose drift is not being reported. No tenant label: a handful of
+ * outcomes.
+ */
+export function recordIntegrationPassportSweep(attrs: { outcome: string }): void {
+    if (!_passportSweep) {
+        _passportSweep = getMeter().createCounter('agentic.integration_passport.sweep', {
+            description: 'Weekly integration-passport passes, by outcome',
+            unit: '1',
+        });
+    }
+    _passportSweep.add(1, { outcome: attrs.outcome });
+}
