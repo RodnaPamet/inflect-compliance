@@ -8,9 +8,9 @@
  * own thing to point a UI button at, and neither should be reachable by a
  * partial-update body that happened to carry an extra key.
  *
- * RETIRED is deliberately NOT in `AGENT_LIFECYCLE_MOVES`: retirement carries a
- * precondition (no proposals awaiting review) and lives on DELETE, where the
- * refusal has somewhere to be said.
+ * RETIRED is deliberately NOT in `AGENT_LIFECYCLE_MOVES`: retirement is a
+ * permanent act with a cascade (#3698) and lives on DELETE. Both moves here
+ * refuse a RETIRED agent with a 409 — retirement is terminal.
  */
 import { NextRequest } from 'next/server';
 

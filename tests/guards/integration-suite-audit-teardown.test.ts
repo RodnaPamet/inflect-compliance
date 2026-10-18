@@ -144,7 +144,6 @@ const verdicts = new Map<string, Verdict>(
 const GRANDFATHERED: ReadonlySet<string> = new Set([
     'agent-amend.test.ts',
     'agent-monthly-budget-enforcement.test.ts',
-    'agent-retire-preconditions.test.ts',
     'agentic-art14-run-closes-the-loop.test.ts',
     'agentic-engine.test.ts',
     'asset-update-round-trip.test.ts',

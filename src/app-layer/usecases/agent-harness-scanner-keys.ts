@@ -14,7 +14,8 @@
 import { z } from 'zod';
 
 import type { RequestContext } from '../types';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { isAgentRetiredDbRefusal, RETIREMENT_KEY_ID_CAP } from '@/lib/agentic/agent-retirement';
 import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { harnessKeyFingerprint } from '@/lib/agentic/harness-contract';
@@ -25,6 +26,8 @@ export const AddHarnessScannerKeySchema = z
         publicKey: z.string().min(1).max(256),
     })
     .strict();
+
+const RETIRED_SCANNER_MESSAGE = 'A retired agent cannot be given a scanner key';
 
 function assertMayManageKeys(ctx: RequestContext): void {
     if (!ctx.appPermissions.admin.agent_registry) {
@@ -43,7 +46,7 @@ export async function addHarnessScannerKey(ctx: RequestContext, input: z.infer<t
             select: { id: true, status: true },
         });
         if (!agent) throw notFound('Registered agent not found');
-        if (agent.status === 'RETIRED') throw badRequest('A retired agent cannot be given a scanner key');
+        if (agent.status === 'RETIRED') throw badRequest(RETIRED_SCANNER_MESSAGE);
 
         const existing = await db.agentHarnessScannerKey.findFirst({
             where: { tenantId: ctx.tenantId, keyFingerprint: fingerprint },
@@ -51,16 +54,26 @@ export async function addHarnessScannerKey(ctx: RequestContext, input: z.infer<t
         });
         if (existing) throw conflict('This key is already registered for this tenant');
 
-        const key = await db.agentHarnessScannerKey.create({
-            data: {
-                tenantId: ctx.tenantId,
-                agentId: agent.id,
-                publicKey: input.publicKey.trim(),
-                keyFingerprint: fingerprint,
-                createdByUserId: ctx.userId,
-            },
-            select: { id: true, agentId: true, keyFingerprint: true, createdAt: true },
-        });
+        // The status read above is unlocked; a retirement committing after it
+        // would otherwise leave this key unrevoked behind the cascade, still
+        // verifying reports. The insert trigger takes FOR SHARE on the agent row
+        // and refuses once it reads RETIRED (#3698) — mapped to the same answer.
+        let key;
+        try {
+            key = await db.agentHarnessScannerKey.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    agentId: agent.id,
+                    publicKey: input.publicKey.trim(),
+                    keyFingerprint: fingerprint,
+                    createdByUserId: ctx.userId,
+                },
+                select: { id: true, agentId: true, keyFingerprint: true, createdAt: true },
+            });
+        } catch (err) {
+            if (isAgentRetiredDbRefusal(err)) throw badRequest(RETIRED_SCANNER_MESSAGE);
+            throw err;
+        }
         await logEvent(db, ctx, {
             action: 'AGENT_HARNESS_SCANNER_KEY_ADDED',
             entityType: 'AgentHarnessScannerKey',
@@ -95,6 +108,40 @@ export async function listHarnessScannerKeys(ctx: RequestContext) {
             },
         }),
     );
+}
+
+/**
+ * Revoke every scanner key bound to one agent, inside a transaction the caller
+ * already holds — retirement's scanner-key effect (#3698).
+ *
+ * Here rather than in the cascade module because this file is the one write
+ * seam for `AgentHarnessScannerKey` (`agent-harness-single-write-seam`), and a
+ * second writer is the hole that guard exists to keep shut. A retired scanner's
+ * key would otherwise go on verifying harness reports: ingest trusts every
+ * unrevoked key the tenant registered, whatever became of the scanner.
+ *
+ * No gate and no audit row of its own. The caller is the retirement cascade,
+ * gated on `admin.agent_registry` — the key this file's own verbs take — and it
+ * writes the audit row for the effect, alongside the others, after every write.
+ */
+export async function revokeScannerKeysForAgentInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    agentId: string,
+    now: Date,
+): Promise<{ count: number; ids: string[] }> {
+    const live = await db.agentHarnessScannerKey.findMany({
+        where: { tenantId: ctx.tenantId, agentId, revokedAt: null },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+        // The ids are for the audit row; the write below is unbounded.
+        take: RETIREMENT_KEY_ID_CAP + 1,
+    });
+    const revoked = await db.agentHarnessScannerKey.updateMany({
+        where: { tenantId: ctx.tenantId, agentId, revokedAt: null },
+        data: { revokedAt: now, revokedByUserId: ctx.userId },
+    });
+    return { count: revoked.count, ids: live.map((k) => k.id) };
 }
 
 export async function revokeHarnessScannerKey(ctx: RequestContext, input: { keyId: string }) {

@@ -46,6 +46,7 @@ import {
     type ApprovalRequirement,
 } from '@/lib/agentic/approval-tiering';
 import { isProposalExpired, proposalExpiresAt } from '@/lib/agentic/proposal-expiry';
+import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
 import {
     CreateRiskSchema,
     CreateControlSchema,
@@ -689,6 +690,18 @@ export async function createAgentProposal(
                 requiredApprovals: requirement.requiredApprovals,
             },
             select: { id: true, kind: true, status: true, operation: true },
+        }).catch((err: unknown) => {
+            // The agent was RETIRED while this call was in flight (#3698). The
+            // trigger `agent_proposal_agent_not_retired` refuses a PENDING row
+            // for a retired agent, and it waits on retirement's row lock, so
+            // the race resolves one way or the other: committed before the
+            // retirement (and then expired by its cascade) or refused here. A
+            // QUARANTINED row is not refused — it is evidence of an attempt.
+            // Anything that is not that refusal is rethrown untouched.
+            if (isAgentRetiredDbRefusal(err)) {
+                throw forbidden('This agent was retired; it can no longer queue proposals.');
+            }
+            throw err;
         });
 
         // The AI-FEATURE record, for the agentic path. Same three properties

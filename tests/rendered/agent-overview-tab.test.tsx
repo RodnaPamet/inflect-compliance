@@ -178,6 +178,8 @@ function catalogue(path: string): string {
 
 /** The shape of `GET /admin/agents/:agentId` as this tab narrows it. */
 interface Agent {
+    /** Read only by the retire dialog's typed confirmation. */
+    name?: string;
     description: string | null;
     modelRef: string | null;
     provenance: 'FIRST_PARTY' | 'THIRD_PARTY';
@@ -193,7 +195,12 @@ interface Agent {
         id: string;
         riskTier: 'UNCLASSIFIED' | 'PROHIBITED' | 'HIGH' | 'LIMITED' | 'MINIMAL' | null;
     } | null;
-    _count: { apiKeys: number };
+    /**
+     * `proposals` and `tools` are optional HERE only so the many fixtures that
+     * override `_count` to talk about keys need not restate them; the endpoint
+     * always sends both, and only the retire dialog reads them.
+     */
+    _count: { apiKeys: number; proposals?: number; tools?: number };
     registrationEnforced: boolean;
     driver: 'static' | 'flue';
     driverReason:
@@ -881,5 +888,79 @@ describe('the Overview tab names the run engine, and why it was narrowed', () =>
             unmount();
         }
         expect(seen.size).toBe(Object.keys(OV.driverReason).length);
+    });
+});
+
+/**
+ * RETIREMENT CASCADES, AND IS TERMINAL (#3698).
+ *
+ * Retirement used to be refused while proposals were pending, and this dialog
+ * disabled its commit button to say so in advance. Retirement now EXPIRES those
+ * proposals as one of its effects — so the dialog's job changed from stating a
+ * precondition to stating what the click will take away, and a pending queue
+ * must no longer stop the click. And a retired agent is never offered the move
+ * back into service, because the server refuses it.
+ */
+describe('the retire dialog previews the cascade, and a retired agent is not offered activation', () => {
+    function openRetire(agent: Agent) {
+        renderTab(agent);
+        fireEvent.click(screen.getByRole('button', { name: EN.retireAction }));
+        return screen.getByTestId('agent-retire-modal');
+    }
+
+    it('lists what retiring takes away — keys, grants, pending proposals and the card', () => {
+        const modal = openRetire(makeAgent({ _count: { apiKeys: 2, proposals: 3, tools: 4 } }));
+        const cascade = within(modal).getByTestId('agent-retire-cascade');
+        expect(within(cascade).getByText(EN.retireCascadeIntro)).toBeInTheDocument();
+        expect(within(cascade).getByTestId('agent-retire-cascade-keys').textContent).toBe(EN.retireCascadeKeys);
+        expect(within(cascade).getByTestId('agent-retire-cascade-tools').textContent).toBe(EN.retireCascadeTools);
+        expect(within(cascade).getByTestId('agent-retire-cascade-proposals').textContent).toBe(
+            EN.retireCascadeProposals,
+        );
+        expect(within(cascade).getByText(EN.retireCascadeCard)).toBeInTheDocument();
+        // Pending proposals are a choice, not a block: the queue is offered…
+        expect(within(cascade).getByRole('link', { name: EN.retireReviewFirstLink })).toHaveAttribute(
+            'href',
+            '/t/acme/agents/proposals',
+        );
+    });
+
+    it('…and does not stand in the way: with proposals pending, the typed name alone enables Retire', () => {
+        const agent = makeAgent({ name: 'Ops agent', _count: { apiKeys: 1, proposals: 3, tools: 1 } });
+        const modal = openRetire(agent);
+        // The footer sits beside the modal body, not inside it.
+        const commit = screen.getByTestId('agent-retire-commit');
+        // Disabled until the name is typed — the confirmation this dialog owns.
+        expect(commit).toBeDisabled();
+        fireEvent.change(within(modal).getByTestId('agent-retire-confirm-input'), {
+            target: { value: 'Ops agent' },
+        });
+        expect(commit).toBeEnabled();
+
+        fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
+        fireEvent.click(commit);
+        expect(fetchMock).toHaveBeenCalledWith('/api/t/acme/admin/agents/agent-1', { method: 'DELETE' });
+    });
+
+    it('offers no review link when nothing is pending, and zero takes its own sentence', () => {
+        const modal = openRetire(makeAgent({ _count: { apiKeys: 0, proposals: 0, tools: 0 } }));
+        expect(within(modal).queryByRole('link', { name: EN.retireReviewFirstLink })).not.toBeInTheDocument();
+        // Companion: the cascade itself is on screen, so the absence is the link's.
+        expect(within(modal).getByTestId('agent-retire-cascade-keys').textContent).toBe(EN.retireCascadeKeysNone);
+        expect(within(modal).getByTestId('agent-retire-cascade-tools').textContent).toBe(EN.retireCascadeToolsNone);
+        expect(within(modal).getByTestId('agent-retire-cascade-proposals').textContent).toBe(
+            EN.retireCascadeProposalsNone,
+        );
+    });
+
+    it('a RETIRED agent is offered neither Activate nor Retire — retirement is terminal', () => {
+        renderTab(makeAgent({ status: 'RETIRED' }));
+        expect(screen.queryByRole('button', { name: EN.activateAction })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: EN.retireAction })).not.toBeInTheDocument();
+    });
+
+    it('the paired positive — a SUSPENDED agent is still offered Activate', () => {
+        renderTab(makeAgent({ status: 'SUSPENDED' }));
+        expect(screen.getByRole('button', { name: EN.activateAction })).toBeEnabled();
     });
 });

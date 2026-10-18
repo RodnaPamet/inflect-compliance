@@ -84,6 +84,8 @@ const EXCLUSIONS: Record<string, string> = {
         'Approval window for a run parked at a HUMAN_CHECKPOINT. Excluded for exactly the reason `AgentProposal.expiresAt` above is, and the argument transfers without modification: the window exists so a run cannot wait on a person for ever, and the remedy for a checkpoint nobody reached is that it CLOSES unapproved — not that somebody is reminded to go and approve it before the clock runs out. A compliance calendar entry would turn a bound on deliberation into a prompt to clear the queue, which is the behaviour the bound exists to discourage. The deadline is shown on the runs list beside the run it belongs to, which is where a reviewer is already deciding.',
     'TenantInvite.expiresAt':
         'Invite-token lifetime — a leaked-token bound, not work to be done; the admin members screen shows pending invites.',
+    'AgentOwnershipTransfer.expiresAt':
+        "How long a proposed agent ownership transfer stays acceptable (#3698), for the reason TenantInvite.expiresAt above is excluded: it is the lifetime of a standing offer to one named person, a bound on how long the offer may wait, not an obligation with an owner. A lapsed transfer is simply proposed again, and nobody is to be reminded to accept a handover of accountability before the clock runs out — that would turn the bound into pressure to accept.",
     'AuditPackShare.expiresAt':
         'Share-link lifetime — a bounded exposure window on an unauthenticated URL; the pack detail lists its shares.',
     'TrustCenterAccessRequest.expiresAt':

@@ -524,7 +524,7 @@ describe("cross-tenant ids that look legitimate — refused by the usecase, and 
     });
 });
 
-describe('retirement waits for the review queue; suspension does not', () => {
+describe('retirement expires the review queue rather than waiting for it; suspension still has no precondition', () => {
     let pendingId = '';
 
     beforeAll(async () => {
@@ -544,36 +544,38 @@ describe('retirement waits for the review queue; suspension does not', () => {
         if (pendingId) await prisma.agentProposal.deleteMany({ where: { id: pendingId } });
     });
 
-    it('refuses to retire while a proposal awaits a human', async () => {
-        await expect(retireRegisteredAgent(ctxFor(T1), seeded[T1].agentId)).rejects.toThrow(
-            /awaiting review/i,
-        );
-        const after = await prisma.registeredAgent.findUniqueOrThrow({
-            where: { id: seeded[T1].agentId },
-        });
-        expect(after.status).toBe('DRAFT');
-    });
-
-    it('suspends anyway — the emergency stop has no precondition', async () => {
+    it('suspends with a proposal pending — the reversible stop has no precondition', async () => {
         await expect(suspendRegisteredAgent(ctxFor(T1), seeded[T1].agentId)).resolves.toEqual({
             id: seeded[T1].agentId,
             status: 'SUSPENDED',
         });
+        // Suspension takes nothing away: the proposal is still awaiting a human.
+        const proposal = await prisma.agentProposal.findUniqueOrThrow({ where: { id: pendingId } });
+        expect(proposal.status).toBe('PENDING');
     });
 
-    it('retires once the proposal is decided', async () => {
-        await prisma.agentProposal.update({
-            where: { id: pendingId },
-            data: { status: 'REJECTED' },
-        });
-        await expect(retireRegisteredAgent(ctxFor(T1), seeded[T1].agentId)).resolves.toEqual({
+    it('retires with the proposal still pending, and the proposal survives as EXPIRED', async () => {
+        // Retirement used to REFUSE here (#2448). Since #3698 it expires the
+        // queue as one of its effects, so the agent's pending reach into the
+        // tenant ends with it.
+        await expect(retireRegisteredAgent(ctxFor(T1), seeded[T1].agentId)).resolves.toMatchObject({
             id: seeded[T1].agentId,
             status: 'RETIRED',
+            cascade: { proposalsExpired: 1 },
         });
         // The proposal SURVIVES retirement. It is the agent's audit trail, and
         // a register that discards what its agents did is not a register.
         const proposal = await prisma.agentProposal.findUniqueOrThrow({ where: { id: pendingId } });
+        expect(proposal.status).toBe('EXPIRED');
         expect(proposal.agentId).toBe(seeded[T1].agentId);
+        expect(proposal.reviewedByUserId).toBeNull();
+    });
+
+    it("leaves the other tenant's agent exactly as it was", async () => {
+        const other = await prisma.registeredAgent.findUniqueOrThrow({
+            where: { id: seeded[T2].agentId },
+        });
+        expect(other.status).toBe('DRAFT');
     });
 });
 

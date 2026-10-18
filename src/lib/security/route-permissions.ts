@@ -366,6 +366,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'widely the credential is scoped.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/ownership-transfer(\\/complete)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Propose, read, cancel and complete a two-step agent ownership ' +
+            'transfer (#3698, step 0e). Tenant lifecycle, not agent_registry: ' +
+            "ADMIN holds the register key, and an agent's accountable owner " +
+            'must not be movable by the role it is accountable to. The person ' +
+            'completing step two must hold this key too. Above the catch-all: ' +
+            'first-match-wins would otherwise record admin.agent_registry.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/agents\\/kill-switch$`),
         permission: 'admin.agent_kill_switch',
         note:

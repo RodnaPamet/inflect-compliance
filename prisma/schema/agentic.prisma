@@ -725,6 +725,9 @@ model RegisteredAgent {
   harnessScannerKeys AgentHarnessScannerKey[]
   harnessScans       AgentHarnessScan[]
   discoveredAs       DiscoveredAgent[]
+  /// Two-step handovers of this agent's accountability (#3698). The current
+  /// owner is `ownerUserId`; this is how it came to be that person.
+  ownershipTransfers AgentOwnershipTransfer[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -2376,4 +2379,63 @@ model AgentHarnessAcceptance {
   @@unique([id, tenantId])
   @@index([tenantId, discoveredAgentId])
   @@index([tenantId, expiresAt])
+}
+
+/// Step 2a (#3698): a TWO-STEP handover of one agent's accountability. Step one
+/// records who should become the owner; only that person completes it, and the
+/// person who started it never can. Both steps carry
+/// `requirePermission('admin.tenant_lifecycle')` (0e), so the recipient must
+/// hold that key too. `RegisteredAgent.ownerUserId` moves ONLY through this
+/// table's completion — the register's PATCH refuses the field.
+///
+/// Every rule a person could be tempted to bypass is in the database as well
+/// (migration 20261017235800): CHECKs make "the initiator completes it" and
+/// "a transfer to the current owner" unrepresentable, a trigger makes a row
+/// that has left PENDING immutable (2b's OWNER_DEPARTED lift reads COMPLETED
+/// rows), and `app_user` holds no DELETE.
+///
+/// At most ONE PENDING transfer per agent: a PARTIAL unique index in the
+/// migration ("AgentOwnershipTransfer_one_open_per_agent" … WHERE status =
+/// 'PENDING'). Prisma cannot declare a partial index — do NOT add a @@unique
+/// for it, or the next `migrate dev` replaces it with an unconditional one that
+/// refuses every second transfer the agent ever has.
+///
+/// The user-id columns are plain ids with no FK, the agentic precedent
+/// (AgentHarnessAcceptance, AgentKillSwitch): this row is history, and
+/// removing a user must not be blocked by, or cascade into, the record of what
+/// they were handed. Business record, kept as long as RegisteredAgent.
+model AgentOwnershipTransfer {
+  id                String    @id @default(cuid())
+  tenantId          String
+  agentId           String
+  /// The owner when step one ran. Step two moves ownership only if the agent
+  /// is STILL owned by this person, so a transfer cannot land on top of a
+  /// change it never saw.
+  fromOwnerUserId   String
+  /// The one person who may complete step two.
+  toOwnerUserId     String
+  /// Who started it. CHECKed to differ from `toOwnerUserId`, and completion is
+  /// CHECKed to be by `toOwnerUserId` — so this person can never complete it.
+  initiatedByUserId String
+  /// TEXT + CHECK: PENDING | COMPLETED | CANCELLED | EXPIRED. One way out of
+  /// PENDING, and none after (trigger).
+  status            String    @default("PENDING")
+  /// The step-two deadline. Enforced in the completion claim itself; a lapsed
+  /// row is marked EXPIRED lazily, by the next request that finds it.
+  expiresAt         DateTime
+  completedAt       DateTime?
+  completedByUserId String?
+  /// Who cancelled it: the initiator withdrawing, the recipient declining, an
+  /// OWNER, or the actor whose retirement of the agent cancelled it.
+  cancelledAt       DateTime?
+  cancelledByUserId String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+
+  @@unique([id, tenantId])
+  /// The agent's transfer history, newest first, and the open-transfer lookup.
+  @@index([tenantId, agentId, createdAt])
 }

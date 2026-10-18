@@ -19,7 +19,7 @@ import type { AgentSummary, OwnerChoice, VendorChoice } from './AgentDetailClien
  * inconvenience.
  *
  * `PATCH /admin/agents/:id` has existed since the register shipped.
- * `updateRegisteredAgent` validates all nine fields, re-checks ownership and
+ * `updateRegisteredAgent` validates the eight amendable fields, re-checks
  * supplier attribution on the MERGED row, and enforces the risk-tier autonomy
  * ceiling. No .tsx file called it. So autonomy — the central authority dial —
  * was set at creation and frozen: an agent granted too much could not be turned
@@ -42,6 +42,14 @@ import type { AgentSummary, OwnerChoice, VendorChoice } from './AgentDetailClien
  * That is surfaced verbatim rather than replaced with a generic failure: the
  * client cannot compute the ceiling (it is derived from a tier the client does
  * not hold) and should not pretend to.
+ *
+ * ── THE OWNER IS SHOWN, NOT EDITED ──────────────────────────────────
+ *
+ * The accountable owner used to be the ninth field. Since #3698 it moves only by
+ * a two-step transfer — proposed by one holder of the tenant lifecycle
+ * permission, accepted by the person it names — and the PATCH refuses
+ * `ownerUserId` by name. So the modal shows who owns the agent and says how that
+ * changes, rather than offering a picker whose every use would be a 400.
  */
 
 const DATA_ACCESS_SCOPES = [
@@ -63,7 +71,6 @@ interface Draft {
     reversibility: string;
     provenance: string;
     modelRef: string;
-    ownerUserId: string;
     vendorId: string;
 }
 
@@ -76,7 +83,6 @@ function draftOf(agent: AgentSummary): Draft {
         reversibility: agent.reversibility,
         provenance: agent.provenance,
         modelRef: agent.modelRef ?? '',
-        ownerUserId: agent.ownerUserId,
         vendorId: agent.vendorId ?? '',
     };
 }
@@ -121,7 +127,6 @@ export function AgentAmendModal({
         if (draft.modelRef !== initial.modelRef) {
             out.modelRef = draft.modelRef.trim() === '' ? null : draft.modelRef.trim();
         }
-        if (draft.ownerUserId !== initial.ownerUserId) out.ownerUserId = draft.ownerUserId;
         if (draft.vendorId !== initial.vendorId) {
             out.vendorId = draft.vendorId === '' ? null : draft.vendorId;
         }
@@ -129,6 +134,9 @@ export function AgentAmendModal({
     }, [draft, initial]);
 
     const changedCount = Object.keys(patch).length;
+    // Read-only: see the docstring. The id stands in when the owner is not in
+    // the ACTIVE-member list, so a departed owner still shows as somebody.
+    const ownerLabel = owners.find((o) => o.id === agent.ownerUserId)?.label ?? agent.ownerUserId;
     const lowering = Number(draft.autonomyLevel) < agent.autonomyLevel;
 
     async function submit() {
@@ -240,18 +248,11 @@ export function AgentAmendModal({
                         <Input value={draft.modelRef} onChange={(e) => set('modelRef', e.target.value)} />
                     </FormField>
 
-                    <FormField label={t('agentDetail.amend.owner')} required>
-                        <Combobox
-                            id="agent-amend-owner"
-                            selected={
-                                owners.map((o) => ({ value: o.id, label: o.label }))
-                                    .find((o) => o.value === draft.ownerUserId) ?? null
-                            }
-                            setSelected={(o) => set('ownerUserId', o?.value ?? draft.ownerUserId)}
-                            options={owners.map((o) => ({ value: o.id, label: o.label }))}
-                            matchTriggerWidth
-                            buttonProps={{ className: 'w-full' }}
-                        />
+                    <FormField
+                        label={t('agentDetail.amend.owner')}
+                        description={t('agentDetail.amend.ownerMovesByTransfer')}
+                    >
+                        <Input value={ownerLabel} readOnly data-testid="agent-amend-owner" />
                     </FormField>
 
                     <FormField label={t('agentDetail.amend.vendor')}>

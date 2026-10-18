@@ -3,11 +3,14 @@
  *
  * DELETE is RETIREMENT, not deletion. The row survives: the register has to keep
  * saying that the agent existed and what authority it held, and the runtime
- * records that point at it are its audit trail. Retirement is REFUSED while the
- * agent has proposals awaiting a human — see `retireRegisteredAgent` for why
- * refusing beats cascading, and note that an operator who needs it stopped NOW
- * reaches for `POST ./status { "status": "SUSPENDED" }`, which has no
- * precondition at all.
+ * records that point at it are its audit trail. Retirement CASCADES (#3698), in
+ * one transaction under this route's one key: every credential bound to the agent
+ * is revoked, its tool grants are dropped, its PENDING proposals expire and its
+ * policy card is frozen. It is permanent — a retired agent cannot be activated or
+ * suspended again — and the response reports what the cascade changed. An
+ * operator who needs an agent stopped NOW but not closed reaches for the
+ * reversible `POST ./status { "status": "SUSPENDED" }`. See
+ * `retireRegisteredAgent` for the order and why it is load-bearing.
  */
 import { NextRequest } from 'next/server';
 

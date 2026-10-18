@@ -51,6 +51,7 @@ import {
     type AgentTierFilterValue,
 } from '../repositories/RegisteredAgentRepository';
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
+import { applyRetirementCascadeInTx, writeRetirementAuditRows } from './agent-retirement-cascade';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
 import {
     readConcurrencyCap,
@@ -822,9 +823,10 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
     const parsed = UpdateRegisteredAgentSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
-        // Both checks apply to an UPDATE as much as a create — reassigning
-        // ownership to a non-member is the same hole arrived at later.
-        if (parsed.ownerUserId !== undefined) await assertAgentOwner(db, ctx, parsed.ownerUserId);
+        // The supplier check applies to an UPDATE as much as a create. The
+        // OWNER is not amendable at all: the schema refuses `ownerUserId` by
+        // name, because ownership moves only by a two-step transfer (#3698,
+        // `agent-ownership-transfer.ts`).
         if (parsed.vendorId) await assertVendorInTenant(db, ctx, parsed.vendorId);
 
         // The supplier attribution is a MERGED-ROW rule, and the schema can only
@@ -883,7 +885,6 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
             ...(parsed.modelRef !== undefined
                 ? { modelRef: normalizeModelRef(parsed.modelRef) ?? null }
                 : {}),
-            ...(parsed.ownerUserId !== undefined ? { ownerUserId: parsed.ownerUserId } : {}),
             ...(parsed.vendorId !== undefined ? { vendorId: parsed.vendorId ?? null } : {}),
         });
         // Zero rows means the id was not this tenant's (or is soft-deleted).
@@ -928,60 +929,168 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
 }
 
 /**
- * Retire an agent — and REFUSE while it has proposals awaiting a human.
+ * The gate retirement takes: `admin.agent_registry`, and no narrower key.
  *
- * ## The choice, and why refusing beats cascading
+ * Decided in step 0e: retirement is one act under one key, because every effect
+ * of its cascade takes authority away (revoke keys, drop grants, expire
+ * proposals, freeze the card), and a holder of a narrower key keeps the
+ * standalone verb they hold today. The route already requires the key with a
+ * literal `requirePermission`; it is asserted here too so a second caller of the
+ * usecase cannot reach the cascade with `canWrite` alone. For the built-in roles
+ * this changes nothing — the ones that may write and hold the key are the ones
+ * the route admits.
+ */
+function assertCanRetireAgent(ctx: RequestContext) {
+    assertCanWrite(ctx);
+    if (!ctx.appPermissions?.admin?.agent_registry) {
+        throw forbidden(
+            'Retiring an agent requires permission to manage the agent register. ' +
+                'Retirement revokes its credentials and its tool grants, so it is the ' +
+                'register key that decides it.',
+        );
+    }
+}
+
+/**
+ * Retire an agent — and take its authority apart in the same transaction.
  *
- * A PENDING `AgentProposal` is not a record of something that happened; it is a
- * request that, when a human approves it, runs the REAL create-usecase. So an
- * agent with a pending queue still has reach into the tenant's data — its
- * authority outlives the click that retired it. Two ways to close that:
+ * ## What changed, and why the old refusal went
  *
- *   • CASCADE — reject every pending proposal as a side effect of retirement.
- *     Rejected. It is a bulk mutation of a HUMAN REVIEW QUEUE performed by a
- *     lifecycle action, and the reviewer who was mid-decision on one of those
- *     proposals is never told. "I retired an agent and my review queue emptied"
- *     is a worse surprise than any error message.
+ * Until #3698 this usecase REFUSED while any proposal was PENDING and flipped
+ * the status alone. Its docstring rejected cascading on purpose: expiring a
+ * human review queue as the side effect of a lifecycle action would surprise the
+ * reviewer mid-decision. Two facts outweighed that. Every other piece of the
+ * agent's authority — the API keys bound to it, its tool grants, its card —
+ * survived the flip: in a workspace that does not enforce registration a
+ * retired agent's key kept working, and the register said "retired" about an
+ * agent that could still act. And the refusal made the permanent decommission
+ * conditional on a queue nobody may have been working, while SUSPEND stood in
+ * for it indefinitely. So 0e decided retirement is ONE act: it revokes, drops,
+ * expires and freezes, and it says exactly what it did.
  *
- *   • REFUSE — say what is in the way and let the operator clear it. Chosen.
+ * ## The cascade (`agent-retirement-cascade.ts`)
  *
- * The refusal is only tolerable because there is an immediate answer to the
- * emergency it might otherwise block: SUSPEND. `suspendRegisteredAgent` is the
- * kill switch, it takes effect at the MCP gate on the next request, it is
- * reversible, and it has no precondition at all. So the pairing is: SUSPEND
- * stops an agent NOW, RETIRE closes its file once its queue is settled. An
- * operator who has to make it stop is never blocked by this refusal — they are
- * one route away from the control that actually stops it, which is the one they
- * wanted.
+ *   • every `TenantApiKey` bound to the agent revoked (`revokedAt`), and every
+ *     harness scanner signing key it holds;
+ *   • every `RegisteredAgentTool` grant deleted;
+ *   • every PENDING `AgentProposal` moved to EXPIRED — the expiry sweep's write,
+ *     so a reviewer opening one is refused exactly as for a lapsed window, and
+ *     the row stays as the record of what the agent asked for;
+ *   • its policy card FROZEN: no further version can be written for a retired
+ *     agent (refused at the card's write seam and by a trigger), and its history
+ *     stays readable;
+ *   • its open ownership transfer, if any, closed — CANCELLED while live (a
+ *     retired agent can never be completed into), EXPIRED once lapsed
+ *     (`agent-ownership-transfer.ts`);
+ *   • no evidence artefact withdrawn, because none is attributable to one agent;
+ *     the summary row records that basis rather than skipping the effect. That
+ *     is the owner's decision (2026-10-18); per-agent evidence a retirement can
+ *     withdraw is #3700 (`RETIREMENT_EVIDENCE_BASIS`).
  *
- * "Open" means `PENDING` only. ACCEPTED / REJECTED / EDITED are decided; they
- * are history, and history is exactly what the register must keep.
+ * ## The order is load-bearing
+ *
+ *   1. Resolve the agent — not found, or already RETIRED (one cascade per agent;
+ *      a second retirement is a 409, not a second pass).
+ *   2. STATUS FIRST. The UPDATE takes the agent row's lock, and every trigger
+ *      that refuses an authority-bearing insert for a retired agent — a PENDING
+ *      proposal, a card version, an ownership transfer, an unrevoked API key or
+ *      scanner key, a tool grant — takes `FOR SHARE` on that row. So anything
+ *      inserted for the agent concurrently, by the agent or by a person, either
+ *      committed before this UPDATE — and the cascade below takes it apart — or
+ *      waits for this commit, reads RETIRED, and is refused. Nothing slips
+ *      between. (The minting usecases read the status unlocked, and an FK
+ *      check's `FOR KEY SHARE` does not wait on this UPDATE, so without those
+ *      triggers a key minted at this moment would survive it, unrevoked.)
+ *   3. The effects, written directly under this one key (see
+ *      `assertCanRetireAgent`).
+ *   4. AUDIT LAST. `logEvent` writes on its own connection, outside this
+ *      transaction, so a row written before an effect that then threw would
+ *      describe a retirement that was rolled back.
+ *
+ * RETIRED is terminal from here: `setStatus` matches no retired row and a
+ * trigger refuses the move from any writer, so activate and suspend both refuse
+ * a retired agent. SUSPEND remains the REVERSIBLE stop, and the one to reach for
+ * when the agent must stop now and its file is not yet to be closed.
  */
 export async function retireRegisteredAgent(ctx: RequestContext, id: string) {
-    assertCanWrite(ctx);
+    assertCanRetireAgent(ctx);
+    const now = new Date();
     return runInTenantContext(ctx, async (db) => {
-        const openProposals = await db.agentProposal.count({
-            where: { tenantId: ctx.tenantId, agentId: id, status: 'PENDING' },
-        });
-        if (openProposals > 0) {
+        const agent = await RegisteredAgentRepository.getLifecycleState(db, ctx, id);
+        // Same shape whether absent or foreign, so a caller learns nothing
+        // about another tenant's id space.
+        if (!agent) throw notFound('Registered agent not found');
+        if (agent.status === 'RETIRED') {
             throw conflict(
-                `This agent has ${openProposals} proposal(s) still awaiting review. ` +
-                    'Approve or reject them first, or suspend the agent — suspension ' +
-                    'stops it immediately and is reversible.',
+                'This agent is already retired. Retirement is permanent and is applied once; ' +
+                    'its credentials, tool grants and open proposals were dealt with then.',
             );
         }
-        return applyRegisteredAgentStatus(db, ctx, id, 'RETIRED', 'AGENT_RETIRED');
+
+        const moved = await RegisteredAgentRepository.setStatus(db, ctx, id, 'RETIRED');
+        if (moved === 0) {
+            // The pre-read saw a live, unretired row; zero now means it was
+            // retired or removed while this request was in flight.
+            throw conflict(
+                'This agent was retired or removed while this request was in flight. ' +
+                    'Nothing further was changed; reload it to see its state.',
+            );
+        }
+
+        const effects = await applyRetirementCascadeInTx(db, ctx, id, now);
+        const cascade = await writeRetirementAuditRows(db, ctx, agent, effects);
+
+        return { id, status: 'RETIRED' as const, cascade };
     });
 }
 
 /**
- * The kill switch. Reversible, unlike retirement, and — deliberately — carrying
- * no precondition whatsoever: this is the control an operator reaches for when
- * an agent is doing something it should not be, and a check that could refuse it
- * would be a check that refuses the emergency stop.
+ * Resolve an agent for a REVERSIBLE lifecycle move, refusing a retired one.
+ *
+ * Retirement is permanent (#3698): it revoked the agent's credentials, dropped
+ * its grants and froze its card. Moving it back to ACTIVE would put a register
+ * row into service whose authority had been taken apart, and would lift the card
+ * freeze; moving it to SUSPENDED would make the permanent state reversible
+ * through the kill switch's own route. Neither takes authority AWAY, so refusing
+ * both is consistent with "taking authority away is never the move to refuse".
+ */
+async function assertLifecycleMovable(
+    db: PrismaTx,
+    ctx: RequestContext,
+    id: string,
+    move: AgentLifecycleMove,
+) {
+    const agent = await RegisteredAgentRepository.getLifecycleState(db, ctx, id);
+    if (!agent) throw notFound('Registered agent not found');
+    if (agent.status === 'RETIRED') {
+        throw conflict(
+            move === 'ACTIVE'
+                ? 'This agent is retired, and retirement is permanent: its credentials were ' +
+                      'revoked, its tool grants dropped and its policy card frozen, so it cannot ' +
+                      'be put back into service. Register a new agent instead.'
+                : 'This agent is retired, which already stops it permanently. There is ' +
+                      'nothing to suspend.',
+        );
+    }
+    return agent;
+}
+
+/**
+ * The kill switch. Reversible, unlike retirement, and carrying no precondition
+ * on a LIVE agent: this is the control an operator reaches for when an agent is
+ * doing something it should not be, and a check that could refuse it would be a
+ * check that refuses the emergency stop.
+ *
+ * The one refusal is a retired agent (#3698), and it refuses no emergency stop:
+ * a retired agent is already stopped, with its credentials revoked. Suspending it
+ * would only make the permanent state reversible.
  */
 export async function suspendRegisteredAgent(ctx: RequestContext, id: string) {
-    return setRegisteredAgentStatus(ctx, id, 'SUSPENDED', 'AGENT_SUSPENDED');
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        await assertLifecycleMovable(db, ctx, id, 'SUSPENDED');
+        return applyRegisteredAgentStatus(db, ctx, id, 'SUSPENDED', 'AGENT_SUSPENDED');
+    });
 }
 
 /**
@@ -1010,11 +1119,15 @@ export async function suspendRegisteredAgent(ctx: RequestContext, id: string) {
  * in the register stops containing agents that provably cannot act.
  *
  * SUSPEND and RETIRE carry no such precondition, and must not: taking authority
- * away is never the move to refuse.
+ * away is never the move to refuse. A RETIRED agent is refused here outright —
+ * retirement is permanent (#3698), see `assertLifecycleMovable`.
  */
 export async function activateRegisteredAgent(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
+        // A retired agent is refused before its score is even read: retirement
+        // is permanent, and "complete its assessment" would be the wrong fix.
+        await assertLifecycleMovable(db, ctx, id, 'ACTIVE');
         const agent = await RegisteredAgentRepository.getScoringState(db, ctx, id);
         if (!agent) throw notFound('Registered agent not found');
         if (agent.riskTier === null) {
@@ -1123,32 +1236,31 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
     });
 }
 
-type AgentLifecycleStatus = 'ACTIVE' | 'RETIRED' | 'SUSPENDED';
-
-async function setRegisteredAgentStatus(
-    ctx: RequestContext,
-    id: string,
-    status: AgentLifecycleStatus,
-    action: string,
-) {
-    assertCanWrite(ctx);
-    return runInTenantContext(ctx, (db) => applyRegisteredAgentStatus(db, ctx, id, status, action));
-}
+/** The two REVERSIBLE moves. RETIRED is not one — it has its own act above. */
+type AgentLifecycleMove = 'ACTIVE' | 'SUSPENDED';
 
 /**
- * The status write itself, taking an open transaction so a caller that has
- * already read something in the same transaction (retirement, which counts the
- * open proposal queue first) does not have to open a second one and race itself.
+ * The status write for a reversible move, taking an open transaction so the
+ * caller's pre-read (`assertLifecycleMovable`) and the write are one snapshot of
+ * intent. Retirement does NOT come through here: it writes its status itself,
+ * then its cascade, then a summary audit row that carries what the cascade did.
  */
 async function applyRegisteredAgentStatus(
     db: PrismaTx,
     ctx: RequestContext,
     id: string,
-    status: AgentLifecycleStatus,
+    status: AgentLifecycleMove,
     action: string,
 ) {
     const count = await RegisteredAgentRepository.setStatus(db, ctx, id, status);
-    if (count === 0) throw notFound('Registered agent not found');
+    // The pre-read found a live, unretired row, so zero here means it was
+    // retired or removed while this request was in flight.
+    if (count === 0) {
+        throw conflict(
+            'This agent was retired or removed while this request was in flight. ' +
+                'Nothing was changed; reload it to see its state.',
+        );
+    }
 
     await logEvent(db, ctx, {
         action,

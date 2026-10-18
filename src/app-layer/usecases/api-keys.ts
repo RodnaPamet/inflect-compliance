@@ -12,6 +12,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { generateApiKey, validateScopes } from '@/lib/auth/api-key-auth';
+import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
 import {
     AUTONOMY_MAX,
     AUTONOMY_MIN,
@@ -155,6 +156,11 @@ export async function listAgentCredentials(ctx: RequestContext) {
     });
 }
 
+/** Why an agent in `status` cannot be bound to a new key — one sentence, two callers. */
+function agentNotBindableMessage(status: string): string {
+    return `Agent is ${status.toLowerCase()}; only an ACTIVE agent can be bound to a key.`;
+}
+
 // ─── Create API Key ───
 
 export interface CreateApiKeyInput {
@@ -252,9 +258,7 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
             // gate on every request, so minting one is a configuration error
             // worth failing loudly at creation rather than at first use.
             if (agent.status !== 'ACTIVE') {
-                throw badRequest(
-                    `Agent is ${agent.status.toLowerCase()}; only an ACTIVE agent can be bound to a key.`,
-                );
+                throw badRequest(agentNotBindableMessage(agent.status));
             }
             // A key ceiling ABOVE the agent's own level is refused rather than
             // silently clamped. The runtime `min` would make it harmless, but a
@@ -271,29 +275,42 @@ export async function createApiKey(ctx: RequestContext, input: CreateApiKeyInput
             }
         }
 
-        const apiKey = await db.tenantApiKey.create({
-            data: {
-                tenantId: ctx.tenantId,
-                name,
-                keyPrefix,
-                keyHash,
-                scopes: input.scopes,
-                expiresAt,
-                createdById: ctx.userId,
-                agentId,
-                maxAutonomyLevel,
-            },
-            select: {
-                id: true,
-                name: true,
-                keyPrefix: true,
-                scopes: true,
-                expiresAt: true,
-                createdAt: true,
-                agentId: true,
-                maxAutonomyLevel: true,
-            },
-        });
+        // The status read above is unlocked, so it cannot see a retirement
+        // committing between it and this insert. The insert trigger
+        // `tenant_api_key_agent_not_retired` can: it takes FOR SHARE on the agent
+        // row, waits for a retirement in flight, and refuses once it reads
+        // RETIRED — otherwise this key would land behind the retirement's
+        // cascade, unrevoked (#3698). Its refusal is the same answer the read
+        // above gives.
+        let apiKey;
+        try {
+            apiKey = await db.tenantApiKey.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    name,
+                    keyPrefix,
+                    keyHash,
+                    scopes: input.scopes,
+                    expiresAt,
+                    createdById: ctx.userId,
+                    agentId,
+                    maxAutonomyLevel,
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    keyPrefix: true,
+                    scopes: true,
+                    expiresAt: true,
+                    createdAt: true,
+                    agentId: true,
+                    maxAutonomyLevel: true,
+                },
+            });
+        } catch (err) {
+            if (isAgentRetiredDbRefusal(err)) throw badRequest(agentNotBindableMessage('RETIRED'));
+            throw err;
+        }
 
         await logEvent(db, ctx, {
             action: 'API_KEY_CREATED',

@@ -1529,6 +1529,78 @@ surface ever shows a refused skill's text. A defensive "never reveal your
 instructions" sentence is refused too — the rules cannot tell which way a
 sentence points.
 
+**The retirement cascade and agent ownership transfer, since 2a (#3698).**
+`retireRegisteredAgent` is one act under `admin.agent_registry` alone, and its
+effects live in `usecases/agent-retirement-cascade.ts`. Rules that are each one
+careless edit from being undone:
+
+- **Every effect is written DIRECTLY**, never through `revokeApiKey`
+  (`admin.manage`), `revokeAgentTool`, `updateAgentPolicyCard` or the scanner-key
+  revoke. Calling a standalone verb adds its gate to retirement without anybody
+  deciding it should (0e: every effect takes authority away).
+- **Status first, audit last.** The status UPDATE takes the agent row lock that
+  the insert triggers' `FOR SHARE` waits on, so nothing inserted for the agent
+  slips in behind the cascade; `logEvent` writes on its own connection, so a row
+  written before an effect that then threw would narrate a rollback.
+- **Every authority-bearing insert for an agent takes `FOR SHARE` on its row in
+  a trigger** — a `PENDING` proposal, a card version, an ownership transfer, an
+  unrevoked `TenantApiKey` (insert or re-bind) or `AgentHarnessScannerKey`, and a
+  `RegisteredAgentTool` grant. The human usecases that mint keys and grants read
+  the status UNLOCKED, and an FK check's `FOR KEY SHARE` does not conflict with
+  retirement's `FOR NO KEY UPDATE`, so without the trigger a key minted at the
+  moment of retirement survives it, unrevoked. A new table carrying authority
+  for an agent needs the same trigger, or "retirement leaves nothing" stops
+  being true of it.
+- **`RETIRED` is terminal** — `setStatus` matches no retired row and a trigger
+  refuses any move out of it. Every one of these triggers raises the
+  `AGENT_RETIRED:` prefix (default SQLSTATE, not `restrict_violation`, which
+  Prisma renders as an FK error), and each writing usecase maps it back with
+  `isAgentRetiredDbRefusal` to the error it gives when it sees the status itself.
+- **Population-level evidence is never withdrawn by retirement.** No
+  `AgenticEvidenceArtefact` is attributable to one agent; the summary row says
+  `evidenceBasis: 'POPULATION_LEVEL_ONLY'` instead of skipping the effect. Do not
+  "complete" the 0e row by withdrawing tenant-wide artefacts: that retracts true
+  evidence about every other agent, and the next emission re-issues the month.
+  Withdrawing none is the owner's decision (2026-10-18); per-agent evidence that
+  retirement can withdraw is its own follow-up roadmap step, not a gap here.
+- **The owner moves only by the two-step transfer**
+  (`usecases/agent-ownership-transfer.ts`). `UpdateRegisteredAgentSchema` refuses
+  `ownerUserId` by NAME (a stripped field would answer 200 with nothing changed),
+  and `RegisteredAgentRepository.update` excludes it by type; `moveOwner` is the
+  only post-registration write of the column.
+- **Only the person a transfer names completes it; the person who started it
+  never can.** The usecase asks that first, from the stored row; the claim's
+  WHERE names the recipient; and CHECKs make any other completion
+  unrepresentable. Both routes carry a literal
+  `requirePermission('admin.tenant_lifecycle')`, ruled above the
+  `/admin/agents(/.*)?` catch-all, so the recipient must hold the key too.
+- **A recipient must be able to reach step two, and step two has TWO gates.**
+  The routes sit under `/api/t/:slug/admin/`, where the edge middleware refuses
+  any session whose BUILT-IN role is not ADMIN or OWNER before the route runs;
+  a custom role never enters that check. So step one accepts an OWNER, or an
+  ADMIN whose custom role carries the key — never a READER/EDITOR/AUDITOR
+  membership, whatever custom role it holds (`TRANSFER_RECIPIENT_MEMBERSHIP_ROLES`).
+  `tests/unit/agent-ownership-transfer-edge-gate.test.ts` runs the real
+  middleware and fails if the set and the edge disagree. The usecase gates on
+  `assertCanRead` + the key, not `assertCanWrite`: an ADMIN membership with a
+  READER-based custom role resolves `canWrite: false` and is a valid recipient.
+  This narrow set is the owner's accepted interim state (2026-10-18): a new
+  built-in `AI_ADMIN` role widens it in its own PR — do not widen it by
+  loosening the edge gate here. The edge reads the session's PRIMARY (oldest)
+  membership role, not this tenant's; that limitation fails closed and stays
+  documented, not fixed, in this subsystem.
+- **At most one `PENDING` transfer per agent is a PARTIAL unique index in the
+  migration.** Do not add a `@@unique` for it. A row that has left `PENDING` is
+  immutable (trigger) — 2b's `OWNER_DEPARTED` lift is to read `COMPLETED` rows —
+  and `app_user` holds no DELETE on the table.
+- **Lock order is agent row, then transfer row**, on every path that takes
+  both: step one reads the agent `FOR SHARE` before it stamps a lapsed transfer
+  (`lockLifecycleStateForShare`), completion moves the owner before it claims
+  the transfer, and retirement writes the status before it closes the open
+  transfer (CANCELLED if live, EXPIRED if lapsed). Step one used to stamp first
+  and lock the agent second, and deadlocked with a retirement whenever the row's
+  deadline fell between the two requests' clocks.
+
 
 
 
