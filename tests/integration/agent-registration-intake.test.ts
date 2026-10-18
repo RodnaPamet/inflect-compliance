@@ -61,7 +61,7 @@ const ROLE: Record<Person, Role> = {
 };
 
 /** The shadow agents the seeded scan reports, besides the one registered agent. */
-const SHADOWS = ['shadow-flow', 'shadow-again', 'shadow-race', 'shadow-refusals', 'shadow-route', 'shadow-other'] as const;
+const SHADOWS = ['shadow-flow', 'shadow-again', 'shadow-race', 'shadow-refusals', 'shadow-route', 'shadow-other', 'shadow-ai-admin'] as const;
 type Shadow = (typeof SHADOWS)[number];
 const discoveredIdOf = (s: Shadow) => `entra:sp:${s}`;
 
@@ -668,6 +668,20 @@ describe('the intake route', () => {
         const again = await INTAKE(req(T2, intakeBody(T2, 'shadow-route')), routeArgs(T2));
         expect(again.status).toBe(409);
         expect(await again.json()).toMatchObject({ error: { details: { reason: 'ALREADY_REGISTERED_BY_INTAKE' } } });
+    });
+
+    it('an AI_ADMIN — the register key on a READER tier — runs the intake (#3699)', async () => {
+        // The usecase floor is the agent-governance floor: the coarse write
+        // tier OR the register key. AI_ADMIN holds the key and not the tier.
+        const aiAdmin = makeRequestContext(Role.AI_ADMIN, {
+            tenantId: T2,
+            tenantSlug: T2,
+            userId: seeded[T2].users.editor,
+        });
+        expect(aiAdmin.permissions.canWrite).toBe(false);
+        expect(aiAdmin.appPermissions.admin.agent_registry).toBe(true);
+        const registered = await registerShadowAgent(aiAdmin, intakeBody(T2, 'shadow-ai-admin'));
+        expect(registered).toMatchObject({ status: 'DRAFT', aiActRiskTier: 'UNCLASSIFIED' });
     });
 
     it('the hash chain still verifies with the intake rows in it', async () => {

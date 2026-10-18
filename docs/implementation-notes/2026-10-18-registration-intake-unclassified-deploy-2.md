@@ -11,7 +11,7 @@ and the ownership transfer. This PR adds the writer.
 ```
 POST /api/t/:slug/admin/agents/intake            requirePermission('admin.agent_registry')
   └ registerShadowAgent (usecases/agent-registration-intake.ts)
-      assertCanWrite + admin.agent_registry
+      assertAgentGovernanceWrite + admin.agent_registry
       schema (.strict — no tier, no questionnaire)
       OWNER_NOT_CONFIRMED  ← no ownerUserId, or confirmOwner !== true      (before any read)
       SUGGESTION_INVALID   ← attribution fails parseOwnershipAttribution   (1d's contract)

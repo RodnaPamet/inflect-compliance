@@ -64,7 +64,7 @@
  */
 import { Prisma } from '@prisma/client';
 
-import { assertCanWrite } from '../policies/common';
+import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { AppError, ConflictError, forbidden, ValidationError } from '@/lib/errors/types';
@@ -116,11 +116,13 @@ function refuse(
 /**
  * `admin.agent_registry`, re-asserted beneath the route's literal
  * `requirePermission` so a second caller of this usecase cannot reach it with
- * `canWrite` alone — the same shape as retirement. Registering is a write, so
- * `assertCanWrite` comes first.
+ * `canWrite` alone — the same shape as retirement. The floor beneath it is the
+ * agent-governance floor, not `assertCanWrite`.
  */
 function assertCanRunIntake(ctx: RequestContext) {
-    assertCanWrite(ctx);
+    // The agent-governance floor (#3699): the coarse write tier OR the
+    // register key, so an AI_ADMIN — the key on a READER tier — can run it.
+    assertAgentGovernanceWrite(ctx, 'agent_registry');
     if (!ctx.appPermissions?.admin?.agent_registry) {
         throw forbidden(
             'Registering a shadow agent requires permission to manage the agent register. ' +

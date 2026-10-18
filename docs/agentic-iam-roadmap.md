@@ -354,7 +354,6 @@ Both jobs emit outcome metrics (`agentic.owner_orphan_pass.*`,
 `agentic.credential_hygiene.*`), and their execution rows are excluded from the
 tenant-wide control-check list.
 
-<<<<<<< HEAD
 ### The AI_ADMIN role
 
 `AI_ADMIN` (#3699) is a built-in tenant role that runs the agent register and
@@ -378,7 +377,7 @@ carries it. Deploy 1 is on `main`: the enum value exists, every reader of a role
 handles it, and nothing writes it — every membership-role writer reads
 `ASSIGNABLE_TENANT_ROLES` in `src/lib/roles.ts`, which excludes it. Nothing in
 the product can assign the role until deploy 2.
-=======
+
 ### Registration intake from a shadow-agent finding
 
 A person holding `admin.agent_registry` takes a `SHADOW_AGENT` finding into the
@@ -431,17 +430,12 @@ finding id.
   four answers is required, and `null` means "does not apply". It then links the
   tier's obligations. It moves an entry out of `UNCLASSIFIED` once and refuses
   an entry that is already classified. No page calls this route either.
->>>>>>> cd6609214 (feat(agentic): registration intake from a SHADOW_AGENT finding, the one UNCLASSIFIED writer (2a deploy 2))
 
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-<<<<<<< HEAD
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key; nothing assigns the role yet (deploy 1 of #3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`, and which nothing writes until `2a`'s intake (#3669). | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
-=======
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Five separate admin rights. The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in `DRAFT` through such an entry; activation refuses the agent until the entry is classified. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
->>>>>>> cd6609214 (feat(agentic): registration intake from a SHADOW_AGENT finding, the one UNCLASSIFIED writer (2a deploy 2))
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key; nothing assigns the role yet (deploy 1 of #3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
