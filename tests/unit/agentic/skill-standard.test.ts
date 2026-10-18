@@ -72,9 +72,14 @@ describe('the two drafted IAM skills', () => {
         expect(check).toMatchObject({ ok: true });
     });
 
-    it('is declared by no workflow, so no run can mount either yet', () => {
-        const declared = listWorkflowDefinitions().flatMap((d) => d.skills ?? []);
-        for (const name of DRAFTED) expect(declared).not.toContain(name);
+    it('is declared by exactly one workflow, the discovered-agent review (#3668)', () => {
+        // 0b drafted them undeclared; 1d declared both on one workflow. The
+        // mount itself is proved in `discovered-agent-review-workflow.test.ts`.
+        for (const name of DRAFTED) {
+            expect(listWorkflowDefinitions().filter((d) => (d.skills ?? []).includes(name)).map((d) => d.key)).toEqual([
+                'discovered-agent-review',
+            ]);
+        }
     });
 });
 

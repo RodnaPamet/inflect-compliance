@@ -43,6 +43,8 @@ const EXPECTED: Array<[string, ContentProvenance]> = [
     ['questionnaire.vendor-response', 'THIRD_PARTY_INGESTED'],
     // Machine output.
     ['scanner.vulnerability-import', 'THIRD_PARTY_INGESTED'],
+    // A signed harness report: the signature names the sender, not the truth.
+    ['scanner.harness-report', 'THIRD_PARTY_INGESTED'],
     // Systems of record synced in.
     ['integration.servicenow', 'THIRD_PARTY_INGESTED'],
     ['integration.sharepoint', 'THIRD_PARTY_INGESTED'],

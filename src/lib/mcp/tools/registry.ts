@@ -47,6 +47,7 @@ import { findCoverageGapsTool, getFrameworkStatusTool } from './framework-tools'
 import { listEvidenceExpiringTool } from './evidence-tools';
 import { listFindingsTool, listTasksTool } from './work-tools';
 import { getTenantContextTool } from './context-tools';
+import { getDiscoveredAgentTool } from './harness-tools';
 
 /**
  * The registered read tools — the full tenant-inspection suite. Each is a thin
@@ -67,6 +68,7 @@ export const READ_TOOLS = [
     listEvidenceExpiringTool,
     listFindingsTool,
     listTasksTool,
+    getDiscoveredAgentTool,
 ] as unknown as ReadonlyArray<McpReadTool<unknown>>;
 
 /**

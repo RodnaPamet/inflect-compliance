@@ -1601,6 +1601,25 @@ hand), and `WorkflowRun.mountedSkills` pins each mounted skill's hash at
 admission, write-once by trigger — `[]` is "mounted nothing", NULL is "predates
 the pin", and the two must never be conflated.
 
+**The two IAM skills' answers** (`src/lib/agentic/iam-skill-outputs.ts`, since
+#3668) are parsed before anything acts on them, and three rules there are easy
+to undo:
+
+- **An attribution is a suggestion by type.** `AttributionStatus` is the
+  reconcile engine's `Outcome` minus `LINKED` and `NON_PERSON`; no arm carries
+  an owner the run recorded. Do not add a `CONFIRMED` status or an
+  `ownerUserId` member: a person confirms in the registration intake (2a), and
+  the grade and outcome are re-derived from the answer's own signals.
+- **A met verdict with no evidence reference is REFUSED, not coerced.** The
+  ladder would read it as not met, so accepting it lets an answer claim a pass
+  its own level does not contain. An answer stating a `level` is refused too.
+- **The facts read (`get_discovered_agent`) takes `admin.agent_registry`**, the
+  key every harness read takes, and no API-key scope carries it — so a Flue run
+  (always agent-key-bound) is never offered it, and the Flue engine does not
+  pass the run input to the model either. Closing that is an owner decision
+  about who reads the agent inventory (a view key), never a weaker key chosen
+  to make the tool reachable.
+
 **The retirement cascade and agent ownership transfer, since 2a (#3698).**
 `retireRegisteredAgent` is one act under `admin.agent_registry` alone, and its
 effects live in `usecases/agent-retirement-cascade.ts`. Rules that are each one

@@ -329,6 +329,15 @@ export function parseStoredHarnessVerdicts(json: unknown): CriterionVerdict[] | 
     return parsed.success ? parsed.data : null;
 }
 
+/** One tool as a scan item stores it: identifiers, a hash and two flags — never a description. */
+export type StoredHarnessTool = z.infer<typeof ToolSchema>;
+
+/** One scan item's stored tools, re-validated. `null` is "could not be read", never "no tools". */
+export function parseStoredHarnessTools(json: unknown): StoredHarnessTool[] | null {
+    const parsed = z.array(ToolSchema).max(MAX_TOOLS_PER_AGENT).safeParse(json);
+    return parsed.success ? parsed.data : null;
+}
+
 /** Why a report was refused. Stable codes: the ingest records them. */
 export type HarnessRefusal =
     | 'TOO_LARGE'

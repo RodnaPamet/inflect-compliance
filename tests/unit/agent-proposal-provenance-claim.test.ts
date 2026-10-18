@@ -236,6 +236,7 @@ describe('the type refuses the call the clamp catches', () => {
             'questionnaire.inbound-answer': true,
             'questionnaire.vendor-response': true,
             'scanner.vulnerability-import': true,
+            'scanner.harness-report': true,
             'integration.servicenow': true,
             'integration.sharepoint': true,
             'integration.github': true,

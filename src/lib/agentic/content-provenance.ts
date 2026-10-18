@@ -106,6 +106,10 @@ export const CONTENT_SOURCE_PROVENANCE = {
     'questionnaire.inbound-answer': 'THIRD_PARTY_INGESTED',
     'questionnaire.vendor-response': 'THIRD_PARTY_INGESTED',
     'scanner.vulnerability-import': 'THIRD_PARTY_INGESTED',
+    // A signed `inflect-agent-harness/1` report (#3665). The signature says
+    // WHICH scanner sent it, not that what it observed is true or benign: its
+    // identifiers and evidence pointers are written by the client's estate.
+    'scanner.harness-report': 'THIRD_PARTY_INGESTED',
     'integration.servicenow': 'THIRD_PARTY_INGESTED',
     'integration.sharepoint': 'THIRD_PARTY_INGESTED',
     'integration.github': 'THIRD_PARTY_INGESTED',
@@ -254,7 +258,7 @@ export interface ToolCorpusEntry {
  * THE AGENT'S REACHABLE CORPUS — every MCP read tool, and what its result is
  * actually made of.
  *
- * Nine of the ten are `THIRD_PARTY_INGESTED`, and that is not pessimism: a risk
+ * Ten of the eleven are `THIRD_PARTY_INGESTED`, and that is not pessimism: a risk
  * description can be typed by a compliance manager OR imported from a scanner;
  * a control description can come from a framework library OR a customer's own
  * spreadsheet; an evidence row names an uploaded file. IC records no per-row
@@ -333,6 +337,13 @@ export const MCP_TOOL_CORPUS: Readonly<Record<string, ToolCorpusEntry>> = {
         basis:
             'Task titles/descriptions are mirrored from external ticketing systems ' +
             'and created by automation from webhook payloads.',
+    },
+    get_discovered_agent: {
+        provenance: 'THIRD_PARTY_INGESTED',
+        sources: ['scanner.harness-report'],
+        basis:
+            'Every member is what a scanner in the client estate reported: source ids, ' +
+            'owner references, evidence pointers and tool names, signed but not vouched for.',
     },
 };
 
