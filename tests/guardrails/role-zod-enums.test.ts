@@ -17,14 +17,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { codeOf } from '../helpers/source-blocks';
-import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
+import { ASSIGNABLE_TENANT_ROLES, MEMBER_ROLE_CHANGE_ROLES } from '@/lib/roles';
 
 const ROOT = path.resolve(__dirname, '../..');
 
+/** Each member-management route, and the shared list its `role` must validate against. */
 const MEMBER_MGMT_FILES = [
-    'src/app/api/t/[tenantSlug]/admin/members/route.ts',
-    'src/app/api/t/[tenantSlug]/admin/members/[membershipId]/route.ts',
-];
+    { file: 'src/app/api/t/[tenantSlug]/admin/members/route.ts', list: 'ASSIGNABLE_TENANT_ROLES' },
+    {
+        file: 'src/app/api/t/[tenantSlug]/admin/members/[membershipId]/route.ts',
+        list: 'MEMBER_ROLE_CHANGE_ROLES',
+    },
+] as const;
 
 const OWNER_EXEMPT_FILES: Array<{ file: string; reason: string }> = [
     {
@@ -47,25 +51,27 @@ function readFile(rel: string): string {
 
 describe('Role Zod enums include OWNER where member-management relevant', () => {
     /**
-     * Since #3699 the member-management routes validate `role` against the
-     * shared writers' list, `ASSIGNABLE_TENANT_ROLES` (`src/lib/roles.ts`),
-     * rather than a literal of their own: `Role` gained AI_ADMIN, which no
-     * writer may write until deploy 2. So "includes OWNER" is asked of that
-     * list, and the routes are asked to use it and to carry no literal role
-     * enum beside it — a second list is how the two would drift.
+     * Since #3699 the member-management routes validate `role` against a
+     * shared list in `src/lib/roles.ts` rather than a literal of their own:
+     * `Role` gained AI_ADMIN, which the direct add (an invite) must refuse and
+     * the role change (`MEMBER_ROLE_CHANGE_ROLES`, deploy 2) accepts for an
+     * OWNER. So "includes OWNER" is asked of those lists, and the routes are
+     * asked to use theirs and to carry no literal role enum beside it — a
+     * second list is how the two would drift.
      */
-    it('the writers’ list the routes validate against includes OWNER', () => {
+    it('both lists the routes validate against include OWNER', () => {
         expect(ASSIGNABLE_TENANT_ROLES).toContain('OWNER');
+        expect(MEMBER_ROLE_CHANGE_ROLES).toContain('OWNER');
     });
 
     it.each(MEMBER_MGMT_FILES)(
-        '%s validates role against the writers’ list, and no literal role enum',
-        (file) => {
+        '$file validates role against $list, and no literal role enum',
+        ({ file, list }) => {
             const content = readFile(file);
             expect({
-                fromWritersList: /role:\s*z\.enum\(ASSIGNABLE_TENANT_ROLES\)/.test(content),
+                fromSharedList: new RegExp(`role:\\s*z\\.enum\\(${list}\\)`).test(content),
                 literalRoleEnum: ROLE_ENUM_PATTERN.test(content),
-            }).toEqual({ fromWritersList: true, literalRoleEnum: false });
+            }).toEqual({ fromSharedList: true, literalRoleEnum: false });
         },
     );
 

@@ -860,6 +860,12 @@ function getEntraRoleSync() {
  *                       assigned (ADMIN today); nothing was written.
  *   - `no_match`      — mappings exist but none matched the user's groups (gate off).
  *   - `no_mappings`   — the tenant has no group mappings configured.
+ *   - `ambiguous_tie` — the top-priority matches tie between AI_ADMIN and a role
+ *                       seniority may not rank it against (ADMIN, EDITOR,
+ *                       AUDITOR); nothing was written (#3699).
+ *   - `custom_role_held` — the mapping yields AI_ADMIN but the membership carries
+ *                       a custom role, which that role never does; nothing was
+ *                       written (#3699).
  *
  * A `gate_denied` spike means a tenant's gate is denying logins (often a
  * misconfigured mapping). No tenantId/userId label — fleet-health signal;
@@ -874,7 +880,9 @@ export function recordEntraRoleSync(attrs: {
         | 'owner_immune'
         | 'role_protected'
         | 'no_match'
-        | 'no_mappings';
+        | 'no_mappings'
+        | 'ambiguous_tie'
+        | 'custom_role_held';
 }): void {
     getEntraRoleSync().add(1, { outcome: attrs.outcome });
 }

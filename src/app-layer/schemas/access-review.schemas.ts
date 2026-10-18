@@ -136,8 +136,8 @@ export const SubmitDecisionSchema = z.discriminatedUnion('decision', [
     z.object({
         decision: z.literal('MODIFY'),
         /// The writers' list, NOT `z.nativeEnum(Role)`: closing the campaign
-        /// writes this value to the membership, so a role nothing may write
-        /// yet (AI_ADMIN, #3699 deploy 1) is refused here at submission.
+        /// writes this value to the membership, and a campaign never promotes
+        /// anybody to AI_ADMIN (#3699), so it is refused here at submission.
         modifiedToRole: z.enum(ASSIGNABLE_TENANT_ROLES),
         /// Only meaningful when the target role uses a TenantCustomRole.
         modifiedToCustomRoleId: z.string().min(1).optional().nullable(),

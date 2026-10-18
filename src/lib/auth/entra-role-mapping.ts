@@ -14,7 +14,7 @@ export interface GroupRoleMapping {
 }
 
 export interface ResolvedGroupRole {
-    /** The winning role, or null when the user matched no *eligible* mapping. */
+    /** The winning role, or null when the user matched no *eligible* mapping, or the top tie is ambiguous. */
     role: Role | null;
     /** Every mapped group the user is actually in (for audit + the gate). */
     matchedGroupIds: string[];
@@ -25,6 +25,13 @@ export interface ResolvedGroupRole {
      * matched mapping names such a role.
      */
     clampedGroupIds: string[];
+    /**
+     * The groups of an equal-priority tie that seniority may not break — see
+     * `TIE_DECIDABLE_AGAINST`. When non-empty, `role` is null: nothing is
+     * decided, so the caller leaves the membership's role as it is. Empty
+     * otherwise.
+     */
+    ambiguousGroupIds: string[];
 }
 
 export interface ResolveRoleOptions {
@@ -50,37 +57,68 @@ export interface ResolveRoleOptions {
  * Role seniority, used only as a deterministic tie-breaker when two matched
  * mappings share the same `priority`. NOT an authority model — the admin's
  * explicit `priority` is the primary signal. OWNER is ranked for completeness
- * even though it is never a mappable target (see the Zod schema).
+ * even though it is never a mappable target (see the Zod schema, and
+ * `NEVER_GROUP_MAPPED_ROLES` below).
+ *
+ * AI_ADMIN (#3699) is ranked just above READER, and only READER: it is
+ * READER's permission set plus the agent keys, so a tie it wins against READER
+ * takes away nothing READER grants. Against every other role the rank is never
+ * consulted — `TIE_DECIDABLE_AGAINST` makes such a tie ambiguous first.
  */
 const ROLE_SENIORITY: Record<Role, number> = {
-    OWNER: 4,
-    ADMIN: 3,
-    EDITOR: 2,
+    OWNER: 5,
+    ADMIN: 4,
+    EDITOR: 3,
+    AI_ADMIN: 2,
     READER: 1,
     AUDITOR: 0,
-    // Never ranked in practice: `NEVER_GROUP_MAPPED_ROLES` drops it first.
-    AI_ADMIN: -1,
+};
+
+/**
+ * Roles that sit OFF the tenant-wide seniority ladder, each with the roles a
+ * priority tie may be broken against — an allowlist, so a role not named is
+ * undecidable by default.
+ *
+ * AI_ADMIN is on a different axis from the ladder. EDITOR and ADMIN write
+ * business data it cannot, AUDITOR shares audit packs and exports reports it
+ * cannot, and it holds `admin.agent_ownership`, which none of them does — so
+ * whichever way seniority broke a tie between it and one of them, the user
+ * would silently lose a grant the tenant mapped to them on purpose. Such a tie
+ * decides nothing: the resolver yields no role, the membership keeps the one
+ * it has, and the caller reports the groups. The admin settles it the way the
+ * product already asks them to settle every conflict — with `priority`. A
+ * mapping with a higher priority still wins outright, in either direction.
+ *
+ * READER is the one role it may beat, because AI_ADMIN contains READER.
+ */
+const TIE_DECIDABLE_AGAINST: Partial<Record<Role, readonly Role[]>> = {
+    AI_ADMIN: ['READER'],
 };
 
 /**
  * Roles a group mapping can NEVER yield, whatever row is stored and whatever
- * ceiling the caller passes (#3699).
+ * ceiling the caller passes — the read-side half of the schema's exclusion
+ * (`ENTRA_MAPPABLE_ROLES`), so a row written around the schema still cannot
+ * confer the role at sign-in or through a SCIM Groups push. Dropped mappings
+ * are reported in `clampedGroupIds`, like a ceiling's.
  *
- * `AI_ADMIN` holds the agent keys, including the one that lets its holder
- * receive an agent's accountability, so it is granted by an OWNER on the
- * members page and by nothing an identity provider controls. The Zod schema
- * for a mapping already refuses it (`ENTRA_MAPPABLE_ROLES`); this is the
- * read-side half, so a row written around the schema still cannot promote
- * anybody at sign-in or through a SCIM Groups push. Dropped mappings are
- * reported in `clampedGroupIds`, like a ceiling's.
+ * OWNER: ownership carries tenant lifecycle and owner management and stays
+ * manually granted. The list held `AI_ADMIN` in deploy 1 of #3699, when no
+ * group could confer that role either; deploy 2 made it mappable (owner
+ * decision, 2026-10-18) and the list kept the one role the schema still
+ * excludes rather than going empty — the resolver used to promote a stored
+ * OWNER row, and it is the same defence. `tests/unit/entra-role-mapping.test.ts`
+ * asserts it is exactly the complement of the schema's list.
  */
-export const NEVER_GROUP_MAPPED_ROLES: readonly Role[] = ['AI_ADMIN'];
+export const NEVER_GROUP_MAPPED_ROLES: readonly Role[] = ['OWNER'];
 
 /**
  * Resolve the IC role a user earns from their AAD security-group membership.
  *
  * Winner selection, in order: highest `priority`, then most-senior role, then
- * lowest `aadGroupId` (lexicographic) so the result is fully deterministic.
+ * lowest `aadGroupId` (lexicographic) so the result is fully deterministic —
+ * except that a top-priority tie seniority may not break (`TIE_DECIDABLE_AGAINST`)
+ * yields no role and reports the tied groups in `ambiguousGroupIds`.
  * Returns `{ role: null }` when no mapping matches — the caller decides what
  * that means (no change, or denial under `enforceGroupGate`).
  *
@@ -94,7 +132,9 @@ export function resolveRoleFromGroups(
 ): ResolvedGroupRole {
     const groupSet = new Set(aadGroups);
     const matched = mappings.filter((m) => groupSet.has(m.aadGroupId));
-    if (matched.length === 0) return { role: null, matchedGroupIds: [], clampedGroupIds: [] };
+    if (matched.length === 0) {
+        return { role: null, matchedGroupIds: [], clampedGroupIds: [], ambiguousGroupIds: [] };
+    }
 
     // `matchedGroupIds` stays the FULL matched set: the caller's group gate and
     // the audit row both mean "groups this user is actually in", which the
@@ -107,14 +147,33 @@ export function resolveRoleFromGroups(
     const eligible = matched.filter((m) => mayWin(m.role));
     const clampedGroupIds = matched.filter((m) => !mayWin(m.role)).map((m) => m.aadGroupId);
 
-    if (eligible.length === 0) return { role: null, matchedGroupIds, clampedGroupIds };
+    if (eligible.length === 0) {
+        return { role: null, matchedGroupIds, clampedGroupIds, ambiguousGroupIds: [] };
+    }
 
-    const winner = [...eligible].sort(
+    // Only the TOP priority can be ambiguous: a lower tier is outranked by an
+    // explicit admin choice, so falling through to it would be guessing.
+    const topPriority = Math.max(...eligible.map((m) => m.priority));
+    const topTier = eligible.filter((m) => m.priority === topPriority);
+    const tierRoles = [...new Set(topTier.map((m) => m.role))];
+    const undecidable = tierRoles.some((role) => {
+        const decidable = TIE_DECIDABLE_AGAINST[role];
+        return decidable !== undefined && tierRoles.some((other) => other !== role && !decidable.includes(other));
+    });
+    if (undecidable) {
+        return {
+            role: null,
+            matchedGroupIds,
+            clampedGroupIds,
+            ambiguousGroupIds: topTier.map((m) => m.aadGroupId).sort(),
+        };
+    }
+
+    const winner = [...topTier].sort(
         (a, b) =>
-            b.priority - a.priority ||
             ROLE_SENIORITY[b.role] - ROLE_SENIORITY[a.role] ||
             a.aadGroupId.localeCompare(b.aadGroupId),
     )[0];
 
-    return { role: winner.role, matchedGroupIds, clampedGroupIds };
+    return { role: winner.role, matchedGroupIds, clampedGroupIds, ambiguousGroupIds: [] };
 }

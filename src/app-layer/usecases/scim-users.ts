@@ -54,6 +54,7 @@ import {
     SCIM_ASSIGNABLE_ROLES,
     SCIM_DEFAULT_ROLE,
     isScimProtectedRole,
+    isScimStatusProtectedRole,
     type ScimAssignableRole,
 } from '@/lib/scim/roles';
 import { SCIM_SCHEMAS, type ScimUser } from '@/lib/scim/types';
@@ -112,8 +113,10 @@ async function emitScimAudit(
 // ─── Membership Protection ───────────────────────────────────────────
 
 /**
- * Refuse any SCIM write against a membership whose role SCIM could not itself
- * have assigned (ADMIN / OWNER today).
+ * Refuse a SCIM STATUS write against a membership whose role no SCIM path could
+ * itself have assigned (ADMIN / OWNER today). AI_ADMIN is not refused here: a
+ * Groups push can assign it, so a deprovision can remove it
+ * (`isScimStatusProtectedRole`, #3699 deploy 2).
  *
  * The role writes below already skipped ADMIN. The STATUS writes did not — so a
  * token holder could not change an ADMIN's role but could switch that ADMIN
@@ -132,7 +135,7 @@ function assertScimMayWrite(
     userId: string,
     tenantId: string,
 ): void {
-    if (!isScimProtectedRole(membership.role)) return;
+    if (!isScimStatusProtectedRole(membership.role)) return;
     logger.warn('SCIM write refused against a protected membership', {
         component: 'scim', operation, userId, tenantId, role: membership.role,
     });
@@ -318,7 +321,7 @@ export async function scimCreateUser(
             // on. Skipped rather than 403'd — POST /Users is the idempotent create
             // verb, and the response below reports the membership's REAL status,
             // so the IdP is told what actually happened.
-            const mayReactivate = needsReactivation && !isScimProtectedRole(existingMembership.role);
+            const mayReactivate = needsReactivation && !isScimStatusProtectedRole(existingMembership.role);
             if (needsReactivation && !mayReactivate) {
                 logger.warn('SCIM reactivation refused against a protected membership', {
                     component: 'scim', userId: existingUser.id, tenantId: ctx.tenantId,

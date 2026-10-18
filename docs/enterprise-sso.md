@@ -120,9 +120,19 @@ The winner is chosen by, in order:
 
 Example: a user in two priority-100 groups mapping to ADMIN and READER → ADMIN.
 
-OWNER is **not** a mappable target (only ADMIN / EDITOR / READER / AUDITOR) —
-ownership carries tenant-lifecycle + owner-management authority and must be
-granted by hand.
+**AI_ADMIN is off the seniority ladder.** It is READER's access plus the agent
+keys, so it beats READER on a priority tie. Against ADMIN, EDITOR or AUDITOR each
+side holds something the other lacks, so an equal-priority tie at the top
+decides nothing: the user's role is left as it is (metric outcome
+`ambiguous_tie`). Give the AI_ADMIN mapping a higher or lower priority to settle
+it. A higher priority still wins outright, in either direction.
+
+OWNER is **not** a mappable target (only ADMIN / EDITOR / READER / AUDITOR /
+AI_ADMIN) — ownership carries tenant-lifecycle + owner-management authority and
+must be granted by hand; a stored OWNER row is dropped at resolution too.
+A mapping to **AI_ADMIN** is created, changed and removed by an OWNER only, as
+on the members page. The group sync never moves a member who carries a custom
+role into AI_ADMIN (outcome `custom_role_held`) — remove the custom role first.
 
 ### Enforce group gate
 When **on**, a user who matches **none** of your mappings is denied access to

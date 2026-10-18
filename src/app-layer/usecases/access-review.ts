@@ -647,10 +647,11 @@ export async function closeAccessReview(
             );
         }
 
-        // A MODIFY whose target role no writer may write yet (AI_ADMIN, #3699
-        // deploy 1) refuses the whole close BEFORE any row executes, like a
-        // pending decision. `SubmitDecisionSchema` refuses it at submission;
-        // this is the read-side half, for a row stored around the schema.
+        // A MODIFY whose target role no campaign may write (AI_ADMIN, #3699:
+        // a review never promotes to it) refuses the whole close BEFORE any
+        // row executes, like a pending decision. `SubmitDecisionSchema`
+        // refuses it at submission; this is the read-side half, for a row
+        // stored around the schema.
         const unassignable = decisions.find(
             (d) =>
                 d.decision === 'MODIFY' &&
