@@ -26,8 +26,8 @@
     },
     "ci.yml:test-summary": {
         "kind": "conditional",
-        "reason": "Carries `if: !cancelled()` so it can run in states other than success. It is an aggregator over the four Test shards, not an independent check.",
-        "coveredBy": "The four Test shards it summarises are unconditionally PR-reachable; this job adds no coverage of its own."
+        "reason": "Carries `if: !cancelled()` so it can run in states other than success. It is an aggregator over the Test shards, not an independent check.",
+        "coveredBy": "The Test shards it summarises are unconditionally PR-reachable; this job adds no coverage of its own."
     },
     "dast-full.yml:zap-full": {
         "kind": "never",
