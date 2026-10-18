@@ -11,9 +11,13 @@ import {
     hygieneSourceRef,
     isAgentCredential,
     isLiveKey,
+    isPermittedRotationDays,
     keyRuleHits,
+    MAX_KEY_ROTATION_DAYS,
+    MIN_KEY_ROTATION_DAYS,
     parseHygieneSourceRef,
     planHygiene,
+    resolveRotationAge,
     RULE_SEVERITY,
     type ConnectionFacts,
     type KeyFacts,
@@ -41,6 +45,7 @@ function cleanKey(over: Partial<KeyFacts> = {}): KeyFacts {
 }
 
 const rotation = DEFAULT_KEY_ROTATION_DAYS;
+const defaultAge = resolveRotationAge(null);
 
 describe('the clean key fires no rule', () => {
     it('fires nothing', () => {
@@ -72,7 +77,7 @@ describe('KEY_NO_EXPIRY', () => {
     });
 });
 
-describe('KEY_OLDER_THAN_ROTATION_AGE — the 90-day default, there being no tenant setting', () => {
+describe('KEY_OLDER_THAN_ROTATION_AGE — the 90-day default when the tenant has no setting', () => {
     it('is 90 days', () => {
         expect(DEFAULT_KEY_ROTATION_DAYS).toBe(90);
     });
@@ -84,7 +89,7 @@ describe('KEY_OLDER_THAN_ROTATION_AGE — the 90-day default, there being no ten
     it('does not fire on a key created 89 days ago', () => {
         expect(keyRuleHits(cleanKey({ createdAt: daysAgo(89) }), NOW, rotation)).toEqual([]);
     });
-    it('reads the age it is given, so a tenant setting would only have to pass one', () => {
+    it('reads the age it is given, so a tenant setting only has to pass one', () => {
         expect(keyRuleHits(cleanKey({ createdAt: daysAgo(20) }), NOW, 14)).toEqual(['KEY_OLDER_THAN_ROTATION_AGE']);
     });
 });
@@ -138,7 +143,7 @@ describe('the population is agent credentials — an integration key is not hygi
             connections: [],
             openRefs: [hygieneSourceRef('KEY_NO_EXPIRY', 'api_key', 'k-ci')],
             now: NOW,
-            rotationDays: rotation,
+            rotationAge: defaultAge,
         });
         expect(plan.assert).toEqual([]);
         expect(plan.resolve).toEqual([hygieneSourceRef('KEY_NO_EXPIRY', 'api_key', 'k-ci')]);
@@ -186,7 +191,7 @@ describe('CONNECTION_APP_ONLY_NO_OWNER', () => {
 describe('planHygiene — assert, resolve, hold', () => {
     it('asserts one finding per (rule, credential), with a parseable ref', () => {
         const weak = cleanKey({ id: 'k-weak', expiresAt: null, agentId: null });
-        const plan = planHygiene({ keys: [weak], connections: [], openRefs: [], now: NOW, rotationDays: rotation });
+        const plan = planHygiene({ keys: [weak], connections: [], openRefs: [], now: NOW, rotationAge: defaultAge });
         expect(plan.assert.map((f) => f.sourceRef).sort()).toEqual([
             'KEY_NOT_BOUND_TO_AGENT:api_key:k-weak',
             'KEY_NO_EXPIRY:api_key:k-weak',
@@ -207,7 +212,7 @@ describe('planHygiene — assert, resolve, hold', () => {
                 hygieneSourceRef('KEY_NO_EXPIRY', 'api_key', 'k-revoked-since'),
             ],
             now: NOW,
-            rotationDays: rotation,
+            rotationAge: defaultAge,
         });
         expect(plan.assert).toEqual([]);
         expect(plan.resolve.sort()).toEqual([
@@ -224,7 +229,7 @@ describe('planHygiene — assert, resolve, hold', () => {
             connections: [{ id: 'c-locked', name: 'x', grantKind: 'unreadable', namedOwnerUserId: null }],
             openRefs: [ref],
             now: NOW,
-            rotationDays: rotation,
+            rotationAge: defaultAge,
         });
         expect(plan.assert).toEqual([]);
         expect(plan.resolve).toEqual([]);
@@ -239,9 +244,81 @@ describe('planHygiene — assert, resolve, hold', () => {
             connections: [],
             openRefs: [ref],
             now: NOW,
-            rotationDays: rotation,
+            rotationAge: defaultAge,
         });
         expect(plan.assert.map((f) => f.sourceRef)).toEqual([ref]);
         expect(plan.resolve).toEqual([]);
+    });
+});
+
+describe('the rotation age: the tenant setting when there is one, the default when there is not (#3708)', () => {
+    it('a NULL setting — or no settings row — is the 90-day product default, and says so', () => {
+        expect(resolveRotationAge(null)).toEqual({ days: 90, source: 'DEFAULT_NO_TENANT_SETTING' });
+        expect(resolveRotationAge(undefined)).toEqual({ days: 90, source: 'DEFAULT_NO_TENANT_SETTING' });
+    });
+
+    it('a permitted value is the tenant\'s own, at both ends of the range', () => {
+        expect(resolveRotationAge(30)).toEqual({ days: 30, source: 'TENANT_SETTING' });
+        expect(resolveRotationAge(MIN_KEY_ROTATION_DAYS)).toEqual({ days: 7, source: 'TENANT_SETTING' });
+        expect(resolveRotationAge(MAX_KEY_ROTATION_DAYS)).toEqual({ days: 730, source: 'TENANT_SETTING' });
+        // A tenant that sets 90 has CHOSEN 90: the source is its own, not the default.
+        expect(resolveRotationAge(90)).toEqual({ days: 90, source: 'TENANT_SETTING' });
+    });
+
+    it.each([6, 731, 0, -1, 30.5, Number.NaN])(
+        'a stored %s — which the CHECK refuses — throws rather than being judged by or relabelled as the default',
+        (stored) => {
+            expect(isPermittedRotationDays(stored)).toBe(false);
+            expect(() => resolveRotationAge(stored)).toThrow(/outside 7\.\.730/);
+        },
+    );
+
+    const old = cleanKey({ id: 'k-old', createdAt: daysAgo(40) });
+    const refOld = hygieneSourceRef('KEY_OLDER_THAN_ROTATION_AGE', 'api_key', 'k-old');
+    const planWith = (rotationAge: ReturnType<typeof resolveRotationAge>, openRefs: string[] = []) =>
+        planHygiene({ keys: [old], connections: [], openRefs, now: NOW, rotationAge });
+
+    it('the default\'s finding names the default — with the wording the rule shipped with', () => {
+        const [aged] = planHygiene({
+            keys: [cleanKey({ id: 'k-old', createdAt: daysAgo(100) })],
+            connections: [],
+            openRefs: [],
+            now: NOW,
+            rotationAge: defaultAge,
+        }).assert;
+        expect(aged.title).toBe('API key "clean" (iflk_cln…) is older than the 90-day rotation age');
+        expect(aged.description).toMatch(/the product default \(90 days\) because this workspace has no rotation-age setting/);
+    });
+
+    it('a tenant setting\'s finding names the days applied and that they are the workspace\'s own', () => {
+        const [f] = planWith(resolveRotationAge(30)).assert;
+        expect(f.sourceRef).toBe(refOld);
+        expect(f.title).toBe('API key "clean" (iflk_cln…) is older than the 30-day rotation age set for this workspace');
+        expect(f.description).toMatch(/created more than 30 days ago/);
+        expect(f.description).toMatch(/this workspace's own setting \(30 days\)/);
+        expect(f.description).not.toMatch(/product default/);
+    });
+
+    it('the same days from the two sources give two different titles, so a restatement can tell them apart', () => {
+        const aged = cleanKey({ id: 'k-old', createdAt: daysAgo(100) });
+        const title = (rotationAge: ReturnType<typeof resolveRotationAge>) =>
+            planHygiene({ keys: [aged], connections: [], openRefs: [], now: NOW, rotationAge }).assert[0].title;
+        expect(title(resolveRotationAge(90))).not.toBe(title(resolveRotationAge(null)));
+    });
+
+    it('a shorter tenant age fires where the default did not; a longer one resolves what the default raised', () => {
+        expect(planWith(defaultAge).assert).toEqual([]);
+        expect(planWith(resolveRotationAge(30)).assert.map((f) => f.sourceRef)).toEqual([refOld]);
+
+        const aged = cleanKey({ id: 'k-old', createdAt: daysAgo(100) });
+        const longer = planHygiene({
+            keys: [aged],
+            connections: [],
+            openRefs: [refOld],
+            now: NOW,
+            rotationAge: resolveRotationAge(365),
+        });
+        expect(longer.assert).toEqual([]);
+        expect(longer.resolve).toEqual([refOld]);
     });
 });

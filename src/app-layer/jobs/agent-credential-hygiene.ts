@@ -120,6 +120,7 @@ export async function runAgentCredentialHygieneJob(
                     opened: r.results.reduce((n, x) => n + x.opened, 0),
                     reopened: r.results.reduce((n, x) => n + x.reopened, 0),
                     resolved: r.results.reduce((n, x) => n + x.resolved, 0),
+                    restated: r.results.reduce((n, x) => n + x.restated, 0),
                     errored,
                 },
             };

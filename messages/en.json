@@ -4577,6 +4577,27 @@
         "typeToConfirm": "Type {slug} to confirm",
         "unavailable": "You do not have permission to read the agent register, so this setting cannot be changed here. Enforcing agent registration requires the agent register permission as well as security settings access.",
         "saveFailed": "Could not change agent-registration enforcement."
+      },
+      "apiKeyRotation": {
+        "title": "API-key rotation age",
+        "description": "The credential-hygiene pass raises a finding for every agent API key created longer ago than this. It is a finding threshold only: no key is rotated, revoked or expired by it.",
+        "defaultBadge": "Product default",
+        "customBadge": "Workspace setting",
+        "stateDefault": "Agent keys are judged by the product default: {days} days.",
+        "stateCustom": "Agent keys are judged by this workspace's own setting: {days} days.",
+        "modeAria": "Where the rotation age comes from",
+        "useDefault": "Use the product default ({days} days)",
+        "useDefaultDesc": "Findings say the age is the product default, not this workspace's policy.",
+        "useCustom": "Set this workspace's own rotation age",
+        "useCustomDesc": "A whole number of days from {min} to {max}. Findings say the age is this workspace's setting.",
+        "daysLabel": "Rotation age (days)",
+        "daysHint": "From {min} to {max} days. Takes effect on the next daily pass: keys that no longer exceed the age have their findings resolved, and keys that now exceed it get one.",
+        "decrease": "Decrease rotation age",
+        "increase": "Increase rotation age",
+        "save": "Save rotation age",
+        "saved": "Rotation age saved. It applies from the next credential-hygiene pass.",
+        "saveFailed": "Could not save the rotation age.",
+        "unavailable": "The rotation age could not be loaded. Changing it requires security settings access."
       }
     },
     "agentDetail": {

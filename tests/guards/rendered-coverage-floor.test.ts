@@ -332,7 +332,11 @@ const ROOT = path.resolve(__dirname, '../..');
 // convenient count beside it, and not from one taken before the base moved.
 //   356 (#3687): + agent-harness-matrix-tab.test.tsx, counted the same way.
 //   358 (#3687): + agent-harness-accept-modal and agent-harness-scanner-keys.
-const RENDERED_TEST_FLOOR = 358;
+//   367 (#3708): the nine rendered suites added since #3687, measured by this
+// guard's own counter on this branch rebased onto main. Each PR that added
+// them stayed inside the slack of 8 alone; together they did not, which is how
+// a merge group found it.
+const RENDERED_TEST_FLOOR = 367;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

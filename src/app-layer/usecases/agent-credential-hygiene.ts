@@ -23,6 +23,11 @@
  * outcome included — an empty population is NOT_APPLICABLE with a named reason,
  * never PASSED, and a pass that threw is an ERROR row.
  *
+ * The rotation age is the tenant's `apiKeyRotationDays` when set, else the
+ * product default (#3708). It is read inside the same tenant transaction as the
+ * credentials, so the rules are judged against the setting that held at the
+ * snapshot, and the row records the days applied and their source.
+ *
  * @module usecases/agent-credential-hygiene
  */
 import type { Prisma } from '@prisma/client';
@@ -34,12 +39,11 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
 import { recordAgentCredentialHygiene } from '@/lib/observability/integration-metrics';
 import {
-    DEFAULT_KEY_ROTATION_DAYS,
     HYGIENE_AUTOMATION_KEY,
     HYGIENE_FINDING_SOURCE_KIND,
     isAgentCredential,
     planHygiene,
-    ROTATION_AGE_SOURCE,
+    resolveRotationAge,
     type ConnectionFacts,
     type ConnectionGrantKind,
     type HygieneRule,
@@ -67,6 +71,11 @@ export interface HygienePassResult {
     reopened: number;
     resolved: number;
     held: number;
+    /**
+     * Existing rotation findings whose title and description were rewritten to
+     * name the age now applied — while open, or as they reopened.
+     */
+    restated: number;
     executionId: string | null;
 }
 
@@ -131,10 +140,21 @@ export async function runAgentCredentialHygiene(input: {
         reopened: 0,
         resolved: 0,
         held: 0,
+        restated: 0,
     };
 
     try {
         const outcome = await runInTenantContext(ctx, async (db) => {
+            // THE ROTATION AGE, read in the same snapshot as the credentials it
+            // judges. One row, one read — never per key. An absent settings row
+            // is the product default, exactly as a NULL column is; a value the
+            // CHECK should have refused throws, and the pass records ERROR.
+            const settings = await db.tenantSecuritySettings.findUnique({
+                where: { tenantId: ctx.tenantId },
+                select: { apiKeyRotationDays: true },
+            });
+            const rotationAge = resolveRotationAge(settings?.apiKeyRotationDays);
+
             const keys = await drainPages((cursor) =>
                 db.tenantApiKey.findMany({
                     where: {
@@ -216,7 +236,7 @@ export async function runAgentCredentialHygiene(input: {
                 connections: connectionFacts,
                 openRefs: open.map((f) => f.sourceRef).filter((r): r is string => typeof r === 'string'),
                 now,
-                rotationDays: DEFAULT_KEY_ROTATION_DAYS,
+                rotationAge,
             });
 
             // WHO ANSWERS FOR A KEY: the owner of the agent it is bound to, else
@@ -274,21 +294,32 @@ export async function runAgentCredentialHygiene(input: {
                               sourceRef: { in: refs },
                               deletedAt: null,
                           },
-                          select: { id: true, sourceRef: true, status: true },
+                          select: { id: true, sourceRef: true, status: true, title: true },
                           take: refs.length,
                       });
             const byRef = new Map(existing.map((f) => [f.sourceRef as string, f]));
 
-            const counts = { opened: 0, reopened: 0, resolved: 0 };
+            const counts = { opened: 0, reopened: 0, resolved: 0, restated: 0 };
             const firedByRule: Partial<Record<HygieneRule, number>> = {};
             for (const f of plan.assert) {
                 firedByRule[f.rule] = (firedByRule[f.rule] ?? 0) + 1;
                 const prior = byRef.get(f.sourceRef);
+                // RESTATE, for the one rule whose text quotes a tenant setting.
+                // A rotation finding opened under 90 days that still fires
+                // under 60 would otherwise go on quoting 90 — an age the pass no
+                // longer applies. The title carries the days and their source
+                // (plaintext; the description is encrypted at rest), so a title
+                // mismatch is the signal and both fields are rewritten. Scoped
+                // to this rule on purpose: the others quote constants.
+                const title = sanitizePlainText(f.title);
+                const restate =
+                    prior !== undefined && f.rule === 'KEY_OLDER_THAN_ROTATION_AGE' && prior.title !== title;
+                const restatedText = restate ? { title, description: sanitizePlainText(f.description) } : {};
                 if (!prior) {
                     const created = await FindingRepository.create(db, ctx, {
                         severity: f.severity,
                         type: 'OBSERVATION',
-                        title: sanitizePlainText(f.title),
+                        title,
                         description: sanitizePlainText(f.description),
                         status: 'OPEN',
                         sourceKind: HYGIENE_FINDING_SOURCE_KIND,
@@ -309,27 +340,56 @@ export async function runAgentCredentialHygiene(input: {
                             after: { rule: f.rule, sourceRef: f.sourceRef, severity: f.severity },
                         },
                     });
-                } else if (prior.status === 'CLOSED') {
-                    await db.finding.update({
-                        where: { id: prior.id },
-                        data: {
-                            status: 'OPEN',
-                            verificationNotes: sanitizePlainText('Reopened by the credential-hygiene pass'),
-                        },
-                    });
-                    counts.reopened += 1;
-                    await logEvent(db, ctx, {
-                        action: 'STATUS_CHANGE',
-                        entityType: 'Finding',
-                        entityId: prior.id,
-                        details: `Credential hygiene reopened ${f.rule} on ${f.credentialKind} ${f.credentialId}`,
-                        detailsJson: {
-                            category: 'status_change',
-                            entityName: 'Finding',
-                            before: { status: 'CLOSED' },
-                            after: { status: 'OPEN', sourceRef: f.sourceRef },
-                        },
-                    });
+                } else {
+                    if (prior.status === 'CLOSED') {
+                        await db.finding.update({
+                            where: { id: prior.id },
+                            data: {
+                                status: 'OPEN',
+                                verificationNotes: sanitizePlainText('Reopened by the credential-hygiene pass'),
+                                ...restatedText,
+                            },
+                        });
+                        counts.reopened += 1;
+                        await logEvent(db, ctx, {
+                            action: 'STATUS_CHANGE',
+                            entityType: 'Finding',
+                            entityId: prior.id,
+                            details: `Credential hygiene reopened ${f.rule} on ${f.credentialKind} ${f.credentialId}`,
+                            detailsJson: {
+                                category: 'status_change',
+                                entityName: 'Finding',
+                                before: { status: 'CLOSED' },
+                                after: { status: 'OPEN', sourceRef: f.sourceRef },
+                            },
+                        });
+                    } else if (restate) {
+                        await db.finding.update({ where: { id: prior.id }, data: restatedText });
+                    }
+                    // A text rewrite is its own audited change, whether it rode
+                    // on a reopen or stood alone.
+                    if (restate) {
+                        counts.restated += 1;
+                        await logEvent(db, ctx, {
+                            action: 'UPDATE',
+                            entityType: 'Finding',
+                            entityId: prior.id,
+                            details:
+                                `Credential hygiene restated ${f.rule} on ${f.credentialKind} ${f.credentialId} ` +
+                                `under the ${rotationAge.days}-day rotation age (${rotationAge.source})`,
+                            detailsJson: {
+                                category: 'entity_lifecycle',
+                                entityName: 'Finding',
+                                operation: 'updated',
+                                changedFields: ['title', 'description'],
+                                after: {
+                                    sourceRef: f.sourceRef,
+                                    rotationAgeDays: rotationAge.days,
+                                    rotationAgeSource: rotationAge.source,
+                                },
+                            },
+                        });
+                    }
                 }
             }
 
@@ -372,6 +432,7 @@ export async function runAgentCredentialHygiene(input: {
                 held: plan.held.length,
                 unjudgeableConnectionIds: plan.unjudgeableConnectionIds,
                 firedByRule,
+                rotationAge,
             };
             // A first pass over a workspace with many keys opens a finding and
             // an audit row per (rule, key) inside this one transaction — the
@@ -410,13 +471,16 @@ export async function runAgentCredentialHygiene(input: {
                             otherLiveKeys: outcome.otherLiveKeys,
                             mcpServerConnections: outcome.connections,
                         },
-                        rotationAge: { days: DEFAULT_KEY_ROTATION_DAYS, source: ROTATION_AGE_SOURCE },
+                        // The age APPLIED, and where it came from — never the
+                        // default reported for a tenant that set its own.
+                        rotationAge: { days: outcome.rotationAge.days, source: outcome.rotationAge.source },
                         firedByRule: outcome.firedByRule,
                         findings: {
                             opened: outcome.opened,
                             reopened: outcome.reopened,
                             resolved: outcome.resolved,
                             held: outcome.held,
+                            restated: outcome.restated,
                         },
                         // Named, never dropped: a connection the pass could not
                         // judge is a fact about this run, and its findings stay
@@ -445,6 +509,9 @@ export async function runAgentCredentialHygiene(input: {
             opened: outcome.opened,
             reopened: outcome.reopened,
             resolved: outcome.resolved,
+            restated: outcome.restated,
+            rotationAgeDays: outcome.rotationAge.days,
+            rotationAgeSource: outcome.rotationAge.source,
         });
 
         return {
@@ -457,6 +524,7 @@ export async function runAgentCredentialHygiene(input: {
             reopened: outcome.reopened,
             resolved: outcome.resolved,
             held: outcome.held,
+            restated: outcome.restated,
             executionId: row.id,
         };
     } catch (err) {

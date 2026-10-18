@@ -46,6 +46,7 @@ import {
 } from '@/app-layer/usecases/tenant-security-settings';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { validateAuditDetailsJson } from '@/app-layer/schemas/json-columns.schemas';
+import { UpdateTenantSecuritySettingsInput } from '@/app-layer/schemas/tenant-security-settings.schemas';
 
 function ctxFor(role: 'ADMIN' | 'EDITOR' | 'READER'): any {
     return {
@@ -326,5 +327,85 @@ describe('recertificationOwnerUserId', () => {
 
         const written = mockDb.tenantSecuritySettings.upsert.mock.calls.at(-1)?.[0];
         expect(written.update).not.toHaveProperty('recertificationOwnerUserId');
+    });
+});
+
+/**
+ * `apiKeyRotationDays` — the rotation age credential hygiene applies (#3708).
+ *
+ * Three layers refuse an out-of-range value: the route's schema, this usecase
+ * and the DB CHECK (proved in tests/integration/tenant-api-key-rotation-age.test.ts).
+ * The audit event is its own, with both values, because the general event
+ * records field names only.
+ */
+describe('apiKeyRotationDays', () => {
+    const rotationEvent = () =>
+        mockLogEvent.mock.calls.map((c) => c[2] as any).find((p) => p.action === 'API_KEY_ROTATION_AGE_CHANGED');
+
+    it('the schema accepts 7..730 and null, and refuses anything else', () => {
+        for (const ok of [7, 30, 90, 730, null]) {
+            expect(UpdateTenantSecuritySettingsInput.safeParse({ apiKeyRotationDays: ok }).success).toBe(true);
+        }
+        for (const bad of [6, 731, 0, -30, 30.5, '30', true]) {
+            const r = UpdateTenantSecuritySettingsInput.safeParse({ apiKeyRotationDays: bad });
+            expect({ bad, success: r.success }).toEqual({ bad, success: false });
+        }
+        const refused = UpdateTenantSecuritySettingsInput.safeParse({ apiKeyRotationDays: 3 });
+        expect(refused.success ? '' : refused.error.issues[0]?.message).toMatch(/from 7 to 730, or null/);
+    });
+
+    it('writes only the key it was given, as a value or as an explicit null', async () => {
+        await updateTenantSecurityConfig(adminCtx, { apiKeyRotationDays: 30 });
+        expect(mockDb.tenantSecuritySettings.upsert.mock.calls[0][0].update).toEqual({ apiKeyRotationDays: 30 });
+
+        await updateTenantSecurityConfig(adminCtx, { apiKeyRotationDays: null });
+        expect(mockDb.tenantSecuritySettings.upsert.mock.calls[1][0].update).toEqual({ apiKeyRotationDays: null });
+    });
+
+    it.each([6, 731, 30.5])('the usecase refuses %s before anything is written', async (bad) => {
+        await expect(updateTenantSecurityConfig(adminCtx, { apiKeyRotationDays: bad })).rejects.toThrow(
+            /from 7 to 730/,
+        );
+        expect(mockDb.tenantSecuritySettings.upsert).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it.each(['EDITOR', 'READER'] as const)('%s cannot set it', async (role) => {
+        await expect(updateTenantSecurityConfig(ctxFor(role), { apiKeyRotationDays: 30 })).rejects.toThrow(
+            /ADMIN|OWNER/,
+        );
+        expect(mockDb.tenantSecuritySettings.upsert).not.toHaveBeenCalled();
+    });
+
+    it('a change writes its own audit event naming the old and new value, which passes the real validator', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ apiKeyRotationDays: null });
+        await updateTenantSecurityConfig(adminCtx, { apiKeyRotationDays: 30 });
+
+        const event = rotationEvent();
+        expect(event).toMatchObject({
+            entityType: 'TenantSecuritySettings',
+            entityId: 'tenant-1',
+            detailsJson: {
+                before: { apiKeyRotationDays: null, effectiveDays: 90, source: 'DEFAULT_NO_TENANT_SETTING' },
+                after: { apiKeyRotationDays: 30, effectiveDays: 30, source: 'TENANT_SETTING' },
+            },
+        });
+        expect(event.details).toBe(
+            'API-key rotation age changed from 90 days (DEFAULT_NO_TENANT_SETTING) to 30 days (TENANT_SETTING)',
+        );
+        expect(() => validateAuditDetailsJson(event.detailsJson)).not.toThrow();
+    });
+
+    it('a PUT that leaves the value where it was writes no rotation event', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ apiKeyRotationDays: 30 });
+        await updateTenantSecurityConfig(adminCtx, { apiKeyRotationDays: 30 });
+        expect(rotationEvent()).toBeUndefined();
+    });
+
+    it('is reported on read, null meaning the product default', async () => {
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue(null);
+        expect((await getTenantSecurityConfig(adminCtx)).apiKeyRotationDays).toBeNull();
+        mockDb.tenantSecuritySettings.findUnique.mockResolvedValue({ apiKeyRotationDays: 45 });
+        expect((await getTenantSecurityConfig(adminCtx)).apiKeyRotationDays).toBe(45);
     });
 });

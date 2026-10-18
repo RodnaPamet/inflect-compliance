@@ -1626,6 +1626,24 @@ model TenantSecuritySettings {
   /// DRY_RUN, nulled on every move out of it — the leaver's rule, so the dwell
   /// measures the CURRENT window and never a stale one.
   agentOrphanPassDryRunSince   DateTime?
+  /// THE API-KEY ROTATION AGE the credential-hygiene pass applies to this
+  /// tenant's agent credentials, in days (#3708, follow-up to step 2b). A live
+  /// agent key created longer ago than this raises `KEY_OLDER_THAN_ROTATION_AGE`.
+  ///
+  /// NULL = "use the product default", `DEFAULT_KEY_ROTATION_DAYS` (90) in
+  /// `src/lib/agentic/credential-hygiene.ts`, and the pass row and every
+  /// finding say so (`DEFAULT_NO_TENANT_SETTING`). A value is reported as
+  /// `TENANT_SETTING`. Nullable with no default and no backfill: a default in
+  /// the database would make every tenant's row claim a policy nobody chose.
+  ///
+  /// A FINDING THRESHOLD, NOT AN AUTHORITY. The pass writes findings only; no
+  /// key is rotated, revoked or expired by this number.
+  ///
+  /// A CHECK holds it to 7..730 inclusive. Below a week every key fires within
+  /// days of minting, which is noise that teaches people to ignore the rule;
+  /// above two years the rule stops saying anything. Written only by
+  /// `updateTenantSecurityConfig`, behind `admin.manage`.
+  apiKeyRotationDays           Int?
   aiGuardMode                  AiGuardMode       @default(BALANCED)
   /// AI sovereignty (DS-1). EXTERNAL (default) allows the configured external
   /// provider; LOCAL_ONLY forces inference onto the tenant's own local gateway

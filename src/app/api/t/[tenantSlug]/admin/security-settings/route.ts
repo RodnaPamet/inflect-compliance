@@ -24,6 +24,12 @@ import { jsonResponse } from '@/lib/api-response';
  * routes (`admin/risk-matrix-config`). Reads are admin-only rather than
  * member-visible because the row carries the session cap and the presence of
  * an outbound streaming endpoint.
+ *
+ * `apiKeyRotationDays` (#3708) — the credential-hygiene pass's rotation age —
+ * is written HERE rather than on a sub-route: it is one nullable column on this
+ * row, this PUT is already patch-shaped and `.strict()`, and a second writer
+ * for the row is what the patch semantics exist to avoid. Its before/after
+ * values get their own audit event in the usecase.
  */
 
 export const GET = withApiErrorHandling(

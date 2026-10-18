@@ -7,6 +7,12 @@ import {
 } from '@/lib/legacy-access/adjudication-mode';
 import { badRequest, forbidden } from '@/lib/errors/types';
 import { checkWebhookUrl } from '@/app-layer/automation/webhook-safety';
+import {
+    isPermittedRotationDays,
+    MAX_KEY_ROTATION_DAYS,
+    MIN_KEY_ROTATION_DAYS,
+    resolveRotationAge,
+} from '@/lib/agentic/credential-hygiene';
 import type { AiGuardMode, AiResidency, LegacyMatchAiMode } from '@prisma/client';
 
 /**
@@ -183,6 +189,12 @@ export interface TenantSecurityConfig {
      * different label.
      */
     recertificationOwnerUserId: string | null;
+    /**
+     * The API-key rotation age the credential-hygiene pass applies, in days,
+     * or null when this tenant has set none and the pass applies the product
+     * default (`DEFAULT_KEY_ROTATION_DAYS`) — and says so on its row (#3708).
+     */
+    apiKeyRotationDays: number | null;
 }
 
 export interface TenantSecurityConfigPatch {
@@ -204,6 +216,11 @@ export interface TenantSecurityConfigPatch {
      * quietly.
      */
     recertificationOwnerUserId?: string | null;
+    /**
+     * The API-key rotation age for credential hygiene, 7..730 days. `null`
+     * clears it, which returns the tenant to the product default.
+     */
+    apiKeyRotationDays?: number | null;
 }
 
 const MAX_CONCURRENT_SESSIONS_CEILING = 100;
@@ -229,6 +246,7 @@ export async function getTenantSecurityConfig(
                 recertificationOwnerUserId: true,
                 mfaFailClosed: true,
                 requireRegisteredAgent: true,
+                apiKeyRotationDays: true,
             },
         });
 
@@ -250,6 +268,8 @@ export async function getTenantSecurityConfig(
             // Null is the DEFAULT and it is meaningful: nobody nominated, so
             // nothing is raised automatically.
             recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
+            // Null is "no setting": the pass applies the product default.
+            apiKeyRotationDays: row?.apiKeyRotationDays ?? null,
         };
     });
 }
@@ -348,6 +368,21 @@ export async function updateTenantSecurityConfig(
         changed.push('recertificationOwnerUserId');
     }
 
+    if (patch.apiKeyRotationDays !== undefined) {
+        const v = patch.apiKeyRotationDays;
+        // Checked here as well as in the route's schema, because a usecase is
+        // reachable from callers that are not that route. The DB CHECK is the
+        // last word; this is the one that says why in a sentence.
+        if (v !== null && !isPermittedRotationDays(v)) {
+            throw badRequest(
+                `apiKeyRotationDays must be a whole number of days from ${MIN_KEY_ROTATION_DAYS} to ` +
+                `${MAX_KEY_ROTATION_DAYS}, or null to use the product default.`,
+            );
+        }
+        data.apiKeyRotationDays = v;
+        changed.push('apiKeyRotationDays');
+    }
+
     if (patch.auditStreamUrl !== undefined) {
         if (patch.auditStreamUrl !== null) assertUsableAuditStreamUrl(patch.auditStreamUrl);
         data.auditStreamUrl = patch.auditStreamUrl;
@@ -401,6 +436,7 @@ export async function updateTenantSecurityConfig(
                 aiLocalBaseUrl: true,
                 auditStreamUrl: true,
                 auditStreamSecretEncrypted: true,
+                apiKeyRotationDays: true,
             },
         });
 
@@ -532,6 +568,46 @@ export async function updateTenantSecurityConfig(
             });
         }
 
+        // THE ROTATION AGE GETS ITS OWN EVENT, with both values — for the same
+        // reason the adjudication mode does above. `SECURITY_SETTINGS_UPDATED`
+        // records field names only, and "somebody changed apiKeyRotationDays"
+        // does not answer "since when has this workspace judged keys by 30
+        // days, and what did it use before". Neither value is sensitive. The
+        // EFFECTIVE age rides along, so a null reads as the default it means
+        // rather than as an absence.
+        if (patch.apiKeyRotationDays !== undefined) {
+            const prior = before?.apiKeyRotationDays ?? null;
+            const next = patch.apiKeyRotationDays;
+            if (prior !== next) {
+                const priorAge = resolveRotationAge(prior);
+                const nextAge = resolveRotationAge(next);
+                await logEvent(db, ctx, {
+                    action: 'API_KEY_ROTATION_AGE_CHANGED',
+                    entityType: 'TenantSecuritySettings',
+                    entityId: ctx.tenantId,
+                    details:
+                        `API-key rotation age changed from ${priorAge.days} days (${priorAge.source}) ` +
+                        `to ${nextAge.days} days (${nextAge.source})`,
+                    detailsJson: {
+                        category: 'entity_lifecycle',
+                        entityName: 'TenantSecuritySettings',
+                        operation: 'updated',
+                        changedFields: ['apiKeyRotationDays'],
+                        before: {
+                            apiKeyRotationDays: prior,
+                            effectiveDays: priorAge.days,
+                            source: priorAge.source,
+                        },
+                        after: {
+                            apiKeyRotationDays: next,
+                            effectiveDays: nextAge.days,
+                            source: nextAge.source,
+                        },
+                    },
+                });
+            }
+        }
+
         await logEvent(db, ctx, {
             action: 'SECURITY_SETTINGS_UPDATED',
             entityType: 'TenantSecuritySettings',
@@ -572,6 +648,7 @@ export async function updateTenantSecurityConfig(
                 recertificationOwnerUserId: true,
                 mfaFailClosed: true,
                 requireRegisteredAgent: true,
+                apiKeyRotationDays: true,
             },
         });
 
@@ -593,6 +670,8 @@ export async function updateTenantSecurityConfig(
             // Null is the DEFAULT and it is meaningful: nobody nominated, so
             // nothing is raised automatically.
             recertificationOwnerUserId: row?.recertificationOwnerUserId ?? null,
+            // Null is "no setting": the pass applies the product default.
+            apiKeyRotationDays: row?.apiKeyRotationDays ?? null,
         };
     });
 }
