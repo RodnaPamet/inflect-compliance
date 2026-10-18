@@ -210,6 +210,7 @@ model Tenant {
   discoveredAgents                  DiscoveredAgent[]
   agentHarnessAcceptances           AgentHarnessAcceptance[]
   agentOwnershipTransfers           AgentOwnershipTransfer[]
+  agentServicePrincipalConfirmations AgentServicePrincipalConfirmation[]
   agentBehaviourWindows             AgentBehaviourWindow[]
   agentCircuitBreakers              AgentCircuitBreaker[]
   agenticEvidenceArtefacts          AgenticEvidenceArtefact[]

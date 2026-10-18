@@ -459,6 +459,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'UNCLASSIFIED, in one transaction, owned by the person the caller ' +
             'confirms. The agent cannot be activated until the entry is classified.',
     },
+    // #3671 (2c). The same key as the catch-all below, stated on its own
+    // because which key it is was a decision (owner, 2026-10-18), not an
+    // inheritance: confirming which directory identity IS a registered agent is
+    // register authority, and no API-key scope carries it, so a scanner cannot
+    // confirm the links its own reports claim.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/service-principal-link$`),
+        permission: 'admin.agent_registry',
+        note:
+            'Confirm that a discovered Entra service principal is a registered ' +
+            "agent's own — the condition for an UNATTENDED disable of that " +
+            'principal when the owner-orphan pass contains the agent.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),
         permission: 'admin.agent_registry',

@@ -34,15 +34,37 @@
  * first-party principal (Microsoft Graph, Office 365 Exchange Online) is never
  * an agent a customer registered; disabling one breaks the tenant.
  *
- * ═══ THE PERMISSION IS THE OPERATOR'S CONSENT, AND IT IS NOT NARROW ═══
+ * ═══ THE PERMISSION: `Application.ReadWrite.OwnedBy` + `Application.Read.All` ═══
  *
- * Graph's update-servicePrincipal operation takes `Application.ReadWrite.OwnedBy`
- * (only principals the calling app owns) or `Application.ReadWrite.All` as an
- * application permission, and the read takes `Application.Read.All`. Nothing
- * here asks for a scope — a client-credentials token asks for `.default` — so
- * which of these the customer's administrator consents is the whole of the
- * authority, and `docs/implementation-notes/2026-10-18-service-principal-disable.md`
- * records which one is recommended and why that choice is the owner's.
+ * Owner decision, 2026-10-18. The outbound app's administrator consents
+ * exactly these two APPLICATION permissions:
+ *
+ *   • `Application.Read.All` — the prior-state read. It reads ANY principal in
+ *     the directory, which the read must, because what the disable replaces is
+ *     recorded before anything is sent.
+ *   • `Application.ReadWrite.OwnedBy` — the disable. It writes only principals
+ *     whose application the calling app OWNS (the app is listed as an owner).
+ *
+ * `Application.ReadWrite.All` is NOT requested. It would let this code disable
+ * any principal in the customer's directory — Graph itself, the customer's
+ * line-of-business apps — and the rails in front of it (contained agent,
+ * confirmed link, population, template) would then be the only thing between
+ * a scanner's reconciliation and the tenant. With `OwnedBy`, Graph is a fifth
+ * rail that this codebase cannot widen.
+ *
+ * The consequence is deliberate and must not be "fixed": a principal Inflect's
+ * app does NOT own is read successfully, passes every refusal above, and then
+ * the PATCH answers 403 `Authorization_RequestDenied`. That throws here; the
+ * route turns it into a protocol error; the dispatch settles the journal row
+ * `INDETERMINATE`, which is a row for a HUMAN — someone with authority in the
+ * customer's directory either disables it there or adds the app as an owner.
+ * Do not catch the 403 into a refusal: the dispatch cannot tell it from a
+ * request that reached the directory, and `INDETERMINATE` is the honest claim.
+ *
+ * Nothing here asks for a scope — a client-credentials token asks for
+ * `.default` — so the consent IS the authority.
+ * `docs/implementation-notes/2026-10-18-service-principal-disable.md` records
+ * the decision.
  */
 import { getEntraAccessToken } from './index';
 import { assertEntraObjectId } from './writer';

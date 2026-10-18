@@ -60,7 +60,12 @@ describe('readContainedAgentServicePrincipalLinks', () => {
         expect([...out.containedAgentIds]).toEqual(['a1']);
         // Lower-cased: one principal, one spelling, everywhere.
         expect(out.links).toEqual([
-            { agentId: 'a1', discoveredAgentId: 'd1', servicePrincipalId: SP.toLowerCase() },
+            {
+                agentId: 'a1',
+                discoveredAgentId: 'd1',
+                discoveredId: `entra:sp:${SP}`,
+                servicePrincipalId: SP.toLowerCase(),
+            },
         ]);
     });
 
@@ -105,8 +110,8 @@ describe('admissibleServicePrincipalIds', () => {
     it('admits one principal per agent that names exactly one', () => {
         expect(
             admissibleServicePrincipalIds([
-                { agentId: 'a1', discoveredAgentId: 'd1', servicePrincipalId: 'sp-1' },
-                { agentId: 'a2', discoveredAgentId: 'd2', servicePrincipalId: 'sp-2' },
+                { agentId: 'a1', discoveredAgentId: 'd1', discoveredId: 'entra:sp:1', servicePrincipalId: 'sp-1' },
+                { agentId: 'a2', discoveredAgentId: 'd2', discoveredId: 'entra:sp:2', servicePrincipalId: 'sp-2' },
             ]),
         ).toEqual(['sp-1', 'sp-2']);
     });
@@ -114,16 +119,18 @@ describe('admissibleServicePrincipalIds', () => {
     it('admits neither principal of an agent that names two', () => {
         expect(
             admissibleServicePrincipalIds([
-                { agentId: 'a1', discoveredAgentId: 'd1', servicePrincipalId: 'sp-1' },
-                { agentId: 'a1', discoveredAgentId: 'd2', servicePrincipalId: 'sp-2' },
-                { agentId: 'a3', discoveredAgentId: 'd3', servicePrincipalId: 'sp-3' },
+                { agentId: 'a1', discoveredAgentId: 'd1', discoveredId: 'entra:sp:1', servicePrincipalId: 'sp-1' },
+                { agentId: 'a1', discoveredAgentId: 'd2', discoveredId: 'entra:sp:2', servicePrincipalId: 'sp-2' },
+                { agentId: 'a3', discoveredAgentId: 'd3', discoveredId: 'entra:sp:3', servicePrincipalId: 'sp-3' },
             ]),
         ).toEqual(['sp-3']);
     });
 
     it('admits no malformed principal', () => {
         expect(
-            admissibleServicePrincipalIds([{ agentId: 'a1', discoveredAgentId: 'd1', servicePrincipalId: null }]),
+            admissibleServicePrincipalIds([
+                { agentId: 'a1', discoveredAgentId: 'd1', discoveredId: 'entra:sp:x', servicePrincipalId: null },
+            ]),
         ).toEqual([]);
     });
 });

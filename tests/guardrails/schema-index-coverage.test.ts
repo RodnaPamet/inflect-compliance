@@ -452,6 +452,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'agent-harness-matrix.getHarnessMatrix reads the acceptances still on the clock (unrevoked, expiry not yet processed) by tenantId ordered by expiresAt asc, bounded take ≤201; the compliance calendar\'s loadAgentHarnessAcceptanceEvents ranges the same population on [tenantId, expiresAt] ordered by expiresAt asc, bounded by the per-source limit',
     },
+    // ── Agent service-principal link confirmation (#3671) ───────────
+    {
+        model: 'AgentServicePrincipalConfirmation',
+        fields: ['tenantId', 'registeredAgentId'],
+        justification:
+            "agent-service-principal-confirmation.getServicePrincipalLinkState lists one agent's confirmations by [tenantId, registeredAgentId], ordered by confirmedAt desc, bounded take 20; the live-confirmation lookups add discoveredAgentId and invalidatedAt IS NULL, which the partial unique index one_live_per_link serves",
+    },
     // ── Agent ownership transfer (#3698) ────────────────────────────
     {
         model: 'AgentOwnershipTransfer',

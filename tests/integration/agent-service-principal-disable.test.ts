@@ -49,6 +49,7 @@ import {
 } from '@/lib/agentic/service-principal-disable';
 import { runAgentOwnerOrphanPass } from '@/app-layer/usecases/agent-owner-orphan-pass';
 import { requestServicePrincipalDisable } from '@/app-layer/usecases/agent-service-principal-disable';
+import { confirmServicePrincipalLink } from '@/app-layer/usecases/agent-service-principal-confirmation';
 import { resolveTargetPopulation } from '@/app-layer/usecases/external-tool-target-populations';
 import { getJournalWrite } from '@/app-layer/usecases/external-write-journal';
 import { runExternalWriteDispatch } from '@/app-layer/usecases/external-write-dispatch';
@@ -131,7 +132,11 @@ async function person(tenantId: string, who: Who, role: Role, status: Membership
  * the harness to `principals` Entra service principals (each present and
  * ENABLED in the mocked directory). Returns the agent id and its principals.
  */
-async function orphan(tenantId: string, principals = 1): Promise<{ agentId: string; sps: string[] }> {
+async function orphan(
+    tenantId: string,
+    principals = 1,
+    opts: { confirm?: boolean } = {},
+): Promise<{ agentId: string; sps: string[] }> {
     seq += 1;
     const owner = users[tenantId].departed as string;
     const sys = await prisma.aiSystem.create({ data: { tenantId, name: `sp host ${seq}`, ownerUserId: owner } });
@@ -170,6 +175,17 @@ async function orphan(tenantId: string, principals = 1): Promise<{ agentId: stri
                 lastLevel: 'H2',
                 lastReach: 'WRITE_OR_EXTERNAL',
             },
+        });
+    }
+    if (opts.confirm) {
+        // A PERSON confirms the scanner's link — the condition for AUTOMATIC
+        // (owner decision, 2026-10-18). Through the real usecase.
+        const [discovered] = await prisma.discoveredAgent.findMany({
+            where: { tenantId, registeredAgentId: agent.id },
+            select: { id: true },
+        });
+        await confirmServicePrincipalLink(ctxFor(tenantId, 'approver'), agent.id, {
+            discoveredAgentId: discovered.id,
         });
     }
     return { agentId: agent.id, sps };
@@ -245,6 +261,7 @@ async function clearOwnRows(): Promise<void> {
     await prisma.externalToolParameterSetApproval.deleteMany({ where: t });
     await prisma.externalToolParameterSet.deleteMany({ where: t });
     await prisma.externalToolPriorStateRead.deleteMany({ where: t });
+    await prisma.agentServicePrincipalConfirmation.deleteMany({ where: t });
     await prisma.discoveredAgent.deleteMany({ where: t });
     await prisma.agentKillSwitch.deleteMany({ where: t });
     await prisma.registeredAgent.deleteMany({ where: t });
@@ -326,6 +343,8 @@ describe('the orphan pass requests the disable per the outbound connection\'s ru
         expect(payload.toolName).toBe(writeTool(T1));
         expect(payload.arguments).toEqual({ servicePrincipalId: sps[0] });
         expect(payload.priorState).toEqual(readAnswer(sps[0], true));
+        // The approver is told the link is the scanner's and nobody confirmed it.
+        expect(proposal.rationale ?? '').toContain('THE LINK IS UNCONFIRMED');
         expect(await prisma.externalWriteJournal.count({ where: { tenantId: T1, outcome: 'PENDING' } })).toBe(0);
 
         // A human approves: a PENDING row, still nothing sent.
@@ -345,7 +364,7 @@ describe('the orphan pass requests the disable per the outbound connection\'s ru
     it('AUTOMATIC: a PENDING row carries the prior state; the dispatch sends; APPLIED only once the read shows it disabled', async () => {
         await approvedTemplate(T1);
         await setRung(T1, 'AUTOMATIC');
-        const { agentId, sps } = await orphan(T1);
+        const { agentId, sps } = await orphan(T1, 1, { confirm: true });
         const result = await runAgentOwnerOrphanPass({ tenantId: T1, tenantSlug: T1 });
         const sp = await decisionFor(result.executionId, agentId);
         expect(sp?.status).toBe('QUEUED');
@@ -391,12 +410,24 @@ describe('the orphan pass requests the disable per the outbound connection\'s ru
 describe('refusals', () => {
     it('a failed prior-state read refuses the write, and the pass says it needs attention', async () => {
         await setRung(T1, 'AUTOMATIC');
-        const { agentId } = await orphan(T1);
+        const { agentId } = await orphan(T1, 1, { confirm: true });
         const before = await prisma.externalWriteJournal.count({ where: { tenantId: T1 } });
         callToolMock.mockRejectedValue(new Error('endpoint unreachable'));
         const result = await runAgentOwnerOrphanPass({ tenantId: T1, tenantSlug: T1 });
         expect((await decisionFor(result.executionId, agentId))?.status).toBe('PRIOR_STATE_UNREADABLE');
         expect(result.status).toBe('PARTIAL');
+        expect(await prisma.externalWriteJournal.count({ where: { tenantId: T1 } })).toBe(before);
+    });
+
+    it('at AUTOMATIC an UNCONFIRMED link is refused — nothing read, nothing opened — and the pass is PARTIAL', async () => {
+        await setRung(T1, 'AUTOMATIC');
+        const { agentId } = await orphan(T1);
+        const before = await prisma.externalWriteJournal.count({ where: { tenantId: T1 } });
+        const result = await runAgentOwnerOrphanPass({ tenantId: T1, tenantSlug: T1 });
+        const sp = await decisionFor(result.executionId, agentId);
+        expect(sp?.status).toBe('LINK_UNCONFIRMED');
+        expect(result.status).toBe('PARTIAL');
+        expect(callToolMock).not.toHaveBeenCalled();
         expect(await prisma.externalWriteJournal.count({ where: { tenantId: T1 } })).toBe(before);
     });
 

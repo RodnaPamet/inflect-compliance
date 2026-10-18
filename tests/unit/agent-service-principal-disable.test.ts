@@ -53,6 +53,10 @@ const memberMock = jest.fn();
 jest.mock('@/app-layer/usecases/external-tool-target-populations', () => ({
     checkTargetInPopulation: (...a: unknown[]) => memberMock(...a),
 }));
+const confirmationMock = jest.fn();
+jest.mock('@/app-layer/usecases/agent-service-principal-confirmation', () => ({
+    liveConfirmationFor: (...a: unknown[]) => confirmationMock(...a),
+}));
 
 const mockTx = {
     externalToolPriorStateRead: { findMany: jest.fn() },
@@ -78,6 +82,8 @@ const AGENT = 'agent-1';
 const SP = '9f1c2b7e-4a3d-4c1e-8b2f-6d5e4c3b2a19';
 const CONN = 'cmconnspaaaaaaaaaaaaaaaa';
 const WRITE = `mcp__${CONN}__${SERVICE_PRINCIPAL_DISABLE_TOOL}`;
+/** A person's live confirmation of the link (owner decision, 2026-10-18). */
+const CONFIRMED = { id: 'conf-1', confirmedByUserId: 'user-confirmer', confirmedAt: new Date('2026-10-18T09:00:00.000Z') };
 const READ = `mcp__${CONN}__${SERVICE_PRINCIPAL_READ_TOOL}`;
 
 /** The read tool's answer, in the envelope `callTool` returns. */
@@ -128,8 +134,11 @@ beforeEach(() => {
     jest.clearAllMocks();
     linksMock.mockResolvedValue({
         containedAgentIds: new Set([AGENT]),
-        links: [{ agentId: AGENT, discoveredAgentId: 'disc-1', servicePrincipalId: SP }],
+        links: [
+            { agentId: AGENT, discoveredAgentId: 'disc-1', discoveredId: `entra:sp:${SP}`, servicePrincipalId: SP },
+        ],
     });
+    confirmationMock.mockResolvedValue(CONFIRMED);
     mockTx.externalToolPriorStateRead.findMany.mockResolvedValue([
         { writeToolName: WRITE, readToolName: READ },
     ]);
@@ -322,10 +331,11 @@ describe('only a contained agent naming exactly one principal is a candidate', (
         linksMock.mockResolvedValue({
             containedAgentIds: new Set([AGENT]),
             links: [
-                { agentId: AGENT, discoveredAgentId: 'd1', servicePrincipalId: SP },
+                { agentId: AGENT, discoveredAgentId: 'd1', discoveredId: `entra:sp:${SP}`, servicePrincipalId: SP },
                 {
                     agentId: AGENT,
                     discoveredAgentId: 'd2',
+                    discoveredId: 'entra:sp:11111111-2222-4333-8444-555555555555',
                     servicePrincipalId: '11111111-2222-4333-8444-555555555555',
                 },
             ],
@@ -340,6 +350,67 @@ describe('only a contained agent naming exactly one principal is a candidate', (
         const out = await requestServicePrincipalDisable(ctx, { agentId: AGENT });
         expect(out.status).toBe('CONNECTION_UNUSABLE');
         expect(callToolMock).not.toHaveBeenCalled();
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 3b. A PERSON CONFIRMS THE LINK BEFORE AN UNATTENDED DISABLE
+// ═════════════════════════════════════════════════════════════════════
+
+describe('the link must be confirmed by a person at AUTOMATIC, and is stated at PROPOSE_ONLY', () => {
+    it('at AUTOMATIC an UNCONFIRMED link is refused with its own reason, before any read or row', async () => {
+        mockTx.integrationConnection.findFirst.mockResolvedValue(connection('AUTOMATIC'));
+        confirmationMock.mockResolvedValue(null);
+        const out = await requestServicePrincipalDisable(ctx, { agentId: AGENT });
+        expect(out.status).toBe('LINK_UNCONFIRMED');
+        expect(out.linkConfirmed).toBe(false);
+        expect(callToolMock).not.toHaveBeenCalled();
+        expect(nothingOpened()).toBe(true);
+        expect(mockTx.externalToolParameterSet.findMany).not.toHaveBeenCalled();
+    });
+
+    it('asks about EXACTLY the link it found — the discovered agent, its harness id and the agent', async () => {
+        mockTx.integrationConnection.findFirst.mockResolvedValue(connection('AUTOMATIC'));
+        await requestServicePrincipalDisable(ctx, { agentId: AGENT });
+        expect(confirmationMock).toHaveBeenCalledWith(ctx, {
+            agentId: AGENT,
+            discoveredAgentId: 'disc-1',
+            discoveredId: `entra:sp:${SP}`,
+        });
+    });
+
+    it('at AUTOMATIC a CONFIRMED link proceeds to the queued row', async () => {
+        mockTx.integrationConnection.findFirst.mockResolvedValue(connection('AUTOMATIC'));
+        const out = await requestServicePrincipalDisable(ctx, { agentId: AGENT });
+        expect(out.status).toBe('QUEUED');
+        expect(out.linkConfirmed).toBe(true);
+    });
+
+    it.each([['DRY_RUN'], ['PROPOSE_ONLY']])(
+        'at %s an unconfirmed link still proceeds — a person reads what it produces',
+        async (mode) => {
+            mockTx.integrationConnection.findFirst.mockResolvedValue(connection(mode));
+            confirmationMock.mockResolvedValue(null);
+            const out = await requestServicePrincipalDisable(ctx, { agentId: AGENT });
+            expect(out.status).toBe(mode === 'DRY_RUN' ? 'RECORDED_INTENT' : 'PROPOSED');
+            expect(out.linkConfirmed).toBe(false);
+        },
+    );
+
+    it('the PROPOSE_ONLY proposal tells the approver the link is UNCONFIRMED', async () => {
+        mockTx.integrationConnection.findFirst.mockResolvedValue(connection('PROPOSE_ONLY'));
+        confirmationMock.mockResolvedValue(null);
+        await requestServicePrincipalDisable(ctx, { agentId: AGENT });
+        const rationale = String((proposeMock.mock.calls[0][1] as { rationale: string }).rationale);
+        expect(rationale).toContain('THE LINK IS UNCONFIRMED');
+    });
+
+    it('and names who confirmed it, and when, when it is confirmed', async () => {
+        mockTx.integrationConnection.findFirst.mockResolvedValue(connection('PROPOSE_ONLY'));
+        await requestServicePrincipalDisable(ctx, { agentId: AGENT });
+        const rationale = String((proposeMock.mock.calls[0][1] as { rationale: string }).rationale);
+        expect(rationale).toContain('confirmed by user user-confirmer at 2026-10-18T09:00:00.000Z');
+        expect(rationale).not.toContain('UNCONFIRMED');
     });
 });
 

@@ -28,6 +28,15 @@
  * `entra:sp:` principal is refused as ambiguous rather than resolved — a
  * directory write names one object, and the first of several is a guess.
  *
+ * ═══ AND AT AUTOMATIC A PERSON MUST HAVE CONFIRMED IT ═══
+ *
+ * That link is the scanner's claim. Owner decision, 2026-10-18: DRY_RUN and
+ * PROPOSE_ONLY may act on it, because a person reads the result, and the
+ * proposal says whether the link is confirmed; AUTOMATIC refuses it
+ * (`LINK_UNCONFIRMED`) unless a person holding `admin.agent_registry` confirmed
+ * that exact link (`AgentServicePrincipalConfirmation`) and no scan has moved
+ * it since.
+ *
  * @module lib/agentic/service-principal-disable
  */
 
@@ -173,6 +182,12 @@ export type ServicePrincipalDisableStatus =
     | 'CONNECTION_UNUSABLE'
     /** The connection's external-write rung is DISABLED. Nothing was read or written. */
     | 'RUNG_DISABLED'
+    /**
+     * AUTOMATIC, and no person has confirmed the link (owner decision,
+     * 2026-10-18). The scanner's reconciliation is enough for a person to
+     * review; it is not enough for a write with nobody in it.
+     */
+    | 'LINK_UNCONFIRMED'
     /** AUTOMATIC with no approved template bound to the contained-agent population. */
     | 'NO_APPROVED_TEMPLATE'
     /** AUTOMATIC with more than one such template. Refused rather than choosing. */
@@ -208,6 +223,11 @@ export interface ServicePrincipalDisableRecord {
     readonly discoveredAgentId?: string;
     /** The rung the paired connection was at, when one was resolved. */
     readonly rung?: string;
+    /**
+     * Whether a person had confirmed the link when the request was made. Absent
+     * when the request stopped before it was asked.
+     */
+    readonly linkConfirmed?: boolean;
     readonly connectionId?: string;
     readonly journalId?: string;
     readonly proposalId?: string;
@@ -229,6 +249,7 @@ const ATTENTION: ReadonlySet<ServicePrincipalDisableRecord['status']> = new Set(
     'NOT_CONTAINED',
     'AMBIGUOUS_PAIRED_ENDPOINT',
     'CONNECTION_UNUSABLE',
+    'LINK_UNCONFIRMED',
     'NO_APPROVED_TEMPLATE',
     'AMBIGUOUS_TEMPLATE',
     'NOT_IN_POPULATION',

@@ -33,7 +33,9 @@
  *      connection? ("No external write without prior state": no pairing, no
  *      write.)
  *   3. The connection's rung. DISABLED stops here, before any read.
- *   4. At AUTOMATIC only: exactly one approved template bounded to the
+ *   4. Has a person confirmed this link? At AUTOMATIC an unconfirmed link is
+ *      refused (`LINK_UNCONFIRMED`); below it, the proposal or intent says.
+ *      Then, at AUTOMATIC only: exactly one approved template bounded to the
  *      contained-agent population, and the principal in that population NOW.
  *   5. The paired read, with the write's own arguments. A read that fails, or
  *      answers in any shape but the read tool's, REFUSES the write.
@@ -71,6 +73,7 @@ import { authorizationFor } from '@/app-layer/integrations/mcp/token';
 import { MCP_SERVER_PROVIDER_ID } from '@/app-layer/integrations/providers/mcp-server-provider';
 
 import { readContainedAgentServicePrincipalLinks } from './agent-service-principal-links';
+import { liveConfirmationFor } from './agent-service-principal-confirmation';
 import { checkTargetInPopulation } from './external-tool-target-populations';
 import { recordIntent } from './external-write-journal';
 import { openAutomaticExternalWrite } from './external-write-automatic';
@@ -79,6 +82,28 @@ import { createAgentProposal } from './agent-proposals';
 /** Bounded, ours, and never the far end's prose. */
 function bounded(text: string): string {
     return text.length > 300 ? `${text.slice(0, 297)}...` : text;
+}
+
+/**
+ * What the approving human is told about the link (owner decision,
+ * 2026-10-18): a confirmed link names who confirmed it and when; an
+ * unconfirmed one says so plainly, because it is the scanner's claim and the
+ * approval is the only person who will look at it.
+ */
+function linkSentence(
+    confirmation: { readonly id: string; readonly confirmedByUserId: string; readonly confirmedAt: Date } | null,
+): string {
+    if (confirmation === null) {
+        return (
+            'THE LINK IS UNCONFIRMED: it is the harness scanner\'s reconciliation, and no person has '
+            + 'confirmed that this principal is the agent\'s own. Check the principal in the prior '
+            + 'state before approving.'
+        );
+    }
+    return (
+        `The link was confirmed by user ${confirmation.confirmedByUserId} at `
+        + `${confirmation.confirmedAt.toISOString()} (confirmation ${confirmation.id}).`
+    );
 }
 
 /** How many pairings, templates or links we read to tell "one" from "several". */
@@ -247,7 +272,31 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
     }
     const transport = { url: url.trim(), authorization };
 
-    // ── 4. AT AUTOMATIC: THE ONE TEMPLATE, AND THE POPULATION NOW ──────────
+    // ── 4a. HAS A PERSON CONFIRMED THIS LINK? ──────────────────────────────
+    //
+    // Asked at every rung that reads, and decisive at AUTOMATIC only (owner
+    // decision, 2026-10-18). The link is the scanner's reconciliation; a
+    // person reviewing a proposal can judge it, and the proposal says which it
+    // is. A write with nobody in it needs a person to have confirmed THIS link
+    // — exactly this principal, this agent — and no scan to have moved it.
+    const confirmation = await liveConfirmationFor(ctx, {
+        agentId: input.agentId,
+        discoveredAgentId: link.discoveredAgentId,
+        discoveredId: link.discoveredId,
+    });
+    const confirmed = { ...atRung, linkConfirmed: confirmation !== null };
+    if (rung === 'AUTOMATIC' && confirmation === null) {
+        return {
+            ...confirmed,
+            status: 'LINK_UNCONFIRMED',
+            detail:
+                'The connection is at AUTOMATIC and no person has confirmed that this principal is '
+                + 'the agent\'s own. Confirm the link on the agent (admin.agent_registry) for an '
+                + 'unattended disable; nothing was read or opened.',
+        };
+    }
+
+    // ── 4b. AT AUTOMATIC: THE ONE TEMPLATE, AND THE POPULATION NOW ─────────
     //
     // The arguments sent are the template's exact values with the target
     // merged OVER nothing — a template that also fixes `servicePrincipalId` is
@@ -279,7 +328,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
         });
         if (usable.length === 0) {
             return {
-                ...atRung,
+                ...confirmed,
                 status: 'NO_APPROVED_TEMPLATE',
                 detail:
                     'The connection is at AUTOMATIC and no approved template opens only '
@@ -289,7 +338,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
         }
         if (usable.length > 1) {
             return {
-                ...atRung,
+                ...confirmed,
                 status: 'AMBIGUOUS_TEMPLATE',
                 detail:
                     `${usable.length} approved templates qualify for the unattended disable, so none `
@@ -309,7 +358,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
         );
         if (!member.ok) {
             return {
-                ...atRung,
+                ...confirmed,
                 status: 'NOT_IN_POPULATION',
                 detail: `The contained-agent population did not admit this principal (${member.kind}).`,
             };
@@ -327,7 +376,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
         priorState = await callTool(transport, readRef.toolName, args);
     } catch {
         return {
-            ...atRung,
+            ...confirmed,
             status: 'PRIOR_STATE_UNREADABLE',
             detail: 'The paired prior-state read could not be run, so the disable was not requested.',
         };
@@ -335,7 +384,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
     const facts = servicePrincipalFactsOf(priorState);
     if (facts === null || facts.id !== link.servicePrincipalId) {
         return {
-            ...atRung,
+            ...confirmed,
             status: 'PRIOR_STATE_UNREADABLE',
             detail:
                 'The paired prior-state read did not report this principal\'s state, so what the '
@@ -344,7 +393,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
     }
 
     // ── 6. NOTHING TO DO ───────────────────────────────────────────────────
-    if (!facts.accountEnabled) return { ...atRung, status: 'ALREADY_DISABLED' };
+    if (!facts.accountEnabled) return { ...confirmed, status: 'ALREADY_DISABLED' };
 
     const write = {
         connectionId: connection.id,
@@ -366,7 +415,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
             // read as the agent disabling itself.
             agentId: null,
         });
-        return { ...atRung, status: 'RECORDED_INTENT', journalId: handle.journalId };
+        return { ...confirmed, status: 'RECORDED_INTENT', journalId: handle.journalId };
     }
 
     if (rung === 'PROPOSE_ONLY') {
@@ -383,17 +432,18 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
                     + 'accountable owner has left (OWNER_DEPARTED), and the harness reconciled one '
                     + 'Entra service principal to it. Disabling the principal stops its credentials '
                     + 'working in the directory as well as in Inflect. It is undone by re-enabling '
-                    + 'the principal.',
+                    + 'the principal. '
+                    + linkSentence(confirmation),
                 proposedBySessionRef: `agent-owner-orphan-pass:${input.agentId}`,
             });
             return {
-                ...atRung,
+                ...confirmed,
                 status: proposal.status === 'QUARANTINED' ? 'QUARANTINED' : 'PROPOSED',
                 proposalId: proposal.id,
             };
         } catch (err) {
             return {
-                ...atRung,
+                ...confirmed,
                 status: 'REFUSED',
                 detail: bounded(
                     `The proposal was refused: ${err instanceof Error ? err.message : 'non-Error thrown'}`,
@@ -410,10 +460,10 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
                 argumentsJson: JSON.stringify(args),
                 priorStateJson: JSON.stringify(priorState),
             });
-            return { ...atRung, status: 'QUEUED', journalId: opened.journalId };
+            return { ...confirmed, status: 'QUEUED', journalId: opened.journalId };
         } catch (err) {
             return {
-                ...atRung,
+                ...confirmed,
                 status: 'REFUSED',
                 detail: bounded(
                     `The unattended write was refused: ${err instanceof Error ? err.message : 'non-Error thrown'}`,
@@ -425,7 +475,7 @@ async function request(ctx: RequestContext, input: { readonly agentId: string })
     // A rung added to the ladder without a branch here is refused, never
     // inherited — the identity ladder's lesson.
     return {
-        ...atRung,
+        ...confirmed,
         status: 'REFUSED',
         detail: `This build requests no disable at ${rung}.`,
     };

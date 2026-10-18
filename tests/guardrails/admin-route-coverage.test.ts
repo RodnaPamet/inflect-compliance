@@ -114,6 +114,10 @@ const ADMIN_ONLY_ROUTES = [
     // the person it names and never by the person who started it.
     'admin/agents/[agentId]/ownership-transfer/route.ts',
     'admin/agents/[agentId]/ownership-transfer/complete/route.ts',
+    // A person confirms which discovered Entra service principal is the
+    // agent's own (#3671) — the register's key, `admin.agent_registry`: the
+    // condition for an unattended disable of that principal.
+    'admin/agents/[agentId]/service-principal-link/route.ts',
     // The versioned runtime policy card (Agentic 5) — its own key,
     // `admin.agent_policy_card`, and the WIDEST of the three: a card declares
     // the permitted tools, the data rung, the autonomy rung and both action

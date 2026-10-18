@@ -40,6 +40,17 @@
  * row it names — authenticated, never asserted. Every refusal that can be
  * attributed to a tenant writes the `AUTHZ_DENIED` row `requirePermission`
  * would have written; the ones that cannot are logged.
+ *
+ * ═══ THE GRAPH PERMISSION THE CONNECTION'S APP NEEDS ═══
+ *
+ * `Application.Read.All` (the prior-state read) + `Application.ReadWrite.OwnedBy`
+ * (the disable) — owner decision, 2026-10-18; never `Application.ReadWrite.All`.
+ * `OwnedBy` writes only principals whose application Inflect's app owns, so a
+ * principal it does NOT own reads fine and then fails the PATCH with 403
+ * `Authorization_RequestDenied`: the tool call becomes a protocol error and the
+ * dispatch settles the journal row `INDETERMINATE` for a human to finish in the
+ * customer's directory. That is the designed outcome, not a fault to retry.
+ * `providers/entra-id/service-principal.ts` carries the reasoning.
  */
 import { NextRequest } from 'next/server';
 

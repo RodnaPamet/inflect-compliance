@@ -40,6 +40,10 @@ const memberMock = jest.fn(async (..._a: unknown[]) => ({ ok: true }) as unknown
 jest.mock('@/app-layer/usecases/external-tool-target-populations', () => ({
     checkTargetInPopulation: (...a: unknown[]) => memberMock(...a),
 }));
+const linkConfirmedMock = jest.fn(async (..._a: unknown[]) => true);
+jest.mock('@/app-layer/usecases/agent-service-principal-confirmation', () => ({
+    servicePrincipalLinkConfirmed: (...a: unknown[]) => linkConfirmedMock(...a),
+}));
 jest.mock('@/lib/security/encryption', () => ({
     ...jest.requireActual('@/lib/security/encryption'),
     decryptField: (s: string) => s,
@@ -112,6 +116,7 @@ beforeEach(() => {
     getPriorStateReadMock.mockResolvedValue({ writeToolName: WRITE, readToolName: READ });
     boundRefusalMock.mockResolvedValue(null);
     memberMock.mockResolvedValue({ ok: true });
+    linkConfirmedMock.mockResolvedValue(true);
 });
 
 // ═════════════════════════════════════════════════════════════════════
@@ -170,6 +175,30 @@ describe('the dispatch is the one sender, and a sent disable settles ACCEPTED', 
             );
         },
     );
+
+    it('an AUTOMATIC row whose link is no longer CONFIRMED by a person is refused at send', async () => {
+        mockTx.externalWriteJournal.findMany.mockResolvedValue([
+            row({ mode: 'AUTOMATIC', parameterSetLabel: 'contained-agent-disable' }),
+        ]);
+        mockTx.integrationConnection.findMany.mockResolvedValue([connection('AUTOMATIC')]);
+        linkConfirmedMock.mockResolvedValue(false);
+        const r = await runExternalWriteDispatch({ tenantId: T });
+        expect(writeWasSent()).toBe(false);
+        expect(settled()?.outcome).toBe('FAILED');
+        expect(settled()?.detail).toContain('no longer confirmed by a person');
+        expect(r.refused).toBe(1);
+        expect(linkConfirmedMock).toHaveBeenCalledWith(expect.objectContaining({ tenantId: T }), SP);
+    });
+
+    it('a PROPOSE_ONLY row is not asked for a confirmation — a person approved it', async () => {
+        callToolMock.mockImplementation(async (_t: unknown, name: string) =>
+            name === SERVICE_PRINCIPAL_READ_TOOL ? readAnswer(true) : { content: [] },
+        );
+        linkConfirmedMock.mockResolvedValue(false);
+        await runExternalWriteDispatch({ tenantId: T });
+        expect(linkConfirmedMock).not.toHaveBeenCalled();
+        expect(settled()?.outcome).toBe('ACCEPTED');
+    });
 
     it('a write with no declared precondition never asks the population', async () => {
         mockTx.externalWriteJournal.findMany.mockResolvedValue([

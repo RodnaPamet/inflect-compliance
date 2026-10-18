@@ -86,6 +86,7 @@ import {
     rowRungNarrowedRefusal,
 } from './external-write-automatic';
 import { checkTargetInPopulation } from './external-tool-target-populations';
+import { servicePrincipalLinkConfirmed } from './agent-service-principal-confirmation';
 
 /**
  * Bound per pass, so one tenant's backlog cannot monopolise a worker.
@@ -169,6 +170,8 @@ export const ASYNC_DELIVERY_TOOLS: ReadonlySet<string> = new Set([
 type SendPrecondition = (
     ctx: ReturnType<typeof buildSystemContext>,
     args: Record<string, unknown>,
+    /** The rung the ROW was opened at, already coerced. */
+    rowMode: ReturnType<typeof coerceStoredMode>,
 ) => Promise<string | null>;
 
 /**
@@ -184,22 +187,40 @@ type SendPrecondition = (
  * and the disable a person approved before it must not leave after it. At
  * AUTOMATIC the template's bound re-check already asks this; asking again costs
  * one read and makes the rule independent of how the row was opened.
+ *
+ * And a row opened at AUTOMATIC needs the link to be CONFIRMED by a person
+ * still (owner decision, 2026-10-18) — a scan that moved the link between the
+ * open and the send invalidated the confirmation, and the unattended write must
+ * not leave on a link nobody now vouches for. A PROPOSE_ONLY row is not asked:
+ * a person approved it with the link's state in front of them.
  */
 export const SEND_PRECONDITIONS: ReadonlyMap<string, SendPrecondition> = new Map([
     [
         SERVICE_PRINCIPAL_DISABLE_TOOL,
-        async (ctx, args) => {
+        async (ctx, args, rowMode) => {
             const member = await checkTargetInPopulation(
                 ctx,
                 CONTAINED_AGENT_SP_POPULATION,
                 args[SERVICE_PRINCIPAL_TARGET_FIELD],
             );
-            if (member.ok) return null;
-            return (
-                'The service principal is no longer the principal of a contained agent '
-                + `(${member.kind}): its agent's OWNER_DEPARTED kill may have been lifted by a `
-                + 'completed ownership transfer. Nothing was sent.'
-            );
+            if (!member.ok) {
+                return (
+                    'The service principal is no longer the principal of a contained agent '
+                    + `(${member.kind}): its agent's OWNER_DEPARTED kill may have been lifted by a `
+                    + 'completed ownership transfer. Nothing was sent.'
+                );
+            }
+            if (
+                rowMode === 'AUTOMATIC'
+                && !(await servicePrincipalLinkConfirmed(ctx, args[SERVICE_PRINCIPAL_TARGET_FIELD]))
+            ) {
+                return (
+                    'The service principal\'s link to its agent is no longer confirmed by a person — '
+                    + 'a scan has moved it, or the confirmation was never made — so this unattended '
+                    + 'disable was not sent. Confirm the current link to retry.'
+                );
+            }
+            return null;
         },
     ],
 ]);
@@ -464,7 +485,7 @@ export async function runExternalWriteDispatch(input: {
         // principal's record did not move and no template is involved.
         const precondition = SEND_PRECONDITIONS.get(row.advertisedToolName);
         if (precondition) {
-            const refusal = await precondition(ctx, args);
+            const refusal = await precondition(ctx, args, coerceStoredMode(row.mode));
             if (refusal) {
                 await refuse(refusal);
                 continue;

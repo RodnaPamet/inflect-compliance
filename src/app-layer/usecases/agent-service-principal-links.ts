@@ -39,6 +39,8 @@ import {
 export interface AgentServicePrincipalLink {
     readonly agentId: string;
     readonly discoveredAgentId: string;
+    /** The harness id exactly as the row holds it — what a confirmation names. */
+    readonly discoveredId: string;
     /** Lower-cased object id, or null when the harness id is not a GUID. */
     readonly servicePrincipalId: string | null;
 }
@@ -118,6 +120,7 @@ export async function readContainedAgentServicePrincipalLinks(
                       {
                           agentId: r.registeredAgentId,
                           discoveredAgentId: r.id,
+                          discoveredId: r.discoveredId,
                           servicePrincipalId: servicePrincipalObjectIdOf(r.discoveredId),
                       },
                   ]
