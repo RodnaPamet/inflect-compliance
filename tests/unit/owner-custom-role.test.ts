@@ -13,8 +13,9 @@
  *   ASSIGNING one to an OWNER is refused for every caller, OWNER included
  *     (409, `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`).
  *   PROMOTING a member who carries one to OWNER is refused until it is removed —
- *     on the members page, in an ownership transfer, through an invite and
- *     through an access review's MODIFY (409, the same reason).
+ *     on the members page, in an ownership transfer and through an invite (409,
+ *     the same reason). An access review's MODIFY cannot reach the combination
+ *     at all: since #3727 it never sets OWNER and never sets a custom role.
  *   CLEARING one already on an OWNER (legacy data) is an OWNER's change only
  *     (403, `CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`); on any other role,
  *     AI_ADMIN included, it is unchanged.
@@ -79,7 +80,6 @@ import {
     redeemPendingInvitesByEmail,
 } from '@/app-layer/usecases/tenant-invites';
 import { SubmitDecisionSchema } from '@/app-layer/schemas/access-review.schemas';
-import { closeAccessReview } from '@/app-layer/usecases/access-review';
 import {
     SCIM_ASSIGNABLE_ROLES,
     SCIM_GROUP_ASSIGNABLE_ROLES,
@@ -459,74 +459,17 @@ describe('invites redeemed as OWNER onto a membership carrying a custom role', (
 
 // ─── ACCESS REVIEW MODIFY ──────────────────────────────────────────
 
-describe('an access review MODIFY into OWNER', () => {
-    it('submission refuses OWNER with a custom role, and accepts OWNER without one and EDITOR with one', () => {
-        const parsed = SubmitDecisionSchema.safeParse({
-            decision: 'MODIFY',
-            modifiedToRole: 'OWNER',
-            modifiedToCustomRoleId: 'cr-1',
-        });
-        expect(parsed.success).toBe(false);
-        expect(JSON.stringify(parsed.error?.issues)).toContain(BUILT_IN_SCOPE_REFUSAL);
-        expect(SubmitDecisionSchema.safeParse({ decision: 'MODIFY', modifiedToRole: 'OWNER' }).success).toBe(true);
-        expect(
-            SubmitDecisionSchema.safeParse({ decision: 'MODIFY', modifiedToRole: 'EDITOR', modifiedToCustomRoleId: 'cr-1' })
-                .success,
-        ).toBe(true);
-    });
-
-    function closeDb(decision: { modifiedToRole: string; modifiedToCustomRoleId: string | null }, live: { role: string; customRoleId: string | null }) {
-        const db = {
-            accessReview: {
-                findFirst: jest.fn().mockResolvedValue({
-                    id: 'ar-1',
-                    tenantId: 'tenant-1',
-                    scope: 'ALL_USERS',
-                    status: 'IN_REVIEW',
-                    deletedAt: null,
-                    reviewer: { email: 'r@x' },
-                    createdBy: { email: 'c@x' },
-                }),
-            },
-            accessReviewDecision: {
-                findMany: jest.fn().mockResolvedValue([
-                    {
-                        id: 'd-1',
-                        membershipId: 'm-1',
-                        subjectUserId: 'u-1',
-                        snapshotRole: live.role,
-                        snapshotMembershipStatus: 'ACTIVE',
-                        decision: 'MODIFY',
-                        ...decision,
-                        executedAt: null,
-                        membership: { id: 'm-1', userId: 'u-1', status: 'ACTIVE', ...live },
-                        subjectUser: { id: 'u-1', email: 'u@x', name: null },
-                    },
-                ]),
-            },
-            tenantMembership: { findMany: jest.fn(), update: jest.fn() },
+describe('an access review MODIFY cannot make the combination — it never sets OWNER nor a custom role (#3727)', () => {
+    it('submission refuses both by name; the close half is tests/unit/access-review-campaign-authority.test.ts', () => {
+        const reasons = (body: Record<string, unknown>) => {
+            const r = SubmitDecisionSchema.safeParse({ decision: 'MODIFY', ...body });
+            return r.success ? [] : r.error.issues.map((i) => (i as { params?: { reason?: string } }).params?.reason);
         };
-        mockRunInTx.mockImplementation(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(db));
-        return db;
-    }
-
-    it('closing a stored MODIFY to OWNER that names a custom role refuses the whole close before any row executes', async () => {
-        const db = closeDb({ modifiedToRole: 'OWNER', modifiedToCustomRoleId: 'cr-1' }, { role: 'EDITOR', customRoleId: null });
-        await expect(closeAccessReview(owner(), 'ar-1')).rejects.toMatchObject({
-            status: 409,
-            details: { reason: BUILT_IN_SCOPE_REFUSAL },
-        });
-        expect(db.tenantMembership.findMany).not.toHaveBeenCalled();
-        expect(db.tenantMembership.update).not.toHaveBeenCalled();
-    });
-
-    it('closing a MODIFY to OWNER for a member who still carries a custom role is refused too — never cleared on the closer’s behalf', async () => {
-        const db = closeDb({ modifiedToRole: 'OWNER', modifiedToCustomRoleId: null }, { role: 'EDITOR', customRoleId: 'cr-1' });
-        await expect(closeAccessReview(owner(), 'ar-1')).rejects.toMatchObject({
-            status: 409,
-            details: { reason: BUILT_IN_SCOPE_REFUSAL },
-        });
-        expect(db.tenantMembership.update).not.toHaveBeenCalled();
+        expect(reasons({ modifiedToRole: 'OWNER' })).toEqual(['CAMPAIGN_NEVER_PROMOTES_TO_OWNER']);
+        expect(reasons({ modifiedToRole: 'EDITOR', modifiedToCustomRoleId: 'cr-1' })).toEqual([
+            'CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE',
+        ]);
+        expect(reasons({ modifiedToRole: 'EDITOR' })).toEqual([]);
     });
 });
 
@@ -592,7 +535,7 @@ const CUSTOM_ROLE_ID_WRITERS: Readonly<Record<string, string>> = {
     'src/app-layer/usecases/custom-roles.ts':
         'assignCustomRole (refuses OWNER/AI_ADMIN; the OWNER clear is OWNER-tier) and deleteCustomRole (clears to NULL only)',
     'src/app-layer/usecases/access-review.ts':
-        'closeAccessReview MODIFY: refused at submission and close when the target role carries none',
+        'closeAccessReview MODIFY: writes NULL only — a campaign never sets a custom role (#3727), and never sets OWNER',
 };
 
 /** A `data:` / `create:` / `update:` object literal naming `customRoleId`. */

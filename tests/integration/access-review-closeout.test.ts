@@ -315,8 +315,11 @@ describeFn('Epic G-4 — closeAccessReview executes decisions + emits evidence',
             [ownerA.userId]: { decision: 'REVOKE', notes: 'rotation' },
             [ownerB.userId]: { decision: 'REVOKE', notes: 'rotation' },
         });
+        // An OWNER closer: revoking an OWNER is OWNER-tier (#3727), so an
+        // ADMIN would be refused before the count. The guard still applies
+        // to the closer who IS allowed to revoke one.
         await expect(
-            closeAccessReview(ctxAs(Role.ADMIN, admin.userId), reviewId),
+            closeAccessReview(ctxAs(Role.OWNER, ownerB.userId), reviewId),
         ).rejects.toThrow(/zero ACTIVE OWNERs/i);
         // Both OWNER memberships untouched.
         const a = await globalPrisma.tenantMembership.findUniqueOrThrow({
@@ -334,8 +337,10 @@ describeFn('Epic G-4 — closeAccessReview executes decisions + emits evidence',
             [ownerA.userId]: { decision: 'REVOKE', notes: 'rotation' },
             // ownerB stays
         });
+        // Closed by an OWNER: an ADMIN closer is refused (#3727,
+        // `tests/integration/access-review-campaign-authority.test.ts`).
         const result = await closeAccessReview(
-            ctxAs(Role.ADMIN, admin.userId),
+            ctxAs(Role.OWNER, ownerB.userId),
             reviewId,
         );
         expect(result.executions[0].outcome).toBe('EXECUTED');

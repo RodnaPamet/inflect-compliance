@@ -1,6 +1,6 @@
-# 2026-10-18 — An OWNER membership never carries a custom role (#3720)
+# 2026-10-18 — An OWNER membership never carries a custom role (#3720), and a campaign does no OWNER-tier work (#3727)
 
-**Commit:** `(this commit) fix(security): an OWNER membership never carries a custom role, with a DB CHECK backstop`
+**Commit:** `(this commit) fix(security): an OWNER never carries a custom role, and a campaign does no OWNER-tier work`
 
 ## Design
 
@@ -37,7 +37,7 @@ Every writer that can set `role` or `customRoleId` reads `mayCarryCustomRole`:
 | `createInviteToken` | refuses an OWNER invite for an inactive membership that carries one (409) |
 | `finalizeInviteRedemption` | backstop inside the transaction (409, invite stays burnt) |
 | `redeemPendingInvitesByEmail` | skips such an invite BEFORE the claim, with one hoisted read |
-| access review MODIFY | schema refuses OWNER + a custom role; the close refuses that and a MODIFY into OWNER for a member who still carries one (409) |
+| access review MODIFY | never sets OWNER and never sets a custom role (#3727, below), so it cannot reach the combination |
 | Entra group sync | OWNER is never a mapped role, and an OWNER membership is never touched (`owner_immune`) |
 | SCIM, SSO JIT | never write OWNER, and never write `customRoleId` |
 
@@ -55,7 +55,13 @@ backstop for anything that does not go through a usecase.
 | `src/app-layer/usecases/tenant-admin.ts` | docs only: the existing check now covers OWNER |
 | `src/app-layer/usecases/tenant-lifecycle.ts` | the ownership-transfer refusal |
 | `src/app-layer/usecases/tenant-invites.ts` | invite creation, token redemption and sign-in redemption |
-| `src/app-layer/schemas/access-review.schemas.ts`, `usecases/access-review.ts`, `repositories/AccessReviewRepository.ts` | MODIFY at submission and close; the close reads the live `customRoleId` |
+| `src/lib/access-review/member-decision-rules.ts` | #3727's three named reasons and their messages |
+| `src/app-layer/schemas/access-review.schemas.ts` | MODIFY refuses OWNER and any custom role by name (`params.reason`) |
+| `src/app-layer/usecases/access-review.ts` | the close's four refusals; refusal audit rows; MODIFY writes the built-in role and clears a custom role |
+| `src/app-layer/repositories/AccessReviewRepository.ts` | the close reads the live `customRoleId` |
+| `src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/decisions/[decisionId]/route.ts` | a schema refusal at the route is audited too |
+| `src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx` | the MODIFY picker offers `CAMPAIGN_MODIFY_ROLES` (no OWNER) |
+| `tests/integration/access-review-{closeout,e2e}.test.ts` | their OWNER-lowering closes now run as an OWNER |
 | `src/app/api/t/[tenantSlug]/admin/members/[membershipId]/route.ts` | `customRoleId` must be non-empty; comment on why neither half slips through |
 | `src/app/t/[tenantSlug]/(app)/admin/members/page.tsx`, `messages/{en,bg}.json` | OWNER rows are locked for a non-OWNER; an OWNER can remove a legacy custom role |
 | `prisma/migrations/20261018180000_built_in_scope_role_no_custom_role/` | the CHECK, NOT VALID, then a conditional VALIDATE |
@@ -85,11 +91,11 @@ backstop for anything that does not go through a usecase.
   comes back empty it cannot happen. Until then, a refusal is a loud 500, not a
   silent write.
 - **Refused, never repaired.** No path clears a custom role on the caller's
-  behalf, as for AI_ADMIN. A MODIFY decision's write would clear one as a side
-  effect (it writes `modifiedToCustomRoleId`, null when not given). So a MODIFY
-  into OWNER for a member who still carries one refuses the whole close rather
-  than strip it. The strip would also have been an OWNER-tier clear performed by
-  a `canAdmin` closer.
+  behalf, as for AI_ADMIN, except the one whose purpose is removing access: an
+  executed campaign MODIFY. It sets the built-in role and clears the custom role,
+  as it always did for a MODIFY naming none, because a custom role replaces the
+  role at resolution and leaving it would make the MODIFY change nothing. Its
+  execution row now records `clearedCustomRoleId`.
 - **The clear is OWNER-tier for OWNER only.** It restores full OWNER authority.
   AI_ADMIN keeps what #3722 shipped, an `admin.members` clear. That path is moot
   anyway: no AI_ADMIN row can carry a custom role (deploy 1 had no writer, deploy
@@ -113,3 +119,60 @@ backstop for anything that does not go through a usecase.
   principal. They now use an ADMIN, which keeps the property under test (the
   narrowing travels `resolveTenantContext`) without depending on a state the
   database now refuses.
+
+## #3727 — a campaign does no OWNER-tier work
+
+Found while verifying #3720's writers. Closing a member campaign writes its
+decisions under `access_reviews.close`, which an ADMIN holds, and nothing
+excluded the closer's own membership. So an ADMIN could create a campaign over
+themselves, MODIFY themselves to OWNER and close it; demote or revoke an OWNER;
+or hand a member an existing custom role without `assertGrantWithinOwnAuthority`.
+Owner decisions (2026-10-18):
+
+1. A campaign never promotes anyone to OWNER (`CAMPAIGN_MODIFY_ROLES`).
+2. Lowering an OWNER — a REVOKE, or a MODIFY, which with (1) can only lower —
+   needs a closer holding `admin.owner_management`. The last-OWNER guard applies
+   as well.
+3. A MODIFY sets a built-in role only, never a custom role.
+
+```
+                      schema (submit)          close (every stored decision)
+MODIFY → OWNER        400 NEVER_PROMOTES_…     409 CAMPAIGN_NEVER_PROMOTES_TO_OWNER
+MODIFY + custom role  400 MODIFY_SETS_NO_…     409 CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE
+lower a LIVE OWNER    —                        403 OWNER_SUBJECT_NEEDS_OWNER_CLOSER (closer lacks owner_management)
+REVOKE a legacy row   —                        409 BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE (#3720's CHECK)
+```
+
+### Decisions
+
+- **The whole close is refused, not the offending decision.** A CLOSED campaign
+  is immutable, so a decision skipped at close could never be carried out, and
+  the sealed evidence would record a reviewer's verdict nobody acted on — the
+  "silently dropped" the owner ruled out. It is also the shape the close already
+  had for a pending decision, an unassignable MODIFY and the zero-OWNER
+  projection. The campaign stays open; the message names the reason, the
+  decision ids and the way out (an OWNER closes it, or the reviewer revokes the
+  decisions and records them again).
+- **Rule 2 reads the LIVE role.** It is what the write changes: a subject
+  promoted to OWNER since the snapshot is held, one demoted since is not.
+- **Named in the schema by `params.reason`, not by enum.** OWNER stays in
+  `ASSIGNABLE_TENANT_ROLES`'s enum and is refused by a refinement, so the caller
+  learns why. `modifiedToCustomRoleId` stays in the shape so a client still
+  sending one is refused by name rather than having it stripped in silence;
+  `submitDecision` stores NULL.
+- **Every named refusal writes an audit row, outside the refused transaction.**
+  `ACCESS_REVIEW_DECISION_REFUSED` and `ACCESS_REVIEW_CLOSE_REFUSED` carry the
+  reason and decision ids. The close's refusal is thrown inside its
+  transaction, so the row is written after the rollback (`recordCloseRefusal`),
+  never relying on `logEvent` happening to use its own connection. The decision
+  route audits a schema refusal from `parseJsonBody`, and `submitDecision` from
+  its own parse, so it is recorded once whichever reached the schema first.
+- **A REVOKE of a legacy OWNER that still carries a custom role is named**
+  rather than surfacing as #3720's CHECK failing mid-close. A MODIFY of one
+  writes `customRoleId: null` and satisfies the CHECK.
+- **Unreachable code removed, not left.** #3720's narrower close check (OWNER
+  plus a custom role) and its schema refinement went with rule 3, and the
+  projected-OWNER GAIN term went with rule 1: nothing can gain OWNER at close.
+- **A behaviour change for open campaigns.** One holding a MODIFY to OWNER or
+  with a custom role, or one an ADMIN means to close that lowers an OWNER, now
+  refuses to close until an OWNER closes it or the decisions are re-recorded.

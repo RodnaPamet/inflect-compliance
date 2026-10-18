@@ -11,13 +11,13 @@
  *     parse time so the usecase never sees a malformed verdict.
  */
 import { z } from 'zod';
-import {
-    ASSIGNABLE_TENANT_ROLES,
-    BUILT_IN_SCOPE_REFUSAL,
-    builtInScopeRoleMessage,
-    mayCarryCustomRole,
-} from '@/lib/roles';
+import { ASSIGNABLE_TENANT_ROLES, isCampaignModifyRole } from '@/lib/roles';
 import { MEMBER_ACCESS_REVIEW_SCOPES } from '@/lib/access-review/scope';
+import {
+    MEMBER_DECISION_REFUSAL,
+    MEMBER_DECISION_REFUSAL_MESSAGE,
+    type MemberDecisionRefusal,
+} from '@/lib/access-review/member-decision-rules';
 
 const TextField = z
     .string()
@@ -139,22 +139,30 @@ export const SubmitDecisionSchema = z.discriminatedUnion('decision', [
             decision: z.literal('MODIFY'),
             /// The writers' list, NOT `z.nativeEnum(Role)`: closing the campaign
             /// writes this value to the membership, and a campaign never promotes
-            /// anybody to AI_ADMIN (#3699), so it is refused here at submission.
+            /// anybody to AI_ADMIN (#3699), so the enum refuses it. OWNER is in
+            /// the enum and refused below BY NAME (#3727), so the caller is told
+            /// why rather than that the value is unknown.
             modifiedToRole: z.enum(ASSIGNABLE_TENANT_ROLES),
-            /// Only meaningful when the target role uses a TenantCustomRole.
-            modifiedToCustomRoleId: z.string().min(1).optional().nullable(),
+            /// Refused whenever it names a role (#3727): a campaign MODIFY sets
+            /// a built-in role only. Kept in the shape rather than dropped, so a
+            /// client still sending one is refused by name instead of having it
+            /// stripped in silence. `null` (none) is accepted.
+            modifiedToCustomRoleId: z.string().nullable().optional(),
             notes: OptionalText,
         })
-        /// Closing writes BOTH columns, so a MODIFY naming OWNER and a custom
-        /// role would make an OWNER with a custom role, which never exists
-        /// (#3720). `closeAccessReview` refuses a stored one too.
         .superRefine((v, issue) => {
-            if (!mayCarryCustomRole(v.modifiedToRole) && v.modifiedToCustomRoleId) {
+            const refuse = (reason: MemberDecisionRefusal, path: string) =>
                 issue.addIssue({
                     code: 'custom',
-                    path: ['modifiedToCustomRoleId'],
-                    message: `${BUILT_IN_SCOPE_REFUSAL}: ${builtInScopeRoleMessage(v.modifiedToRole, 'assign-custom-role')}`,
+                    path: [path],
+                    message: `${reason}: ${MEMBER_DECISION_REFUSAL_MESSAGE[reason]}`,
+                    params: { reason },
                 });
+            if (!isCampaignModifyRole(v.modifiedToRole)) {
+                refuse(MEMBER_DECISION_REFUSAL.NEVER_PROMOTES_TO_OWNER, 'modifiedToRole');
+            }
+            if (v.modifiedToCustomRoleId !== undefined && v.modifiedToCustomRoleId !== null) {
+                refuse(MEMBER_DECISION_REFUSAL.MODIFY_SETS_NO_CUSTOM_ROLE, 'modifiedToCustomRoleId');
             }
         }),
 ]);

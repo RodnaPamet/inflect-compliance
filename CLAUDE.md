@@ -830,13 +830,24 @@ new tenant-membership creation path).
   check — still read OWNER. `BUILT_IN_SCOPE_ROLES` / `mayCarryCustomRole` in
   `src/lib/roles.ts` is read by every writer: assigning one is refused for every
   caller, OWNER included, and promoting a member who carries one (members page,
-  ownership transfer, invite, access-review MODIFY) is refused until it is
-  removed — 409, `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`. Clearing a legacy
-  one from an OWNER needs `admin.owner_management` (403,
+  ownership transfer, invite) is refused until it is removed — 409,
+  `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`. Clearing a legacy one from an
+  OWNER needs `admin.owner_management` (403,
   `CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`). The DB backstop is the CHECK
   `TenantMembership_built_in_scope_role_no_custom_role`, added `NOT VALID` and
   validated only on a clean table: while an offending row exists it stays NOT
   VALID, and that row refuses EVERY update except the clear.
+- **An access-review campaign does no OWNER-tier work** (#3727). Closing one
+  writes its decisions under `access_reviews.close`, which an ADMIN holds, so it
+  holds the members page's rules itself: a MODIFY never sets OWNER
+  (`CAMPAIGN_MODIFY_ROLES`; `CAMPAIGN_NEVER_PROMOTES_TO_OWNER`) and never a
+  custom role (`CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`) — refused at the schema and
+  again at close — and a REVOKE or MODIFY of a LIVE OWNER needs a closer holding
+  `admin.owner_management` (`OWNER_SUBJECT_NEEDS_OWNER_CLOSER`); the last-OWNER
+  guard still applies to that closer. Each refusal is the WHOLE close, before any
+  row executes, so a decision stored before the rule is never applied and never
+  dropped; each writes `ACCESS_REVIEW_DECISION_REFUSED` / `_CLOSE_REFUSED`.
+  Reasons live in `src/lib/access-review/member-decision-rules.ts`.
 
 ### Observability
 

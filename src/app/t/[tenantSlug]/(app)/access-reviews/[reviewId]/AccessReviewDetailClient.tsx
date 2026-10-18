@@ -36,7 +36,7 @@ import { FormField } from '@/components/ui/form-field';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
-import { TENANT_ROLES, type AssignableTenantRole } from '@/lib/roles';
+import { CAMPAIGN_MODIFY_ROLES, TENANT_ROLES, type CampaignModifyRole } from '@/lib/roles';
 import { apiErrorMessage } from '@/lib/api-error';
 import { Heading } from '@/components/ui/typography';
 import {
@@ -49,18 +49,13 @@ import {
 
 /**
  * The roles a MODIFY decision may target — a writer's list, because closing the
- * campaign writes the target to the membership. AI_ADMIN (#3699) is absent:
- * a campaign never promotes anybody to it (`ASSIGNABLE_TENANT_ROLES`, which
- * the API enforces).
+ * campaign writes the target to the membership. Neither AI_ADMIN (#3699) nor
+ * OWNER (#3727) is offered: a campaign never promotes anybody to either, and the
+ * API refuses both. No custom role is offered either; a MODIFY sets a built-in
+ * role only (#3727).
  */
-const MODIFY_TARGET_ROLES = [
-    'OWNER',
-    'ADMIN',
-    'EDITOR',
-    'READER',
-    'AUDITOR',
-] as const satisfies readonly AssignableTenantRole[];
-type ModifyTargetRole = (typeof MODIFY_TARGET_ROLES)[number];
+const MODIFY_TARGET_ROLES = CAMPAIGN_MODIFY_ROLES;
+type ModifyTargetRole = CampaignModifyRole;
 /** A role a row can CARRY — a reader's type, so AI_ADMIN included. */
 type Role = (typeof TENANT_ROLES)[number];
 type DecisionType = 'CONFIRM' | 'REVOKE' | 'MODIFY';

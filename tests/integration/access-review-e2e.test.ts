@@ -214,8 +214,10 @@ describeFn('Epic G-4 — end-to-end campaign lifecycle', () => {
         expect(inReview.status).toBe('IN_REVIEW');
 
         // ── 4. Close the campaign ───────────────────────────────
+        // By an OWNER: the campaign lowers ownerB, and demoting an OWNER
+        // through a campaign is OWNER-tier (#3727).
         const closeResult = await closeAccessReview(
-            ctxAs(Role.ADMIN, admin.userId),
+            ctxAs(Role.OWNER, ownerA.userId),
             accessReviewId,
         );
         expect(closeResult.counts).toEqual({

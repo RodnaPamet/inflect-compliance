@@ -69,6 +69,11 @@ Clearing a legacy one from an OWNER is an OWNER's change (403 for an ADMIN,
 `CLEARING_OWNER_CUSTOM_ROLE_IS_OWNER_TIER`). The database enforces the same rule
 with the CHECK `TenantMembership_built_in_scope_role_no_custom_role`.
 
+Custom roles are assigned on the members page only, under its grant check. An
+access-review MODIFY sets a built-in role only: one naming a custom role is
+refused at submission and at close (`CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE`,
+#3727), and an executed MODIFY clears any custom role the member carried.
+
 ### PermissionSet Shape
 
 `PermissionSet` and its companion `PERMISSION_SCHEMA` live in

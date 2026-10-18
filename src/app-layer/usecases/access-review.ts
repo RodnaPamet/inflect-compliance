@@ -31,6 +31,11 @@
  *   - submitDecision → only the campaign's `reviewerUserId` OR a
  *     tenant admin (admin acts as backup if the reviewer is
  *     unavailable; the audit log captures who).
+ *   - closeAccessReview → assertCanAdmin, and OWNER-tier for what is
+ *     OWNER-tier on the members page (#3727): a campaign never promotes
+ *     to OWNER, never sets a custom role, and lowers an OWNER only when
+ *     the closer holds `admin.owner_management`. Each such refusal is
+ *     named and writes an audit row (`src/lib/access-review/member-decision-rules.ts`).
  */
 import { RequestContext } from '../types';
 import { AccessReviewRepository } from '../repositories/AccessReviewRepository';
@@ -38,14 +43,19 @@ import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, forbidden, notFound, ConflictError } from '@/lib/errors/types';
+import { AppError, badRequest, forbidden, notFound, ConflictError } from '@/lib/errors/types';
+import { ZodError } from 'zod';
 import {
     BUILT_IN_SCOPE_REFUSAL,
-    builtInScopeRoleMessage,
     isAssignableTenantRole,
+    isCampaignModifyRole,
     mayCarryCustomRole,
     unassignableRoleMessage,
 } from '@/lib/roles';
+import {
+    MEMBER_DECISION_REFUSAL,
+    MEMBER_DECISION_REFUSAL_MESSAGE,
+} from '@/lib/access-review/member-decision-rules';
 import {
     CreateAccessReviewSchema,
     SubmitDecisionSchema,
@@ -264,6 +274,115 @@ export async function createAccessReview(
     });
 }
 
+// ─── Named refusals and their audit rows (#3727) ──────────────────────
+
+/**
+ * The reasons a member campaign refuses a decision or a close BY NAME. Each
+ * refusal writes an audit row as well as the error, because each is an attempt
+ * at something OWNER-tier (a promotion to OWNER, a custom-role grant, an
+ * OWNER's demotion) that the product refused.
+ */
+const NAMED_CAMPAIGN_REFUSALS: ReadonlySet<string> = new Set([
+    ...Object.values(MEMBER_DECISION_REFUSAL),
+    BUILT_IN_SCOPE_REFUSAL,
+]);
+
+/** The named reason a refusal carries, from a usecase error or a schema issue; `null` for any other error. */
+function namedCampaignRefusalOf(err: unknown): string | null {
+    if (err instanceof AppError) {
+        const reason = (err.details as { reason?: unknown } | undefined)?.reason;
+        return typeof reason === 'string' && NAMED_CAMPAIGN_REFUSALS.has(reason) ? reason : null;
+    }
+    if (err instanceof ZodError) {
+        for (const issue of err.issues) {
+            const reason = (issue as { params?: { reason?: unknown } }).params?.reason;
+            if (typeof reason === 'string' && NAMED_CAMPAIGN_REFUSALS.has(reason)) return reason;
+        }
+    }
+    return null;
+}
+
+/**
+ * Write the refusal's audit row, in its OWN transaction: a close refusal is
+ * thrown from inside the close's, which rolls back, and nothing the refused
+ * attempt touched may be committed except this record of it.
+ */
+async function auditCampaignRefusal(
+    ctx: RequestContext,
+    row: { action: string; entityType: string; entityId: string; reason: string; decisionIds?: string[] },
+): Promise<void> {
+    await runInTenantContext(ctx, (db) =>
+        logEvent(db, ctx, {
+            action: row.action,
+            entityType: row.entityType,
+            entityId: row.entityId,
+            detailsJson: {
+                category: 'access',
+                entityName: row.entityType,
+                operation: 'refused',
+                summary: `${row.action}: ${row.reason}`,
+                after: { reason: row.reason, ...(row.decisionIds ? { decisionIds: row.decisionIds } : {}) },
+            },
+        }),
+    );
+}
+
+/**
+ * The submit path's refusal: audit a named one, then rethrow `err` unchanged.
+ * The decision route calls it when `parseJsonBody` refuses the body, and
+ * `submitDecision` when its own parse does, so a refusal is recorded whichever
+ * caller reached the schema first — and only once.
+ */
+export async function recordDecisionSubmissionRefusal(
+    ctx: RequestContext,
+    decisionId: string,
+    err: unknown,
+): Promise<never> {
+    const reason = namedCampaignRefusalOf(err);
+    if (reason) {
+        await auditCampaignRefusal(ctx, {
+            action: 'ACCESS_REVIEW_DECISION_REFUSED',
+            entityType: 'AccessReviewDecision',
+            entityId: decisionId,
+            reason,
+        });
+    }
+    throw err;
+}
+
+/** A close refusal naming its reason and the decisions that carry it. */
+function closeRefusal(
+    kind: 'conflict' | 'forbidden',
+    reason: string,
+    explanation: string,
+    decisionIds: string[],
+    remedy: string,
+): AppError {
+    const message =
+        `Cannot close: ${decisionIds.length} decision(s) refused — ${reason}. ${explanation} ` +
+        `${remedy} Decision(s): ${decisionIds.join(', ')}.`;
+    const details = { reason, decisionIds };
+    return kind === 'forbidden' ? forbidden(message, details) : new ConflictError(message, details);
+}
+
+const RE_RECORD = 'Revoke the decision(s) and record them again.';
+
+/** The close path's refusal: audit a named one (after the close's transaction rolled back), then rethrow. */
+async function recordCloseRefusal(ctx: RequestContext, accessReviewId: string, err: unknown): Promise<never> {
+    const reason = namedCampaignRefusalOf(err);
+    if (reason) {
+        const decisionIds = (err as AppError & { details?: { decisionIds?: string[] } }).details?.decisionIds;
+        await auditCampaignRefusal(ctx, {
+            action: 'ACCESS_REVIEW_CLOSE_REFUSED',
+            entityType: 'AccessReview',
+            entityId: accessReviewId,
+            reason,
+            decisionIds,
+        });
+    }
+    throw err;
+}
+
 // ─── submitDecision ───────────────────────────────────────────────────
 
 export interface SubmitDecisionResult {
@@ -291,7 +410,9 @@ export async function submitDecision(
     input: unknown,
 ): Promise<SubmitDecisionResult> {
     assertCanRead(ctx);
-    const parsed: SubmitDecisionInput = SubmitDecisionSchema.parse(input);
+    const result = SubmitDecisionSchema.safeParse(input);
+    if (!result.success) return recordDecisionSubmissionRefusal(ctx, decisionId, result.error);
+    const parsed: SubmitDecisionInput = result.data;
 
     return runInTenantContext(ctx, async (db) => {
         const decision = await AccessReviewRepository.getDecision(db, ctx, decisionId);
@@ -336,10 +457,9 @@ export async function submitDecision(
                 notes: parsed.notes ? sanitizePlainText(parsed.notes) : null,
                 modifiedToRole:
                     parsed.decision === 'MODIFY' ? parsed.modifiedToRole : null,
-                modifiedToCustomRoleId:
-                    parsed.decision === 'MODIFY'
-                        ? parsed.modifiedToCustomRoleId ?? null
-                        : null,
+                // A campaign MODIFY never sets a custom role (#3727); the schema
+                // refuses one, so the column only ever records "none".
+                modifiedToCustomRoleId: null,
             },
         );
         if (updateCount === 0) {
@@ -375,11 +495,7 @@ export async function submitDecision(
                     accessReviewId: review.id,
                     decision: parsed.decision,
                     ...(parsed.decision === 'MODIFY'
-                        ? {
-                              modifiedToRole: parsed.modifiedToRole,
-                              modifiedToCustomRoleId:
-                                  parsed.modifiedToCustomRoleId ?? null,
-                          }
+                        ? { modifiedToRole: parsed.modifiedToRole }
                         : {}),
                     /// Don't ship the notes string to the structured
                     /// stream — auditors get it from the row, the
@@ -590,6 +706,10 @@ export interface CloseAccessReviewResult {
  *   • Campaign must be OPEN or IN_REVIEW (not CLOSED, not deleted).
  *   • Every decision row must have a verdict — pending rows reject
  *     the close so the auditor never sees an under-reviewed campaign.
+ *   • #3727: a MODIFY to OWNER, a MODIFY carrying a custom role, and —
+ *     for a closer without `admin.owner_management` — a REVOKE or MODIFY
+ *     of a live OWNER each reject the WHOLE close by name, with an
+ *     `ACCESS_REVIEW_CLOSE_REFUSED` audit row.
  *   • Last-OWNER guard runs at the campaign level: if the planned
  *     execution would leave zero ACTIVE OWNERs, the WHOLE close is
  *     rejected. (DB trigger is the per-row backstop.)
@@ -671,31 +791,84 @@ export async function closeAccessReview(
             );
         }
 
-        // A MODIFY into a role that carries no custom role (OWNER, #3720)
-        // refuses the whole close, before any row executes, in two shapes:
-        //   - the decision itself names a custom role (`SubmitDecisionSchema`
-        //     refuses that at submission; this is the read-side half);
-        //   - the LIVE membership still carries one. Closing writes the
-        //     decision's `modifiedToCustomRoleId` (null) over it, which would
-        //     clear it on the caller's behalf — and on an OWNER the clear is
-        //     OWNER-tier while the close takes `canAdmin`. Like the members
-        //     page, the custom role is removed first, as its own change.
-        const builtInScopeConflict = decisions.find(
-            (d) =>
-                d.decision === 'MODIFY' &&
-                d.modifiedToRole !== null &&
-                !mayCarryCustomRole(d.modifiedToRole) &&
-                (d.modifiedToCustomRoleId !== null || Boolean(d.membership?.customRoleId)),
+        // ── #3727 — what a campaign may do to a membership ──────────────
+        //
+        // Each rule refuses the WHOLE close, before any row executes, and
+        // names its reason and the decisions that carry it — like a pending
+        // decision. A decision stored before the rule (an open campaign
+        // decided earlier) is refused here, never applied and never dropped:
+        // a CLOSED campaign is immutable, so a decision skipped at close
+        // could never be carried out, and the sealed evidence would record a
+        // reviewer's verdict nobody acted on. The campaign stays open; the
+        // message says who may close it, or which decisions to re-record.
+        const modifies = decisions.filter((d) => d.decision === 'MODIFY');
+
+        // 1. A campaign never promotes anyone to OWNER.
+        const toOwner = modifies.filter(
+            (d) => d.modifiedToRole !== null && !isCampaignModifyRole(d.modifiedToRole),
         );
-        if (builtInScopeConflict?.modifiedToRole) {
-            throw new ConflictError(
-                `Cannot close: MODIFY decision ${builtInScopeConflict.id} ` +
-                    `targets ${builtInScopeConflict.modifiedToRole} with a custom role. ` +
-                    builtInScopeRoleMessage(
-                        builtInScopeConflict.modifiedToRole,
-                        builtInScopeConflict.modifiedToCustomRoleId !== null ? 'assign-custom-role' : 'promote',
-                    ),
-                { reason: BUILT_IN_SCOPE_REFUSAL },
+        if (toOwner.length > 0) {
+            throw closeRefusal(
+                'conflict',
+                MEMBER_DECISION_REFUSAL.NEVER_PROMOTES_TO_OWNER,
+                MEMBER_DECISION_REFUSAL_MESSAGE.CAMPAIGN_NEVER_PROMOTES_TO_OWNER,
+                toOwner.map((d) => d.id),
+                RE_RECORD,
+            );
+        }
+
+        // 2. A MODIFY sets a built-in role only, never a custom role.
+        const withCustomRole = modifies.filter((d) => d.modifiedToCustomRoleId !== null);
+        if (withCustomRole.length > 0) {
+            throw closeRefusal(
+                'conflict',
+                MEMBER_DECISION_REFUSAL.MODIFY_SETS_NO_CUSTOM_ROLE,
+                MEMBER_DECISION_REFUSAL_MESSAGE.CAMPAIGN_MODIFY_SETS_NO_CUSTOM_ROLE,
+                withCustomRole.map((d) => d.id),
+                RE_RECORD,
+            );
+        }
+
+        // 3. Demoting or revoking an OWNER membership is OWNER-tier. Judged on
+        //    the LIVE role, because that is what the write changes: a subject
+        //    promoted to OWNER since the snapshot is held, one demoted since is
+        //    not. With (1) in force, every MODIFY of an OWNER lowers it.
+        const lowersAnOwner = decisions.filter(
+            (d) =>
+                (d.decision === 'REVOKE' || d.decision === 'MODIFY') &&
+                d.membership?.role === 'OWNER',
+        );
+        if (lowersAnOwner.length > 0 && !ctx.appPermissions.admin.owner_management) {
+            throw closeRefusal(
+                'forbidden',
+                MEMBER_DECISION_REFUSAL.OWNER_SUBJECT_NEEDS_OWNER_CLOSER,
+                MEMBER_DECISION_REFUSAL_MESSAGE.OWNER_SUBJECT_NEEDS_OWNER_CLOSER,
+                lowersAnOwner.map((d) => d.id),
+                'Ask an OWNER to close it, or revoke those decisions and record them again.',
+            );
+        }
+
+        // 4. A REVOKE cannot execute on a legacy membership that holds a role
+        //    which carries no custom role and still carries one (#3720): the
+        //    CHECK refuses every UPDATE of that row except the clear. Named
+        //    here rather than surfacing as a database error mid-close. (A
+        //    MODIFY of such a row writes `customRoleId: null` and satisfies it.)
+        const revokesLegacyRow = decisions.filter(
+            (d) =>
+                d.decision === 'REVOKE' &&
+                d.membership !== null &&
+                !mayCarryCustomRole(d.membership.role) &&
+                d.membership.customRoleId !== null,
+        );
+        if (revokesLegacyRow.length > 0) {
+            throw closeRefusal(
+                'conflict',
+                BUILT_IN_SCOPE_REFUSAL,
+                'The membership holds a role that carries no custom role but still carries one ' +
+                    '(data from before #3720), and the database refuses every change to it except ' +
+                    'removing the custom role.',
+                revokesLegacyRow.map((d) => d.id),
+                'An OWNER removes the custom role on the members page, then the campaign closes.',
             );
         }
 
@@ -711,29 +884,18 @@ export async function closeAccessReview(
         });
         const liveOwnerIds = new Set(liveOwners.map((m) => m.id));
 
-        // Plan: which OWNER memberships would lose OWNER after exec?
-        //   • REVOKE → deactivated (loses everything, including OWNER)
-        //   • MODIFY OWNER→non-OWNER → loses OWNER
-        //   • MODIFY non-OWNER→OWNER → gains OWNER
+        // Plan: which OWNER memberships would lose OWNER after exec? A REVOKE
+        // deactivates one and a MODIFY lowers one; nothing GAINS OWNER, because
+        // a campaign never promotes to it (rule 1 above, #3727).
         let projectedOwnerLoss = 0;
-        let projectedOwnerGain = 0;
         for (const d of decisions) {
             if (!d.membership) continue; // stale — won't execute anyway
-            if (!liveOwnerIds.has(d.membership.id)) {
-                if (d.decision === 'MODIFY' && d.modifiedToRole === 'OWNER') {
-                    projectedOwnerGain += 1;
-                }
-                continue;
-            }
-            // The membership is currently a live OWNER.
-            if (d.decision === 'REVOKE') {
-                projectedOwnerLoss += 1;
-            } else if (d.decision === 'MODIFY' && d.modifiedToRole !== 'OWNER') {
+            if (!liveOwnerIds.has(d.membership.id)) continue;
+            if (d.decision === 'REVOKE' || d.decision === 'MODIFY') {
                 projectedOwnerLoss += 1;
             }
         }
-        const projectedOwnerCount =
-            liveOwners.length - projectedOwnerLoss + projectedOwnerGain;
+        const projectedOwnerCount = liveOwners.length - projectedOwnerLoss;
         if (liveOwners.length > 0 && projectedOwnerCount <= 0) {
             throw forbidden(
                 `Cannot close: executing the planned decisions would leave the tenant with ` +
@@ -784,18 +946,24 @@ export async function closeAccessReview(
             } else {
                 // MODIFY
                 try {
+                    // The built-in role and nothing else (#3727). The custom
+                    // role is CLEARED, as it always was for a MODIFY naming
+                    // none: a custom role replaces the role at resolution,
+                    // so leaving it would make the MODIFY change nothing the
+                    // member can do. Recorded, so the audit row says so.
                     await db.tenantMembership.update({
                         where: { id: d.membership.id },
                         data: {
                             role: d.modifiedToRole as Role,
-                            ...(d.modifiedToCustomRoleId !== undefined
-                                ? { customRoleId: d.modifiedToCustomRoleId }
-                                : {}),
+                            customRoleId: null,
                         },
                     });
                     outcome = 'EXECUTED';
                     auditMutation.fromRole = d.membership.role;
                     auditMutation.toRole = d.modifiedToRole;
+                    if (d.membership.customRoleId !== null) {
+                        auditMutation.clearedCustomRoleId = d.membership.customRoleId;
+                    }
                 } catch (err) {
                     if (
                         err instanceof Error &&
@@ -907,7 +1075,7 @@ export async function closeAccessReview(
             tenantName: tenantRow?.name ?? 'Tenant',
             closerEmail: closerRow?.email ?? '(unknown)',
         };
-    });
+    }).catch((err: unknown) => recordCloseRefusal(ctx, accessReviewId, err));
 
     // Phase 2 — generate + store PDF, link to campaign. Out of the
     // tenant context block because the PDF write hits external

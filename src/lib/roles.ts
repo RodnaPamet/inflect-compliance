@@ -77,6 +77,27 @@ export function isAssignableTenantRole(role: string): role is AssignableTenantRo
 }
 
 /**
+ * The roles an access-review MODIFY may set (#3727, owner decision 1 of
+ * 2026-10-18): the writers' list minus OWNER. A campaign never promotes anyone
+ * to OWNER; an OWNER assigns it on the members page, as for AI_ADMIN. The
+ * schema refuses OWNER by name (`CAMPAIGN_NEVER_PROMOTES_TO_OWNER`) rather
+ * than by enum, and so does the close for a decision stored before the rule;
+ * the decision modal offers only these.
+ */
+export const CAMPAIGN_MODIFY_ROLES = [
+    'ADMIN',
+    'EDITOR',
+    'AUDITOR',
+    'READER',
+] as const satisfies readonly AssignableTenantRole[];
+
+export type CampaignModifyRole = (typeof CAMPAIGN_MODIFY_ROLES)[number];
+
+export function isCampaignModifyRole(role: string): role is CampaignModifyRole {
+    return (CAMPAIGN_MODIFY_ROLES as readonly string[]).includes(role);
+}
+
+/**
  * The roles the members-page role change may set on an EXISTING member
  * (`PATCH /api/t/:slug/admin/members/:membershipId`, `updateTenantMemberRole`):
  * the writers' list plus `AI_ADMIN` (#3699 deploy 2). Its own constant so every
@@ -131,8 +152,9 @@ export function ownerManagedRoleMessage(role: string): string {
  * carrying one is not moved into the role — the custom role is removed first,
  * by a person, as its own audited change. Every writer reads this list: the
  * members-page role change and custom-role assignment, ownership transfer,
- * invite creation and both redemptions, an access review's MODIFY (submission
- * and close), and the Entra group sync.
+ * invite creation and both redemptions, and the Entra group sync. An access
+ * review's MODIFY cannot reach the combination at all: it never sets OWNER
+ * (`CAMPAIGN_MODIFY_ROLES`) and never sets a custom role (#3727).
  *
  * The database holds the same rule as a CHECK,
  * `TenantMembership_built_in_scope_role_no_custom_role`
