@@ -58,6 +58,19 @@ const EXEMPTIONS: Record<string, string> = {
     'admin/integrations/[connectionId]/LegacyAccessMappingCard.tsx':
         'detail-page sub-table — column mapping sits between a drift notice, a value-map editor and a save action',
 
+    // #3687 — the harness tab of the multi-section /agents/reports dashboard.
+    // Each table sits between sibling cards (scanner sections, acceptances,
+    // the shadow list, the scan history), so clamping any one of them to the
+    // viewport would fight the cards above and below it.
+    'agents/reports/harness/MatrixGrid.tsx':
+        'sub-table inside the multi-section /agents/reports dashboard (harness tab) — sibling cards above and below; not a viewport-clamped list page',
+    'agents/reports/harness/ShadowList.tsx':
+        'sub-table inside the multi-section /agents/reports dashboard (harness tab) — sibling cards above and below; not a viewport-clamped list page',
+    'agents/reports/harness/ScanHistory.tsx':
+        'sub-table inside the multi-section /agents/reports dashboard (harness tab) — sibling cards above and below; not a viewport-clamped list page',
+    'agents/reports/harness/ScannerKeysCard.tsx':
+        'sub-table inside the multi-section /agents/reports dashboard (harness tab) — the scanner-key register, the last card below the scan history; not a viewport-clamped list page',
+
     'frameworks/[frameworkKey]/readiness/Nis2ReadinessClient.tsx':
         'multi-section readiness view (KPIs + trend chart + domain + gap tables) — not a single viewport-clamped list',
     'audits/nis2-gap/Nis2GapLifecycleClient.tsx':

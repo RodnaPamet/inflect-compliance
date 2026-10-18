@@ -63,6 +63,12 @@ export type CalendarEventCategory =
  *                                             a clock is running on the
  *                                             response — the NIS2 Art.23
  *                                             regulatory notification SLA)
+ *   - `agent-harness-acceptance-expiry`
+ *                                → `control` (the owner's time-limited
+ *                                             acceptance of an agent's harness
+ *                                             shortfall — ControlException's
+ *                                             sibling, so it shares its
+ *                                             category)
  *
  * The `type` stays distinct in every case, so filters and tooltip copy
  * can still address these precisely.
@@ -94,6 +100,10 @@ export const CALENDAR_EVENT_TYPES = [
     'control-review',
     'control-test-due',
     'control-exception-expiry',
+    // An agent's harness-shortfall acceptance lapsing (#3687). The sibling of
+    // a control exception: when it lapses, the shortfall finding it closed
+    // reopens if the agent is still below its bar.
+    'agent-harness-acceptance-expiry',
     // asset — a vulnerability's remediation deadline. User-editable via an
     // inline DatePicker on the asset's vulnerability list, so it is a
     // deadline someone deliberately set and then could not see anywhere.
@@ -180,6 +190,7 @@ export interface CalendarEvent {
         | 'CONTROL'
         | 'CONTROL_TEST_PLAN'
         | 'CONTROL_EXCEPTION'
+        | 'AGENT_HARNESS_ACCEPTANCE'
         | 'TRAINING_ASSIGNMENT'
         | 'INCIDENT_NOTIFICATION'
         | 'TASK'
@@ -207,7 +218,7 @@ export interface CalendarEvent {
      * own `DueItem.ownerUserId` from independent queries and never import this
      * usecase. Widening a loader here cannot change who gets emailed.
      *
-     * Sixteen of the seventeen sources populate this. Where an entity has no
+     * Every source but one populates this. Where an entity has no
      * user column of its own it inherits its parent's owner (a vendor document
      * from its vendor, an incident notification from its incident, a treatment
      * milestone from its plan). The exception is listed below.
@@ -361,6 +372,7 @@ export const CALENDAR_SOURCE_NAMES = [
     'control',
     'control-test-plan',
     'control-exception',
+    'agent-harness-acceptance',
     'asset-vulnerability',
     'audit',
     'access-review',

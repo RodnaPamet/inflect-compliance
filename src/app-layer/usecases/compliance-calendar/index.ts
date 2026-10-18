@@ -13,6 +13,7 @@
  *   - Control             (nextDueAt)
  *   - ControlTestPlan     (nextDueAt)
  *   - ControlException    (expiresAt)
+ *   - AgentHarnessAcceptance (expiresAt — an agent's harness-shortfall acceptance)
  *   - AccessReview        (dueAt)
  *   - TrainingAssignment  (dueAt)
  *   - IncidentNotification(dueAt — the NIS2 Art.23 notification SLA)
@@ -100,7 +101,7 @@ import {
 import { loadTreatmentMilestoneEvents, loadTreatmentPlanEvents } from './loaders-risk-treatment';
 import {
     loadAccessReviewEvents, loadTrainingEvents, loadIncidentNotificationEvents,
-    loadControlExceptionEvents, loadVendorAssessmentEvents,
+    loadControlExceptionEvents, loadVendorAssessmentEvents, loadAgentHarnessAcceptanceEvents,
 } from './loaders-reminder-backed';
 
 // ─── Public entry point ──────────────────────────────────────────────
@@ -146,6 +147,10 @@ const CALENDAR_SOURCES: readonly CalendarSourceDef[] = [
     { name: 'control', permission: 'controls.view', category: 'control', types: ['control-review'], load: loadControlEvents },
     { name: 'control-test-plan', permission: 'tests.view', category: 'control', types: ['control-test-due'], load: loadTestPlanEvents },
     { name: 'control-exception', permission: 'controls.view', category: 'control', types: ['control-exception-expiry'], load: loadControlExceptionEvents },
+    // #3687 — the register's key, because the event links to the harness tab,
+    // which asks the same question — a different key would send its holder
+    // to a ForbiddenPage. Only OWNER/ADMIN hold it, and no API-key scope maps to it.
+    { name: 'agent-harness-acceptance', permission: 'admin.agent_registry', category: 'control', types: ['agent-harness-acceptance-expiry'], load: loadAgentHarnessAcceptanceEvents },
     { name: 'asset-vulnerability', permission: 'assets.view', category: 'control', types: ['vulnerability-remediation-due'], load: loadAssetVulnerabilityEvents },
     { name: 'audit', permission: 'audits.view', category: 'audit', types: ['audit-scheduled'], load: loadAuditEvents },
     { name: 'access-review', permission: 'audits.view', category: 'audit', types: ['access-review-due'], load: loadAccessReviewEvents },
@@ -233,8 +238,8 @@ export async function getComplianceCalendarEvents(
     // The catch is what makes a per-source failure survivable. Without it, one
     // loader breaching its 8s budget (P2028) — or exhausting the pool (P2024),
     // or throwing for any reason at all — rejected the whole `Promise.all` and
-    // 500'd the entire calendar: seventeen domains, all three views, for a
-    // fault in one.
+    // 500'd the entire calendar: every domain, all three views, for a fault
+    // in one.
     //
     // The sentinel is index-aligned deliberately. `cappedSources` below reads
     // `results[i]` positionally against `eligible`, so a filtered (shorter)
@@ -375,7 +380,7 @@ const MAX_BADGE_COUNT = 99;
  * forward horizon.
  *
  * Renamed from `getUpcomingDeadlineCount`, which was a lie of scope. The
- * calendar page beside it aggregates NINETEEN sources tenant-wide; this counts
+ * calendar page beside it aggregates TWENTY sources tenant-wide; this counts
  * one model, filtered to `assigneeUserId === ctx.userId`. Those are different
  * questions and the divergence is INTENTIONAL — the badge answers "what do I
  * personally owe?", the page answers "what does the org owe?" — but the old

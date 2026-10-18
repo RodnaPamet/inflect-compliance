@@ -396,6 +396,17 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // target, which at 280 secondaries would cap primaries at 93; the product is
 // at 175. The aspiration and the enforced number have been different for a
 // long time, and this comment is not the place that gets reconciled.
+//
+// 2026-10-17 — #3687 harness tab: 175 stays, PAID FOR rather than raised.
+// The tab adds two primaries `modal-action-order` requires — the owner's
+// accept-shortfall confirm and the register-scanner-key submit, the LAST
+// action of their dialogs, neither destructive — and they are bought by two
+// demotions of disclosure toggles that shared a region with their own form's
+// primary submit: `ControlMappingsTab`'s "map requirement" toggle and the test
+// run page's evidence show/hide toggle (which reads "Cancel" while open). The
+// card trigger that opens the key dialog was written primary and is secondary
+// instead — a card action inside a tab, the agent-detail-tabs precedent above.
+// Net change to the measured total: zero.
 const MAX_PRIMARY_COUNT = 175;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

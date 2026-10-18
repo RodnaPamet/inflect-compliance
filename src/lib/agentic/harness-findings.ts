@@ -184,6 +184,11 @@ export function isHarnessShortfall(level: HarnessLevel, reach: StoredReach): boo
     return isShortfall(level, LADDER_REACH[reach]);
 }
 
+/** The report-only bar for a stored reach — `shortfallBarFor`, spelled the way the DB spells reach. */
+export function harnessBarFor(reach: StoredReach): HarnessLevel {
+    return shortfallBarFor(LADDER_REACH[reach]);
+}
+
 /**
  * The shortfall finding, in one place: the ingest raises it and the expiry
  * monitor reopens it, and the two must describe it alike.
@@ -195,7 +200,7 @@ export function shortfallFinding(
     because: string,
     blocking: readonly string[] = [],
 ): PlannedFinding {
-    const bar = shortfallBarFor(LADDER_REACH[reach]);
+    const bar = harnessBarFor(reach);
     return {
         code: 'HARNESS_SHORTFALL',
         sourceRef: shortfallRefOf(discoveredId),

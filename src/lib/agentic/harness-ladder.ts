@@ -142,31 +142,66 @@ export interface HarnessScore {
     readonly blockingNextRung: readonly HarnessCriterionId[];
 }
 
-/** Is this one criterion met, by the ladder's rule? */
-function isEvidenced(v: CriterionVerdict | undefined): boolean {
+/** Is this one criterion met, by the ladder's rule? Met, AND with a non-blank evidence reference. */
+export function isVerdictEvidenced(v: CriterionVerdict | undefined): boolean {
     return v !== undefined && v.met === true && typeof v.evidence === 'string' && v.evidence.trim().length > 0;
 }
 
 /**
- * Score one agent. Returns the highest rung whose criteria — and every lower
- * rung's — are ALL met with evidence.
- *
- * A criterion reported twice is judged on its LEAST favourable answer: a report
- * that says both "met" and "not met" about one thing has not established it.
+ * How one criterion reads, after the ladder's rule. Only `EVIDENCED` is met:
+ * the other three are three different ways of NOT being met, kept apart so a
+ * surface can say which — "reported met with nothing behind it" is a different
+ * conversation with the scanner's owner from "never reported".
  */
-export function scoreHarness(verdicts: readonly CriterionVerdict[]): HarnessScore {
+export type CriterionState = 'EVIDENCED' | 'MET_UNEVIDENCED' | 'NOT_MET' | 'UNANSWERED';
+
+/** The state of one (collapsed) verdict. `undefined` is a criterion the report never answered. */
+export function criterionState(v: CriterionVerdict | undefined): CriterionState {
+    if (v === undefined) return 'UNANSWERED';
+    if (v.met !== true) return 'NOT_MET';
+    return isVerdictEvidenced(v) ? 'EVIDENCED' : 'MET_UNEVIDENCED';
+}
+
+/** Lower is LESS favourable. Unanswered never arises from a reported verdict. */
+const FAVOUR: Readonly<Record<CriterionState, number>> = {
+    UNANSWERED: 0,
+    NOT_MET: 1,
+    MET_UNEVIDENCED: 2,
+    EVIDENCED: 3,
+};
+
+/**
+ * One verdict per criterion: a criterion reported more than once is judged on
+ * its LEAST favourable answer (a report that says both "met" and "not met"
+ * about one thing has not established it), and among equally unfavourable
+ * answers the first reported stands. `scoreHarness` scores over exactly this,
+ * and a surface that shows a cell per criterion must show exactly this, or the
+ * cells and the level disagree.
+ */
+export function collapseVerdicts(
+    verdicts: readonly CriterionVerdict[],
+): ReadonlyMap<HarnessCriterionId, CriterionVerdict> {
     const byCriterion = new Map<HarnessCriterionId, CriterionVerdict>();
     for (const v of verdicts) {
         const seen = byCriterion.get(v.criterion);
-        if (seen === undefined || (isEvidenced(seen) && !isEvidenced(v))) {
+        if (seen === undefined || FAVOUR[criterionState(v)] < FAVOUR[criterionState(seen)]) {
             byCriterion.set(v.criterion, v);
         }
     }
+    return byCriterion;
+}
+
+/**
+ * Score one agent. Returns the highest rung whose criteria — and every lower
+ * rung's — are ALL met with evidence, judged over `collapseVerdicts`.
+ */
+export function scoreHarness(verdicts: readonly CriterionVerdict[]): HarnessScore {
+    const byCriterion = collapseVerdicts(verdicts);
 
     let level: HarnessLevel = 'H0';
     for (const candidate of HARNESS_LEVELS.slice(1)) {
         const required = HARNESS_CRITERIA[candidate] as readonly HarnessCriterionId[];
-        const unmet = required.filter((c) => !isEvidenced(byCriterion.get(c)));
+        const unmet = required.filter((c) => criterionState(byCriterion.get(c)) !== 'EVIDENCED');
         if (unmet.length > 0) {
             return { level, blockingNextRung: unmet };
         }

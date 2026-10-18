@@ -1504,6 +1504,48 @@ rules in it are easy to undo:
   `createFinding`**, because the principal is a key that holds the ingest
   permission and nothing else. Every write is still sanitised and audited.
 
+**The harness matrix** (`usecases/agent-harness-matrix.ts`,
+`/agents/reports?tab=harness`, #3687) reads the harness tables and writes none of
+them; the tab's only mutations are the owner's acceptance and the key register,
+through their own routes. Rules that are easy to undo:
+
+- **"Latest" means `asOf`**, then `createdAt`, then `id` — never arrival order —
+  and drift compares a scanner only with its OWN previous scan.
+- **An empty population is a finding, never `EmptyState`**: no scan, an EMPTY
+  scan (`harnessScanCompleteness` — complete sources AND at least one agent, in
+  one expression the evidence emitter reuses), and an empty shadow list without
+  EVERY trusted scanner's complete latest scan behind it — one scanner's complete
+  scan says nothing about the sources another reads, and a key holder with no
+  scan in the window is named on the tab.
+- **Rows are the worst of a WHOLE latest scan, or none** (`rowsUnread`): the
+  latest scans' items are read on their own, never in one bounded read with the
+  previous scans', which only drift needs.
+- **A cell is the ladder's `criterionState` over `collapseVerdicts`**; do not
+  re-implement it in a component. A pointer is a link only when it is an
+  absolute http(s) URL — a scanner-chosen `/path` must not become an in-app link.
+- **The accept button and `acceptHarnessShortfall` share
+  `shortfallAcceptanceRefusal`** (`src/lib/agentic/harness-acceptance-rules.ts`).
+  The server computes the affordance; no user id reaches the client.
+- **The calendar source is keyed `admin.agent_registry`** (the tab's own gate)
+  and its titles carry the registered agent's name only — they are pushed to
+  external calendars.
+- **`AGENT_HARNESS_SCANS` evidence** goes to ASI10 and ASI03, one artefact per
+  control per UTC month, and only for a tenant that has ever registered a scanner
+  key. It is planned `APPROVED` only when every scanner's latest scan of the
+  month is complete and non-empty AND every scanner that held a trusted key in
+  the month reported, `NEEDS_REVIEW` otherwise, with the reasons in the body.
+  The emitter corrects the Evidence status in ONE direction
+  (`harnessStatusCorrection`): an incomplete month found APPROVED is put back,
+  and a NEEDS_REVIEW is raised only when it was its own verdict
+  (`plannedEvidenceStatus`); REJECTED, SUBMITTED and a stale-review sweep's
+  NEEDS_REVIEW stand, and every change it makes is a `STATUS_CHANGE` audit row.
+  A month is not closed by its last tick: the scheduled run re-emits the
+  previous month and any month a late scan reached
+  (`reconcileClosedHarnessPeriods`). Receipts and decision records keep `null`
+  ownership. The body carries no owner reference, user id, justification,
+  pointer, credential reference, tool server or agent name (DPIA condition 8),
+  and the level never decides the status: the ladder is report-only.
+
 **The `UNCLASSIFIED` AI-system tier** (#3691, deploy 1 of 2 for step 2a) marks
 a provisional `AiSystem` entry that nobody has classified. Every reader treats
 it as not classified, never as `MINIMAL`: not in a tone, a count, a filter or

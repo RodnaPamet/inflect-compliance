@@ -1,19 +1,34 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { SkeletonCard } from '@/components/ui/skeleton';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
+import { ToggleGroup } from '@/components/ui/toggle-group';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
+import type { HarnessMatrixView, HarnessScannerKeysView } from '@/lib/agentic/harness-read-model';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { ExportPackButton } from './ExportPackButton';
 import { Metric, type DefinitionView, type MeasureView } from './Metric';
+
+/**
+ * The harness tab loads on demand. It is not the default tab, and its matrix,
+ * modals and key management are client code the governance pack never runs;
+ * imported statically, they put the route past its First Load JS budget
+ * (`tests/guardrails/bundle-size-budget.test.ts`). A budget raise would have
+ * loosened the catch-all for every tenant page to make room for one tab.
+ */
+const HarnessTab = dynamic(() => import('./harness/HarnessTab').then((m) => m.HarnessTab), {
+    loading: () => <SkeletonCard lines={4} />,
+});
 
 /** One report's envelope, as it crosses the server/client boundary. */
 interface EnvelopeView<TBody> {
@@ -113,17 +128,8 @@ function Truncated({ envelope }: { envelope: EnvelopeView<unknown> }) {
     );
 }
 
-export function ReportsClient({
-    tenantSlug,
-    pack,
-    enforcing,
-    canReviewProposals,
-    canInvestigate,
-    canExport,
-}: {
+interface ReportsCommonProps {
     tenantSlug: string;
-    pack: PackView;
-    enforcing: boolean;
     /** `admin.view` — the proposals and runs entries' own gate. */
     canReviewProposals: boolean;
     /** `admin.agent_registry` — this page's gate, so it is true by construction here. */
@@ -136,10 +142,22 @@ export function ReportsClient({
      * defect report waiting to be filed against a working permission model.
      */
     canExport: boolean;
-}) {
+}
+
+/** The assessor pack — the default tab, and the shape every caller before #3687 passes. */
+export type PackTabProps = ReportsCommonProps & { tab?: 'pack'; pack: PackView; enforcing: boolean };
+/** The harness matrix (#3687), read server-side by `getHarnessMatrix` and `getHarnessScannerKeysView`. */
+export type HarnessTabProps = ReportsCommonProps & {
+    tab: 'harness';
+    harness: HarnessMatrixView;
+    scannerKeys: HarnessScannerKeysView;
+};
+
+export function ReportsClient(props: PackTabProps | HarnessTabProps) {
+    const { tenantSlug, canReviewProposals, canInvestigate, canExport } = props;
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
-    const agents = pack.inventory.body.agents;
+    const tab = props.tab === 'harness' ? 'harness' : 'pack';
 
     return (
         <DashboardLayout
@@ -169,7 +187,48 @@ export function ReportsClient({
                 ),
             }}
         >
-            {/* THE MOST IMPORTANT LINE ON THE PAGE, and it is first.
+            {/* Two fixed artefacts behind one gate. Link mode: the SERVER
+                chooses which one to read, so a tab is a navigation and neither
+                tab's data is fetched for the other. */}
+            <div data-testid="reports-tabs">
+                <ToggleGroup
+                    ariaLabel={t('reports.tabsAria')}
+                    size="sm"
+                    selected={tab}
+                    options={[
+                        {
+                            value: 'pack',
+                            label: t('reports.tabPack'),
+                            href: tenantHref('/agents/reports'),
+                            id: 'reports-tab-pack',
+                        },
+                        {
+                            value: 'harness',
+                            label: t('reports.tabHarness'),
+                            href: tenantHref('/agents/reports?tab=harness'),
+                            id: 'reports-tab-harness',
+                        },
+                    ]}
+                />
+            </div>
+            {props.tab === 'harness' ? (
+                <HarnessTab view={props.harness} scannerKeys={props.scannerKeys} />
+            ) : (
+                <PackReports tenantSlug={tenantSlug} pack={props.pack} enforcing={props.enforcing} />
+            )}
+        </DashboardLayout>
+    );
+}
+
+/** The five reports of the assessor pack, unchanged by the tab that now sits above them. */
+function PackReports({ tenantSlug, pack, enforcing }: { tenantSlug: string; pack: PackView; enforcing: boolean }) {
+    const t = useTranslations('agents');
+    const tenantHref = useTenantHref();
+    const agents = pack.inventory.body.agents;
+
+    return (
+        <>
+            {/* THE MOST IMPORTANT LINE OF THE PACK, and it is first in it.
                 Every figure below describes a register that refuses nothing
                 unless registration is enforced. An assessor reading the pack
                 without that caveat would be misled about what it means, and no
@@ -392,6 +451,6 @@ export function ReportsClient({
                     ))}
                 </ul>
             </Card>
-        </DashboardLayout>
+        </>
     );
 }

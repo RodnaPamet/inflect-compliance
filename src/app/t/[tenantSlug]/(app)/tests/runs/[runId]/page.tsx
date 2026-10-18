@@ -637,8 +637,10 @@ export default function TestRunPage() {
                     {/* A completed run is frozen audit evidence — its evidence
                         set is immutable server-side, so hide the add affordance. */}
                     {permissions.canWrite && !isCompleted && (
+                        // A disclosure toggle that reads "Cancel" while open, so
+                        // secondary: the open form holds this region's primary.
                         <Button
-                            variant="primary"
+                            variant="secondary"
                             icon={showEvForm ? undefined : <Plus className="-ml-0.5 -mr-2.5" />}
                             onClick={() => { setShowEvForm(!showEvForm); setEvError(''); }}
                             id="link-evidence-btn"

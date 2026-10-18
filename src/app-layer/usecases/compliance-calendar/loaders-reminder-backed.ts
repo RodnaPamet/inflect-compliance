@@ -281,6 +281,79 @@ export async function loadControlExceptionEvents(
 }
 
 /**
+ * Harness-shortfall acceptance expiry (`AgentHarnessAcceptance.expiresAt`,
+ * #3687) — ControlException's sibling. When an acceptance lapses, the nightly
+ * exception-expiry monitor reopens the HARNESS_SHORTFALL finding it closed if
+ * the agent is still below its bar, so the expiry is a real deadline for the
+ * agent's owner.
+ *
+ * The population is ControlException's "APPROVED" analogue: unrevoked (a
+ * renewal revokes its predecessor, so one clock runs per agent) and not yet
+ * handled by the monitor (once handled, the reopened finding carries the
+ * obligation, and it is on the findings register). Only an acceptance on a
+ * LIVE register row is projected — an agent whose row was deleted, or that a
+ * later scan no longer reconciles to one, has nobody who can renew it.
+ *
+ * The title and entity name are the REGISTERED AGENT NAME and nothing else.
+ * Calendar titles leave the product (calendar subscriptions push them to
+ * external calendars), so neither the justification, the source's owner
+ * reference nor any user id goes into them. Prisma is read directly: the
+ * harness usecases reach the request stack, which the worker-safe calendar
+ * graph must not.
+ */
+export async function loadAgentHarnessAcceptanceEvents(
+    db: PrismaTx,
+    ctx: RequestContext,
+    range: DateRange,
+    now: Date,
+    limit: number,
+): Promise<CalendarSourceResult> {
+    const rows = await db.agentHarnessAcceptance.findMany({
+        where: {
+            tenantId: ctx.tenantId,
+            revokedAt: null,
+            expiryProcessedAt: null,
+            expiresAt: { gte: range.from, lte: range.to },
+            // A to-one filter: a shadow agent (no register row) does not match,
+            // and neither does a register row deleted after it was accepted.
+            discoveredAgent: { registeredAgent: { deletedAt: null } },
+        },
+        select: {
+            id: true,
+            expiresAt: true,
+            discoveredAgentId: true,
+            // Whoever carries the risk — the "My deadlines" filter. Never
+            // rendered into the title.
+            acceptedByUserId: true,
+            discoveredAgent: {
+                select: { discoveredId: true, registeredAgent: { select: { name: true } } },
+            },
+        },
+        orderBy: { expiresAt: 'asc' },
+        take: limit,
+    });
+    const events = rows.map((r): CalendarEvent => {
+        const name = r.discoveredAgent.registeredAgent?.name ?? r.discoveredAgent.discoveredId;
+        return {
+            id: `AGENT_HARNESS_ACCEPTANCE:${r.id}:agent-harness-acceptance-expiry`,
+            type: 'agent-harness-acceptance-expiry',
+            category: 'control',
+            title: `Harness acceptance expires: ${name}`,
+            entityName: name,
+            date: r.expiresAt.toISOString(),
+            status: classifyStatus(r.expiresAt, now, false),
+            entityType: 'AGENT_HARNESS_ACCEPTANCE',
+            entityId: r.id,
+            // The harness tab's acceptances card renders one anchor per agent
+            // for exactly this population.
+            href: tenantHrefFromCtx(ctx, `/agents/reports?tab=harness#harness-acceptance-${r.discoveredAgentId}`),
+            ownerUserId: r.acceptedByUserId,
+        };
+    });
+    return sourceResult(events, rows.length, limit);
+}
+
+/**
  * Vendor reassessment dates (`VendorAssessment.nextReviewAt`) — distinct
  * from `Vendor.nextReviewAt` (the vendor-level review): this is the date
  * a specific completed assessment falls due for redoing. CLOSED

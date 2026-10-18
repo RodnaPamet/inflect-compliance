@@ -151,6 +151,18 @@ const EXEMPTIONS: Record<string, string> = {
         "Custom roles admin — small fixed list with inline create + permission controls.",
 
     // ── Section dashboards / composite pages ──
+    // #3687 — the harness tab of /agents/reports. The page's own contract is
+    // "IT HAS NO FILTERS": each table is a fixed artefact (the same rows render
+    // the same way every visit), and the tab is a stack of sibling cards, so a
+    // toolbar on any one of them would filter evidence out of a report.
+    "src/app/t/[tenantSlug]/(app)/agents/reports/harness/MatrixGrid.tsx":
+        "Harness matrix sub-table inside the multi-section /agents/reports dashboard — one fixed column per ladder criterion over a scanner's latest scan, worst rung first; a facet that hid a row would hide an agent below its bar from the report.",
+    "src/app/t/[tenantSlug]/(app)/agents/reports/harness/ShadowList.tsx":
+        "Shadow-agent sub-table inside the multi-section /agents/reports dashboard — the agents no register row answers for, bounded by the read and ordered by last seen; faceting it would let the report under-state the shadow population.",
+    "src/app/t/[tenantSlug]/(app)/agents/reports/harness/ScanHistory.tsx":
+        "Scan-history sub-table inside the multi-section /agents/reports dashboard — the newest scans in a fixed window with their sources and completeness, read in full; not a faceted-filter list surface.",
+    "src/app/t/[tenantSlug]/(app)/agents/reports/harness/ScannerKeysCard.tsx":
+        "Scanner-key register sub-table inside the multi-section /agents/reports dashboard — the handful of keys a tenant trusts, with inline register and revoke; a small fixed list, not a faceted-filter list surface.",
     // Pages composed of multiple cards + sub-tables, where the page
     // body is itself the navigation/filter surface. FilterToolbar
     // would compete with the page's existing composition.

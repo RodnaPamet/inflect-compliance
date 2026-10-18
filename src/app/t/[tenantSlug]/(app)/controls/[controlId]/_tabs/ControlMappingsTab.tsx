@@ -373,7 +373,9 @@ export function ControlMappingsTab({
         <div className="space-y-default">
             {canWrite && (
                 <div className="flex justify-end">
-                    <Button variant="primary" onClick={() => setShowMapForm(!showMapForm)} id="map-requirement-btn">
+                    {/* A disclosure toggle, so secondary: when it is open, the
+                        form below it holds this region's primary (its submit). */}
+                    <Button variant="secondary" onClick={() => setShowMapForm(!showMapForm)} id="map-requirement-btn">
                         {t('mappingsTab.linkRequirement')}
                     </Button>
                 </div>

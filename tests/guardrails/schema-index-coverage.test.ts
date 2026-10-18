@@ -444,7 +444,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         model: 'AgentHarnessAcceptance',
         fields: ['tenantId', 'discoveredAgentId'],
         justification:
-            'agent-harness-acceptance.listHarnessAcceptances filters by [tenantId, discoveredAgentId?]; the scan ingest reads the in-force acceptances of a set of discovered agents by the same pair',
+            'agent-harness-acceptance.listHarnessAcceptances filters by [tenantId, discoveredAgentId?]; the scan ingest and the harness matrix read the in-force acceptances of a set of discovered agents by the same pair',
+    },
+    {
+        model: 'AgentHarnessAcceptance',
+        fields: ['tenantId', 'expiresAt'],
+        justification:
+            'agent-harness-matrix.getHarnessMatrix reads the acceptances still on the clock (unrevoked, expiry not yet processed) by tenantId ordered by expiresAt asc, bounded take ≤201; the compliance calendar\'s loadAgentHarnessAcceptanceEvents ranges the same population on [tenantId, expiresAt] ordered by expiresAt asc, bounded by the per-source limit',
     },
     // ── Agent ownership transfer (#3698) ────────────────────────────
     {
@@ -668,9 +674,12 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // by the admin surface; there is no other shape.
     // Harness ingest (#3665) — both read per tenant with a bounded take.
     AgentHarnessScannerKey:
-        'listHarnessScannerKeys and the scan ingest filter by tenantId (+ revokedAt IS NULL) only — a tenant trusts a handful of scanner keys, covered by the tenantId-leading @@unique([tenantId, keyFingerprint]) and @@index([tenantId, agentId]); bounded take ≤200.',
+        'listHarnessScannerKeys, the harness tab\'s key card (getHarnessScannerKeysView, ordered by createdAt desc) and the scan ingest filter by tenantId (+ revokedAt IS NULL) only — a tenant trusts a handful of scanner keys, covered by the tenantId-leading @@unique([tenantId, keyFingerprint]) and @@index([tenantId, agentId]); bounded take ≤201.',
     DiscoveredAgent:
-        'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) only — exactly the @@unique([tenantId, discoveredId]); bounded by the report\'s agent count.',
+        'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) — exactly the @@unique([tenantId, discoveredId]), bounded by the report\'s agent count; the harness matrix\'s shadow list filters by tenantId and registeredAgentId IS NULL (or a deleted register row) and orders by lastSeenAt desc — covered by @@index([tenantId, registeredAgentId]) + @@index([tenantId, lastSeenAt]); bounded take ≤201.',
+    // Harness matrix (#3687) — read by (tenantId, scanId IN …[, discoveredAgentId IN …]).
+    AgentHarnessScanItem:
+        'the harness matrix reads scan items by (tenantId, scanId IN …) and (tenantId, scanId, discoveredAgentId IN …) only — the tenantId-leading prefix of @@unique([tenantId, scanId, discoveredAgentId]); bounded take ≤20001 (light) and by the displayed row count (heavy).',
     RegisteredAgentTool:
         'listGrantedToolNames and listAgentTools both filter by (tenantId, agentId) and nothing else — covered by @@index([tenantId, agentId]) with the tenantId-leading @@unique([tenantId, agentId, toolName]) behind it; bounded take ≤200.',
     // MCP agent proposals — listAgentProposals filters by tenantId (+ optional

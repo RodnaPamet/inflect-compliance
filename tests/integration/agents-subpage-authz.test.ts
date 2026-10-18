@@ -161,6 +161,27 @@ jest.mock('@/app-layer/usecases/agent-governance-reports', () => {
     };
 });
 
+const harnessSpy = jest.fn();
+const keysSpy = jest.fn();
+jest.mock('@/app-layer/usecases/agent-harness-matrix', () => {
+    const actual = jest.requireActual('@/app-layer/usecases/agent-harness-matrix') as Record<
+        'getHarnessMatrix' | 'getHarnessScannerKeysView',
+        (...x: unknown[]) => unknown
+    >;
+    return {
+        __esModule: true,
+        ...actual,
+        getHarnessMatrix: (...a: unknown[]) => {
+            harnessSpy(...a);
+            return actual.getHarnessMatrix(...a);
+        },
+        getHarnessScannerKeysView: (...a: unknown[]) => {
+            keysSpy(...a);
+            return actual.getHarnessScannerKeysView(...a);
+        },
+    };
+});
+
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import ReceiptsPage from '@/app/t/[tenantSlug]/(app)/agents/receipts/page';
 import QuarantinePage from '@/app/t/[tenantSlug]/(app)/agents/quarantine/page';
@@ -211,6 +232,16 @@ type PageFn = (args: {
 
 async function renderPage(page: unknown, tenantSlug: string) {
     return (page as PageFn)({ params: Promise.resolve({ tenantSlug }) });
+}
+
+/** The same call with the query string Next passes as `searchParams`. */
+type TabbedPageFn = (args: {
+    params: Promise<{ tenantSlug: string }>;
+    searchParams: Promise<{ tab?: string | string[] }>;
+}) => Promise<{ type: unknown; props: Record<string, unknown> }>;
+
+async function renderPageWithQuery(page: unknown, tenantSlug: string, query: { tab?: string | string[] }) {
+    return (page as TabbedPageFn)({ params: Promise.resolve({ tenantSlug }), searchParams: Promise.resolve(query) });
 }
 
 async function clearOwnRows(): Promise<void> {
@@ -293,6 +324,8 @@ afterEach(() => {
     listProposalsSpy.mockClear();
     listRunsSpy.mockClear();
     packSpy.mockClear();
+    harnessSpy.mockClear();
+    keysSpy.mockClear();
     getTenantCtxMock.mockReset();
 });
 
@@ -432,6 +465,46 @@ describe('the reports page’s export offer is a SEPARATE grant (#2467)', () => 
         // against a working permission model.
         expect(el.type).not.toBe(ForbiddenPage);
         expect((el as unknown as { props: { canExport: boolean } }).props.canExport).toBe(false);
+    });
+});
+
+describe('the reports page’s harness tab sits behind the SAME gate, and reads only itself (#3687)', () => {
+    it('a refused caller asking for the harness tab gets the refusal, and neither read starts', async () => {
+        getTenantCtxMock.mockResolvedValue(withoutKey(T1, 'agent_registry'));
+        const el = await renderPageWithQuery(ReportsPage, T1, { tab: 'harness' });
+        expect(el.type).toBe(ForbiddenPage);
+        expect(harnessSpy).not.toHaveBeenCalled();
+        expect(keysSpy).not.toHaveBeenCalled();
+        expect(packSpy).not.toHaveBeenCalled();
+    });
+
+    it('?tab=harness renders the harness tab, reads the matrix once, and never builds the pack', async () => {
+        getTenantCtxMock.mockResolvedValue(fullCtx(T1));
+        const el = await renderPageWithQuery(ReportsPage, T1, { tab: 'harness' });
+        expect(el.type).not.toBe(ForbiddenPage);
+        expect(el.props.tab).toBe('harness');
+        expect(harnessSpy).toHaveBeenCalledTimes(1);
+        expect((harnessSpy.mock.calls[0][0] as RequestContext).tenantId).toBe(T1);
+        // The key register travels with the tab, read for the same tenant.
+        expect(keysSpy).toHaveBeenCalledTimes(1);
+        expect((keysSpy.mock.calls[0][0] as RequestContext).tenantId).toBe(T1);
+        expect(el.props.scannerKeys).toEqual(expect.objectContaining({ keys: expect.any(Object) }));
+        expect(packSpy).not.toHaveBeenCalled();
+        // The same header grants travel with either tab.
+        expect(el.props.canInvestigate).toBe(true);
+    });
+
+    it.each([
+        ['no query at all', {}],
+        ['an unknown tab', { tab: 'nonsense' }],
+        ['the pack tab by name', { tab: 'pack' }],
+    ])('%s is the pack, and never reads a scan', async (_label, query) => {
+        getTenantCtxMock.mockResolvedValue(fullCtx(T1));
+        const el = await renderPageWithQuery(ReportsPage, T1, query);
+        expect(el.props.tab).toBeUndefined();
+        expect(packSpy).toHaveBeenCalledTimes(1);
+        expect(harnessSpy).not.toHaveBeenCalled();
+        expect(keysSpy).not.toHaveBeenCalled();
     });
 });
 
