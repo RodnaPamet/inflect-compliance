@@ -136,9 +136,16 @@ export type DomainErrorCode =
      * serving a request during deploy 2's rollout refuses by NAME rather than
      * routing an agent campaign into a flow that lacks its rules — the member
      * close has no zero-subject guard, and the connected decide has no
-     * owner-may-not-decide-their-own-agent check.
+     * owner-may-not-decide-their-own-agent check. From deploy 2 it is the
+     * brake's refusal (`AGENT_CAMPAIGNS_IMPLEMENTED`).
      */
-    | 'AGENT_CAMPAIGN_NOT_AVAILABLE';
+    | 'AGENT_CAMPAIGN_NOT_AVAILABLE'
+    /**
+     * Step 3a, deploy 2 — a generic member or connected path was asked to
+     * decide or close an AGENT campaign. Those are decided and closed by the
+     * agent campaign flow, which holds the rules the generic paths do not.
+     */
+    | 'AGENT_CAMPAIGN_OWN_FLOW';
 
 export class DomainError extends AppError {
     public readonly domainCode: DomainErrorCode;

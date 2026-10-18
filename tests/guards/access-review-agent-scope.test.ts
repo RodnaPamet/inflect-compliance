@@ -1,28 +1,27 @@
 /**
- * Nothing writes the AGENT access-review scope yet (#3674, deploy 1 of 2).
+ * The AGENT access-review scope has exactly one writer (#3674).
  *
- * AGENT reaches `AccessReviewScope` in two deploys so that no running container
+ * AGENT reached `AccessReviewScope` in two deploys so that no running container
  * reads a value its Prisma client does not know — a client that meets an
  * unknown enum value fails the whole read, which on the register is every
- * campaign the tenant has. In THIS deploy the value exists, every reader handles
- * it, and nothing may create a campaign with it. Deploy 2 adds the one writer to
- * `WRITERS` below in its own pull request; until then the list is empty and its
- * emptiness is the property.
+ * campaign the tenant has. Deploy 1 added the value and taught every reader,
+ * with `WRITERS` empty; deploy 2 adds the agent campaign flow
+ * (`usecases/access-review-agent.ts`) as the one writer and releases the brake.
  *
  * What holds it, each checked here:
  *
- *   1. AccessReview has ONE create seam, `AccessReviewRepository.create` — no
+ *   1. AccessReview has ONE create seam file, `AccessReviewRepository` — no
  *      other file calls a create delegate on it or carries SQL text inserting
  *      into it — and no write anywhere sets `scope` after creation.
- *   2. That seam's `scope` parameter excludes AGENT, proved at the TYPE level
- *      below, so `npm run typecheck` fails if it is widened.
+ *   2. Its general `create` excludes AGENT from its `scope` parameter, proved
+ *      at the TYPE level below; AGENT is written only by `createAgentCampaign`,
+ *      which takes no scope at all, and only the listed writer calls it.
  *   3. No Zod schema is built from the generated `AccessReviewScope`. One was:
  *      `CreateAccessReviewSchema` used `z.nativeEnum(AccessReviewScope)`, which
  *      would have admitted AGENT the moment the client was regenerated, without
  *      any file naming it — the one way past check 4.
- *   4. Every access-review file whose CODE names AGENT is a listed reader with
- *      its reason, so a new one fails until somebody says whether it reads or
- *      writes.
+ *   4. Every access-review file whose CODE names AGENT is a listed reader or the
+ *      writer, with its reason, so a new one fails until somebody says which.
  *   5. The scope list readers key on (`ACCESS_REVIEW_SCOPES`) is exactly the
  *      generated enum, proved at the type level, so a value added to the enum
  *      without a reader entry is a compile error, not a fall-through.
@@ -30,8 +29,9 @@
  * The behaviour each reader gives AGENT is tested where it lives:
  * `tests/unit/access-review-agent-scope.test.ts`,
  * `tests/unit/access-review-close-route-dispatch.test.ts`,
- * `tests/rendered/access-review-agent-scope.test.tsx` and
- * `tests/integration/access-review-agent-scope.test.ts`.
+ * `tests/rendered/access-review-agent-scope.test.tsx`,
+ * `tests/integration/access-review-agent-scope.test.ts` and, for the campaign
+ * itself, `tests/integration/access-review-agent-campaign.test.ts`.
  */
 import { readFileSync } from 'fs';
 
@@ -50,16 +50,24 @@ import {
 /** Access-review files that name AGENT to READ it, and why. */
 const READERS: Readonly<Record<string, string>> = {
     'src/lib/access-review/scope.ts': 'declares the scope list, its subject table and the agent subject shape',
-    'src/app-layer/usecases/access-review-scope-gate.ts': 'refuses to act on an AGENT campaign, by name',
-    'src/app-layer/schemas/access-review.schemas.ts': 'refuses AGENT on the member creation route, by name',
-    'src/app-layer/repositories/AccessReviewRepository.ts': 'excludes AGENT from the create seam by type and at run time',
+    'src/app-layer/usecases/access-review-scope-gate.ts': 'the generic paths refuse an AGENT campaign, by name',
+    'src/app-layer/schemas/access-review.schemas.ts': 'refuses AGENT on the member creation route, naming its own route',
+    'src/app-layer/repositories/AccessReviewRepository.ts': 'excludes AGENT from the general create by type and at run time; createAgentCampaign is the seam the writer calls',
     'src/app-layer/usecases/access-review.ts': 'narrows an AGENT campaign’s subjects to the reviewer or a register reader',
     'src/app-layer/usecases/access-review-connected.ts': 'narrows the subject list the same way; the remediation wording for an agent',
-    'src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx': 'renders agent subjects, read-only while no AGENT campaign is implemented',
+    'src/app-layer/usecases/agent-recertification-evidence.ts': 'the pack evidence read refuses any campaign that is not AGENT',
+    'src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/close/route.ts': 'dispatches an AGENT campaign to the agent close',
+    'src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/connected-decisions/[decisionId]/route.ts': 'dispatches an AGENT subject to the agent decide',
+    'src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/evidence/route.ts': 'narrows an AGENT campaign’s evidence file to the reviewer or a register reader',
+    'src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx': 'renders agent subjects, packs and narrowings, and the agent-flow controls',
+    'src/app/t/[tenantSlug]/(app)/access-reviews/AccessReviewsClient.tsx': 'offers AGENT in the create modal, posting to its own route',
 };
 
-/** Files that may WRITE AGENT. Empty in deploy 1; deploy 2 adds the campaign usecase. */
-const WRITERS: readonly string[] = [];
+/** Files that may WRITE AGENT, with the method they call. */
+const WRITERS: readonly string[] = ['src/app-layer/usecases/access-review-agent.ts'];
+
+/** The repository method that stores AGENT, and the only file that may call it. */
+const AGENT_CREATE = 'createAgentCampaign';
 
 const CREATE_SEAM = 'src/app-layer/repositories/AccessReviewRepository.ts';
 
@@ -99,7 +107,7 @@ export function widensScopeSchema(code: string): boolean {
     return /\bz\s*\.\s*(?:nativeEnum|enum)\s*\(\s*(?:Object\s*\.\s*values\s*\(\s*)?(?:\$Enums\s*\.\s*|Prisma\s*\.\s*)?AccessReviewScope\b/.test(code);
 }
 
-describe('nothing writes the AGENT scope in deploy 1', () => {
+describe('the AGENT scope has one writer', () => {
     const files = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] });
     const scanned = files.map((abs) => {
         const rel = repoRelative(abs);
@@ -111,6 +119,7 @@ describe('nothing writes the AGENT scope in deploy 1', () => {
             creates: createsAccessReview(code),
             rewrites: rewritesScope(code),
             widens: widensScopeSchema(code),
+            callsAgentCreate: new RegExp(`\\.${AGENT_CREATE}\\s*\\(`).test(code),
         };
     });
 
@@ -140,9 +149,10 @@ describe('nothing writes the AGENT scope in deploy 1', () => {
         expect(scanned.filter((s) => s.widens).map((s) => s.rel)).toEqual([]);
     });
 
-    it('has no writer in this deploy, and the brake is on', () => {
-        expect(WRITERS).toEqual([]);
-        expect(AGENT_CAMPAIGNS_IMPLEMENTED).toBe(false);
+    it('has exactly one writer, it alone calls the AGENT create, and the brake is released', () => {
+        expect(WRITERS).toHaveLength(1);
+        expect(scanned.filter((s) => s.callsAgentCreate).map((s) => s.rel)).toEqual([...WRITERS]);
+        expect(AGENT_CAMPAIGNS_IMPLEMENTED).toBe(true);
     });
 });
 
@@ -154,6 +164,11 @@ describe('the seam cannot store it, and readers cannot miss it, by type', () => 
     type CreateExcludesAgent = 'AGENT' extends CreateScope ? never : true;
     const createExcludesAgent: CreateExcludesAgent = true;
 
+    // The AGENT create takes no scope, so it can write no other value.
+    type AgentCreateInput = Parameters<typeof AccessReviewRepository.createAgentCampaign>[2];
+    type AgentCreateTakesNoScope = 'scope' extends keyof AgentCreateInput ? never : true;
+    const agentCreateTakesNoScope: AgentCreateTakesNoScope = true;
+
     // The readers' scope list is EXACTLY the generated enum, in both
     // directions: a value Prisma adds is a missing `SUBJECT_TABLE` key, and a
     // value the list invents is not a stored value.
@@ -164,6 +179,10 @@ describe('the seam cannot store it, and readers cannot miss it, by type', () => 
 
     it('AccessReviewRepository.create takes every scope but AGENT', () => {
         expect(createExcludesAgent).toBe(true);
+    });
+
+    it('createAgentCampaign takes no scope argument', () => {
+        expect(agentCreateTakesNoScope).toBe(true);
     });
 
     it('ACCESS_REVIEW_SCOPES is the generated enum, and SUBJECT_TABLE is keyed on all of it', () => {

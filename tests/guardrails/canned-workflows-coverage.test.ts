@@ -134,7 +134,9 @@ describe('the Flue engine is reachable from the shipped registry', () => {
             .filter((d) => d.driver !== 'flue')
             .map((d) => d.key)
             .sort();
-        expect(untouched).toEqual(['audit-prep', 'diagnostic', 'framework-onboarding']);
+        // `agent-recertification-pack` (#3674) is NEW and static from birth —
+        // its usecase reads the recorded READ step back — not a re-pointed one.
+        expect(untouched).toEqual(['agent-recertification-pack', 'audit-prep', 'diagnostic', 'framework-onboarding']);
     });
 
     it('every flue-requesting workflow is READ-ONLY', () => {

@@ -26,7 +26,7 @@ import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { Readable } from 'node:stream';
 import { logger } from '@/lib/observability/logger';
 import { mayReadAgentSubjects } from '@/lib/access-review/scope';
-import { assertNotUnimplementedAgentCampaign } from './access-review-scope-gate';
+import { assertNotAgentCampaign } from './access-review-scope-gate';
 
 const IDENTITY_PROVIDERS = ['okta', 'google-workspace', 'entra-id', 'active-directory'];
 const MAX_SUBJECTS = 5000;
@@ -225,6 +225,23 @@ export async function listConnectedDecisions(ctx: RequestContext, accessReviewId
     });
 }
 
+/**
+ * The scope of the campaign a connected-decision row belongs to, or null when
+ * the row is not found. The verdict route reads it to send an AGENT subject to
+ * `submitAgentDecision` (#3674); the generic decide refuses AGENT by name for a
+ * caller that does not ask first.
+ */
+export async function scopeOfConnectedDecision(ctx: RequestContext, decisionId: string): Promise<string | null> {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const row = await db.accessReviewConnectedDecision.findFirst({
+            where: { id: decisionId, tenantId: ctx.tenantId },
+            select: { accessReview: { select: { scope: true } } },
+        });
+        return row?.accessReview.scope ?? null;
+    });
+}
+
 export const SubmitConnectedDecisionSchema = z.object({
     decision: z.enum(['CONFIRM', 'REVOKE', 'MODIFY']),
     notes: z.string().max(2000).optional(),
@@ -247,9 +264,9 @@ export async function submitConnectedDecision(ctx: RequestContext, decisionId: s
         if (decision.accessReview.status === 'CLOSED') throw badRequest('This campaign is closed; decisions are immutable.');
         // An AGENT subject is decided under rules this path does not implement
         // — chiefly that an agent's owner may not decide their own agent — so
-        // a build without the AGENT campaign refuses by name rather than
-        // accepting a verdict the owner rule would have refused (#3674).
-        assertNotUnimplementedAgentCampaign(decision.accessReview.scope, 'decide');
+        // it refuses by name rather than accepting a verdict the owner rule
+        // would have refused; `submitAgentDecision` decides it (#3674).
+        assertNotAgentCampaign(decision.accessReview.scope, 'decide');
         const isAssignedReviewer = decision.accessReview.reviewerUserId === ctx.userId;
         if (!isAssignedReviewer && !ctx.permissions?.canAdmin) {
             throw forbidden('Only the assigned reviewer (or a tenant admin) may submit connected-app decisions.');
@@ -399,8 +416,9 @@ export async function closeConnectedAccessReview(
         if (!review || review.deletedAt !== null) throw notFound('Access review not found');
         if (review.status === 'CLOSED') throw badRequest('Campaign is already closed.');
         // Before any write, and before the pending check: an AGENT campaign
-        // closes under rules this build does not implement (#3674).
-        assertNotUnimplementedAgentCampaign(review.scope, 'close');
+        // closes under rules this path does not implement — packs, narrowings,
+        // the sample — and `closeAgentAccessReview` closes it (#3674).
+        assertNotAgentCampaign(review.scope, 'close');
 
         const decisions = await db.accessReviewConnectedDecision.findMany({ where: { tenantId: ctx.tenantId, accessReviewId }, select: { id: true, subjectRef: true, decision: true, decidedAt: true, executedAt: true, notes: true, snapshotJson: true }, orderBy: { subjectRef: 'asc' } });
 

@@ -55,7 +55,7 @@ import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { Readable } from 'node:stream';
 import { logger } from '@/lib/observability/logger';
 import { isMemberScope, mayReadAgentSubjects } from '@/lib/access-review/scope';
-import { assertNotUnimplementedAgentCampaign } from './access-review-scope-gate';
+import { assertNotAgentCampaign } from './access-review-scope-gate';
 
 // ─── Read paths ───────────────────────────────────────────────────────
 
@@ -625,7 +625,7 @@ export async function closeAccessReview(
         // reviewed. AGENT is refused by name; the connected scopes close
         // through `closeConnectedAccessReview`.
         if (!isMemberScope(review.scope)) {
-            assertNotUnimplementedAgentCampaign(review.scope, 'close');
+            assertNotAgentCampaign(review.scope, 'close');
             throw badRequest(
                 `A ${review.scope} campaign does not close through the member flow; its subjects are not tenant memberships.`,
             );

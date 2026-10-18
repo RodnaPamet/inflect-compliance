@@ -1,18 +1,21 @@
 /**
- * #3674, deploy 1 of 2 — the AGENT access-review scope exists, every reader
- * handles it, and nothing creates or acts on an AGENT campaign.
+ * #3674 — the AGENT access-review scope: every reader handles it, the generic
+ * paths refuse to act on it by name, and only the agent campaign flow writes it.
  *
  * One describe per writer and per acting reader. The structural half — one
  * create seam, no Zod schema over the generated enum, every file that names the
  * value listed — is `tests/guards/access-review-agent-scope.test.ts`; this file
- * is what each path DOES when it meets the value.
+ * is what each path DOES when it meets the value. The agent flow itself is
+ * `tests/unit/access-review-agent.test.ts` and
+ * `tests/integration/access-review-agent-campaign.test.ts`.
  *
- * Why the acting readers refuse rather than "handle" AGENT: in deploy 1 the
- * paths that could decide or close a campaign were written for other scopes.
- * The member close has no zero-subject guard, and the connected decide does
- * not know that an agent's owner may not decide their own agent. A container
- * running this build serves requests during deploy 2's rollout, which is the
- * first moment an AGENT row exists, so each refuses by name.
+ * Why the generic paths still refuse rather than "handle" AGENT: they were
+ * written for other scopes. The member close has no zero-subject guard, and the
+ * connected decide does not know that an agent's owner may not decide their own
+ * agent, that a pack must exist, or that a subject waits for its narrowings.
+ * The routes dispatch AGENT to the agent flow; these refusals are the backstop
+ * for a caller that does not (`AGENT_CAMPAIGN_OWN_FLOW`), and while the brake
+ * is on they give the brake's refusal (`AGENT_CAMPAIGN_NOT_AVAILABLE`).
  */
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) => fn(mockDb)),
@@ -52,7 +55,8 @@ import {
 } from '@/app-layer/usecases/access-review-connected';
 import { createLegacyAccessReview } from '@/app-layer/usecases/access-review-legacy';
 import {
-    assertNotUnimplementedAgentCampaign,
+    assertAgentCampaignsAvailable,
+    assertNotAgentCampaign,
     refuseAgentCampaign,
 } from '@/app-layer/usecases/access-review-scope-gate';
 import { DomainError } from '@/lib/errors/types';
@@ -128,11 +132,11 @@ beforeEach(() => {
     mockDb.identityAccountLink.findMany.mockResolvedValue([]);
 });
 
-// ─── The refusal itself ─────────────────────────────────────────────────
+// ─── The two refusals ───────────────────────────────────────────────────
 
-describe('the one named refusal', () => {
-    it('is a 409 DomainError carrying AGENT_CAMPAIGN_NOT_AVAILABLE, for each action', () => {
-        for (const action of ['create', 'decide', 'close'] as const) {
+describe('the named refusals', () => {
+    it('the brake: a 409 DomainError carrying AGENT_CAMPAIGN_NOT_AVAILABLE, for each action', () => {
+        for (const action of ['create', 'prepare', 'decide', 'close'] as const) {
             let caught: unknown;
             try {
                 refuseAgentCampaign(action);
@@ -146,21 +150,52 @@ describe('the one named refusal', () => {
         }
     });
 
-    it('fires for AGENT and for nothing else', () => {
-        expect(() => assertNotUnimplementedAgentCampaign('AGENT', 'decide')).toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
-        for (const scope of ['ALL_USERS', 'ADMIN_ONLY', 'CUSTOM', 'CONNECTED_APP', 'LEGACY_APP', null, undefined]) {
-            expect(() => assertNotUnimplementedAgentCampaign(scope, 'decide')).not.toThrow();
+    it('a generic path refuses AGENT with AGENT_CAMPAIGN_OWN_FLOW, and nothing else', () => {
+        let caught: unknown;
+        try {
+            assertNotAgentCampaign('AGENT', 'decide');
+        } catch (err) {
+            caught = err;
         }
+        expect((caught as DomainError).domainCode).toBe('AGENT_CAMPAIGN_OWN_FLOW');
+        expect((caught as DomainError).status).toBe(409);
+        expect((caught as Error).message).toMatch(/^AGENT_CAMPAIGN_OWN_FLOW:/);
+        for (const scope of ['ALL_USERS', 'ADMIN_ONLY', 'CUSTOM', 'CONNECTED_APP', 'LEGACY_APP', null, undefined]) {
+            expect(() => assertNotAgentCampaign(scope, 'decide')).not.toThrow();
+        }
+    });
+
+    it('the brake is released in this build, so the agent flow may act', () => {
+        expect(() => assertAgentCampaignsAvailable('create')).not.toThrow();
+    });
+
+    it('with the brake on, the agent flow AND the generic paths give the brake’s refusal', () => {
+        jest.isolateModules(() => {
+            jest.doMock('@/lib/access-review/scope', () => ({
+                ...jest.requireActual('@/lib/access-review/scope'),
+                AGENT_CAMPAIGNS_IMPLEMENTED: false,
+            }));
+            const gate = jest.requireActual<typeof import('@/app-layer/usecases/access-review-scope-gate')>(
+                '@/app-layer/usecases/access-review-scope-gate',
+            );
+            for (const action of ['create', 'prepare', 'decide', 'close'] as const) {
+                expect(() => gate.assertAgentCampaignsAvailable(action)).toThrow(/^AGENT_CAMPAIGN_NOT_AVAILABLE:/);
+            }
+            expect(() => gate.assertNotAgentCampaign('AGENT', 'close')).toThrow(/^AGENT_CAMPAIGN_NOT_AVAILABLE:/);
+            expect(() => gate.assertNotAgentCampaign('CONNECTED_APP', 'close')).not.toThrow();
+        });
     });
 });
 
 // ─── Writers ────────────────────────────────────────────────────────────
 
 describe('the member creation route refuses AGENT by name', () => {
-    it('CreateAccessReviewSchema rejects AGENT with AGENT_CAMPAIGN_NOT_AVAILABLE', () => {
+    it('CreateAccessReviewSchema rejects AGENT, naming its own route', () => {
         const r = CreateAccessReviewSchema.safeParse({ name: 'Q4', reviewerUserId: 'u-rev', scope: 'AGENT' });
         expect(r.success).toBe(false);
-        expect(r.error?.issues[0]?.message).toMatch(/^AGENT_CAMPAIGN_NOT_AVAILABLE:/);
+        expect(r.error?.issues[0]?.message).toBe(
+            'SCOPE_HAS_ITS_OWN_ROUTE: an AGENT campaign is created at POST /access-reviews/agents.',
+        );
     });
 
     it('…and points the other non-member scopes at their own routes, rather than snapshotting members into them', () => {
@@ -181,7 +216,7 @@ describe('the member creation route refuses AGENT by name', () => {
     it('createAccessReview refuses AGENT before any row is written', async () => {
         await expect(
             createAccessReview(makeRequestContext('ADMIN'), { name: 'Q4', reviewerUserId: 'u-rev', scope: 'AGENT' }),
-        ).rejects.toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
+        ).rejects.toThrow(/SCOPE_HAS_ITS_OWN_ROUTE/);
         expect(AccessReviewRepository.create).not.toHaveBeenCalled();
         expect(AccessReviewRepository.bulkCreateDecisions).not.toHaveBeenCalled();
     });
@@ -194,12 +229,12 @@ describe('AccessReviewRepository.create — the one create seam — refuses AGEN
         '@/app-layer/repositories/AccessReviewRepository',
     ).AccessReviewRepository;
 
-    it('throws AGENT_CAMPAIGN_NOT_AVAILABLE and never calls the delegate', async () => {
+    it('throws AGENT_CAMPAIGN_OWN_FLOW and never calls the delegate', async () => {
         await expect(
             Real.create(mockDb as never, makeRequestContext('ADMIN'), {
                 name: 'Q4', reviewerUserId: 'u-rev', scope: 'AGENT' as never,
             }),
-        ).rejects.toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
+        ).rejects.toThrow(/AGENT_CAMPAIGN_OWN_FLOW/);
         expect(mockDb.accessReview.create).not.toHaveBeenCalled();
     });
 
@@ -242,11 +277,11 @@ describe('the connected and legacy writers cannot be asked for AGENT', () => {
 
 // ─── Acting readers ─────────────────────────────────────────────────────
 
-describe('deciding an AGENT subject is refused by name', () => {
+describe('deciding an AGENT subject through the generic decide is refused by name', () => {
     it('submitConnectedDecision refuses, even for the assigned reviewer, and writes nothing', async () => {
         await expect(
             submitConnectedDecision(makeRequestContext('ADMIN', { userId: 'u-rev' }), 'dec-1', { decision: 'CONFIRM' }, NOW),
-        ).rejects.toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
+        ).rejects.toThrow(/AGENT_CAMPAIGN_OWN_FLOW/);
         expect(mockDb.accessReviewConnectedDecision.updateMany).not.toHaveBeenCalled();
     });
 
@@ -261,18 +296,18 @@ describe('deciding an AGENT subject is refused by name', () => {
     });
 });
 
-describe('closing an AGENT campaign is refused by name, by both closes', () => {
+describe('closing an AGENT campaign through a generic close is refused by name, by both', () => {
     it('closeConnectedAccessReview refuses before claiming the close or writing a task', async () => {
         mockDb.accessReviewConnectedDecision.findMany.mockResolvedValue([agentSubject({ decision: 'CONFIRM', decidedAt: NOW })]);
         await expect(closeConnectedAccessReview(makeRequestContext('ADMIN'), 'ar-agent', NOW)).rejects.toThrow(
-            /AGENT_CAMPAIGN_NOT_AVAILABLE/,
+            /AGENT_CAMPAIGN_OWN_FLOW/,
         );
         expect(mockDb.accessReview.updateMany).not.toHaveBeenCalled();
         expect(mockDb.task.create).not.toHaveBeenCalled();
     });
 
     it('closeAccessReview — the member close, which has no zero-subject guard — refuses it too', async () => {
-        await expect(closeAccessReview(makeRequestContext('ADMIN'), 'ar-agent')).rejects.toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
+        await expect(closeAccessReview(makeRequestContext('ADMIN'), 'ar-agent')).rejects.toThrow(/AGENT_CAMPAIGN_OWN_FLOW/);
         expect(AccessReviewRepository.getDecisionsForExecution).not.toHaveBeenCalled();
         expect(AccessReviewRepository.closeCampaign).not.toHaveBeenCalled();
     });

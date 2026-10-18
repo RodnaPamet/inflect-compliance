@@ -48,6 +48,8 @@ const EXPECTED_TOOLS = [
     'list_evidence_expiring',
     'list_findings',
     'list_tasks',
+    // Step 3a (#3674) — the pack workflow's one READ step.
+    'get_agent_recertification_evidence',
 ];
 
 // Resource scopes the api-key layer understands. DERIVED, not copied: this

@@ -390,7 +390,25 @@ describe('epic-named ratchets are not added back', () => {
         // readers the value (#3674). It holds the empty writer allowlist the
         // second deploy amends, and the type-level proof that the one create
         // seam cannot store the value; no existing guard owns either.
-        expect(guardFiles().length).toBeLessThan(788);
+        //
+        // RAISED 788 -> 789 on 2026-10-18, for ONE file, the same test:
+        // `agent-recertification-single-write-seam` is named for its invariant
+        // — the pack, narrowing and sample tables have one writer, and that
+        // writer can delete a grant but cannot add authority (#3674, deploy 2).
+        // It is not folded into `agent-harness-single-write-seam`, whose
+        // tables and allowlist belong to the harness ingest, nor into
+        // `access-review-agent-scope`, which is about the scope VALUE.
+        //
+        // RAISED 789 -> 790 on 2026-10-18, for ONE file, the same test:
+        // `client-reachable-modules-import-no-node-builtins` is named for its
+        // invariant — nothing a `'use client'` file reaches imports a `node:`
+        // specifier, and nothing the workflow registry reaches imports a Node
+        // built-in at all (#3674, deploy 2, whose `node:crypto` in a workflow
+        // step failed `next build`). The nearest guard,
+        // `no-usecase-imports-in-client`, checks one DIRECT import per client
+        // file; this one walks the transitive graph, which that guard's name
+        // and allowlist do not describe, so it is not folded in there.
+        expect(guardFiles().length).toBeLessThan(790);
     });
 
     /**

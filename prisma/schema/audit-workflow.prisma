@@ -324,3 +324,171 @@ model ReadinessSnapshot {
   @@index([tenantId, frameworkKey, computedAt])
   @@index([tenantId, auditCycleId])
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Step 3a (#3674) — agent recertification: the reviewer pack, the
+// narrowings it proposes, and the retrospective sample of decisions.
+//
+// An AGENT access review reuses `AccessReview` and
+// `AccessReviewConnectedDecision` (one row per registered agent, as
+// LEGACY_APP reuses them). What the campaign adds is evidence about each
+// agent and the narrowing that evidence supports, and both are records an
+// auditor relies on: every model below is a REGULATORY ARTEFACT, kept with
+// its campaign and retained by the tenant purge. None of them carries a
+// foreign key to `RegisteredAgent`, which the purge deletes — the agent id
+// is stored as a plain string, frozen, like `ExternalWriteJournal.agentId`.
+//
+// Every one is a ONE-WAY record, held by triggers in the migration, not by
+// the usecase alone: a pack is never edited after it is written; a
+// narrowing's outcome leaves PENDING once and its grant delete is stamped
+// once; a sample's outcome leaves PENDING once.
+// ─────────────────────────────────────────────────────────────────
+
+/// The reviewer pack for one agent in one AGENT campaign.
+///
+/// Assembled by the `agent-recertification-pack` workflow, which uses read
+/// tools only, from stored rows only: grants, observed use, proposals, card
+/// versions, time-bounded grants, guard flags, breaker trips, kill
+/// engagements and the harness level. Written once, by
+/// `prepareAgentReviewPacks`, and never updated (trigger).
+model AccessReviewAgentPack {
+  id               String   @id @default(cuid())
+  tenantId         String
+  accessReviewId   String
+  decisionId       String
+  /// The registered agent described. No FK — see the header.
+  agentId          String
+  /// The workflow run whose READ step produced the sections. No FK: a run is
+  /// operational and may be pruned; the pack is the record that outlives it.
+  preparedByRunId  String
+  /// The registered agent whose run prepared it — the campaign's preparer,
+  /// or for the preparer's own pack its cross-preparer — or NULL when a
+  /// person prepared the preparer's own pack on the static path. A CHECK
+  /// refuses it equal to `agentId`: no agent prepares the pack it is reviewed
+  /// by.
+  preparedByAgentId String?
+  /// How the pack was prepared: `AGENT_RUN` (a registered agent's run) or
+  /// `PERSON_STATIC_SELF_PACK` (the preparer's own pack, prepared by a person
+  /// on the static path because the campaign names no cross-preparer). A
+  /// CHECK pairs it with `preparedByAgentId`.
+  preparationBasis String
+  /// The campaign's preparer, bound to `AccessReview.preparerAgentId` by FK,
+  /// so a CHECK can hold the one exception: a pack no agent prepared must be
+  /// the preparer's own.
+  campaignPreparerAgentId String
+  /// Who STARTED the preparation; the run is the agent's, or (for a
+  /// `PERSON_STATIC_SELF_PACK`) this person's. No FK, matching
+  /// `grantedByUserId`: the record must survive the account.
+  preparedByUserId String
+  /// The observation window: the 90 days before the campaign froze its
+  /// population. `windowEnd` is `AccessReview.createdAt`, so every page of
+  /// one campaign reads the same window.
+  windowStart      DateTime
+  windowEnd        DateTime
+  /// The pack sections, exactly as the read tool returned them.
+  sectionsJson     Json
+  /// `sha256:<hex>` over the canonical JSON of `sectionsJson`. Enters the
+  /// campaign's closing evidence, which is how the evidence hash covers the
+  /// packs without inlining them.
+  contentHash      String
+  preparedAt       DateTime @default(now())
+
+  tenant       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accessReview AccessReview                  @relation("AgentPackCampaign", fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  /// RESTRICT on update: a campaign's preparer cannot move once a pack names it.
+  preparerCampaign AccessReview              @relation("AgentPackCampaignPreparer", fields: [accessReviewId, campaignPreparerAgentId], references: [id, preparerAgentId], onDelete: Cascade, onUpdate: Restrict)
+  decision     AccessReviewConnectedDecision @relation(fields: [decisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  narrowings   AccessReviewAgentNarrowing[]
+
+  /// One pack per subject, ever — preparation is one-shot. Composite because
+  /// Prisma types a composite relation as 1:1 only over its exact field list;
+  /// a decision id is globally unique, so this is the same invariant.
+  @@unique([decisionId, tenantId])
+  @@unique([id, tenantId])
+  @@index([tenantId, accessReviewId])
+  @@index([tenantId, campaignPreparerAgentId])
+}
+
+/// One narrowing a pack proposed: delete a grant the agent did not use.
+///
+/// The ONLY change a campaign can make to an agent's authority, and it only
+/// narrows: accepting it deletes the one `RegisteredAgentTool` row it names
+/// (by id AND tool name, so a grant re-issued after the pack is not the one
+/// deleted); rejecting it changes nothing. No campaign path adds a grant or
+/// raises a card.
+model AccessReviewAgentNarrowing {
+  id                 String                @id @default(cuid())
+  tenantId           String
+  accessReviewId     String
+  decisionId         String
+  packId             String
+  /// No FK — see the header.
+  agentId            String
+  /// The grant the narrowing deletes. No FK: accepting it deletes the row.
+  grantId            String
+  toolName           String
+  grantedByUserId    String
+  grantedAt          DateTime
+  /// Why it was proposed. `NO_RECORDED_CALL_IN_WINDOW` is the one basis: the
+  /// grant was held for the whole window and no behaviour window recorded a
+  /// call to it.
+  basis              String
+  /// The agent's owner when the campaign froze it. A CHECK refuses a
+  /// `decidedByUserId` equal to it.
+  subjectOwnerUserId String
+  outcome            AgentNarrowingOutcome @default(PENDING)
+  decidedAt          DateTime?
+  decidedByUserId    String?
+  /// Set once, when an ACCEPTED narrowing's grant delete ran.
+  executedAt         DateTime?
+  /// `GRANT_DELETED`, or `GRANT_ALREADY_ABSENT` when the grant was gone (or
+  /// re-issued under a new id) before the narrowing was accepted.
+  executionResult    String?
+  createdAt          DateTime              @default(now())
+
+  tenant       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accessReview AccessReview                  @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  decision     AccessReviewConnectedDecision @relation(fields: [decisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  pack         AccessReviewAgentPack         @relation(fields: [packId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([packId, grantId])
+  @@index([tenantId, accessReviewId, outcome])
+  @@index([tenantId, decisionId])
+}
+
+/// The retrospective review of one sampled decision of a closed AGENT
+/// campaign, by a second human (OWASP ASI09 applied to recertification).
+///
+/// `AgentProposalSampleAudit` is the pattern and cannot be reused: every row
+/// of it requires a proposal, and a recertification decision is not one. The
+/// draw is the existing keyed sampler (`selectSample`) over the campaign's
+/// decisions, made once, at close, by `closeAgentAccessReview` — the only
+/// writer. No free-text column: dissent is stable codes.
+model AccessReviewDecisionSampleAudit {
+  id               String                  @id @default(cuid())
+  tenantId         String
+  accessReviewId   String
+  decisionId       String
+  /// `<accessReviewId>@<YYYY-MM-DD>` — the draw re-derives from the epoch,
+  /// the per-tenant seed and the decision ids. The seed is never stored.
+  samplingEpoch    String
+  sampledAt        DateTime                @default(now())
+  /// Who was asked. NULL: the draw names nobody, and an answer is refused
+  /// from the decider and from the agent's owner.
+  assignedToUserId String?
+  outcome          AgentSampleAuditOutcome @default(PENDING)
+  dissentCodes     String[]                @default([])
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  tenant       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accessReview AccessReview                  @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  decision     AccessReviewConnectedDecision @relation(fields: [decisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One sample per decision, ever — the draw's idempotency key.
+  @@unique([tenantId, decisionId])
+  @@index([tenantId, accessReviewId])
+  @@index([tenantId, outcome, sampledAt])
+}

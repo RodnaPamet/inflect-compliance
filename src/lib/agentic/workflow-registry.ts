@@ -13,6 +13,7 @@ import { auditPrepWorkflow } from './workflows/audit-prep';
 import { postureReviewWorkflow } from './workflows/posture-review';
 import { accessPostureWorkflow } from './workflows/access-posture';
 import { discoveredAgentReviewWorkflow } from './workflows/discovered-agent-review';
+import { agentRecertificationPackWorkflow } from './workflows/agent-recertification-pack';
 
 /**
  * "Diagnostic" — read the tenant's compliance posture, then synthesise a
@@ -65,6 +66,10 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
     // refused at admission when absent. See the header of
     // `discovered-agent-review.ts`.
     [discoveredAgentReviewWorkflow.key]: discoveredAgentReviewWorkflow,
+    // Step 3a (#3674): the reviewer packs of an AGENT access review. Static —
+    // one read and one pure synthesis — and it writes no campaign record:
+    // `prepareAgentReviewPacks` reads its recorded steps and writes the packs.
+    [agentRecertificationPackWorkflow.key]: agentRecertificationPackWorkflow,
 };
 
 /**

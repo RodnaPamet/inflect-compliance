@@ -365,6 +365,17 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // `vr6-execution-overlay` asserts this file exports GET and nothing else.
     't/[tenantSlug]/agent-runs/[id]/checkpoint/route.ts',
     't/[tenantSlug]/agent-runs/route.ts',
+    // #3674 (step 3a) — agent recertification. An access review whose subjects
+    // are registered agents, driven from the access-review detail page
+    // (`AccessReviewDetailClient` / `AccessReviewsClient`), not from `/agents`:
+    // create, prepare the reviewer packs through the read-only pack workflow,
+    // decide a narrowing (an ACCEPT deletes one grant — the only authority
+    // change a campaign makes), and the second person's answer to a sampled
+    // decision. Keys are the existing access-review ones the roadmap names.
+    't/[tenantSlug]/access-reviews/agents/route.ts',
+    't/[tenantSlug]/access-reviews/[reviewId]/agent-packs/route.ts',
+    't/[tenantSlug]/access-reviews/[reviewId]/agent-narrowings/[narrowingId]/route.ts',
+    't/[tenantSlug]/access-reviews/[reviewId]/agent-samples/[sampleId]/route.ts',
 ] as const;
 
 /** Every `.ts`/`.tsx` file under `src/`, comment-stripped, by repo-relative path. */

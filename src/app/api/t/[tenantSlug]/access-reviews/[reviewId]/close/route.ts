@@ -18,6 +18,7 @@ import {
     getAccessReview,
 } from '@/app-layer/usecases/access-review';
 import { closeConnectedAccessReview } from '@/app-layer/usecases/access-review-connected';
+import { closeAgentAccessReview } from '@/app-layer/usecases/access-review-agent';
 import { subjectTableOf } from '@/lib/access-review/scope';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -44,9 +45,17 @@ export const POST = withApiErrorHandling(
             // LEGACY_APP and send everything else to the member close, so the
             // AGENT value would have reached the one close with no zero-subject
             // guard. An unknown scope now goes to the connected close, which
-            // refuses zero subjects; both closes refuse AGENT by name in a
-            // build that implements no AGENT campaign.
+            // refuses zero subjects.
+            //
+            // AGENT is named, and FIRST: its subjects are in the connected
+            // table, but it closes through `closeAgentAccessReview` — packs,
+            // narrowings and the sample are rules the connected close does not
+            // hold, and both generic closes refuse AGENT by name
+            // (`AGENT_CAMPAIGN_OWN_FLOW`).
             const review = await getAccessReview(ctx, params.reviewId);
+            if (review.scope === 'AGENT') {
+                return jsonResponse(await closeAgentAccessReview(ctx, params.reviewId));
+            }
             const viaConnected = subjectTableOf(review.scope) === 'CONNECTED';
             const result = viaConnected
                 ? await closeConnectedAccessReview(ctx, params.reviewId)

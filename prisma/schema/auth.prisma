@@ -119,6 +119,10 @@ model Tenant {
   trainingAssignments               TrainingAssignment[]
   backgroundChecks                  BackgroundCheck[]
   accessReviewConnectedDecisions    AccessReviewConnectedDecision[]
+  /// Step 3a (#3674) — an AGENT campaign's packs, narrowings and decision samples.
+  accessReviewAgentPacks            AccessReviewAgentPack[]
+  accessReviewAgentNarrowings       AccessReviewAgentNarrowing[]
+  accessReviewDecisionSampleAudits  AccessReviewDecisionSampleAudit[]
   trustCenterDocuments              TrustCenterDocument[]
   trustCenterAccessRequests         TrustCenterAccessRequest[]
   questionnaireAnswerLibrary        QuestionnaireAnswerLibrary[]
@@ -735,6 +739,20 @@ model AccessReviewConnectedDecision {
   executedAt       DateTime?
   executedByUserId String?
 
+  /// Step 3a (#3674) — an AGENT subject: the registered agent under review.
+  /// NULL on every other scope.
+  ///
+  /// A plain String with NO foreign key, on purpose. This row is a regulatory
+  /// artefact the tenant purge RETAINS (`TENANT_PURGE_RETAINED`), and
+  /// `RegisteredAgent` is a business record it deletes: an FK would either
+  /// block the purge or null the one column saying which agent was certified.
+  /// `snapshotJson` carries the same id, frozen, for the same reason.
+  subjectAgentId     String?
+  /// The agent's accountable owner when the campaign froze it. The owner may
+  /// not decide their own agent: a CHECK refuses `decidedByUserId` equal to
+  /// it, and the usecase refuses the CURRENT owner too.
+  subjectOwnerUserId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -742,10 +760,21 @@ model AccessReviewConnectedDecision {
   accessReview AccessReview              @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
   account      ConnectedIdentityAccount? @relation(fields: [connectedAccountId, tenantId], references: [id, tenantId])
   decidedBy    User?                     @relation("ConnectedDecisionDecider", fields: [decidedByUserId], references: [id])
+  /// Step 3a — the reviewer pack, the narrowings it proposed, and the
+  /// retrospective sample drawn at close.
+  agentPack       AccessReviewAgentPack?
+  agentNarrowings AccessReviewAgentNarrowing[]
+  sampleAudits    AccessReviewDecisionSampleAudit[]
 
   @@unique([accessReviewId, subjectRef])
+  /// The composite parent key the step-3a children reference, so a pack, a
+  /// narrowing or a sample can never point at another tenant's decision.
+  @@unique([id, tenantId])
   @@index([tenantId])
   @@index([tenantId, accessReviewId])
+  /// "Which campaigns reviewed this agent" — read by the pack's
+  /// card-versions-since-the-last-campaign section.
+  @@index([tenantId, subjectAgentId])
 }
 
 model TenantMembership {
@@ -882,6 +911,17 @@ model AccessReview {
   /// is indistinguishable from a directory of exactly N), so the usecase reads
   /// `MAX_SUBJECTS + 1` and records the verdict here.
   snapshotTruncated    Boolean            @default(false)
+  /// Step 3a (#3674) — the registered agents that prepare an AGENT
+  /// campaign's packs, named at creation and never changed.
+  /// `preparerAgentId` (required for AGENT) prepares every reviewer pack but
+  /// its own (roadmap rule 8: the auditor is not the auditee). Its own pack is
+  /// prepared by `crossPreparerAgentId` when one is named, and otherwise by a
+  /// PERSON on the static path (owner decision of 2026-10-18). Both NULL for
+  /// every other scope; a CHECK holds the pairing. No FK to the register, as
+  /// the pack's `agentId` has none: the campaign's record must not depend on
+  /// the register's.
+  preparerAgentId      String?
+  crossPreparerAgentId String?
   createdByUserId      String
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
@@ -896,11 +936,20 @@ model AccessReview {
   evidenceFile       FileRecord?                     @relation("AccessReviewEvidence", fields: [evidenceFileRecordId, tenantId], references: [id, tenantId])
   decisions          AccessReviewDecision[]
   connectedDecisions AccessReviewConnectedDecision[]
+  /// Step 3a (#3674) — an AGENT campaign's packs, narrowings and samples.
+  agentPacks         AccessReviewAgentPack[]           @relation("AgentPackCampaign")
+  /// The same packs, through the campaign's preparer: the FK that lets a
+  /// CHECK on the pack compare its subject with the campaign's preparer.
+  agentPacksByPreparer AccessReviewAgentPack[]         @relation("AgentPackCampaignPreparer")
+  agentNarrowings    AccessReviewAgentNarrowing[]
+  sampleAudits       AccessReviewDecisionSampleAudit[]
 
   /// Composite parent key used by AccessReviewDecision's compound FK
   /// (the same denorm-tenantId pattern Phase 2 introduced for
   /// AuditChecklistItem → Audit).
   @@unique([id, tenantId])
+  /// The parent key of `AccessReviewAgentPack`'s preparer FK (#3674).
+  @@unique([id, preparerAgentId])
   @@index([tenantId, status])
   @@index([tenantId, reviewerUserId, status])
   @@index([tenantId, dueAt])

@@ -8,6 +8,11 @@
  * with the canonical filename. 404 when the campaign has no
  * artifact yet (e.g. closeout PDF generation failed and the
  * regenerate path hasn't run).
+ *
+ * #3674 — an AGENT campaign's evidence lists its subjects, which are register
+ * data, so it is served only to the campaign's reviewer or a holder of
+ * `admin.agent_registry`, the narrowing every other read of those subjects
+ * takes. Every role holds `access_reviews.view`.
  */
 import { NextRequest } from 'next/server';
 import { Readable } from 'node:stream';
@@ -18,6 +23,7 @@ import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { notFound, forbidden } from '@/lib/errors/types';
 import { contentDispositionHeader } from '@/lib/http/content-disposition';
+import { mayReadAgentSubjects } from '@/lib/access-review/scope';
 
 export const GET = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; reviewId: string }>(
@@ -26,9 +32,19 @@ export const GET = withApiErrorHandling(
             const fileRecord = await runInTenantContext(ctx, async (db) => {
                 const review = await db.accessReview.findFirst({
                     where: { id: params.reviewId, tenantId: ctx.tenantId },
-                    select: { evidenceFileRecordId: true },
+                    select: { evidenceFileRecordId: true, scope: true, reviewerUserId: true },
                 });
                 if (!review) throw notFound('Access review not found');
+                if (
+                    review.scope === 'AGENT'
+                    && !mayReadAgentSubjects({
+                        userId: ctx.userId,
+                        reviewerUserId: review.reviewerUserId,
+                        holdsAgentRegistry: ctx.appPermissions?.admin?.agent_registry === true,
+                    })
+                ) {
+                    throw forbidden('An agent campaign’s evidence is readable by its reviewer and by holders of admin.agent_registry');
+                }
                 if (!review.evidenceFileRecordId) {
                     throw notFound(
                         'No evidence artifact has been generated for this campaign yet.',

@@ -76,6 +76,32 @@ export class RegisteredAgentToolRepository {
     }
 
     /**
+     * Revoke ONE grant, by its id and its tool name — an accepted narrowing of
+     * an AGENT access review (#3674).
+     *
+     * By id, not by `(agentId, toolName)` like `revoke`: the narrowing was
+     * proposed from evidence about that grant row, so a grant revoked and
+     * re-issued since — a new row, a new human decision — is not the one it
+     * deletes. Zero rows is the caller's evidence that the grant had already
+     * gone.
+     */
+    static async revokeGrant(
+        db: PrismaTx,
+        ctx: RequestContext,
+        grant: { grantId: string; agentId: string; toolName: string },
+    ): Promise<number> {
+        const res = await db.registeredAgentTool.deleteMany({
+            where: {
+                id: grant.grantId,
+                tenantId: ctx.tenantId,
+                agentId: grant.agentId,
+                toolName: grant.toolName,
+            },
+        });
+        return res.count;
+    }
+
+    /**
      * Revoke EVERY tool the agent holds — retirement's grant effect (#3698).
      *
      * Unbounded on purpose: "a retired agent holds zero grants" has to be true

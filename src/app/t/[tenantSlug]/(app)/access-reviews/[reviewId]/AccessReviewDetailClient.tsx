@@ -20,7 +20,7 @@
  *   - Anyone with read can browse + download the evidence PDF when
  *     the campaign is CLOSED.
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -37,6 +37,8 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { TENANT_ROLES, type AssignableTenantRole } from '@/lib/roles';
+import { apiErrorMessage } from '@/lib/api-error';
+import { Heading } from '@/components/ui/typography';
 import {
     AGENT_CAMPAIGNS_IMPLEMENTED,
     readAgentSubjectSnapshot,
@@ -150,6 +152,119 @@ function readSnapshot(value: unknown): ConnectedSnapshot {
     return {};
 }
 
+// ─── #3674 — an AGENT campaign's packs, narrowings and sample ──────────
+
+type NarrowingOutcome = 'PENDING' | 'ACCEPTED' | 'REJECTED';
+type SampleOutcome = 'PENDING' | 'CONCURRED' | 'DISSENTED' | 'INDETERMINATE';
+
+interface AgentPackRow {
+    id: string;
+    decisionId: string;
+    agentId: string;
+    preparedByRunId: string;
+    /** The registered agent whose run prepared it — never `agentId` itself — or null when a person did. */
+    preparedByAgentId: string | null;
+    /** `AGENT_RUN`, or `PERSON_STATIC_SELF_PACK` for the preparer's own pack prepared by a person. */
+    preparationBasis: string;
+    windowStart: string;
+    windowEnd: string;
+    sectionsJson: unknown;
+    contentHash: string;
+    preparedAt: string;
+}
+
+interface AgentNarrowingRow {
+    id: string;
+    decisionId: string;
+    packId: string;
+    grantId: string;
+    toolName: string;
+    grantedByUserId: string;
+    grantedAt: string;
+    basis: string;
+    outcome: NarrowingOutcome;
+    decidedAt: string | null;
+    decidedByUserId: string | null;
+    executedAt: string | null;
+    executionResult: string | null;
+}
+
+interface AgentSampleRow {
+    id: string;
+    decisionId: string;
+    samplingEpoch: string;
+    sampledAt: string;
+    outcome: SampleOutcome;
+    dissentCodes: string[];
+    reviewedByUserId: string | null;
+    reviewedAt: string | null;
+}
+
+interface AgentPacksResponse {
+    packs: AgentPackRow[];
+    narrowings: AgentNarrowingRow[];
+    samples: AgentSampleRow[];
+    evidence: {
+        fileRecordId: string;
+        storedSha256: string | null;
+        recomputedSha256: string;
+        matches: boolean;
+    } | null;
+}
+
+/** Mirrors `RECERT_SAMPLE_DISSENT_CODES`; the server refuses any other. */
+const RECERT_DISSENT_CODES = [
+    'ACCESS_SHOULD_HAVE_BEEN_REVOKED',
+    'NARROWING_SHOULD_HAVE_BEEN_ACCEPTED',
+    'NARROWING_SHOULD_HAVE_BEEN_REJECTED',
+    'DECISION_NOT_SUPPORTED_BY_PACK',
+    'OWNERSHIP_OR_REMIT_NOT_QUESTIONED',
+] as const;
+
+interface PackSummary {
+    grants: number;
+    unusedGrants: number;
+    harnessLevel: string | null;
+    harnessDrift: string | null;
+    guardFlags: number;
+    breakerTripped: boolean;
+    kills: number;
+}
+
+/**
+ * The few figures the subject table shows from a pack's sections. Degrades to
+ * zeros field by field, as `readAgentSubjectSnapshot` does, so one malformed
+ * pack cannot take the page down; the hash beside it is what vouches for the
+ * stored sections, not this summary.
+ */
+function readPackSummary(value: unknown): PackSummary {
+    const v = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+    const grants = Array.isArray(v.grants) ? (v.grants as Array<Record<string, unknown>>) : [];
+    const harness = v.harness && typeof v.harness === 'object' ? (v.harness as Record<string, unknown>) : {};
+    const flags = v.guardFlags && typeof v.guardFlags === 'object' ? Object.values(v.guardFlags as Record<string, unknown>) : [];
+    const breaker = v.breaker && typeof v.breaker === 'object' ? (v.breaker as Record<string, unknown>) : null;
+    return {
+        grants: grants.length,
+        unusedGrants: grants.filter((g) => g.lastCalledAt === null && g.heldForWholeWindow === true).length,
+        harnessLevel: typeof harness.level === 'string' ? harness.level : null,
+        harnessDrift: typeof harness.drift === 'string' ? harness.drift : null,
+        guardFlags: flags.reduce<number>((n, x) => n + (typeof x === 'number' ? x : 0), 0),
+        breakerTripped: breaker?.trippedInWindow === true,
+        kills: Array.isArray(v.killEngagements) ? v.killEngagements.length : 0,
+    };
+}
+
+async function postJson(url: string, body?: unknown): Promise<void> {
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!res.ok) {
+        throw new Error(apiErrorMessage(await res.json().catch(() => null), `HTTP ${res.status}`));
+    }
+}
+
 interface ReviewDetail {
     id: string;
     name: string;
@@ -217,11 +332,12 @@ export function AccessReviewDetailClient({
     const review = reviewQuery.data!;
 
     const isReviewer = currentUserId === review.reviewerUserId;
-    // #3674 — an AGENT campaign is decided and closed under rules (the owner
-    // may not decide their own agent; a narrowing only deletes) that ship with
-    // the release that creates such campaigns. Until then its page is
-    // read-only, matching the server, which refuses both by name — showing a
-    // control that always fails is worse than showing none.
+    // #3674 — an AGENT campaign is decided and closed by the agent flow, under
+    // rules the page mirrors below (the owner may not decide their own agent; a
+    // subject waits for its pack and its narrowings). While the brake
+    // (`AGENT_CAMPAIGNS_IMPLEMENTED`) is on the page is read-only, matching the
+    // server, which refuses every act by name — showing a control that always
+    // fails is worse than showing none.
     const isAgent = review.scope === 'AGENT';
     const agentActionsAvailable = !isAgent || AGENT_CAMPAIGNS_IMPLEMENTED;
     const canDecide = (isReviewer || isAdmin) && review.status !== 'CLOSED' && agentActionsAvailable;
@@ -244,6 +360,7 @@ export function AccessReviewDetailClient({
         type: DecisionType;
     } | null>(null);
     const [closing, setClosing] = useState(false);
+    const [connectedError, setConnectedError] = useState<string | null>(null);
 
     // ─── Progress over the subjects this campaign ACTUALLY has ──────────
     //
@@ -253,7 +370,7 @@ export function AccessReviewDetailClient({
     // the campaign is — rather than describing member rows and silently
     // reporting 0/0 for a connected one.
     const isConnected = review.scope === 'CONNECTED_APP';
-    const connectedRows = review.connectedDecisions ?? [];
+    const connectedRows = useMemo(() => review.connectedDecisions ?? [], [review.connectedDecisions]);
     const subjectCount = review.decisions.length + connectedRows.length;
     const decided =
         review.decisions.filter((d) => d.decision !== null).length +
@@ -266,6 +383,61 @@ export function AccessReviewDetailClient({
     // refuses it too — this is the same rule stated where the operator sees it,
     // so the button is disabled rather than failing on press.
     const everySubjectDecided = subjectCount > 0 && decided === subjectCount;
+
+    // ─── #3674 — the AGENT campaign's packs, narrowings and sample ──────
+    //
+    // Read only by somebody the server will answer: the packs are register
+    // data, narrowed to the reviewer or a holder of `admin.agent_registry`,
+    // and a withheld campaign (`subjectsRestricted`) would only fetch a 403.
+    const packsQuery = useTenantSWR<AgentPacksResponse>(
+        isAgent && !review.subjectsRestricted ? `/access-reviews/${review.id}/agent-packs` : null,
+    );
+    const packs = useMemo(() => packsQuery.data?.packs ?? [], [packsQuery.data]);
+    const narrowings = useMemo(() => packsQuery.data?.narrowings ?? [], [packsQuery.data]);
+    const samples = useMemo(() => packsQuery.data?.samples ?? [], [packsQuery.data]);
+    const packByDecision = useMemo(() => new Map(packs.map((p) => [p.decisionId, p])), [packs]);
+    const pendingByDecision = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const n of narrowings) if (n.outcome === 'PENDING') m.set(n.decisionId, (m.get(n.decisionId) ?? 0) + 1);
+        return m;
+    }, [narrowings]);
+    const pendingNarrowings = narrowings.filter((n) => n.outcome === 'PENDING').length;
+    const agentRowById = useMemo(() => new Map(connectedRows.map((r) => [r.id, r])), [connectedRows]);
+    // Every preparing agent is ACTIVE, so it is a subject too: its name is in a snapshot.
+    const agentNameByAgentId = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const r of connectedRows) {
+            const snap = readAgentSubjectSnapshot(r.snapshotJson);
+            if (snap) m.set(snap.agentId, snap.agentName ?? snap.agentId);
+        }
+        return m;
+    }, [connectedRows]);
+    /** The agent's frozen owner, from the subject's snapshot. */
+    const ownerOf = useCallback(
+        (decisionId: string): string | null =>
+            readAgentSubjectSnapshot(agentRowById.get(decisionId)?.snapshotJson)?.ownerUserId ?? null,
+        [agentRowById],
+    );
+    // An AGENT campaign closes only with every pack prepared and every
+    // narrowing decided as well — the server's rule, stated where it is pressed.
+    const agentCloseReady = !isAgent || (packs.length === subjectCount && pendingNarrowings === 0);
+    const [agentBusy, setAgentBusy] = useState(false);
+
+    const mutateReview = reviewQuery.mutate;
+    const mutatePacks = packsQuery.mutate;
+    const agentAct = useCallback(async (url: string, body?: unknown) => {
+        setAgentBusy(true);
+        setConnectedError(null);
+        try {
+            await postJson(url, body);
+            await Promise.all([mutateReview(), mutatePacks()]);
+            void swrMutate(CACHE_KEYS.accessReviews.list());
+        } catch (err) {
+            setConnectedError(err instanceof Error ? err.message : t('unknownError'));
+        } finally {
+            setAgentBusy(false);
+        }
+    }, [mutateReview, mutatePacks, swrMutate, t]);
 
     const decisionColumns = useMemo(
         () => createColumns<DecisionRow>([
@@ -384,7 +556,6 @@ export function AccessReviewDetailClient({
         [canDecide, review.lastActivityByUser, t],
     );
 
-    const [connectedError, setConnectedError] = useState<string | null>(null);
 
     /**
      * Record a verdict on a connected subject.
@@ -586,21 +757,243 @@ export function AccessReviewDetailClient({
                 },
             },
             {
+                id: 'pack',
+                header: t('colAgentPack'),
+                cell: ({ row }) => {
+                    const pack = packByDecision.get(row.original.id);
+                    if (!pack) {
+                        return <span className="text-xs text-content-muted">{t('agentPackMissing')}</span>;
+                    }
+                    const sum = readPackSummary(pack.sectionsJson);
+                    return (
+                        <div className="text-xs" data-testid={`agent-pack-${row.original.id}`}>
+                            <div>{t('agentPackUnused', { unused: sum.unusedGrants, total: sum.grants })}</div>
+                            <div className="text-content-muted">
+                                {t('agentPackHarness', { level: sum.harnessLevel ?? '—', drift: sum.harnessDrift ?? '—' })}
+                                {sum.guardFlags > 0 ? ` · ${t('agentPackGuardFlags', { count: sum.guardFlags })}` : ''}
+                                {sum.breakerTripped ? ` · ${t('agentPackBreakerTripped')}` : ''}
+                                {sum.kills > 0 ? ` · ${t('agentPackKills', { count: sum.kills })}` : ''}
+                            </div>
+                            <div className="text-content-muted" data-testid={`agent-pack-prepared-by-${row.original.id}`}>
+                                {pack.preparedByAgentId
+                                    ? t('agentPackPreparedBy', { agent: agentNameByAgentId.get(pack.preparedByAgentId) ?? pack.preparedByAgentId })
+                                    : t('agentPackPreparedByPerson')}
+                            </div>
+                            <div className="font-mono text-content-muted">
+                                {pack.contentHash.slice(0, 19)}…
+                            </div>
+                        </div>
+                    );
+                },
+            },
+            {
                 id: 'decision',
                 header: t('colDecision'),
                 cell: ({ row }) => {
                     const d = row.original;
-                    return d.decision ? (
-                        <StatusBadge variant={DECISION_VARIANT[d.decision]}>
-                            {d.decision}
-                        </StatusBadge>
-                    ) : (
-                        <span className="text-xs text-content-muted">{t('pending')}</span>
+                    if (d.decision) {
+                        return (
+                            <StatusBadge variant={DECISION_VARIANT[d.decision]}>
+                                {d.decision}
+                            </StatusBadge>
+                        );
+                    }
+                    if (!canDecide) {
+                        return <span className="text-xs text-content-muted">{t('pending')}</span>;
+                    }
+                    // The server refuses each of these; saying so here means the
+                    // reviewer is not offered a control that always fails.
+                    if (ownerOf(d.id) === currentUserId) {
+                        return (
+                            <span className="text-xs text-content-muted" data-testid={`agent-owner-cannot-decide-${d.id}`}>
+                                {t('agentOwnerCannotDecide')}
+                            </span>
+                        );
+                    }
+                    if (!packByDecision.has(d.id)) {
+                        return <span className="text-xs text-content-muted">{t('agentPackMissing')}</span>;
+                    }
+                    const pending = pendingByDecision.get(d.id) ?? 0;
+                    if (pending > 0) {
+                        return (
+                            <span className="text-xs text-content-muted" data-testid={`agent-narrowings-first-${d.id}`}>
+                                {t('agentNarrowingsFirst', { count: pending })}
+                            </span>
+                        );
+                    }
+                    return (
+                        <select
+                            className="input"
+                            defaultValue=""
+                            disabled={agentBusy}
+                            data-testid={`agent-decision-select-${d.id}`}
+                            onChange={(e) => {
+                                const v = e.target.value as DecisionType | '';
+                                e.target.value = '';
+                                if (v) void agentAct(`${apiBase}/connected-decisions/${d.id}`, { decision: v });
+                            }}
+                        >
+                            <option value="" disabled>{t('decidePrompt')}</option>
+                            <option value="CONFIRM">{t('agentConfirm')}</option>
+                            <option value="REVOKE">{t('agentRevoke')}</option>
+                            <option value="MODIFY">{t('agentModify')}</option>
+                        </select>
                     );
                 },
             },
         ]),
-        [t],
+        [t, packByDecision, pendingByDecision, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase, agentNameByAgentId],
+    );
+
+    const agentNameOf = useCallback((decisionId: string): string => {
+        const snap = readAgentSubjectSnapshot(agentRowById.get(decisionId)?.snapshotJson);
+        return snap ? (snap.agentName ?? snap.agentId) : t('agentRestricted');
+    }, [agentRowById, t]);
+
+    const narrowingColumns = useMemo(
+        () => createColumns<AgentNarrowingRow>([
+            {
+                id: 'agent',
+                header: t('colAgent'),
+                cell: ({ row }) => <span className="text-sm">{agentNameOf(row.original.decisionId)}</span>,
+            },
+            {
+                id: 'tool',
+                header: t('colNarrowingTool'),
+                cell: ({ row }) => (
+                    <div data-testid={`agent-narrowing-${row.original.id}`}>
+                        <div className="font-mono text-sm">{row.original.toolName}</div>
+                        <div className="text-xs text-content-muted">
+                            {t('narrowingGranted', { date: formatDate(row.original.grantedAt) })}
+                        </div>
+                    </div>
+                ),
+            },
+            {
+                id: 'basis',
+                header: t('colNarrowingBasis'),
+                cell: () => <span className="text-xs text-content-muted">{t('narrowingBasisUnused')}</span>,
+            },
+            {
+                id: 'outcome',
+                header: t('colDecision'),
+                cell: ({ row }) => {
+                    const n = row.original;
+                    if (n.outcome !== 'PENDING') {
+                        // Plain text, not a badge: the subject's verdict is the
+                        // row's one loud status.
+                        return (
+                            <span className="text-sm font-medium">
+                                {n.outcome === 'ACCEPTED' ? t('narrowingAccepted') : t('narrowingRejected')}
+                            </span>
+                        );
+                    }
+                    if (!canDecide || ownerOf(n.decisionId) === currentUserId) {
+                        return <span className="text-xs text-content-muted">{t('pending')}</span>;
+                    }
+                    return (
+                        <div className="flex gap-tight">
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={agentBusy}
+                                data-testid={`agent-narrowing-accept-${n.id}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-narrowings/${n.id}`, { outcome: 'ACCEPT' })}
+                            >{t('narrowingAccept')}</Button>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={agentBusy}
+                                data-testid={`agent-narrowing-reject-${n.id}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-narrowings/${n.id}`, { outcome: 'REJECT' })}
+                            >{t('narrowingReject')}</Button>
+                        </div>
+                    );
+                },
+            },
+        ]),
+        [t, canDecide, currentUserId, agentBusy, agentNameOf, ownerOf, agentAct, apiBase],
+    );
+
+    const sampleColumns = useMemo(
+        () => createColumns<AgentSampleRow>([
+            {
+                id: 'agent',
+                header: t('colAgent'),
+                cell: ({ row }) => (
+                    <span className="text-sm" data-testid={`agent-sample-${row.original.id}`}>
+                        {agentNameOf(row.original.decisionId)}
+                    </span>
+                ),
+            },
+            {
+                id: 'decision',
+                header: t('colSampleDecision'),
+                cell: ({ row }) => {
+                    const decision = agentRowById.get(row.original.decisionId)?.decision ?? null;
+                    return <span className="text-sm">{decision ?? '—'}</span>;
+                },
+            },
+            {
+                id: 'outcome',
+                header: t('colSampleOutcome'),
+                cell: ({ row }) => {
+                    const sample = row.original;
+                    if (sample.outcome !== 'PENDING') {
+                        return (
+                            <span className="text-sm">
+                                {t(`sampleOutcome.${sample.outcome}`)}
+                                {sample.dissentCodes.length ? ` — ${sample.dissentCodes.map((c) => t(`dissentCodes.${c}`)).join(', ')}` : ''}
+                            </span>
+                        );
+                    }
+                    const first = agentRowById.get(sample.decisionId)?.decidedBy?.id ?? null;
+                    // The second human is neither the first nor the agent's owner.
+                    if (first === currentUserId || ownerOf(sample.decisionId) === currentUserId) {
+                        return <span className="text-xs text-content-muted">{t('sampleNotYours')}</span>;
+                    }
+                    if (!(isReviewer || isAdmin)) {
+                        return <span className="text-xs text-content-muted">{t('pending')}</span>;
+                    }
+                    const url = `${apiBase}/agent-samples/${sample.id}`;
+                    return (
+                        <div className="flex flex-wrap gap-tight">
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={agentBusy}
+                                data-testid={`agent-sample-concur-${sample.id}`}
+                                onClick={() => void agentAct(url, { outcome: 'CONCURRED' })}
+                            >{t('sampleConcur')}</Button>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={agentBusy}
+                                onClick={() => void agentAct(url, { outcome: 'INDETERMINATE' })}
+                            >{t('sampleIndeterminate')}</Button>
+                            <select
+                                className="input"
+                                defaultValue=""
+                                disabled={agentBusy}
+                                aria-label={t('sampleDissent')}
+                                data-testid={`agent-sample-dissent-${sample.id}`}
+                                onChange={(e) => {
+                                    const code = e.target.value;
+                                    e.target.value = '';
+                                    if (code) void agentAct(url, { outcome: 'DISSENTED', dissentCodes: [code] });
+                                }}
+                            >
+                                <option value="" disabled>{t('sampleDissent')}</option>
+                                {RECERT_DISSENT_CODES.map((c) => (
+                                    <option key={c} value={c}>{t(`dissentCodes.${c}`)}</option>
+                                ))}
+                            </select>
+                        </div>
+                    );
+                },
+            },
+        ]),
+        [t, currentUserId, isReviewer, isAdmin, agentBusy, agentRowById, agentNameOf, ownerOf, agentAct, apiBase],
     );
 
     return (
@@ -658,7 +1051,7 @@ export function AccessReviewDetailClient({
                         {canClose ? (
                             <Button
                                 onClick={() => setClosing(true)}
-                                disabled={!everySubjectDecided}
+                                disabled={!everySubjectDecided || !agentCloseReady}
                                 data-testid="access-review-close-button"
                             >{t('closeCampaign')}</Button>
                         ) : null}
@@ -743,6 +1136,37 @@ export function AccessReviewDetailClient({
                 </div>
             ) : null}
 
+            {isAgent && isAdmin && review.status === 'OPEN' && !review.subjectsRestricted
+                && packsQuery.data && packs.length === 0 ? (
+                <div
+                    role="status"
+                    data-testid="access-review-agent-packs-missing"
+                    className="flex items-center justify-between gap-default rounded-md border border-border-subtle bg-bg-muted p-3 text-sm"
+                >
+                    <span className="text-content-muted">{t('agentPacksMissingNotice')}</span>
+                    <Button
+                        variant="secondary"
+                        disabled={agentBusy}
+                        onClick={() => void agentAct(`${apiBase}/agent-packs`)}
+                        data-testid="access-review-agent-prepare-packs"
+                    >{agentBusy ? t('agentPreparing') : t('agentPreparePacks')}</Button>
+                </div>
+            ) : null}
+
+            {isAgent && packsQuery.data?.evidence ? (
+                <div
+                    role="status"
+                    data-testid="access-review-agent-evidence-hash"
+                    data-matches={packsQuery.data.evidence.matches ? 'true' : 'false'}
+                    className={packsQuery.data.evidence.matches
+                        ? 'rounded-md border border-border-subtle bg-bg-muted p-3 text-xs text-content-muted'
+                        : 'rounded-md border border-border-error bg-bg-error p-3 text-xs text-content-error'}
+                >
+                    {packsQuery.data.evidence.matches ? t('agentEvidenceMatches') : t('agentEvidenceMismatch')}{' '}
+                    <span className="font-mono">{packsQuery.data.evidence.recomputedSha256}</span>
+                </div>
+            ) : null}
+
             {isAgent ? (
                 <DataTable
                     data={connectedRows}
@@ -771,6 +1195,43 @@ export function AccessReviewDetailClient({
                     data-testid="access-review-roster-table"
                 />
             )}
+
+            {/* #3674 — what each pack proposes to remove, and the person's
+                answer. Accepting deletes the grant; nothing here can add one. */}
+            {isAgent && narrowings.length > 0 ? (
+                <section className="space-y-tight" aria-labelledby="access-review-agent-narrowings-heading">
+                    <Heading level={3} id="access-review-agent-narrowings-heading">
+                        {t('agentNarrowingsTitle')}
+                    </Heading>
+                    <p className="text-xs text-content-muted max-w-prose">{t('agentNarrowingsHint')}</p>
+                    <DataTable
+                        data={narrowings}
+                        columns={narrowingColumns}
+                        getRowId={(n) => n.id}
+                        emptyState={t('rosterEmpty')}
+                        resourceName={(p) => (p ? 'narrowings' : 'narrowing')}
+                        data-testid="access-review-agent-narrowings-table"
+                    />
+                </section>
+            ) : null}
+
+            {/* #3674 — the decisions drawn at close for a second human. */}
+            {isAgent && samples.length > 0 ? (
+                <section className="space-y-tight" aria-labelledby="access-review-agent-sample-heading">
+                    <Heading level={3} id="access-review-agent-sample-heading">
+                        {t('agentSampleTitle')}
+                    </Heading>
+                    <p className="text-xs text-content-muted max-w-prose">{t('agentSampleHint')}</p>
+                    <DataTable
+                        data={samples}
+                        columns={sampleColumns}
+                        getRowId={(x) => x.id}
+                        emptyState={t('rosterEmpty')}
+                        resourceName={(p) => (p ? 'samples' : 'sample')}
+                        data-testid="access-review-agent-sample-table"
+                    />
+                </section>
+            ) : null}
 
             {activeDecision ? (
                 <DecisionDialog

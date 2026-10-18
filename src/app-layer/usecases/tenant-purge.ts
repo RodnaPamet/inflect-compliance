@@ -77,7 +77,10 @@ export const TENANT_PURGE_RETAINED: ReadonlySet<string> = new Set([
     // "deleting an employee for privacy must not erase the record that their
     // access was revoked, which is frequently the artefact an auditor asks
     // for". That is the class of mistake this list exists to prevent.
+    'AccessReviewAgentNarrowing',
+    'AccessReviewAgentPack',
     'AccessReviewConnectedDecision',
+    'AccessReviewDecisionSampleAudit',
     'AgentActionReceipt',
     'AgentKillSwitch',
     'AgentKillSwitchDrill',

@@ -20,7 +20,7 @@ import type {
 import { PrismaTx } from '@/lib/db-context';
 import { badRequest } from '@/lib/errors/types';
 import {
-    AGENT_CAMPAIGN_REFUSAL,
+    AGENT_CAMPAIGN_OWN_FLOW,
     type MemberAccessReviewScope,
     type StoredAccessReviewScope,
 } from '@/lib/access-review/scope';
@@ -29,11 +29,10 @@ import { RequestContext } from '../types';
 /**
  * The scopes `create` may write. Every stored scope EXCEPT AGENT.
  *
- * #3674, deploy 1 of 2: the AGENT value exists so that every reader learns it
- * before any row holds it, and nothing may write it yet. Excluded by TYPE, so a
- * caller passing it fails `npm run typecheck`, and refused again at run time
- * for a caller that reached here through a widening cast. Deploy 2 adds the one
- * AGENT writer and widens this deliberately, in its own reviewed diff —
+ * #3674: an AGENT campaign is written by `createAgentCampaign` alone, which
+ * takes no scope argument. Excluded here by TYPE, so a member, connected or
+ * legacy caller passing AGENT fails `npm run typecheck`, and refused again at
+ * run time for a caller that reached here through a widening cast —
  * `tests/guards/access-review-agent-scope.test.ts` proves the exclusion.
  */
 export type WritableAccessReviewScope = Exclude<StoredAccessReviewScope, 'AGENT'>;
@@ -198,8 +197,8 @@ export class AccessReviewRepository {
         // got here through a cast, which is exactly the caller a type cannot see.
         if ((data.scope as string) === 'AGENT') {
             throw badRequest(
-                `${AGENT_CAMPAIGN_REFUSAL}: AccessReviewRepository.create does not write the AGENT `
-                    + 'scope in this release.',
+                `${AGENT_CAMPAIGN_OWN_FLOW}: AccessReviewRepository.create does not write the AGENT `
+                    + 'scope; an AGENT campaign is created by createAgentCampaign.',
             );
         }
         return db.accessReview.create({
@@ -214,6 +213,56 @@ export class AccessReviewRepository {
                 dueAt: data.dueAt ?? null,
                 snapshotTruncated: data.snapshotTruncated ?? false,
                 createdByUserId: ctx.userId,
+            },
+            select: accessReviewListSelect,
+        });
+    }
+
+    /**
+     * Step 3a (#3674) — create an AGENT campaign. The ONLY write of the AGENT
+     * scope, and it takes no scope argument: `create` still excludes AGENT by
+     * type, so no member, connected or legacy writer can produce the value by
+     * passing it, and this method cannot produce any other.
+     */
+    static async createAgentCampaign(
+        db: PrismaTx,
+        ctx: RequestContext,
+        data: {
+            name: string;
+            description?: string | null;
+            periodStartAt?: Date | null;
+            periodEndAt?: Date | null;
+            reviewerUserId: string;
+            dueAt?: Date | null;
+            snapshotTruncated: boolean;
+            createdAt: Date;
+            /**
+             * The registered agent that prepares every pack but its own, and
+             * the optional second agent that prepares that one (rule 8). With
+             * no second agent, a person prepares the preparer's own pack.
+             */
+            preparerAgentId: string;
+            crossPreparerAgentId: string | null;
+        },
+    ) {
+        return db.accessReview.create({
+            data: {
+                tenantId: ctx.tenantId,
+                name: data.name,
+                description: data.description ?? null,
+                scope: 'AGENT',
+                periodStartAt: data.periodStartAt ?? null,
+                periodEndAt: data.periodEndAt ?? null,
+                reviewerUserId: data.reviewerUserId,
+                dueAt: data.dueAt ?? null,
+                snapshotTruncated: data.snapshotTruncated,
+                createdByUserId: ctx.userId,
+                // Pinned by the caller, not defaulted by the database: the
+                // pack's observation window ends at this instant, and the
+                // caller reads its subjects at the same one.
+                createdAt: data.createdAt,
+                preparerAgentId: data.preparerAgentId,
+                crossPreparerAgentId: data.crossPreparerAgentId,
             },
             select: accessReviewListSelect,
         });

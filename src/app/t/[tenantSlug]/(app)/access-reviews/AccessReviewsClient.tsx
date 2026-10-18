@@ -335,6 +335,9 @@ function readIdentityAccounts(data: unknown): IdentityAccount[] | null {
     return null;
 }
 
+/** The scopes the create modal offers; LEGACY_APP is created from a reconciled snapshot. */
+type CreatableScope = 'ALL_USERS' | 'ADMIN_ONLY' | 'CONNECTED_APP' | 'AGENT';
+
 function CreateCampaignButton({
     tenantSlug,
     onCreated,
@@ -343,13 +346,27 @@ function CreateCampaignButton({
     const [open, setOpen] = useState(false);
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
-    const [scope, setScope] = useState<'ALL_USERS' | 'ADMIN_ONLY' | 'CONNECTED_APP'>('ALL_USERS');
+    const [scope, setScope] = useState<CreatableScope>('ALL_USERS');
     // Directory scope for a CONNECTED_APP review — 'all' reviews every synced
     // provider; a specific id (e.g. 'entra-id', 'active-directory') scopes the
     // campaign to one directory. Matches the ScheduledCheckProvider ids the
     // access-review-connected usecase accepts.
     const [directory, setDirectory] = useState<string>('all');
     const [reviewerUserId, setReviewerUserId] = useState('');
+    // #3674 — an AGENT review names the registered agent that prepares every
+    // reviewer pack but its own, and optionally a second that prepares that one
+    // (an agent never prepares the pack it is reviewed by). Left empty, a person
+    // prepares the preparer's own pack. Offered from the ACTIVE agents; the
+    // server re-checks every term (scored, not killed, granted the read).
+    const [preparerAgentId, setPreparerAgentId] = useState('');
+    const [crossPreparerAgentId, setCrossPreparerAgentId] = useState('');
+    const agentsQuery = useTenantSWR<{ agents?: Array<{ id: string; name: string }> }>(
+        scope === 'AGENT' ? '/admin/agents?status=ACTIVE' : null,
+    );
+    const agentOptions: ComboboxOption[] = useMemo(
+        () => (agentsQuery.data?.agents ?? []).map((a) => ({ value: a.id, label: a.name })),
+        [agentsQuery.data],
+    );
 
     // Which directories actually have ACTIVE synced accounts.
     //
@@ -430,12 +447,21 @@ function CreateCampaignButton({
             // separate endpoint + usecase; the member scopes (ALL_USERS /
             // ADMIN_ONLY) use the roster endpoint. A specific `directory` scopes
             // the campaign to one provider; 'all' omits the filter.
+            //
+            // An AGENT review (#3674) runs over the registered agents through
+            // its own endpoint, which freezes the population; its reviewer
+            // packs are then prepared by a second call. A failed preparation
+            // does not undo the campaign — the detail page offers it again.
             const isConnected = scope === 'CONNECTED_APP';
-            const body = isConnected
+            const isAgent = scope === 'AGENT';
+            const body = isConnected || isAgent
                 ? {
                       name,
                       description: description || undefined,
-                      provider: directory !== 'all' ? directory : undefined,
+                      provider: isConnected && directory !== 'all' ? directory : undefined,
+                      ...(isAgent
+                          ? { preparerAgentId, crossPreparerAgentId: crossPreparerAgentId || undefined }
+                          : {}),
                       reviewerUserId,
                       dueAt: dueAt ? dueAt.toISOString() : undefined,
                   }
@@ -446,7 +472,7 @@ function CreateCampaignButton({
                       reviewerUserId,
                       dueAt: dueAt ? dueAt.toISOString() : undefined,
                   };
-            const res = await fetch(isConnected ? `${apiUrl}/connected` : apiUrl, {
+            const res = await fetch(isConnected ? `${apiUrl}/connected` : isAgent ? `${apiUrl}/agents` : apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
@@ -461,11 +487,16 @@ function CreateCampaignButton({
                 throw new Error(apiErrorMessage(body, t('createFailed')));
             }
             const data = (await res.json()) as { accessReviewId: string };
+            if (isAgent) {
+                await fetch(`${apiUrl}/${data.accessReviewId}/agent-packs`, { method: 'POST' }).catch(() => undefined);
+            }
             setOpen(false);
             setName('');
             setDescription('');
             setReviewerUserId('');
             setDirectory('all');
+            setPreparerAgentId('');
+            setCrossPreparerAgentId('');
             setScope('ALL_USERS');
             setDueAt(null);
             onCreated(data.accessReviewId);
@@ -519,9 +550,7 @@ function CreateCampaignButton({
                                 <RadioGroup
                                     value={scope}
                                     onValueChange={(v) =>
-                                        setScope(
-                                            v as 'ALL_USERS' | 'ADMIN_ONLY' | 'CONNECTED_APP',
-                                        )
+                                        setScope(v as CreatableScope)
                                     }
                                     className="flex flex-col gap-tight"
                                 >
@@ -534,6 +563,10 @@ function CreateCampaignButton({
                                             // via the integrations connector; scoped by the Directory
                                             // picker below.
                                             ['CONNECTED_APP', t('scopeConnectedApp')],
+                                            // Recertifies the registered agents (#3674): one subject
+                                            // per agent, a reviewer pack each, created at its own
+                                            // endpoint.
+                                            ['AGENT', t('scopeAgent')],
                                         ] as const
                                     ).map(([value, labelText]) => (
                                         <label
@@ -597,6 +630,32 @@ function CreateCampaignButton({
                                         )}
                                     </div>
                                 </FormField>
+                            ) : null}
+                            {scope === 'AGENT' ? (
+                                <>
+                                    <FormField label={t('fieldPreparer')} hint={t('preparerHint')} required>
+                                        <div data-testid="access-review-new-preparer">
+                                            <Combobox
+                                                id="access-review-preparer-select"
+                                                selected={agentOptions.find((o) => o.value === preparerAgentId) ?? null}
+                                                setSelected={(opt) => setPreparerAgentId(opt?.value ?? '')}
+                                                options={agentOptions}
+                                                matchTriggerWidth
+                                            />
+                                        </div>
+                                    </FormField>
+                                    <FormField label={t('fieldCrossPreparer')} description={t('crossPreparerHint')}>
+                                        <div data-testid="access-review-new-cross-preparer">
+                                            <Combobox
+                                                id="access-review-cross-preparer-select"
+                                                selected={agentOptions.find((o) => o.value === crossPreparerAgentId) ?? null}
+                                                setSelected={(opt) => setCrossPreparerAgentId(opt?.value ?? '')}
+                                                options={agentOptions.filter((o) => o.value !== preparerAgentId)}
+                                                matchTriggerWidth
+                                            />
+                                        </div>
+                                    </FormField>
+                                </>
                             ) : null}
                             <FormField label={t('fieldReviewer')} required>
                                 {/* People-picker over the tenant's members
