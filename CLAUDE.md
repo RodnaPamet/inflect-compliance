@@ -863,11 +863,16 @@ The tenant purge (`usecases/tenant-purge.ts`, the last step of `data-lifecycle`,
 days after a tenant's soft-delete) deletes every tenant-scoped table except
 `TENANT_PURGE_RETAINED`: each tenant-scoped Regulatory artefact plus the `Tenant`
 tombstone. **Skipping a table does not keep a row that `ON DELETE CASCADE`s from a
-purged parent** — Postgres deletes it with the parent. That is why access-review
+purged parent** — Postgres deletes it with the parent. So a model is either
+retained with everything it cascades from, or classed with its parent and purged
+with it. Both owner decisions of 2026-10-18 (#3716, open question 10): access-review
 campaigns are retained WHOLE, root included (`AccessReview` and every decision /
-pack / narrowing / sample table; owner decision 2026-10-18, #3716), and why five
-other retained models are in fact removed today (the doc's open question 10). A
-retained model's FK to a purged table must be a column-scoped `SET NULL`.
+pack / narrowing / sample table), and `AgentPolicyCardVersion`,
+`AgentProposalApproval`, `AgentProposalSampleAudit`, `AgenticEvidenceArtefact` and
+`IncidentEvidence` left the retained set and are removed with their parent. A
+retained model's FK to a purged table must be a column-scoped `SET NULL`;
+`tests/guardrails/tenant-purge-retained-never-cascades.test.ts` derives the
+cascade closure from the schema, with no allowlist.
 Adding a new model ⇒ classify it in the doc's inventory table (the
 `tests/guardrails/retention-policy-coverage.test.ts` ratchet fails CI until you do).
 

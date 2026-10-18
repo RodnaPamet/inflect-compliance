@@ -77,8 +77,8 @@ dedupe on `(control, family, canonical code)`.
 
 | File | Role |
 | --- | --- |
-| `src/app-layer/usecases/tenant-purge.ts` | `AccessReview` and `AccessReviewDecision` join `TENANT_PURGE_RETAINED` |
-| `docs/data-retention.md` | both reclassified Regulatory; the four evidence rows corrected; new "Tenant purge" subsection; open question 10 |
+| `src/app-layer/usecases/tenant-purge.ts` | `AccessReview` and `AccessReviewDecision` join `TENANT_PURGE_RETAINED`; the five cascading models leave it |
+| `docs/data-retention.md` | both reclassified Regulatory; the four evidence rows corrected; the five reclassified with their parents; new "Tenant purge" subsection; open question 10 opened and decided |
 | `src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx` | subject table via `subjectTableOf`; legacy posture cell |
 | `messages/en.json`, `messages/bg.json` | `appPrivileged`, `appStandard` |
 | `src/app-layer/usecases/legacy-evidence-controls.ts` | obligations by family + spelling |
@@ -89,6 +89,10 @@ dedupe on `(control, family, canonical code)`.
 | `tests/rendered/access-review-detail.test.tsx` | a LEGACY_APP campaign renders its subjects |
 | `tests/unit/tenant-purge.test.ts` | the campaign family is retained; dead citation corrected |
 | `CLAUDE.md` | Data Retention: a skipped table does not keep a cascaded row |
+| `tests/guardrails/tenant-purge-retained-never-cascades.test.ts` | the #3724 guard: no retained table is reachable by a cascade from a purged one |
+| `tests/helpers/prisma-schema-models.ts` | `relations` (target, FK fields, `onDelete`) and `tableName` (`@@map`) |
+| `tests/guards/no-epic-named-ratchets.test.ts` | ceiling +1, with its paragraph |
+| `docs/agentic-iam-roadmap.md` | the 3d workpaper-review row no longer says `AgentProposalSampleAudit` is regulatory |
 
 ## Decisions
 
@@ -124,13 +128,19 @@ dedupe on `(control, family, canonical code)`.
   `control.deletedAt: null`; the emitter's reason for it — a removed control
   must not keep attracting evidence — applies here unchanged.
 
-### The #3724 guard is held, and why
+### The #3724 guard, and the five models it found
 
-The structural guard #3724 asks for — no retained model may cascade,
-transitively, from a model the purge deletes, derived from the live schema and
-the purge's own deleted set, no allowlist — was written and mutation-checked. It
-is green for the whole access-review family and RED on five other retained
-models, each of which cascades from a business record the purge deletes:
+The structural guard #3724 asks for —
+`tests/guardrails/tenant-purge-retained-never-cascades.test.ts` — derives the
+purge's directly-deleted set through the real `deletionOrder()` and
+retained-set filter, closes it over every `onDelete: Cascade` relation in the
+live Prisma schema (through models with no `tenantId` as well), and fails on
+any retained table in the closure, naming the chain. There is no allowlist.
+`tests/helpers/prisma-schema-models.ts` gained the two facts it needs: each
+FK-carrying relation's target and delete action, and the `@@map` table name.
+
+Its first run, with the access-review family already retained whole, found
+five more:
 
 ```
 AgentPolicyCardVersion.card        <- cascade from AgentPolicyCard
@@ -140,10 +150,23 @@ AgenticEvidenceArtefact.control    <- cascade from Control   (also Evidence, Reg
 IncidentEvidence.evidence          <- cascade from Evidence
 ```
 
-The 2026-10-18 decision covers access reviews; each of these needs its own
-answer (retain the parent, detach the FK — a migration and, for the
-append-only tables, a trigger change — or stop classing it as retained). An
-allowlist is what the brief forbids, so the guard is kept off this commit until
-those five are decided rather than landed red or landed with exemptions. The
-retention doc states the current behaviour of all five and records the question
-as open question 10.
+**Owner decision, 2026-10-18 (open question 10): remove with parent.** All five
+leave `TENANT_PURGE_RETAINED` and are reclassified with the table they cascade
+from — `AgentPolicyCardVersion` as Configuration (the card is), the other four
+as Business records. No migration. The two decisions of the day are one rule
+seen from both sides: a model is either retained together with everything it
+cascades from, or it lives and dies with its parent. Access-review campaigns
+went the first way because their parent is itself the evidence; these five went
+the second because retaining their parents would retain the business data the
+purge exists to remove.
+
+- **Why not detach them instead.** A `SET NULL` on each would need a nullable
+  column, a denormalised reference, and — for `AgentPolicyCardVersion` and
+  `AgentProposalApproval` — an amended immutability trigger, because the
+  `SET NULL` is an UPDATE those triggers refuse. That is a migration across
+  five tables to keep rows the owner did not ask to keep.
+- **The guard was written before the decision and changed by none of it.** It
+  went red on the five, was held while they were decided, and goes green by the
+  set changing, not the guard. Mutation-checked both ways: with the pre-#3716
+  retained set it names the four access-review evidence tables; with the five
+  put back it names them.

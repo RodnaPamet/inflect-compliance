@@ -15,6 +15,11 @@
  * table in the database, read from the catalogue, so a row surviving that
  * should not, or one vanishing that should stay, both fail here.
  *
+ * It also holds the other half of the day's decisions (open question 10): an
+ * `IncidentEvidence` junction and an `AgenticEvidenceArtefact`, two of the five
+ * models classed with a purged parent, which the purge must now REMOVE while it
+ * keeps the incident the junction pointed at.
+ *
  * Two tenants. The second is never purged and must come through byte-for-byte
  * untouched in every table: a purge scoped by `WHERE "tenantId" = $1` that
  * reached across would be a far worse defect than the one being fixed.
@@ -37,7 +42,7 @@ const TENANTS = [PURGED, KEPT];
 const AT = new Date('2026-09-30T12:00:00Z');
 const SHA = (c: string) => `sha256:${c.repeat(64)}`;
 
-/** The models that must survive the purge, and nothing else of the tenant's. */
+/** The access-review models that must survive the purge. */
 const RETAINED_CAMPAIGN_TABLES = [
     'AccessReview',
     'AccessReviewAgentNarrowing',
@@ -109,7 +114,28 @@ async function seedTenant(tenantId: string): Promise<void> {
 
     // Ordinary business data, which the purge MUST remove — the control that
     // proves the purge ran at all.
-    await prisma.control.create({ data: { tenantId, name: 'Quarterly access review', code: 'AC-2' } });
+    id.control = (await prisma.control.create({ data: { tenantId, name: 'Quarterly access review', code: 'AC-2' } })).id;
+
+    // Two of the five models that USED to be "retained" while cascading from a
+    // purged parent, and are classed with that parent since 2026-10-18 (open
+    // question 10). Each hangs off an `Evidence` row the purge deletes; the
+    // incident is a regulatory artefact the purge keeps, which is what makes
+    // the junction the interesting case — one parent stays, one goes.
+    id.evidence = (await prisma.evidence.create({ data: { tenantId, type: 'TEXT', title: 'Forensic notes' } })).id;
+    id.incident = (await prisma.incident.create({
+        data: {
+            tenantId, reference: `INC-${tenantId}`, title: 'Phishing', description: 'Credential phish',
+            severity: 'HIGH', incidentType: 'phishing', detectedAt: AT, createdByUserId: u.owner,
+        },
+    })).id;
+    await prisma.incidentEvidence.create({ data: { tenantId, incidentId: id.incident, evidenceId: id.evidence } });
+    await prisma.agenticEvidenceArtefact.create({
+        data: {
+            tenantId, controlId: id.control, kind: 'AGENT_ACTION_RECEIPTS', evidenceId: id.evidence,
+            periodStart: new Date('2026-09-01T00:00:00Z'), periodEnd: new Date('2026-10-01T00:00:00Z'),
+            sourceDigest: SHA('c'),
+        },
+    });
 
     // ── 1. A closed MEMBER campaign, with its signed evidence PDF ─────────
     id.file = (await prisma.fileRecord.create({
@@ -256,6 +282,8 @@ async function clearOwnRows(): Promise<void> {
     await prisma.accessReviewConnectedDecision.deleteMany({ where: t });
     await prisma.accessReviewDecision.deleteMany({ where: t });
     await prisma.accessReview.deleteMany({ where: t });
+    // Retained by the purge too, as the regulatory artefact it is.
+    await prisma.incident.deleteMany({ where: t });
     await deleteAuditRowsForTenants(prisma, TENANTS);
     await prisma.user.deleteMany({
         where: { emailHash: { in: TENANTS.flatMap((tn) => PEOPLE.map((p) => hashForLookup(emailOf(tn, p)))) } },
@@ -299,6 +327,10 @@ describe('a tenant purge keeps every access-review campaign, whole', () => {
             AccessReviewAgentNarrowing: 1,
             AccessReviewDecisionSampleAudit: 1,
             Control: 1,
+            Evidence: 1,
+            Incident: 1,
+            IncidentEvidence: 1,
+            AgenticEvidenceArtefact: 1,
             TenantMembership: 4,
             FileRecord: 1,
             ConnectedIdentityAccount: 1,
@@ -311,6 +343,10 @@ describe('a tenant purge keeps every access-review campaign, whole', () => {
         expect(mine.map((r) => r.tenantId)).toEqual([PURGED]);
         expect(mine[0].totalRows).toBeGreaterThan(0);
         expect(mine[0].deleted.Control).toBe(1);
+        // The two formerly "retained" models are now in the DELETE list
+        // themselves, children before their parents.
+        expect(mine[0].deleted.IncidentEvidence).toBe(1);
+        expect(mine[0].deleted.AgenticEvidenceArtefact).toBe(1);
         // A retained table is never in the DELETE list, so it reports nothing.
         for (const t of RETAINED_CAMPAIGN_TABLES) expect(mine[0].deleted[t]).toBeUndefined();
     });
@@ -323,6 +359,7 @@ describe('a tenant purge keeps every access-review campaign, whole', () => {
             AccessReviewConnectedDecision: 4,
             AccessReviewDecision: 2,
             AccessReviewDecisionSampleAudit: 1,
+            Incident: 1,
         });
         // And the tombstone the campaign rows point at.
         expect(await prisma.tenant.findUnique({ where: { id: PURGED }, select: { id: true } })).toEqual({ id: PURGED });
@@ -390,11 +427,25 @@ describe('a tenant purge keeps every access-review campaign, whole', () => {
         expect(sample.outcome).toBe('CONCURRED');
     });
 
+    it('keeps none of the models classed with a purged parent — the incident stays, its evidence link goes', async () => {
+        // Owner decision 2026-10-18, open question 10: `IncidentEvidence` and
+        // `AgenticEvidenceArtefact` (with `AgentPolicyCardVersion`,
+        // `AgentProposalApproval` and `AgentProposalSampleAudit`) live and die
+        // with their parent. The incident is retained; the forensic evidence
+        // and the junction to it are not.
+        expect(await prisma.incident.count({ where: { tenantId: PURGED } })).toBe(1);
+        expect(await prisma.evidence.count({ where: { tenantId: PURGED } })).toBe(0);
+        expect(await prisma.incidentEvidence.count({ where: { tenantId: PURGED } })).toBe(0);
+        expect(await prisma.agenticEvidenceArtefact.count({ where: { tenantId: PURGED } })).toBe(0);
+    });
+
     it('the other tenant is untouched — every row of every table, byte for byte', async () => {
         const after = await fullDump(KEPT);
         // Denominator first: the witness covers the tables the purge emptied
         // for the other tenant, so "equal" is not "equal and empty".
-        expect(Object.keys(after)).toEqual(expect.arrayContaining(['Control', 'TenantMembership', 'FileRecord', ...RETAINED_CAMPAIGN_TABLES]));
+        expect(Object.keys(after)).toEqual(
+            expect.arrayContaining(['Control', 'TenantMembership', 'FileRecord', 'IncidentEvidence', ...RETAINED_CAMPAIGN_TABLES]),
+        );
         expect(after).toEqual(keptBefore);
     });
 });
