@@ -2019,6 +2019,51 @@ it are easy to undo:
   matches. An ABSENT membership row is a departure, because `removeTenantMember`
   deletes the row rather than writing REMOVED.
 
+**The service-principal disable** (step 2c, #3671). When the orphan pass
+contains an agent at AUTOMATIC, it REQUESTS that the agent's Entra service
+principal be disabled (`usecases/agent-service-principal-disable.ts`), and the
+request goes through the external write ladder and nowhere else. Rules that are
+each one careless edit from being undone:
+
+- **The disable lives on the OUTBOUND endpoint `/api/mcp/entra-service-principal`,
+  a sibling of the grant endpoint, never in `src/lib/mcp/`.** One file speaks
+  Graph's `servicePrincipals/` resource (`providers/entra-id/service-principal.ts`),
+  one module imports it (`entra-service-principal-dispatch.ts`), and only the
+  route imports that. `tests/guards/service-principal-disable-graph-seam.test.ts`
+  holds that import graph, and also holds that `external-write-dispatch.ts` is the
+  only module that calls `callTool` with a row's advertised write tool. Do not
+  give a job a direct call "to save a hop": the hop is where the rung, the
+  pairing and the journal are.
+- **It has its own connection, so it has its own rung.** Do not move the two tools
+  onto the grant endpoint: the rung is per connection, and a tenant at AUTOMATIC
+  for grants would be at AUTOMATIC for disables. `endpointBindingRefusal` refuses
+  a token whose connection is configured for a different endpoint.
+- **The request opens rows and sends nothing.** DISABLED reads nothing; DRY_RUN
+  `recordIntent`; PROPOSE_ONLY `createAgentProposal` (EXTERNAL_WRITE, prior state
+  in the payload, `agentId` null); AUTOMATIC `openAutomaticExternalWrite` under
+  the one approved template whose only open field is `servicePrincipalId`, bounded
+  to `contained_orphan_agent_entra_service_principals`. No pairing, an unreadable
+  prior state, or a read answering about another principal REFUSES. It never
+  throws at the pass.
+- **"Contained" is an `OWNER_DEPARTED` kill in force, and the link is the harness
+  reconciliation.** `DiscoveredAgent.discoveredId = entra:sp:<GUID>` with
+  `registeredAgentId` = the agent, exactly one per agent; two is `AMBIGUOUS_LINK`
+  and is excluded from the population. The request and the population read both
+  through `readContainedAgentServicePrincipalLinks`, so they cannot disagree. A
+  completed transfer lifts the kill, and `SEND_PRECONDITIONS` in the dispatch
+  refuses the disable at send at EVERY rung — a PROPOSE_ONLY approval made before
+  the transfer must not leave after it.
+- **ACCEPTED, never APPLIED on a 2xx.** The disable is in `ASYNC_DELIVERY_TOOLS`,
+  and only the reconcile's verifier promotes it: the prior state read enabled, the
+  current read says `accountEnabled: false`, same principal. An absent
+  `accountEnabled` is unreadable, never false. An `isError` answer to any write
+  settles INDETERMINATE, not ACCEPTED or FAILED.
+- **The endpoint refuses the connection's own principal and Microsoft first-party
+  principals**, and reads no JML direction flag: `writesEnabled` is consent to
+  disable people's accounts, not an agent's principal.
+- **The execution row names the `DiscoveredAgent` id, never the object id.**
+  `resultJson` is not encrypted; the object id stays in the encrypted journal.
+
 **Credential hygiene** (`usecases/agent-credential-hygiene.ts`, #3670, 06:00
 UTC) writes FINDINGS ONLY — no credential row is touched, and its integration
 test compares every key and connection row byte for byte. It reads one secret

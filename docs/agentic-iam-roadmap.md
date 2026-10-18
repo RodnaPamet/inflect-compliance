@@ -524,6 +524,55 @@ document against ISO/IEC 27001 A.5.18, SOC 2 CC6.1 and OWASP ASI03. The
 document's hash is the SHA-256 of its stored bytes and recomputes from the
 campaign's rows; the packs read shows whether it still does.
 
+### Disabling a contained agent's service principal
+
+When the owner-orphan pass contains an agent at AUTOMATIC, it also asks for the
+agent's Entra service principal to be disabled (`2c`, #3671). The request goes
+through the external write ladder, and nothing in the pass calls Microsoft
+Graph. An agent's principal is the one the harness ingest reconciled to it: a
+`DiscoveredAgent` whose `discoveredId` is `entra:sp:<objectId>` and whose
+`registeredAgentId` is the agent. An agent reconciled to two principals is
+refused as ambiguous. An agent counts as contained while an `OWNER_DEPARTED`
+kill is in force for it.
+
+The write goes to an outbound MCP endpoint, `POST /api/mcp/entra-service-principal`,
+a sibling of the grant endpoint. It advertises two tools: `disable_service_principal`,
+which sets `accountEnabled` to false and nothing else, and its paired prior-state
+read, `read_service_principal_state`. The endpoint is reached only through an
+`mcp-server` connection configured for it, so the disable has its own rung. It
+takes the grant endpoint's per-connection token, refuses a token whose connection
+names another endpoint, and writes `AUTHZ_DENIED` for every refusal it can
+attribute to a tenant. It refuses to disable a principal that is already
+disabled, the principal the Entra connection authenticates as, and a Microsoft
+first-party principal.
+
+The request finds the one connection whose `disable_service_principal` has a
+nominated prior-state read, and acts on that connection's rung:
+
+- DISABLED: nothing, not even the read.
+- DRY_RUN: the paired read runs, and a `RECORDED_ONLY` journal row records it.
+- PROPOSE_ONLY: an `EXTERNAL_WRITE` proposal carrying the prior state, for a person
+  to approve. No agent is attributed to it.
+- AUTOMATIC: a `PENDING` journal row carrying the prior state, under the one
+  approved template whose only open field is `servicePrincipalId`, bounded to the
+  `contained_orphan_agent_entra_service_principals` population.
+
+A completed ownership transfer lifts the kill, and at every rung the dispatch
+checks at send that the principal still belongs to a contained agent, so a
+disable approved or opened before the transfer is not sent after it. A missing pairing, a failed prior-state read, or a read that answers about
+another principal refuses the write. The external-write dispatch sends the
+disable and settles it `ACCEPTED`. The reconcile promotes it to `APPLIED` only
+when the paired read shows the principal disabled, where it showed it enabled
+before the write. A write that the far end answers with an error result settles
+`INDETERMINATE`.
+
+The pass records each outcome on its decision by the `DiscoveredAgent` id, never
+the principal's object id. An outcome that needs an operator makes the pass
+PARTIAL; an agent with no principal, a tenant with no paired endpoint and a
+connection at DISABLED do not. Each request emits
+`agentic.owner_orphan_pass.service_principal_disable`. Which Graph application
+permission the Inflect app holds for this is an owner decision recorded on #3671.
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
@@ -532,9 +581,9 @@ campaign's rows; the packs read shows whether it still does.
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
-| External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
+| External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
-| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). |
+| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). |
 
 ## Roadmap (future direction)
 
@@ -849,19 +898,19 @@ grants.
 
 #### Token-gated endpoints
 
-Two planned endpoints take no `requirePermission`, because no session or role
-stands behind the caller, and nothing in the permission system can express who
-it is:
+Two endpoints take no `requirePermission`, because no session or role stands
+behind the caller, and nothing in the permission system can express who it is.
+The first shipped in `2c` (#3671); the second is planned:
 
 | Endpoint (step) | Gate | Why |
 |---|---|---|
-| `read_service_principal_state` and `disable_service_principal`, on `/api/mcp/entra-grant` or a sibling route under `src/app/api/mcp/` (`2c`) | The per-connection token, as on the grant endpoint | The only client is Inflect's own external-write dispatch. The header of `src/app/api/mcp/entra-grant/route.ts` sets the precedent: the gate is the token, and every refusal that can be attributed to a tenant writes the `AUTHZ_DENIED` row `requirePermission` would have written. |
+| `read_service_principal_state` and `disable_service_principal`, on the sibling route `/api/mcp/entra-service-principal` (`2c`, shipped) | The per-connection token, as on the grant endpoint, and the token's connection must be configured for this endpoint | The only client is Inflect's own external-write dispatch. The header of `src/app/api/mcp/entra-grant/route.ts` sets the precedent: the gate is the token, and every refusal that can be attributed to a tenant writes the `AUTHZ_DENIED` row `requirePermission` would have written. A sibling rather than the grant endpoint, because the rung is per connection. |
 | The inbound A2A task endpoint (`4b`) | The pinned peer's signature over the task, checked against its approved card before the body is read | The caller is another organisation's agent, and its reach is the receiving agent's grants (decision 4), not a key of its own. Every refusal that can be attributed to a tenant writes `AUTHZ_DENIED`. |
 
 Each is triaged into the `PROTOCOL_CREDENTIAL` class of
 `tests/guardrails/api-route-has-some-authorization.test.ts`, where `/api/mcp`,
-`/api/mcp/entra-grant` and `/api/mcp/token` already sit. A new route fails that
-test until it is triaged.
+`/api/mcp/entra-grant`, `/api/mcp/entra-service-principal` and `/api/mcp/token`
+sit. A new route fails that test until it is triaged.
 
 **The retirement cascade is one act under one key.** Retirement takes
 `admin.agent_registry` alone. It does not also ask for the keys that gate each
@@ -959,8 +1008,9 @@ Planned changes that add no model:
   tables. Its mode is a column on an existing model and takes that model's
   class, and so does the kill's reason code, a column on `AgentKillSwitch`
   (shipped in #3670).
-- Step `2c` writes `ExternalWriteJournal` and prior-state rows to the existing
-  external-write tables.
+- Step `2c` writes `ExternalWriteJournal` rows and `EXTERNAL_WRITE` proposals to
+  the existing tables (#3671, shipped); its pairing is an
+  `ExternalToolPriorStateRead` row an OWNER nominates.
 - Step `2d` stores no passport: passports are derived and emitted as `Evidence`
   (#3672).
 - Step `3a` reuses `AccessReview` and `AccessReviewConnectedDecision`, as the
@@ -996,7 +1046,7 @@ tracked on #3664.
 |---|---|---|---|---|
 | The pilot as a whole | Yes | Inflect's own estate, reported into Inflect's own tenant | Decision 10; CLAUDE.md, "Production VM" | Not named |
 | `entra-sp` | Yes | Inflect's Entra tenant: its service principals and app registrations. The repository shows that the product has an Entra app registration, because the Entra consent callback serves every tenant from one registered redirect URI; which directory holds that registration it does not say. | Decision 10; `src/app/api/integrations/mcp-server/callback/route.ts` | Not named |
-| `mcp` | Yes | MCP servers. Decision 10 does not say which, and the repository cannot tell: #3686 reads every configured MCP server. The repository shows two kinds. Inflect serves its own: `/api/mcp`, read tools and propose tools behind the registration gate, and `/api/mcp/entra-grant`, a two-tool server whose intended client is Inflect's own dispatch job, both in the `app` service (`/api/mcp/token` is the token exchange, not a server). And a tenant can connect external MCP servers, through the `mcp-server` and `legacy-mcp` integration providers; which ones Inflect's own tenant has connected is production data the repository cannot read. | Decision 10; `src/app/api/mcp/route.ts`, `src/app/api/mcp/entra-grant/route.ts`, `src/app/api/mcp/token/route.ts`, `src/app-layer/integrations/providers/mcp-server-provider.ts`, `src/app-layer/integrations/providers/legacy-mcp/index.ts` | Not named |
+| `mcp` | Yes | MCP servers. Decision 10 does not say which, and the repository cannot tell: #3686 reads every configured MCP server. The repository shows two kinds. Inflect serves its own: `/api/mcp`, read tools and propose tools behind the registration gate, `/api/mcp/entra-grant`, a server whose intended client is Inflect's own dispatch job, and `/api/mcp/entra-service-principal`, its two-tool sibling for the `2c` disable, all in the `app` service (`/api/mcp/token` is the token exchange, not a server). And a tenant can connect external MCP servers, through the `mcp-server` and `legacy-mcp` integration providers; which ones Inflect's own tenant has connected is production data the repository cannot read. | Decision 10; `src/app/api/mcp/route.ts`, `src/app/api/mcp/entra-grant/route.ts`, `src/app/api/mcp/entra-service-principal/route.ts`, `src/app/api/mcp/token/route.ts`, `src/app-layer/integrations/providers/mcp-server-provider.ts`, `src/app-layer/integrations/providers/legacy-mcp/index.ts` | Not named |
 | `cicd` | Yes | GitHub Actions, 15 workflows on `main`. One calls a model: `skills-evaluate.yml` (#3690), run on manual dispatch, calls the Anthropic API with the repository secret `ANTHROPIC_API_KEY` (decision 8). The `flue` job in `ci.yml` runs the agent loop against a scripted fake provider, with no credential and no network. Three non-human identities act: the per-run `GITHUB_TOKEN` that every job receives, a GitHub App release identity minted from `RELEASE_APP_ID` and the secret `RELEASE_APP_PRIVATE_KEY` (`release.yml`), and the `ANTHROPIC_API_KEY` of `skills-evaluate.yml`. `ghcr-publish.yml` publishes the image the VM runs. | Decision 10; `.github/workflows/*.yml` | Not named |
 | `inflect-register` | Yes, always | The `RegisteredAgent` rows of Inflect's own tenant. Which tenant that is, and what its register holds, is production data the repository cannot read. | Decision 10; `prisma/schema/agentic.prisma` `RegisteredAgent` | Not named |
 | `vault` | No | Inflect has no secrets vault. CLAUDE.md names a host environment file on the VM as where production secrets live, and an environment file is not an inventory the scanner can read. | Decision 10; CLAUDE.md, "Production VM" | Not named |
@@ -1039,7 +1089,7 @@ What this means for Phase 1:
 |---|---|---|
 | 0 Mobilise (#3655) | Oct–Nov 2026 | `0a` ladder and contract (#3660) · `0b` skill standard (#3661) · `0c` passport spec and A2A threat model (#3662) · `0d` audit procedures (#3663) · `0e` DPIA, keys, retention, pilot (#3664) |
 | 1 See and teach (#3656) | Nov 2026–Jan 2027 | `1a` scanner and ingest (#3665) · `1b` skill evaluation gate and run pins (#3666) · `1c` skill text scan (#3667) · `1d` first IAM skills (#3668) |
-| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698, the intake under #3669 itself) · `2a-evidence` per-agent evidence that retirement withdraws (#3700) · `2b` orphan pass and hygiene (#3670, shipped; per-tenant key rotation age #3708) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
+| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698, the intake under #3669 itself) · `2a-evidence` per-agent evidence that retirement withdraws (#3700) · `2b` orphan pass and hygiene (#3670, shipped; per-tenant key rotation age #3708) · `2c` service-principal disable (#3671, shipped) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
 | 3 Decide and assure (#3658) | Mar–Jun 2027 | `3a` agent recertification (#3674) · `3b` workpapers and independence (#3675) · `3c` auditor agent (#3676) · `3d` workpaper sampling (#3677) |
 | 4 Scale and certify (#3659) | Jul–Oct 2027 | `4a` more estates and sources (#3678) · `4b` A2A pilot (#3679) · `4c` tenant-authored skills (#3680) · `4d` external reliance (#3681) · `4e` methodology hand-over (#3682) |
 
