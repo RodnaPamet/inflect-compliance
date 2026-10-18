@@ -204,35 +204,62 @@ export function parseSkillDocument(name: string, raw: string): LoadedSkill {
     // taken from the directory, so a copied skill that kept its old name is a
     // load error instead of a silently renamed skill.
     if (str('name') !== name) throw new SkillLoadError(name, `frontmatter name "${str('name')}" does not match its directory`);
-    if (!NAME_RE.test(name) || name.length > 64) throw new SkillLoadError(name, 'name is not a valid Agent Skills identifier');
-    const description = str('description');
-    if (!description) throw new SkillLoadError(name, 'description is required — it carries the entire routing decision');
-    if (description.length > MAX_DESCRIPTION_CHARS) throw new SkillLoadError(name, `description exceeds ${MAX_DESCRIPTION_CHARS} chars`);
-    if (!body) throw new SkillLoadError(name, 'instructions are empty');
-    if (Buffer.byteLength(body, 'utf8') > MAX_SKILL_BYTES) throw new SkillLoadError(name, `instructions exceed ${MAX_SKILL_BYTES} bytes`);
-    if (!str('license')) throw new SkillLoadError(name, 'license is required — a skill with no stated licence cannot be audited');
     const metadata = fm.metadata;
     if (metadata !== undefined && typeof metadata !== 'object') {
         throw new SkillLoadError(name, 'metadata must be a map');
     }
-    const meta = (metadata as Record<string, string> | undefined) ?? {};
-    validateStandardMetadata(name, meta);
+    return validateSkillFields(name, {
+        description: str('description'),
+        instructions: body,
+        license: str('license'),
+        metadata: (metadata as Record<string, string> | undefined) ?? {},
+    });
+}
+
+/** The fields of one skill, wherever its text is kept. */
+export interface SkillFields {
+    readonly description: string;
+    readonly instructions: string;
+    readonly license: string;
+    readonly metadata: Readonly<Record<string, string>>;
+}
+
+/**
+ * The loader's rules on one skill's fields, then the text scan — the SAME rules
+ * whether the skill is a document in the repository or a version a tenant
+ * authored (#3680). A structural failure throws `SkillLoadError`; text the scan
+ * refuses throws `SkillTextRefusedError`, which names rule ids only.
+ */
+export function validateSkillFields(name: string, f: SkillFields): LoadedSkill {
+    if (!NAME_RE.test(name) || name.length > 64) throw new SkillLoadError(name, 'name is not a valid Agent Skills identifier');
+    const { description, instructions } = f;
+    if (!description) throw new SkillLoadError(name, 'description is required — it carries the entire routing decision');
+    if (description.length > MAX_DESCRIPTION_CHARS) throw new SkillLoadError(name, `description exceeds ${MAX_DESCRIPTION_CHARS} chars`);
+    if (!instructions) throw new SkillLoadError(name, 'instructions are empty');
+    if (Buffer.byteLength(instructions, 'utf8') > MAX_SKILL_BYTES) throw new SkillLoadError(name, `instructions exceed ${MAX_SKILL_BYTES} bytes`);
+    if (!f.license) throw new SkillLoadError(name, 'license is required — a skill with no stated licence cannot be audited');
+    validateStandardMetadata(name, f.metadata);
 
     // Last, so a refusal is only ever about text that was otherwise a valid skill.
     const scan = scanSkillText({
         description,
-        instructions: body,
-        declaredTools: meta.tools === undefined ? [] : listOf(meta.tools),
+        instructions,
+        declaredTools: f.metadata.tools === undefined ? [] : listOf(f.metadata.tools),
     });
     if (scan.rules.length > 0) throw new SkillTextRefusedError(name, scan.rules, scan.guardRules);
 
     return {
         name,
         description,
-        instructions: body,
-        license: str('license'),
-        metadata: Object.freeze({ ...((fm.metadata as Record<string, string>) ?? {}) }),
+        instructions,
+        license: f.license,
+        metadata: Object.freeze({ ...f.metadata }),
     };
+}
+
+/** Is this an Agent Skills identifier the loader would accept? */
+export function isSkillName(name: string): boolean {
+    return NAME_RE.test(name) && name.length <= 64;
 }
 
 const INPUT_NAME_RE = /^[a-z][A-Za-z0-9]{0,63}$/;
@@ -316,11 +343,11 @@ export function loadAllSkills(): LoadedSkill[] {
 }
 
 /** The always-present cost: what every mounted skill adds to every prompt. */
-export function catalogBytes(skills: readonly LoadedSkill[]): number {
+export function catalogBytes(skills: readonly Pick<LoadedSkill, 'name' | 'description'>[]): number {
     return skills.reduce((n, s) => n + Buffer.byteLength(`${s.name}: ${s.description}\n`, 'utf8'), 0);
 }
 
-export function assertCatalogWithinBudget(skills: readonly LoadedSkill[]): void {
+export function assertCatalogWithinBudget(skills: readonly Pick<LoadedSkill, 'name' | 'description'>[]): void {
     const bytes = catalogBytes(skills);
     if (bytes > MAX_CATALOG_BYTES) {
         throw new SkillLoadError(

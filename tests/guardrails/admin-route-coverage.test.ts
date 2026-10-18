@@ -106,6 +106,17 @@ const ADMIN_ONLY_ROUTES = [
     // `admin.agent_registry` rather than the per-agent exposure key: a
     // skill is instruction text delivered to a model and is tenant-wide.
     'admin/agents/skills/route.ts',
+    // #3680 — tenant-authored skills: author, edit, evaluate, submit, approve,
+    // reject and retire. Their own key, `admin.agent_skill_review`, above the
+    // register's catch-all; the approver is never the version's author.
+    'admin/agents/skills/tenant/route.ts',
+    'admin/agents/skills/tenant/[skillId]/route.ts',
+    'admin/agents/skills/tenant/[skillId]/versions/route.ts',
+    'admin/agents/skills/tenant/[skillId]/versions/[versionId]/evaluation/route.ts',
+    'admin/agents/skills/tenant/[skillId]/versions/[versionId]/submit/route.ts',
+    'admin/agents/skills/tenant/[skillId]/versions/[versionId]/approve/route.ts',
+    'admin/agents/skills/tenant/[skillId]/versions/[versionId]/reject/route.ts',
+    'admin/agents/skills/tenant/[skillId]/versions/[versionId]/retire/route.ts',
     // Deny-by-default MCP tool exposure — its own key,
     // `admin.agent_tool_exposure`, narrower than the register's.
     'admin/agents/[agentId]/tools/route.ts',

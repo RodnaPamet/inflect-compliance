@@ -30,6 +30,11 @@ const SEAMS = {
     // the peer's card pin is the only thing that admits it, so exactly one file
     // may write the row that carries the pin.
     peerAgent: { table: 'PeerAgent', seam: 'src/app-layer/usecases/peer-agents.ts' },
+    // And for the same reason (#3680): a tenant skill's approval is what lets
+    // its text reach a model, so exactly one file may write the rows that carry
+    // the text, the review stamps and the pinned hash.
+    tenantSkill: { table: 'TenantSkill', seam: 'src/app-layer/usecases/tenant-skills.ts' },
+    tenantSkillVersion: { table: 'TenantSkillVersion', seam: 'src/app-layer/usecases/tenant-skills.ts' },
 } as const;
 type Delegate = keyof typeof SEAMS;
 
@@ -87,13 +92,14 @@ describe('the harness tables have one write seam each', () => {
     const files = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] });
     const scanned = files.map((abs) => ({ rel: repoRelative(abs), writes: findWrites(codeOf(readFileSync(abs, 'utf8'))) }));
 
-    it('scans the tree and finds exactly the four seams writing', () => {
+    it('scans the tree and finds exactly the five seams writing', () => {
         expect(files.length).toBeGreaterThan(500);
         expect(scanned.filter((s) => s.writes.length > 0).map((s) => s.rel).sort()).toEqual([
             'src/app-layer/usecases/agent-harness-acceptance.ts',
             'src/app-layer/usecases/agent-harness-scanner-keys.ts',
             'src/app-layer/usecases/agent-harness-scans.ts',
             'src/app-layer/usecases/peer-agents.ts',
+            'src/app-layer/usecases/tenant-skills.ts',
         ]);
     });
 

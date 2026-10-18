@@ -415,6 +415,18 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // submit: the vendor Documents tab's "add document" and the task Links tab's
 // "add link" (the vendor Links tab's toggle was demoted the same way for
 // #3301). The Classify trigger is a card action and is secondary. Net: zero.
+//
+// 2026-10-18 — #3680 tenant-authored skills: 175 stays, PAID FOR. The one
+// primary the step adds is the skill editor's save, the LAST action of its
+// dialog, which `modal-action-order` requires. It was first bought with the
+// vendor documents toggle, which #3712 spent first, so it is bought instead by
+// the task detail page's Watch toggle, which rendered primary while the user
+// was not watching and is now secondary in both states: a personal
+// notification preference is not the task's primary action, and its label and
+// `aria-pressed` carry the state. The workspace section's new-skill trigger
+// and the review sheet's approve and submit are secondary: a card action
+// inside a tab, and a four-eyes approve, as the parameter-sets page's is. Net
+// change: zero, re-measured at 175 on this branch rebased onto main.
 const MAX_PRIMARY_COUNT = 175;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

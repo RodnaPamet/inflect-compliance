@@ -29,6 +29,12 @@
  * no edit button" is the kind of claim a docblock makes and a later commit
  * quietly falsifies.
  *
+ * Since #3680 the tab also carries the WORKSPACE's own skills, with authoring
+ * for holders of `admin.agent_skill_review`. Every render here is a viewer
+ * without that right, so the whole panel still counts zero controls; the
+ * repository section counting zero for a viewer WITH it is held in
+ * `agent-skills-tenant-authoring.test.tsx`.
+ *
  * ── WHAT THIS HARNESS CANNOT SEE ────────────────────────────────────────────
  *
  * The `next-intl` mock is this repo's standard one for rendered tests and does

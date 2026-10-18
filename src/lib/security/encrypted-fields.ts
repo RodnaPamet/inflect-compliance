@@ -426,6 +426,18 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     WorkflowRun: ['contextJson', 'summary'],
     WorkflowStep: ['inputJson', 'outputJson'],
 
+    // ─── Step 4c (#3680) — tenant-authored skills ──────
+    // `instructions` is the procedure a tenant authored — third-party
+    // methodology under the author's licence, which is exactly what must not
+    // sit in plaintext in a database shared by tenants. `evaluationRecordJson`
+    // carries the evaluation cases (written around the same methodology) and a
+    // model's answers to them. Sanitised at the single write seam
+    // (`usecases/tenant-skills.ts`) before this middleware encrypts them.
+    // Neither is filtered or sorted on. The version's `description` stays
+    // plaintext on purpose — see its NOT_SENSITIVE entry in
+    // `tests/guardrails/encryption-manifest-coverage.test.ts`.
+    TenantSkillVersion: ['instructions', 'evaluationRecordJson'],
+
     // ─── Epic Agentic — the agent register ─────────────
     // `description` is the operator's own account of what an agent does and
     // what it may touch: it names internal systems, the data the agent reaches
