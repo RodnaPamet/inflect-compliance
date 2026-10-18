@@ -1557,6 +1557,32 @@ the property. `AiSystemRepository.create` takes the classifier's four-tier
 so neither the classifier nor that writer can produce the value. Do not widen
 the parameter. Readers use `StoredAiRiskTier`.
 
+**A2A peers** (`usecases/peer-agents.ts`, since #3673) are agents in another
+organisation, registered for identity and attribution and never for authority
+(`docs/a2a-mapping.md`). Five rules in it are easy to undo:
+
+- **`PeerAgent` has no authority column, and must never get one.** No grant,
+  scope, key or rung. Whatever a peer causes is decided by the registered agent
+  that receives it, through the existing funnel; a column here would be the
+  second authority model the design rules out.
+- **No trust on first use.** Registration records the card it saw and pins
+  nothing, and an unpinned peer is refused. Do not add a baseline pin the way
+  `recordBaselinePins` does for built-in tools: a card is another
+  organisation's text.
+- **Approval names the reviewed hash and re-reads the card**, refusing when it
+  moved, and an `apiKeyId` on the context refuses outright: a pin is a person
+  accepting what they read.
+- **Card text is never stored, logged, audited or notified.** It goes only to
+  the reviewer in the card-read response. Audit rows carry hashes and the
+  components that moved.
+- **The routes take `admin.agent_registry`, not `admin.agent_external_tools`**
+  (owner decision, 2026-10-18; threat-model R3). The key for an agent's call
+  out must not also configure whom it talks to.
+
+Card text is hashed through `JSON.stringify`, not straight to SHA-256: UTF-8
+encoding turns every lone surrogate into U+FFFD, so two different texts would
+hash alike.
+
 **Skills** follow `docs/agent-skill-standard.md`. The 2 KiB catalogue budget
 binds PER WORKFLOW and PER RUN (`assertWorkflowCatalogsWithinBudget`,
 `resolveSkillsFor`), never the corpus as a whole (owner decision, 2026-10-17):

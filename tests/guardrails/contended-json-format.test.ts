@@ -140,7 +140,9 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // (docs/agentic-audit-procedures.md, step 0d of #3654).
         // Moved again 2026-10-17 by one sorted ADDITION, the scanner DPIA
         // (#3664): a three-line diff, +3/-0.
-        keyOrderSha: '2be64ed9a0975a2acefaa3ee78ebadbaffd6ac2782d7df4bddb29e7cb0473bcb',
+        // Moved 2026-10-18 by one sorted ADDITION, docs/a2a-mapping.md (step
+        // 2e, #3673): +3/-0.
+        keyOrderSha: '8d8c1cf3a3648220a297fa5d34026e2d883ea369ad011d397d36e9af844a4243',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

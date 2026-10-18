@@ -2469,3 +2469,93 @@ model AgentOwnershipTransfer {
   /// The agent's transfer history, newest first, and the open-transfer lookup.
   @@index([tenantId, agentId, createdAt])
 }
+
+/// An A2A PEER: an agent in ANOTHER organisation that this tenant may one day
+/// exchange tasks with (#3673, step 2e; UC5). Step 4b builds the exchange; this
+/// row is what it will admit against.
+///
+/// ## A principal for identity and attribution, never for authority
+///
+/// `docs/a2a-mapping.md` states the rule this model is shaped by: A2A adds no
+/// second authority model. So the row holds ADMISSION FACTS only — who the
+/// peer is, who answers for it, the key its messages must be signed with,
+/// which card a person accepted, and whether it is active. There is no tool
+/// grant, permission key, scope or autonomy rung here, and there must never
+/// be one: whatever a peer causes is decided by the registered agent that
+/// receives it, through the existing funnel.
+///
+/// ## The card pin, and why it lives on this row
+///
+/// One pin per peer, re-approved in place with a revision counter, as
+/// `McpToolManifestPin` does for a tool. The pin columns are all NULL (never
+/// approved) or all set (approved), enforced by a CHECK. There is NO trust on
+/// first use: a NULL pin refuses all traffic (`docs/a2a-threat-model.md`,
+/// pinning rule 1). Only HASHES are stored. The card's text is never stored,
+/// logged or audited (rule 8); review reads the live card.
+model PeerAgent {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// A display name the operator chose. Not the card's own `name`, which is
+  /// peer-written text and is pinned rather than trusted.
+  name String
+
+  /// Where the card is served, https only, checked by `checkWebhookUrl` at save
+  /// time and re-resolved by `safeFetch` at every read. One registration per
+  /// card URL per tenant.
+  cardUrl String
+
+  /// The person in THIS tenant who answers for the peer. Required: a peer
+  /// nobody answers for is the shadow-agent problem in another organisation.
+  ownerUserId String
+  /// The supplier the peer belongs to. Required, as `RegisteredAgent.vendorId`
+  /// is for a THIRD_PARTY agent: a peer is always another organisation's.
+  vendorId    String
+
+  /// NULL means UNSCORED, and unscored refuses all traffic, as a NULL
+  /// `RegisteredAgent.riskTier` does.
+  riskTier         AgentRiskTier?
+  riskTierScoredAt DateTime?
+
+  /// The Ed25519 public key the peer's messages must be signed with (4b), as
+  /// the operator supplied it, and its SPKI SHA-256 fingerprint. Public
+  /// material only.
+  signingPublicKey      String
+  signingKeyFingerprint String
+
+  status PeerAgentStatus @default(ACTIVE)
+
+  /// The card hash the last successful read observed, and when. Informational:
+  /// it lets the admin surface show drift without fetching, and it is NEVER
+  /// what admission compares — admission reads the live card.
+  observedCardHash String?
+  observedAt       DateTime?
+
+  /// The approved pin. See the model doc for the all-or-nothing rule.
+  pinnedCardHash     String?
+  pinnedTextHash     String?
+  pinnedEndpointHash String?
+  pinnedOtherHash    String?
+  /// 0 while never approved, then 1, then +1 on every re-approval.
+  pinRevision        Int       @default(0)
+  /// A plain String with no FK, as `McpToolManifestPin.approvedByUserId` is:
+  /// the approval must survive the approver's account being deleted.
+  pinnedByUserId     String?
+  pinnedAt           DateTime?
+  /// The card hash this pin REPLACED. NULL on the first approval.
+  previousCardHash   String?
+
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner  User   @relation("PeerAgentOwner", fields: [ownerUserId], references: [id])
+  vendor Vendor @relation("PeerAgentVendor", fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, cardUrl])
+  @@index([tenantId, status])
+  @@index([tenantId, ownerUserId])
+  @@index([tenantId, vendorId])
+}

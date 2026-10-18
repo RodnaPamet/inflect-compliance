@@ -112,8 +112,29 @@ Two documents specify UC5's new parts.
   by an inbound A2A task never dispatches an external write above
   `PROPOSE_ONLY` (R17); and a peer's agent card is re-checked before every
   message against a copy at most 15 minutes old (R18). Which permission key
-  governs the peer register and pin routes (R3) is the model's recommendation,
-  open for step `2e`.
+  governs the peer register and pin routes (R3) the owner decided at step `2e`,
+  on 2026-10-18: `admin.agent_registry`.
+
+### A2A peer register and card pinning
+
+Step `2e` (#3673) builds the record an A2A peer is admitted against, and
+[`docs/a2a-mapping.md`](a2a-mapping.md) maps A2A tasks onto the funnel with no
+second authority model. No task is exchanged on `main`; that is `4b`.
+
+- `PeerAgent` holds admission facts only: an accountable owner, the supplier, a
+  risk tier, the peer's Ed25519 signing key, the approved card pin and a status
+  (RETIRED is one-way). Row-level security with `FORCE`, no `DELETE` for
+  `app_user`, and one writer, `src/app-layer/usecases/peer-agents.ts`.
+- There is no trust on first use. Registration records the card it saw and pins
+  nothing. A person reads the live card and approves the hash they reviewed; the
+  approval reads the card again and refuses when it moved, and an API key never
+  approves one. The hash (`a2a-agent-card/v1`) covers the whole card, with
+  component hashes for its text, its endpoint and the rest.
+- `checkPeerAdmission` is the gate `4b` calls before every message: ACTIVE,
+  owner still an ACTIVE member, tier scored, pinned, card readable and
+  unchanged, or refused.
+- The routes under `/api/t/:slug/admin/agents/peers` take
+  `admin.agent_registry`, by owner decision (2026-10-18, R3).
 
 ### Audit procedure catalogue
 
@@ -316,7 +337,9 @@ of decisions 1 to 6 above.
     both `agentMonthlyTokenBudget` and `agentMaxConcurrentRuns`. R18: a peer's
     agent card is re-checked before every message against a copy at most 15
     minutes old. R3, which permission key governs the peer register and pin
-    routes, stays an open recommendation for step `2e`. (`2e`, `4b`)
+    routes, was decided at step `2e` on 2026-10-18: `admin.agent_registry`, as
+    the model recommended, with `admin.agent_external_tools` kept for the call.
+    (`2e`, `4b`)
 
 ### Decisions recorded by the owner on 2026-10-18
 
@@ -345,9 +368,9 @@ changed what #3698 built.
 
 Decided in step `0e` (#3664) and signed with it (decision 9). This covers every
 privileged route the step issues plan through Phase 4, and records the routes
-of `1a` that #3688 shipped as they are on `main`. One row is a proposal rather
-than a decision: the key for the A2A peer register and pin routes of `2e` is
-open (decision 12). Every route below carries a literal `requirePermission` and
+of `1a` that #3688 shipped as they are on `main`. The key for the A2A peer
+register and pin routes of `2e`, the one row left open here (decision 12), was
+decided by the owner at step `2e` on 2026-10-18. Every route below carries a literal `requirePermission` and
 a rule in `src/lib/security/route-permissions.ts`, except the two endpoints
 under [Token-gated endpoints](#token-gated-endpoints), which say why. Key names
 follow `PERMISSION_SCHEMA` in `src/lib/permissions.ts`.
@@ -433,7 +456,7 @@ and one new key:
 | Set the orphan pass's mode (`2b`) | `admin.tenant_lifecycle` | The key `/admin/identity-write-policy` carries for the identity ladder: the mode decides whether a scheduled job stops agents unattended. |
 | Lift an `OWNER_DEPARTED` kill (`2b`) | `admin.agent_kill_switch` | The existing kill-switch route. The completed transfer is a precondition in the usecase, not a second key. |
 | Show a connection's passport (`2d`) | `admin.manage` | The view sits on the integrations admin page, and `/admin/integrations(/.*)?` resolves to `admin.manage`, the key of the integration settings beside it. Passports are derived (#3672), so the view writes nothing. |
-| Register an A2A peer, approve its card pin, re-approve a changed card (`2e`) | Open for `2e` (decision 12). Proposed here: `admin.agent_external_tools` | #3673 names it: a peer is a destination agents act towards, and this key already decides whether an agent may act outside the platform. `*` carries it (`scopesToPermissions` subtracts only the four agent-governance flags, deliberately), and decision 4 and #3673 have a human approve each pin, so the pin approval also refuses a caller whose context carries an `apiKeyId`. |
+| Register an A2A peer, approve its card pin, re-approve a changed card (`2e`) | `admin.agent_registry` (owner decision, 2026-10-18; decision 12) | Registering and pinning decide which other organisation's agent the tenant talks to, which is configuration, and the register already approves tenant-wide external tool definitions. #3673 had proposed `admin.agent_external_tools`; that key stays the one for the call itself (`4b`), so the authority that acts never configures whom it talks to. Decision 4 has a person approve each pin, so the approval also refuses a caller whose context carries an `apiKeyId`. |
 | Create, decide, close and read an `AGENT` campaign (`3a`) | `access_reviews.create`, `.decide`, `.close`, `.view` | The existing access-review routes and keys. |
 | Read an `AGENT` campaign's reviewer packs (`3a`) | `access_reviews.view` | Every role holds it, and a pack carries register data, so the usecase narrows the read to the campaign's assigned reviewer or a holder of `admin.agent_registry`, as `decide` narrows to the assigned reviewer. |
 | Accept or reject a narrowing in a campaign (`3a`) | `access_reviews.decide` | The effect is a grant delete, which only narrows, so it does not also need `admin.agent_tool_exposure`. |

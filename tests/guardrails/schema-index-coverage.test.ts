@@ -675,6 +675,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // Harness ingest (#3665) — both read per tenant with a bounded take.
     AgentHarnessScannerKey:
         'listHarnessScannerKeys, the harness tab\'s key card (getHarnessScannerKeysView, ordered by createdAt desc) and the scan ingest filter by tenantId (+ revokedAt IS NULL) only — a tenant trusts a handful of scanner keys, covered by the tenantId-leading @@unique([tenantId, keyFingerprint]) and @@index([tenantId, agentId]); bounded take ≤201.',
+    // A2A peers (#3673) — listPeerAgents filters by tenantId alone and orders
+    // by createdAt; a tenant registers a handful of partners.
+    PeerAgent:
+        'listPeerAgents filters by tenantId only and every other read is by (id, tenantId) or the tenantId-leading @@unique([tenantId, cardUrl]) — a tenant registers a handful of peers, covered by @@index([tenantId, status]); bounded take ≤200.',
     DiscoveredAgent:
         'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) — exactly the @@unique([tenantId, discoveredId]), bounded by the report\'s agent count; the harness matrix\'s shadow list filters by tenantId and registeredAgentId IS NULL (or a deleted register row) and orders by lastSeenAt desc — covered by @@index([tenantId, registeredAgentId]) + @@index([tenantId, lastSeenAt]); bounded take ≤201.',
     // Harness matrix (#3687) — read by (tenantId, scanId IN …[, discoveredAgentId IN …]).

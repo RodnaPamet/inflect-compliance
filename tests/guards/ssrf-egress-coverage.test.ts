@@ -98,6 +98,13 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         // bare call on the caller's URL.
         noBareFetchOf: 'fetch(opts.url',
     },
+    {
+        file: 'src/lib/agentic/peer-agent-card-fetch.ts',
+        reason:
+            "An A2A peer's agent card URL (#3673): an operator types a host in " +
+            'another organisation, read again on every review and admission.',
+        noBareFetchOf: 'fetch(cardUrl',
+    },
 ];
 
 /**
