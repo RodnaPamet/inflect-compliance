@@ -66,6 +66,7 @@ model Vendor {
   primaryOf                VendorRelationship[]   @relation("PrimaryRelation")
   subprocessorOf           VendorRelationship[]   @relation("SubprocessorRelation")
   registeredAgents         RegisteredAgent[]      @relation("RegisteredAgentVendor")
+  peerAgents               PeerAgent[]            @relation("PeerAgentVendor")
 
   /// The target of composite, tenant-carrying foreign keys. Postgres runs FK
   /// checks as the table owner, which BYPASSES row-level security — so RLS does

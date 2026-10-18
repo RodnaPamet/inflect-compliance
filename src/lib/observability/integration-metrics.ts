@@ -1001,6 +1001,7 @@ export function recordSyncLock(attrs: {
 let _policyCardEvaluation: Counter | null = null;
 let _policyCardRefusal: Counter | null = null;
 let _toolManifestDrift: Counter | null = null;
+let _peerCardCheck: Counter | null = null;
 let _agentKillRefusal: Counter | null = null;
 let _agentKillDrill: Counter | null = null;
 
@@ -1126,6 +1127,34 @@ export function recordToolManifestDrift(attrs: { tool: string; status: string })
         });
     }
     _toolManifestDrift.add(1, { tool: attrs.tool, status: attrs.status });
+}
+
+// ── A2A peer agent cards (#3673) ─────────────────────────────────────────────
+
+/**
+ * One read of an A2A peer's agent card, and what it found against the pin.
+ *
+ * `outcome` is `MATCH`, `CHANGED`, `UNPINNED`, or the fetch failure that stopped
+ * the read (`TIMEOUT`, `TOO_LARGE`, `NOT_AN_AGENT_CARD`, …). The peer id and
+ * the hashes are NOT labels: both are unbounded, and the per-peer record is the
+ * audit row an approval writes.
+ *
+ * ALERT ON — any `outcome="CHANGED"`. A peer's card is another organisation's
+ * text, and it changing under a pin is either the partner's release or the
+ * thing pinning exists to catch; either way a person must look before traffic
+ * resumes. A run of fetch failures for one tenant is a partner that went away
+ * or a card that grew past the cap, and the peer is refused until it is read.
+ */
+export function recordPeerCardCheck(attrs: { outcome: string; context: 'register' | 'read' | 'approve' | 'admission' }): void {
+    if (!_peerCardCheck) {
+        _peerCardCheck = getMeter().createCounter('agentic.peer_card.check', {
+            description:
+                'Reads of an A2A peer agent card and their verdict against the approved pin. ' +
+                'CHANGED and every fetch failure refuse the peer until a person re-approves or the card is read.',
+            unit: '1',
+        });
+    }
+    _peerCardCheck.add(1, { outcome: attrs.outcome, context: attrs.context });
 }
 
 // ── The kill switch, and its drill (OWASP ASI08 / ASI10) ───────────────────

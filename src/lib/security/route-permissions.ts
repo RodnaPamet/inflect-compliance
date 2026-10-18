@@ -421,6 +421,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'ingests nothing: the report must be signed by a scanner key the ' +
             'tenant registered, which takes admin.agent_registry.',
     },
+    // A2A peers (#3673). The same key as the catch-all below, stated on its
+    // own because which key it is was a decision (owner, 2026-10-18; residual
+    // R3 of docs/a2a-threat-model.md), not an inheritance.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/peers(\\/.*)?$`),
+        permission: 'admin.agent_registry',
+        note:
+            'Register an A2A peer agent, score it, and approve its card pin. ' +
+            'Configuration, so the register key: admin.agent_external_tools ' +
+            'is the key for an agent call leaving the tenant, and the ' +
+            'authority that acts must not also configure whom it talks to.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),
         permission: 'admin.agent_registry',

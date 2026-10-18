@@ -6,9 +6,10 @@ exchange work with agents in other organisations. The owner settled it on
 peers use A2A from the start, through the existing authority funnel, and each
 peer's agent card is pinned by hash and re-approved when it changes.
 
-This document models that traffic in both directions, hop by hop, before any A2A
-code exists. On `main` there is no inbound A2A endpoint, no outbound A2A client
-and no peer record. For every hop it names the trust boundary, the STRIDE
+This document models that traffic in both directions, hop by hop. On `main`
+there is a peer register with card pinning (step 2e, #3673; the mapping onto the
+funnel is [`docs/a2a-mapping.md`](a2a-mapping.md)), and there is no inbound A2A
+endpoint and no outbound A2A client. For every hop it names the trust boundary, the STRIDE
 threats and the control. Each control is in one of two states:
 
 - **On `main`**, cited by file and symbol. It holds today and A2A traffic must
@@ -32,8 +33,10 @@ each row that carries one says **by owner decision (2026-10-17)**:
 - **R18**: a peer's agent card is re-checked before every message against a
   copy at most 15 minutes old (pinning rule 6; I2 S, O1 T).
 
-R3, which permission key governs the peer register and pin routes, is not
-decided. It stays this model's recommendation, open for step 2e.
+On 2026-10-18, at step 2e, the owner decided R3 as this model recommended: the
+peer register and pin routes take `admin.agent_registry`, and
+`admin.agent_external_tools` stays the key for an agent's call leaving the
+tenant.
 
 The owner's merge of the pull request that adds this document is the owner's
 sign-off on it. The security owner's review is a separate act that the merge
@@ -136,8 +139,9 @@ that decide what a model is told.
 ## Agent-card pinning
 
 A card is the A2A counterpart of an MCP tool definition and is pinned on the same
-reasoning (`src/lib/mcp/tool-manifest.ts`). The rules below are requirements:
-step 2e builds them, and step 4b enforces them on traffic.
+reasoning (`src/lib/mcp/tool-manifest.ts`). Step 2e built the rules below
+(`src/lib/agentic/peer-agent-card.ts`, `src/app-layer/usecases/peer-agents.ts`),
+and step 4b enforces them on traffic.
 
 1. **No pin, no traffic, in either direction.** An unpinned peer is refused.
    Trust on first use, which built-in tools get from `recordBaselinePins`
@@ -197,12 +201,12 @@ Boundaries: TB7, and TB5 for fetching the card.
 
 | STRIDE | Threat | Control |
 |---|---|---|
-| S | A host that imitates a known partner is registered as that partner. | Required, 2e: the peer record names an accountable owner and the supplier, the way `RegisteredAgent` requires a `vendorId` when `provenance` is `THIRD_PARTY` (a CHECK constraint, documented on `RegisteredAgent.vendorId` in `prisma/schema/agentic.prisma`), and carries a risk tier, because the owner's decision registers a peer like an agent, with an owner, a tier and a card. An unscored tier refuses traffic, as a null `RegisteredAgent.riskTier` means deny today. |
-| T | The card changes between the operator reading it and approving it. | Required, 2e: approval on the reviewed hash (pinning rule 5). |
-| R | Nobody can say who accepted a card. | Required, 2e: approver, time and revision on the pin, and an audit entry (pinning rule 5). |
-| I | Fetching the card dials an address the peer chose, which can point inside the network. | On `main`: `safeFetch` (`src/app-layer/automation/webhook-safety.ts`) accepts https only, re-resolves DNS and pins the connection to validated public addresses, and refuses redirects. Required, 2e: the card fetch goes through it with a byte cap that aborts, and is registered as a sink in `tests/guards/ssrf-egress-coverage.test.ts`. |
-| D | An oversized or slow card. | Required, 2e: the cap and a deadline, as `wirePost` reads bodies (`src/lib/mcp/wire-transport.ts`). |
-| E | The authority that registers and pins a peer is the authority an agent then exercises. | On `main`: configuring and acting are separate keys. `admin.agent_external_tools` governs an agent's call leaving the tenant (`src/lib/permissions.ts`); approving a tenant-wide definition sits with `admin.agent_registry` (`src/app/api/t/[tenantSlug]/admin/agents/external-tools/route.ts`). Required, 2e: the register and pin routes carry a literal `requirePermission`. See residual R3 on which key. |
+| S | A host that imitates a known partner is registered as that partner. | On `main` (2e): `PeerAgent` names an accountable owner, who must be an ACTIVE member, and the supplier, the way `RegisteredAgent` requires a `vendorId` when `provenance` is `THIRD_PARTY` (a CHECK constraint, documented on `RegisteredAgent.vendorId` in `prisma/schema/agentic.prisma`), and carries a risk tier, because the owner's decision registers a peer like an agent, with an owner, a tier and a card. An unscored tier refuses admission (`evaluatePeerAdmission` in `src/lib/agentic/peer-agent-card.ts`), as a null `RegisteredAgent.riskTier` means deny. |
+| T | The card changes between the operator reading it and approving it. | On `main` (2e): approval on the reviewed hash, re-read and refused on a mismatch (`approvePeerAgentCard`; pinning rule 5). |
+| R | Nobody can say who accepted a card. | On `main` (2e): approver, time, revision and the replaced hash on the pin, and a `PEER_AGENT_CARD_APPROVED` audit entry carrying hashes only (pinning rule 5). |
+| I | Fetching the card dials an address the peer chose, which can point inside the network. | On `main`: `safeFetch` (`src/app-layer/automation/webhook-safety.ts`) accepts https only, re-resolves DNS and pins the connection to validated public addresses, and refuses redirects. On `main` (2e): the card fetch (`src/lib/agentic/peer-agent-card-fetch.ts`) goes through it with a byte cap that aborts, and is a registered sink in `tests/guards/ssrf-egress-coverage.test.ts`; `checkWebhookUrl` refuses a private or plaintext card URL at registration. |
+| D | An oversized or slow card. | On `main` (2e): a 64 KiB cap that aborts the transfer and a 10-second deadline over request and body, as `wirePost` reads bodies (`src/lib/mcp/wire-transport.ts`). |
+| E | The authority that registers and pins a peer is the authority an agent then exercises. | On `main`: configuring and acting are separate keys. `admin.agent_external_tools` governs an agent's call leaving the tenant (`src/lib/permissions.ts`); approving a tenant-wide definition sits with `admin.agent_registry` (`src/app/api/t/[tenantSlug]/admin/agents/external-tools/route.ts`). On `main` (2e): the register and pin routes carry a literal `requirePermission('admin.agent_registry')`, the key the owner chose (R3, 2026-10-18), so the key for the call never configures whom it talks to. |
 
 ### I1 — Arrival at the edge
 
@@ -224,11 +228,11 @@ Boundaries: TB2, TB6.
 | STRIDE | Threat | Control |
 |---|---|---|
 | S | A peer presents a leaked or another peer's credential. | Required, 4b: the inbound credential is issued per peer, stored as a hash as `TenantApiKey.keyHash` is (`prisma/schema/auth.prisma`), revocable, re-checked on every message, and paired with the per-message signature, so a leaked bearer alone is not enough. |
-| S | The peer's card changed since it was pinned. | Required, 2e and 4b: pinning rule 6. Its comparison before every message, against a copy at most 15 minutes old, is required on 4b by owner decision (2026-10-17; R18). |
+| S | The peer's card changed since it was pinned. | On `main` (2e): `checkPeerAdmission` reads the live card and refuses a peer whose card differs from its pin (pinning rule 6). Required, 4b: calling it before every message, against a copy at most 15 minutes old, by owner decision (2026-10-17; R18). |
 | E | The peer gains authority of its own. | Required, 4b: the inbound credential is bound to the receiving registered agent, as `TenantApiKey.agentId` binds a key today (`prisma/schema/auth.prisma`), and resolves through the chain under "One authority model". Its principal is the peer's accountable owner, so a departed owner's peer is refused by `resolveAgentAuthority`'s existing membership checks. |
 | E | The peer chooses which work runs. | On `main`: workflow definitions are code (`src/lib/agentic/workflow-registry.ts`). Required, 4b: an allowlist of workflow keys per peer; a task naming any other workflow is refused. |
 | E | A stopped agent receives work. | On `main`: `resolveKillState` (`src/lib/agentic/kill-switch.ts`) is read uncached before the model is called on the agent runtime (`src/lib/agentic/flue/execute.ts`) and as step 0 of every tool call; the registration gate refuses an agent that is not ACTIVE when `TenantSecuritySettings.requireRegisteredAgent` is on, which is the default. Required, 4b: the per-peer kill, checked at admission. |
-| I | A peer registered by one tenant reaches another. | On `main`: `getTenantCtx` refuses a key whose tenant is not the URL's tenant (`src/app-layer/context.ts`), and every tenant table carries row-level security (`docs/rls-tenant-isolation.md`). Required, 2e: the peer table under row-level security with a two-tenant test. |
+| I | A peer registered by one tenant reaches another. | On `main`: `getTenantCtx` refuses a key whose tenant is not the URL's tenant (`src/app-layer/context.ts`), and every tenant table carries row-level security (`docs/rls-tenant-isolation.md`). On `main` (2e): `PeerAgent` under row-level security with `FORCE`, tested across two tenants under `app_user` (`tests/integration/peer-agents.test.ts`). |
 | D | Peers exhaust a tenant's capacity. | On `main`: `assertWithinMonthlyBudget` (`src/lib/agentic/monthly-budget-policy.ts`) and `assertWithinConcurrencyCap` (`src/lib/agentic/run-concurrency-policy.ts`) refuse before the run row exists. Both columns, `agentMonthlyTokenBudget` and `agentMaxConcurrentRuns`, are nullable and NULL means no cap (`TenantSecuritySettings`, `prisma/schema/auth.prisma`), so a tenant on the defaults has neither. Required, 4b: the per-peer message quota (R13). Required, 4b, by owner decision (2026-10-17): inbound A2A is refused for a tenant that has not set both caps (R13). |
 | R | Nobody can say which peer started a run. | On `main`: `WorkflowRun.triggeredViaKeyId` and `WorkflowRun.agentId` (`prisma/schema/agentic.prisma`). Required, 4b: the peer and the verified inbound message are recorded against the run. |
 
@@ -279,7 +283,7 @@ Boundary: TB7.
 |---|---|---|
 | E | A peer becomes reachable without review. | On `main`, for every external tool: it is offered only when granted to the agent (`RegisteredAgentTool`, under `admin.agent_tool_exposure`), pinned by a named person (`approveExternalToolManifest`, under `admin.agent_registry`), on an enabled connection above `DISABLED` (`resolveGrantedExternalTools`). It can be granted only to an agent whose declared data axis reaches `EXTERNAL_EGRESS` (`assertGrantWithinDeclaredDataScope` in `src/app-layer/usecases/agent-tool-exposure.ts`) and called only under a policy card that permits that rung, the one `dataScopeForToolCall` assigns every external tool (`src/lib/mcp/tool-data-scope.ts`). Required, 4b: the send to a peer is an external tool on that path, offered only while the peer's card pin is current. |
 | E | The write rung is raised quickly. | On `main`: one rung per widening, seven days at each rung above `DISABLED`, and evidence before leaving `DRY_RUN` or `PROPOSE_ONLY` (`refusalForMove`, `MODE_MIN_DAYS`, `MODE_MIN_EVIDENCE` in `src/lib/integrations/external-write-ladder.ts`). Moves are OWNER-only (`admin.tenant_lifecycle` on `src/app/api/t/[tenantSlug]/admin/external-write-policy/[connectionId]/route.ts`). |
-| T | The endpoint is repointed while the stored credential is kept. | On `main`: `redirectsStoredCredential` (`src/app-layer/integrations/config-schema.ts`) refuses that update for an `mcp-server` connection's `url`. Required, 2e: the same refusal for a peer's endpoint. Required, 2d: an endpoint change is a HIGH passport finding (`docs/integration-passport.md`, P1). |
+| T | The endpoint is repointed while the stored credential is kept. | On `main`: `redirectsStoredCredential` (`src/app-layer/integrations/config-schema.ts`) refuses that update for an `mcp-server` connection's `url`. On `main` (2e): a peer's card URL and signing key cannot be updated at all (`UpdatePeerAgentSchema` in `src/app-layer/usecases/peer-agents.ts` has neither field), so a move is a new registration that starts unpinned, and the card's own endpoint sits inside the pin's endpoint hash. Required, 2d: an endpoint change is a HIGH passport finding (`docs/integration-passport.md`, P1). |
 | R | A configuration change goes unnoticed. | On `main`: each change is audited: `AGENT_TOOL_GRANTED` (`src/app-layer/usecases/agent-tool-exposure.ts`), `MCP_TOOL_MANIFEST_APPROVED` (`src/app-layer/usecases/mcp-tool-manifest.ts`), `EXTERNAL_WRITE_MODE_CHANGED` (`src/app-layer/usecases/external-write-policy.ts`) and `EXTERNAL_PRIOR_STATE_READ_SET` (`src/app-layer/usecases/external-prior-state-read.ts`). Required, 2d: the weekly passport raises a finding for each change, with an owner. |
 
 ### O1 — Assembling the run's tools
@@ -288,7 +292,7 @@ Boundary: TB7 into the run.
 
 | STRIDE | Threat | Control |
 |---|---|---|
-| T | The peer rewrites its card or skill text to steer Inflect's model (tool poisoning, OWASP ASI04). | On `main`, for MCP tools: verbatim description hashing, and refusal until a person re-approves (`src/lib/mcp/tool-manifest.ts`). Required, 2e and 4b: pinning rules 1 to 6 for cards; the send tool is not offered while the live card differs from the pin, and each send compares the card again (pinning rule 6), against a copy at most 15 minutes old, which is required on 4b by owner decision (2026-10-17; R18). |
+| T | The peer rewrites its card or skill text to steer Inflect's model (tool poisoning, OWASP ASI04). | On `main`, for MCP tools: verbatim description hashing, and refusal until a person re-approves (`src/lib/mcp/tool-manifest.ts`). On `main` (2e): pinning rules 1 to 6 for cards (`src/lib/agentic/peer-agent-card.ts`, `src/app-layer/usecases/peer-agents.ts`). Required, 4b: the send tool is not offered while the live card differs from the pin, and each send compares the card again (pinning rule 6), against a copy at most 15 minutes old, which is required on 4b by owner decision (2026-10-17; R18). |
 | E | The set of reachable tools grows during a run. | On `main`: the offered set is a snapshot taken at assembly (`McpInvocation.offeredTools` in `src/lib/mcp/authorize.ts`; `src/lib/mcp/loadable-tools.ts`). |
 | D | The peer is down and takes the run with it. | On `main`: an unreachable server loses its tools, not the run (`src/lib/mcp/tools/external-tools.ts`). |
 
@@ -390,14 +394,14 @@ write ladder, the row says so and names what bounds the top rung.
 This table is the worklist for steps 2d, 2e and 4b. Every Required control in the
 hop tables, the pinning rules, the receipts table and "Stopping a peer" appears
 in at least one row below. The controls in R13 (the tenant caps), R17 and R18
-are required on 4b by owner decision (2026-10-17); R3 is a recommendation and
-is open.
+are required on 4b by owner decision (2026-10-17). R1 and R3 are closed, and
+R2 is closed in part, by step 2e (#3673).
 
 | # | Risk | Why it remains on `main` | Closed by |
 |---|---|---|---|
-| R1 | A peer has no record of its own: no owner, supplier, tier, endpoint, signing key, card pin or status. | Only `RegisteredAgent` exists, and it describes Inflect's own agents. | 2e: the peer record, with an accountable owner, a supplier and a risk tier (an unscored tier refuses traffic), under row-level security, with a two-tenant test (I0 S, I2 I). |
-| R2 | A peer's card is neither pinned nor compared. | Nothing fetches a card. | 2e: the card fetched through `safeFetch` with an aborting byte cap and a deadline, registered as a sink in `tests/guards/ssrf-egress-coverage.test.ts`; hashing, approval on the reviewed hash, and refusal on change (pinning rules 1 to 8; I0 T, R, I, D). 4b: the comparison before every message in both directions (pinning rule 6; I2 S, O1 T), which refuses within 15 minutes of a change and is required by owner decision (2026-10-17; R18). |
-| R3 | The key for the register and pin routes. 2e's issue names `admin.agent_external_tools`, which governs an agent's call leaving the tenant; approving a tenant-wide definition sits with `admin.agent_registry` today. Using the calling key to approve would let the authority that acts also configure. | The routes do not exist. | 2e: decides and records the key, and gives each route a literal `requirePermission` (I0 E). This model recommends `admin.agent_registry` for registering and pinning, and `admin.agent_external_tools` for the call. The recommendation is open: no decision on the key has been made. |
+| R1 | A peer has no record of its own: no owner, supplier, tier, endpoint, signing key, card pin or status. | **Closed by 2e (#3673).** `PeerAgent` holds each, under row-level security, tested across two tenants. | 2e: the peer record, with an accountable owner, a supplier and a risk tier (an unscored tier refuses admission), under row-level security, with a two-tenant test (I0 S, I2 I). |
+| R2 | A peer's card is neither pinned nor compared. | **Closed in part by 2e (#3673):** the card is fetched, hashed, approved on the reviewed hash and compared by `checkPeerAdmission`. Nothing compares it before a message yet, because no message is exchanged. | 2e: the card fetched through `safeFetch` with an aborting byte cap and a deadline, registered as a sink in `tests/guards/ssrf-egress-coverage.test.ts`; hashing, approval on the reviewed hash, and refusal on change (pinning rules 1 to 8; I0 T, R, I, D). 4b: the comparison before every message in both directions (pinning rule 6; I2 S, O1 T), which refuses within 15 minutes of a change and is required by owner decision (2026-10-17; R18). |
+| R3 | The key for the register and pin routes. Using the calling key to approve would let the authority that acts also configure. | **Closed by 2e (#3673).** The owner decided it on 2026-10-18 as this model recommended: `admin.agent_registry` for registering and pinning, and `admin.agent_external_tools` stays the key for the call. | 2e: each route carries a literal `requirePermission('admin.agent_registry')` (I0 E). |
 | R4 | The inbound endpoint and its edge handling. | No endpoint exists. | 4b: an endpoint that refuses any request whose credential does not resolve to an active peer with a current card pin, with its own recogniser that leaves `matchTenantApiKeyRequest` unchanged, per-message signatures over https, replay refusal, and a byte cap before the body is parsed (I1 S, T, I, D). |
 | R5 | The inbound credential and its binding to the receiving agent. | No inbound peer credential exists. | 4b: a credential per peer, hashed at rest, revocable, re-checked on every message, bound to the receiving registered agent and resolved through `resolveAgentAuthority` (I2 S, E). |
 | R6 | A peer choosing which workflow runs. | No inbound path exists. | 4b: a workflow allowlist per peer (I2 E). |
@@ -416,6 +420,6 @@ is open.
 | R19 | Inflect's own published card discloses what a tenant runs. | Inflect publishes no card. | 4b: a card only for an agent a tenant enables for A2A, carrying no tenant data and no tool names (I1 I). |
 | R20 | A very large inbound task. | No inbound path exists. | 4b: a size cap on the run input before it is scanned (I3 D). |
 | R21 | The answer to a peer: what it carries, what it claims, and what a refusal reveals. | No answer is sent today. | 4b: the answer passes `guardEgress` before it leaves and a block withholds it (I5 I); it reports proposals as pending, never as committed (I5 T); refusals are generic and the reason stays in the audit row (I5 I). |
-| R22 | A peer's endpoint repointed while its stored credential is kept. | `redirectsStoredCredential` covers the host-bearing fields of an `IntegrationConnection`, and a peer is not one: no peer record exists. | 2e: the same refusal for a peer's endpoint (O0 T). 2d: an endpoint change is a HIGH passport finding (P1). |
+| R22 | A peer's endpoint repointed while its stored credential is kept. | **Closed by 2e (#3673) for the peer record:** a peer's card URL and signing key cannot be updated, so a move is a new, unpinned registration, and the card's own endpoint is inside the pinned endpoint hash. The credential 4b issues per peer does not exist yet. | 2e: the same refusal for a peer's endpoint (O0 T). 2d: an endpoint change is a HIGH passport finding (P1). |
 | R23 | Replies to a peer that asks for more input sent as one approved call. | No A2A task has a lifecycle in Inflect. | 4b: every message Inflect sends within one task is its own call under the ladder (O3 T). |
 | R24 | One credential presented to several peers. | No outbound A2A client exists. | 4b: a credential per peer for outbound calls (O4 I). |

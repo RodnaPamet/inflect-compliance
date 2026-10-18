@@ -244,6 +244,14 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/harness-scanner-keys/[keyId]/route.ts',
     't/[tenantSlug]/admin/agents/harness-scanner-keys/route.ts',
     't/[tenantSlug]/admin/agents/harness-scans/route.ts',
+    // #3673 — the A2A peer register and card pinning. API-only in step 2e,
+    // which builds the record and the pin and no exchange: the pilot peer is
+    // registered and pinned by an operator, and a page belongs with the
+    // traffic it would govern (4b).
+    't/[tenantSlug]/admin/agents/peers/[peerId]/card/approve/route.ts',
+    't/[tenantSlug]/admin/agents/peers/[peerId]/card/route.ts',
+    't/[tenantSlug]/admin/agents/peers/[peerId]/route.ts',
+    't/[tenantSlug]/admin/agents/peers/route.ts',
     't/[tenantSlug]/admin/agents/reports/export/route.ts',
     't/[tenantSlug]/admin/agents/reports/route.ts',
     't/[tenantSlug]/admin/agents/review-quality/route.ts',

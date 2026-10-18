@@ -1972,6 +1972,16 @@ enum AgentStatus {
   RETIRED
 }
 
+/// Lifecycle of an A2A peer agent (#3673). A peer is an agent in ANOTHER
+/// organisation, so it has no DRAFT: it arrives ACTIVE and is still refused
+/// all traffic until a person approves its card pin and scores its tier.
+/// SUSPENDED stops it and is reversible; RETIRED is one-way.
+enum PeerAgentStatus {
+  ACTIVE
+  SUSPENDED
+  RETIRED
+}
+
 /// Agent-safety risk tier — a DIFFERENT taxonomy from `AiRiskTier`, and the two
 /// must never be read for one another.
 ///

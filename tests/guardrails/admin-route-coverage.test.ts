@@ -167,6 +167,13 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/harness-scanner-keys/route.ts',
     'admin/agents/harness-scanner-keys/[keyId]/route.ts',
     'admin/agents/harness-acceptances/route.ts',
+    // A2A peers (#3673). Their own rule above the subtree rule, on the same
+    // key, `admin.agent_registry`: the owner chose it (residual R3 of
+    // docs/a2a-threat-model.md), so it is stated rather than inherited.
+    'admin/agents/peers/route.ts',
+    'admin/agents/peers/[peerId]/route.ts',
+    'admin/agents/peers/[peerId]/card/route.ts',
+    'admin/agents/peers/[peerId]/card/approve/route.ts',
     // Quarantine triage — the proposals the agentic output guard refused, with
     // the content that was attempted. Read-only, gated on
     // `admin.agent_registry` by its own rule in ROUTE_PERMISSIONS (nothing in
