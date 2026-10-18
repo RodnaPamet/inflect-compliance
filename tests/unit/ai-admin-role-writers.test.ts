@@ -257,6 +257,9 @@ describe('BEHAVIOUR — every membership-role writer refuses AI_ADMIN', () => {
                 findFirst: jest.fn().mockResolvedValue({
                     id: 'ar-1',
                     tenantId: 'tenant-1',
+                    // A member campaign: the close refuses any other scope
+                    // before it reads a decision (3a, #3674).
+                    scope: 'ALL_USERS',
                     status: 'IN_REVIEW',
                     deletedAt: null,
                     reviewer: { email: 'r@x' },
