@@ -95,11 +95,13 @@ its row from the browser. Everything else under `/admin` still refuses AUDITOR.
 - **A value too long to carry whole refuses the run.** A truncated identifier is
   a different identifier, and a run asked to review the wrong agent is worse
   than one refused by name.
-- **The DPIA records a transfer it does not close.** On an `EXTERNAL` residency
-  tenant a Flue run sends the owner reference to the external model provider,
-  whose sub-processor row names other data. The DPIA's own rule sends that
-  through the change policy before the data moves; condition 12 holds it open
-  with the owner rather than this PR deciding a notice question.
+- **The DPIA's transfer is closed by naming it, not by a code gate.** On an
+  `EXTERNAL` residency tenant a Flue run sends the owner reference to the
+  external model provider. The owner decided (2026-10-18) that naming that data
+  on the provider's existing row in `docs/sub-processors.md` is enough, with no
+  separate notice window and no gate in the read tool, so condition 12 is met by
+  that row rather than by a residency check in code. A gate that redacted
+  `ownerRef` for external residency was the alternative, and was declined.
 - **The view key does not reach the canvas review or AGENT campaign subjects.**
   The checkpoint route admits it, so its declared authority matches the
   proposals page it mirrors, but the processes canvas still offers the review on

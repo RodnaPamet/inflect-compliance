@@ -192,7 +192,7 @@ for one person.
 
 | Condition | Status |
 |---|---|
-| 12. Before a tenant's Flue runs of `discovered-agent-review` send the owner reference to an external model provider, [`docs/sub-processors.md`](sub-processors.md) names that data in the provider's row and the notice [`docs/sub-processor-change-policy.md`](sub-processor-change-policy.md) requires is given, or the repository owner records why it is not required. Today the Anthropic row names the posture summary and the risk suggestions, not an agentic run's payload. | **Open**, owned by the repository owner |
+| 12. Before a tenant's Flue runs of `discovered-agent-review` send the owner reference to an external model provider, [`docs/sub-processors.md`](sub-processors.md) names that data in the provider's row and the notice [`docs/sub-processor-change-policy.md`](sub-processor-change-policy.md) requires is given, or the repository owner records why it is not required. | **Met** — the Anthropic row and its section (c) in `docs/sub-processors.md` name an agent run's payload, the owner reference included. The repository owner recorded on 2026-10-18 that the note on the existing row is enough and that no separate notice window or code gate is required before these runs ship. |
 | 13. A model reads the owner reference only through `get_discovered_agent`, under the named scope and a tool grant, and labelled untrusted. | Met by #3710 (`tests/integration/agent-registry-view-key.test.ts`) |
 | 14. Every stored column the model's answer can reach that names a person is named DSAR-relevant, as condition 7 requires of the ingest's. | Met by #3710 for `AiDecisionLog.outputSummary` |
 
@@ -333,8 +333,8 @@ path; the tenant purge is the only automated deletion.
 None from the scanner or the ingest. The one transfer this assessment now
 covers is the model call above: on a tenant whose `aiResidency` is `EXTERNAL`,
 a Flue run of `discovered-agent-review` sends the owner reference to the
-external model provider (US or global, per `docs/sub-processors.md`), and
-condition 12 holds it open. Under condition 4 the scanner sends a report only over HTTPS to the
+external model provider (US or global, per `docs/sub-processors.md`), whose row
+names that data (condition 12, met). Under condition 4 the scanner sends a report only over HTTPS to the
 ingest route of the client's own tenant. The ingest runs in the existing `app`
 service, so what it keeps of a report is written to the same database as the
 rest of that tenant's data: on Inflect's production deployment, Google Cloud
@@ -351,8 +351,7 @@ mechanism.
 **The scanner and the ingest introduce no sub-processor.** A model reading the
 owner reference can: on a tenant whose `aiResidency` is `EXTERNAL`, a Flue run of
 `discovered-agent-review` sends it to the external model provider. That provider
-is already listed for other data, and condition 12 holds the data category open
-(see [A model as a reader of the owner reference](#a-model-as-a-reader-of-the-owner-reference)).
+is listed, and its row names this data category (condition 12, met; see [A model as a reader of the owner reference](#a-model-as-a-reader-of-the-owner-reference)).
 
 - The scanner is to run on the client's infrastructure, under the client's
   control, and read the client's own systems. The identity provider, vault, MCP
@@ -405,7 +404,6 @@ owns it:
 | A person confirming a discovered agent's owner | Step `2a` |
 | The controller's answers to the two lawful-basis questions | Open; recorded on #3664 when given |
 | An erasure path for one person's owner reference or user ids | None planned |
-| The data category of an agentic run's payload in the external model provider's row of `docs/sub-processors.md` | Condition 12, the repository owner |
 
 ## Sign-off
 
@@ -426,4 +424,4 @@ changes: the contract id (`inflect-agent-harness/2`), the source kinds in
 `SOURCE_KINDS`, a stored column that holds a person's identifier, a condition
 on step `1a`, or where scan data goes. #3710 reopened it on the last of those —
 a model became a reader of the owner reference — and the merge of the pull
-request that carries the amendment signs it again, with condition 12 open.
+request that carries the amendment signs it again, with condition 12 met.

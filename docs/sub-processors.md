@@ -28,7 +28,7 @@ auditor can verify the inventory is accurate, not merely asserted.
 | Stripe | Tenant billing contact email; plan; payment method (held by Stripe — we do not store it) | Billing | US | Per Stripe agreement | Yes (self-hosted mode disables) |
 | SMTP relay (operator-chosen) | Recipient email; message body (verification tokens, notification text — may include names + tenant slug) | Email delivery | Per operator | Per operator | No (delivery surface) |
 | OpenRouter | Risk-assessment prompt text (risk titles/descriptions — business content) | AI risk suggestions | US/global | Per OpenRouter | Yes (default `stub`; off unless enabled) |
-| Anthropic (Claude API) | Posture summary: aggregate metrics only (counts + percentages — no PII, no entity text). Risk suggestions: risk-assessment prompt text (risk titles/descriptions, asset names — business content) | AI posture summary; AI risk suggestions | US/global | Per Anthropic | Yes (both default `stub`; off unless enabled) |
+| Anthropic (Claude API) | Posture summary: aggregate metrics only (counts + percentages — no PII, no entity text). Risk suggestions: risk-assessment prompt text (risk titles/descriptions, asset names — business content). Agent runs (Flue, tenants with `aiResidency=EXTERNAL`): the run's prompt — workflow description, declared run input and read-tool output; for `discovered-agent-review` that includes a discovered agent's source owner reference (`DiscoveredAgent.ownerRef`, a person reference from the customer's directory) | AI posture summary; AI risk suggestions; agent runtime (Flue) | US/global | Per Anthropic | Yes (both default `stub`; off unless enabled) |
 | HaveIBeenPwned | SHA-1 prefix of a chosen password (k-anonymity; no PII) | Password breach check | Global | Volatile (no log) | No (security primitive) |
 | GitHub | Repo metadata (per-tenant integration only) | Repo sync | Global | Token lifetime | Yes (per-tenant opt-in) |
 | Microsoft SharePoint | Document metadata (per-tenant integration only) | Document sync | Global | Token lifetime | Yes (per-tenant opt-in) |
@@ -170,7 +170,12 @@ enabled by its own env var, so an operator can run either alone.
 - **Residency:** a tenant with `aiResidency=LOCAL_ONLY` NEVER reaches this provider — the factory short-circuits to the local gateway or the deterministic stub before any external provider is constructed (`tests/guards/ai-residency-enforcement.test.ts`).
 - **Codebase:** `src/app-layer/ai/risk-assessment/anthropic-provider.ts` (`https://api.anthropic.com/v1/messages`).
 
-Common to both:
+**(c) Agent runs (Flue agent runtime)** — the external provider `inflect-external`, model `AGENT_FLUE_MODEL`
+- **Data shared:** the run's prompt — the workflow's description and step labels, the run's declared input (labelled as data, `src/lib/agentic/flue/run-message.ts`) and the output of the read tools the agent is granted, labelled `THIRD_PARTY_INGESTED` where it came from outside the tenant. For `discovered-agent-review` that output includes the discovered agent's source owner reference (`DiscoveredAgent.ownerRef`), a person reference from the customer's own directory (#3710; `docs/agentic-harness-scanner-dpia.md`, condition 12).
+- **Residency:** a tenant with `aiResidency=LOCAL_ONLY` never reaches this provider; its runs use the local model.
+- **Owner decision (2026-10-18):** naming this data category on the existing Anthropic row is sufficient; the agent runtime ships without a separate notice window or a code gate for it.
+
+Common to all three:
 - **Legal basis:** legitimate interest (Art. 6(1)(f)); only active when the operator opts in.
 - **Processing instructions:** generate the requested completion; per Anthropic's terms.
 - **Transfer:** Anthropic US/global; per its terms.
