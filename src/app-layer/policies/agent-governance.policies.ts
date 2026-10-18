@@ -49,12 +49,20 @@ function holdsAgentKey(ctx: RequestContext, key: AgentGovernanceKey): boolean {
 }
 
 /**
+ * Does the caller clear the floor of an agent-governance WRITE? The boolean
+ * `assertAgentGovernanceWrite` throws on, for a page that must offer an action
+ * exactly where the usecase would take it.
+ */
+export function meetsAgentGovernanceWrite(ctx: RequestContext, key: AgentGovernanceKey): boolean {
+    return Boolean(ctx.permissions.canWrite) || holdsAgentKey(ctx, key);
+}
+
+/**
  * The floor of an agent-governance WRITE: `canWrite`, or the agent key.
  * Replaces `assertCanWrite` in the agent usecases.
  */
 export function assertAgentGovernanceWrite(ctx: RequestContext, key: AgentGovernanceKey): void {
-    if (ctx.permissions.canWrite) return;
-    if (holdsAgentKey(ctx, key)) return;
+    if (meetsAgentGovernanceWrite(ctx, key)) return;
     throw forbidden('You do not have permission to modify records in this context.');
 }
 

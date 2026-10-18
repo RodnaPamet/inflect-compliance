@@ -46,15 +46,18 @@
  *
  * No `DiscoveredAgent` or `AgentHarnessScan*` row: the harness ingest is their
  * only writer (`tests/guards/agent-harness-single-write-seam.test.ts`). The
- * discovered agent is linked to its new register row by the NEXT SCAN, which
- * reports the row's id as `registeredAgentId`; until then the agent still reads
- * SHADOW on the harness tab.
+ * discovered agent is linked to its new register row by the NEXT SCAN that
+ * reports it: by the row's id when the scan claims it, and otherwise by the
+ * claim this usecase records (`intakeDiscoveredAgentId`), which the ingest's
+ * planner reads as the register's own evidence (#3712). Until then the agent
+ * still reads SHADOW on the harness tab.
  *
  * And no `Finding` write. The SHADOW_AGENT finding stays OPEN: a scan closes a
  * harness finding only on positive evidence, and the evidence here is a scan
- * that sees the agent in the register — which is exactly what resolves it. A
- * finding closed by the act it asked for would be closed by an assertion, not
- * by an observation. The intake writes an audit row ON the finding instead, so
+ * that sees the agent in the register — which is exactly what resolves it (for
+ * a link made from this usecase's claim alone, a COMPLETE scan). A finding
+ * closed by the act it asked for would be closed by an assertion, not by an
+ * observation. The intake writes an audit row ON the finding instead, so
  * the finding's own history says it was taken into the register, by whom, as
  * which agent.
  *
@@ -64,7 +67,7 @@
  */
 import { Prisma } from '@prisma/client';
 
-import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
+import { assertAgentGovernanceWrite, meetsAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { AppError, ConflictError, forbidden, ValidationError } from '@/lib/errors/types';
@@ -114,6 +117,16 @@ function refuse(
 }
 
 /**
+ * May this caller run the intake? The SAME two checks `assertCanRunIntake`
+ * makes, as a boolean, so the harness tab offers the Register action exactly
+ * where the usecase would take it (#3712): the agent-governance floor — the
+ * coarse write tier, or `canRead` with the register key — and the register key.
+ */
+export function canRunRegistrationIntake(ctx: RequestContext): boolean {
+    return meetsAgentGovernanceWrite(ctx, 'agent_registry') && ctx.appPermissions?.admin?.agent_registry === true;
+}
+
+/**
  * `admin.agent_registry`, re-asserted beneath the route's literal
  * `requirePermission` so a second caller of this usecase cannot reach it with
  * `canWrite` alone — the same shape as retirement. The floor beneath it is the
@@ -123,7 +136,7 @@ function assertCanRunIntake(ctx: RequestContext) {
     // The agent-governance floor (#3699): the coarse write tier OR the
     // register key, so an AI_ADMIN — the key on a READER tier — can run it.
     assertAgentGovernanceWrite(ctx, 'agent_registry');
-    if (!ctx.appPermissions?.admin?.agent_registry) {
+    if (!canRunRegistrationIntake(ctx)) {
         throw forbidden(
             'Registering a shadow agent requires permission to manage the agent register. ' +
                 'It creates a register row and its AI-system entry.',
@@ -229,7 +242,7 @@ export async function registerShadowAgent(
             throw refuse(
                 'ALREADY_REGISTERED_BY_INTAKE',
                 'This agent has already been registered from its shadow-agent finding. The finding ' +
-                    'closes when the next harness scan reports the agent in the register.',
+                    'closes at the next complete harness scan that sees the agent.',
                 { registeredAgentId: claimed.id },
             );
         }
@@ -378,7 +391,7 @@ export async function registerShadowAgent(
                 operation: 'intake',
                 summary:
                     `Shadow agent ${discovered.discoveredId} registered in DRAFT as "${parsed.name}". ` +
-                    'The finding stays open until a harness scan reports the agent in the register.',
+                    'The finding stays open until a complete harness scan sees the agent in the register.',
                 sourceEntity: 'Finding',
                 sourceId: finding.id,
                 targetEntity: 'RegisteredAgent',

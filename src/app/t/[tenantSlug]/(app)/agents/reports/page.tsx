@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { buildAgentGovernancePack } from '@/app-layer/usecases/agent-governance-reports';
 import { getAgentGovernanceStatus } from '@/app-layer/usecases/agent-registry';
+import { canRunRegistrationIntake } from '@/app-layer/usecases/agent-registration-intake';
 import { getHarnessMatrix, getHarnessScannerKeysView } from '@/app-layer/usecases/agent-harness-matrix';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
@@ -61,10 +62,11 @@ import { ReportsClient } from './ReportsClient';
  *     the same rows every visit.
  *   · IT ALSO READS LIVE AND STORES NOTHING (`getHarnessMatrix`,
  *     `getHarnessScannerKeysView`). It is read-only apart from the owner's
- *     shortfall acceptance and the scanner-key register, which post to their
- *     own routes (`harness-acceptances`, `harness-scanner-keys`) and then
- *     refresh this server read. The accept action is shown only where the
- *     acceptance usecase would take it — the same rule decides both.
+ *     shortfall acceptance, the scanner-key register and the registration
+ *     intake from the shadow list, which post to their own routes
+ *     (`harness-acceptances`, `harness-scanner-keys`, `intake`) and then
+ *     refresh this server read. The accept and register actions are shown
+ *     only where their usecases would take them — the same rule decides both.
  *   · AN EMPTY SCAN POPULATION IS A FINDING. The inventory's empty state is "a
  *     complete answer" because the register is the whole population by
  *     definition. A scan population is the opposite: no scan means nothing
@@ -124,6 +126,9 @@ export default async function AgentReportsPage({
                 // pack's, and keeps the server/client boundary honest.
                 harness={JSON.parse(JSON.stringify(harness))}
                 scannerKeys={JSON.parse(JSON.stringify(scannerKeys))}
+                // The intake's own rule, so the shadow list's Register action
+                // is shown exactly where the usecase would take it (#3712).
+                canRegisterShadow={canRunRegistrationIntake(ctx)}
                 canReviewProposals={canReviewProposals}
                 canCompose={canCompose}
                 canInvestigate={canInvestigate}

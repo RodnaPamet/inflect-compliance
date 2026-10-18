@@ -58,7 +58,13 @@ import { forbidden } from '@/lib/errors/types';
 import { mayReadAgentInventory } from '@/lib/permissions';
 import { listHarnessScans } from './agent-harness-scans';
 import { MAX_AGENTS, parseStoredHarnessSources, parseStoredHarnessVerdicts } from '@/lib/agentic/harness-contract';
-import { harnessBarFor, isHarnessShortfall } from '@/lib/agentic/harness-findings';
+import {
+    HARNESS_FINDING_SOURCE_KIND,
+    harnessBarFor,
+    isHarnessShortfall,
+    isIntakeClaimLinkable,
+    shadowRefOf,
+} from '@/lib/agentic/harness-findings';
 import { collapseVerdicts, type HarnessLevel } from '@/lib/agentic/harness-ladder';
 import { acceptAffordanceFor } from '@/lib/agentic/harness-acceptance-rules';
 import {
@@ -405,15 +411,53 @@ export async function getHarnessMatrix(
             orderBy: [{ lastSeenAt: 'desc' }, { id: 'asc' }],
             take: shadowCap + 1,
         });
-        const shadowRows: ShadowRow[] = shadowRead.slice(0, shadowCap).map((d) => ({
-            discoveredAgentId: d.id,
-            discoveredId: d.discoveredId,
-            discoveredVia: d.discoveredVia,
-            firstSeenAt: d.firstSeenAt.toISOString(),
-            lastSeenAt: d.lastSeenAt.toISOString(),
-            lastLevel: d.lastLevel,
-            reason: d.registeredAgentId === null ? 'UNREGISTERED' : 'REGISTER_ROW_DELETED',
-        }));
+        const shadowShown = shadowRead.slice(0, shadowCap);
+        // 3h. What the Register action needs (#3712), read-only: each shown
+        // agent's SHADOW_AGENT finding, and the intake row already made from
+        // it. One read each, never one per row.
+        const shadowFindings = shadowShown.length === 0
+            ? []
+            : await db.finding.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    sourceKind: HARNESS_FINDING_SOURCE_KIND,
+                    sourceRef: { in: shadowShown.map((d) => shadowRefOf(d.discoveredId)) },
+                    deletedAt: null,
+                },
+                select: { id: true, sourceRef: true },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                take: shadowShown.length * 2,
+            });
+        const findingByRef = new Map<string, string>();
+        for (const f of shadowFindings) if (f.sourceRef && !findingByRef.has(f.sourceRef)) findingByRef.set(f.sourceRef, f.id);
+        const intakeRows = shadowShown.length === 0
+            ? []
+            : await db.registeredAgent.findMany({
+                where: { tenantId: ctx.tenantId, intakeDiscoveredAgentId: { in: shadowShown.map((d) => d.id) } },
+                select: { id: true, name: true, status: true, deletedAt: true, intakeDiscoveredAgentId: true },
+                take: shadowShown.length,
+            });
+        const intakeBy = new Map(intakeRows.map((r) => [r.intakeDiscoveredAgentId, r]));
+        const shadowRows: ShadowRow[] = shadowShown.map((d) => {
+            const intake = intakeBy.get(d.id);
+            return {
+                discoveredAgentId: d.id,
+                discoveredId: d.discoveredId,
+                discoveredVia: d.discoveredVia,
+                firstSeenAt: d.firstSeenAt.toISOString(),
+                lastSeenAt: d.lastSeenAt.toISOString(),
+                lastLevel: d.lastLevel,
+                reason: d.registeredAgentId === null ? 'UNREGISTERED' : 'REGISTER_ROW_DELETED',
+                findingId: findingByRef.get(shadowRefOf(d.discoveredId)) ?? null,
+                intake: intake
+                    ? {
+                        agentId: intake.id,
+                        name: intake.deletedAt === null ? intake.name : null,
+                        linkable: isIntakeClaimLinkable({ status: intake.status, deleted: intake.deletedAt !== null }),
+                    }
+                    : null,
+            };
+        });
 
         // 4. The sections.
         const sections: HarnessScannerSection[] = planned.map((p) => {

@@ -29,6 +29,30 @@
  * telling a read-only external tool from an internal one needs an inventory
  * of which servers are internal, which the contract does not carry.
  *
+ * ── THE REGISTER LINK, AND THE INTAKE'S OWN RECORD OF IT (#3712) ────────────
+ *
+ * A report's `registeredAgentId` links only to a row the register holds; a
+ * claimed id it does not hold is no link at all (`docs/agent-harness-contract.md`).
+ * When a report carries no such link, the register may still know the agent:
+ * the registration intake records the discovered agent it registered a row from
+ * on `RegisteredAgent.intakeDiscoveredAgentId`. That is the register's own
+ * evidence, not the scanner's claim, and it links the agent when the row is
+ * live and in a linkable status (`INTAKE_LINKABLE_STATUSES` — an allowlist, so
+ * RETIRED and any status added later are never linked). Three rules hold it:
+ *
+ *   • A REPORT THAT NAMES A LIVE REGISTER ROW WINS, even one other than the
+ *     intake's. The disagreement is returned as an `intakeConflicts` entry for
+ *     the ingest to audit; the intake's record never overrides a claim the
+ *     register holds.
+ *   • THE INTAKE LINK CLOSES `SHADOW_AGENT` ONLY ON A COMPLETE SCAN
+ *     (`isScanComplete`). An incomplete scan still links the agent — the link is
+ *     the register's evidence, and dropping it on every incomplete scan would
+ *     flip the agent between shadow and registered — but it neither raises nor
+ *     resolves the finding. A link the REPORT claimed still closes it on any
+ *     scan; that asymmetry is an owner decision (2026-10-18).
+ *   • AN AGENT ABSENT FROM THE SCAN IS UNTOUCHED, as always: the planner only
+ *     iterates the agents the report names.
+ *
  * ── FINDINGS, AND WHEN THIS SCAN MAY CLOSE ONE ──────────────────────────────
  *
  * Every finding is keyed by a `sourceRef` so re-ingesting is idempotent:
@@ -66,7 +90,12 @@ import {
     type HarnessLevel,
     type HarnessReach,
 } from './harness-ladder';
-import { looksLikeSecret, type HarnessReportAgent, type HarnessReportBody } from './harness-contract';
+import {
+    isScanComplete,
+    looksLikeSecret,
+    type HarnessReportAgent,
+    type HarnessReportBody,
+} from './harness-contract';
 
 /**
  * The path of the first string member of a verified body whose value is
@@ -139,6 +168,11 @@ export interface PlannedAgent {
     readonly discoveredVia: readonly string[];
     /** The register row, when it exists in this tenant; null is SHADOW. */
     readonly registeredAgentId: string | null;
+    /**
+     * Where the link came from: a claim of the report's that the register
+     * holds, the registration intake's own record, or nothing (SHADOW).
+     */
+    readonly linkBasis: 'REPORT' | 'INTAKE' | null;
     readonly ownerKind: 'user' | 'group' | null;
     readonly ownerRef: string | null;
     readonly level: HarnessLevel;
@@ -148,6 +182,55 @@ export interface PlannedAgent {
     readonly tools: HarnessReportAgent['tools'];
 }
 
+/**
+ * A register row the registration intake created from a discovered agent, as
+ * the register stores it (#3669): `RegisteredAgent.intakeDiscoveredAgentId`.
+ */
+export interface IntakeClaim {
+    readonly registeredAgentId: string;
+    /** The row's `AgentStatus`, as stored. */
+    readonly status: string;
+    /** Soft-deleted (`deletedAt` set). */
+    readonly deleted: boolean;
+}
+
+/**
+ * The statuses in which an intake row links its discovered agent. An
+ * ALLOWLIST: RETIRED is out of service and never linked, and a status added to
+ * the enum later is not linked until somebody adds it here.
+ */
+export const INTAKE_LINKABLE_STATUSES: readonly string[] = ['DRAFT', 'ACTIVE', 'SUSPENDED'];
+
+/** May this intake row link the discovered agent it was registered from? Live, and in a linkable status. */
+export function isIntakeClaimLinkable(claim: Pick<IntakeClaim, 'status' | 'deleted'>): boolean {
+    return !claim.deleted && INTAKE_LINKABLE_STATUSES.includes(claim.status);
+}
+
+/**
+ * The intake rows a scan's known discovered agents were registered into, keyed
+ * by `discoveredId` — the key the report speaks in. A row naming a discovered
+ * agent the ingest did not load (another tenant's, or one this scan does not
+ * report) is dropped here, so it can link nothing.
+ */
+export function intakeClaimsByDiscoveredId(
+    known: readonly { readonly id: string; readonly discoveredId: string }[],
+    rows: readonly {
+        readonly id: string;
+        readonly status: string;
+        readonly deletedAt: Date | null;
+        readonly intakeDiscoveredAgentId: string | null;
+    }[],
+): ReadonlyMap<string, IntakeClaim> {
+    const discoveredIdOf = new Map(known.map((k) => [k.id, k.discoveredId]));
+    const claims = new Map<string, IntakeClaim>();
+    for (const r of rows) {
+        const discoveredId = r.intakeDiscoveredAgentId === null ? undefined : discoveredIdOf.get(r.intakeDiscoveredAgentId);
+        if (discoveredId === undefined) continue;
+        claims.set(discoveredId, { registeredAgentId: r.id, status: r.status, deleted: r.deletedAt !== null });
+    }
+    return claims;
+}
+
 export interface PriorHarnessState {
     /** The level each already-known discovered agent was last derived at. */
     readonly previousLevels: ReadonlyMap<string, HarnessLevel>;
@@ -155,6 +238,19 @@ export interface PriorHarnessState {
     readonly registeredAgentIds: ReadonlySet<string>;
     /** Discovered agents whose shortfall is under an unexpired, unrevoked acceptance. */
     readonly acceptedShortfalls: ReadonlySet<string>;
+    /** The intake row each known discovered agent was registered into, by `discoveredId` (#3712). */
+    readonly intakeClaims: ReadonlyMap<string, IntakeClaim>;
+}
+
+/**
+ * A report linked an agent to a live register row OTHER than the one the
+ * intake registered from it. The report's link stands; this records that the
+ * register's own record disagreed.
+ */
+export interface IntakeConflict {
+    readonly discoveredId: string;
+    readonly reportedRegisteredAgentId: string;
+    readonly intakeRegisteredAgentId: string;
 }
 
 export interface HarnessPlan {
@@ -163,6 +259,8 @@ export interface HarnessPlan {
     readonly assert: readonly PlannedFinding[];
     /** Findings this scan proves resolved, by `sourceRef`. */
     readonly resolve: readonly string[];
+    /** Reports overriding the intake's record (#3712), for the ingest to audit. */
+    readonly intakeConflicts: readonly IntakeConflict[];
 }
 
 /** Is this tool one the bar treats as a write? An undeclared hint is a write. */
@@ -248,22 +346,38 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
     const scanRef = body.scan.id;
     const scanner = body.scan.scanner.agentId;
     const mcpReadInFull = sourceComplete(body, 'mcp');
+    const scanComplete = isScanComplete(body);
     const assert: PlannedFinding[] = [];
     const resolve: string[] = [];
+    const intakeConflicts: IntakeConflict[] = [];
     const where = `scan ${scanRef}, scanner ${scanner}`;
 
     const agents: PlannedAgent[] = body.agents.map((a) => {
         const score = scoreHarness(a.verdicts);
         const reach = reachOf(a, mcpReadInFull);
-        const registeredAgentId =
+        const id = a.discoveredId;
+
+        // THE LINK. A claim the register holds wins; a claim it does not hold
+        // is no link at all; with no link, the intake's own record of this
+        // agent links it if that row is live and linkable.
+        const reported =
             a.registeredAgentId !== null && prior.registeredAgentIds.has(a.registeredAgentId)
                 ? a.registeredAgentId
                 : null;
-        const id = a.discoveredId;
+        const claim = prior.intakeClaims.get(id);
+        const intake = claim !== undefined && isIntakeClaimLinkable(claim) ? claim.registeredAgentId : null;
+        if (reported !== null && intake !== null && reported !== intake) {
+            intakeConflicts.push({ discoveredId: id, reportedRegisteredAgentId: reported, intakeRegisteredAgentId: intake });
+        }
+        const registeredAgentId = reported ?? intake;
+        const linkBasis: PlannedAgent['linkBasis'] = reported !== null ? 'REPORT' : intake !== null ? 'INTAKE' : null;
 
-        // SHADOW. Resolved by the register, which is evidence whatever the
-        // scan's completeness: the row exists or it does not.
+        // SHADOW. A link the report claimed is resolved by the register, which
+        // is evidence whatever the scan's completeness: the row exists or it
+        // does not. A link from the intake's record closes the finding only on
+        // a complete scan, and an incomplete one leaves the finding as it is.
         const shadowRef = shadowRefOf(id);
+        const shadowHeld = linkBasis === 'INTAKE' && !scanComplete;
         if (registeredAgentId === null) {
             assert.push({
                 code: 'SHADOW_AGENT',
@@ -276,7 +390,7 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
                     + 'It has no row in the agent register, so it has no accountable owner, no '
                     + 'risk tier and no grants on record. Register it, or retire the principal.',
             });
-        } else {
+        } else if (!shadowHeld) {
             resolve.push(shadowRef);
         }
 
@@ -330,6 +444,7 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
             discoveredId: id,
             discoveredVia: a.discoveredVia,
             registeredAgentId,
+            linkBasis,
             ownerKind: a.owner?.kind ?? null,
             ownerRef: a.owner?.id ?? null,
             level: score.level,
@@ -375,5 +490,5 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
         }
     }
 
-    return { agents, assert, resolve };
+    return { agents, assert, resolve, intakeConflicts };
 }

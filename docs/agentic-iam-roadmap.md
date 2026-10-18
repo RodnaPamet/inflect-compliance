@@ -444,9 +444,13 @@ the intake is the value's only writer, through
 `AiSystemRepository.createProvisional`, which takes no tier parameter, and
 `tests/guards/ai-risk-tier-unclassified-writers.test.ts` holds both facts. The
 request declares the agent's name and its three exposure axes, because a scan
-does not observe them, and carries no classification and no tier. It is API
-surface only: no page calls it, because the harness tab's shadow rows carry no
-finding id.
+does not observe them, and carries no classification and no tier. Since #3712
+the harness tab's shadow list calls it: each shadow row carries its finding id
+and the intake row already made from the agent, and a person holding the
+intake's own permission (`canRunRegistrationIntake`) gets a Register action on
+a row with a finding and no intake row. The dialog's owner picker is the ACTIVE
+roster, starts empty, and needs a confirmation that names the chosen person;
+no exposure axis is pre-selected.
 
 - **The owner is confirmed by a person.** The request names `ownerUserId`, who
   must be an `ACTIVE` member of the tenant, and sets `confirmOwner: true`.
@@ -470,10 +474,16 @@ finding id.
   another tenant's member is not an active member here.
 - **The finding and the discovered agent are not written.** The harness ingest
   is the only writer of `DiscoveredAgent`, so the new row is linked to the
-  discovered agent by the next scan that reports its id as `registeredAgentId`.
-  That scan also closes the `SHADOW_AGENT` finding, on the positive evidence the
-  ingest requires. Until then the agent still appears on the shadow list. The
-  intake writes an audit row on the finding naming the register row it became.
+  discovered agent by the next scan that sees it. A scan that reports the row's
+  id links it as before. A scan that claims no register id (or one the register
+  does not hold) links it by the register's own record,
+  `intakeDiscoveredAgentId`, when that row is live and not RETIRED (#3712); a
+  link made that way closes the `SHADOW_AGENT` finding only on a complete scan.
+  A report that names a different live register row wins, and the disagreement
+  is audited as `AGENT_INTAKE_LINK_CONFLICT` on the intake row. The rule is in
+  the pure planner, `harness-findings.ts`. Until a scan links it the agent still
+  appears on the shadow list. The intake writes an audit row on the finding
+  naming the register row it became.
 - **An intake agent cannot go into service until it is classified.**
   `activateRegisteredAgent` refuses `AI_SYSTEM_UNCLASSIFIED` while the agent's
   entry is `UNCLASSIFIED`, before it checks the score (`UNSCORED`). Both checks
@@ -483,7 +493,10 @@ finding id.
   It runs the same classifier over a questionnaire answered in full: each of the
   four answers is required, and `null` means "does not apply". It then links the
   tier's obligations. It moves an entry out of `UNCLASSIFIED` once and refuses
-  an entry that is already classified. No page calls this route either.
+  an entry that is already classified. The AI-system detail page offers
+  Classify on an `UNCLASSIFIED` entry to a caller who may write; every question
+  starts unanswered, "Does not apply" is an explicit answer, and the form cannot
+  submit until all four are answered (#3712).
 
 ### Agent recertification campaigns
 
@@ -615,13 +628,13 @@ settles `INDETERMINATE` for a person to finish in the customer's directory.
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. The harness tab's shadow list offers the intake, the AI-system page classifies a provisional entry, and a scan that claims no register id links the agent to the row the intake registered. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. Agent recertification campaigns (above): a frozen, non-empty population of registered agents, reviewer packs prepared by registered agents' read-only workflow runs — never an agent's own, which a second agent or a person prepares — narrowings that only delete a grant, the owner barred from deciding their own agent, one-way stamps in the database, evidence whose hash recomputes, and a sample for a second person. | Campaigns are started by hand; nothing schedules one. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry; Entra service-principal disable for contained agents, promoted to applied only on a read. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
-| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | No page offers the registration intake or the classification of a provisional entry; both are API surface (#3712). |
+| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals, freezes its card and withdraws its per-agent evidence for the open month; its owner moves only by a two-step transfer. When its owner leaves, the owner-orphan pass suspends it and engages an `OWNER_DEPARTED` kill that lifts only after a completed transfer, and requests the disable of its Entra service principal through the external write ladder; a daily hygiene pass raises findings for weak agent credentials, judged by the tenant's own key rotation age or a 90-day default. | — |
 
 ## Roadmap (future direction)
 

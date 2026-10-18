@@ -14,7 +14,8 @@
  *   4. refuses a replay (`scan.id` is unique per tenant);
  *   5. plans what the report means (`lib/agentic/harness-findings.ts`, pure):
  *      every level derived by the ladder, every register link checked against
- *      the register rather than taken from the report;
+ *      the register rather than taken from the report, and an agent the report
+ *      links to nothing linked by the registration intake's own record (#3712);
  *   6. writes the scan, the discovered agents and the items, and reconciles the
  *      harness findings, in one transaction.
  *
@@ -50,6 +51,7 @@ import {
 import {
     firstSecretShapedMember,
     HARNESS_FINDING_SOURCE_KIND,
+    intakeClaimsByDiscoveredId,
     planHarnessScan,
     type PlannedFinding,
 } from '@/lib/agentic/harness-findings';
@@ -186,6 +188,15 @@ async function record(
             select: { discoveredAgentId: true },
             take: known.length * 4,
         });
+    // The register's own record of which discovered agent each intake row was
+    // registered from (#3712). The planner decides what it may link.
+    const intake = known.length === 0
+        ? []
+        : await db.registeredAgent.findMany({
+            where: { tenantId: ctx.tenantId, intakeDiscoveredAgentId: { in: known.map((k) => k.id) } },
+            select: { id: true, status: true, deletedAt: true, intakeDiscoveredAgentId: true },
+            take: known.length,
+        });
     const knownById = new Map(known.map((k) => [k.id, k]));
 
     const plan = planHarnessScan(body, {
@@ -194,6 +205,7 @@ async function record(
         acceptedShortfalls: new Set(
             accepted.map((a) => knownById.get(a.discoveredAgentId)?.discoveredId).filter((v): v is string => !!v),
         ),
+        intakeClaims: intakeClaimsByDiscoveredId(known, intake),
     });
 
     // The signed body, without its signature, is what the signature covers.
@@ -303,6 +315,28 @@ async function record(
     }
 
     const counts = await reconcileFindings(db, ctx, scan, plan.assert, plan.resolve, now);
+
+    // A report linked an agent to a live register row other than the intake's:
+    // the report's link stands, and the intake row's own history says so.
+    for (const c of plan.intakeConflicts) {
+        await logEvent(db, ctx, {
+            action: 'AGENT_INTAKE_LINK_CONFLICT',
+            entityType: 'RegisteredAgent',
+            entityId: c.intakeRegisteredAgentId,
+            details: `Harness scan ${scan.scanRef} linked ${c.discoveredId} to another register row`,
+            detailsJson: {
+                category: 'custom',
+                entityName: 'RegisteredAgent',
+                operation: 'intake_link_conflict',
+                after: {
+                    discoveredId: c.discoveredId,
+                    reportedRegisteredAgentId: c.reportedRegisteredAgentId,
+                    intakeRegisteredAgentId: c.intakeRegisteredAgentId,
+                    scanRef: scan.scanRef,
+                },
+            },
+        });
+    }
 
     await logEvent(db, ctx, {
         action: 'AGENT_HARNESS_SCAN_INGESTED',

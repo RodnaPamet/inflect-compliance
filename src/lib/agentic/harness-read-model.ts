@@ -138,6 +138,21 @@ export interface ShadowRow {
     readonly lastSeenAt: string;
     readonly lastLevel: HarnessLevel;
     readonly reason: 'UNREGISTERED' | 'REGISTER_ROW_DELETED';
+    /**
+     * The agent's SHADOW_AGENT finding — what the registration intake registers
+     * from (#3712). `null` when none is on record, and then there is nothing to
+     * register from.
+     */
+    readonly findingId: string | null;
+    /**
+     * The register row the intake already made from this agent, if any. The
+     * intake refuses a second one whatever its status, so the Register action
+     * is offered only when this is `null`. `linkable` is the ingest planner's
+     * own rule (`isIntakeClaimLinkable`): a linkable row takes the agent off
+     * this list at the next scan that sees it, and closes the finding at the
+     * next complete one.
+     */
+    readonly intake: { readonly agentId: string; readonly name: string | null; readonly linkable: boolean } | null;
 }
 
 export interface AcceptanceRow {
