@@ -1637,38 +1637,77 @@ rules are each one careless edit from being undone:
   that count "nothing written" across a rollback count the intake's actions,
   not every audit row.
 
-**The `AGENT` access-review scope** (#3674, deploy 1 of 2 for step 3a) exists
-so every reader knows it before any row holds it — a Prisma client meeting an
-enum value it was not generated with fails the whole read, which on the
-access-review register is every campaign the tenant has. Rules that are easy to
-undo:
+**Agent recertification** (`usecases/access-review-agent.ts`, step 3a, #3674)
+is an access review whose scope is `AGENT`: one subject per registered agent
+that can hold authority, a reviewer pack each, narrowings a person decides, and
+a close that files evidence and draws a sample for a second human. The value
+reached `AccessReviewScope` in two deploys — a Prisma client meeting an enum
+value it was not generated with fails the whole read, which on the register is
+every campaign the tenant has — so the first deploy taught every reader and
+wrote nothing. Rules that are easy to undo:
 
 - **Readers key on `src/lib/access-review/scope.ts`, never on two scope
   names.** `SUBJECT_TABLE` says which decision table holds a scope's subjects
   (AGENT is `CONNECTED`, as LEGACY_APP is), keyed exhaustively on the stored
-  value. The close route used to name CONNECTED_APP and LEGACY_APP and send
-  everything else to the member close — the one close with no zero-subject
-  guard. An unknown scope now routes to the connected close.
-- **`POST /access-reviews` creates member campaigns only**
-  (`z.enum(MEMBER_ACCESS_REVIEW_SCOPES)`). It was `z.nativeEnum(AccessReviewScope)`,
-  which would have admitted AGENT without any file naming it, and already
-  snapshotted memberships into unclosable CONNECTED_APP/LEGACY_APP campaigns.
-  No Zod schema may be built from the generated enum.
-- **`AccessReviewRepository.create` is the one create seam and its scope type
-  excludes AGENT** (`WritableAccessReviewScope`, plus a run-time refusal). Every
-  path that would create, decide or close an AGENT campaign refuses
-  `AGENT_CAMPAIGN_NOT_AVAILABLE` while `AGENT_CAMPAIGNS_IMPLEMENTED` is false —
-  the member close, the connected close and the connected decide were written
-  for scopes whose rules are not an agent's. `WRITERS` in
-  `tests/guards/access-review-agent-scope.test.ts` is empty; deploy 2 adds the
-  campaign usecase there and flips the flag in the same pull request.
-- **An AGENT campaign's subjects are register data**, read under
-  `admin.agent_registry`, while every role holds `access_reviews.view`. So
-  `narrowAgentSubjects` (and the same rule in `listConnectedDecisions`) strips
-  `snapshotJson`, `subjectRef` and `notes` for anyone who is neither the
-  campaign's reviewer nor a register reader; the campaign and its counts stay
-  visible. Deploy 2's writer must keep register data inside rows these readers
-  narrow, or behind a read that narrows the same way.
+  value. An unknown scope routes to the connected close, which refuses zero
+  subjects, never the member close, which has no zero-subject guard.
+- **AGENT has ONE writer and its own routes.** `createAgentCampaign` on the
+  repository takes no scope and is called only by `createAgentAccessReview`;
+  the general `create` excludes AGENT by type and at run time, and
+  `POST /access-reviews` (member scopes only, `z.enum(MEMBER_ACCESS_REVIEW_SCOPES)`
+  — never a Zod schema over the generated enum) answers `SCOPE_HAS_ITS_OWN_ROUTE`.
+  The generic member close, connected decide and connected close refuse AGENT
+  by name (`AGENT_CAMPAIGN_OWN_FLOW`); the routes dispatch it to the agent flow
+  FIRST, before the subject-table dispatch. `tests/guards/access-review-agent-scope.test.ts`.
+- **`AGENT_CAMPAIGNS_IMPLEMENTED` is the brake, and it is true.** Every act of
+  the agent flow asserts it, so setting it back to false — a reviewed one-line
+  diff — stops create, prepare, decide and close with
+  `AGENT_CAMPAIGN_NOT_AVAILABLE` while every reader keeps reading the rows.
+- **Zero is never complete, twice.** Creation refuses an empty population
+  (`NO_SUBJECTS`); the close is `subjectCount > 0 && decided === subjectCount`
+  in ONE expression, and also requires a pack per subject and no pending
+  narrowing.
+- **The agent's owner may not decide its subject, its narrowings or its
+  sample** — frozen owner (`subjectOwnerUserId`, stamped at creation) AND
+  current owner, 403 plus a hash-chained `AUTHZ_DENIED`, even for an ADMIN. A
+  CHECK refuses the frozen owner as `decidedByUserId` for any writer.
+- **A pack is read, never written, by the workflow.** `agent-recertification-pack`
+  is one READ step on `get_agent_recertification_evidence` and one pure
+  SYNTHESIS; its usecase (`agent-recertification-evidence.ts`) writes nothing.
+  `prepareAgentReviewPacks` reads each run's recorded steps, RE-DERIVES the
+  plan from the READ output and refuses a recorded plan that disagrees, then
+  writes every pack and narrowing in one transaction. One run per
+  `PACK_PAGE_SIZE` agents, so a run's context stays bounded.
+- **A narrowing only deletes.** It is proposed for a grant held for the WHOLE
+  90-day window before creation with no recorded call in it — never for a grant
+  younger than the window, never from a truncated grant list. Accepting deletes
+  that grant row by id (`RegisteredAgentToolRepository.revokeGrant`) under
+  `access_reviews.decide`, and writes the standard `AGENT_TOOL_REVOKED` row.
+  The campaign file writes no register, grant-creating or card table —
+  `tests/guards/agent-recertification-single-write-seam.test.ts` pins its exact
+  write set. Narrowings are their own model, not `AgentProposal`: a proposal
+  kind would be another two-deploy enum, and the proposal queue's expiry and
+  four-eyes rules are not a recertification's.
+- **Every stamp is one-way in the database.** Triggers refuse changing a
+  recorded verdict, an executed stamp or a frozen subject on EVERY
+  `AccessReviewConnectedDecision` (all scopes), any update of a pack, and any
+  change to a decided narrowing or an answered sample. `app_user` holds no
+  DELETE on the three new tables.
+- **The evidence hash recomputes from stored rows.** `buildAgentCampaignEvidence`
+  sorts every collection and renders every date as ISO (`canonicalJson` sorts
+  keys, not arrays, and turns a `Date` into `{}`); the hash is the hex SHA-256 of
+  exactly the stored bytes, so it equals the `FileRecord.sha256`.
+  `getAgentReviewPacks` recomputes it on every read and reports `matches`. Filed
+  against A.5.18, CC6.1 (the brief's CC6.3 is in neither SOC 2 representation —
+  a test asserts the absence) and ASI03.
+- **The sample uses the existing keyed sampler** (`selectSample`,
+  `sampleSizeFor`), seeded per tenant through `deriveSubkey` and epoch-bound to
+  the campaign, at close. The second human may read the pack and is neither the
+  first decider nor the owner.
+- **An AGENT campaign's subjects, packs and evidence are register data**, read
+  under `admin.agent_registry`, while every role holds `access_reviews.view`.
+  Every read of them — detail, subject list, packs, the evidence read tool, the
+  evidence file route — narrows to the campaign's reviewer or a register reader.
 
 **A2A peers** (`usecases/peer-agents.ts`, since #3673) are agents in another
 organisation, registered for identity and attribution and never for authority

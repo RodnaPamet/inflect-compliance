@@ -1444,6 +1444,16 @@ enum AccessReviewScope {
   AGENT
 }
 
+/// Step 3a (#3674) — what a reviewer did with one narrowing an agent's pack
+/// proposed. PENDING until decided, then terminal: a trigger refuses any move
+/// out of ACCEPTED or REJECTED. A new type for a new table, so no running
+/// container meets it before it knows it.
+enum AgentNarrowingOutcome {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 /// Lifecycle for an access review campaign.
 ///   OPEN      — created + snapshotted, awaiting reviewer
 ///   IN_REVIEW — at least one decision recorded, not all complete

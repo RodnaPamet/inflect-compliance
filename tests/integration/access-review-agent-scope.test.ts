@@ -1,5 +1,6 @@
 /**
- * #3674, deploy 1 of 2 — the AGENT scope against a real database.
+ * #3674 — the AGENT scope against a real database: the readers, and the
+ * generic paths' refusals.
  *
  * The reason the value ships in two deploys is that a Prisma client meeting an
  * enum value it was not generated with fails the whole read — on the register,
@@ -9,8 +10,11 @@
  * subjects are narrowed to the readers who may see them, and every path that
  * would decide or close it refuses by name and leaves it untouched.
  *
- * The row is written straight through the test client because this build has
- * no AGENT writer — that absence is the property `tests/guards/` holds.
+ * The row is written straight through the test client, in the shape a deploy-1
+ * container meets it — without deploy 2's own columns — because that is the
+ * row the readers must survive. Deploy 2's campaign flow, which does write AGENT,
+ * is proved in `access-review-agent-campaign.test.ts`; here the property is that
+ * the GENERIC member and connected paths still refuse to act on one, by name.
  */
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient } from '../helpers/db';
@@ -116,34 +120,34 @@ describe('readers read an AGENT row', () => {
     });
 });
 
-describe('nothing acts on an AGENT campaign in this build', () => {
-    it('a decision is refused by name, and the row stays undecided', async () => {
+describe('the generic paths do not act on an AGENT campaign', () => {
+    it('a decision through the generic decide is refused by name, and the row stays undecided', async () => {
         await expect(
             submitConnectedDecision(ctx('ADMIN', REVIEWER), decisionId, { decision: 'CONFIRM' }),
-        ).rejects.toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
+        ).rejects.toThrow(/AGENT_CAMPAIGN_OWN_FLOW/);
         const row = await prisma.accessReviewConnectedDecision.findUniqueOrThrow({ where: { id: decisionId } });
         expect(row.decision).toBeNull();
         expect(row.decidedAt).toBeNull();
     });
 
-    it('both closes refuse by name, even fully decided, and leave the campaign open with no task', async () => {
+    it('both generic closes refuse by name, even fully decided, and leave the campaign open with no task', async () => {
         await prisma.accessReviewConnectedDecision.update({
             where: { id: decisionId },
             data: { decision: 'CONFIRM', decidedAt: new Date(), decidedByUserId: REVIEWER },
         });
-        await expect(closeConnectedAccessReview(ctx('ADMIN', REVIEWER), reviewId)).rejects.toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
-        await expect(closeAccessReview(ctx('ADMIN', REVIEWER), reviewId)).rejects.toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
+        await expect(closeConnectedAccessReview(ctx('ADMIN', REVIEWER), reviewId)).rejects.toThrow(/AGENT_CAMPAIGN_OWN_FLOW/);
+        await expect(closeAccessReview(ctx('ADMIN', REVIEWER), reviewId)).rejects.toThrow(/AGENT_CAMPAIGN_OWN_FLOW/);
         const review = await prisma.accessReview.findUniqueOrThrow({ where: { id: reviewId } });
         expect(review.status).toBe('OPEN');
         expect(review.closedAt).toBeNull();
         expect(await prisma.task.count({ where: { tenantId: T } })).toBe(0);
     });
 
-    it('the member creation route refuses to create one', async () => {
+    it('the member creation route refuses to create one, naming its own route', async () => {
         const before = await prisma.accessReview.count({ where: { tenantId: T } });
         await expect(
             createAccessReview(ctx('ADMIN', REVIEWER), { name: 'nope', reviewerUserId: REVIEWER, scope: 'AGENT' }),
-        ).rejects.toThrow(/AGENT_CAMPAIGN_NOT_AVAILABLE/);
+        ).rejects.toThrow(/SCOPE_HAS_ITS_OWN_ROUTE/);
         expect(await prisma.accessReview.count({ where: { tenantId: T } })).toBe(before);
     });
 });

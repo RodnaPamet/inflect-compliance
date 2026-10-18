@@ -1,16 +1,14 @@
 /**
- * #3674, deploy 1 of 2 — the access-review pages read an AGENT campaign.
+ * #3674 — the access-review pages read and drive an AGENT campaign.
  *
- * Deploy 1 writes no AGENT campaign, so these render rows shaped as deploy 2
- * writes them: that is the case they exist for, because a container running
- * this build serves pages during deploy 2's rollout, when the first such rows
- * appear. Three defects a reader could have, each pinned below:
+ * Defects a reader could have, each pinned below:
  *
  *   - the detail page rendered every scope but CONNECTED_APP from the MEMBER
  *     table, which is empty for an agent campaign — an empty roster beside a
  *     progress bar counting subjects it does not show;
- *   - it offered decision controls and a Close button the server refuses in
- *     this build, so every press would fail;
+ *   - it offered controls the server refuses — a verdict before the pack, a
+ *     verdict beside an undecided narrowing, a verdict to the agent's own
+ *     owner, a Close with a narrowing pending — so the press would fail;
  *   - the register's progress column counted member rows only, so an agent
  *     campaign of three agents read 0/0.
  *
@@ -18,7 +16,7 @@
  * and fails the text assertion.
  */
 import * as React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SWRConfig } from 'swr';
 
 jest.mock('next/navigation', () => ({
@@ -115,12 +113,66 @@ function agentReview(over: Record<string, unknown> = {}) {
     };
 }
 
+interface PacksPayload {
+    packs: unknown[];
+    narrowings: unknown[];
+    samples: unknown[];
+    evidence: unknown;
+}
+
+function pack(decisionId: string) {
+    return {
+        id: `pk-${decisionId}`, decisionId, agentId: `ag-${decisionId}`, preparedByRunId: 'run-1',
+        windowStart: '2026-07-20T00:00:00.000Z', windowEnd: '2026-10-18T00:00:00.000Z',
+        sectionsJson: {
+            grants: [
+                { grantId: 'g-1', toolName: 'list_risks', lastCalledAt: null, heldForWholeWindow: true },
+                { grantId: 'g-2', toolName: 'list_controls', lastCalledAt: '2026-10-01T00:00:00.000Z', heldForWholeWindow: true },
+            ],
+            harness: { level: 'H2', drift: 'UP' },
+            guardFlags: {},
+            breaker: null,
+            killEngagements: [],
+        },
+        contentHash: `sha256:${'a'.repeat(64)}`,
+        preparedAt: '2026-10-18T01:00:00.000Z',
+    };
+}
+
+function narrowing(id: string, decisionId: string, outcome = 'PENDING') {
+    return {
+        id, decisionId, packId: `pk-${decisionId}`, grantId: 'g-1', toolName: 'list_risks',
+        grantedByUserId: 'usr_admin', grantedAt: '2026-01-01T00:00:00.000Z',
+        basis: 'NO_RECORDED_CALL_IN_WINDOW', outcome,
+        decidedAt: null, decidedByUserId: null, executedAt: null, executionResult: null,
+    };
+}
+
+let packsPayload: PacksPayload = { packs: [], narrowings: [], samples: [], evidence: null };
+/** What the detail endpoint answers when SWR revalidates — the review rendered. */
+let detailPayload: unknown = null;
+
+beforeEach(() => {
+    packsPayload = { packs: [], narrowings: [], samples: [], evidence: null };
+    detailPayload = null;
+    (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async (url: string) => {
+        const u = String(url);
+        const body = u.includes('/agent-packs')
+            ? packsPayload
+            : /\/access-reviews\/[^/?]+$/.test(u) && detailPayload
+                ? detailPayload
+                : { rows: [], truncated: false };
+        return { ok: true, status: 200, json: async () => body };
+    });
+});
+
 function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean; userId?: string } = {}) {
+    detailPayload = agentReview(review);
     return render(
         withClient(
             <AccessReviewDetailClient
                 tenantSlug="acme"
-                initialReview={agentReview(review) as never}
+                initialReview={detailPayload as never}
                 currentUserId={opts.userId ?? 'usr_admin'}
                 isAdmin={opts.isAdmin ?? true}
             />,
@@ -146,16 +198,56 @@ describe('the detail page reads an AGENT campaign', () => {
         expect(screen.getByTestId('access-review-scope')).toHaveTextContent('Registered agents');
     });
 
-    it('is read-only in this release: no decision control, no Close, and a notice saying why', () => {
-        // The assigned reviewer AND an admin: neither gets a control the
-        // server would refuse.
-        renderDetail({}, { isAdmin: true, userId: 'usr_reviewer' });
-        expect(screen.getByTestId('access-review-agent-read-only')).toBeInTheDocument();
-        expect(screen.queryByTestId('connected-decision-select-1')).not.toBeInTheDocument();
-        expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('access-review-close-button')).not.toBeInTheDocument();
-        expect(screen.getByText('pending')).toBeInTheDocument();
-        expect(screen.getByText('CONFIRM')).toBeInTheDocument();
+    it('offers the reviewer a verdict only once the pack exists and its narrowings are decided', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [narrowing('n-1', '1')], samples: [], evidence: null };
+        const view = renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+        await waitFor(() => expect(screen.getByTestId('agent-narrowings-first-1')).toBeInTheDocument());
+        expect(screen.queryByTestId('agent-decision-select-1')).not.toBeInTheDocument();
+        expect(screen.getByTestId('agent-narrowing-accept-n-1')).toBeInTheDocument();
+        expect(screen.getByTestId('agent-pack-1')).toHaveTextContent('1 of 2 grants unused in the window');
+        view.unmount();
+
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [narrowing('n-1', '1', 'REJECTED')], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+        await waitFor(() => expect(screen.getByTestId('agent-decision-select-1')).toBeInTheDocument());
+    });
+
+    it('offers no verdict before the pack exists, and offers an admin the preparation', async () => {
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        await waitFor(() => expect(screen.getByTestId('access-review-agent-prepare-packs')).toBeInTheDocument());
+        expect(screen.queryByTestId('agent-decision-select-1')).not.toBeInTheDocument();
+        expect(screen.getAllByText('No pack yet').length).toBeGreaterThan(0);
+    });
+
+    it('gives the agent’s owner no verdict and no narrowing control, even as an admin', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [narrowing('n-1', '1')], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: true, userId: 'usr_owner' });
+        await waitFor(() => expect(screen.getByTestId('agent-owner-cannot-decide-1')).toBeInTheDocument());
+        expect(screen.queryByTestId('agent-decision-select-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('agent-narrowing-accept-n-1')).not.toBeInTheDocument();
+    });
+
+    it('keeps Close disabled while a narrowing is pending, though every subject is decided', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [narrowing('n-1', '1')], samples: [], evidence: null };
+        renderDetail({
+            connectedDecisions: [
+                agentSubject('1', { decision: 'CONFIRM', decidedAt: new Date().toISOString() }),
+                agentSubject('2', { decision: 'CONFIRM', decidedAt: new Date().toISOString() }),
+            ],
+        }, { isAdmin: true, userId: 'usr_admin' });
+        await screen.findByTestId('agent-narrowing-n-1');
+        expect(screen.getByTestId('access-review-close-button')).toBeDisabled();
+    });
+
+    it('says whether a closed campaign’s evidence still recomputes from its rows', async () => {
+        packsPayload = {
+            packs: [pack('1'), pack('2')], narrowings: [], samples: [],
+            evidence: { fileRecordId: 'f-1', storedSha256: 'b'.repeat(64), recomputedSha256: 'c'.repeat(64), matches: false },
+        };
+        renderDetail({ status: 'CLOSED', evidenceFileRecordId: 'f-1' }, { isAdmin: true, userId: 'usr_admin' });
+        const notice = await screen.findByTestId('access-review-agent-evidence-hash');
+        expect(notice).toHaveAttribute('data-matches', 'false');
+        expect(notice).toHaveTextContent('does NOT match');
     });
 
     it('renders withheld subjects as restricted, and says who may see them', () => {
@@ -179,17 +271,11 @@ describe('the detail page reads an AGENT campaign', () => {
         expect(screen.getByTestId('access-review-connected-table')).toBeInTheDocument();
         expect(screen.getByTestId('connected-decision-select-c1')).toBeInTheDocument();
         expect(screen.queryByTestId('access-review-agent-read-only')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('access-review-agent-table')).not.toBeInTheDocument();
     });
 });
 
 describe('the register reads an AGENT campaign', () => {
-    beforeEach(() => {
-        (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async () => ({
-            ok: true,
-            json: async () => ({ rows: [], truncated: false }),
-        }));
-    });
-
     it('labels it, and counts its subjects in the connected table', () => {
         render(
             withClient(
@@ -207,5 +293,13 @@ describe('the register reads an AGENT campaign', () => {
         );
         expect(screen.getByTestId('access-review-scope-cell-rev_agent')).toHaveTextContent('Registered agents');
         expect(screen.getByText('0/3')).toBeInTheDocument();
+    });
+
+    it('offers an AGENT campaign in the create modal', () => {
+        render(withClient(<AccessReviewsClient tenantSlug="acme" initialReviews={[]} />));
+        fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));
+        const option = document.getElementById('access-review-scope-AGENT');
+        expect(option).not.toBeNull();
+        expect(option!.closest('label')).toHaveTextContent('Registered agents');
     });
 });

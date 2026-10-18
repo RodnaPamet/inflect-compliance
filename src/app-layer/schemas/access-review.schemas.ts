@@ -12,10 +12,7 @@
  */
 import { z } from 'zod';
 import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
-import {
-    AGENT_CAMPAIGN_REFUSAL,
-    MEMBER_ACCESS_REVIEW_SCOPES,
-} from '@/lib/access-review/scope';
+import { MEMBER_ACCESS_REVIEW_SCOPES } from '@/lib/access-review/scope';
 
 const TextField = z
     .string()
@@ -51,8 +48,7 @@ const DateField = z.union([z.string().datetime(), z.date()]).transform((v) =>
  */
 function memberScopeRefusal(input: unknown): string {
     if (input === 'AGENT') {
-        return `${AGENT_CAMPAIGN_REFUSAL}: an AGENT campaign is not created through this route, `
-            + 'and this release creates none.';
+        return 'SCOPE_HAS_ITS_OWN_ROUTE: an AGENT campaign is created at POST /access-reviews/agents.';
     }
     if (input === 'CONNECTED_APP') {
         return 'SCOPE_HAS_ITS_OWN_ROUTE: a CONNECTED_APP campaign is created at POST /access-reviews/connected.';

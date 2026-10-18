@@ -291,9 +291,12 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
         expect(SOURCES.length).toBeGreaterThan(1000);
         expect(SCANNED.map((f) => f.rel).sort()).toEqual([
             'src/app-layer/usecases/agent-circuit-breaker.ts',
+            'src/app-layer/usecases/agent-recertification-evidence.ts',
+            // Names the model in its docs and makes no call (zero sites).
+            'src/lib/agentic/agent-recertification.ts',
             'src/lib/agentic/circuit-breaker-store.ts',
         ]);
-        expect(ALL_SITES.length).toBe(4);
+        expect(ALL_SITES.length).toBe(5);
     });
 
     it('every row-multiplying read carries a take at or below the cap', () => {
@@ -306,6 +309,8 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
         expect(reads.map((r) => `${r.file}:${r.method}`).sort()).toEqual([
             'src/app-layer/usecases/agent-circuit-breaker.ts:findMany',
             'src/app-layer/usecases/agent-circuit-breaker.ts:findMany',
+            // #3674 — one take:1 read per grant, on the index prefix.
+            'src/app-layer/usecases/agent-recertification-evidence.ts:findMany',
             'src/lib/agentic/circuit-breaker-store.ts:findMany',
         ]);
 

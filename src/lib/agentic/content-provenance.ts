@@ -331,6 +331,14 @@ export const MCP_TOOL_CORPUS: Readonly<Record<string, ToolCorpusEntry>> = {
             'Finding titles, descriptions and root causes are free text sourced ' +
             'from audits, vendor responses and scanner output.',
     },
+    get_agent_recertification_evidence: {
+        provenance: 'THIRD_PARTY_INGESTED',
+        sources: ['platform.aggregate', 'ui.authenticated-form', 'agent.tool-result'],
+        basis:
+            'Ids, dates, counts and states from the agent register, but tool names ' +
+            'include external tools named by the MCP server that serves them, and ' +
+            'connection names are operator-typed. The payload takes its least-trusted part.',
+    },
     list_tasks: {
         provenance: 'THIRD_PARTY_INGESTED',
         sources: ['ui.authenticated-form', 'integration.servicenow', 'webhook.inbound'],

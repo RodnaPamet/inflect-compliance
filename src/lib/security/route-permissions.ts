@@ -1510,6 +1510,57 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'already asserted inline (assertCanRead), and the caller set is ' +
             'unchanged.',
     },
+    // ── Agent recertification (step 3a, #3674) ────────────────────────
+    // The roadmap's permission table: the existing access-review keys. Each
+    // leaf precedes the `[^/]+` detail rule below for the ordering reason above.
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-packs$`),
+        methods: ['GET'],
+        permission: 'access_reviews.view',
+        note:
+            'Reading an AGENT campaign\'s reviewer packs, narrowings, sample and ' +
+            'recomputed evidence hash. Every role holds the key and a pack is ' +
+            'register data, so getAgentReviewPacks narrows the read to the ' +
+            'campaign\'s reviewer or a holder of admin.agent_registry.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-packs$`),
+        methods: ['POST'],
+        permission: 'access_reviews.create',
+        note:
+            'Preparing an AGENT campaign\'s packs through the read-only pack ' +
+            'workflow — the second half of creating it. Mirrors the ' +
+            'assertCanAdmin in prepareAgentReviewPacks: OWNER + ADMIN.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-narrowings\\/[^/]+$`),
+        methods: ['POST'],
+        permission: 'access_reviews.decide',
+        note:
+            'Accepting or rejecting a narrowing. Accepting deletes a grant, which ' +
+            'only narrows, so it does not also need admin.agent_tool_exposure. ' +
+            'decideAgentNarrowing keeps the assigned-reviewer-or-admin rule and ' +
+            'refuses the agent\'s owner.',
+    },
+    {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-samples\\/[^/]+$`),
+        methods: ['POST'],
+        permission: 'access_reviews.decide',
+        note:
+            'The second human\'s answer to a sampled agent decision — the key a ' +
+            'first verdict takes. The usecase admits only a reader of the pack ' +
+            '(reviewer or admin.agent_registry) who neither made the decision ' +
+            'nor owns the agent.',
+    },
+    {
+        // BEFORE the `[^/]+` detail rule below — see the ordering note above.
+        path: new RegExp(`^${T}\\/access-reviews\\/agents$`),
+        methods: ['POST'],
+        permission: 'access_reviews.create',
+        note:
+            'Creating an AGENT campaign over the registered agents. Mirrors ' +
+            'the assertCanAdmin in createAgentAccessReview: OWNER + ADMIN.',
+    },
     {
         // BEFORE the `[^/]+` detail rule below — see the ordering note above.
         path: new RegExp(`^${T}\\/access-reviews\\/connected$`),

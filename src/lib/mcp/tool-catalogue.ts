@@ -28,6 +28,7 @@ export const MCP_READ_TOOL_NAMES = [
     'list_findings',
     'list_tasks',
     'get_discovered_agent',
+    'get_agent_recertification_evidence',
 ] as const;
 
 /** Propose tools — `propose-tools.ts`'s `PROPOSE_TOOLS`, by name. */

@@ -48,6 +48,7 @@ import { listEvidenceExpiringTool } from './evidence-tools';
 import { listFindingsTool, listTasksTool } from './work-tools';
 import { getTenantContextTool } from './context-tools';
 import { getDiscoveredAgentTool } from './harness-tools';
+import { getAgentRecertificationEvidenceTool } from './access-review-tools';
 
 /**
  * The registered read tools — the full tenant-inspection suite. Each is a thin
@@ -69,6 +70,7 @@ export const READ_TOOLS = [
     listFindingsTool,
     listTasksTool,
     getDiscoveredAgentTool,
+    getAgentRecertificationEvidenceTool,
 ] as unknown as ReadonlyArray<McpReadTool<unknown>>;
 
 /**

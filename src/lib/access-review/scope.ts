@@ -13,16 +13,16 @@
  *
  * No server imports, so a client component can hold it.
  *
- * ── AGENT, deploy 1 of 2 (#3674) ────────────────────────────────────────
+ * ── AGENT (#3674) ────────────────────────────────────────────────────────
  *
- * The value exists and every reader knows it; nothing creates an AGENT
- * campaign, and every path that would DECIDE or CLOSE one refuses with
- * `AGENT_CAMPAIGN_NOT_AVAILABLE`. That is the whole point of the first deploy:
- * by the time deploy 2's writer stores the value, no container still running
- * predates the code that reads it, and none of them acts on a campaign whose
- * rules (the owner may not decide their own agent; a narrowing only deletes)
- * it does not implement. `AGENT_CAMPAIGNS_IMPLEMENTED` is the brake deploy 2
- * releases, in a reviewed diff.
+ * Deploy 1 added the value and taught every reader; nothing created an AGENT
+ * campaign, and every path that would decide or close one refused. Deploy 2
+ * adds the agent campaign flow (`usecases/access-review-agent.ts`) and releases
+ * `AGENT_CAMPAIGNS_IMPLEMENTED`, the brake that flow asserts at every act. The
+ * generic member and connected paths still refuse AGENT, by name
+ * (`AGENT_CAMPAIGN_OWN_FLOW`): the rules an agent campaign holds — the owner
+ * may not decide their own agent, a narrowing only deletes — live in its own
+ * flow and nowhere else.
  */
 
 /** Every value `AccessReview.scope` can hold, in declaration order. */
@@ -94,13 +94,18 @@ export function scopeLabelKey(scope: string): StoredAccessReviewScope | 'UNKNOWN
 }
 
 /**
- * Deploy 1 of 2: no AGENT campaign is created, decided or closed. Deploy 2 sets
- * this to `true` in the same pull request that adds the one writer.
+ * The brake. False in deploy 1, when no AGENT campaign could be created,
+ * decided or closed; true from deploy 2. Every act of the agent flow asserts
+ * it, so setting it back to false stops them all (`AGENT_CAMPAIGN_NOT_AVAILABLE`)
+ * while every reader keeps reading the rows already written.
  */
-export const AGENT_CAMPAIGNS_IMPLEMENTED = false;
+export const AGENT_CAMPAIGNS_IMPLEMENTED: boolean = true;
 
-/** The named refusal every path that would act on an AGENT campaign gives. */
+/** The named refusal every act gives while the brake is on. */
 export const AGENT_CAMPAIGN_REFUSAL = 'AGENT_CAMPAIGN_NOT_AVAILABLE';
+
+/** The named refusal a generic (member or connected) path gives an AGENT campaign. */
+export const AGENT_CAMPAIGN_OWN_FLOW = 'AGENT_CAMPAIGN_OWN_FLOW';
 
 /**
  * May this caller read an AGENT campaign's SUBJECTS?
@@ -125,10 +130,11 @@ export function mayReadAgentSubjects(input: {
 /**
  * The frozen subject of one AGENT campaign row, as `snapshotJson` holds it.
  *
- * Declared in deploy 1 although deploy 1 writes none, because this is the shape
- * deploy-1 readers render: a container running this build during deploy 2's
+ * Declared in deploy 1 although deploy 1 wrote none, because this is the shape
+ * deploy-1 readers render: a container running that build during deploy 2's
  * rollout reads rows deploy 2 wrote, and it must find the fields it looks for.
- * Deploy 2's writer is typed against this interface for the same reason.
+ * Deploy 2's writer (`createAgentAccessReview`) is typed against this interface
+ * for the same reason, and may only ADD fields to it.
  *
  * Register data only to the readers `mayReadAgentSubjects` admits.
  */

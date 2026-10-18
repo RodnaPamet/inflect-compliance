@@ -390,7 +390,15 @@ describe('epic-named ratchets are not added back', () => {
         // readers the value (#3674). It holds the empty writer allowlist the
         // second deploy amends, and the type-level proof that the one create
         // seam cannot store the value; no existing guard owns either.
-        expect(guardFiles().length).toBeLessThan(788);
+        //
+        // RAISED 788 -> 789 on 2026-10-18, for ONE file, the same test:
+        // `agent-recertification-single-write-seam` is named for its invariant
+        // — the pack, narrowing and sample tables have one writer, and that
+        // writer can delete a grant but cannot add authority (#3674, deploy 2).
+        // It is not folded into `agent-harness-single-write-seam`, whose
+        // tables and allowlist belong to the harness ingest, nor into
+        // `access-review-agent-scope`, which is about the scope VALUE.
+        expect(guardFiles().length).toBeLessThan(789);
     });
 
     /**
