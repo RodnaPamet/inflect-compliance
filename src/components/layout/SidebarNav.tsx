@@ -30,7 +30,9 @@ import {
     Xmark,
 } from '@inflect/ui/components/ui/icons/nucleo';
 import { cn } from '@inflect/ui/lib/cn';
-import { mayReadAgentInventory } from '@/lib/permissions';
+// From the leaf module, NOT `@/lib/permissions`: this component renders on
+// every tenant page, and a value import from there ships that whole module.
+import { mayReadAgentInventory } from '@/lib/agent-inventory-read';
 import { useCalendarBadge } from './use-calendar-badge';
 import { NavItem } from './nav-item';
 // A SEPARATE type-only import on purpose. `nav-item-import-discipline` pins the

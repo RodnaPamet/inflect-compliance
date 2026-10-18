@@ -38,7 +38,8 @@ its row from the browser. Everything else under `/admin` still refuses AUDITOR.
 
 | File | Role |
 |---|---|
-| `src/lib/permissions.ts` | The key, its holders, `mayReadAgentInventory`, `mayReadAgentActivity` |
+| `src/lib/permissions.ts` | The key and its holders; re-exports the two read predicates |
+| `src/lib/agent-inventory-read.ts` | `mayReadAgentInventory`, `mayReadAgentActivity`: a leaf module, so the sidebar can import them without `permissions.ts` |
 | `src/lib/auth/api-key-auth.ts` | The `admin:agent_registry_view` scope, `WILDCARD_EXCLUDED_ACTIONS`, `*` subtraction, `ScopeCheckAction` |
 | `src/lib/auth/guard.ts`, `src/middleware.ts` | `AUDITOR_ADMIN_READ_PATHS`, `AGENT_ADMIN_API_STATIC_SEGMENTS`, the method-aware AUDITOR branch |
 | `src/app-layer/usecases/agent-registry.ts`, `agent-harness-{scans,matrix,facts}.ts` | The inventory reads; the matrix offers no accept action without the register key, and the scanner-key view stays on it |
@@ -102,6 +103,13 @@ its row from the browser. Everything else under `/admin` still refuses AUDITOR.
   separate notice window and no gate in the read tool, so condition 12 is met by
   that row rather than by a residency check in code. A gate that redacted
   `ownerRef` for external residency was the alternative, and was declined.
+- **The two read predicates live in a leaf module, `src/lib/agent-inventory-read.ts`.**
+  `permissions.ts` re-exports them. The sidebar renders on every tenant page,
+  and its first version imported `mayReadAgentInventory` from
+  `@/lib/permissions`. That shipped the whole module, role tables and
+  `PERMISSION_SCHEMA` included, in every page's First Load JS. CI's bundle
+  budget caught it on the risk detail page, at 641 KB against 640. The leaf
+  module imports only a type, so the sidebar pays for two one-line functions.
 - **The view key does not reach the canvas review or AGENT campaign subjects.**
   The checkpoint route admits it, so its declared authority matches the
   proposals page it mirrors, but the processes canvas still offers the review on

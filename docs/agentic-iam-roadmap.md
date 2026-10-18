@@ -854,7 +854,7 @@ and one new key:
 - **Reading scans takes the inventory view key.** `GET …/admin/agents/harness-scans`
   lists scans under `admin.agent_registry_view` or `admin.agent_registry`, and
   `listHarnessScans` in `src/app-layer/usecases/agent-harness-scans.ts` refuses
-  a caller with neither (`mayReadAgentInventory` in `src/lib/permissions.ts`).
+  a caller with neither (`mayReadAgentInventory` in `src/lib/agent-inventory-read.ts`).
   #3687 builds the harness matrix and the shadow list as a tab on
   `/agents/reports` through `listHarnessScans`, behind the same read; the
   scanner-key register on that tab stays on `admin.agent_registry`, and a
