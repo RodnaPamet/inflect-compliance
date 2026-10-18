@@ -51,6 +51,7 @@ import {
     DENY_CEILING,
 } from '@/lib/agentic/autonomy-ceiling';
 import { dataScopeWithinCard } from '@/lib/agentic/policy-card';
+import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
 import type { AgentDataAccessScope } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 
@@ -92,12 +93,17 @@ async function assertAgentGrantable(db: PrismaTx, ctx: RequestContext, agentId: 
     // another tenant's id space.
     if (!agent) throw notFound('Registered agent not found');
     if (agent.status === 'RETIRED') {
-        throw badRequest(
-            'This agent is retired. Reactivate it before changing what it may reach.',
-        );
+        // Permanent since #3698: retirement dropped every grant the agent held
+        // and cannot be undone, so there is nothing to list and nothing to
+        // grant. The trail of what it could reach is the retirement's audit row.
+        throw badRequest(RETIRED_AGENT_TOOLS_MESSAGE);
     }
     return agent;
 }
+
+const RETIRED_AGENT_TOOLS_MESSAGE =
+    'This agent is retired. Retirement is permanent and takes away what the ' +
+    'agent may reach, so there is nothing here to list or change.';
 
 export async function listAgentTools(ctx: RequestContext, agentId: string) {
     assertCanRead(ctx);
@@ -372,7 +378,18 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
         const agent = await assertAgentGrantable(db, ctx, agentId);
         assertGrantWithinTier(agent, toolName);
         assertGrantWithinDeclaredDataScope(agent, toolName);
-        const granted = await RegisteredAgentToolRepository.grant(db, ctx, agentId, toolName);
+        // `assertAgentGrantable` read the status unlocked, so a retirement can
+        // commit between that read and this write. The insert trigger
+        // `registered_agent_tool_agent_not_retired` takes FOR SHARE on the agent
+        // row and refuses once it reads RETIRED, so the grant cannot land behind
+        // the retirement's delete of every grant (#3698). Same answer as above.
+        let granted;
+        try {
+            granted = await RegisteredAgentToolRepository.grant(db, ctx, agentId, toolName);
+        } catch (err) {
+            if (isAgentRetiredDbRefusal(err)) throw badRequest(RETIRED_AGENT_TOOLS_MESSAGE);
+            throw err;
+        }
 
         await logEvent(db, ctx, {
             action: 'AGENT_TOOL_GRANTED',

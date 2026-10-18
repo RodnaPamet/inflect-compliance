@@ -749,6 +749,26 @@ export function parsePermissionsJson(json: unknown, baseRole: Role): PermissionS
     return result;
 }
 
+/**
+ * The permission set a MEMBERSHIP resolves to — the custom role's, parsed over
+ * its base role, when it has one; the built-in role's otherwise.
+ *
+ * The same expression `getTenantCtx` (via `src/lib/tenant-context.ts`) builds
+ * `appPermissions` from, for a principal who is not the caller. It exists for a
+ * usecase that must predict what ANOTHER member will be allowed to do — the
+ * agent ownership transfer (#3698) refuses at step one a recipient who could
+ * never pass step two's `requirePermission`. The request-context resolvers keep
+ * their own inline copies; this one must stay in step with them.
+ */
+export function permissionsForMembership(membership: {
+    role: Role;
+    customRole: { permissionsJson: unknown; baseRole: Role } | null;
+}): PermissionSet {
+    return membership.customRole
+        ? parsePermissionsJson(membership.customRole.permissionsJson, membership.customRole.baseRole)
+        : getPermissionsForRole(membership.role);
+}
+
 // ─── Privilege-escalation guard ──────────────────────────────────────
 
 /**

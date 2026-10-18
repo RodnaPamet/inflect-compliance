@@ -10,7 +10,11 @@
  * per-run and a per-day action budget, which refusals to escalate on, and how
  * many humans must sign what the agent proposes.
  *
- * ## Four refusals, and why each is here rather than at the boundary
+ * ## Five refusals, and why each is here rather than at the boundary
+ *
+ *   • A RETIRED AGENT (#3698). Retirement freezes the card at the version in
+ *     force: no create and no edit is written for an agent that can no longer
+ *     act, and the history stays readable. See `assertCardNotFrozen`.
  *
  *   • UNSCORED AGENT. `defaultPolicyCardForRiskTier` already says what a card
  *     opens at for an unassessed agent — nothing, on every axis — and its
@@ -55,6 +59,7 @@
  */
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, conflict, notFound } from '@/lib/errors/types';
+import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
 import { DENY_CEILING, ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 import {
     checkLadderStep,
@@ -97,6 +102,36 @@ async function assertAgentCardable(db: PrismaTx, ctx: RequestContext, agentId: s
     // another tenant's id space.
     if (!agent) throw notFound('Registered agent not found');
     return agent;
+}
+
+/**
+ * A RETIRED agent's card is FROZEN (#3698): no further version can be written.
+ *
+ * Retirement takes the agent's authority apart — keys revoked, grants dropped,
+ * open proposals expired — and the card is the one piece of it that is a
+ * DECLARATION rather than a grant, so it is kept, readable, at the version in
+ * force when the agent was retired. A version written afterwards would be a
+ * policy for an agent that can no longer act, and the next person reading the
+ * card's history would take it for one that governed something.
+ *
+ * Asserted on the two WRITE paths only, never inside `assertAgentCardable`:
+ * that helper is shared with `getAgentPolicyCard`, and the history must stay
+ * readable. The trigger `agent_policy_card_version_agent_not_retired` refuses the
+ * same insert from any writer, and `asFrozenCardRefusal` maps its message back
+ * to this error for the race where the agent is retired between the read here
+ * and the write.
+ */
+const FROZEN_CARD_MESSAGE =
+    'This agent is retired, so its policy card is frozen: no further version can be ' +
+    'written. Its history stays readable.';
+
+function assertCardNotFrozen(agent: { status: string }) {
+    if (agent.status === 'RETIRED') throw conflict(FROZEN_CARD_MESSAGE);
+}
+
+/** The trigger's refusal, as the error the usecase would have raised; anything else untouched. */
+function asFrozenCardRefusal(err: unknown): unknown {
+    return isAgentRetiredDbRefusal(err) ? conflict(FROZEN_CARD_MESSAGE) : err;
 }
 
 /**
@@ -298,6 +333,7 @@ export async function createAgentPolicyCard(ctx: RequestContext, agentId: string
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const agent = await assertAgentCardable(db, ctx, agentId);
+        assertCardNotFrozen(agent);
         if (agent.riskTier === null) {
             throw badRequest(
                 'This agent has not been risk-assessed, so there is nothing to seed a ' +
@@ -330,7 +366,9 @@ export async function createAgentPolicyCard(ctx: RequestContext, agentId: string
             ctx,
             agentId,
             { ...toVersionInput(value), seededFromTier: agent.riskTier },
-        );
+        ).catch((err: unknown) => {
+            throw asFrozenCardRefusal(err);
+        });
 
         // Hoisted out of the audit call below: a call inside a sink's arguments
         // is a position `local/no-raw-prompt-logging` cannot open, and so must
@@ -400,6 +438,7 @@ export async function updateAgentPolicyCard(
 
     return runInTenantContext(ctx, async (db) => {
         const agent = await assertAgentCardable(db, ctx, agentId);
+        assertCardNotFrozen(agent);
         const card = await AgentPolicyCardRepository.findForAgent(db, ctx, agentId);
         if (!card) throw notFound('This agent has no policy card');
 
@@ -444,7 +483,9 @@ export async function updateAgentPolicyCard(
             card.id,
             card.currentVersion,
             toVersionInput(next),
-        );
+        ).catch((err: unknown) => {
+            throw asFrozenCardRefusal(err);
+        });
         if (written === 0) {
             throw conflict(
                 'This card changed while your edit was in flight. Reload it and reapply ' +

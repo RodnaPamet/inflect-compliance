@@ -136,6 +136,62 @@ auditor agent, workpaper or line-of-defence value exists on `main`, no handler
 runs any procedure, and each procedure's PwC methodology reference is open: PwC
 supplies it, and it is recorded on #3663 when given.
 
+### Agent retirement and ownership transfer
+
+Retiring an agent (`DELETE /api/t/:slug/admin/agents/[agentId]`, under
+`admin.agent_registry` alone) is one transaction that takes its authority apart
+and records what it took: every `TenantApiKey` bound to the agent is revoked,
+including keys already past their expiry, and so is every harness scanner
+signing key it holds; its `RegisteredAgentTool` grants are deleted; its `PENDING`
+proposals move to `EXPIRED`, unreviewed; its policy card is frozen, so no further
+`AgentPolicyCardVersion` can be written while its history stays readable; and an
+open ownership transfer is closed — cancelled while it is live, marked expired
+once it has lapsed. The status is written first and the audit
+rows last: an `AGENT_RETIRED` summary carrying every count, then one row per
+effect that changed something. `RETIRED` is terminal: the status write matches
+no retired row, and a trigger refuses any move out of it from any writer. More
+triggers refuse, for a retired agent, a `PENDING` proposal, a card version, a
+new ownership transfer, an unrevoked API key or scanner signing key, and a tool
+grant. Each takes a share lock on the agent row, so a write in flight at the
+moment of retirement either commits first and is taken apart by the cascade, or
+waits for the retirement and is refused: nothing attaches to the agent after
+the retirement commits, whether the agent wrote it or a person did. The retire dialog previews
+the live keys, grants and pending proposals the cascade will change.
+
+No evidence artefact is withdrawn. Every `AgenticEvidenceArtefact` is a
+tenant-wide monthly aggregate over all agents' receipts or decisions, keyed
+`(tenant, control, kind, period)` with no agent column, so none is attributable
+to one agent; the summary row records `evidenceArtefactsWithdrawn: 0` and the
+basis `POPULATION_LEVEL_ONLY`. Withdrawing none is the owner's decision of
+2026-10-18 (decision 13 below), not a gap: per-agent evidence that a retirement
+could withdraw is its own step, #3700. Agents retired before this change
+keep whatever keys and grants they held then.
+
+An agent's owner moves only by a two-step transfer
+(`…/admin/agents/[agentId]/ownership-transfer` and `…/ownership-transfer/complete`,
+both a literal `requirePermission('admin.tenant_lifecycle')`, and API-only: no
+page calls them). Step one names the new owner, who must be an active OWNER, or
+an active ADMIN whose custom role carries `admin.tenant_lifecycle` — the routes
+sit under `/admin/`, where the edge admits only the ADMIN and OWNER built-in
+roles; step two is completed by that person and never
+by the one who started it, and re-checks that the agent is not retired or
+removed, is still owned by the person it was proposed away from, and that the
+completer is still an active member holding the key. A proposal lasts seven
+days and is marked `EXPIRED` by the next request that finds it lapsed; the
+initiator, the recipient or another holder of the key can cancel it. The
+`AgentOwnershipTransfer` table backs every rule: CHECKs make a completion by
+anyone but the recipient unrepresentable, a partial unique index admits one
+`PENDING` transfer per agent, a row that has left `PENDING` is immutable, and
+`app_user` cannot delete one. The register's `PATCH` refuses `ownerUserId` by
+name, and the amend dialog shows the owner read-only.
+
+That recipient set is narrow on purpose, and the owner accepted it on
+2026-10-18 as the interim state (decision 14 below). The edge gate reads the
+session's primary — oldest — membership role rather than the role in the tenant
+being called, so an OWNER here whose oldest membership elsewhere is READER is
+refused on every admin route, these two included. That limitation fails closed
+and is documented, not fixed, by this change (decision 15 below).
+
 ### What the six use cases stand on
 
 | Area | Shipped on `main` | Not built |
@@ -146,7 +202,7 @@ supplies it, and it is recorded on #3663 when given.
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. | No agent recertification campaign. |
 | External systems | MCP server and client, delegated and app-only grants, one outbound wire; external writes on a four-rung ladder with prior-state reads and a journal; Entra time-bounded access packages with verified expiry. | — |
 | Assurance | Control-test runner with four agentic checks (an empty population is inconclusive); audit-prep workflow; auditor role, pack-scoped auditor accounts; a catalogue of eight audit procedures, adopted for this repository, proposing library v1 as five. | Internal audit's approval and PwC's agreement of the catalogue are open; no handler for any audit procedure, no workpapers, no auditor independence check. |
-| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. | Offboarding a person does nothing to the agents they own; retiring an agent only flips its status. |
+| Identity chain | Sync, HRIS, joiner, leaver in a fixed order with a dwell; every directory write journaled; legacy-application recertification campaigns. Retiring an agent revokes its keys, drops its grants, expires its pending proposals and freezes its card; its owner moves only by a two-step transfer. | Offboarding a person does nothing to the agents they own; no registration intake from a shadow-agent finding. |
 
 ## Roadmap (future direction)
 
@@ -261,6 +317,28 @@ of decisions 1 to 6 above.
     agent card is re-checked before every message against a copy at most 15
     minutes old. R3, which permission key governs the peer register and pin
     routes, stays an open recommendation for step `2e`. (`2e`, `4b`)
+
+### Decisions recorded by the owner on 2026-10-18
+
+The owner made these while reviewing the retirement cascade and ownership
+transfer of `2a` (#3698). They continue the numbering above, and none of them
+changed what #3698 built.
+
+13. **Retirement withdraws no evidence artefact.** Every
+    `AgenticEvidenceArtefact` is a tenant-wide aggregate per period with no agent
+    column, so the cascade withdraws none and its summary audit row records the
+    basis `POPULATION_LEVEL_ONLY`. Per-agent evidence that a retirement can
+    withdraw — an agent-attributable artefact kind, per-agent emission and a
+    withdrawal reason for it — is its own roadmap step, #3700. (`2a`)
+14. **Transfer recipients stay narrow for now.** An agent passes only to an
+    OWNER, or to an ADMIN whose custom role carries `admin.tenant_lifecycle`.
+    This is the accepted interim state. A new built-in `AI_ADMIN` role widens who
+    can receive an agent, in its own pull request (#3699); the edge gate is not widened
+    for the transfer paths in the meantime. (`2a`)
+15. **The edge gate's primary-membership limitation stays documented, not
+    fixed, in `2a`.** The edge reads the role of the session's oldest
+    membership, not the role in the tenant being called. It fails closed, and
+    #3701 tracks the fix. (`2a`)
 
 ### Permission keys
 
@@ -399,11 +477,12 @@ holder of a narrower key keeps the standalone verb they hold today.
 | Drop its tool grants | `RegisteredAgentTool` rows deleted | `admin.agent_tool_exposure`, at `/admin/agents/[agentId]/tools` |
 | Expire its open proposals | `AgentProposal` rows moved from `PENDING` to `EXPIRED` | No key: the `agent-proposal-expiry` job expires them, and a person rejects one at `/agent-proposals/[id]/reject` behind `assertCanWrite` and no key |
 | Freeze its policy card | No further `AgentPolicyCardVersion` | `admin.agent_policy_card`, at `/admin/agents/[agentId]/policy-card` |
-| Withdraw its evidence artefacts | `AgenticEvidenceArtefact` withdrawn with a reason | No key: only the emission usecase withdraws (`src/app-layer/usecases/agentic-evidence-emission.ts`) |
+| Revoke its harness scanner signing keys | `AgentHarnessScannerKey.revokedAt` set where `agentId` is the agent (added by `2a`, #3698: an unrevoked key keeps verifying reports after its scanner is retired) | `admin.agent_registry`, at `/admin/agents/harness-scanner-keys/[keyId]` |
+| Cancel its open ownership transfer | `AgentOwnershipTransfer.status` moved from `PENDING` to `CANCELLED`, by the retiring actor; a lapsed one to `EXPIRED`, with no actor (added by `2a`, #3698: a retired agent can never be completed into) | `admin.tenant_lifecycle`, at `/admin/agents/[agentId]/ownership-transfer` |
+| Withdraw its evidence artefacts | None attributable, so none withdrawn (amended by `2a`, #3698, and settled by decision 13). Every `AgenticEvidenceArtefact` is a tenant-wide aggregate per period, and the agent's past actions stay correctly counted in `CURRENT` artefacts; the summary audit row records `evidenceArtefactsWithdrawn: 0` and the basis. Per-agent evidence a retirement can withdraw is #3700 | No key: only the emission usecase withdraws (`src/app-layer/usecases/agentic-evidence-emission.ts`) |
 
-Today `retireRegisteredAgent` refuses while any proposal is `PENDING`, and its
-docstring rejects cascading on purpose. Expiring them in the cascade replaces
-that refusal, so `2a` rewrites the docstring with the change.
+`2a` shipped the cascade (#3698): `retireRegisteredAgent` no longer refuses while
+a proposal is `PENDING`, and its docstring records why the old refusal went.
 
 **Agent ownership transfer.** Both steps of `transferAgentOwnership` carry a
 literal `requirePermission('admin.tenant_lifecycle')`, and the second step
@@ -412,7 +491,16 @@ therefore hold the key as well: with the built-in roles an agent passes only to
 an OWNER, or to a member an OWNER has given a custom role carrying the key.
 Registration accepts any active member as owner (`assertOwnerInTenant`), so
 this narrows who can receive an agent by transfer, and the owner accepts that
-narrowing in signing.
+narrowing in signing. (Amended by `2a`, #3698: the custom-role case holds only
+on an ADMIN membership. Both steps sit under `/api/t/:slug/admin/`, where the
+edge middleware refuses any session whose BUILT-IN role is not ADMIN or OWNER
+before the route's `requirePermission` runs, and a custom role does not change
+the built-in role. A READER, EDITOR or AUDITOR given a custom role carrying the
+key would pass the route and never reach it, so step one refuses them.
+Admitting them would mean widening the edge gate for these paths, which is a
+separate decision. The owner accepted the narrow set as the interim state on
+2026-10-18; a new built-in `AI_ADMIN` role widens it in its own pull request —
+see decision 14.)
 
 **A membership's line of defence is OWNER-only.** The route takes
 `admin.owner_management`, which `getPermissionsForRole` grants to OWNER and
@@ -547,7 +635,7 @@ What this means for Phase 1:
 |---|---|---|
 | 0 Mobilise (#3655) | Oct–Nov 2026 | `0a` ladder and contract (#3660) · `0b` skill standard (#3661) · `0c` passport spec and A2A threat model (#3662) · `0d` audit procedures (#3663) · `0e` DPIA, keys, retention, pilot (#3664) |
 | 1 See and teach (#3656) | Nov 2026–Jan 2027 | `1a` scanner and ingest (#3665) · `1b` skill evaluation gate and run pins (#3666) · `1c` skill text scan (#3667) · `1d` first IAM skills (#3668) |
-| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669) · `2b` orphan pass and hygiene (#3670) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
+| 2 Own and connect (#3657) | Jan–Mar 2027 | `2a` intake, retirement cascade, ownership transfer (#3669; cascade and transfer shipped in #3698) · `2b` orphan pass and hygiene (#3670) · `2c` service-principal disable (#3671) · `2d` integration passport (#3672) · `2e` A2A peers and card pinning (#3673) |
 | 3 Decide and assure (#3658) | Mar–Jun 2027 | `3a` agent recertification (#3674) · `3b` workpapers and independence (#3675) · `3c` auditor agent (#3676) · `3d` workpaper sampling (#3677) |
 | 4 Scale and certify (#3659) | Jul–Oct 2027 | `4a` more estates and sources (#3678) · `4b` A2A pilot (#3679) · `4c` tenant-authored skills (#3680) · `4d` external reliance (#3681) · `4e` methodology hand-over (#3682) |
 

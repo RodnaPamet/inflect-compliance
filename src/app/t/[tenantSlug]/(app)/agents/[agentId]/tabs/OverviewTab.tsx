@@ -109,11 +109,12 @@ interface AgentDetail {
     _count: {
         apiKeys: number;
         /**
-         * PENDING proposals — the RETIREMENT PRECONDITION (#2448).
-         * `retireRegisteredAgent` refuses while this is non-zero, so the dialog
-         * states it before the click instead of after the 409.
+         * PENDING proposals and tool grants — two of the RETIREMENT CASCADE's
+         * effects (#3698), counted by the cascade's own predicates so the
+         * dialog states what retiring will change before the click.
          */
         proposals: number;
+        tools: number;
     };
     /**
      * Whether `requireRegisteredAgent` is ON for this tenant — i.e. whether
@@ -200,8 +201,9 @@ export function OverviewTab({
     /**
      * RETIRE — the only permanent decommission, on DELETE rather than the
      * status route, because `AGENT_LIFECYCLE_MOVES` deliberately excludes
-     * RETIRED: retirement carries a precondition that a value in a dropdown
-     * cannot express.
+     * RETIRED: retirement cascades (#3698) — keys revoked, grants dropped,
+     * pending proposals expired, card frozen — and cannot be undone, so it sits
+     * behind a typed confirmation rather than one value in a dropdown.
      */
     const retire = useCallback(async () => {
         setBusy(true);
@@ -210,10 +212,9 @@ export function OverviewTab({
             const res = await fetch(apiUrl(`/admin/agents/${agentId}`), { method: 'DELETE' });
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
-                // The server's 409 names the number still awaiting review. Kept
-                // rather than replaced: this path is reachable even with the
-                // pre-check, because a proposal can arrive between the read and
-                // the click.
+                // The server's own sentence, kept rather than replaced: a 409
+                // here says the agent was retired or removed meanwhile, which
+                // the generic fallback could not.
                 setFailure(apiErrorMessage(body, t('agentDetail.overview.retireError')));
                 return;
             }
@@ -348,7 +349,10 @@ export function OverviewTab({
     // the route has already told us exists.
     const unscored = agent.riskTier === null;
     const canSuspend = canManageRegistry && agent.status === 'ACTIVE';
-    const canActivate = canManageRegistry && agent.status !== 'ACTIVE';
+    // RETIRED is terminal (#3698): the server refuses to activate a retired
+    // agent, so the button is not offered rather than offered and refused.
+    const canActivate =
+        canManageRegistry && agent.status !== 'ACTIVE' && agent.status !== 'RETIRED';
 
     return (
         <div className="space-y-section">
@@ -672,55 +676,73 @@ export function OverviewTab({
                     />
                     <Modal.Body>
                         <div className="space-y-default" data-testid="agent-retire-modal">
-                            {/* THE PRECONDITION, STATED BEFORE THE CLICK.
-                                `retireRegisteredAgent` refuses while any
-                                proposal is PENDING, and the 409 names the
-                                count — but a precondition you only meet by
-                                being rejected is one you discover by failing.
-                                The queue is LINKED, because "approve or reject
-                                them first" is an instruction the page can
-                                actually help with. */}
-                            {agent._count.proposals > 0 ? (
-                                <InlineNotice
-                                    variant="warning"
-                                    data-testid="agent-retire-blocked"
-                                >
-                                    <div className="space-y-1">
-                                        <p>
-                                            {t('agentDetail.overview.retireBlocked', {
-                                                count: agent._count.proposals,
-                                            })}
-                                        </p>
-                                        <Link
-                                            className="underline"
-                                            href={`/t/${tenantSlug}/agents/proposals`}
-                                        >
-                                            {t('agentDetail.overview.retireBlockedLink')}
-                                        </Link>
-                                    </div>
-                                </InlineNotice>
-                            ) : (
-                                <>
-                                    <p className="text-sm text-content-muted">
-                                        {t('agentDetail.overview.retireIrreversible')}
-                                    </p>
-                                    <FormField
-                                        label={t('agentDetail.overview.retireTypeToConfirm', {
-                                            name: agent.name,
-                                        })}
-                                        required
+                            {/* THE CASCADE, STATED BEFORE THE CLICK (#3698).
+                                Retirement revokes, drops, expires and freezes
+                                in one act, and it cannot be undone — so the
+                                dialog says what it will change, by the same
+                                predicates the cascade uses, rather than leaving
+                                the operator to read it off the audit trail. The
+                                queue is LINKED when proposals are pending,
+                                because "decide them first" is a choice the page
+                                can help with: retiring expires them instead. */}
+                            <div className="space-y-tight text-sm" data-testid="agent-retire-cascade">
+                                <p className="text-content-emphasis">
+                                    {t('agentDetail.overview.retireCascadeIntro')}
+                                </p>
+                                <ul className="list-disc space-y-1 pl-5 text-content-muted">
+                                    {/* Zero takes its own sentence, never "0 … are
+                                        revoked" — the same rule the credential
+                                        count above follows. */}
+                                    <li data-testid="agent-retire-cascade-keys">
+                                        {agent._count.apiKeys === 0
+                                            ? t('agentDetail.overview.retireCascadeKeysNone')
+                                            : t('agentDetail.overview.retireCascadeKeys', {
+                                                  count: agent._count.apiKeys,
+                                              })}
+                                    </li>
+                                    <li data-testid="agent-retire-cascade-tools">
+                                        {agent._count.tools === 0
+                                            ? t('agentDetail.overview.retireCascadeToolsNone')
+                                            : t('agentDetail.overview.retireCascadeTools', {
+                                                  count: agent._count.tools,
+                                              })}
+                                    </li>
+                                    <li data-testid="agent-retire-cascade-proposals">
+                                        {agent._count.proposals === 0
+                                            ? t('agentDetail.overview.retireCascadeProposalsNone')
+                                            : t('agentDetail.overview.retireCascadeProposals', {
+                                                  count: agent._count.proposals,
+                                              })}
+                                    </li>
+                                    <li>{t('agentDetail.overview.retireCascadeCard')}</li>
+                                </ul>
+                                {agent._count.proposals > 0 && (
+                                    <Link
+                                        className="underline"
+                                        href={`/t/${tenantSlug}/agents/proposals`}
                                     >
-                                        <Input
-                                            value={retireTyped}
-                                            onChange={(e) => setRetireTyped(e.target.value)}
-                                            autoComplete="off"
-                                            autoFocus
-                                            placeholder={agent.name}
-                                            data-testid="agent-retire-confirm-input"
-                                        />
-                                    </FormField>
-                                </>
-                            )}
+                                        {t('agentDetail.overview.retireReviewFirstLink')}
+                                    </Link>
+                                )}
+                            </div>
+                            <p className="text-sm text-content-muted">
+                                {t('agentDetail.overview.retireIrreversible')}
+                            </p>
+                            <FormField
+                                label={t('agentDetail.overview.retireTypeToConfirm', {
+                                    name: agent.name,
+                                })}
+                                required
+                            >
+                                <Input
+                                    value={retireTyped}
+                                    onChange={(e) => setRetireTyped(e.target.value)}
+                                    autoComplete="off"
+                                    autoFocus
+                                    placeholder={agent.name}
+                                    data-testid="agent-retire-confirm-input"
+                                />
+                            </FormField>
                             {failure && <InlineNotice variant="error">{failure}</InlineNotice>}
                         </div>
                     </Modal.Body>
@@ -738,14 +760,10 @@ export function OverviewTab({
                             type="button"
                             variant="destructive"
                             size="sm"
-                            // Blocked by the precondition OR by the typed name.
-                            // Both, not either: the precondition is the server's
-                            // rule and the typing is this dialog's.
-                            disabled={
-                                busy
-                                || agent._count.proposals > 0
-                                || retireTyped !== agent.name
-                            }
+                            // Blocked only by the typed name. There is no
+                            // precondition left to wait for: pending proposals
+                            // are one of the things retiring expires.
+                            disabled={busy || retireTyped !== agent.name}
                             data-testid="agent-retire-commit"
                             onClick={() => void retire()}
                         >

@@ -289,9 +289,10 @@ async function seedTenantOne(): Promise<void> {
         where: { id: s.agents.A2 },
         data: { status: 'ACTIVE', riskTier: 'HIGH', riskTierScoredAt: ago(30) },
     });
+    // A4 is scored here and RETIRED below, after its grant is seeded — see there.
     await prisma.registeredAgent.update({
         where: { id: s.agents.A4 },
-        data: { status: 'RETIRED', riskTier: 'LOW', riskTierScoredAt: ago(40) },
+        data: { riskTier: 'LOW', riskTierScoredAt: ago(40) },
     });
     await prisma.registeredAgent.update({
         where: { id: s.agents.A5 },
@@ -330,6 +331,15 @@ async function seedTenantOne(): Promise<void> {
             { tenantId: T1, agentId: s.agents.A1, toolName: 'list_controls', grantedByUserId: s.ownerUserId },
             { tenantId: T1, agentId: s.agents.A4, toolName: 'list_risks', grantedByUserId: s.ownerUserId },
         ],
+    });
+    // Retired only NOW. Since #3698 the database refuses a grant to a RETIRED
+    // agent (`registered_agent_tool_agent_not_retired`), and retiring through
+    // the usecase would delete this one. A4 models an agent retired before the
+    // cascade existed, which kept the grant it held — the population the
+    // reports must still count correctly.
+    await prisma.registeredAgent.update({
+        where: { id: s.agents.A4 },
+        data: { status: 'RETIRED' },
     });
 
     // ── Coverage. Two controls, ASI03 left with none.

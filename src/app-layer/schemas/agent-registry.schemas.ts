@@ -111,12 +111,31 @@ export const CreateRegisteredAgentSchema = z
 export type CreateRegisteredAgentInput = z.infer<typeof CreateRegisteredAgentSchema>;
 
 /**
+ * Why an amend cannot move the owner (#3698): the accountable owner moves only by
+ * a TWO-STEP transfer — proposed by one holder of `admin.tenant_lifecycle`,
+ * accepted by the person it names — at `…/admin/agents/:id/ownership-transfer`.
+ * The register's PATCH takes `admin.agent_registry`, which ADMIN holds, so a
+ * one-step owner change here would be a bypass of that rule by the role the owner
+ * is accountable to.
+ */
+export const OWNER_MOVES_BY_TRANSFER_MESSAGE =
+    "An agent's owner cannot be changed by amending it. Ownership moves only by a " +
+    'two-step transfer: propose it at /admin/agents/{agentId}/ownership-transfer, and ' +
+    'the person it names accepts it.';
+
+/**
  * Partial update. The THIRD_PARTY refinement applies to the PAYLOAD, not the
  * merged row: naming `provenance: 'THIRD_PARTY'` requires naming the vendor in
  * the same call, even when the stored row already has one. That is deliberate —
  * the alternative reads the current row to decide whether the payload is legal,
  * which is a check that passes or fails depending on a value the caller never
  * saw. The DB CHECK constraint remains the backstop either way.
+ *
+ * `ownerUserId` is ACCEPTED as a key only to be REFUSED by name. The object is
+ * not `.strict()`, so simply deleting the field would strip it silently: a client
+ * that sent an owner change would get a 200 and an unchanged owner, and believe
+ * the change had been made. An explicit 400 naming the transfer is the honest
+ * answer. See `OWNER_MOVES_BY_TRANSFER_MESSAGE`.
  */
 export const UpdateRegisteredAgentSchema = z
     .object({
@@ -127,10 +146,17 @@ export const UpdateRegisteredAgentSchema = z
         reversibility: z.enum(AGENT_REVERSIBILITIES).optional(),
         provenance: z.enum(AGENT_PROVENANCES).optional(),
         modelRef,
-        ownerUserId: z.string().min(1).optional(),
+        ownerUserId: z.unknown().optional(),
         vendorId: z.string().optional().nullable(),
     })
     .superRefine((value, ctx) => {
+        if (value.ownerUserId !== undefined) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['ownerUserId'],
+                message: OWNER_MOVES_BY_TRANSFER_MESSAGE,
+            });
+        }
         if (!isUnattributedThirdParty(value)) return;
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -145,13 +171,16 @@ export type UpdateRegisteredAgentInput = z.infer<typeof UpdateRegisteredAgentSch
 export const AGENT_STATUSES = ['DRAFT', 'ACTIVE', 'SUSPENDED', 'RETIRED'] as const;
 
 /**
- * The lifecycle moves an operator may make DIRECTLY.
+ * The lifecycle moves an operator may make DIRECTLY — the two REVERSIBLE ones.
  *
  * `RETIRED` is absent on purpose and its absence is load-bearing: retirement is
- * refused while the agent has proposals awaiting a human, so it needs its own
- * route that can carry that refusal rather than being one value in a status
- * dropdown. `DRAFT` is absent because it is where an agent arrives; going back
- * there would say the register had never seen it.
+ * a permanent act with a cascade (#3698) — it revokes the agent's credentials,
+ * drops its tool grants, expires its open proposals and freezes its policy card
+ * — so it lives on its own route (`DELETE /admin/agents/:id`), behind a typed
+ * confirmation, rather than as one value in a status dropdown. Neither move here
+ * applies to a retired agent: retirement is terminal. `DRAFT` is absent because
+ * it is where an agent arrives; going back there would say the register had
+ * never seen it.
  */
 export const AGENT_LIFECYCLE_MOVES = ['ACTIVE', 'SUSPENDED'] as const;
 

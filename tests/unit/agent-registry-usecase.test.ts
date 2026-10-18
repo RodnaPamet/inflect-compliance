@@ -22,11 +22,14 @@
  *      same claim as "this rejects it", and only one of those survives a
  *      schema rewrite.
  *
- *   3. Retiring an agent with proposals still awaiting a human is REFUSED, not
- *      cascaded. See `retireRegisteredAgent` for the reasoning; what is
- *      asserted here is that the refusal happens BEFORE any status write, and
- *      that suspension — the emergency stop the refusal points at — carries no
- *      such precondition.
+ *   3. Retiring an agent CASCADES (#3698): its keys are revoked, its grants
+ *      dropped, its pending proposals expired and its card frozen, in one
+ *      transaction under `admin.agent_registry` alone. What is asserted here is
+ *      the ORDER the usecase owns and the database cannot see — status first,
+ *      audit rows last, so an effect that throws leaves no audit row describing
+ *      a retirement that rolled back — plus the gate, the one-cascade-per-agent
+ *      refusal, and that RETIRED is terminal for activate and suspend. What the
+ *      cascade does to real rows is `agent-retirement-cascade.test.ts`.
  */
 
 jest.mock('@/lib/db-context', () => ({
@@ -38,16 +41,19 @@ jest.mock('@/app-layer/events/audit', () => ({
 }));
 
 import {
+    activateRegisteredAgent,
     createRegisteredAgent,
     registerAgent,
     retireRegisteredAgent,
     suspendRegisteredAgent,
     updateRegisteredAgent,
 } from '@/app-layer/usecases/agent-registry';
+import { logEvent } from '@/app-layer/events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { makeRequestContext } from '../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<any>;
+const mockLogEvent = logEvent as jest.MockedFunction<typeof logEvent>;
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 'tenant-1', userId: 'user-1' });
 
@@ -55,9 +61,24 @@ const ctx = makeRequestContext('ADMIN', { tenantId: 'tenant-1', userId: 'user-1'
 const ACTIVE_MEMBERS = new Set(['user-1', 'owner-1']);
 
 interface DbOverrides {
-    pendingProposals?: number;
     vendors?: readonly string[];
+    /** The agent's status as the lifecycle pre-read sees it; `null` = no such agent here. */
+    agentStatus?: 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'RETIRED' | null;
+    /** Unrevoked keys bound to the agent, and how many of them are unexpired. */
+    unrevokedKeys?: number;
+    liveKeys?: number;
+    scannerKeys?: number;
+    tools?: readonly string[];
+    pendingProposals?: number;
+    card?: { id: string; currentVersion: number } | null;
+    /** Make the grant delete throw — the effect that fails mid-cascade. */
+    failToolDelete?: boolean;
+    /** The agent's open (PENDING) ownership transfer, if any; lapsed when `expiresAt` has passed. */
+    openTransfer?: { id: string; toOwnerUserId: string; expiresAt: Date } | null;
 }
+
+const ids = (prefix: string, n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `${prefix}-${i + 1}` }));
 
 /**
  * A transaction double shaped like the real client, recording what the usecase
@@ -89,15 +110,59 @@ function makeDb(overrides: DbOverrides = {}) {
         },
         agentProposal: {
             count: jest.fn(async () => overrides.pendingProposals ?? 0),
+            findMany: jest.fn(async () => ids('proposal', overrides.pendingProposals ?? 0)),
+            updateMany: jest.fn(async () => ({ count: overrides.pendingProposals ?? 0 })),
+        },
+        tenantApiKey: {
+            findMany: jest.fn(async () => ids('key', overrides.unrevokedKeys ?? 0)),
+            count: jest.fn(async () => overrides.liveKeys ?? overrides.unrevokedKeys ?? 0),
+            updateMany: jest.fn(async () => ({ count: overrides.unrevokedKeys ?? 0 })),
+        },
+        agentHarnessScannerKey: {
+            findMany: jest.fn(async () => ids('scanner-key', overrides.scannerKeys ?? 0)),
+            updateMany: jest.fn(async () => ({ count: overrides.scannerKeys ?? 0 })),
+        },
+        registeredAgentTool: {
+            findMany: jest.fn(async () =>
+                (overrides.tools ?? []).map((toolName, i) => ({ id: `grant-${i}`, toolName })),
+            ),
+            deleteMany: jest.fn(async () => {
+                if (overrides.failToolDelete) throw new Error('connection reset mid-cascade');
+                return { count: (overrides.tools ?? []).length };
+            }),
+        },
+        agentPolicyCard: {
+            findUnique: jest.fn(async () => overrides.card ?? null),
+        },
+        agentOwnershipTransfer: {
+            findFirst: jest.fn(async () => overrides.openTransfer ?? null),
+            updateMany: jest.fn(async () => ({ count: overrides.openTransfer ? 1 : 0 })),
         },
         registeredAgent: {
             create: jest.fn(async (args: any) => {
                 calls.agentCreates.push(args);
                 return { id: 'agent-1', status: 'DRAFT', riskTier: null };
             }),
+            // The lifecycle pre-read (and the scoring read, which selects
+            // different columns from the same row).
+            findFirst: jest.fn(async ({ where }: any) => {
+                const status = overrides.agentStatus === undefined ? 'ACTIVE' : overrides.agentStatus;
+                if (status === null || where.tenantId !== 'tenant-1') return null;
+                return {
+                    id: where.id,
+                    status,
+                    name: 'Ops agent',
+                    ownerUserId: 'owner-1',
+                    riskTier: 'LOW',
+                    riskTierScoredAt: new Date(),
+                };
+            }),
+            // Emulates the repository's terminal predicate: a RETIRED row
+            // matches nothing, whatever status is asked for.
             updateMany: jest.fn(async (args: any) => {
                 calls.statusUpdates.push(args);
-                return { count: 1 };
+                const retired = overrides.agentStatus === 'RETIRED';
+                return { count: retired && args.where?.status?.not === 'RETIRED' ? 0 : 1 };
             }),
         },
         aiSystem: {
@@ -173,13 +238,21 @@ describe('the accountable owner must be an active member of this tenant', () => 
         expect(calls.agentCreates).toHaveLength(0);
     });
 
-    it('refuses reassigning ownership to a non-member on UPDATE', async () => {
-        // The same hole arrived at later. An update-only check that was never
-        // written is the usual way this class of bug survives its own fix.
-        useDb();
-        await expect(
-            updateRegisteredAgent(ctx, 'agent-1', { ownerUserId: 'user-from-tenant-2' }),
-        ).rejects.toThrow(/active member/i);
+    it('refuses ANY owner change on UPDATE — ownership moves only by a two-step transfer', async () => {
+        // Until #3698 this asserted that an amend refused a non-member owner,
+        // which implied an amend could move the owner to a member. It cannot:
+        // the PATCH takes `admin.agent_registry`, which ADMIN holds, and the
+        // owner moves only by the transfer under `admin.tenant_lifecycle`.
+        // A member and a non-member are refused alike, by name, before
+        // anything is read or written.
+        const { db } = useDb();
+        for (const ownerUserId of ['user-from-tenant-2', 'user-1']) {
+            await expect(
+                updateRegisteredAgent(ctx, 'agent-1', { ownerUserId }),
+            ).rejects.toThrow(/two-step transfer/);
+        }
+        expect(db.registeredAgent.updateMany).not.toHaveBeenCalled();
+        expect(db.tenantMembership.findFirst).not.toHaveBeenCalled();
     });
 
     it('refuses a vendor from another tenant', async () => {
@@ -236,48 +309,240 @@ describe('autonomy is a bounded integer ladder', () => {
     });
 });
 
-// ─── 3. Retirement vs the pending review queue ──────────────────────
+// ─── 3. Retirement is one act, and its order is the usecase's ─────────
 
-describe('retirement is refused while proposals await a human', () => {
-    it('refuses, names the count, and points at suspension', async () => {
-        const { calls } = useDb({ pendingProposals: 3 });
-        await expect(retireRegisteredAgent(ctx, 'agent-1')).rejects.toThrow(/3 proposal/);
-        await expect(retireRegisteredAgent(ctx, 'agent-1')).rejects.toThrow(/suspend/i);
-        // Nothing was written. A refusal that had already flipped the status
-        // would leave the agent RETIRED with a live queue — the exact state the
-        // check exists to prevent.
-        expect(calls.statusUpdates).toHaveLength(0);
-    });
+/** The `invocationCallOrder` of a mock's first call — the global sequence number. */
+const firstCall = (fn: jest.Mock) => fn.mock.invocationCallOrder[0];
+const lastCall = (fn: jest.Mock) => fn.mock.invocationCallOrder[fn.mock.invocationCallOrder.length - 1];
 
-    it('retires once the queue is empty', async () => {
-        const { calls } = useDb({ pendingProposals: 0 });
-        await expect(retireRegisteredAgent(ctx, 'agent-1')).resolves.toEqual({
-            id: 'agent-1',
-            status: 'RETIRED',
-        });
-        expect(calls.statusUpdates).toHaveLength(1);
-        expect(calls.statusUpdates[0].data.status).toBe('RETIRED');
-    });
+const FULL_AGENT: DbOverrides = {
+    unrevokedKeys: 3,
+    liveKeys: 2,
+    scannerKeys: 1,
+    tools: ['list_risks', 'propose_risks'],
+    pendingProposals: 4,
+    card: { id: 'card-1', currentVersion: 3 },
+    openTransfer: { id: 'transfer-1', toOwnerUserId: 'owner-2', expiresAt: new Date(Date.now() + 86_400_000) },
+};
 
-    it('counts only PENDING — a decided proposal is history, not a blocker', async () => {
-        const { db } = useDb({ pendingProposals: 0 });
+describe('retirement cascades, status first and audit last', () => {
+    it('writes the status BEFORE any effect, and every effect before the first audit row', async () => {
+        // Status first is what serialises against an agent still in flight: the
+        // UPDATE holds the agent row's lock, which the proposal and card-version
+        // triggers wait on. Audit last because `logEvent` appends on its own
+        // connection — a row written before an effect would survive a rollback.
+        const { db } = useDb(FULL_AGENT);
         await retireRegisteredAgent(ctx, 'agent-1');
-        expect(db.agentProposal.count).toHaveBeenCalledWith({
+
+        const statusAt = firstCall(db.registeredAgent.updateMany);
+        const effectWrites = [
+            db.tenantApiKey.updateMany,
+            db.agentHarnessScannerKey.updateMany,
+            db.registeredAgentTool.deleteMany,
+            db.agentProposal.updateMany,
+            db.agentOwnershipTransfer.updateMany,
+        ];
+        for (const write of effectWrites) {
+            expect(write).toHaveBeenCalledTimes(1);
+            expect(firstCall(write)).toBeGreaterThan(statusAt);
+        }
+        const lastEffect = Math.max(...effectWrites.map(lastCall), lastCall(db.agentPolicyCard.findUnique));
+        expect(mockLogEvent).toHaveBeenCalled();
+        expect(firstCall(mockLogEvent as unknown as jest.Mock)).toBeGreaterThan(lastEffect);
+    });
+
+    it('an effect that throws leaves NO audit row — the rollback is not narrated', async () => {
+        const { db } = useDb({ ...FULL_AGENT, failToolDelete: true });
+        await expect(retireRegisteredAgent(ctx, 'agent-1')).rejects.toThrow(/connection reset/);
+        // The status write and the key revocation did run (inside the
+        // transaction the failure rolls back); what must not exist is a
+        // hash-chained row, written outside it, saying they happened.
+        expect(db.registeredAgent.updateMany).toHaveBeenCalledTimes(1);
+        expect(db.tenantApiKey.updateMany).toHaveBeenCalledTimes(1);
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it('records the summary with every count, then one row per effect that changed something', async () => {
+        useDb(FULL_AGENT);
+        const result = await retireRegisteredAgent(ctx, 'agent-1');
+
+        const actions = mockLogEvent.mock.calls.map(([, , payload]) => payload.action);
+        expect(actions).toEqual([
+            'AGENT_RETIRED',
+            'AGENT_RETIREMENT_KEYS_REVOKED',
+            'AGENT_RETIREMENT_SCANNER_KEYS_REVOKED',
+            'AGENT_RETIREMENT_TOOLS_DROPPED',
+            'AGENT_RETIREMENT_PROPOSALS_EXPIRED',
+            'AGENT_RETIREMENT_POLICY_CARD_FROZEN',
+            'AGENT_RETIREMENT_OWNERSHIP_TRANSFER_CANCELLED',
+        ]);
+        const summary = mockLogEvent.mock.calls[0][2].detailsJson as Record<string, any>;
+        expect(summary.fromStatus).toBe('ACTIVE');
+        expect(summary.toStatus).toBe('RETIRED');
+        expect(summary.cascade).toEqual({
+            apiKeysRevoked: 3,
+            liveApiKeysRevoked: 2,
+            scannerKeysRevoked: 1,
+            toolGrantsDropped: 2,
+            proposalsExpired: 4,
+            policyCardFrozenAtVersion: 3,
+            ownershipTransferCancelled: 'transfer-1',
+            evidenceArtefactsWithdrawn: 0,
+            evidenceBasis: 'POPULATION_LEVEL_ONLY',
+        });
+        // The response carries the same summary the row does.
+        expect(result).toEqual({ id: 'agent-1', status: 'RETIRED', cascade: summary.cascade });
+
+        const tools = mockLogEvent.mock.calls[3][2].detailsJson as Record<string, any>;
+        expect(tools.before).toEqual({ toolNames: ['list_risks', 'propose_risks'] });
+        const proposals = mockLogEvent.mock.calls[4][2].detailsJson as Record<string, any>;
+        expect(proposals.proposalIds).toEqual(['proposal-1', 'proposal-2', 'proposal-3', 'proposal-4']);
+        expect(proposals.idsTruncated).toBe(false);
+        const transfer = mockLogEvent.mock.calls[6][2].detailsJson as Record<string, any>;
+        expect(transfer.transferId).toBe('transfer-1');
+        expect(transfer.targetUserId).toBe('owner-2');
+    });
+
+    it('cancels a LIVE open transfer, attributed to the retiring actor', async () => {
+        const { db } = useDb(FULL_AGENT);
+        await retireRegisteredAgent(ctx, 'agent-1');
+        const [{ where, data }] = db.agentOwnershipTransfer.updateMany.mock.calls[0];
+        expect(where).toEqual({
+            id: 'transfer-1',
+            tenantId: 'tenant-1',
+            agentId: 'agent-1',
+            status: 'PENDING',
+        });
+        expect(data).toEqual(
+            expect.objectContaining({ status: 'CANCELLED', cancelledByUserId: 'user-1' }),
+        );
+    });
+
+    it('stamps a LAPSED open transfer EXPIRED — no actor, no cancellation row', async () => {
+        // It ended on its own; recording a cancellation would attribute an act
+        // to the retiring actor that they did not perform.
+        const { db } = useDb({
+            ...FULL_AGENT,
+            openTransfer: { id: 'transfer-1', toOwnerUserId: 'owner-2', expiresAt: new Date(Date.now() - 1000) },
+        });
+        const result = await retireRegisteredAgent(ctx, 'agent-1');
+        expect(db.agentOwnershipTransfer.updateMany).toHaveBeenCalledTimes(1);
+        expect(db.agentOwnershipTransfer.updateMany.mock.calls[0][0]).toEqual({
+            where: { id: 'transfer-1', tenantId: 'tenant-1', agentId: 'agent-1', status: 'PENDING' },
+            data: { status: 'EXPIRED' },
+        });
+        expect(result.cascade.ownershipTransferCancelled).toBeNull();
+        expect(mockLogEvent.mock.calls.map(([, , p]) => p.action)).not.toContain(
+            'AGENT_RETIREMENT_OWNERSHIP_TRANSFER_CANCELLED',
+        );
+    });
+
+    it('an agent with nothing to take away gets the summary row alone', async () => {
+        // No row asserting an act that did not happen. The zeroes are on the
+        // summary, once.
+        useDb({ agentStatus: 'DRAFT' });
+        await retireRegisteredAgent(ctx, 'agent-1');
+        expect(mockLogEvent.mock.calls.map(([, , p]) => p.action)).toEqual(['AGENT_RETIRED']);
+        const summary = mockLogEvent.mock.calls[0][2].detailsJson as Record<string, any>;
+        expect(summary.cascade.apiKeysRevoked).toBe(0);
+        expect(summary.cascade.policyCardFrozenAtVersion).toBeNull();
+    });
+
+    it('expires PENDING proposals only — the predicate names the agent, the tenant and PENDING', async () => {
+        const { db } = useDb(FULL_AGENT);
+        await retireRegisteredAgent(ctx, 'agent-1');
+        expect(db.agentProposal.updateMany).toHaveBeenCalledWith({
             where: { tenantId: 'tenant-1', agentId: 'agent-1', status: 'PENDING' },
+            data: { status: 'EXPIRED' },
+        });
+        expect(db.registeredAgentTool.deleteMany).toHaveBeenCalledWith({
+            where: { tenantId: 'tenant-1', agentId: 'agent-1' },
         });
     });
 
-    it('SUSPEND has no such precondition — the emergency stop cannot be blocked', async () => {
-        // This is what makes refusing retirement tolerable. An operator who
-        // needs the agent stopped NOW is one route away from the control that
-        // stops it, and that control asks nothing about the review queue.
+    it('takes admin.agent_registry, and a writer without it is refused before anything is written', async () => {
+        const { db } = useDb(FULL_AGENT);
+        const editor = makeRequestContext('EDITOR', { tenantId: 'tenant-1', userId: 'user-1' });
+        const noRegistry = {
+            ...editor,
+            appPermissions: {
+                ...editor.appPermissions,
+                admin: { ...editor.appPermissions.admin, agent_registry: false },
+            },
+        };
+        await expect(retireRegisteredAgent(noRegistry, 'agent-1')).rejects.toThrow(/agent register/i);
+        expect(db.registeredAgent.findFirst).not.toHaveBeenCalled();
+        expect(db.registeredAgent.updateMany).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it('and needs no narrower key — admin.agent_registry alone runs the whole cascade', async () => {
+        // 0e: every effect takes authority away, so retirement does not also ask
+        // for the keys that gate each effect on its own.
+        useDb(FULL_AGENT);
+        const registryOnly = {
+            ...ctx,
+            appPermissions: {
+                ...ctx.appPermissions,
+                admin: {
+                    ...ctx.appPermissions.admin,
+                    manage: false,
+                    agent_tool_exposure: false,
+                    agent_policy_card: false,
+                },
+            },
+        };
+        const result = await retireRegisteredAgent(registryOnly, 'agent-1');
+        expect(result.cascade.apiKeysRevoked).toBe(3);
+        expect(result.cascade.toolGrantsDropped).toBe(2);
+    });
+
+    it('an agent already RETIRED is a conflict and gets no second cascade', async () => {
+        const { db } = useDb({ ...FULL_AGENT, agentStatus: 'RETIRED' });
+        await expect(retireRegisteredAgent(ctx, 'agent-1')).rejects.toThrow(/already retired/i);
+        expect(db.registeredAgent.updateMany).not.toHaveBeenCalled();
+        expect(db.tenantApiKey.updateMany).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it("another tenant's agent is not found, and nothing is written", async () => {
+        const { db } = useDb({ ...FULL_AGENT, agentStatus: null });
+        await expect(retireRegisteredAgent(ctx, 'agent-1')).rejects.toThrow(/not found/i);
+        expect(db.registeredAgent.updateMany).not.toHaveBeenCalled();
+    });
+});
+
+describe('RETIRED is terminal; SUSPEND stays the reversible stop', () => {
+    it('SUSPEND still has no precondition on a live agent — pending proposals included', async () => {
         const { calls, db } = useDb({ pendingProposals: 42 });
         await expect(suspendRegisteredAgent(ctx, 'agent-1')).resolves.toEqual({
             id: 'agent-1',
             status: 'SUSPENDED',
         });
         expect(calls.statusUpdates[0].data.status).toBe('SUSPENDED');
-        expect(db.agentProposal.count).not.toHaveBeenCalled();
+        expect(db.agentProposal.updateMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['suspend', suspendRegisteredAgent, /nothing to suspend/i],
+        ['activate', activateRegisteredAgent, /cannot be put back into service/i],
+    ] as const)('%s refuses a RETIRED agent and writes nothing', async (_name, move, message) => {
+        const { db } = useDb({ agentStatus: 'RETIRED' });
+        await expect(move(ctx, 'agent-1')).rejects.toThrow(message);
+        expect(db.registeredAgent.updateMany).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it('the status write itself carries the terminal predicate', async () => {
+        // The backstop for a retirement that lands between the pre-read and the
+        // write: the WHERE excludes RETIRED, so the race matches zero rows.
+        const { db } = useDb();
+        await suspendRegisteredAgent(ctx, 'agent-1');
+        expect(db.registeredAgent.updateMany.mock.calls[0][0].where).toMatchObject({
+            id: 'agent-1',
+            tenantId: 'tenant-1',
+            status: { not: 'RETIRED' },
+        });
     });
 });
 

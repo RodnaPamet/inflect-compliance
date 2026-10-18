@@ -313,21 +313,22 @@ export class RegisteredAgentRepository {
                                 OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
                             },
                         },
-                        // The RETIREMENT PRECONDITION (#2448), counted on the
-                        // detail read so the screen can state it BEFORE the
-                        // operator commits rather than after the server refuses.
+                        // THE RETIREMENT CASCADE, PREVIEWED (#3698). Retiring an
+                        // agent expires every PENDING proposal and drops every
+                        // tool grant (`applyRetirementCascadeInTx`), and the retire
+                        // dialog states both numbers BEFORE the operator commits —
+                        // an irreversible act should say what it will change, not
+                        // report it afterwards.
                         //
-                        // `retireRegisteredAgent` refuses while any proposal is
-                        // PENDING and its message names the number — good, but a
-                        // precondition an operator only meets by being rejected
-                        // is one they discover by failing. The same predicate,
-                        // read ahead of the click, turns it into something the
-                        // page can say and link to.
-                        //
-                        // PENDING mirrors the usecase exactly. If that status set
-                        // ever widens, this must widen with it, or the dialog
-                        // will promise a retirement the server declines.
+                        // Each predicate here is the cascade's own: PENDING is
+                        // what it expires, and every grant is what it deletes. If
+                        // either widens there, it must widen here, or the dialog
+                        // understates what the click does. `apiKeys` above is the
+                        // LIVE count, which is what stops being accepted; the
+                        // cascade also revokes keys that had already expired, and
+                        // its audit row reports both figures.
                         proposals: { where: { status: 'PENDING' } },
+                        tools: true,
                     },
                 },
             },
@@ -353,12 +354,15 @@ export class RegisteredAgentRepository {
      * Conditional update — the `tenantId` predicate is part of the WHERE, so a
      * caller naming another tenant's id updates ZERO rows rather than throwing.
      * The count is the caller's evidence that the row was theirs.
+     *
+     * `ownerUserId` is excluded by TYPE: after registration the owner moves only
+     * through `moveOwner`, the completion of a two-step transfer (#3698).
      */
     static async update(
         db: PrismaTx,
         ctx: RequestContext,
         id: string,
-        data: Partial<RegisteredAgentWriteFields>,
+        data: Partial<Omit<RegisteredAgentWriteFields, 'ownerUserId'>>,
     ): Promise<number> {
         const res = await db.registeredAgent.updateMany({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
@@ -424,7 +428,67 @@ export class RegisteredAgentRepository {
         return res.count;
     }
 
-    /** Kill switch / lifecycle move. Same conditional-update contract. */
+    /**
+     * The columns a lifecycle move — or an ownership transfer — decides on, and
+     * nothing else: whether the agent exists here, where it is on its
+     * lifecycle, who owns it, and the names an audit row about it carries
+     * (`aiSystemId` so a transfer can record the register entry's own owner
+     * beside the agent's).
+     */
+    static async getLifecycleState(db: PrismaTx, ctx: RequestContext, id: string) {
+        return db.registeredAgent.findFirst({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, status: true, name: true, ownerUserId: true, aiSystemId: true },
+        });
+    }
+
+    /**
+     * `getLifecycleState`, read `FOR SHARE` — the same columns, with the agent
+     * row's share lock held until the caller's transaction ends.
+     *
+     * For a caller that is about to lock a row that depends on the agent (step
+     * one of an ownership transfer, #3698) and so must take the agent row FIRST,
+     * the order retirement and completion take it in. `FOR SHARE` conflicts with
+     * their UPDATE of this row, so it waits for either to commit and then
+     * returns what it left — a RETIRED status included — and it does not
+     * conflict with another share reader. Prisma has no locking read, hence the
+     * raw statement; it runs on the caller's tenant-bound client, under RLS.
+     */
+    static async lockLifecycleStateForShare(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+    ): Promise<{
+        id: string;
+        status: AgentStatus;
+        name: string;
+        ownerUserId: string;
+        aiSystemId: string;
+    } | null> {
+        const rows = await db.$queryRaw<
+            Array<{ id: string; status: AgentStatus; name: string; ownerUserId: string; aiSystemId: string }>
+        >`
+            SELECT "id", "status", "name", "ownerUserId", "aiSystemId"
+              FROM "RegisteredAgent"
+             WHERE "id" = ${id} AND "tenantId" = ${ctx.tenantId} AND "deletedAt" IS NULL
+               FOR SHARE`;
+        return rows[0] ?? null;
+    }
+
+    /**
+     * Kill switch / lifecycle move. Same conditional-update contract — and
+     * RETIRED IS TERMINAL (#3698): a retired agent matches zero rows, whatever
+     * status is asked for. Retirement revoked its credentials, dropped its
+     * grants and froze its card, so a move back into service would hand back a
+     * register row whose authority had been taken apart underneath it.
+     *
+     * The predicate sits on the row being updated, so under READ COMMITTED a
+     * concurrent retirement is re-checked against the committed status rather
+     * than the one this transaction read; the caller's pre-read gives the
+     * precise error, and a zero count after it means the row moved meanwhile.
+     * The trigger `registered_agent_retirement_is_terminal` refuses the same move
+     * from any writer that bypasses this method.
+     */
     static async setStatus(
         db: PrismaTx,
         ctx: RequestContext,
@@ -432,8 +496,40 @@ export class RegisteredAgentRepository {
         status: AgentStatus,
     ): Promise<number> {
         const res = await db.registeredAgent.updateMany({
-            where: { id, tenantId: ctx.tenantId, deletedAt: null },
+            where: { id, tenantId: ctx.tenantId, deletedAt: null, status: { not: 'RETIRED' } },
             data: { status },
+        });
+        return res.count;
+    }
+
+    /**
+     * Move the accountable owner — the completion of a two-step ownership
+     * transfer, and the ONLY write of `ownerUserId` after registration (#3698;
+     * the register's PATCH refuses the field).
+     *
+     * Conditional on everything step one assumed and step two must re-check:
+     * the agent still exists, is not RETIRED, and is STILL owned by the person
+     * the transfer was proposed away from. The predicate sits on the row being
+     * updated, so under READ COMMITTED a concurrent retirement or a concurrent
+     * transfer is re-evaluated against the committed row. Zero means one of
+     * them happened, and the caller rolls the completion back.
+     */
+    static async moveOwner(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        fromUserId: string,
+        toUserId: string,
+    ): Promise<number> {
+        const res = await db.registeredAgent.updateMany({
+            where: {
+                id,
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                status: { not: 'RETIRED' },
+                ownerUserId: fromUserId,
+            },
+            data: { ownerUserId: toUserId },
         });
         return res.count;
     }

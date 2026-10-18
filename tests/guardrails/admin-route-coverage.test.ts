@@ -96,6 +96,13 @@ const ADMIN_ONLY_ROUTES = [
     // Deny-by-default MCP tool exposure — its own key,
     // `admin.agent_tool_exposure`, narrower than the register's.
     'admin/agents/[agentId]/tools/route.ts',
+    // The two-step agent ownership transfer (#3698) — `admin.tenant_lifecycle`,
+    // NOT the register's key: ADMIN holds `agent_registry`, and an agent's
+    // accountable owner must not be movable by the role it is accountable to.
+    // Step one (propose), its read and its cancel; then step two, completed by
+    // the person it names and never by the person who started it.
+    'admin/agents/[agentId]/ownership-transfer/route.ts',
+    'admin/agents/[agentId]/ownership-transfer/complete/route.ts',
     // The versioned runtime policy card (Agentic 5) — its own key,
     // `admin.agent_policy_card`, and the WIDEST of the three: a card declares
     // the permitted tools, the data rung, the autonomy rung and both action

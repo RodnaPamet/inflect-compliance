@@ -74,4 +74,23 @@ export class RegisteredAgentToolRepository {
         });
         return res.count;
     }
+
+    /**
+     * Revoke EVERY tool the agent holds — retirement's grant effect (#3698).
+     *
+     * Unbounded on purpose: "a retired agent holds zero grants" has to be true
+     * of the table, not of the first page of it. The count is the evidence the
+     * cascade's audit row reports, and the same `tenantId` predicate makes a
+     * foreign agent id delete nothing.
+     */
+    static async revokeAllForAgent(
+        db: PrismaTx,
+        ctx: RequestContext,
+        agentId: string,
+    ): Promise<number> {
+        const res = await db.registeredAgentTool.deleteMany({
+            where: { tenantId: ctx.tenantId, agentId },
+        });
+        return res.count;
+    }
 }

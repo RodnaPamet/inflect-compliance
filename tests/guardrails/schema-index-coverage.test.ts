@@ -446,6 +446,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'agent-harness-acceptance.listHarnessAcceptances filters by [tenantId, discoveredAgentId?]; the scan ingest reads the in-force acceptances of a set of discovered agents by the same pair',
     },
+    // ── Agent ownership transfer (#3698) ────────────────────────────
+    {
+        model: 'AgentOwnershipTransfer',
+        fields: ['tenantId', 'agentId', 'createdAt'],
+        justification:
+            "AgentOwnershipTransferRepository.listForAgent filters by [tenantId, agentId] and orders by createdAt desc, bounded take 20; the open-transfer lookup reads the same pair (and the partial unique index one_open_per_agent serves its PENDING arm)",
+    },
     // ── Agent policy card (AgentPolicyCardRepository) ───────────────
     {
         model: 'AgentPolicyCardVersion',

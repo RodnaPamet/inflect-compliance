@@ -4163,9 +4163,9 @@
       "killInFlight": "Checked on every tool call, so a run already under way stops at its next tool call.",
       "killUndo": "Reversible: lifting it is a separate deliberate act.",
       "killNote": "Can stop this agent alone or every agent in the workspace. It does not change the agent's status, so the register still reads ACTIVE.",
-      "retireInFlight": "Refuses the next request. A run already under way continues to the end.",
+      "retireInFlight": "Refuses the next request, and revokes the API keys bound to the agent, which are re-checked on every tool call.",
       "retireUndo": "PERMANENT. It cannot be undone and the agent cannot be brought back into service.",
-      "retireNote": "Refused while any proposal is still awaiting review."
+      "retireNote": "Also drops its tool grants, expires its proposals still awaiting review and freezes its policy card."
     },
     "autonomy": {
       "rung0": "Suggests to a human in session and reaches nothing itself. No tool sits at this rung, so an agent registered here can call nothing.",
@@ -4645,6 +4645,7 @@
         "provenance": "Provenance",
         "modelRef": "Model reference",
         "owner": "Accountable owner",
+        "ownerMovesByTransfer": "Ownership moves only by a two-step transfer: another holder of the tenant lifecycle permission proposes it, and the person it names accepts it.",
         "vendor": "Supplier",
         "vendorNone": "No supplier — first party",
         "save": "Save {count} change(s)",
@@ -4677,7 +4678,7 @@
           "DRAFT": "This agent has never been put into service. Its credentials are refused at registration until someone activates it.",
           "ACTIVE": "This agent's credentials are accepted at registration. Suspending it refuses them from the next request onward.",
           "SUSPENDED": "This agent is suspended in the register, so its credentials are refused at registration. It stays in the register and can be activated again.",
-          "RETIRED": "This agent is retired, so its credentials are refused at registration. The register keeps its record and the authority it held; activating it would put it back into service."
+          "RETIRED": "This agent is retired, so its credentials are refused at registration. Retirement is permanent: it revokes the API keys bound to the agent, drops its tool grants, expires its proposals still awaiting review and freezes its policy card. The register keeps its record and the authority it held."
         },
         "activateAction": "Activate agent",
         "activatedToast": "Agent activated.",
@@ -4712,13 +4713,20 @@
           "DRAFT": "This agent has never been put into service. This workspace does not require registered agents, so a credential bound to it is accepted anyway — and because the agent is not active it never resolves at the tool boundary, so its granted tools, its autonomy ceiling and its policy card do not apply to that credential.",
           "ACTIVE": "This agent's credentials are accepted at registration. This workspace does not require registered agents, so they would be accepted whatever the register said about this agent — but while it is active, its granted tools, its autonomy ceiling and its policy card do apply to them at the tool boundary.",
           "SUSPENDED": "This agent is suspended in the register. This workspace does not require registered agents, so its credentials are still accepted at registration — but while it is suspended every tool call is refused at the boundary, and its granted tools, its autonomy ceiling, its policy card and its stop controls apply again. It can still read the framework catalogue. It stays in the register and can be activated again.",
-          "RETIRED": "This agent is retired. This workspace does not require registered agents, so retirement does not refuse a credential bound to it — and it stops applying this agent's granted tools, autonomy ceiling and policy card to that credential. The register keeps its record and the authority it held."
+          "RETIRED": "This agent is retired. This workspace does not require registered agents, so it is retirement's own effects that stop it: retirement revokes the API keys bound to the agent and drops its tool grants. A credential bound to it that is still live is accepted at registration, and this agent's granted tools, autonomy ceiling and policy card do not apply to it. The register keeps its record and the authority it held."
         },
         "retireAction": "Retire",
         "retireTitle": "Retire this agent",
         "retirePrompt": "Retirement is permanent. It cannot be undone, and the agent cannot be brought back into service.",
-        "retireBlocked": "This agent has {count} proposal(s) still awaiting review. Retirement is refused until they are resolved — approve or reject them, or suspend the agent instead, which stops it immediately and is reversible.",
-        "retireBlockedLink": "Open the proposal queue",
+        "retireCascadeIntro": "Retiring this agent does all of this at once:",
+        "retireCascadeKeys": "{count, plural, one {# live API key bound to it is revoked.} other {# live API keys bound to it are revoked.}}",
+        "retireCascadeKeysNone": "No live API key is bound to it.",
+        "retireCascadeTools": "{count, plural, one {# tool grant is dropped.} other {# tool grants are dropped.}}",
+        "retireCascadeToolsNone": "It holds no tool grant.",
+        "retireCascadeProposals": "{count, plural, one {# proposal awaiting review expires, and can no longer be approved.} other {# proposals awaiting review expire, and can no longer be approved.}}",
+        "retireCascadeProposalsNone": "None of its proposals is awaiting review.",
+        "retireCascadeCard": "Its policy card is frozen: no further version can be written, and its history stays readable.",
+        "retireReviewFirstLink": "Review its open proposals first",
         "retireIrreversible": "Suspension stops this agent just as completely and can be lifted. Retirement cannot.",
         "retireTypeToConfirm": "Type {name} to confirm",
         "retireError": "Could not retire this agent.",
@@ -4934,7 +4942,7 @@
         "retry": "Try again",
         "forbiddenTitle": "Tool exposure access required",
         "forbiddenBody": "Granting an agent's tools is a separate permission from the agent register, and it covers reading the list as well as changing it. Ask a workspace administrator for it.",
-        "retiredBody": "The register will not list or change a retired agent's tools. Reactivate it to see what it may reach.",
+        "retiredBody": "The register does not list or change a retired agent's tools. Retirement is permanent, and it takes away what the agent may reach.",
         "loadFailedTitle": "Tool grants could not be loaded",
         "loadFailedBody": "The list of granted tools did not load, so this panel shows nothing rather than reporting an empty list as fact.",
         "noTools": "No tools granted yet",

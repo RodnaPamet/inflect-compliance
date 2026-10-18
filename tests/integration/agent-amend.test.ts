@@ -1,10 +1,12 @@
 /**
- * AMEND A REGISTERED AGENT (#2447) — nine fields, and the one rule that is not
- * symmetric.
+ * AMEND A REGISTERED AGENT (#2447) — eight fields, the one rule that is not
+ * symmetric, and the one field that is not amendable at all.
  *
  * `PATCH /admin/agents/:id` and `updateRegisteredAgent` have existed since the
- * register shipped, validating all nine fields and enforcing the risk-tier
- * autonomy ceiling. NO .tsx FILE CALLED IT. So autonomy — the central authority
+ * register shipped, validating the agent's fields and enforcing the risk-tier
+ * autonomy ceiling. The accountable OWNER was the ninth field until #3698: it now
+ * moves only by a two-step transfer under `admin.tenant_lifecycle`, and the PATCH
+ * refuses it by name rather than stripping it. NO .tsx FILE CALLED IT. So autonomy — the central authority
  * dial — was set at creation and frozen: an agent granted too much could not be
  * turned DOWN without somebody issuing an API call by hand. That is a governance
  * gap rather than an inconvenience, which is why this is the highest-priority of
@@ -97,7 +99,7 @@ beforeAll(async () => {
 
 afterAll(clearProbeRows);
 
-describe('all nine fields are amendable', () => {
+describe('all eight amendable fields are amendable', () => {
     it('accepts a patch touching every one of them', async () => {
         const agent = await makeAgent({ riskTier: 'LOW', riskTierScoredAt: new Date() });
 
@@ -109,7 +111,6 @@ describe('all nine fields are amendable', () => {
             reversibility: 'COMPENSABLE',
             provenance: 'FIRST_PARTY',
             modelRef: 'gpt-probe-1',
-            ownerUserId: owner2Id,
             vendorId: null,
         });
 
@@ -124,8 +125,22 @@ describe('all nine fields are amendable', () => {
         expect(after.reversibility).toBe('COMPENSABLE');
         expect(after.provenance).toBe('FIRST_PARTY');
         expect(after.modelRef).toBe('gpt-probe-1');
-        expect(after.ownerUserId).toBe(owner2Id);
         expect(after.vendorId).toBeNull();
+    });
+});
+
+describe('the owner is not amendable — it moves only by a two-step transfer', () => {
+    it('refuses ownerUserId by name, even to an active member, and changes nothing', async () => {
+        // A 400 naming the transfer, not a silent strip: stripping would answer
+        // 200 with the owner unchanged, and the caller would believe it moved.
+        const agent = await makeAgent();
+        await expect(
+            updateRegisteredAgent(ctx(), agent.id, { ownerUserId: owner2Id, name: 'renamed too' }),
+        ).rejects.toThrow(/two-step transfer/);
+        const after = await prisma.registeredAgent.findUniqueOrThrow({ where: { id: agent.id } });
+        expect(after.ownerUserId).toBe(ownerId);
+        // The whole patch is refused, not just the owner half of it.
+        expect(after.name).toBe('amend probe');
     });
 });
 

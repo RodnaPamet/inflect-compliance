@@ -223,6 +223,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/[agentId]/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/status/route.ts',
     't/[tenantSlug]/admin/agents/[agentId]/tools/route.ts',
+    // #3698 — the two-step agent ownership transfer. API-only until its panel on
+    // the agent overview ships (propose, the pending banner, accept or decline
+    // for the person named). It is the ONLY way an agent's owner moves after
+    // registration: the register's PATCH refuses `ownerUserId`.
+    't/[tenantSlug]/admin/agents/[agentId]/ownership-transfer/complete/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/ownership-transfer/route.ts',
     't/[tenantSlug]/admin/agents/kill-switch/route.ts',
     // #3665 — the harness ingest. `harness-scans` is MACHINE surface: a
     // scanner POSTs a signed report with an API key scoped to
