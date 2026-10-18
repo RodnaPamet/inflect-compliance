@@ -1,10 +1,12 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { SkeletonCard } from '@/components/ui/skeleton';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -16,7 +18,17 @@ import type { HarnessMatrixView, HarnessScannerKeysView } from '@/lib/agentic/ha
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { ExportPackButton } from './ExportPackButton';
 import { Metric, type DefinitionView, type MeasureView } from './Metric';
-import { HarnessTab } from './harness/HarnessTab';
+
+/**
+ * The harness tab loads on demand. It is not the default tab, and its matrix,
+ * modals and key management are client code the governance pack never runs;
+ * imported statically, they put the route past its First Load JS budget
+ * (`tests/guardrails/bundle-size-budget.test.ts`). A budget raise would have
+ * loosened the catch-all for every tenant page to make room for one tab.
+ */
+const HarnessTab = dynamic(() => import('./harness/HarnessTab').then((m) => m.HarnessTab), {
+    loading: () => <SkeletonCard lines={4} />,
+});
 
 /** One report's envelope, as it crosses the server/client boundary. */
 interface EnvelopeView<TBody> {

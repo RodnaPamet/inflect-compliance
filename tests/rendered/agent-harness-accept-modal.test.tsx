@@ -84,6 +84,13 @@ jest.mock('@/components/ui/date-picker/date-picker', () => ({
 const mockToast = { success: jest.fn(), error: jest.fn(), info: jest.fn(), warning: jest.fn(), dismiss: jest.fn() };
 jest.mock('sonner', () => ({ toast: mockToast, Toaster: () => null }));
 
+// `ReportsClient` loads the harness tab through `next/dynamic`, which resolves a
+// tick after the first render in jsdom. What is under test here is the tab, not
+// the loading boundary, so the one dynamic import is answered synchronously.
+jest.mock('next/dynamic', () => ({
+    __esModule: true,
+    default: () => require('@/app/t/[tenantSlug]/(app)/agents/reports/harness/HarnessTab').HarnessTab,
+}));
 import { ReportsClient } from '@/app/t/[tenantSlug]/(app)/agents/reports/ReportsClient';
 import type {
     AcceptanceRow,

@@ -73,6 +73,13 @@ jest.mock('@/components/ui/tooltip', () => ({
     DynamicTooltipWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+// `ReportsClient` loads the harness tab through `next/dynamic`, which resolves a
+// tick after the first render in jsdom. What is under test here is the tab, not
+// the loading boundary, so the one dynamic import is answered synchronously.
+jest.mock('next/dynamic', () => ({
+    __esModule: true,
+    default: () => require('@/app/t/[tenantSlug]/(app)/agents/reports/harness/HarnessTab').HarnessTab,
+}));
 import { ReportsClient } from '@/app/t/[tenantSlug]/(app)/agents/reports/ReportsClient';
 import {
     ALL_HARNESS_CRITERIA,
