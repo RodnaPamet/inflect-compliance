@@ -236,9 +236,13 @@ export class AccessReviewRepository {
             dueAt?: Date | null;
             snapshotTruncated: boolean;
             createdAt: Date;
-            /** The two registered agents that prepare the packs (rule 8). */
+            /**
+             * The registered agent that prepares every pack but its own, and
+             * the optional second agent that prepares that one (rule 8). With
+             * no second agent, a person prepares the preparer's own pack.
+             */
             preparerAgentId: string;
-            crossPreparerAgentId: string;
+            crossPreparerAgentId: string | null;
         },
     ) {
         return db.accessReview.create({

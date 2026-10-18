@@ -353,10 +353,11 @@ function CreateCampaignButton({
     // access-review-connected usecase accepts.
     const [directory, setDirectory] = useState<string>('all');
     const [reviewerUserId, setReviewerUserId] = useState('');
-    // #3674 — an AGENT review names two registered agents: one prepares every
-    // reviewer pack but its own, the other prepares that one (an agent never
-    // prepares the pack it is reviewed by). Offered from the ACTIVE agents;
-    // the server re-checks every term (scored, not killed, granted the read).
+    // #3674 — an AGENT review names the registered agent that prepares every
+    // reviewer pack but its own, and optionally a second that prepares that one
+    // (an agent never prepares the pack it is reviewed by). Left empty, a person
+    // prepares the preparer's own pack. Offered from the ACTIVE agents; the
+    // server re-checks every term (scored, not killed, granted the read).
     const [preparerAgentId, setPreparerAgentId] = useState('');
     const [crossPreparerAgentId, setCrossPreparerAgentId] = useState('');
     const agentsQuery = useTenantSWR<{ agents?: Array<{ id: string; name: string }> }>(
@@ -458,7 +459,9 @@ function CreateCampaignButton({
                       name,
                       description: description || undefined,
                       provider: isConnected && directory !== 'all' ? directory : undefined,
-                      ...(isAgent ? { preparerAgentId, crossPreparerAgentId } : {}),
+                      ...(isAgent
+                          ? { preparerAgentId, crossPreparerAgentId: crossPreparerAgentId || undefined }
+                          : {}),
                       reviewerUserId,
                       dueAt: dueAt ? dueAt.toISOString() : undefined,
                   }
@@ -641,7 +644,7 @@ function CreateCampaignButton({
                                             />
                                         </div>
                                     </FormField>
-                                    <FormField label={t('fieldCrossPreparer')} hint={t('crossPreparerHint')} required>
+                                    <FormField label={t('fieldCrossPreparer')} description={t('crossPreparerHint')}>
                                         <div data-testid="access-review-new-cross-preparer">
                                             <Combobox
                                                 id="access-review-cross-preparer-select"

@@ -362,10 +362,22 @@ model AccessReviewAgentPack {
   /// operational and may be pruned; the pack is the record that outlives it.
   preparedByRunId  String
   /// The registered agent whose run prepared it — the campaign's preparer,
-  /// or for the preparer's own pack its cross-preparer. A CHECK refuses it
-  /// equal to `agentId`: no agent prepares the pack it is reviewed by.
-  preparedByAgentId String
-  /// Who STARTED the preparation; the run is the agent's. No FK, matching
+  /// or for the preparer's own pack its cross-preparer — or NULL when a
+  /// person prepared the preparer's own pack on the static path. A CHECK
+  /// refuses it equal to `agentId`: no agent prepares the pack it is reviewed
+  /// by.
+  preparedByAgentId String?
+  /// How the pack was prepared: `AGENT_RUN` (a registered agent's run) or
+  /// `PERSON_STATIC_SELF_PACK` (the preparer's own pack, prepared by a person
+  /// on the static path because the campaign names no cross-preparer). A
+  /// CHECK pairs it with `preparedByAgentId`.
+  preparationBasis String
+  /// The campaign's preparer, bound to `AccessReview.preparerAgentId` by FK,
+  /// so a CHECK can hold the one exception: a pack no agent prepared must be
+  /// the preparer's own.
+  campaignPreparerAgentId String
+  /// Who STARTED the preparation; the run is the agent's, or (for a
+  /// `PERSON_STATIC_SELF_PACK`) this person's. No FK, matching
   /// `grantedByUserId`: the record must survive the account.
   preparedByUserId String
   /// The observation window: the 90 days before the campaign froze its
@@ -382,7 +394,9 @@ model AccessReviewAgentPack {
   preparedAt       DateTime @default(now())
 
   tenant       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  accessReview AccessReview                  @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  accessReview AccessReview                  @relation("AgentPackCampaign", fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  /// RESTRICT on update: a campaign's preparer cannot move once a pack names it.
+  preparerCampaign AccessReview              @relation("AgentPackCampaignPreparer", fields: [accessReviewId, campaignPreparerAgentId], references: [id, preparerAgentId], onDelete: Cascade, onUpdate: Restrict)
   decision     AccessReviewConnectedDecision @relation(fields: [decisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   narrowings   AccessReviewAgentNarrowing[]
 
@@ -392,6 +406,7 @@ model AccessReviewAgentPack {
   @@unique([decisionId, tenantId])
   @@unique([id, tenantId])
   @@index([tenantId, accessReviewId])
+  @@index([tenantId, campaignPreparerAgentId])
 }
 
 /// One narrowing a pack proposed: delete a grant the agent did not use.

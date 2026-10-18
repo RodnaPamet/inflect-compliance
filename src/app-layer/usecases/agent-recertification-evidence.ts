@@ -36,11 +36,12 @@
  * carries), its own subject is never read: excluded from the population the
  * pages cover, and refused by name when asked for (`SELF_PACK_REFUSED`). So an
  * agent cannot prepare the pack it is reviewed by however it is driven — the
- * campaign's orchestration routes that one pack to the cross-preparer, and this
- * is the half that holds for any caller of the read tool.
+ * campaign's orchestration routes that one pack to the cross-preparer, or to a
+ * person when it names none, and this is the half that holds for any caller of
+ * the read tool.
  *
- * `onlyAgentId` narrows the read to one subject: the cross-preparer's run reads
- * exactly the preparer's pack.
+ * `onlyAgentId` narrows the read to one subject: the run for the preparer's
+ * own pack — the cross-preparer's, or the person's — reads exactly that one.
  *
  * @module app-layer/usecases/agent-recertification-evidence
  */

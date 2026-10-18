@@ -104,6 +104,7 @@ export type AgentCampaignRefusal =
     | 'PREPARER_LACKS_READ_GRANT'
     | 'PREPARE_REQUIRES_PERSON'
     | 'SELF_PACK_REFUSED'
+    | 'STATIC_PACK_NOT_PREPARERS_OWN'
     | 'PACK_RUN_FAILED'
     | 'PACK_PLAN_MISMATCH'
     | 'NARROWINGS_PENDING'
@@ -151,12 +152,23 @@ function holdsRegistry(ctx: RequestContext): boolean {
 // 2026-10-18): the pack workflow runs as that agent, through the funnel, with
 // its grants, card and autonomy terms; the admin who asks only starts it. And
 // no agent prepares the pack it is reviewed by (rule 8). Every agent able to
-// prepare is ACTIVE, so it is always in the frozen population — so a campaign
-// names TWO: the preparer prepares every pack but its own, and the
-// cross-preparer prepares exactly that one. A CHECK on `AccessReview` holds the
-// pairing and one on the pack refuses `preparedByAgentId = agentId`.
+// prepare is ACTIVE, so it is always in the frozen population: the preparer
+// prepares every pack but its own, and its own pack is prepared by the
+// campaign's cross-preparer when one is named — otherwise by a PERSON on the
+// static, agent-free path, for that one pack only (owner decision of
+// 2026-10-18, which relaxes rule 1 there and nowhere else). CHECKs on
+// `AccessReview` and on the pack hold all of it for any writer: two preparers
+// differ, no agent prepares its own pack, the provenance is paired, and a pack
+// no agent prepared is the preparer's own.
 
-/** One of the two agents a campaign names, and which role it plays. */
+/** The provenance a pack records. */
+export const PACK_PREPARATION_BASIS = {
+    AGENT_RUN: 'AGENT_RUN',
+    PERSON_STATIC_SELF_PACK: 'PERSON_STATIC_SELF_PACK',
+} as const;
+export type PackPreparationBasis = (typeof PACK_PREPARATION_BASIS)[keyof typeof PACK_PREPARATION_BASIS];
+
+/** One of the agents a campaign names, and which role it plays. */
 type PreparerRole = 'preparer' | 'cross-preparer';
 
 /**
@@ -201,7 +213,10 @@ export const CreateAgentAccessReviewSchema = z.object({
     reviewerUserId: z.string().min(1),
     /** Prepares every pack but its own. Required — refused by name when absent. */
     preparerAgentId: z.string().max(64).optional(),
-    /** Prepares the preparer's own pack. Required — refused by name when absent. */
+    /**
+     * Prepares the preparer's own pack. Optional: left out, a person prepares
+     * that one pack on the static path.
+     */
     crossPreparerAgentId: z.string().max(64).optional(),
     dueAt: z.coerce.date().optional(),
     periodStartAt: z.coerce.date().optional(),
@@ -235,14 +250,13 @@ export async function createAgentAccessReview(
     const parsed = CreateAgentAccessReviewSchema.parse(input);
     const preparerAgentId = parsed.preparerAgentId?.trim() || null;
     const crossPreparerAgentId = parsed.crossPreparerAgentId?.trim() || null;
-    if (!preparerAgentId || !crossPreparerAgentId) {
+    if (!preparerAgentId) {
         refuse(
             'PREPARER_REQUIRED',
-            'an agent campaign names the registered agent that prepares its packs and a second one that '
-            + 'prepares the first one’s own pack (an agent never prepares the pack it is reviewed by)',
+            'an agent campaign names the registered agent that prepares its packs',
         );
     }
-    if (preparerAgentId === crossPreparerAgentId) {
+    if (crossPreparerAgentId && preparerAgentId === crossPreparerAgentId) {
         refuse('PREPARERS_MUST_DIFFER', 'the preparer and the cross-preparer must be two different agents');
     }
 
@@ -285,7 +299,7 @@ export async function createAgentAccessReview(
         // After the population, so an empty one is the refusal a caller meets
         // first, whatever agents the request names.
         await assertPreparerEligible(db, ctx, preparerAgentId, 'preparer');
-        await assertPreparerEligible(db, ctx, crossPreparerAgentId, 'cross-preparer');
+        if (crossPreparerAgentId) await assertPreparerEligible(db, ctx, crossPreparerAgentId, 'cross-preparer');
 
         const review = await AccessReviewRepository.createAgentCampaign(db, ctx, {
             name: sanitizePlainText(parsed.name),
@@ -391,35 +405,58 @@ interface PreparedRun {
     readonly evidence: RecertificationEvidence;
     readonly plan: PackPlan;
     readonly runId: string;
-    readonly agentId: string;
+    /** The agent whose run it was, or null for the person-started static run. */
+    readonly agentId: string | null;
 }
 
 /**
- * Start one pack run AS `agentId` and read its recorded steps back.
- *
- * The context is the requester's with the agent bound — the seam the automation
- * dispatcher uses to start a run for a registered agent. `startWorkflowRun`
- * resolves the agent through the register, pins its policy card and stamps
- * `WorkflowRun.agentId`; the static driver builds the invocation from the
- * register, so the READ step's tool call is the agent's: deny-by-default over
- * ITS grants, its card, its autonomy ceiling, the kill and credential checks.
- * The requester's permissions are one term of that intersection, never a way
- * around it.
+ * The person-started static run may prepare ONE pack: the campaign preparer's
+ * own. Exported so the refusal is unit-testable without forging a run; a CHECK
+ * on the pack refuses the same thing for any writer.
  */
-async function runPackAs(
+export function assertStaticRunIsPreparersOwn(evidence: RecertificationEvidence, preparerAgentId: string): void {
+    const others = evidence.subjects.filter((x) => x.agentId !== preparerAgentId);
+    if (others.length > 0 || evidence.subjects.length !== 1) {
+        refuse(
+            'STATIC_PACK_NOT_PREPARERS_OWN',
+            `a person's static preparation prepares only the preparer's own pack; this one read ${evidence.subjects.length} `
+            + `subject(s), ${others.length} of them not the preparer`,
+        );
+    }
+}
+
+/**
+ * Start one pack run and read its recorded steps back.
+ *
+ * AS AN AGENT (`agentId` set): the requester's context with the agent bound —
+ * the seam the automation dispatcher uses to start a run for a registered
+ * agent. `startWorkflowRun` resolves the agent through the register, pins its
+ * policy card and stamps `WorkflowRun.agentId`; the static driver builds the
+ * invocation from the register, so the READ step's tool call is the agent's:
+ * deny-by-default over ITS grants, its card, its autonomy ceiling, the kill and
+ * credential checks. The requester's permissions are one term of that
+ * intersection, never a way around it.
+ *
+ * AS A PERSON (`agentId` null): the same static workflow, read tool and stored
+ * rows, with no agent bound — no model, `WorkflowRun.agentId` NULL — for the
+ * preparer's own pack only, when the campaign names no cross-preparer.
+ */
+async function runPack(
     ctx: RequestContext,
-    agentId: string,
+    agentId: string | null,
     accessReviewId: string,
     page: number,
     subject: string,
 ): Promise<PreparedRun> {
-    const run = await startWorkflowRun({ ...ctx, agentId }, AGENT_RECERTIFICATION_PACK_WORKFLOW, {
+    const runCtx: RequestContext = agentId ? { ...ctx, agentId } : { ...ctx, agentId: undefined };
+    const run = await startWorkflowRun(runCtx, AGENT_RECERTIFICATION_PACK_WORKFLOW, {
         accessReviewId,
         page: String(page),
         subject,
     });
+    const who = agentId ? `agent ${agentId}` : 'a person';
     if (run.status !== 'COMPLETED' || run.stepFailures > 0) {
-        refuse('PACK_RUN_FAILED', `run ${run.runId} (agent ${agentId}, page ${page}) ended ${run.status} with ${run.stepFailures} failed step(s)`);
+        refuse('PACK_RUN_FAILED', `run ${run.runId} (${who}, page ${page}) ended ${run.status} with ${run.stepFailures} failed step(s)`);
     }
     const { steps, runAgentId } = await runInTenantContext(ctx, async (db) => ({
         steps: await db.workflowStep.findMany({
@@ -433,11 +470,11 @@ async function runPackAs(
             select: { agentId: true },
         }))?.agentId ?? null,
     }));
-    // The run row must say it was the agent's. A run stamped with anybody else
-    // — or nobody — did not prepare a pack under the terms this function exists
-    // to apply.
+    // The run row must say whose it was: the agent's, or — for the static
+    // path — nobody's. A run stamped otherwise did not prepare a pack under
+    // the terms this function exists to apply.
     if (runAgentId !== agentId) {
-        refuse('PACK_RUN_FAILED', `run ${run.runId} is attributed to ${runAgentId ?? 'no agent'}, not ${agentId}`);
+        refuse('PACK_RUN_FAILED', `run ${run.runId} is attributed to ${runAgentId ?? 'no agent'}, not ${agentId ?? 'no agent'}`);
     }
     const read = steps.find((x) => x.seq === 0 && x.kind === 'READ' && x.toolCalled === AGENT_RECERTIFICATION_EVIDENCE_TOOL && x.status === 'DONE');
     const syn = steps.find((x) => x.seq === 1 && x.kind === 'SYNTHESIS' && x.status === 'DONE');
@@ -450,7 +487,7 @@ async function runPackAs(
     }
     // Rule 8 at the result, whatever the read did: an agent's run carries no
     // evidence about the agent itself.
-    if (evidence.subjects.some((x) => x.agentId === agentId)) {
+    if (agentId && evidence.subjects.some((x) => x.agentId === agentId)) {
         refuse('SELF_PACK_REFUSED', `run ${run.runId} returned the running agent's own subject`);
     }
     const recorded = (JSON.parse(syn.outputJson) as { data?: unknown } | null)?.data;
@@ -462,11 +499,14 @@ async function runPackAs(
  * campaign's registered agents.
  *
  * The PREPARER runs one static workflow per page of `PACK_PAGE_SIZE` subjects
- * over every subject but its own; the CROSS-PREPARER runs one over exactly the
- * preparer's subject. Each run's READ step is the evidence read and its
- * SYNTHESIS step the plan. The packs and narrowings are written only after
- * every run succeeded, in one transaction, so a campaign has all of its packs
- * or none — and every pack records the agent whose run prepared it.
+ * over every subject but its own. The preparer's own pack is prepared by the
+ * CROSS-PREPARER's run when the campaign names one, and otherwise by a run
+ * this person starts with no agent bound (`PERSON_STATIC_SELF_PACK`), which
+ * may prepare that one pack and no other. Each run's READ step is the evidence
+ * read and its SYNTHESIS step the plan. The packs and narrowings are written
+ * only after every run succeeded, in one transaction, so a campaign has all of
+ * its packs or none — and every pack records how it was prepared, and by
+ * which agent.
  *
  * Started by a person (OWNER/ADMIN), never by a credential: the person only
  * starts the agents' runs, and a key's own agent binding would otherwise decide
@@ -490,8 +530,8 @@ export async function prepareAgentReviewPacks(
         if (!review) throw notFound('Access review not found');
         if (review.scope !== 'AGENT') refuse('NOT_AN_AGENT_CAMPAIGN', 'only an AGENT campaign has reviewer packs');
         if (review.status !== 'OPEN') refuse('CAMPAIGN_CLOSED', `packs are prepared before any decision; this campaign is ${review.status}`);
-        if (!review.preparerAgentId || !review.crossPreparerAgentId) {
-            refuse('PREPARER_REQUIRED', 'this campaign names no preparing agents');
+        if (!review.preparerAgentId) {
+            refuse('PREPARER_REQUIRED', 'this campaign names no preparing agent');
         }
         const existing = await db.accessReviewAgentPack.count({ where: { tenantId: ctx.tenantId, accessReviewId } });
         if (existing > 0) refuse('PACKS_ALREADY_PREPARED', 'a pack is written once; this campaign has its packs');
@@ -504,7 +544,9 @@ export async function prepareAgentReviewPacks(
         // Asked again: the agents named at creation may have stopped
         // qualifying since — suspended, killed, ungranted.
         await assertPreparerEligible(db, ctx, review.preparerAgentId, 'preparer');
-        await assertPreparerEligible(db, ctx, review.crossPreparerAgentId, 'cross-preparer');
+        if (review.crossPreparerAgentId) {
+            await assertPreparerEligible(db, ctx, review.crossPreparerAgentId, 'cross-preparer');
+        }
         return {
             review: { ...review, preparerAgentId: review.preparerAgentId, crossPreparerAgentId: review.crossPreparerAgentId },
             subjects,
@@ -518,16 +560,24 @@ export async function prepareAgentReviewPacks(
     const prepared: PreparedRun[] = [];
     const pages = Math.ceil(preparerSubjects.length / PACK_PAGE_SIZE);
     for (let page = 0; page < pages; page++) { // guardrail-allow: n+1 — one workflow run and one bounded step read per page of PACK_PAGE_SIZE agents
-        prepared.push(await runPackAs(ctx, preparerAgentId, accessReviewId, page, PACK_SUBJECT_ALL_BUT_SELF));
+        prepared.push(await runPack(ctx, preparerAgentId, accessReviewId, page, PACK_SUBJECT_ALL_BUT_SELF));
     }
     if (preparersOwn.length > 0) {
-        prepared.push(await runPackAs(ctx, crossPreparerAgentId, accessReviewId, 0, preparerAgentId));
+        if (crossPreparerAgentId) {
+            prepared.push(await runPack(ctx, crossPreparerAgentId, accessReviewId, 0, preparerAgentId));
+        } else {
+            // The one pack no agent prepares: the person who asked starts the
+            // static run, for the preparer's subject alone.
+            const own = await runPack(ctx, null, accessReviewId, 0, preparerAgentId);
+            assertStaticRunIsPreparersOwn(own.evidence, preparerAgentId);
+            prepared.push(own);
+        }
     }
     const runIds = prepared.map((r) => r.runId);
 
     const window = observationWindow(head.review.createdAt);
     const subjectById = new Map(head.subjects.map((x) => [x.id, x]));
-    const coveredBy = new Map<string, string>();
+    const coveredBy = new Map<string, string | null>();
     for (const r of prepared) for (const x of r.evidence.subjects) coveredBy.set(x.decisionId, r.agentId);
     if (coveredBy.size !== head.subjects.length || [...coveredBy.keys()].some((id) => !subjectById.has(id))) {
         refuse('PACK_RUN_FAILED', `the runs covered ${coveredBy.size} of ${head.subjects.length} subject(s)`);
@@ -551,6 +601,10 @@ export async function prepareAgentReviewPacks(
                     agentId: x.agentId,
                     preparedByRunId: runId,
                     preparedByAgentId: preparedBy,
+                    preparationBasis: preparedBy
+                        ? PACK_PREPARATION_BASIS.AGENT_RUN
+                        : PACK_PREPARATION_BASIS.PERSON_STATIC_SELF_PACK,
+                    campaignPreparerAgentId: preparerAgentId,
                     preparedByUserId: ctx.userId,
                     windowStart: window.start,
                     windowEnd: window.end,
@@ -634,7 +688,8 @@ export async function getAgentReviewPacks(ctx: RequestContext, accessReviewId: s
         const packs = await db.accessReviewAgentPack.findMany({
             where: { tenantId: ctx.tenantId, accessReviewId },
             select: {
-                id: true, decisionId: true, agentId: true, preparedByRunId: true, preparedByAgentId: true, windowStart: true,
+                id: true, decisionId: true, agentId: true, preparedByRunId: true, preparedByAgentId: true,
+                preparationBasis: true, windowStart: true,
                 windowEnd: true, sectionsJson: true, contentHash: true, preparedAt: true,
             },
             orderBy: { decisionId: 'asc' },
@@ -996,7 +1051,7 @@ async function evidenceRowsOf(
     });
     const packs = await db.accessReviewAgentPack.findMany({
         where: { tenantId: ctx.tenantId, accessReviewId },
-        select: { decisionId: true, contentHash: true, preparedByRunId: true, preparedByAgentId: true },
+        select: { decisionId: true, contentHash: true, preparedByRunId: true, preparedByAgentId: true, preparationBasis: true },
         take: MAX_AGENT_SUBJECTS + 1,
     });
     const narrowings = await db.accessReviewAgentNarrowing.findMany({

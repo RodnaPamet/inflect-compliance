@@ -306,7 +306,10 @@ export interface AgentCampaignEvidenceRows {
         readonly decisionId: string;
         readonly contentHash: string;
         readonly preparedByRunId: string;
-        readonly preparedByAgentId: string;
+        /** NULL for the preparer's own pack when a person prepared it. */
+        readonly preparedByAgentId: string | null;
+        /** `AGENT_RUN` or `PERSON_STATIC_SELF_PACK` — stated, so the evidence says which pack no agent prepared. */
+        readonly preparationBasis: string;
     }>;
     readonly narrowings: ReadonlyArray<{
         readonly id: string;
@@ -375,6 +378,7 @@ export function buildAgentCampaignEvidence(rows: AgentCampaignEvidenceRows) {
                         contentHash: packByDecision.get(s.decisionId)!.contentHash,
                         preparedByRunId: packByDecision.get(s.decisionId)!.preparedByRunId,
                         preparedByAgentId: packByDecision.get(s.decisionId)!.preparedByAgentId,
+                        preparationBasis: packByDecision.get(s.decisionId)!.preparationBasis,
                     }
                     : null,
                 narrowings: rows.narrowings

@@ -28,7 +28,7 @@ const evidenceArgs = z
     .object({
         accessReviewId: z.string().min(1).max(64),
         page: z.number().int().min(0).max(1000).optional(),
-        /** Read exactly this agent's subject — the cross-preparer's one pack. */
+        /** Read exactly this agent's subject — the preparer's own pack. */
         onlyAgentId: z.string().min(1).max(64).optional(),
     })
     .strict();

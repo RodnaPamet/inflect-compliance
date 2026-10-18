@@ -5,7 +5,7 @@
 -- This migration adds what an AGENT campaign writes:
 --
 --   AccessReview                   + preparerAgentId, crossPreparerAgentId
---                                  (the two registered agents that prepare the packs)
+--                                  (the registered agents that prepare the packs)
 --   AccessReviewConnectedDecision  + subjectAgentId, subjectOwnerUserId
 --                                  (an agent subject, and its owner frozen)
 --   AccessReviewAgentPack          one reviewer pack per agent subject
@@ -37,7 +37,9 @@ CREATE TABLE "AccessReviewAgentPack" (
     "decisionId" TEXT NOT NULL,
     "agentId" TEXT NOT NULL,
     "preparedByRunId" TEXT NOT NULL,
-    "preparedByAgentId" TEXT NOT NULL,
+    "preparedByAgentId" TEXT,
+    "preparationBasis" TEXT NOT NULL,
+    "campaignPreparerAgentId" TEXT NOT NULL,
     "preparedByUserId" TEXT NOT NULL,
     "windowStart" TIMESTAMP(3) NOT NULL,
     "windowEnd" TIMESTAMP(3) NOT NULL,
@@ -101,6 +103,12 @@ CREATE UNIQUE INDEX "AccessReviewAgentPack_decisionId_tenantId_key" ON "AccessRe
 CREATE UNIQUE INDEX "AccessReviewAgentPack_id_tenantId_key" ON "AccessReviewAgentPack"("id", "tenantId");
 
 -- CreateIndex
+CREATE INDEX "AccessReviewAgentPack_tenantId_campaignPreparerAgentId_idx" ON "AccessReviewAgentPack"("tenantId", "campaignPreparerAgentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AccessReview_id_preparerAgentId_key" ON "AccessReview"("id", "preparerAgentId");
+
+-- CreateIndex
 CREATE INDEX "AccessReviewAgentNarrowing_tenantId_accessReviewId_outcome_idx" ON "AccessReviewAgentNarrowing"("tenantId", "accessReviewId", "outcome");
 
 -- CreateIndex
@@ -132,6 +140,12 @@ ALTER TABLE "AccessReviewAgentPack" ADD CONSTRAINT "AccessReviewAgentPack_access
 
 -- AddForeignKey
 ALTER TABLE "AccessReviewAgentPack" ADD CONSTRAINT "AccessReviewAgentPack_decisionId_tenantId_fkey" FOREIGN KEY ("decisionId", "tenantId") REFERENCES "AccessReviewConnectedDecision"("id", "tenantId") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+-- The campaign's preparer, on every pack, bound to the campaign's own column so
+-- the CHECK below compares the pack with the real preparer. RESTRICT on update:
+-- once a pack names the preparer, the campaign's preparer cannot move.
+ALTER TABLE "AccessReviewAgentPack" ADD CONSTRAINT "AccessReviewAgentPack_accessReviewId_campaignPreparerAgent_fkey" FOREIGN KEY ("accessReviewId", "campaignPreparerAgentId") REFERENCES "AccessReview"("id", "preparerAgentId") ON DELETE CASCADE ON UPDATE RESTRICT;
 
 -- AddForeignKey
 ALTER TABLE "AccessReviewAgentNarrowing" ADD CONSTRAINT "AccessReviewAgentNarrowing_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -167,23 +181,37 @@ ALTER TABLE "AccessReviewConnectedDecision" ADD CONSTRAINT "AccessReviewConnecte
 ALTER TABLE "AccessReviewAgentNarrowing" ADD CONSTRAINT "AccessReviewAgentNarrowing_owner_not_decider"
     CHECK ("decidedByUserId" IS NULL OR "decidedByUserId" <> "subjectOwnerUserId");
 
--- An AGENT campaign names two DIFFERENT preparing agents; no other scope names
--- any. Roadmap rule 8 — the auditor is not the auditee — is why there are two:
--- every agent that can prepare a pack is ACTIVE, so it is always in the frozen
--- population, and its own pack must come from somebody else.
+-- An AGENT campaign names its preparing agent, and at most one cross-preparer
+-- that is a DIFFERENT agent; no other scope names any. Roadmap rule 8 — the
+-- auditor is not the auditee — is why the preparer's own pack comes from
+-- somebody else: the cross-preparer when one is named, a person otherwise.
 ALTER TABLE "AccessReview" ADD CONSTRAINT "AccessReview_agent_preparers"
     CHECK (
         ("scope" = 'AGENT'
             AND "preparerAgentId" IS NOT NULL
-            AND "crossPreparerAgentId" IS NOT NULL
-            AND "preparerAgentId" <> "crossPreparerAgentId")
+            AND ("crossPreparerAgentId" IS NULL OR "crossPreparerAgentId" <> "preparerAgentId"))
         OR ("scope" <> 'AGENT' AND "preparerAgentId" IS NULL AND "crossPreparerAgentId" IS NULL)
     );
 
 -- Rule 8 again, on the pack itself, for any writer: no agent prepares the pack
 -- it is reviewed by.
 ALTER TABLE "AccessReviewAgentPack" ADD CONSTRAINT "AccessReviewAgentPack_not_self_prepared"
-    CHECK ("preparedByAgentId" <> "agentId");
+    CHECK ("preparedByAgentId" IS NULL OR "preparedByAgentId" <> "agentId");
+
+-- The provenance is explicit and paired: an agent's run names its agent, and a
+-- person's static preparation names none.
+ALTER TABLE "AccessReviewAgentPack" ADD CONSTRAINT "AccessReviewAgentPack_preparation_basis"
+    CHECK (
+        ("preparationBasis" = 'AGENT_RUN' AND "preparedByAgentId" IS NOT NULL)
+        OR ("preparationBasis" = 'PERSON_STATIC_SELF_PACK' AND "preparedByAgentId" IS NULL)
+    );
+
+-- The one exception to "a registered agent prepares each pack" (owner decision
+-- of 2026-10-18): a pack no agent prepared is the campaign preparer's OWN pack,
+-- and no other. `campaignPreparerAgentId` is the campaign's preparer by the FK
+-- above, so this compares the pack with the real one.
+ALTER TABLE "AccessReviewAgentPack" ADD CONSTRAINT "AccessReviewAgentPack_person_prepares_only_preparers_own"
+    CHECK ("preparedByAgentId" IS NOT NULL OR "agentId" = "campaignPreparerAgentId");
 
 -- A narrowing's stamp is all-or-nothing, and only an ACCEPTED one executes.
 ALTER TABLE "AccessReviewAgentNarrowing" ADD CONSTRAINT "AccessReviewAgentNarrowing_stamp_consistent"

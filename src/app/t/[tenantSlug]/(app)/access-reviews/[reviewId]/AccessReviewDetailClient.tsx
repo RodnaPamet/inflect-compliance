@@ -161,8 +161,10 @@ interface AgentPackRow {
     decisionId: string;
     agentId: string;
     preparedByRunId: string;
-    /** The registered agent whose run prepared it — never `agentId` itself. */
-    preparedByAgentId: string;
+    /** The registered agent whose run prepared it — never `agentId` itself — or null when a person did. */
+    preparedByAgentId: string | null;
+    /** `AGENT_RUN`, or `PERSON_STATIC_SELF_PACK` for the preparer's own pack prepared by a person. */
+    preparationBasis: string;
     windowStart: string;
     windowEnd: string;
     sectionsJson: unknown;
@@ -772,7 +774,9 @@ export function AccessReviewDetailClient({
                                 {sum.kills > 0 ? ` · ${t('agentPackKills', { count: sum.kills })}` : ''}
                             </div>
                             <div className="text-content-muted" data-testid={`agent-pack-prepared-by-${row.original.id}`}>
-                                {t('agentPackPreparedBy', { agent: agentNameByAgentId.get(pack.preparedByAgentId) ?? pack.preparedByAgentId })}
+                                {pack.preparedByAgentId
+                                    ? t('agentPackPreparedBy', { agent: agentNameByAgentId.get(pack.preparedByAgentId) ?? pack.preparedByAgentId })
+                                    : t('agentPackPreparedByPerson')}
                             </div>
                             <div className="font-mono text-content-muted">
                                 {pack.contentHash.slice(0, 19)}…

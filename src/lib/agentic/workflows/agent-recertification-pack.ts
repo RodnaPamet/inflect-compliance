@@ -13,12 +13,15 @@
  * Input: { accessReviewId, page, subject } — `page` as a decimal string,
  * because run input admission validates strings (see `requiredInput`); `subject`
  * is `*` for every subject but the running agent's own, or one agent's id for
- * the cross-preparer's single pack. One run covers `PACK_PAGE_SIZE` agents, so
+ * the preparer's own pack, read by the cross-preparer or by a person. One run
+ * covers `PACK_PAGE_SIZE` agents, so
  * its context stays inside `MAX_CONTEXT_BYTES` whatever the campaign's size.
  *
  * It runs AS A REGISTERED AGENT — the campaign's preparer or cross-preparer —
  * so its one read goes through the funnel with that agent's grants, card and
- * autonomy terms; the admin who asked only started it.
+ * autonomy terms; the admin who asked only started it. The one exception is
+ * the preparer's own pack in a campaign that names no cross-preparer: the
+ * person who asked runs it with no agent bound, for that subject only.
  */
 import type { WorkflowContext, WorkflowDefinition } from '../workflow-types';
 import {

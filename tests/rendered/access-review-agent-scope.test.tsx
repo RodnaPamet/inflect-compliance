@@ -125,6 +125,7 @@ function pack(decisionId: string) {
         id: `pk-${decisionId}`, decisionId, agentId: `ag-${decisionId}`, preparedByRunId: 'run-1',
         // Never the agent itself: ag-1's pack by ag-2, every other by ag-1.
         preparedByAgentId: decisionId === '1' ? 'ag-2' : 'ag-1',
+        preparationBasis: 'AGENT_RUN',
         windowStart: '2026-07-20T00:00:00.000Z', windowEnd: '2026-10-18T00:00:00.000Z',
         sectionsJson: {
             grants: [
@@ -213,6 +214,13 @@ describe('the detail page reads an AGENT campaign', () => {
         packsPayload = { packs: [pack('1'), pack('2')], narrowings: [narrowing('n-1', '1', 'REJECTED')], samples: [], evidence: null };
         renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
         await waitFor(() => expect(screen.getByTestId('agent-decision-select-1')).toBeInTheDocument());
+    });
+
+    it('names a person as the preparer of the preparing agent’s own pack, when no agent prepared it', async () => {
+        const own = { ...pack('1'), preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' };
+        packsPayload = { packs: [own, pack('2')], narrowings: [], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+        await waitFor(() => expect(screen.getByTestId('agent-pack-prepared-by-1')).toHaveTextContent('Prepared by a person'));
     });
 
     it('offers no verdict before the pack exists, and offers an admin the preparation', async () => {
@@ -306,7 +314,7 @@ describe('the register reads an AGENT campaign', () => {
         expect(option!.closest('label')).toHaveTextContent('Registered agents');
     });
 
-    it('asks an AGENT campaign for its two preparing agents', async () => {
+    it('asks an AGENT campaign for its preparing agent, and offers an optional second', async () => {
         render(withClient(<AccessReviewsClient tenantSlug="acme" initialReviews={[]} />));
         fireEvent.click(screen.getByTestId('access-review-new-campaign-button'));
         expect(screen.queryByTestId('access-review-new-preparer')).not.toBeInTheDocument();
@@ -314,5 +322,7 @@ describe('the register reads an AGENT campaign', () => {
         await waitFor(() => expect(screen.getByTestId('access-review-new-preparer')).toBeInTheDocument());
         expect(screen.getByTestId('access-review-new-cross-preparer')).toBeInTheDocument();
         expect(screen.getByText('Second preparing agent')).toBeInTheDocument();
+        // Optional, and the page says what leaving it empty means.
+        expect(screen.getByText(/Left empty, a person prepares that one pack/)).toBeInTheDocument();
     });
 });

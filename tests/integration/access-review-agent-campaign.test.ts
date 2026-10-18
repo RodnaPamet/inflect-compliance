@@ -38,7 +38,9 @@ jest.setTimeout(120_000);
 
 const T1 = 'arc-agent-one';
 const T2 = 'arc-agent-two';
-const TENANTS = [T1, T2];
+/** A tenant with exactly one registered agent: its preparer, and its only subject. */
+const T3 = 'arc-agent-three';
+const TENANTS = [T1, T2, T3];
 const DAY = 86_400_000;
 
 type Person = 'owner' | 'admin2' | 'reviewer' | 'agentOwner' | 'reader';
@@ -186,6 +188,12 @@ beforeAll(async () => {
     const deleted = await makeAgent(T1, 'agentOwner');
     await prisma.registeredAgent.update({ where: { id: deleted.id }, data: { deletedAt: new Date() } });
     A.deleted = deleted.id;
+
+    // T3: ONE agent, ACTIVE, scored and granted the read tool.
+    const solo = await makeAgent(T3, 'agentOwner');
+    A.solo = solo.id;
+    await grant(T3, solo.id, 'list_risks', old);
+    await grant(T3, solo.id, AGENT_RECERTIFICATION_EVIDENCE_TOOL, new Date());
 });
 
 afterAll(async () => {
@@ -203,7 +211,8 @@ const create = (tenantId = T1, reviewer: Person = 'reviewer', preparers: { p?: s
         name: 'Q4 agent recertification',
         reviewerUserId: users[tenantId][reviewer],
         preparerAgentId: preparers.p ?? A.agentA,
-        crossPreparerAgentId: preparers.c ?? A.agentB,
+        // '' leaves the cross-preparer out: a person prepares the preparer's own pack.
+        crossPreparerAgentId: preparers.c === '' ? undefined : (preparers.c ?? A.agentB),
     });
 
 async function decisionFor(accessReviewId: string, agentId: string) {
@@ -362,6 +371,25 @@ async function withAgent<T>(
 
 const grantRead = (agentId: string) => grant(T1, agentId, AGENT_RECERTIFICATION_EVIDENCE_TOOL, new Date()).then(() => undefined);
 
+/** A pack row written straight to the table, to put the database's own rules to the test. */
+function forgedPack(
+    accessReviewId: string,
+    decisionId: string,
+    agentId: string,
+    over: { preparedByAgentId?: string | null; preparationBasis?: string; campaignPreparerAgentId?: string } = {},
+) {
+    return {
+        tenantId: T1, accessReviewId, decisionId, agentId,
+        preparedByRunId: 'run-x',
+        preparedByAgentId: over.preparedByAgentId === undefined ? A.agentB : over.preparedByAgentId,
+        preparationBasis: over.preparationBasis ?? 'AGENT_RUN',
+        campaignPreparerAgentId: over.campaignPreparerAgentId ?? A.agentA,
+        preparedByUserId: users[T1].owner,
+        windowStart: new Date(Date.now() - 90 * DAY), windowEnd: new Date(), sectionsJson: {},
+        contentHash: 'sha256:' + '0'.repeat(64),
+    };
+}
+
 describe('a registered agent prepares each pack, and never its own', () => {
     it('each pack is prepared by a named agent’s run, and the run row carries that agent', async () => {
         const r = await create();
@@ -396,7 +424,7 @@ describe('a registered agent prepares each pack, and never its own', () => {
         const base = { name: 'x', reviewerUserId: users[T1].reviewer };
         await expect(createAgentAccessReview(as(T1, 'owner'), base)).rejects.toThrow(/^PREPARER_REQUIRED:/);
         await expect(
-            createAgentAccessReview(as(T1, 'owner'), { ...base, preparerAgentId: A.agentA }),
+            createAgentAccessReview(as(T1, 'owner'), { ...base, crossPreparerAgentId: A.agentB }),
         ).rejects.toThrow(/^PREPARER_REQUIRED:/);
         await expect(
             createAgentAccessReview(as(T1, 'owner'), { ...base, preparerAgentId: A.agentA, crossPreparerAgentId: A.agentA }),
@@ -473,17 +501,67 @@ describe('a registered agent prepares each pack, and never its own', () => {
         const subject = await decisionFor(r.accessReviewId, A.agentA);
         await expect(
             prisma.accessReviewAgentPack.create({
-                data: {
-                    tenantId: T1, accessReviewId: r.accessReviewId, decisionId: subject.id, agentId: A.agentA,
-                    preparedByRunId: 'run-x', preparedByAgentId: A.agentA, preparedByUserId: users[T1].owner,
-                    windowStart: new Date(Date.now() - 90 * DAY), windowEnd: new Date(), sectionsJson: {},
-                    contentHash: 'sha256:' + '0'.repeat(64),
-                },
+                data: forgedPack(r.accessReviewId, subject.id, A.agentA, { preparedByAgentId: A.agentA }),
             }),
         ).rejects.toThrow(/not_self_prepared/);
         await expect(
             prisma.accessReview.update({ where: { id: r.accessReviewId }, data: { crossPreparerAgentId: A.agentA } }),
         ).rejects.toThrow(/agent_preparers/);
+    });
+
+    it('the database lets a person prepare the preparer’s own pack and no other', async () => {
+        const r = await create(T1, 'reviewer', { c: '' });
+        const ofB = await decisionFor(r.accessReviewId, A.agentB);
+        const ofA = await decisionFor(r.accessReviewId, A.agentA);
+        // agentB is not the preparer: no agent-free pack for it.
+        await expect(
+            prisma.accessReviewAgentPack.create({
+                data: forgedPack(r.accessReviewId, ofB.id, A.agentB, { preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' }),
+            }),
+        ).rejects.toThrow(/person_prepares_only_preparers_own/);
+        // The provenance is paired: an agent-free pack cannot claim an agent run, nor the reverse.
+        await expect(
+            prisma.accessReviewAgentPack.create({
+                data: forgedPack(r.accessReviewId, ofA.id, A.agentA, { preparedByAgentId: null, preparationBasis: 'AGENT_RUN' }),
+            }),
+        ).rejects.toThrow(/preparation_basis/);
+        await expect(
+            prisma.accessReviewAgentPack.create({
+                data: forgedPack(r.accessReviewId, ofB.id, A.agentB, { preparedByAgentId: A.agentA, preparationBasis: 'PERSON_STATIC_SELF_PACK' }),
+            }),
+        ).rejects.toThrow(/preparation_basis/);
+        // The campaign's preparer is bound by FK: a pack cannot name another one.
+        await expect(
+            prisma.accessReviewAgentPack.create({
+                data: forgedPack(r.accessReviewId, ofB.id, A.agentB, { preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK', campaignPreparerAgentId: A.agentB }),
+            }),
+        ).rejects.toThrow(/campaignPreparerAgent_fkey|Foreign key/i);
+        // The one exception holds.
+        await expect(
+            prisma.accessReviewAgentPack.create({
+                data: forgedPack(r.accessReviewId, ofA.id, A.agentA, { preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' }),
+            }),
+        ).resolves.toBeTruthy();
+    });
+
+    it('without a cross-preparer, a person prepares the preparer’s own pack on the static path, and only that one', async () => {
+        const r = await create(T1, 'reviewer', { c: '' });
+        expect((await prisma.accessReview.findUniqueOrThrow({ where: { id: r.accessReviewId } })).crossPreparerAgentId).toBeNull();
+        const prepared = await prepareAgentReviewPacks(as(T1, 'owner'), r.accessReviewId);
+        expect(prepared.packs).toBe(2);
+        const runs = await prisma.workflowRun.findMany({ where: { id: { in: [...prepared.runIds] } }, select: { id: true, agentId: true } });
+        // One agent run (the preparer's page) and one person-started run with no agent.
+        expect(runs.map((x) => x.agentId).sort()).toEqual([A.agentA, null].sort());
+
+        const packs = await prisma.accessReviewAgentPack.findMany({ where: { accessReviewId: r.accessReviewId } });
+        const byAgent = new Map(packs.map((p) => [p.agentId, p]));
+        expect(byAgent.get(A.agentB)).toMatchObject({ preparedByAgentId: A.agentA, preparationBasis: 'AGENT_RUN' });
+        expect(byAgent.get(A.agentA)).toMatchObject({ preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK', preparedByUserId: users[T1].owner });
+        const ownRun = runs.find((x) => x.id === byAgent.get(A.agentA)!.preparedByRunId);
+        expect(ownRun?.agentId).toBeNull();
+        // The static run read through the same tool, as a step of the same workflow.
+        const steps = await prisma.workflowStep.findMany({ where: { runId: ownRun!.id }, orderBy: { seq: 'asc' } });
+        expect(steps.map((x) => [x.kind, x.toolCalled])).toEqual([['READ', AGENT_RECERTIFICATION_EVIDENCE_TOOL], ['SYNTHESIS', null]]);
     });
 
     it('the requester’s own permissions never widen what the run can read', async () => {
@@ -823,6 +901,47 @@ describe('a sample of decisions is drawn for a second human', () => {
             seed: 'test-seed', epoch: `${r.accessReviewId}@${samplingEpochFor(at)}`, count: sampleSizeFor(decisions.length),
         }).map((d) => d.id).sort();
         expect(drawn).toEqual(expected);
+    });
+});
+
+// ─── A single-agent tenant ─────────────────────────────────────────────
+
+describe('a single-agent tenant runs a campaign: its only pack is prepared by a person', () => {
+    it('creates, prepares statically, decides, closes, and files evidence that says how the pack was prepared', async () => {
+        const r = await createAgentAccessReview(as(T3, 'owner'), {
+            name: 'Solo recertification',
+            reviewerUserId: users[T3].reviewer,
+            preparerAgentId: A.solo,
+        });
+        expect(r.subjectCount).toBe(1);
+
+        const prepared = await prepareAgentReviewPacks(as(T3, 'owner'), r.accessReviewId);
+        expect(prepared.packs).toBe(1);
+        expect(prepared.runIds).toHaveLength(1);
+        const run = await prisma.workflowRun.findUniqueOrThrow({ where: { id: prepared.runIds[0] } });
+        expect(run.agentId).toBeNull();
+        const pack = await prisma.accessReviewAgentPack.findFirstOrThrow({ where: { accessReviewId: r.accessReviewId } });
+        expect(pack).toMatchObject({ agentId: A.solo, preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' });
+
+        // The narrowing the pack proposes is decided as any other.
+        for (const n of await prisma.accessReviewAgentNarrowing.findMany({ where: { accessReviewId: r.accessReviewId } })) {
+            await decideAgentNarrowing(as(T3, 'reviewer'), r.accessReviewId, n.id, { outcome: 'REJECT' });
+        }
+        const subject = await prisma.accessReviewConnectedDecision.findFirstOrThrow({ where: { accessReviewId: r.accessReviewId } });
+        await submitAgentDecision(as(T3, 'reviewer'), subject.id, { decision: 'CONFIRM' });
+        const closed = await closeAgentAccessReview(as(T3, 'owner'), r.accessReviewId, new Date(), { seed: 'test-seed' });
+        expect(closed.contentHash).toMatch(/^[0-9a-f]{64}$/);
+
+        const { document, contentHash } = await recomputeAgentCampaignEvidence(as(T3, 'reviewer'), r.accessReviewId);
+        expect(contentHash).toBe(closed.contentHash);
+        expect(document.campaign).toMatchObject({ preparerAgentId: A.solo, crossPreparerAgentId: null });
+        expect(document.subjects[0].pack).toMatchObject({ preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' });
+    });
+
+    it('a tenant with no agent at all is still refused NO_SUBJECTS first', async () => {
+        await expect(
+            createAgentAccessReview(as(T2, 'owner'), { name: 'x', reviewerUserId: users[T2].reviewer, preparerAgentId: 'nobody' }),
+        ).rejects.toThrow(/^NO_SUBJECTS:/);
     });
 });
 

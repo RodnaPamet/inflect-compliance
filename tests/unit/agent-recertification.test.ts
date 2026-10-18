@@ -27,7 +27,7 @@ import {
     type SubjectEvidence,
 } from '@/lib/agentic/agent-recertification';
 import { PROPOSE_TOOLS } from '@/lib/mcp/tools/propose-tools';
-import { AGENT_RECERT_EVIDENCE_OBLIGATIONS } from '@/app-layer/usecases/access-review-agent';
+import { AGENT_RECERT_EVIDENCE_OBLIGATIONS, assertStaticRunIsPreparersOwn } from '@/app-layer/usecases/access-review-agent';
 import { ISO27001_FAMILY_URN, SOC2_FAMILY_URN } from '@/app-layer/domain/framework-representation';
 import { ASI_LIBRARY_URN } from '@/lib/agentic/evidence-artefact';
 import { codeOf } from '../helpers/source-blocks';
@@ -178,8 +178,8 @@ function rows(over: Partial<AgentCampaignEvidenceRows> = {}): AgentCampaignEvide
         ],
         packs: [
             // ag-1's own pack by the cross-preparer ag-2; ag-2's by the preparer ag-1.
-            { decisionId: 'dec-1', contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-2', preparedByAgentId: 'ag-2' },
-            { decisionId: 'dec-2', contentHash: 'sha256:' + 'b'.repeat(64), preparedByRunId: 'run-1', preparedByAgentId: 'ag-1' },
+            { decisionId: 'dec-1', contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-2', preparedByAgentId: 'ag-2', preparationBasis: 'AGENT_RUN' },
+            { decisionId: 'dec-2', contentHash: 'sha256:' + 'b'.repeat(64), preparedByRunId: 'run-1', preparedByAgentId: 'ag-1', preparationBasis: 'AGENT_RUN' },
         ],
         narrowings: [
             { id: 'n-2', decisionId: 'dec-1', grantId: 'g-2', toolName: 'list_tasks', grantedByUserId: 'u-admin', grantedAt: WINDOW.start, basis: NARROWING_BASIS, outcome: 'REJECTED', decidedAt: at, decidedByUserId: 'u-rev', executedAt: null, executionResult: null },
@@ -232,7 +232,9 @@ describe('the closing evidence recomputes from the stored rows', () => {
         expect(doc.schema).toBe(AGENT_CAMPAIGN_EVIDENCE_SCHEMA);
         expect(doc.subjectCount).toBe(2);
         expect(doc.subjects.map((s) => s.subjectRef)).toEqual(['agent:ag-1', 'agent:ag-2']);
-        expect(doc.subjects[0].pack).toEqual({ contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-2', preparedByAgentId: 'ag-2' });
+        expect(doc.subjects[0].pack).toEqual({
+            contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-2', preparedByAgentId: 'ag-2', preparationBasis: 'AGENT_RUN',
+        });
         expect(doc.campaign).toMatchObject({ preparerAgentId: 'ag-1', crossPreparerAgentId: 'ag-2' });
         expect(doc.subjects[0].narrowings.map((n) => [n.id, n.outcome, n.executionResult])).toEqual([
             ['n-1', 'ACCEPTED', 'GRANT_DELETED'],
@@ -240,6 +242,36 @@ describe('the closing evidence recomputes from the stored rows', () => {
         ]);
         expect(doc.sample).toEqual({ epoch: 'ar-1@2026-10-20', decisionIds: ['dec-2'] });
         expect(doc.obligations.map((o) => o.requirementCode).sort()).toEqual(['A.5.18', 'ASI03', 'CC6.1']);
+    });
+});
+
+describe('the evidence says which pack no agent prepared, and why', () => {
+    it('a person-prepared self-pack is carried with its basis and no agent', () => {
+        const base = rows();
+        const doc = buildAgentCampaignEvidence(rows({
+            campaign: { ...base.campaign, crossPreparerAgentId: null },
+            packs: [
+                { decisionId: 'dec-1', contentHash: 'sha256:' + 'a'.repeat(64), preparedByRunId: 'run-2', preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' },
+                { decisionId: 'dec-2', contentHash: 'sha256:' + 'b'.repeat(64), preparedByRunId: 'run-1', preparedByAgentId: 'ag-1', preparationBasis: 'AGENT_RUN' },
+            ],
+        }));
+        expect(doc.campaign.crossPreparerAgentId).toBeNull();
+        expect(doc.subjects[0].pack).toMatchObject({ preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' });
+        expect(doc.subjects[1].pack).toMatchObject({ preparedByAgentId: 'ag-1', preparationBasis: 'AGENT_RUN' });
+    });
+});
+
+describe('a person’s static preparation is for the preparer’s own pack only', () => {
+    const page = (agents: string[]) => ({ ...evidence(agents.map((a, i) => subject({ decisionId: `dec-${i}`, agentId: a }))) });
+
+    it('accepts exactly the preparer’s subject', () => {
+        expect(() => assertStaticRunIsPreparersOwn(page(['ag-1']), 'ag-1')).not.toThrow();
+    });
+
+    it('refuses, by name, any other subject, a second subject, or none', () => {
+        expect(() => assertStaticRunIsPreparersOwn(page(['ag-2']), 'ag-1')).toThrow(/^STATIC_PACK_NOT_PREPARERS_OWN:/);
+        expect(() => assertStaticRunIsPreparersOwn(page(['ag-1', 'ag-2']), 'ag-1')).toThrow(/^STATIC_PACK_NOT_PREPARERS_OWN:/);
+        expect(() => assertStaticRunIsPreparersOwn(page([]), 'ag-1')).toThrow(/^STATIC_PACK_NOT_PREPARERS_OWN:/);
     });
 });
 

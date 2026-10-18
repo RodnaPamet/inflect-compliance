@@ -911,12 +911,15 @@ model AccessReview {
   /// is indistinguishable from a directory of exactly N), so the usecase reads
   /// `MAX_SUBJECTS + 1` and records the verdict here.
   snapshotTruncated    Boolean            @default(false)
-  /// Step 3a (#3674) — an AGENT campaign's two preparing agents, named at
-  /// creation and never changed. `preparerAgentId` prepares every reviewer
-  /// pack except its own; `crossPreparerAgentId` prepares exactly that one
-  /// (roadmap rule 8: the auditor is not the auditee). Both NULL for every
-  /// other scope; a CHECK holds the pairing. No FK, as the pack's `agentId`
-  /// has none: the campaign's record must not depend on the register's.
+  /// Step 3a (#3674) — the registered agents that prepare an AGENT
+  /// campaign's packs, named at creation and never changed.
+  /// `preparerAgentId` (required for AGENT) prepares every reviewer pack but
+  /// its own (roadmap rule 8: the auditor is not the auditee). Its own pack is
+  /// prepared by `crossPreparerAgentId` when one is named, and otherwise by a
+  /// PERSON on the static path (owner decision of 2026-10-18). Both NULL for
+  /// every other scope; a CHECK holds the pairing. No FK to the register, as
+  /// the pack's `agentId` has none: the campaign's record must not depend on
+  /// the register's.
   preparerAgentId      String?
   crossPreparerAgentId String?
   createdByUserId      String
@@ -934,7 +937,10 @@ model AccessReview {
   decisions          AccessReviewDecision[]
   connectedDecisions AccessReviewConnectedDecision[]
   /// Step 3a (#3674) — an AGENT campaign's packs, narrowings and samples.
-  agentPacks         AccessReviewAgentPack[]
+  agentPacks         AccessReviewAgentPack[]           @relation("AgentPackCampaign")
+  /// The same packs, through the campaign's preparer: the FK that lets a
+  /// CHECK on the pack compare its subject with the campaign's preparer.
+  agentPacksByPreparer AccessReviewAgentPack[]         @relation("AgentPackCampaignPreparer")
   agentNarrowings    AccessReviewAgentNarrowing[]
   sampleAudits       AccessReviewDecisionSampleAudit[]
 
@@ -942,6 +948,8 @@ model AccessReview {
   /// (the same denorm-tenantId pattern Phase 2 introduced for
   /// AuditChecklistItem → Audit).
   @@unique([id, tenantId])
+  /// The parent key of `AccessReviewAgentPack`'s preparer FK (#3674).
+  @@unique([id, preparerAgentId])
   @@index([tenantId, status])
   @@index([tenantId, reviewerUserId, status])
   @@index([tenantId, dueAt])

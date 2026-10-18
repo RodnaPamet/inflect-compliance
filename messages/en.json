@@ -9551,8 +9551,9 @@
     "fieldPreparer": "Preparing agent",
     "preparerHint": "The registered agent that prepares every reviewer pack except its own. It must be active, risk-scored and granted get_agent_recertification_evidence.",
     "fieldCrossPreparer": "Second preparing agent",
-    "crossPreparerHint": "Prepares the first agent's own pack — an agent never prepares the pack it is reviewed by.",
-    "agentPackPreparedBy": "Prepared by {agent}"
+    "crossPreparerHint": "Optional. Prepares the first agent's own pack — an agent never prepares the pack it is reviewed by. Left empty, a person prepares that one pack when the packs are prepared.",
+    "agentPackPreparedBy": "Prepared by {agent}",
+    "agentPackPreparedByPerson": "Prepared by a person — the preparing agent's own pack"
   },
   "frameworkUpdates": {
     "crumbDashboard": "Dashboard",

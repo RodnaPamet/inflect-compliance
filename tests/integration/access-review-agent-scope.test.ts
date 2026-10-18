@@ -67,7 +67,8 @@ beforeEach(async () => {
         data: {
             tenantId: T, name: 'Q4 agent recertification', scope: 'AGENT',
             reviewerUserId: REVIEWER, createdByUserId: REVIEWER,
-            // Deploy 2's CHECK: an AGENT campaign names its two preparing agents.
+            // Deploy 2's CHECK: an AGENT campaign names its preparing agent, and
+            // a cross-preparer, when it names one, that differs.
             preparerAgentId: 'ag-prep', crossPreparerAgentId: 'ag-cross',
         },
     });
