@@ -37,6 +37,7 @@ import {
     DEFAULT_KEY_ROTATION_DAYS,
     HYGIENE_AUTOMATION_KEY,
     HYGIENE_FINDING_SOURCE_KIND,
+    isAgentCredential,
     planHygiene,
     ROTATION_AGE_SOURCE,
     type ConnectionFacts,
@@ -58,14 +59,24 @@ const HYGIENE_TX_TIMEOUT_MS = 120_000;
 export interface HygienePassResult {
     tenantId: string;
     status: 'PASSED' | 'PARTIAL' | 'NOT_APPLICABLE' | 'ERROR';
-    refusal: 'NO_LIVE_CREDENTIALS' | null;
-    liveKeys: number;
+    refusal: 'NO_AGENT_CREDENTIALS' | null;
+    /** Live keys in the population: bound to an agent, or admitted by `/api/mcp`. */
+    agentKeys: number;
     connections: number;
     opened: number;
     reopened: number;
     resolved: number;
     held: number;
     executionId: string | null;
+}
+
+/**
+ * A key's stored scopes as the authenticator reads them (`api-key-auth.ts`
+ * takes the JSON array as it stands). Non-string elements are dropped: no gate
+ * can match one, so dropping them changes no admission decision.
+ */
+function scopeStrings(scopes: Prisma.JsonValue): string[] {
+    return Array.isArray(scopes) ? scopes.filter((s): s is string => typeof s === 'string') : [];
 }
 
 /**
@@ -114,7 +125,7 @@ export async function runAgentCredentialHygiene(input: {
     });
     const zero = {
         tenantId: input.tenantId,
-        liveKeys: 0,
+        agentKeys: 0,
         connections: 0,
         opened: 0,
         reopened: 0,
@@ -134,6 +145,7 @@ export async function runAgentCredentialHygiene(input: {
                     select: {
                         id: true, name: true, keyPrefix: true, createdAt: true, lastUsedAt: true,
                         expiresAt: true, revokedAt: true, agentId: true, createdById: true,
+                        scopes: true,
                     },
                     orderBy: { id: 'asc' },
                     take: DRAIN_PAGE_SIZE,
@@ -181,6 +193,7 @@ export async function runAgentCredentialHygiene(input: {
                 expiresAt: k.expiresAt,
                 revokedAt: k.revokedAt,
                 agentId: k.agentId,
+                scopes: scopeStrings(k.scopes),
             }));
             const plan = planHygiene({
                 keys: keyFacts,
@@ -332,8 +345,12 @@ export async function runAgentCredentialHygiene(input: {
                 });
             }
 
+            const agentKeys = keyFacts.filter(isAgentCredential).length;
             return {
-                liveKeys: keys.length,
+                agentKeys,
+                // Live keys outside the population, counted so the row says
+                // what the pass looked past rather than leaving it unstated.
+                otherLiveKeys: keyFacts.length - agentKeys,
                 connections: connections.length,
                 ...counts,
                 held: plan.held.length,
@@ -346,13 +363,13 @@ export async function runAgentCredentialHygiene(input: {
             // five-second budget is too short for it.
         }, { timeout: HYGIENE_TX_TIMEOUT_MS });
 
-        const empty = outcome.liveKeys === 0 && outcome.connections === 0;
+        const empty = outcome.agentKeys === 0 && outcome.connections === 0;
         const status: HygienePassResult['status'] = empty
             ? 'NOT_APPLICABLE'
             : outcome.unjudgeableConnectionIds.length > 0
               ? 'PARTIAL'
               : 'PASSED';
-        const refusal = empty ? ('NO_LIVE_CREDENTIALS' as const) : null;
+        const refusal = empty ? ('NO_AGENT_CREDENTIALS' as const) : null;
 
         const row = await runInTenantContext(ctx, (db) =>
             db.integrationExecution.create({
@@ -367,11 +384,16 @@ export async function runAgentCredentialHygiene(input: {
                     resultJson: {
                         refusal,
                         detail: empty
-                            ? 'This workspace holds no live API key and no external MCP server ' +
+                            ? 'This workspace holds no live agent credential — no key bound to an ' +
+                              'agent or able to reach the MCP endpoint — and no external MCP server ' +
                               'connection, so no credential was checked. An empty population is ' +
                               'recorded as such — it is not a clean result.'
                             : null,
-                        population: { liveKeys: outcome.liveKeys, mcpServerConnections: outcome.connections },
+                        population: {
+                            agentKeys: outcome.agentKeys,
+                            otherLiveKeys: outcome.otherLiveKeys,
+                            mcpServerConnections: outcome.connections,
+                        },
                         rotationAge: { days: DEFAULT_KEY_ROTATION_DAYS, source: ROTATION_AGE_SOURCE },
                         firedByRule: outcome.firedByRule,
                         findings: {
@@ -394,7 +416,7 @@ export async function runAgentCredentialHygiene(input: {
         );
 
         recordAgentCredentialHygiene({
-            outcome: empty ? 'no_live_credentials' : status === 'PARTIAL' ? 'partial' : 'completed',
+            outcome: empty ? 'no_agent_credentials' : status === 'PARTIAL' ? 'partial' : 'completed',
             opened: outcome.opened,
             reopened: outcome.reopened,
             resolved: outcome.resolved,
@@ -402,7 +424,7 @@ export async function runAgentCredentialHygiene(input: {
         logger.info('agent credential hygiene pass complete', {
             component: 'agent-credential-hygiene',
             tenantId: ctx.tenantId,
-            liveKeys: outcome.liveKeys,
+            agentKeys: outcome.agentKeys,
             connections: outcome.connections,
             opened: outcome.opened,
             reopened: outcome.reopened,
@@ -413,7 +435,7 @@ export async function runAgentCredentialHygiene(input: {
             tenantId: input.tenantId,
             status,
             refusal,
-            liveKeys: outcome.liveKeys,
+            agentKeys: outcome.agentKeys,
             connections: outcome.connections,
             opened: outcome.opened,
             reopened: outcome.reopened,

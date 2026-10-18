@@ -15,12 +15,25 @@
  * | `KEY_UNUSED_30_DAYS` | a live key last used more than 30 days ago, or never used and created more than 30 days ago | MEDIUM |
  * | `KEY_NO_EXPIRY` | a live key with `expiresAt` NULL | MEDIUM |
  * | `KEY_OLDER_THAN_ROTATION_AGE` | a live key created longer ago than the rotation age | MEDIUM |
- * | `KEY_NOT_BOUND_TO_AGENT` | a live key with `agentId` NULL | LOW |
+ * | `KEY_NOT_BOUND_TO_AGENT` | a live key the `/api/mcp` gate would admit, with `agentId` NULL | LOW |
  * | `CONNECTION_APP_ONLY_NO_OWNER` | an `mcp-server` connection whose grant is app-only and which names no accountable owner | HIGH |
  *
  * "Live" is `revokedAt IS NULL` and not past `expiresAt` — the set the
  * authenticator would accept. A revoked or expired key cannot be used, so it is
  * not hygiene's subject, and a finding on one is resolved.
+ *
+ * ## The population is AGENT credentials, not every key
+ *
+ * A key rule reads only a key that is bound to a registered agent or that the
+ * `/api/mcp` capability gate would admit (`admitsMcpEndpoint`, the gate's own
+ * predicate). Most keys are integrations — a CI job with `controls:read` — and
+ * the schema says binding them to an agent "would make the register a lie", so
+ * `KEY_NOT_BOUND_TO_AGENT` on every one of them would be a finding nobody can
+ * act on. A key that can reach the agent surface and names no agent is the real
+ * weakness: an agent using it is an unregistered principal. A key outside the
+ * population fires nothing, and an open finding on it resolves — a complete
+ * read that shows the key is not an agent credential is evidence the rule no
+ * longer applies.
  *
  * ## The rotation age: there is no tenant setting, and the rule says so
  *
@@ -53,6 +66,7 @@
  *
  * @module lib/agentic/credential-hygiene
  */
+import { admitsMcpEndpoint } from '@/lib/mcp/endpoint-scope';
 
 /** `Finding.sourceKind` for every hygiene finding. */
 export const HYGIENE_FINDING_SOURCE_KIND = 'AGENT_CREDENTIAL_HYGIENE';
@@ -103,6 +117,8 @@ export interface KeyFacts {
     expiresAt: Date | null;
     revokedAt: Date | null;
     agentId: string | null;
+    /** The key's scope strings, as stored. Decides membership of the population. */
+    scopes: readonly string[];
 }
 
 /**
@@ -132,9 +148,21 @@ export function isLiveKey(key: Pick<KeyFacts, 'revokedAt' | 'expiresAt'>, now: D
     return key.expiresAt === null || key.expiresAt.getTime() > now.getTime();
 }
 
-/** Every key rule this key fires. A key that is not live fires none. */
+/**
+ * Is this key an agent credential — hygiene's population? Bound to an agent, or
+ * admitted by the `/api/mcp` gate. See the header.
+ */
+export function isAgentCredential(key: Pick<KeyFacts, 'agentId' | 'scopes'>): boolean {
+    return key.agentId !== null || admitsMcpEndpoint(key.scopes);
+}
+
+/**
+ * Every key rule this key fires. A key that is not live, or is not an agent
+ * credential, fires none.
+ */
 export function keyRuleHits(key: KeyFacts, now: Date, rotationDays: number): HygieneRule[] {
     if (!isLiveKey(key, now)) return [];
+    if (!isAgentCredential(key)) return [];
     const hits: HygieneRule[] = [];
     const unusedSince = key.lastUsedAt ?? key.createdAt;
     if (now.getTime() - unusedSince.getTime() > KEY_UNUSED_DAYS * DAY_MS) hits.push('KEY_UNUSED_30_DAYS');

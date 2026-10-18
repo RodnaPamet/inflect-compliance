@@ -328,10 +328,13 @@ reactivation is the register's ordinary act.
 
 The `agent-credential-hygiene` job runs at 06:00 UTC and raises findings, and
 writes nothing else: no credential is revoked, rotated, expired or rebound. Its
-five rules, in `src/lib/agentic/credential-hygiene.ts`, read every live API key
-and every `mcp-server` connection: a key unused for 30 days, a key with no
-expiry, a key older than the rotation age, a key bound to no registered agent,
-and a connection with an app-only grant and no named owner. No tenant setting
+five rules, in `src/lib/agentic/credential-hygiene.ts`, read every live agent
+credential and every `mcp-server` connection: a key unused for 30 days, a key
+with no expiry, a key older than the rotation age, a key bound to no registered
+agent, and a connection with an app-only grant and no named owner. An agent
+credential is a key bound to an agent or one the `/api/mcp` capability gate
+admits; an integration key with resource scopes only is not one, and fires
+nothing. No tenant setting
 holds a rotation age, so the rule uses a 90-day product default and says so on
 the row and in each finding. No connection has an owner column (passport field
 P11, step `2d`), so every app-only connection fires its rule. Findings are

@@ -33,8 +33,8 @@ The lift side: `liftKillSwitch` refuses an OWNER_DEPARTED kill until a COMPLETED
 the agent's current owner, who must be that transfer's recipient. A trigger holds
 the same rule beneath the usecase, and a CHECK pins the code to the system actor.
 
-**Hygiene.** Per tenant (discovered: unrevoked keys, `mcp-server` connections, or
-open hygiene findings), one transaction reads every live key, every `mcp-server`
+**Hygiene.** Per tenant (discovered: unrevoked agent credentials, `mcp-server`
+connections, or open hygiene findings), one transaction reads every live key, every `mcp-server`
 connection (grant kind via `resolveMcpCredentials`, kind kept, secret dropped)
 and the open hygiene findings; the pure planner `lib/agentic/credential-hygiene.ts`
 returns assert / resolve / hold; the usecase creates, reopens and closes
@@ -91,6 +91,14 @@ returns assert / resolve / hold; the usecase creates, reopens and closes
 - **Hygiene's rotation age is a 90-day default.** No tenant setting exists. Skipping
   the rule would make an unrotated key look compliant, so the conservative
   option is to apply a stated default and say so on every row.
+- **Hygiene's key population is agent credentials, not every key.** A key bound to
+  an agent, or one the `/api/mcp` gate admits — through `admitsMcpEndpoint`, which
+  the gate itself now calls, so the two cannot drift. Firing "bound to no agent" on
+  every integration key would contradict `TenantApiKey.agentId`'s own docstring
+  ("binding every key to an agent would make the register a lie") and bury the
+  real weakness, an MCP-capable key that names no agent, under LOW findings on CI
+  keys. Integration keys are counted on the row (`otherLiveKeys`) so the pass says
+  what it looked past, and a tenant holding only integration keys is not swept.
 - **Hygiene's "no named owner" fires on every app-only connection** because no
   owner column exists (passport P11); step 2d gives it a source.
 - **06:00 is shared with the kill-switch drill**, the issue's stated time. The

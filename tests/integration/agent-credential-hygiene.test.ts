@@ -49,7 +49,15 @@ async function person(tenantId: string, who: string, status: 'ACTIVE' | 'DEACTIV
 async function key(
     tenantId: string,
     label: string,
-    over: { createdAt?: Date; lastUsedAt?: Date | null; expiresAt?: Date | null; revokedAt?: Date | null; agentId?: string | null; createdById: string },
+    over: {
+        createdAt?: Date;
+        lastUsedAt?: Date | null;
+        expiresAt?: Date | null;
+        revokedAt?: Date | null;
+        agentId?: string | null;
+        scopes?: string[];
+        createdById: string;
+    },
 ) {
     seq += 1;
     const row = await prisma.tenantApiKey.create({
@@ -58,7 +66,7 @@ async function key(
             name: label,
             keyPrefix: `iflk_${String(seq).padStart(3, '0')}`,
             keyHash: `hygiene-${tenantId}-${seq}`,
-            scopes: ['mcp:read'],
+            scopes: over.scopes ?? ['mcp:read'],
             createdById: over.createdById,
             agentId: over.agentId === undefined ? null : over.agentId,
             createdAt: over.createdAt ?? ago(10),
@@ -121,6 +129,9 @@ beforeAll(async () => {
     const weakest = { agentId: null, createdById: ids.creator, createdAt: ago(400), lastUsedAt: null, expiresAt: null };
     await key(T1, 'revoked', { ...weakest, revokedAt: ago(1) });
     await key(T1, 'expired', { ...weakest, expiresAt: ago(1) });
+    // Weak in every way and LIVE — but an integration key: unbound, and no scope
+    // the /api/mcp gate admits. Not an agent credential, so not hygiene's subject.
+    await key(T1, 'integration', { ...weakest, scopes: ['controls:read', 'evidence:write'] });
 
     const cfg = { url: 'https://mcp.example.test', tenantId: 'entra-tenant', clientId: 'client-1' };
     await connection(T1, 'appOnly', { ...cfg, scope: 'api://mcp/.default' }, encryptField(JSON.stringify({ clientSecret: 's3cret' })));
@@ -131,6 +142,8 @@ beforeAll(async () => {
     await key(T2, 't2NoExpiry', { agentId: null, createdById: ids.t2owner, expiresAt: null });
 
     ids.t3owner = await person(T3, 'owner');
+    // T3's only key is an integration key: a tenant with no agent credential.
+    await key(T3, 't3Integration', { ...weakest, createdById: ids.t3owner, scopes: ['controls:read'] });
 });
 
 afterAll(async () => {
@@ -176,9 +189,9 @@ describe('each rule fires on its fixture and on nothing else', () => {
                 hygieneSourceRef('CONNECTION_APP_ONLY_NO_OWNER', 'connection', ids.appOnly),
             ].sort(),
         );
-        // The clean key, the revoked and expired ones, and the delegated
-        // connection appear nowhere.
-        for (const clean of ['clean', 'revoked', 'expired', 'delegated', 'unreadable']) {
+        // The clean key, the revoked and expired ones, the integration key and
+        // the delegated connection appear nowhere.
+        for (const clean of ['clean', 'revoked', 'expired', 'integration', 'delegated', 'unreadable']) {
             expect(refs.some((r) => (r as string).endsWith(`:${ids[clean]}`))).toBe(false);
         }
         expect(result.opened).toBe(6);
@@ -210,7 +223,7 @@ describe('each rule fires on its fixture and on nothing else', () => {
         expect(exec.resultJson).toMatchObject({
             skipped: [{ connectionId: ids.unreadable, reason: 'GRANT_KIND_UNRESOLVED' }],
             rotationAge: { days: 90, source: 'DEFAULT_NO_TENANT_SETTING' },
-            population: { liveKeys: 6, mcpServerConnections: 3 },
+            population: { agentKeys: 6, otherLiveKeys: 1, mcpServerConnections: 3 },
         });
         // The pass's own audit row is a JOB's; the write extension's beside it
         // is SYSTEM. Neither names a person.
@@ -280,9 +293,10 @@ describe('two tenants, and the empty one', () => {
         expect((await findings(T1)).some((f) => (f.sourceRef as string).endsWith(ids.t2NoExpiry))).toBe(false);
     });
 
-    it('a tenant with no live credential records NOT_APPLICABLE, never a clean pass', async () => {
+    it('a tenant with no agent credential — only an integration key — records NOT_APPLICABLE, never a clean pass', async () => {
         const result = await runAgentCredentialHygiene({ tenantId: T3 });
-        expect(result).toMatchObject({ status: 'NOT_APPLICABLE', refusal: 'NO_LIVE_CREDENTIALS' });
+        expect(result).toMatchObject({ status: 'NOT_APPLICABLE', refusal: 'NO_AGENT_CREDENTIALS', agentKeys: 0, opened: 0 });
+        expect(await findings(T3)).toEqual([]);
     });
 
     it('the sweep visits a tenant whose last weak key was revoked, so its finding can close', async () => {
@@ -291,7 +305,7 @@ describe('two tenants, and the empty one', () => {
         const r = await runAgentCredentialHygieneSweep({}, `hygiene-sweep-${SUITE}`);
         const swept = r.results.map((x) => x.tenantId);
         expect(swept).toEqual(expect.arrayContaining([T1, T2]));
-        // T3 holds no credential and no open finding: nothing to visit.
+        // T3 holds only an integration key and no open finding: nothing to visit.
         expect(swept).not.toContain(T3);
         expect((await findings(T2)).every((f) => f.status === 'CLOSED')).toBe(true);
     });

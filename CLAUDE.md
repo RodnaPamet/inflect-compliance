@@ -1801,7 +1801,14 @@ per `mcp-server` connection to classify the grant through
 `resolveMcpCredentials` and keeps only the kind. A finding closes only on
 positive evidence from a complete read; a connection whose secret will not
 decrypt is HELD. The rotation age is `DEFAULT_KEY_ROTATION_DAYS` (90) because no
-tenant setting exists, and every row and finding says so.
+tenant setting exists, and every row and finding says so. **Its key population is
+AGENT credentials** — a key bound to an agent, or one the `/api/mcp` gate admits
+(`admitsMcpEndpoint` in `lib/mcp/endpoint-scope.ts`, the gate's own predicate,
+which `mcp/auth.ts` calls at both its sites). An integration key is not hygiene's
+subject: the schema says binding every key to an agent "would make the register
+a lie", so "bound to no agent" on a CI key is a finding nobody can act on. Do not
+give the hygiene pass a scope list of its own; a scope added to the gate must
+widen the population in the same diff.
 
 
 

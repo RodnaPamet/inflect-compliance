@@ -1284,7 +1284,7 @@ export function recordAgentOwnerOrphanPass(attrs: {
  *
  * `partial` is a pass that could not judge every connection (a secret that
  * would not decrypt): those findings are held, neither raised nor resolved.
- * `no_live_credentials` is an empty population, recorded as such and never as
+ * `no_agent_credentials` is an empty population, recorded as such and never as
  * a clean result.
  *
  * ALERT ON — `outcome="error"`; and the absence of any outcome for two
@@ -1292,7 +1292,7 @@ export function recordAgentOwnerOrphanPass(attrs: {
  * week is new weak credentials being minted, which is the trend to read.
  */
 export function recordAgentCredentialHygiene(attrs: {
-    outcome: 'completed' | 'partial' | 'no_live_credentials' | 'error' | 'swept_nobody';
+    outcome: 'completed' | 'partial' | 'no_agent_credentials' | 'error' | 'swept_nobody';
     opened: number;
     reopened: number;
     resolved: number;

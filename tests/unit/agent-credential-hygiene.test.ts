@@ -9,6 +9,7 @@ import {
     connectionRuleHits,
     DEFAULT_KEY_ROTATION_DAYS,
     hygieneSourceRef,
+    isAgentCredential,
     isLiveKey,
     keyRuleHits,
     parseHygieneSourceRef,
@@ -34,6 +35,7 @@ function cleanKey(over: Partial<KeyFacts> = {}): KeyFacts {
         expiresAt: daysAhead(60),
         revokedAt: null,
         agentId: 'agent-1',
+        scopes: ['mcp:read', 'risks:read'],
         ...over,
     };
 }
@@ -93,6 +95,53 @@ describe('KEY_NOT_BOUND_TO_AGENT', () => {
     });
     it('does not fire on a key bound to an agent', () => {
         expect(keyRuleHits(cleanKey({ agentId: 'agent-9' }), NOW, rotation)).toEqual([]);
+    });
+});
+
+describe('the population is agent credentials — an integration key is not hygiene\'s subject', () => {
+    it.each([['*'], ['mcp:*'], ['mcp:read'], ['mcp:propose']])(
+        'an unbound key carrying %s can reach /api/mcp, so it is an agent credential',
+        (scope) => {
+            expect(isAgentCredential({ agentId: null, scopes: [scope] })).toBe(true);
+            expect(keyRuleHits(cleanKey({ agentId: null, scopes: [scope] }), NOW, rotation)).toEqual([
+                'KEY_NOT_BOUND_TO_AGENT',
+            ]);
+        },
+    );
+
+    it('an unbound key with only resource scopes fires nothing, however weak it is', () => {
+        const ciKey = cleanKey({
+            agentId: null,
+            scopes: ['controls:read', 'evidence:write'],
+            lastUsedAt: null,
+            createdAt: daysAgo(400),
+            expiresAt: null,
+        });
+        expect(isAgentCredential(ciKey)).toBe(false);
+        expect(keyRuleHits(ciKey, NOW, rotation)).toEqual([]);
+    });
+
+    it('mcp:orchestrate alone admits nothing at the endpoint, so it does not make an agent credential', () => {
+        expect(isAgentCredential({ agentId: null, scopes: ['mcp:orchestrate'] })).toBe(false);
+    });
+
+    it('a key bound to an agent is an agent credential whatever its scopes', () => {
+        const bound = cleanKey({ scopes: ['controls:read'], expiresAt: null });
+        expect(isAgentCredential(bound)).toBe(true);
+        expect(keyRuleHits(bound, NOW, rotation)).toEqual(['KEY_NO_EXPIRY']);
+    });
+
+    it('an open finding on a key that is not an agent credential resolves on a complete read', () => {
+        const ciKey = cleanKey({ id: 'k-ci', agentId: null, scopes: ['controls:read'], expiresAt: null });
+        const plan = planHygiene({
+            keys: [ciKey],
+            connections: [],
+            openRefs: [hygieneSourceRef('KEY_NO_EXPIRY', 'api_key', 'k-ci')],
+            now: NOW,
+            rotationDays: rotation,
+        });
+        expect(plan.assert).toEqual([]);
+        expect(plan.resolve).toEqual([hygieneSourceRef('KEY_NO_EXPIRY', 'api_key', 'k-ci')]);
     });
 });
 
