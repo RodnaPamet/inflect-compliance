@@ -18,14 +18,15 @@
  * **Role ceiling.** `externalId` here is a value a SCIM bearer token pushed, and
  * it is matched against the tenant's admin-curated group→role mappings — where
  * ADMIN *is* a legal target for the sign-in path. Every reconcile therefore
- * passes `SCIM_ASSIGNABLE_ROLES` so this path can resolve to no more than the
- * SCIM Users path could (#2200). Do not drop that argument.
+ * passes `SCIM_GROUP_ASSIGNABLE_ROLES`: what the SCIM Users path could assign
+ * (#2200), plus AI_ADMIN, which reaches SCIM through an OWNER-made group
+ * mapping only (#3699 deploy 2). Do not drop that argument.
  */
 import { runInTenantContext } from '@/lib/db-context';
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '../types';
 import { syncEntraMembershipRole } from '@/lib/auth/entra-group-sync';
-import { SCIM_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
+import { SCIM_GROUP_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
 import { ScimUnresolvableMemberError } from '@/lib/scim/auth';
 
 export interface ScimContext {
@@ -317,7 +318,7 @@ async function reconcileUsers(tenantId: string, userIds: string[]): Promise<void
             // The ceiling. Without it a token holder who can guess (or read
             // from the admin UI) an ADMIN-mapped group id promotes themselves
             // by pushing a group with that externalId. See `@/lib/scim/roles`.
-            assignableRoles: SCIM_ASSIGNABLE_ROLES,
+            assignableRoles: SCIM_GROUP_ASSIGNABLE_ROLES,
         });
     }
 }

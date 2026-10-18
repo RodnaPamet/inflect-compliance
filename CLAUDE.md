@@ -748,12 +748,12 @@ floor is `assertAgentGovernanceWrite` / `…Admin`
 the agent key the route requires, a strict superset of the floor it replaced.
 It is declared LAST in the enum because three job actor pickers sort
 `TenantMembership.role` ascending to find the most senior member, and it must
-never sort ahead of ADMIN. **Deploy 1 of 2 is shipped: every reader handles the
-value and nothing writes it** — every membership-role writer reads
-`ASSIGNABLE_TENANT_ROLES` (`src/lib/roles.ts`), which excludes it, and
-`tests/unit/ai-admin-role-writers.test.ts` holds the census. Deploy 2 lets an
-OWNER assign it on the members page; SCIM, Entra group mappings
-(`NEVER_GROUP_MAPPED_ROLES`) and SSO JIT never produce it.
+never sort ahead of ADMIN. **It has exactly two writers** (deploy 2): an OWNER
+on the members page, moving an existing member in or out (`MEMBER_ROLE_CHANGE_ROLES`
++ `OWNER_MANAGED_ROLES` — an ADMIN can do neither), and an Entra group mapping an
+OWNER made, at sign-in and on a SCIM Groups push. Every other writer reads
+`ASSIGNABLE_TENANT_ROLES` (`src/lib/roles.ts`), which still excludes it, and
+`tests/unit/ai-admin-role-writers.test.ts` holds the census.
 
 **Membership creation is explicit.** Eight allowlisted paths can write a
 `TenantMembership` row today:
@@ -1926,7 +1926,7 @@ a lie", so "bound to no agent" on a CI key is a finding nobody can act on. Do no
 give the hygiene pass a scope list of its own; a scope added to the gate must
 widen the population in the same diff.
 
-**The built-in `AI_ADMIN` role, since 2a (#3699, deploy 1 of 2).** It runs the
+**The built-in `AI_ADMIN` role, since 2a (#3699, two deploys).** It runs the
 agent register and can own and receive agents, holding the agent keys and no
 tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
 `PermissionSet`). Rules that are each one careless edit from being undone:
@@ -1943,17 +1943,26 @@ tenant-wide admin key (see the Epic 1 "Role model" paragraph for its
   handler refuses it everywhere else too. Widening the list is a
   security-middleware change: name the key the new path's handler takes and
   show the role holds it.
-- **Nothing writes it in deploy 1.** A running container whose Prisma client
-  predates the value fails every read of a row carrying it ("Value 'AI_ADMIN'
-  not found in enum 'Role'"), so the value is read-only until every container
-  knows it. Every membership-role writer reads `ASSIGNABLE_TENANT_ROLES`
-  (`src/lib/roles.ts`), never `Role`; readers use `TENANT_ROLES`, which is
-  compile-time exhaustive. `tests/unit/ai-admin-role-writers.test.ts` holds the
-  census of every file whose code names the value, an empty `WRITERS` list, and
-  one refusal test per writer. Deploy 2 adds the value to
-  `ASSIGNABLE_TENANT_ROLES` for the members page only; SCIM's ceiling, Entra's
-  `ENTRA_MAPPABLE_ROLES` and `NEVER_GROUP_MAPPED_ROLES`, and SSO JIT keep it out
-  for good.
+- **Two writers, and no third.** Deploy 1 shipped the value read-only (a
+  container whose Prisma client predates it fails every read of a row carrying
+  it); deploy 2 added the members-page role change (OWNER-only in both
+  directions) and Entra group mappings (`ENTRA_MAPPABLE_ROLES`, and
+  `SCIM_GROUP_ASSIGNABLE_ROLES` for the Groups push — SCIM's Users ceiling
+  `SCIM_ASSIGNABLE_ROLES` still excludes it). Do NOT append it to
+  `ASSIGNABLE_TENANT_ROLES`: that list is shared by invites, the direct add, an
+  access review's MODIFY and their redemption/close paths, and none of them may
+  write it. `tests/unit/ai-admin-role-writers.test.ts` pins the `WRITERS`, the
+  exact consumers of each widened list, and one refusal per other writer.
+- **No custom role on an `AI_ADMIN` membership** (`mayCarryCustomRole`). A
+  custom role's base REPLACES the built-in role at resolution, so both orders
+  are refused (`ConflictError`, reason `BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`),
+  never repaired — on the members page, in `assignCustomRole` and by the group
+  sync (`custom_role_held`).
+- **A priority tie with ADMIN, EDITOR or AUDITOR decides nothing.** Group-role
+  resolution breaks ties by seniority, but `AI_ADMIN` is off that ladder
+  (`TIE_DECIDABLE_AGAINST`): it beats READER, which it contains, and against
+  the others the resolver yields no role, so the membership keeps its own
+  (`ambiguous_tie`). The admin settles it with `priority`.
 - **Its coarse tier is READER's, on purpose.** `ROLE_ORDER.AI_ADMIN` is 1, so it
   passes no usecase gated on `canWrite`/`canAdmin` alone. The agent usecases
   take `assertAgentGovernanceWrite` / `assertAgentGovernanceAdmin` instead of

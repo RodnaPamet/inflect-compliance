@@ -3,7 +3,7 @@
 /* TODO(swr-migration): fetch-on-mount + setState, matching the parent
  * EntraProviderWizard. Migrate together to useTenantSWR. */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Trash } from '@inflect/ui/components/ui/icons/nucleo/trash';
 import { Card } from '@/components/ui/card';
@@ -16,8 +16,11 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Heading } from '@/components/ui/typography';
+import { Tooltip } from '@/components/ui/tooltip';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import { ENTRA_MAPPABLE_ROLES } from '@/app-layer/schemas/entra-group-mapping.schemas';
+import { usePermissions } from '@/lib/tenant-context-provider';
+import { isOwnerManagedRole } from '@/lib/roles';
 
 interface GroupMapping {
     id: string;
@@ -27,16 +30,29 @@ interface GroupMapping {
     priority: number;
 }
 
-const ROLE_OPTIONS = ENTRA_MAPPABLE_ROLES.map((r) => ({ value: r, label: r }));
-
 /**
  * EI-2 — manage the tenant's Entra security-group → IC-role mappings. At
  * sign-in (EI-3) a user's resolved groups are matched against these rows to
  * sync their membership role. OWNER is intentionally not offered — ownership
- * stays manually granted.
+ * stays manually granted. AI_ADMIN is offered to an OWNER only, and only an
+ * OWNER may remove such a mapping (#3699 deploy 2; the API enforces both).
  */
 export function GroupMappingsSection({ apiUrl }: { apiUrl: (path: string) => string }) {
     const t = useTranslations('admin');
+    const tRoles = useTranslations('roles');
+    const roleLabel = useCallback(
+        (r: string) => (tRoles.has(r) ? tRoles(r) : r),
+        [tRoles],
+    );
+    const canManageOwnerRoles = usePermissions().admin.owner_management;
+    const roleOptions = useMemo(
+        () =>
+            ENTRA_MAPPABLE_ROLES.filter((r) => canManageOwnerRoles || !isOwnerManagedRole(r)).map((r) => ({
+                value: r,
+                label: roleLabel(r),
+            })),
+        [canManageOwnerRoles, roleLabel],
+    );
     const [rows, setRows] = useState<GroupMapping[]>([]);
     const [groupId, setGroupId] = useState('');
     const [groupName, setGroupName] = useState('');
@@ -149,17 +165,23 @@ export function GroupMappingsSection({ apiUrl }: { apiUrl: (path: string) => str
                                     </div>
                                 )}
                             </div>
-                            <StatusBadge variant="neutral">{m.role}</StatusBadge>
+                            <StatusBadge variant="neutral">{roleLabel(m.role)}</StatusBadge>
                             <span className="w-20 text-right text-xs text-content-muted">
                                 {t('entra.mappings.priorityBadge', { priority: m.priority })}
                             </span>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                icon={<Trash />}
-                                aria-label={t('entra.mappings.removeAria', { name: m.aadGroupName ?? m.aadGroupId })}
-                                onClick={() => remove(m)}
-                            />
+                            <Tooltip
+                                content={t('entra.mappings.ownerOnlyMapping', { role: roleLabel(m.role) })}
+                                disabled={canManageOwnerRoles || !isOwnerManagedRole(m.role)}
+                            >
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    icon={<Trash />}
+                                    aria-label={t('entra.mappings.removeAria', { name: m.aadGroupName ?? m.aadGroupId })}
+                                    disabled={!canManageOwnerRoles && isOwnerManagedRole(m.role)}
+                                    onClick={() => remove(m)}
+                                />
+                            </Tooltip>
                         </li>
                     ))}
                 </ul>
@@ -186,8 +208,8 @@ export function GroupMappingsSection({ apiUrl }: { apiUrl: (path: string) => str
                 <FormField label={t('entra.mappings.role')} hint={t('entra.mappings.roleHint')}>
                     <Combobox
                         id="entra-mapping-role"
-                        options={ROLE_OPTIONS}
-                        selected={ROLE_OPTIONS.find((o) => o.value === role) ?? ROLE_OPTIONS[0]}
+                        options={roleOptions}
+                        selected={roleOptions.find((o) => o.value === role) ?? roleOptions[0]}
                         setSelected={(opt) => setRole(opt?.value ?? 'READER')}
                         matchTriggerWidth
                     />
@@ -203,6 +225,12 @@ export function GroupMappingsSection({ apiUrl }: { apiUrl: (path: string) => str
                     {saving ? t('entra.mappings.adding') : t('entra.mappings.addMapping')}
                 </Button>
             </div>
+            {/* AI_ADMIN never wins an equal-priority tie against a role it does
+                not contain (`TIE_DECIDABLE_AGAINST`): say so, visibly, while
+                the priority is being chosen. */}
+            {role === 'AI_ADMIN' && (
+                <InlineNotice variant="info">{t('entra.mappings.aiAdminTieHint')}</InlineNotice>
+            )}
         </Card>
     );
 }

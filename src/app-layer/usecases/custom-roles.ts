@@ -15,20 +15,22 @@ import { RequestContext } from '../types';
 import { assertCanManageMembers } from '../policies/admin.policies';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden, ConflictError } from '@/lib/errors/types';
 import {
     validatePermissionsJson,
     parsePermissionsJson,
     permissionsExceeding,
 } from '@/lib/permissions';
+import { BUILT_IN_SCOPE_REFUSAL, builtInScopeRoleMessage, mayCarryCustomRole } from '@/lib/roles';
 import type { Role } from '@prisma/client';
 
 /**
  * The roles a custom role may be built on. A custom role's base IS the role a
  * membership resolves to (`effectiveRole` in `resolveTenantContext`), so this is
- * a membership-role writer's list. AI_ADMIN (#3699) is absent: nothing may
- * write it in deploy 1, and whether a custom role may be built on it is deploy
- * 2's question. OWNER is absent as before.
+ * a membership-role writer's list. AI_ADMIN (#3699) is absent, and stays absent
+ * after deploy 2: its scope is always the reviewed built-in set, so no custom
+ * role is built on it and none is assigned to a membership holding it
+ * (`mayCarryCustomRole`, below). OWNER is absent as before.
  */
 const VALID_BASE_ROLES: Role[] = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'];
 
@@ -348,6 +350,15 @@ export async function assignCustomRole(
 
         if (!membership) {
             throw notFound('Membership not found or not active.');
+        }
+
+        // An AI_ADMIN membership's scope is always the built-in one (#3699):
+        // a custom role would replace it at resolution. Removing one (null) is
+        // always allowed.
+        if (customRoleId && !mayCarryCustomRole(membership.role)) {
+            throw new ConflictError(builtInScopeRoleMessage(membership.role, 'assign-custom-role'), {
+                reason: BUILT_IN_SCOPE_REFUSAL,
+            });
         }
 
         // If assigning, verify the custom role exists and belongs to this tenant

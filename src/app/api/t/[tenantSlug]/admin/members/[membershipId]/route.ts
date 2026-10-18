@@ -5,13 +5,32 @@ import { assignCustomRole } from '@/app-layer/usecases/custom-roles';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
-import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
+import {
+    BUILT_IN_SCOPE_REFUSAL,
+    MEMBER_ROLE_CHANGE_ROLES,
+    builtInScopeRoleMessage,
+    mayCarryCustomRole,
+} from '@/lib/roles';
 
-const UpdateMemberSchema = z.object({
-    // The roles a writer may write — AI_ADMIN is refused until deploy 2 of #3699.
-    role: z.enum(ASSIGNABLE_TENANT_ROLES).optional(),
-    customRoleId: z.string().nullable().optional(),
-});
+const UpdateMemberSchema = z
+    .object({
+        // The members-page role change's list: the writers' list plus AI_ADMIN
+        // (#3699 deploy 2), which the usecase lets an OWNER alone assign.
+        role: z.enum(MEMBER_ROLE_CHANGE_ROLES).optional(),
+        customRoleId: z.string().nullable().optional(),
+    })
+    // The two halves below run as separate writes, role first. Asking for a
+    // role that carries no custom role AND a custom role in one body would
+    // commit the first and refuse the second; refuse the body instead.
+    .superRefine((v, issue) => {
+        if (v.role && !mayCarryCustomRole(v.role) && typeof v.customRoleId === 'string') {
+            issue.addIssue({
+                code: 'custom',
+                path: ['customRoleId'],
+                message: `${BUILT_IN_SCOPE_REFUSAL}: ${builtInScopeRoleMessage(v.role, 'assign-custom-role')}`,
+            });
+        }
+    });
 
 export const PATCH = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; membershipId: string }>(

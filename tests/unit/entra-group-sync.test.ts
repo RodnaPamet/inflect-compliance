@@ -24,6 +24,7 @@ import {
     applyEntraSyncToToken,
     type EntraSyncDb,
 } from '@/lib/auth/entra-group-sync';
+import { SCIM_GROUP_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
 
 const GUID = '11111111-1111-4111-8111-111111111111';
 const validConfig = {
@@ -36,7 +37,7 @@ const validConfig = {
 
 function mockDb(over: {
     mappings?: Array<{ aadGroupId: string; role: any; priority: number }>;
-    membership?: { id: string; role: any } | null;
+    membership?: { id: string; role: any; customRoleId?: string | null } | null;
     config?: unknown;
 }): { db: EntraSyncDb; update: jest.Mock } {
     const update = jest.fn().mockResolvedValue({});
@@ -205,6 +206,79 @@ describe('syncEntraMembershipRole', () => {
         const r = await syncEntraMembershipRole(base, { db });
         expect(r.changed).toBe(true);
         expect(update).toHaveBeenCalled();
+    });
+});
+
+/**
+ * AI_ADMIN through a group mapping (#3699 deploy 2): written on both paths,
+ * never over a custom role, and never by an undecidable tie.
+ */
+describe('syncEntraMembershipRole — AI_ADMIN', () => {
+    // The real ceiling the SCIM Groups usecase passes (`tests/unit/scim-groups.test.ts`).
+    const SCIM_GROUP_CEILING = SCIM_GROUP_ASSIGNABLE_ROLES;
+
+    it.each([
+        ['the sign-in path', {}],
+        ['the SCIM Groups path', { assignableRoles: SCIM_GROUP_CEILING }],
+    ] as const)('%s promotes a READER to AI_ADMIN and audits it', async (_label, extra) => {
+        const { db, update } = mockDb({
+            mappings: [{ aadGroupId: 'g-1', role: 'AI_ADMIN', priority: 0 }],
+            membership: { id: 'm1', role: 'READER', customRoleId: null },
+        });
+        const r = await syncEntraMembershipRole({ ...base, ...extra }, { db });
+        expect(r).toEqual({ effectiveRole: 'AI_ADMIN', changed: true, gateDenied: false });
+        expect(update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { role: 'AI_ADMIN' } });
+        expect(mockAppend.mock.calls[0][0]).toMatchObject({
+            action: 'MEMBER_ROLE_CHANGED',
+            detailsJson: expect.objectContaining({ before: { role: 'READER' }, after: { role: 'AI_ADMIN' } }),
+        });
+    });
+
+    it('the SCIM Groups path can move a member back OUT of AI_ADMIN when the group changes', async () => {
+        const { db, update } = mockDb({
+            mappings: [{ aadGroupId: 'g-1', role: 'READER', priority: 0 }],
+            membership: { id: 'm1', role: 'AI_ADMIN', customRoleId: null },
+        });
+        const r = await syncEntraMembershipRole({ ...base, assignableRoles: SCIM_GROUP_CEILING }, { db });
+        expect(r.changed).toBe(true);
+        expect(update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { role: 'READER' } });
+    });
+
+    it('never writes AI_ADMIN over a custom role — custom_role_held, nothing written', async () => {
+        const { db, update } = mockDb({
+            mappings: [{ aadGroupId: 'g-1', role: 'AI_ADMIN', priority: 0 }],
+            membership: { id: 'm1', role: 'EDITOR', customRoleId: 'cr-1' },
+        });
+        const r = await syncEntraMembershipRole(base, { db });
+        expect(r).toEqual({ effectiveRole: 'EDITOR', changed: false, gateDenied: false });
+        expect(update).not.toHaveBeenCalled();
+        expect(mockAppend).not.toHaveBeenCalled();
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'custom_role_held' });
+    });
+
+    it('a custom role does not hold back a mapping to a role that may carry one', async () => {
+        const { db, update } = mockDb({
+            mappings: [{ aadGroupId: 'g-1', role: 'EDITOR', priority: 0 }],
+            membership: { id: 'm1', role: 'READER', customRoleId: 'cr-1' },
+        });
+        await syncEntraMembershipRole(base, { db });
+        expect(update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { role: 'EDITOR' } });
+    });
+
+    it('an AI_ADMIN-vs-EDITOR tie at the top priority leaves the membership as it is', async () => {
+        const { db, update } = mockDb({
+            mappings: [
+                { aadGroupId: 'g-1', role: 'AI_ADMIN', priority: 0 },
+                { aadGroupId: 'g-2', role: 'EDITOR', priority: 0 },
+            ],
+            membership: { id: 'm1', role: 'READER', customRoleId: null },
+            config: { ...validConfig, enforceGroupGate: true },
+        });
+        const r = await syncEntraMembershipRole({ ...base, aadGroups: ['g-1', 'g-2'] }, { db });
+        // Not gate-denied: the user IS in mapped groups.
+        expect(r).toEqual({ effectiveRole: null, changed: false, gateDenied: false });
+        expect(update).not.toHaveBeenCalled();
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'ambiguous_tie' });
     });
 });
 

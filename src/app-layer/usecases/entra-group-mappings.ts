@@ -4,17 +4,34 @@
  * Admin-gated, tenant-scoped (runs under RLS via `runInTenantContext`), and
  * audit-logged. EI-3 consumes these rows at sign-in via `resolveRoleFromGroups`
  * to sync a member's role. Mirrors the sibling `entra-provider` usecase.
+ *
+ * A mapping is a standing role assignment, so it is held to the members page's
+ * rule (#3699 deploy 2): creating, changing or deleting a mapping whose role is
+ * or becomes an OWNER-managed one (`AI_ADMIN`) needs `admin.owner_management`.
+ * An ADMIN, who runs every other mapping, can neither assign nor remove
+ * AI_ADMIN this way. What an ADMIN can still do is re-prioritise ANOTHER
+ * mapping so it outranks an AI_ADMIN one — a mapping's effect on a user who is
+ * in several groups is not attributable to one row, so that is not gated.
  */
 import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { conflict, notFound } from '@/lib/errors/types';
+import { conflict, forbidden, notFound } from '@/lib/errors/types';
+import { isOwnerManagedRole, ownerManagedRoleMessage } from '@/lib/roles';
 import {
     EntraGroupMappingCreateSchema,
     EntraGroupMappingUpdateSchema,
 } from '../schemas/entra-group-mapping.schemas';
+
+/** Refuses a mapping change that would assign or remove an OWNER-managed role without the key. */
+function assertMayWriteMappingRole(ctx: RequestContext, ...roles: (string | undefined)[]): void {
+    const managed = roles.find((r): r is string => r !== undefined && isOwnerManagedRole(r));
+    if (managed && !ctx.appPermissions.admin.owner_management) {
+        throw forbidden(ownerManagedRoleMessage(managed));
+    }
+}
 
 export async function listEntraGroupMappings(ctx: RequestContext) {
     assertCanAdmin(ctx);
@@ -30,6 +47,7 @@ export async function listEntraGroupMappings(ctx: RequestContext) {
 export async function createEntraGroupMapping(ctx: RequestContext, raw: unknown) {
     assertCanAdmin(ctx);
     const input = EntraGroupMappingCreateSchema.parse(raw);
+    assertMayWriteMappingRole(ctx, input.role);
 
     return runInTenantContext(ctx, async (db) => {
         let row;
@@ -82,6 +100,7 @@ export async function updateEntraGroupMapping(
             where: { id: mappingId, tenantId: ctx.tenantId },
         });
         if (!existing) throw notFound('Group mapping not found');
+        assertMayWriteMappingRole(ctx, existing.role, input.role);
 
         const row = await db.tenantEntraGroupMapping.update({
             where: { id: existing.id },
@@ -123,6 +142,7 @@ export async function deleteEntraGroupMapping(ctx: RequestContext, mappingId: st
             where: { id: mappingId, tenantId: ctx.tenantId },
         });
         if (!existing) throw notFound('Group mapping not found');
+        assertMayWriteMappingRole(ctx, existing.role);
 
         await db.tenantEntraGroupMapping.delete({ where: { id: existing.id } });
 

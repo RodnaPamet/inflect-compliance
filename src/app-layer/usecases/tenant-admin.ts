@@ -22,9 +22,17 @@ import {
 import { assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden, ConflictError } from '@/lib/errors/types';
 import type { Role } from '@prisma/client';
-import { isAssignableTenantRole, unassignableRoleMessage } from '@/lib/roles';
+import {
+    BUILT_IN_SCOPE_REFUSAL,
+    builtInScopeRoleMessage,
+    isMemberRoleChangeRole,
+    isOwnerManagedRole,
+    mayCarryCustomRole,
+    ownerManagedRoleMessage,
+    unassignableRoleMessage,
+} from '@/lib/roles';
 
 // Safety cap on the two whole-tenant membership scans below. Both feed
 // surfaces that legitimately want every member (the admin roster, and the
@@ -162,16 +170,32 @@ export async function inviteTenantMember(
 
 // ─── Update Member Role ───
 
+/**
+ * Change an EXISTING, ACTIVE member's built-in role — the members page.
+ *
+ * One of the two writers of `AI_ADMIN` (#3699 deploy 2; the other is an Entra
+ * group mapping). It reads `MEMBER_ROLE_CHANGE_ROLES`, the writers' list plus
+ * that role, and holds the role's two rules: moving a member INTO or OUT OF it
+ * needs `admin.owner_management` (`OWNER_MANAGED_ROLES` — an ADMIN can neither
+ * assign nor remove it), and a member carrying a custom role is not moved into
+ * it (`mayCarryCustomRole` — refused, never cleared on the caller's behalf).
+ */
 export async function updateTenantMemberRole(
     ctx: RequestContext,
     input: { membershipId: string; role: Role }
 ) {
     assertCanChangeRoles(ctx);
 
-    // `ASSIGNABLE_TENANT_ROLES`, not `Role`: AI_ADMIN is a real enum value
-    // that nothing may write until deploy 2 of #3699.
-    if (!isAssignableTenantRole(input.role)) {
+    // `MEMBER_ROLE_CHANGE_ROLES`, not `Role`: a new enum value is unassignable
+    // here until it is added there on purpose.
+    if (!isMemberRoleChangeRole(input.role)) {
         throw badRequest(unassignableRoleMessage(input.role));
+    }
+    // Into an OWNER-managed role — refused before the membership is even read.
+    // OWNER keeps its own wording below; this is the AI_ADMIN half.
+    const intoOwnerManaged = input.role !== 'OWNER' && isOwnerManagedRole(input.role);
+    if (intoOwnerManaged && !ctx.appPermissions.admin.owner_management) {
+        throw forbidden(ownerManagedRoleMessage(input.role));
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -199,6 +223,18 @@ export async function updateTenantMemberRole(
         }
         if (membership.role === 'OWNER' && !ctx.appPermissions.admin.owner_management) {
             throw forbidden('Only OWNERs can modify an OWNER membership.');
+        }
+        // Out of an OWNER-managed role (AI_ADMIN).
+        if (isOwnerManagedRole(membership.role) && !ctx.appPermissions.admin.owner_management) {
+            throw forbidden(ownerManagedRoleMessage(membership.role));
+        }
+
+        // A role whose scope is always the built-in one never sits under a
+        // custom role, which would replace it at resolution.
+        if (membership.customRoleId && !mayCarryCustomRole(input.role)) {
+            throw new ConflictError(builtInScopeRoleMessage(input.role, 'promote'), {
+                reason: BUILT_IN_SCOPE_REFUSAL,
+            });
         }
 
         // Safety: last-OWNER protection — do not demote the only OWNER.

@@ -22,7 +22,8 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, usePermissions } from '@/lib/tenant-context-provider';
+import { mayCarryCustomRole } from '@/lib/roles';
 import {
     Users, UserPlus, ChevronDown, Shield, XCircle,
     MoreVertical, UserMinus, Mail, Monitor, Trash2,
@@ -140,15 +141,21 @@ function apiErrorMessage(body: unknown, fallback: string): string {
 }
 
 /**
- * The roles this page OFFERS — a picker, so a writer's list. AI_ADMIN (#3699)
- * is deliberately absent until deploy 2 lets an OWNER assign it here; until
- * then the API refuses it too (`ASSIGNABLE_TENANT_ROLES`).
+ * The roles the INVITE picker offers — a writer's list. AI_ADMIN (#3699) is
+ * never offered here: nobody is invited straight into it, and the API refuses
+ * it (`ASSIGNABLE_TENANT_ROLES`).
  */
 const ROLES = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER'] as const;
 /**
+ * What the role CHANGE picker adds for an OWNER (a holder of
+ * `admin.owner_management`): an existing member may be moved into AI_ADMIN
+ * (#3699 deploy 2). An ADMIN is not offered it, and the API refuses it to them
+ * (`OWNER_MANAGED_ROLES`).
+ */
+const OWNER_ONLY_ROLE_CHANGE_ROLES = ['AI_ADMIN'] as const;
+/**
  * Badge tone per role — a reader, so it names every role a row can carry,
- * AI_ADMIN included: an AI_ADMIN member renders a labelled badge today even
- * though nothing here can make one.
+ * AI_ADMIN included.
  */
 const ROLE_VARIANT: Record<string, 'error' | 'info' | 'warning' | 'neutral'> = {
     ADMIN: 'error',
@@ -178,6 +185,16 @@ export default function MembersAdminPage() {
     const roleOptions: ComboboxOption[] = useMemo(
         () => ROLES.map((r) => ({ value: r, label: roleLabel(r) })),
         [roleLabel],
+    );
+    // Moving a member into or out of AI_ADMIN is an OWNER's change (#3699).
+    const canManageOwnerRoles = usePermissions().admin.owner_management;
+    const roleChangeOptions: ComboboxOption[] = useMemo(
+        () =>
+            [...ROLES, ...(canManageOwnerRoles ? OWNER_ONLY_ROLE_CHANGE_ROLES : [])].map((r) => ({
+                value: r,
+                label: roleLabel(r),
+            })),
+        [roleLabel, canManageOwnerRoles],
     );
 
     // ─── State ───
@@ -585,6 +602,11 @@ export default function MembersAdminPage() {
                 accessorKey: 'role',
                 cell: ({ row }) => {
                     const m = row.original;
+                    // An AI_ADMIN carries no custom role (#3699): its scope is
+                    // always the built-in one. A member who has one is not
+                    // promoted until it is removed and saved on its own.
+                    const builtInScopeOnly = !mayCarryCustomRole(pendingRole);
+                    const customRoleBlocksPromotion = builtInScopeOnly && Boolean(m.customRoleId);
                     if (editingRoleId === m.id) {
                         return (
                             <div className="space-y-1">
@@ -592,9 +614,14 @@ export default function MembersAdminPage() {
                                     <Combobox
                                         hideSearch
                                         id={`role-select-${m.id}`}
-                                        selected={roleOptions.find(o => o.value === pendingRole) ?? null}
-                                        setSelected={(opt) => setPendingRole(opt?.value ?? pendingRole)}
-                                        options={roleOptions}
+                                        selected={roleChangeOptions.find(o => o.value === pendingRole) ?? null}
+                                        setSelected={(opt) => {
+                                            const next = opt?.value ?? pendingRole;
+                                            setPendingRole(next);
+                                            // Never send a custom role beside a role that carries none.
+                                            if (!mayCarryCustomRole(next)) setPendingCustomRoleId(m.customRoleId);
+                                        }}
+                                        options={roleChangeOptions}
                                         matchTriggerWidth
                                         buttonProps={{ className: 'text-xs py-1 px-2 w-full sm:w-28' }}
                                     />
@@ -602,7 +629,7 @@ export default function MembersAdminPage() {
                                         variant="secondary"
                                         size="xs"
                                         onClick={() => handleRoleChange(m.id)}
-                                        disabled={changingRole}
+                                        disabled={changingRole || customRoleBlocksPromotion}
                                         loading={changingRole}
                                         id={`role-save-${m.id}`}
                                     >
@@ -615,7 +642,12 @@ export default function MembersAdminPage() {
                                         icon={<XCircle className="w-3.5 h-3.5" />}
                                     />
                                 </div>
-                                {customRoles.length > 0 && (
+                                {customRoleBlocksPromotion && (
+                                    <p id={`role-custom-role-conflict-${m.id}`} className="text-xs text-content-warning">
+                                        {t('members.builtInScopeNoCustomRole', { role: roleLabel(pendingRole) })}
+                                    </p>
+                                )}
+                                {customRoles.length > 0 && !builtInScopeOnly && (
                                     <Combobox
                                         hideSearch
                                         id={`custom-role-select-${m.id}`}
@@ -630,30 +662,41 @@ export default function MembersAdminPage() {
                             </div>
                         );
                     }
+                    // Only an OWNER moves a member out of AI_ADMIN (#3699), and
+                    // such a membership takes no custom role, so for anyone else
+                    // there is nothing to edit on the row.
+                    const editable =
+                        m.status === 'ACTIVE' &&
+                        (canManageOwnerRoles || !OWNER_ONLY_ROLE_CHANGE_ROLES.some((r) => r === m.role));
                     return (
                         <div className="flex items-center gap-1 flex-wrap">
                             <Tooltip
-                                content={t('members.clickToChangeRole')}
+                                content={
+                                    m.status === 'ACTIVE' && !editable
+                                        ? t('members.ownerOnlyRoleChange', { role: roleLabel(m.role) })
+                                        : t('members.clickToChangeRole')
+                                }
                                 disabled={m.status !== 'ACTIVE'}
                             >
                                 <button
                                     type="button"
                                     className={cn(
                                         statusBadgeVariants({ variant: ROLE_VARIANT[m.role] || 'neutral' }),
-                                        'cursor-pointer hover:opacity-80 transition',
+                                        editable ? 'cursor-pointer hover:opacity-80 transition' : 'cursor-default',
                                     )}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        if (m.status === 'ACTIVE') {
+                                        if (editable) {
                                             setEditingRoleId(m.id);
                                             setPendingRole(m.role);
                                             setPendingCustomRoleId(m.customRoleId);
                                         }
                                     }}
+                                    aria-disabled={!editable || undefined}
                                     id={`role-badge-${m.id}`}
                                 >
                                     {roleLabel(m.role)}
-                                    {m.status === 'ACTIVE' && <ChevronDown className="w-3.5 h-3.5 ml-0.5" />}
+                                    {editable && <ChevronDown className="w-3.5 h-3.5 ml-0.5" />}
                                 </button>
                             </Tooltip>
                             {m.customRole && (
@@ -796,7 +839,7 @@ export default function MembersAdminPage() {
         // changes — otherwise the inline edit row's combobox would
         // render with a stale selection.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [editingRoleId, pendingRole, pendingCustomRoleId, changingRole, customRoles, openMenuId, t, roleLabel, roleOptions],
+        [editingRoleId, pendingRole, pendingCustomRoleId, changingRole, customRoles, openMenuId, t, roleLabel, roleChangeOptions, canManageOwnerRoles],
     );
 
     // ─── Invites DataTable columns ───

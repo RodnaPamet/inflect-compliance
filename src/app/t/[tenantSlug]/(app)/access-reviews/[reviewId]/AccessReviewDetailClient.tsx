@@ -46,8 +46,9 @@ import {
 
 /**
  * The roles a MODIFY decision may target — a writer's list, because closing the
- * campaign writes the target to the membership. AI_ADMIN (#3699) is absent
- * until deploy 2 (`ASSIGNABLE_TENANT_ROLES`, which the API enforces).
+ * campaign writes the target to the membership. AI_ADMIN (#3699) is absent:
+ * a campaign never promotes anybody to it (`ASSIGNABLE_TENANT_ROLES`, which
+ * the API enforces).
  */
 const MODIFY_TARGET_ROLES = [
     'OWNER',

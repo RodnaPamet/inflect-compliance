@@ -21,20 +21,30 @@ jest.mock('@/lib/auth/entra-group-sync', () => ({
 }));
 
 import { scimCreateGroup, scimPatchGroup } from '@/app-layer/usecases/scim-groups';
-import { SCIM_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
+import { SCIM_ASSIGNABLE_ROLES, SCIM_GROUP_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
 
 /**
- * Every reconcile from this path must carry the SCIM role ceiling — the pushed
- * `externalId` is matched against mappings where ADMIN is a legal target, so
- * dropping this argument is the #2200 escalation. Asserting the FULL call
- * object (not `objectContaining`) is deliberate: an omitted `assignableRoles`
- * has to fail here.
+ * Every reconcile from this path must carry the SCIM Groups role ceiling — the
+ * pushed `externalId` is matched against mappings where ADMIN is a legal
+ * target, so dropping this argument is the #2200 escalation. Asserting the FULL
+ * call object (not `objectContaining`) is deliberate: an omitted
+ * `assignableRoles` has to fail here.
  */
 const reconcileCall = (userId: string, aadGroups: string[]) => ({
     userId,
     tenantId: 't1',
     aadGroups,
-    assignableRoles: SCIM_ASSIGNABLE_ROLES,
+    assignableRoles: SCIM_GROUP_ASSIGNABLE_ROLES,
+});
+
+describe('the SCIM Groups ceiling (#2200, #3699 deploy 2)', () => {
+    it('is the SCIM Users ceiling plus exactly AI_ADMIN — ADMIN and OWNER stay out', () => {
+        expect([...SCIM_GROUP_ASSIGNABLE_ROLES].sort()).toEqual([...SCIM_ASSIGNABLE_ROLES, 'AI_ADMIN'].sort());
+        expect(SCIM_GROUP_ASSIGNABLE_ROLES).not.toContain('ADMIN');
+        expect(SCIM_GROUP_ASSIGNABLE_ROLES).not.toContain('OWNER');
+        // The Users path's ceiling is untouched: a `roles[]` value never confers it.
+        expect(SCIM_ASSIGNABLE_ROLES).not.toContain('AI_ADMIN');
+    });
 });
 
 const ctx = { tenantId: 't1' };

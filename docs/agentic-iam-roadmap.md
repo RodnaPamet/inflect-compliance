@@ -367,16 +367,35 @@ READER's, and the agent usecases accept the agent key as their floor, so it
 writes nothing outside the agent register. The edge admits it to
 `/api/t/:slug/admin/agents/**`, `/api/t/:slug/admin/mcp/quarantine` and the
 agent redirect pages under `/t/:slug/admin` (`AI_ADMIN_ADMIN_PATH_PREFIXES` in
-`src/lib/auth/guard.ts`) and refuses it on every other admin path. Identity
-providers can never confer it: SCIM's ceiling, the Entra group-mapping schema
-and resolver (`NEVER_GROUP_MAPPED_ROLES`) and SSO JIT all exclude it.
+`src/lib/auth/guard.ts`) and refuses it on every other admin path.
 
-It ships in two deploys, for the same reason `UNCLASSIFIED` did: a running
+It shipped in two deploys, for the same reason `UNCLASSIFIED` did: a running
 container whose Prisma client predates a value fails every read of a row that
-carries it. Deploy 1 is on `main`: the enum value exists, every reader of a role
-handles it, and nothing writes it — every membership-role writer reads
-`ASSIGNABLE_TENANT_ROLES` in `src/lib/roles.ts`, which excludes it. Nothing in
-the product can assign the role until deploy 2.
+carries it. Deploy 1 added the value and taught every reader of a role to handle
+it, with nothing writing it. Deploy 2 gave it exactly two writers (decision 16):
+
+- **The members page.** An OWNER moves an EXISTING member into or out of the
+  role (`updateTenantMemberRole`, `MEMBER_ROLE_CHANGE_ROLES`); both directions
+  need `admin.owner_management`, as promoting to OWNER does, so an ADMIN can do
+  neither. Nobody is invited straight into it: invite as another role, then
+  promote.
+- **An Entra group mapping**, at sign-in and on a SCIM Groups push
+  (`ENTRA_MAPPABLE_ROLES`, `SCIM_GROUP_ASSIGNABLE_ROLES`). A mapping that yields
+  the role is created, changed and removed by an OWNER only. In a tenant with
+  mappings the mapping decides the role at sign-in, as for every other role. An
+  equal-priority tie between `AI_ADMIN` and ADMIN, EDITOR or AUDITOR decides
+  nothing and leaves the membership as it is; a tie with READER goes to
+  `AI_ADMIN`, which contains READER (`TIE_DECIDABLE_AGAINST` in
+  `src/lib/auth/entra-role-mapping.ts`).
+
+An `AI_ADMIN` membership never carries a custom role, whose base role would
+replace it at resolution: both orders are refused with the named reason
+`BUILT_IN_SCOPE_ROLE_CARRIES_NO_CUSTOM_ROLE`, on the members page and by the
+group sync. Every other membership-role writer still reads
+`ASSIGNABLE_TENANT_ROLES` in `src/lib/roles.ts`, which excludes the role:
+invites, the direct member add, an access review's MODIFY, the custom-role base,
+SCIM's `roles[]` attribute and SSO JIT. `tests/unit/ai-admin-role-writers.test.ts`
+holds the census.
 
 ### Registration intake from a shadow-agent finding
 
@@ -435,7 +454,7 @@ finding id.
 
 | Area | Shipped on `main` | Not built |
 |---|---|---|
-| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key; nothing assigns the role yet (deploy 1 of #3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
+| Register and funnel | Register with four scorer axes and a required owner; an unscored tier means deny. Deny-by-default grants, versioned and pinned policy cards, the autonomy ceiling, audience-scoped tokens, a registration gate on by default, credential and kill state re-read on every call. Seven separate agent admin keys, and a built-in `AI_ADMIN` role that holds them and no tenant-wide admin key, assigned by an OWNER on the members page or by an Entra group mapping an OWNER made (#3699). The AI-system risk tier has an `UNCLASSIFIED` value for a provisional entry, which every reader shows as not classified and never as `MINIMAL`. Its only writer is the registration intake, which registers a shadow agent in DRAFT through such an entry; activation refuses the agent until the entry is classified. | Signed harness reports are ingested, levels derived and stored per scan, shadow and below-bar agents raised as findings, and shortfalls accepted for a bounded time. The harness matrix tab on `/agents/reports` renders the scans, their drift and the shadow list; owners accept shortfalls there; each month's scans are emitted as evidence against ASI10 and ASI03, `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and non-empty. No scanner ships yet, so nothing discovers agents outside Inflect. |
 | Runs and communication | Four specialists reachable by delegation, depth one, fan-out capped per turn per tenant; tools and skills only narrowed. Delegation spans in the run ledger. Runtime-supplied tools reported. Run input scanned before the run exists. Automation rules invoke agents with named refusals. An integration passport per external connection, compared week on week, with drift raised as findings owned by the connection's accountable owner and the week's passports emitted as Evidence. | No task is exchanged with an A2A peer: peers are registered and their cards pinned, and the exchange is `4b`. |
 | Skills | Eight original, licensed skills, each with a committed evaluation record that passes the mount gate. The two IAM skills are declared by one workflow, `discovered-agent-review`, which mounts exactly those two on the Flue engine; each skill's answer has an output contract its consumers parse it through. The loader enforces name, description, licence, byte budgets and the standard's optional metadata, and scans every skill's text at load: a refused skill is listed on the read-only Skills tab by rule id, and a run that declares it fails closed, as a run declaring an unknown skill does. Every shipped skill ships an evaluation set; the catalogue budget binds per workflow and per run. A run mounts a skill only with a passing evaluation record (the mount gate, refused before the run row exists), and every run pins each mounted skill's name, version and hash, write-once, shown on the run detail page. | No runtime check holds a run's answer to its output contract. A Flue run is not given its run input, and no bearer token holds the key the discovered-agent read takes, so a Flue run of the review cannot read the agent it names. |
 | Writes and approvals | Propose-not-commit with the approver count pinned and four-eyes in the database; expiry, output guard, quarantine, ASI09 sample audits. The access-review scope has an `AGENT` value, added by the first of `3a`'s two deploys: every reader handles it, an agent campaign's subjects are shown only to its reviewer and to holders of `admin.agent_registry`, and every path that would create, decide or close one refuses `AGENT_CAMPAIGN_NOT_AVAILABLE`. | No agent recertification campaign: nothing creates one. |
@@ -593,7 +612,13 @@ changed what #3698 built.
     hold it. Reading agent runs, proposals and the governance pack moves to the
     view key in #3710, which `AI_ADMIN` will hold. Approving a proposal still
     needs write on the domain it changes, so `AI_ADMIN` does not approve. (`2a`,
-    #3699)
+    #3699) **Assignment (deploy 2, decided 2026-10-18):** an OWNER assigns the
+    role to an existing member on the members page, and removes it; an ADMIN
+    can do neither, and nobody is invited straight into it. No `AI_ADMIN`
+    membership carries a custom role. A tenant may also map an Entra group to
+    it; such a mapping is an OWNER's change, and it applies at sign-in and on a
+    SCIM Groups push. SCIM's `roles[]` attribute, SSO JIT, invites, the custom-role
+    base and an access review's MODIFY never produce it.
 17. **The owner-orphan pass has no blast-radius breaker.** At AUTOMATIC it
     contains every orphaned agent it finds, however many. Stopping an unowned
     agent is the conservative direction, and it is reversible by transfer, lift

@@ -3,7 +3,11 @@
  * this being stable (same groups + mappings → same role every sign-in), so the
  * tie-break ordering is pinned here.
  */
-import { resolveRoleFromGroups } from '@/lib/auth/entra-role-mapping';
+import { NEVER_GROUP_MAPPED_ROLES, resolveRoleFromGroups } from '@/lib/auth/entra-role-mapping';
+import { ENTRA_MAPPABLE_ROLES } from '@/app-layer/schemas/entra-group-mapping.schemas';
+import { SCIM_GROUP_ASSIGNABLE_ROLES } from '@/lib/scim/roles';
+import { TENANT_ROLES } from '@/lib/roles';
+import { getPermissionsForRole, permissionsExceeding } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
 
 const m = (aadGroupId: string, role: Role, priority = 0) => ({ aadGroupId, role, priority });
@@ -11,7 +15,7 @@ const m = (aadGroupId: string, role: Role, priority = 0) => ({ aadGroupId, role,
 describe('resolveRoleFromGroups', () => {
     it('returns null when the user matches no mapped group', () => {
         const r = resolveRoleFromGroups(['g-x'], [m('g-1', 'EDITOR')]);
-        expect(r).toEqual({ role: null, matchedGroupIds: [], clampedGroupIds: [] });
+        expect(r).toEqual({ role: null, matchedGroupIds: [], clampedGroupIds: [], ambiguousGroupIds: [] });
     });
 
     it('returns the single matching mapping', () => {
@@ -99,5 +103,116 @@ describe('resolveRoleFromGroups — assignableRoles ceiling', () => {
 
     it('omitting the option leaves the sign-in path unclamped', () => {
         expect(resolveRoleFromGroups(['g-1'], [m('g-1', 'ADMIN', 1)]).role).toBe('ADMIN');
+    });
+});
+
+/**
+ * AI_ADMIN is mappable since deploy 2 of #3699, on the sign-in path (no
+ * ceiling) and the SCIM Groups path (`SCIM_GROUP_ASSIGNABLE_ROLES`).
+ */
+describe('resolveRoleFromGroups — AI_ADMIN (#3699 deploy 2)', () => {
+    it.each([
+        ['the sign-in path (no ceiling)', undefined],
+        ['the SCIM Groups path', SCIM_GROUP_ASSIGNABLE_ROLES],
+    ] as const)('yields AI_ADMIN on %s', (_label, ceiling) => {
+        const r = resolveRoleFromGroups(['g-ai'], [m('g-ai', 'AI_ADMIN', 0)], { assignableRoles: ceiling });
+        expect(r).toEqual({
+            role: 'AI_ADMIN',
+            matchedGroupIds: ['g-ai'],
+            clampedGroupIds: [],
+            ambiguousGroupIds: [],
+        });
+    });
+
+    it('the SCIM Groups ceiling still clamps ADMIN while it admits AI_ADMIN', () => {
+        const mappings = [m('g-admin', 'ADMIN', 10), m('g-ai', 'AI_ADMIN', 1)];
+        const r = resolveRoleFromGroups(['g-admin', 'g-ai'], mappings, {
+            assignableRoles: SCIM_GROUP_ASSIGNABLE_ROLES,
+        });
+        expect({ role: r.role, clamped: r.clampedGroupIds }).toEqual({ role: 'AI_ADMIN', clamped: ['g-admin'] });
+    });
+
+    it('a tie with READER goes to AI_ADMIN — it holds everything READER does', () => {
+        const r = resolveRoleFromGroups(['g-all', 'g-ai'], [m('g-all', 'READER', 0), m('g-ai', 'AI_ADMIN', 0)]);
+        expect(r.role).toBe('AI_ADMIN');
+        expect(r.ambiguousGroupIds).toEqual([]);
+    });
+
+    it.each(['ADMIN', 'EDITOR', 'AUDITOR'] as const)(
+        'a tie with %s decides nothing — neither role silently replaces the other',
+        (other) => {
+            const r = resolveRoleFromGroups(['g-other', 'g-ai'], [m('g-other', other, 5), m('g-ai', 'AI_ADMIN', 5)]);
+            expect(r).toEqual({
+                role: null,
+                matchedGroupIds: ['g-other', 'g-ai'],
+                clampedGroupIds: [],
+                ambiguousGroupIds: ['g-ai', 'g-other'],
+            });
+        },
+    );
+
+    it('a three-way top tie that includes an incomparable role is ambiguous too', () => {
+        const r = resolveRoleFromGroups(
+            ['g-r', 'g-e', 'g-ai'],
+            [m('g-r', 'READER', 3), m('g-e', 'EDITOR', 3), m('g-ai', 'AI_ADMIN', 3)],
+        );
+        expect(r.role).toBeNull();
+        expect(r.ambiguousGroupIds).toEqual(['g-ai', 'g-e', 'g-r']);
+    });
+
+    it.each(['ADMIN', 'EDITOR', 'AUDITOR'] as const)(
+        'priority still decides outright against %s, in both directions',
+        (other) => {
+            const groups = ['g-other', 'g-ai'];
+            expect(resolveRoleFromGroups(groups, [m('g-other', other, 1), m('g-ai', 'AI_ADMIN', 2)]).role).toBe(
+                'AI_ADMIN',
+            );
+            expect(resolveRoleFromGroups(groups, [m('g-other', other, 2), m('g-ai', 'AI_ADMIN', 1)]).role).toBe(other);
+        },
+    );
+
+    it('a lower-priority tie is never consulted: the top tier alone decides', () => {
+        const r = resolveRoleFromGroups(
+            ['g-e', 'g-ai', 'g-r'],
+            [m('g-e', 'EDITOR', 1), m('g-ai', 'AI_ADMIN', 1), m('g-r', 'READER', 9)],
+        );
+        expect(r).toMatchObject({ role: 'READER', ambiguousGroupIds: [] });
+    });
+
+    it('a tie between two ladder roles is unchanged — the more senior wins', () => {
+        const r = resolveRoleFromGroups(['g-e', 'g-a'], [m('g-e', 'EDITOR', 0), m('g-a', 'AUDITOR', 0)]);
+        expect(r).toMatchObject({ role: 'EDITOR', ambiguousGroupIds: [] });
+    });
+
+    /**
+     * The premise the tie rule stands on, computed from the real permission
+     * sets rather than restated: AI_ADMIN holds everything READER holds, and
+     * against each role the rule calls undecidable, each side holds a grant
+     * the other lacks.
+     */
+    it('the premise: AI_ADMIN contains READER, and is incomparable with ADMIN, EDITOR and AUDITOR', () => {
+        const ai = getPermissionsForRole('AI_ADMIN');
+        const exceeds = (a: Role, b: Role) => permissionsExceeding(getPermissionsForRole(a), getPermissionsForRole(b));
+        expect(permissionsExceeding(getPermissionsForRole('READER'), ai)).toEqual([]);
+        for (const other of ['ADMIN', 'EDITOR', 'AUDITOR'] as const) {
+            expect({
+                other,
+                aiLacks: exceeds(other, 'AI_ADMIN').length > 0,
+                otherLacks: exceeds('AI_ADMIN', other).length > 0,
+            }).toEqual({ other, aiLacks: true, otherLacks: true });
+        }
+    });
+});
+
+describe('NEVER_GROUP_MAPPED_ROLES — the read-side half of the schema', () => {
+    it('is exactly the roles the mapping schema refuses (OWNER), so a stored row cannot do what the API cannot', () => {
+        const refusedBySchema = TENANT_ROLES.filter((r) => !(ENTRA_MAPPABLE_ROLES as readonly string[]).includes(r));
+        expect([...NEVER_GROUP_MAPPED_ROLES].sort()).toEqual([...refusedBySchema].sort());
+        expect(NEVER_GROUP_MAPPED_ROLES).toEqual(['OWNER']);
+    });
+
+    it('a STORED OWNER mapping never wins, even at the top priority and with no ceiling', () => {
+        const r = resolveRoleFromGroups(['g-own', 'g-r'], [m('g-own', 'OWNER', 1000), m('g-r', 'READER', 0)]);
+        expect({ role: r.role, clamped: r.clampedGroupIds }).toEqual({ role: 'READER', clamped: ['g-own'] });
     });
 });

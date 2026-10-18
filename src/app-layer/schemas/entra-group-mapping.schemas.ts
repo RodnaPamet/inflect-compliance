@@ -11,15 +11,17 @@
 import { z } from 'zod';
 
 /**
- * The roles an Entra group may map to: every Role except OWNER and AI_ADMIN.
+ * The roles an Entra group may map to: every Role except OWNER.
  *
- * AI_ADMIN (#3699) holds the agent keys, including the one that makes its
- * holder a possible owner of an agent, so it is granted by an OWNER in the
- * product and never by an identity provider's group. The resolver refuses it
- * too (`NEVER_GROUP_MAPPED_ROLES` in `src/lib/auth/entra-role-mapping.ts`), so
- * a row written around this schema cannot yield it either.
+ * AI_ADMIN is mappable since deploy 2 of #3699 (owner decision, 2026-10-18), so
+ * a tenant can map its "AI_Admin" group to the role — but a mapping that yields
+ * it is created, changed and removed by an OWNER only
+ * (`entra-group-mappings.ts`, `OWNER_MANAGED_ROLES`), as on the members page.
+ * The resolver drops a stored OWNER row too (`NEVER_GROUP_MAPPED_ROLES` in
+ * `src/lib/auth/entra-role-mapping.ts`), so a row written around this schema
+ * cannot confer ownership either.
  */
-export const ENTRA_MAPPABLE_ROLES = ['ADMIN', 'EDITOR', 'READER', 'AUDITOR'] as const;
+export const ENTRA_MAPPABLE_ROLES = ['ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN'] as const;
 export type EntraMappableRole = (typeof ENTRA_MAPPABLE_ROLES)[number];
 
 export const EntraGroupMappingCreateSchema = z.object({

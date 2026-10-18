@@ -9,7 +9,8 @@ import { ASSIGNABLE_TENANT_ROLES } from '@/lib/roles';
 
 const InviteMemberSchema = z.object({
     email: z.string().email('Valid email required'),
-    // The roles a writer may write — AI_ADMIN is refused until deploy 2 of #3699.
+    // The writers' list: nobody is invited straight into AI_ADMIN (#3699). An
+    // OWNER promotes an existing member on the members page instead.
     role: z.enum(ASSIGNABLE_TENANT_ROLES),
 });
 
